@@ -745,6 +745,149 @@ fn raising_the_risk_afterwards_does_not_link_an_earlier_change() {
     );
 }
 
+/// ADR-0035 §1: a case this engine created is told by its ledger lines.
+/// Its Log and frontmatter edited by hand to say R3 from the start do not
+/// make an R1 case take an `alwaysRed` change: the record (R1) is not the
+/// frontmatter's (R3), so it tells nothing and nothing links. The Log
+/// alone (WP-115) would have linked it.
+#[test]
+fn the_ledger_record_wins_over_an_edited_log() {
+    let b = Bench::new();
+    let id = b.case(
+        "2026-10-06T13:38:00+02:00",
+        "kernels",
+        "R1",
+        "install linux-zen",
+    );
+    let created = b
+        .ledger()
+        .into_iter()
+        .find(|e| e["kind"] == "case-created" && e["subject"] == json!(id))
+        .unwrap();
+    assert_eq!(created["meta"], json!({ "risk": "R1" }));
+    let path = b.case_path(&id);
+    let text = read(&path)
+        .replacen("risk: R1", "risk: R3", 1)
+        .replacen("risk R1)", "risk R3)", 1);
+    std::fs::write(&path, text).unwrap();
+    b.install("2026-10-06T13:40:57+02:00", &["linux-zen"], &[]);
+    let c = b.capture("2026-10-06T13:45:00+02:00");
+    assert_eq!(c["linkedPlanned"], 0, "{c}");
+    assert!(b.resolutions(&b.pacman("linux-zen")["id"]).is_empty());
+    assert!(
+        b.log_lines(&id).iter().any(|l| l.contains(&format!(
+            "the record of {id} does not tell its risk at the time"
+        ))),
+        "{:?}",
+        b.log_lines(&id)
+    );
+}
+
+/// WP-120 round 2, B1: a `meta.risk` the engine did not write — a 0.1.x
+/// `seldon event --meta risk=R3` note on the case — does not raise an R1
+/// case for the harm guard; the line itself still loads.
+#[test]
+fn a_hand_written_risk_does_not_fool_the_guard() {
+    let b = Bench::new();
+    let id = b.case(
+        "2026-10-06T13:38:00+02:00",
+        "kernels",
+        "R1",
+        "install linux-zen",
+    );
+    let month = b.lb.join("ledger/2026-10.jsonl");
+    let note = json!({
+        "id": "01K6Y0000000000000000000R3", "ts": "2026-10-06T13:39:00+02:00",
+        "source": "manual", "kind": "note", "subject": id, "case": id,
+        "detail": "raised by hand", "actor": "human", "meta": { "risk": "R3" },
+    });
+    let mut text = read(&month);
+    text.push_str(&format!("{note}\n"));
+    std::fs::write(&month, text).unwrap();
+    b.install("2026-10-06T13:40:57+02:00", &["linux-zen"], &[]);
+    let c = b.capture("2026-10-06T13:45:00+02:00");
+    assert_eq!(c["linkedPlanned"], 0, "{c}");
+    // the ledger as it is (the 0.1.x line fails today's event schema, so
+    // not through `common::ledger`, which validates every line)
+    let lines: Vec<Value> = read(&month)
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let zen = lines
+        .iter()
+        .find(|e| e["source"] == "pacman" && e["subject"] == "linux-zen")
+        .unwrap();
+    assert!(
+        lines
+            .iter()
+            .all(|e| !(e["kind"] == "resolution" && e["refersTo"] == zen["id"]))
+    );
+    assert!(
+        b.log_lines(&id)
+            .iter()
+            .any(|l| l.contains(&format!("{id} was R1 at the time"))),
+        "{:?}",
+        b.log_lines(&id)
+    );
+    // and the note still loads: the index lists it, without its `risk`
+    let listed = b.index_event(&note["id"]);
+    assert!(listed.get("meta").is_none(), "{listed}");
+}
+
+/// ADR-0035 §1: a case from before contract 2 (no `meta.risk` on its
+/// `case-created` line) is told by its Log, as WP-115 reads it: the same
+/// story as `raising_the_risk_afterwards…` with the ledger's risk record
+/// removed from the creation line gives the same links.
+#[test]
+fn an_old_case_falls_back_to_its_log() {
+    let b = Bench::new();
+    let id = b.case(
+        "2026-10-06T13:38:00+02:00",
+        "kernels",
+        "R1",
+        "install linux-zen and linux-lts",
+    );
+    b.install("2026-10-06T13:40:57+02:00", &["linux-zen"], &[]);
+    b.ok(
+        "2026-10-06T13:42:00+02:00",
+        &["plan", "set", &id, "--risk", "R3"],
+    );
+    b.install("2026-10-06T13:43:10+02:00", &["linux-lts"], &[]);
+    // the creation line as a contract-1 engine wrote it
+    for entry in std::fs::read_dir(b.lb.join("ledger")).unwrap() {
+        let file = entry.unwrap().path();
+        if file.extension().is_some_and(|e| e == "jsonl") {
+            let text = read(&file);
+            let old: String = text
+                .lines()
+                .map(|l| {
+                    if l.contains(r#""kind":"case-created""#) {
+                        l.replace(r#","meta":{"risk":"R1"}"#, "")
+                    } else {
+                        l.to_string()
+                    }
+                })
+                .map(|l| l + "\n")
+                .collect();
+            std::fs::write(&file, old).unwrap();
+        }
+    }
+    assert!(
+        b.ledger()
+            .iter()
+            .any(|e| e["kind"] == "case-created" && e.get("meta").is_none())
+    );
+    let c = b.capture("2026-10-06T13:45:00+02:00");
+    assert_eq!(c["linkedPlanned"], 1, "{c}");
+    assert!(b.resolutions(&b.pacman("linux-zen")["id"]).is_empty());
+    assert_eq!(
+        b.resolutions(&b.pacman("linux-lts")["id"])[0]["case"],
+        json!(id)
+    );
+    // and an index of the old ledger is valid
+    common::assert_valid_index(&b.index());
+}
+
 /// Round 2, B2 (the reviewer's probe): two open cases plan `glow`, one
 /// file does not load; nothing links, the capture warns and doctor names
 /// it. Repaired, the next capture finds two cases and links nothing.

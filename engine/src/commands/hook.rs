@@ -1468,6 +1468,14 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
     // after the commit, so `logbook.git` shows it (CONTRACT rule 2)
     if let Some(mut built) = built {
         built.index.logbook.git = crate::index::git_info(&logbook.root);
+        if let Some(w) = crate::index::autocommit::attach(
+            &mut built.index.logbook.git,
+            &ctx.dirs,
+            &config,
+            &logbook.root,
+        ) {
+            eprintln!("seldon: warning: {w}");
+        }
         if let Err(e) = crate::index::write(&ctx.dirs.index_file(), &built.index) {
             report("index", &e);
         }

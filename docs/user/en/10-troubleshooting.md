@@ -233,7 +233,8 @@ machine as it is now. Changes made since their last capture may be
 missing from the ledger: `pacman` and `snapper` read their sources again
 and miss little, the other collectors miss every change made in between.
 
-The capture wrote a note with the subject `state-reset` to the ledger,
+The capture wrote a `state-loss` line with the subject `state-reset`
+(a note in 0.1.x) to the ledger,
 so the gap stays visible, and `seldon doctor` shows a `degraded` `state`
 row until the next capture. When the plugin ran that capture, the panel
 shows the warning as a "Capture warned" notice until a capture without

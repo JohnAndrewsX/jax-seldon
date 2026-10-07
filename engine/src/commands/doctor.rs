@@ -19,9 +19,7 @@ use super::capture::{Binding, PendingReset, pending_reset};
 use super::index::duplicate_cases;
 use super::{Context, Output};
 use crate::collectors::config::{Manifest, OwnWrites};
-use crate::collectors::{
-    Cursors, Lost, STATE_RESET, ShownMessages, Sources, cursors_file, snapper,
-};
+use crate::collectors::{Cursors, Lost, ShownMessages, Sources, cursors_file, snapper};
 use crate::config::{Config, LogbookSource};
 use crate::error::{Error, Exit, Result};
 use crate::index::load::{FENCE_BEGIN, FENCE_END, bad_lines_warning};
@@ -982,9 +980,7 @@ fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
         let events = ledger.read_month(m).ok()?.events;
         events
             .into_iter()
-            .filter(|e| {
-                e.source == Source::Seldon && e.kind == Kind::Note && e.subject == STATE_RESET
-            })
+            .filter(crate::collectors::is_state_loss)
             .max_by_key(|e| e.ts)
     })?;
     if reset.ts < last {

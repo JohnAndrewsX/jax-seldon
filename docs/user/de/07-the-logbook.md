@@ -1,6 +1,6 @@
 # Das Logbuch
 
-<!-- source: en/07-the-logbook.md @ e8bf173 -->
+<!-- source: en/07-the-logbook.md @ 4e03e44 -->
 
 Diese Seite geht durch den Ordner des Logbuchs: was jeder Ordner und
 jede Datei enthält, welche Teile der Engine gehören und welche dir, wie
@@ -209,8 +209,9 @@ Plugins, Omarchy, Theme), nehmen die Maschine, wie sie jetzt ist, als
 neuen Ausgangspunkt, und eine Änderung, die geschah, während der Zustand
 fehlte, wird nicht festgehalten.
 
-Das Capture, das neu anfängt, sagt das. Es schreibt eine Notiz mit dem
-Betreff `state-reset` ins Ledger, die die neu startenden Collectors
+Das Capture, das neu anfängt, sagt das. Es schreibt eine
+`state-loss`-Zeile mit dem Betreff `state-reset` ins Ledger (in 0.1.x
+eine Notiz), die die neu startenden Collectors
 nennt, gibt eine Warnung aus, und `seldon doctor` zeigt bis zum nächsten
 Capture eine `state`-Zeile. Dasselbe geschieht, wenn nur `manifest.json`
 oder `owned.json` beschädigt ist. Siehe

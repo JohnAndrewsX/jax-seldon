@@ -1,0 +1,10 @@
+{
+  "id": "01M3V3XDD0Q5Y4FVWJQ985QGR9",
+  "ts": "2026-10-01T08:55:00+02:00",
+  "source": "seldon",
+  "kind": "state-loss",
+  "subject": "config",
+  "detail": "a state-loss line always has the subject state-reset (ADR-0035 §4)",
+  "actor": "system",
+  "meta": { "files": "owned", "sources": "config" }
+}

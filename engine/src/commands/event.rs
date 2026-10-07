@@ -60,7 +60,25 @@ pub fn is_engine_only(kind: Kind) -> bool {
             | Kind::CaseVerified
             | Kind::CaseCompleted
             | Kind::CaseDropped
+            | Kind::CaseUpdated
+            | Kind::StateLoss
     )
+}
+
+/// The command that writes `kind` (the refusal names it; WP-120 N1);
+/// any other kind with `source: seldon` is the engine's own record.
+fn writer(kind: Kind) -> &'static str {
+    match kind {
+        Kind::CaseCreated
+        | Kind::CaseStarted
+        | Kind::CaseVerified
+        | Kind::CaseCompleted
+        | Kind::CaseDropped
+        | Kind::CaseUpdated => "`seldon plan`",
+        Kind::Resolution | Kind::Correction => "`seldon drift`",
+        Kind::StateLoss => "`seldon capture`",
+        _ => "the engine's own commands",
+    }
 }
 
 /// The first `max` characters of `s`, with `…` when it was longer (for
@@ -187,8 +205,10 @@ pub struct EventArgs {
 pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
     if args.source == Source::Seldon || is_engine_only(args.kind) {
         return Err(Error::user(format!(
-            "{}/{} events are written by `seldon plan` and `seldon drift`, not by `seldon event`",
-            args.source, args.kind
+            "{}/{} events are written by {}, not by `seldon event`",
+            args.source,
+            args.kind,
+            writer(args.kind)
         )));
     }
     let subject = args.subject.trim();
@@ -355,6 +375,16 @@ fn parse_meta(pairs: &[String]) -> Result<Meta> {
                     "--meta txId is only written on drift resolutions",
                 ));
             }
+            "risk" => {
+                return Err(Error::user(
+                    "--meta risk is only written on case lines (`seldon plan`)",
+                ));
+            }
+            crate::model::event::TRUNCATED => {
+                return Err(Error::user(
+                    "--meta truncated is index-only; the ledger keeps every text whole",
+                ));
+            }
             "enabled" => {
                 meta.enabled = Some(match value {
                     "true" => true,
@@ -408,6 +438,8 @@ mod tests {
             "txId=1",
             "enabled=yes",
             "pairOf=x",
+            "risk=R1",
+            "truncated=true",
             "=1",
             "a b=1",
         ] {

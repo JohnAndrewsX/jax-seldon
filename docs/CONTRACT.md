@@ -1,12 +1,16 @@
 # CONTRACT.md — Engine ⇄ Plugin
 
 The contract is `schema/index.schema.json` (with `event.schema.json` and
-`case.schema.json`). This file explains it; the schema decides.
+`case.schema.json`) and `schema/proposal.schema.json` for the file
+`index.triage` points at. This file explains it; the schema decides.
+`contractVersion` is **2** since 0.2.0 (ADR-0035); 0.1.x spoke 1.
 
 ## Rules
 
 1. The plugin reads `${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json`
-   and nothing else; the engine writes exactly that path (both honour
+   and the files it points to (the triage proposal of `triage.path`,
+   relative to the index's directory, rule 9), nothing else; the engine
+   writes exactly that path (both honour
    `XDG_STATE_HOME`, both default to `~/.local/state`; decided 2026-10-01,
    plugin side lands in WP-011). Development override:
    `SELDON_INDEX=/path/to/index.json` puts the plugin into a **read-only dev
@@ -33,16 +37,18 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
    and ends in `… (N more characters in the ledger)`; the ledger keeps the
    full text. Cases, decisions and memory topics are not cut; an index of
    1 000 000 bytes or more makes the engine warn and name the largest
-   section. A field that marks a cut (`meta.truncated`) is deferred; it
-   needs a bump.
+   section. Since contract 2 the cut is marked beside the text (ADR-0035
+   §3): an event with a clipped text has `meta.truncated: true`, a drift
+   item with a clipped `detail` has `truncated: true`; the suffix stays
+   for humans. `truncated` is index-only, never in a ledger line.
 6. Every field the plugin displays verbatim is user content; the plugin
    escapes it and never evaluates it.
 7. Fixtures: `fixtures/index.sample.json` is the canonical example. CI
    validates it against the schema and the golden engine output.
 8. Reserved case tags (ADR-0027, WP-101). `tags` is a free string array in
    the case schema and the index; the engine writes these values, and the
-   plugin may read meaning into them (no schema change, `contractVersion`
-   stays 1):
+   plugin may read meaning into them (no schema change; added under
+   contract 1):
    - `closed-by-agent` — an agent actor ran `seldon plan done` (the engine
      refuses that close without a *Result* and a *Plan › Verification*),
      or an agent's `drift explain` made the completed case.
@@ -50,6 +56,43 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
    - `reopens:<caseId>` — `seldon plan reopen <caseId>` made this case.
    - `imported` — `seldon import task` made this case (WP-102).
    A user's own tag with one of these values means the same to the plugin.
+9. Contract 2 (ADR-0035). The index adds, all written by the engine:
+   - kinds `case-updated` (`seldon plan set`: zone, risk or area changed;
+     `detail` the change, `meta.risk` the risk after it) and `state-loss`
+     (a capture re-baselined collectors after a lost state directory;
+     subject `state-reset`, `meta.sources`, `meta.files`). A ledger from
+     before contract 2 has a `note` `state-reset` instead;
+   - `meta.risk` on `case-created`, `case-started` and `case-updated`
+     (absent on lines written before contract 2: append-only). A
+     `meta.risk` on another kind, or written by hand before v2 (0.1.x
+     `seldon event --meta risk=…`), is ignored on read and dropped from the
+     index;
+   - `logbook.git.autocommit` `{ok, at, message}`: the last autocommit
+     attempted (absent while `[git] autocommit` is off, without a
+     repository, or before the first attempt);
+   - `meta.truncated` / drift `truncated` (rule 5);
+   - `decisions[].cases`: the ADR's cases, possibly ones the index does
+     not list (rule 4);
+   - `triage` `{id, at, actor, counts: {items, crises}, path, applied}`:
+     the newest triage proposal, absent when there is none. `path` is
+     `proposals/<id>.json` relative to the directory of `index.json`
+     (so the plugin's dev mode reads a fixture's proposal next to the
+     fixture). The proposal file (`proposal.schema.json`) holds items
+     `{eventId, action: link|explain, caseId | title + intent, crisis,
+     evidence: [{kind, ref, text?}]}`; every text in it is user content
+     (rule 6), and a crisis item is applied only one by one (ADR-0028 §3,
+     ADR-0034 §6). The plugin reads the file; it never writes it.
+     A proposal's `crisis` is what the agent saw. `drift apply` decides a
+     crisis by the engine's classification at apply time, never by the
+     file's flag; the plugin's crisis block is a convenience, the engine
+     is the guard. A proposal is read only when it is a regular file of
+     at most 4 MiB; anything else is skipped with a build warning.
+   - Until 0.2.0 is tagged, a later accepted ADR on `next` may add
+     **optional** fields to the v2 schemas or refine
+     `proposal.schema.json` within contract 2 (ADR-0035 §6): nothing
+     required added, nothing removed or changed in meaning; fixtures,
+     the reference derive and both sides in one PR, and this rule
+     extended with the field.
 
 ## Changing the contract
 

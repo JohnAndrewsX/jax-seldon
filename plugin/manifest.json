@@ -34,5 +34,5 @@
       { "key": "deskSidebar", "type": "enum", "label": "Desk sidebar", "options": ["open", "collapsed"], "defaultValue": "open", "description": "open: section names and counts. collapsed: icons only. On a desk narrower than 960 px the sidebar always shows icons only." }
     ]
   },
-  "seldon": { "contractVersion": 1, "engineMin": "0.1.0" }
+  "seldon": { "contractVersion": 2, "engineMin": "0.1.0" }
 }

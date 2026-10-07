@@ -20,7 +20,7 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
     "defaults": { "captureIntervalMin": 15, "wipLimit": 3, "driftInBar": "crisis", "deskWidth": 100, "deskSidebar": "open" },
     "schema": [ "… one entry per key of defaults (plugin/manifest.json)" ]
   },
-  "seldon": { "contractVersion": 1, "engineMin": "0.1.0" }
+  "seldon": { "contractVersion": 2, "engineMin": "0.1.0" }
 }
 ```
 

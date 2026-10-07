@@ -47,6 +47,9 @@ ATTENTION_ALL = os.path.join(FIX, "index.attention-all.json")
 ID = "https://github.com/JohnAndrewsX/jax-seldon/schema/"
 
 EVENT, CASE, INDEX = ID + "event.schema.json", ID + "case.schema.json", ID + "index.schema.json"
+PROPOSAL = ID + "proposal.schema.json"
+# ADR-0035 §6: the triage proposals the sample's `triage` points at (the engine's state dir)
+PROPOSALS = os.path.join(FIX, "proposals")
 EXT = {
     "snapper": ID + "external/snapper-list.schema.json",
     "plugin-list": ID + "external/omarchy-plugin-list.schema.json",
@@ -58,7 +61,7 @@ DRIFT_SOURCES = {"pacman", "omarchy", "plugins", "theme", "config"}
 EVENT_KEYS = ["id", "ts", "source", "kind", "subject", "detail", "actor", "case", "zone",
               "explicit", "txId", "refersTo", "resolution", "resolutionDetail", "meta"]
 DRIFT_KEYS = ["eventId", "ts", "source", "kind", "subject", "detail", "actor", "zone", "crisis",
-              "proposedCase", "txId", "members"]
+              "proposedCase", "txId", "members", "truncated"]
 
 # ADR-0013 §3, ADR-0023 (WP-050): default of config.toml [drift] alwaysRed (fnmatch globs,
 # case-sensitive); keep in step with engine/src/config.rs DriftConfig::default.
@@ -785,6 +788,34 @@ def risk_at(risks, at):
     return values[0] if values and all(v == values[0] for v in values) else None
 
 
+RISKS = ("R0", "R1", "R2", "R3")
+RISK_KINDS = ("case-created", "case-started", "case-updated")
+
+
+def risk_line(e):
+    """A line whose meta.risk counts (ADR-0035 §1): the engine's case-created|started|updated."""
+    return e["source"] == "seldon" and e["kind"] in RISK_KINDS
+
+
+def ledger_risks(events, cid):
+    """engine: reconcile::ledger_risks — [(instant, risk)] of the case's case-created|started|updated
+    lines with meta.risk, oldest first; None unless its case-created line carries one."""
+    lines = sorted((e for e in events if risk_line(e) and e["subject"] == cid),
+                   key=lambda e: (instant(e["ts"]), e["id"]))
+    if not any(e["kind"] == "case-created" and e.get("meta", {}).get("risk") in RISKS for e in lines):
+        return None
+    return [(instant(e["ts"]), e["meta"]["risk"]) for e in lines if e.get("meta", {}).get("risk") in RISKS]
+
+
+def told(risks, at):
+    """engine: reconcile::told — the last risk before `at` and every one at it, if they agree."""
+    if risks is None:
+        return None
+    before = [r for m, r in risks if m < at][-1:]
+    values = before + [r for m, r in risks if m == at]
+    return values[0] if values and all(v == values[0] for v in values) else None
+
+
 def instant(ts):
     return dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
@@ -827,14 +858,30 @@ def clip(text):
 
 
 def clipped(e):
-    """An event as `index.events` lists it: every free text clipped (ADR-0025)."""
+    """An event as `index.events` lists it: every free text clipped (ADR-0025), and
+    `meta.truncated: true` when one was (ADR-0035 §3; index-only, a ledger line's is dropped)."""
     e = copy.deepcopy(e)
+    cut = False
+    if "meta" in e:
+        e["meta"].pop("truncated", None)
+        # ADR-0035 §1: meta.risk only on the engine's case lines and only R0-R3; 0.1.x let
+        # `seldon event --meta risk=…` write any value on any kind (the engine reads it leniently)
+        if not (risk_line(e) and e["meta"].get("risk") in RISKS):
+            e["meta"].pop("risk", None)
+        if not e["meta"]:
+            del e["meta"]
     for k in ("detail", "resolutionDetail"):
         if isinstance(e.get(k), str):
-            e[k] = clip(e[k])
+            short = clip(e[k])
+            cut |= short != e[k]
+            e[k] = short
     for k, v in e.get("meta", {}).items():
         if isinstance(v, str):
             e["meta"][k] = clip(v)
+            cut |= e["meta"][k] != v
+    if cut:
+        e.setdefault("meta", {})["truncated"] = True
+        e = order_event(e)
     return e
 
 
@@ -881,6 +928,8 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
             problems.append(f"{where}: 'resolution' field on a {e['kind']} event (ledger lines carry it only on kind resolution)")
         if "resolutionDetail" in e:
             problems.append(f"{where}: 'resolutionDetail' is index-only (ADR-0012 §11)")
+        if "truncated" in e.get("meta", {}):
+            problems.append(f"{where}: 'meta.truncated' is index-only (ADR-0035 §3)")
         if "refersTo" in e:
             if e["refersTo"] not in seen:
                 problems.append(f"{where}: refersTo {e['refersTo']} is not an earlier ledger event")
@@ -958,7 +1007,10 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
         d = {"eventId": lead["id"], "ts": lead["ts"], "source": lead["source"], "kind": lead["kind"],
              "subject": lead["subject"], "detail": lead.get("detail"), "actor": lead["actor"]}
         if d["detail"] is not None:
-            d["detail"] = clip(d["detail"])
+            short = clip(d["detail"])
+            if short != d["detail"]:
+                d["truncated"] = True
+            d["detail"] = short
         d["proposedCase"] = proposed(lead["subject"])
         if legacy:
             if lead["source"] == "pacman":
@@ -1027,8 +1079,12 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
     decisions = []
     for f in sorted(glob.glob(os.path.join(lb, "decisions", "ADR-*.md")), reverse=True):
         fm, _ = frontmatter(f)
+        cases = []
+        for c in fm.get("cases") or []:  # as written, without repeats (ADR-0035 §5)
+            if c not in cases:
+                cases.append(c)
         decisions.append({"id": fm["id"], "title": fm["title"], "status": fm["status"], "date": fm["date"],
-                          "path": os.path.relpath(f, lb).replace(os.sep, "/")})
+                          "path": os.path.relpath(f, lb).replace(os.sep, "/"), "cases": cases})
 
     # system
     sysdir = os.path.join(lb, "system")
@@ -1178,16 +1234,30 @@ CASE_STEPS = {
 }
 
 
-def check_case_logs(ledger, case_files):
+# ADR-0035 §1, the fixture story: the engine speaks contract 2 from the start of 2026-10-01; the
+# case lines written from then on carry meta.risk and every `set` Log line has its case-updated
+CONTRACT_2_FROM = "2026-10-01T00:00:00+02:00"
+
+
+def check_case_logs(ledger, case_files, contract_2_from=CONTRACT_2_FROM):
     """Walk every case's Log lines through the state machine `queued → active → verification →
     completed`, open → `dropped`. The walk must end in the frontmatter status; its steps must be
     the case's `case-*` ledger events (same kind, minute and actor, in order); `created`, `started`
-    and `closed` are the dates of their steps; `started (snapshot N)` is `snapshotBefore`."""
+    and `closed` are the dates of their steps; `started (snapshot N)` is `snapshotBefore`.
+    ADR-0035 §1: from `contract_2_from` on (None: never), every `set …` Log line is a
+    `case-updated` line with its words as `detail`, and every `case-created|started|updated` line
+    carries the risk the Log has at that step; lines before it carry none."""
     out = []
+    v2_since = instant(contract_2_from) if contract_2_from else None
+
+    def v2(day, hm):
+        return v2_since is not None and \
+            dt.datetime.fromisoformat(f"{day}T{hm}:59").replace(tzinfo=v2_since.tzinfo) >= v2_since
     for f, fm, body in case_files:
         where = rel(f)
         m = re.search(r"^## Log\n(.*?)(?=^## |\Z)", body, re.S | re.M)
         status, steps, dates, snapshot = None, [], {}, None
+        risk, risks, details = None, [], []
         for line in (m.group(1) if m else "").splitlines():
             if not line.startswith("- "):
                 continue
@@ -1202,7 +1272,17 @@ def check_case_logs(ledger, case_files):
                     out.append(f"{where}: Log 'created' twice")
                 status = "queued"
                 steps.append(("case-created", f"{day} {hm}", actor))
+                rm = re.search(r"\brisk (R[0-3])\b", text)
+                risk = rm.group(1) if rm else None
+                risks.append(risk if v2(day, hm) else None)
                 dates["created"] = day
+            elif word == "set":
+                rm = re.search(r"\brisk R[0-3] → (R[0-3])\b", text)
+                risk = rm.group(1) if rm else risk
+                if v2(day, hm):
+                    steps.append(("case-updated", f"{day} {hm}", actor))
+                    risks.append(risk)
+                    details.append(text[len("set "):])
             elif word in CASE_STEPS:
                 kind, allowed, to = CASE_STEPS[word]
                 if status not in allowed:
@@ -1211,6 +1291,7 @@ def check_case_logs(ledger, case_files):
                 status = to
                 steps.append((kind, f"{day} {hm}", actor))
                 if word == "started":
+                    risks.append(risk if v2(day, hm) else None)
                     dates["started"] = day
                     sm = re.match(r"started \(snapshot (\d+)\)$", text)
                     snapshot = int(sm.group(1)) if sm else None
@@ -1222,6 +1303,14 @@ def check_case_logs(ledger, case_files):
                   if e["source"] == "seldon" and e["kind"].startswith("case-") and e["subject"] == fm.get("id")]
         if events != steps:
             out.append(f"{where}: Log steps {steps} != ledger case events {events}")
+        lines = [e for _, e in ledger if e["source"] == "seldon" and e["subject"] == fm.get("id")
+                 and e["kind"] in ("case-created", "case-started", "case-updated")]
+        have = [e.get("meta", {}).get("risk") for e in lines]
+        if len(have) == len(risks) and have != risks:
+            out.append(f"{where}: ledger meta.risk {have} != the Log's risk at each step {risks} (ADR-0035 §1)")
+        have = [e.get("detail") for e in lines if e["kind"] == "case-updated"]
+        if have != details:
+            out.append(f"{where}: case-updated details {have} != the Log's set lines {details}")
         for k in ("created", "started", "closed"):
             if fm.get(k) != dates.get(k):
                 out.append(f"{where}: frontmatter {k} {fm.get(k)} != Log {dates.get(k)}")
@@ -1293,12 +1382,14 @@ def planned_links(events, case_files):
             cid, fm = planned[0]
             package = always_red(e["subject"])
             crisis = classifier.group([e], e)[0] == "crisis"
-            # the Log's local time; the fixture's events carry the same offset
-            timeline = risk_timeline(by_case[cid])
+            # ADR-0035 §1: the ledger record when the case's case-created line carries meta.risk,
+            # else the Log (its local time; the fixture's events carry the same offset)
+            record = ledger_risks(events, cid)
+            timeline = record if record is not None else risk_timeline(by_case[cid])
             # round 3 fail-safe: a timeline that ends elsewhere than the frontmatter tells nothing
             if timeline and timeline[-1][1] != fm["risk"]:
                 timeline = None
-            risk = risk_at(timeline, t.replace(tzinfo=None))
+            risk = told(timeline, t) if record is not None else risk_at(timeline, t.replace(tzinfo=None))
             if (package or crisis) and risk != "R3":
                 # one wording for packages and paths: the risk at the time (round 3)
                 what = ("is `alwaysRed`" if package
@@ -1363,6 +1454,51 @@ def check_planned_links(ledger, case_files):
         for text in texts:
             if f" · {text} · system" not in body:
                 out.append(f"{rel(f)}: rule 9 Log line missing: {text}")
+    return out
+
+
+def derive_triage(logbook_path, problems):
+    """engine: index::triage::read — the newest proposal of `logbook_path` in fixtures/proposals/
+    (the engine's state dir), as `index.triage` points at it (ADR-0035 §6); None when there is
+    none. A file whose name is not its id is a problem here (the engine skips it with a warning)."""
+    files = sorted(glob.glob(os.path.join(PROPOSALS, "*.json")), reverse=True)
+    for f in files:
+        pid = os.path.basename(f)[:-5]
+        with open(f, encoding="utf-8") as fh:
+            p = json.load(fh)
+        if p.get("id") != pid:
+            problems.append(f"{rel(f)}: id {p.get('id')} is not its file name")
+            continue
+        if p.get("logbook") != logbook_path:
+            continue
+        return {"id": p["id"], "at": p["at"], "actor": p["actor"],
+                "counts": {"items": len(p["items"]), "crises": sum(i["crisis"] for i in p["items"])},
+                "path": f"proposals/{pid}.json", "applied": p["applied"]}
+    return None
+
+
+def check_proposals(sample):
+    """Every fixture proposal proposes for open drift items of the sample: `eventId` an item's
+    eventId, `crisis` its crisis, a link's case an open case, at least one item of each action
+    and one crisis (the desk's surfaces, ADR-0034 §6), `at` not after the sample's generatedAt."""
+    out = []
+    items = {d["eventId"]: d for d in sample["drift"]}
+    open_cases = {c["id"] for k in ("queued", "active", "verification") for c in sample["cases"][k]}
+    for f in sorted(glob.glob(os.path.join(PROPOSALS, "*.json"))):
+        with open(f, encoding="utf-8") as fh:
+            p = json.load(fh)
+        for i in p["items"]:
+            d = items.get(i["eventId"])
+            if d is None:
+                out.append(f"{rel(f)}: {i['eventId']} is no open drift item of the sample")
+            elif d["crisis"] != i["crisis"]:
+                out.append(f"{rel(f)}: {i['eventId']} crisis {i['crisis']} != the item's {d['crisis']}")
+            if i["action"] == "link" and i["caseId"] not in open_cases:
+                out.append(f"{rel(f)}: {i['caseId']} is no open case")
+        if {i["action"] for i in p["items"]} != {"link", "explain"} or not any(i["crisis"] for i in p["items"]):
+            out.append(f"{rel(f)}: needs a link, an explain and a crisis item")
+        if instant(p["at"]) > instant(sample["generatedAt"]):
+            out.append(f"{rel(f)}: at {p['at']} is after the sample's generatedAt")
     return out
 
 
@@ -1435,6 +1571,7 @@ VARIANTS = {
         {"op": "replace", "path": "/system", "value": {}},
         {"op": "replace", "path": "/memory", "value": {}},
         {"op": "replace", "path": "/series", "value": {"heatmap": [], "packages": [], "drift": []}},
+        {"op": "remove", "path": "/triage"},
     ],
     # The engine never writes indexStale; plugin/Model.js derives it from the clock or takes it
     # from state.status. This variant exercises that data-driven branch. With SELDON_NOW =
@@ -1458,9 +1595,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/67/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/67/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/67/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/69/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/69/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/69/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".
@@ -1488,9 +1625,9 @@ VARIANTS = {
     # the mesa downgrade group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [
         {"op": "test", "path": "/drift/5/members", "value": 3},
-        {"op": "test", "path": "/events/46/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
-        {"op": "test", "path": "/events/46/subject", "value": "lib32-mesa"},
-        {"op": "remove", "path": "/events/46"},
+        {"op": "test", "path": "/events/48/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
+        {"op": "test", "path": "/events/48/subject", "value": "lib32-mesa"},
+        {"op": "remove", "path": "/events/48"},
     ],
 }
 
@@ -1735,6 +1872,44 @@ def self_checks(today):
     if not any("C-2026-001" in e and "'completed' from active" in e for e in errs):
         out.append(f"self-check 'C-2026-001 active -> completed is rejected': walker reported {errs}")
 
+    # ADR-0035 §1: a contract-2 `set` Log line without its case-updated line is caught, and so is
+    # a case-started line whose meta.risk is not the Log's risk at that step
+    def drop_case_updated(ledger):
+        ledger[:] = [(w, e) for w, e in ledger if e["kind"] != "case-updated"]
+
+    ledger, case_files = load_logbook(LOGBOOK, [], drop_case_updated)
+    errs = check_case_logs(ledger, case_files)
+    if not any("C-2026-003" in e and "case-updated" in e for e in errs):
+        out.append(f"self-check 'a set line needs its case-updated line (ADR-0035)': walker reported {errs}")
+
+    def wrong_start_risk(ledger):
+        for _, e in ledger:
+            if e["kind"] == "case-started" and e["subject"] == "C-2026-008":
+                e["meta"]["risk"] = "R1"
+
+    ledger, case_files = load_logbook(LOGBOOK, [], wrong_start_risk)
+    errs = check_case_logs(ledger, case_files)
+    if not any("C-2026-008" in e and "meta.risk" in e for e in errs):
+        out.append(f"self-check 'meta.risk is the Log's risk at the step (ADR-0035)': walker reported {errs}")
+
+    # ADR-0035 §1, append-only: the same logbook with every meta.risk gone (an engine of contract
+    # 1 wrote the case lines, the set line had no ledger line) derives the same cases and drift
+    def contract_1(ledger):
+        ledger[:] = [(w, e) for w, e in ledger if e["kind"] != "case-updated"]
+        for _, e in ledger:
+            if "risk" in e.get("meta", {}):
+                del e["meta"]["risk"]
+                if not e["meta"]:
+                    del e["meta"]
+
+    problems = []
+    base, _, _ = derive(LOGBOOK, today, [])
+    old, _, old_cases = derive(LOGBOOK, today, problems, mutate=contract_1)
+    ledger, _ = load_logbook(LOGBOOK, [], contract_1)
+    problems += check_case_logs(ledger, old_cases, None)
+    if problems or old["cases"] != base["cases"] or old["drift"] != base["drift"]:
+        out.append(f"self-check 'a ledger without meta.risk derives the same (ADR-0035)': {problems[:3]}")
+
     # ADR-0029 rule 9: the sample's engine link must be missed without its line, and must be
     # extra when C-2026-002's Plan no longer names the package, or when a second case planned it
     # in the same window (no link then, and a Log line in each)
@@ -1821,7 +1996,7 @@ def self_checks(today):
         lines, logs = planned_links([e for _, e in ledger], case_files)
         if not ok(lines, logs):
             out.append(f"self-check 'rule 9: {label}': lines {[(e['id'], c) for e, c, _ in lines]}, logs {logs}")
-    return out, len(cases) + len(proposals) + 2 + len(rule9) + len(round2)
+    return out, len(cases) + len(proposals) + 5 + len(rule9) + len(round2)
 
 
 # --------------------------------------------------------------------------- snapshot info files
@@ -1884,7 +2059,9 @@ def collect_instances():
             sid, bad = EXT["plugin-catalog"], False
         elif re.fullmatch(r"hooks/claude-code-[a-z0-9-]+\.json", r):
             sid, bad = EXT["hook"], False
-        elif re.fullmatch(r"invalid/(index|event|case)\.[a-z0-9-]+\.json", r):
+        elif re.fullmatch(r"proposals/[0-7][0-9A-HJKMNP-TV-Z]{25}\.json", r):
+            sid, bad = PROPOSAL, False
+        elif re.fullmatch(r"invalid/(index|event|case|proposal)\.[a-z0-9-]+\.json", r):
             sid, bad = ID + r.split("/")[1].split(".")[0] + ".schema.json", True
         else:
             unmapped.append(r)
@@ -1926,6 +2103,7 @@ def main():
     derived, ledger, case_files = derive(LOGBOOK, today, problems)
 
     derived_all, _, _ = derive(LOGBOOK, today, problems, legacy=True)
+    triage = derive_triage(sample["logbook"]["path"], problems)
 
     def as_sample(d):
         out = {k: sample[k] for k in ("contractVersion", "generatedAt", "engineVersion")}
@@ -1935,6 +2113,8 @@ def main():
         out["state"] = sample["state"]
         for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
             out[k] = d[k]
+        if triage is not None:
+            out["triage"] = triage
         return out
 
     if a.write_index:
@@ -1976,6 +2156,8 @@ def main():
     for k in ("language", "machine"):
         if sample["logbook"].get(k) != derived["logbook"][k]:
             problems.append(f"index.sample.json /logbook/{k}: != PROJECT.md")
+    problems += [f"index.sample.json /triage{d}" for d in diff(sample.get("triage"), triage)]
+    problems += check_proposals(sample)
     problems += check_case_logs(ledger, case_files)
     problems += check_planned_links(ledger, case_files)
     problems += check_times(sample, "index.sample.json")
