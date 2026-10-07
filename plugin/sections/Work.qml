@@ -520,13 +520,14 @@ Section {
           .filter(function(p) { return p[1] !== "" }) : []
 
         Column {
+          id: block
           required property var modelData
           width: parent.width
           spacing: Style.spacing.sm
 
           Text {
             textFormat: Text.PlainText
-            text: modelData[0]
+            text: block.modelData[0]
             color: Color.muted
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
@@ -537,7 +538,7 @@ Section {
           Text {
             width: parent.width
             textFormat: Text.PlainText
-            text: modelData[1]
+            text: block.modelData[1]
             color: root.foreground
             wrapMode: Text.Wrap
             font.family: Style.font.family
