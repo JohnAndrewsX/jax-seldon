@@ -569,7 +569,8 @@ done
 expect today 2 "[$tv.selected, $tv.shown, $tv.detail.cls] | join(\",\")" "$UNIT,event,crisis"
 expect today 2 "$tv.detail.actions | join(\",\")" "Link to case…,Explain…,Dismiss…"
 shows today 2 "Why loud?"
-shows today 2 "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
+# the rule is the index's (ADR-0038 §1): known in dev mode too, no engine call
+shows today 2 "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
 shows today 2 "~/.config/systemd/user/ollama.service"
 expect today 3 "$tv.selected" "$HOOK_EVENT"
 expect today 4 "[$tv.cursor, $tv.selected, $tv.shown] | map(tostring) | join(\",\")" "6,toggle,overview"
@@ -589,7 +590,7 @@ run today-resolve "" 1920x1080 "summon;key:Down;key:Return;type:hook test;key:Re
 expect today-resolve 3 "[$tv.detail.form.shown, $tv.detail.form.action, .view.keys] | map(tostring) | join(\",\")" "true,explain,false"
 expect today-resolve 8 "[$tv.selected, $tv.shown, ($tv.needs | join(\"+\")), $tv.headline] | join(\",\")" "$UNIT,event,$HOOK_EVENT,Seldon is recording. 1 change needs you."
 expect today-resolve 8 "[$tv.detail.form.result, ($tv.detail.actions | join(\"+\")), .view.keys] | map(tostring) | join(\",\")" "Explained 1 event · created C-2026-009,Open case,true"
-argv_check today-resolve "$work/home-today-resolve" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift explain $UNIT --json -- "hook test")")"
+argv_check today-resolve "$work/home-today-resolve" "$(printf '%s\n' "$startup" "$(q drift explain $UNIT --json -- "hook test")")"
 clean_log today-resolve
 
 # The sidebar search filters Today's crises and entries (yesterday's too).
@@ -752,7 +753,7 @@ expect quiet-crisis 2 "[$tv.attention, $tv.attentionDim] | map(tostring) | join(
 expect quiet-crisis 2 "$tv.stripes | join(\",\")" \
   "tokyo-night attention,$HOOK crisis,ollama attention,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh attention,~/.config/hypr/monitors.conf attention,mesa attention"
 expect quiet-crisis 3 "[$td.cls, $tf.crisis, $tf.zone, $tf.explainZone] | map(tostring) | join(\",\")" "crisis,true,yellow,yellow"
-expect quiet-crisis 3 "$td.whyLoud" "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
+expect quiet-crisis 3 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
 expect quiet-crisis 3 "$td.actions | join(\",\")" "Link to case…,Explain…,Dismiss…"
 expect quiet-crisis 4 "[$td.cls, $tf.crisis, $tf.zone, $td.whyLoud] | map(tostring) | join(\",\")" "attention,false,red,"
 expect quiet-crisis 4 '[.texts[] | select(. == "Why loud?")] | length' 0
@@ -811,7 +812,7 @@ expect drift-live 29 "[($tv.badges | length), ($td.actions | length), .pill.text
 expect drift-live 30 "$tv.groups | join(\",\")" "active 2,verification 1,queued 3,completed 3"
 expect drift-live 30 "$tv.ids | index(\"C-2026-009\") >= 6" true
 argv_check drift-live "$work/home-drift" "$(printf '%s\n' "$startup" \
-  "$(q drift link $THEME C-2026-005 --json)" "$(q drift show $UNIT --json)" \
+  "$(q drift link $THEME C-2026-005 --json)" \
   "$(q drift explain $UNIT --risk R2 --area dev-env --json -- " --help ")" \
   "$(q drift dismiss $MESA --json -- "routine update  ")")"
 clean_log drift-live
@@ -895,7 +896,8 @@ expect work 1 "$tc.kv | join(\" | \")" \
 expect work 1 "[$tc.plan, $tc.log, $tc.linked, $tc.hint] | map(tostring) | join(\",\")" "4 of 5 steps done,3,5,Dev mode is read-only"
 for text in "ACTIVE · 2" "VERIFICATION · 1" "QUEUED · 3" "COMPLETED · 2" "2 / 3 active" "C-2026-005 · R1 · themes · 1 proposed" \
   "4/5" "Run" "New case" "By agent" "Dev mode is read-only" "PLAN" "LOG" "LINKED CHANGES · 5" "C-2026-003 · R3" \
-  "4 of 5 steps done. The steps, the Intent and the Result are in the case file." "case-started · human · R3" "case-updated · human · R3" \
+  "4 of 5 steps done. The steps and the full Intent and Result are in the case file." "case-started · human · R3" "case-updated · human · R3" \
+  "INTENT" "Omarchy 4.0.7 einspielen, ohne die eigenen Hyprland-Bindings zu verlieren." \
   "Omarchy auf 4.0.7 aktualisieren" "Hand to agent" "To verification"; do
   shows work 1 "$text"
 done
@@ -1055,7 +1057,7 @@ expect tab-focus 14 "$tv.cursor" 1
 expect tab-focus 16 "[.view.section, $tv.sheet.open, $tv.sheet.title, $tv.result] | map(tostring) | join(\",\")" "work,true,xyz,"
 expect tab-focus 18 "$tv.journal.editing" true
 expect tab-focus 21 "[.view.section, .view.keys, .view.editing] | map(tostring) | join(\",\")" "work,true,false"
-argv_check tab-focus "$work/home-tab-focus" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)")"
+argv_check tab-focus "$work/home-tab-focus" "$startup"
 clean_log tab-focus
 
 jq '.events = [
@@ -1144,7 +1146,8 @@ clean_log sections-uninit
 #     lists; key/values wrap at word boundaries at 50 %.
 expected_warnings="$expected_warnings|jax\\.seldon: seldon open exit 1: unknown case C-2026-001\$"
 
-# B1: the callout from the engine's rule (`drift show`), live.
+# B1: the callout from the engine's rule, live: the index's own (ADR-0038
+# §1), so no click starts a process.
 mkdir -p "$work/home-why"
 run why-loud "" 1920x1080 \
   "summon:$(sel $UNIT);wait:sectionView.detail.rule=known always-red-paths;select:$HOOK_EVENT;wait:sectionView.detail.rule=known always-red-paths;text:1;key:Down" \
@@ -1154,8 +1157,23 @@ expect why-loud 2 "[$td.kv[] | select(startswith(\"Case\") or startswith(\"Rule\
 shows why-loud 2 "Why loud?"
 expect why-loud 4 "[$td.id, $td.rule] | join(\",\")" "$HOOK_EVENT,known always-red-paths"
 expect why-loud 6 "[$tv.shown, $tv.detail.rule] | join(\",\")" "event,known always-red-paths"
-argv_check why-loud "$work/home-why" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift show $HOOK_EVENT --json)")"
+argv_check why-loud "$work/home-why" "$startup"
 clean_log why-loud
+
+# … an index without `rule` (an earlier contract-2 engine): `drift show`
+# names it, once per selected crisis — the fallback, unchanged.
+jq 'del(.drift[].rule)' "$sample" >"$work/no-rule.json"
+mkdir -p "$work/home-why-bare"
+run why-loud-bare "" 1920x1080 \
+  "summon:$(sel $UNIT);wait:sectionView.detail.rule=known always-red-paths;select:$HOOK_EVENT;wait:sectionView.detail.rule=known always-red-paths;text:1;key:Down" \
+  HOME="$work/home-why-bare" FAKE_SELDON_FIXTURE="$work/no-rule.json"
+expect why-loud-bare 2 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
+expect why-loud-bare 4 "[$td.id, $td.rule] | join(\",\")" "$HOOK_EVENT,known always-red-paths"
+argv_check why-loud-bare "$work/home-why-bare" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift show $HOOK_EVENT --json)")"
+clean_log why-loud-bare
+run why-loud-bare-dev "$work/no-rule.json" 1920x1080 "summon:$(sel $UNIT)"
+expect why-loud-bare-dev 1 "$td.whyLoud" "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
+clean_log why-loud-bare-dev
 
 # … when an open case's plan names the crisis: the callout, the Case and
 # the Rule rows say the same.
@@ -1168,15 +1186,16 @@ expect why-loud-planned 2 "[$td.kv[] | select(startswith(\"Case\") or startswith
 expect why-loud-planned 2 "$td.actions[0]" "Link to C-2026-003…"
 clean_log why-loud-planned
 
-# … under `[drift] attention = "all"`: a crisis is a red-zone change.
+# … under `[drift] attention = "all"`: a crisis is a red-zone change (the
+# fallback's answer).
 mkdir -p "$work/home-why-all"
 run why-loud-all "" 1920x1080 "summon:$(sel $UNIT);wait:sectionView.detail.rule=known attention-all" \
-  HOME="$work/home-why-all" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_ATTENTION_ALL=1
+  HOME="$work/home-why-all" FAKE_SELDON_FIXTURE="$work/no-rule.json" FAKE_SELDON_ATTENTION_ALL=1
 expect why-loud-all 2 "$td.whyLoud" "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone. No open case plans it, and no case is linked."
 clean_log why-loud-all
 
 # … a pacman group in crisis, from a member: the leader's rule.
-jq --arg m "$MESA" '.summary.crisis = 3 | .drift |= map(if .eventId == $m then .crisis = true else . end)' "$sample" >"$work/group-crisis.json"
+jq --arg m "$MESA" '.summary.crisis = 3 | .drift |= map(if .eventId == $m then .crisis = true else . end)' "$work/no-rule.json" >"$work/group-crisis.json"
 mkdir -p "$work/home-why-group"
 run why-loud-group "" 1920x1080 "summon:$(sel $LIB32);wait:sectionView.detail.rule=known always-red" \
   HOME="$work/home-why-group" FAKE_SELDON_FIXTURE="$work/group-crisis.json"
@@ -1223,6 +1242,36 @@ run kv-wrap "$sample" 1920x1080 "summon:$wk;width:50;shot:kv-wrap-50"
 expect kv-wrap 2 '.overflow | join(" | ")' ""
 expect kv-wrap 2 "[.texts[] | select(startswith(\"R3 · every step\"))] | length" 1
 clean_log kv-wrap
+
+# ADR-0038: the details show what the index carries — an imported case's
+# intent (after its provenance line) and source, a completed case's
+# result, a decision's lead, each as plain text with Open in editor kept;
+# an index without the four fields renders as before.
+run details "$sample" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};call:select:C-2026-001;text:4;call:select:ADR-0003"
+expect details 1 "[$tc.id, $tc.intent, $tc.result] | join(\"|\")" \
+  "C-2026-007|Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben.|"
+expect details 1 "[$tc.kv[] | select(startswith(\"Imported from\"))] | join(\",\")" "Imported from: ~/Notizen/aufgaben.md#4"
+for text in "INTENT" "Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben." \
+  "~/Notizen/aufgaben.md#4" "Open in editor"; do
+  shows details 1 "$text"
+done
+expect details 1 '[.texts[] | select(. == "RESULT")] | length' 0
+expect details 2 "[$tc.id, $tc.result] | join(\"|\")" "C-2026-001|Logbuch läuft, Baseline erfasst, \`seldon doctor\` ohne Befund."
+shows details 2 "RESULT"
+expect details 4 "[.view.selected, $tv.text] | join(\"|\")" "ADR-0003|Zed wird Zweiteditor, Neovim bleibt Standard."
+shows details 4 "Zed wird Zweiteditor, Neovim bleibt Standard."
+for i in 1 2 4; do expect details $i '.overflow | join(" | ")' ""; done
+clean_log details
+jq 'del(.drift[].rule) | .cases[][] |= del(.intent, .result, .source) | .decisions[] |= del(.lead)' "$sample" >"$work/bare.json"
+run details-bare "$work/bare.json" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};text:4;call:select:ADR-0003"
+expect details-bare 1 "[$tc.id, $tc.intent, $tc.result, ([$tc.kv[] | select(startswith(\"Imported from\"))] | length)] | map(tostring) | join(\"|\")" "C-2026-007|||0"
+shows details-bare 1 "0 of 5 steps done. The steps, the Intent and the Result are in the case file."
+expect details-bare 1 '[.texts[] | select(. == "INTENT" or . == "RESULT")] | length' 0
+expect details-bare 3 "[.view.selected, $tv.text] | join(\"|\")" "ADR-0003|"
+shows details-bare 3 "The text is in the file; Open in editor shows it."
+clean_log details-bare
 
 # ---------------------------------------------------------------------------
 # 9. The Prime Radiant, section 7 (ADR-0034 §4, SPEC-PLUGIN §6; WP-123): the
@@ -1534,7 +1583,8 @@ for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur a
   "2026-10-01" "Logbuch-Sprache Deutsch, Struktur Englisch" "ADR-0001 · accepted" "2026-09-01" \
   "ADR-0004 · PROPOSED · 2026-10-01" "Accept" "Open in editor" "decisions/ADR-0004-ollama-user-service.md" \
   "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture." \
-  "The text is in the file; Open in editor shows it."; do
+  "Lokale Modelle nur über einen Case; ollama läuft, wenn überhaupt, als User-Service ohne Autostart." \
+  "The whole text is in the file; Open in editor shows it."; do
   shows decisions 2 "$text"
 done
 shows decisions 2 "CASES · 0"
