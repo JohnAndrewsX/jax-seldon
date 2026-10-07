@@ -23,7 +23,7 @@
     "case":    { "$ref": "#/$defs/caseId" },
     "zone":    { "enum": ["green", "yellow", "red"] },
     "explicit": { "type": "boolean", "description": "pacman: named on the command line" },
-    "txId":    { "type": "string", "minLength": 1, "description": "pacman: opaque transaction id, shared by all lines of one transaction" },
+    "txId":    { "type": "string", "minLength": 1, "description": "pacman: opaque transaction id, shared by the package lines of one transaction; a file pacman left (a pacman note) carries it as meta.transaction instead (ADR-0042)" },
     "refersTo": { "$ref": "#/$defs/ulid", "description": "resolution/correction target" },
     "resolution": { "enum": ["linked", "explained", "dismissed"], "description": "ledger: only on kind resolution; index: folded onto the target event. `linked` by `system`: SPEC-ENGINE §5 rule 9" },
     "resolutionDetail": { "type": "string", "maxLength": 4096, "description": "index only (ADR-0012 §11): the detail of the winning resolution, folded onto its target next to resolution; never in a ledger line (a resolution line carries it as detail)" },
@@ -36,7 +36,7 @@
         "truncated": { "const": true, "description": "index only: a text of this event was clipped (ADR-0025, ADR-0035 §3); never in a ledger line" }
       },
       "additionalProperties": { "type": ["string", "number", "boolean", "null"] },
-      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre), enabled (plugin-add/-enable/-disable), txId (resolution of a drift group), risk (case-created/-started/-updated), sources/files (state-loss), truncated (index only)"
+      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre), enabled (plugin-add/-enable/-disable), txId (resolution of a drift group), transaction (pacman note: the txId of the transaction that left the file, ADR-0042), risk (case-created/-started/-updated), sources/files (state-loss), truncated (index only)"
     }
   },
   "allOf": [
