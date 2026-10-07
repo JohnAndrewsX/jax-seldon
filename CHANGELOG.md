@@ -19,14 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that is still 0.1.4's default gains it at the next capture); turning a
   switch of Omarchy's *Toggle* menu or a Hyprland flag on or off is
   routine (new rule `toggle-flag`, ADR-0037), anything else there is
-  quiet attention. `~/.ssh/authorized_keys` joins the default
-  `alwaysRedPaths`: add it to `watchPaths` and a change to it without a
-  case is a crisis. Under the persistence paths the config collector now
+  quiet attention; every file there is hashed. `~/.ssh/authorized_keys`
+  and `~/.ssh/authorized_keys2` join the default `alwaysRedPaths`: add
+  both to `watchPaths` and a change to either without a case is a
+  crisis. Under the persistence paths the config collector now
   hashes every file — a hook with a NUL byte after its first line or
   over 1 MiB used to be skipped — and follows a linked hook folder (each
   folder once, at most 4096 entries below links; a link with more is a
   crisis of its own; links into the logbook or Seldon's folders are not
-  followed); a file over 64 MiB is hashed from its size, time and inode,
+  followed); a file over 64 MiB is hashed from its size, modification and
+  change time and inode,
   and an unreadable one keeps its last hash. A plugin tree counts an
   unreadable file by its size, time and mode and holds at most 10 000
   entries. The first capture after the upgrade records nothing for files

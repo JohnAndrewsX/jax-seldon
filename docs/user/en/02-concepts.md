@@ -205,7 +205,7 @@ installed or removed by name outside a case. A new file in a persistence
 path is a crisis whoever wrote it: units in `~/.config/systemd/user`,
 Omarchy's hooks in `~/.config/omarchy/hooks`, `~/.config/autostart`,
 `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
-`~/.bash_profile`, and `~/.ssh/authorized_keys` once you watch it. Those
+`~/.bash_profile`, and the `authorized_keys` files once you watch them. Those
 files run at login or on events without being your ordinary
 configuration. A third-party plugin edited in place counts as a plugin
 update: listed, never counted in the bar.

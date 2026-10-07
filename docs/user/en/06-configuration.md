@@ -162,12 +162,14 @@ The files already there when the path enters the list are taken as they
 are: the next capture records no addition for them, and says
 `watch scope changed: 0 file(s) left it, N entered it`.
 
-`~/.ssh/authorized_keys` is not watched unless you add it. Once it is in
-the list, a change to it without a case is a crisis (it is in the default
-`alwaysRedPaths`); only its hash is recorded:
+`~/.ssh/authorized_keys` and `~/.ssh/authorized_keys2` (the two files
+sshd reads by default) are not watched unless you add them; add both
+lines. Once they are in the list, a change to either without a case is a
+crisis (both are in the default `alwaysRedPaths`); only their hashes are
+recorded:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.ssh/authorized_keys"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
 ```
 
 Always left out:
@@ -186,8 +188,9 @@ Always left out:
 - binary files and files over 1 MiB (listed as skipped, without a hash) —
   except in the persistence paths, where every file is hashed: a hook
   runs whatever it holds. A file there over 64 MiB is hashed from its
-  size, time and inode instead of being read, and one that cannot be
-  read keeps its last hash until it can;
+  size, times and inode instead of being read, and one that cannot be
+  read keeps its last hash until it can. Every file in the toggle folder
+  is hashed the same way;
 - files whose name holds a control character, or whose path is longer
   than 512 characters: the capture counts them in a warning;
 - everything in `[redaction] skipPaths`. Its default holds the files that
@@ -327,7 +330,7 @@ only what can break boot, login or the shell is a crisis.
 | `routine` | all rules | the routine rules that apply: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag` |
 | `routinePaths` | `~/.config/omarchy/shell.json`, `**/*.bak.*` | config files whose changes are routine |
 | `routinePackages` | `archlinux-keyring`, `omarchy-keyring` | packages whose own transactions are routine |
-| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys` | persistence paths: a change there without a case is a crisis (`authorized_keys` only once you watch it) |
+| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` | persistence paths: a change there without a case is a crisis (the `authorized_keys` files only once you watch them) |
 
 Want more? A few examples:
 

@@ -1,4 +1,4 @@
-# ADR-0037 — ADR-0028 amended: toggles are routine both ways, `system-link` is narrowed, `authorized_keys` is a default persistence path
+# ADR-0037 — ADR-0028 amended: toggles are routine both ways, `system-link` is narrowed, the `authorized_keys` files are default persistence paths
 
 **Status:** proposed (orchestrator, 2026-10-07, from WP-113 round 2; the
 operator decides). §1 and §3 are implemented on branch
@@ -46,7 +46,9 @@ row change, which an implementing WP may not make on its own:
   user persistence, but a link the user (or an attacker) chose *to* it is.
 - **`authorized_keys`.** The operator decided that a change to it is a
   crisis when no case covers it, once the user opts in (WP-113 0.2.0
-  form, 2026-10-06). The `alwaysRedPaths` row lists the default globs.
+  form, 2026-10-06). sshd's default `AuthorizedKeysFile` names two
+  files, `authorized_keys` and `authorized_keys2`. The `alwaysRedPaths`
+  row lists the default globs.
 
 ## Decision
 
@@ -95,18 +97,19 @@ Evidence and its gap: Omarchy's migrations `1785095882.sh`,
 `~/.config/systemd/user/…wants/` with targets under
 `/usr/lib/systemd/user/`, which the new row covers. Not yet checked:
 which targets a `--user enable` of a packaged unit and Omarchy's install
-scripts create, and whether an autostart link ever targets
-`/etc/xdg/autostart/` (not under `/usr/`, so today's mark never covers
-it either; this ADR keeps that). The implementing WP checks both on the
+scripts create, and whether a link ever targets `/etc/xdg/autostart/` or
+`/etc/systemd/user/` (admin-installed units; neither is under `/usr/`,
+so today's mark never covers them either; this ADR keeps that). The implementing WP checks both on the
 test host (ADR-0028 WP-D) before it changes the capture.
 
-### 3. `~/.ssh/authorized_keys` is a default persistence path (changes the default list of the ADR-0028 §2 `alwaysRedPaths` row)
+### 3. `~/.ssh/authorized_keys` and `~/.ssh/authorized_keys2` are default persistence paths (changes the default list of the ADR-0028 §2 `alwaysRedPaths` row)
 
-The row's default list gains `~/.ssh/authorized_keys` (operator decision
-2026-10-06). It is no default watch path: the user opts in by adding it
-to `watchPaths`, and until then the glob matches nothing. The class of
-the row is unchanged: a change without a case is a crisis, only the hash
-is recorded. This resolves the "`authorized_keys` … is a capture-cost
+The row's default list gains `~/.ssh/authorized_keys` and
+`~/.ssh/authorized_keys2`, sshd's two default `AuthorizedKeysFile`
+entries (operator decision 2026-10-06). Neither is a default watch path:
+the user opts in by adding both to `watchPaths`, and until then the
+globs match nothing. The class of the row is unchanged: a change without
+a case is a crisis, only the hash is recorded. This resolves the "`authorized_keys` … is a capture-cost
 and scope question for WP-E" note of ADR-0028 §4d.
 
 ### Rows changed, in ADR-0028 §2's order
@@ -132,8 +135,10 @@ and scope question for WP-E" note of ADR-0028 §4d.
   so it classifies as that persistence path's crisis (nobody can see
   into it, so a payload hidden behind decoys is the harm test's case);
   where every file is hashed, a file over 64 MiB is hashed by its size,
-  modification time and inode (`meta.hashBasis = "stat"`), so a `touch`
-  changes it and reading a huge file never holds the capture lock.
+  modification time, change time and inode (`meta.hashBasis = "stat"`),
+  so a `touch` — and an in-place write, whose change time no user can
+  reset — changes it, and reading a huge file never holds the capture
+  lock. Every file in the toggle folder is hashed, whatever it holds.
 - `seldon doctor`'s effective rule set lists `toggle-flag`.
 - Rollback: drop `toggle-flag` from `[drift] routine`, or
   `attention = "all"` (ADR-0028 §5).
