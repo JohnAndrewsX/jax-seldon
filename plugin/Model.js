@@ -3634,7 +3634,7 @@ function keptDriftRules(rules, index) {
 var CRISIS_RULE_TEXTS = {
   "always-red": "A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml) was installed, removed or downgraded by name in this transaction.",
   "always-red-paths": "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml).",
-  "pacnew-red": "pacman left a .pacnew, .pacsave or .pacorig beside a file that boot, login or security depend on (mkinitcpio, Limine, systemd, PAM); until the two are merged, one of them is not in use.",
+  "pacnew-red": "pacman left a .pacnew, .pacsave or .pacorig beside a file that boot or login depend on (mkinitcpio, Limine, PAM); check it with pacdiff before the next reboot.",
   "attention-all": "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."
 }
 

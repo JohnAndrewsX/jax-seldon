@@ -2141,7 +2141,7 @@ test("eventDetail: heading, class, the key/values; why loud from the engine's ru
   assert.ok(known("always-red").whyLoud.startsWith("A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml)"))
   assert.ok(known("attention-all").whyLoud.startsWith("[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."))
   assert.ok(known("future-rule").whyLoud.startsWith("The engine's rule: future-rule."))
-  assert.ok(known("pacnew-red").whyLoud.startsWith("pacman left a .pacnew, .pacsave or .pacorig beside a file that boot, login or security depend on"))
+  assert.ok(known("pacnew-red").whyLoud.startsWith("pacman left a .pacnew, .pacsave or .pacorig beside a file that boot or login depend on (mkinitcpio, Limine, PAM)"))
   same(known("always-red-paths").kv[4], ["Rule", "crisis · rule always-red-paths · no case"])
   // a crisis an open case plans: the callout and the Case and Rule rows agree
   const planned = JSON.parse(sample)

@@ -419,9 +419,9 @@ package on your crisis list ([drift] alwaysRed in
 ~/.config/seldon/config.toml) was installed, removed or downgraded by name
 in this transaction."; `always-red-paths` → "The path matches your crisis
 list ([drift] alwaysRedPaths …)."; `pacnew-red` → "pacman left a .pacnew,
-.pacsave or .pacorig beside a file that boot, login or security depend on
-(mkinitcpio, Limine, systemd, PAM); until the two are merged, one of them
-is not in use." (WP-141); `attention-all` → "[drift] attention =
+.pacsave or .pacorig beside a file that boot or login depend on
+(mkinitcpio, Limine, PAM); check it with pacdiff before the next reboot."
+(WP-141, ADR-0042); `attention-all` → "[drift] attention =
 "all" is set: every change without a case is open drift, and a crisis is
 a change in the red zone."; another rule is named as it is. Until the
 answer (and in dev mode, without an engine, when the index has no rule)
