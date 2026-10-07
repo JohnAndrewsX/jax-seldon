@@ -73,6 +73,9 @@ use crate::error::{Error, Result};
 /// What a secret is replaced with.
 pub const REDACTED: &str = "‹redacted›";
 
+/// The name of every rule from `config.toml [redaction] patterns`.
+const USER_PATTERN: &str = "user-pattern";
+
 /// A quoted or bare value after a key (`token=`, `PASSWORD=`); a double
 /// quoted value may hold `\"`. A bare value does not start at a
 /// [`REDACTED`] marker: after `TOKEN="a"bob@example.com` is masked to
@@ -299,9 +302,12 @@ impl Rule {
     /// [`Rule::replace`]; with `keep_lines`, every line break a replaced
     /// match held (a continued command's `\` line end) is put back after
     /// the replacement, as it was (`\n` or `\r\n`), so the text keeps its
-    /// number of lines. A `\r` that ends a match (a rule that takes the
-    /// rest of a CRLF line) is put back after the replacement either way,
-    /// so a CRLF line keeps its line end (WP-128).
+    /// number of lines. A `\r` that ends the match of a built-in rule (one
+    /// that takes the rest of a CRLF line) is put back after the
+    /// replacement either way, so a CRLF line keeps its line end (WP-128).
+    /// A user pattern's match is replaced whole, a `\r` in it too: a
+    /// pattern that matches a bare `\r` would otherwise find it again in
+    /// the second pass of a note (the command's, then the ledger's).
     fn replace_with(&self, text: &str, keep_lines: bool) -> String {
         let markers = markers(text);
         let mut out = String::with_capacity(text.len());
@@ -326,7 +332,8 @@ impl Rule {
                         });
                     }
                 }
-                if matched.ends_with('\r') && !out.ends_with('\r') {
+                // no built-in replacement ends in `\r`
+                if matched.ends_with('\r') && self.name != USER_PATTERN {
                     out.push('\r');
                 }
             } else {
@@ -746,10 +753,12 @@ fn builtin_rules() -> Vec<Rule> {
             r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api_?key)\\?"\s*:\s*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
             has_json_value,
         ),
-        // the header value up to a closing quote or the end of the line
+        // the header value up to a closing quote or the end of the line;
+        // its last character is no `\r`, so an empty value before a CRLF
+        // line end reads as before an LF one (WP-128)
         rule(
             "authorization-header",
-            r#"(?i)(authorization:\s*)[^'"\n]+"#,
+            r#"(?i)(authorization:\s*)[^'"\n]*[^'"\r\n]"#,
             KEEP_PREFIX,
         ),
         // header names that end in a credential word: `X-Api-Key`,
@@ -757,7 +766,7 @@ fn builtin_rules() -> Vec<Rule> {
         // `X-Author`
         rule(
             "secret-header",
-            r#"(?i)((?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]+"#,
+            r#"(?i)((?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]*[^'"\r\n]"#,
             KEEP_PREFIX,
         ),
         // `Cookie: a=b; c=d`, `Set-Cookie: …`: a value that starts with a
@@ -953,7 +962,7 @@ impl Redactor {
                 ))
             })?;
             redactor.user.push(Rule {
-                name: "user-pattern",
+                name: USER_PATTERN,
                 pattern: p.clone(),
                 re: OnceLock::from(re),
                 next: None,

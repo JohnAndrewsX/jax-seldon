@@ -1625,6 +1625,11 @@ const CONTINUED: &[(&str, &str, &[&str])] = &[
         "tool --password 'fakeCr25\nnext",
         &["fakeCr25"],
     ),
+    // a header value ends before the `\r` of a CRLF line end, also an
+    // empty one (round 2)
+    ("secret-header", "X-Api-Key: fakeCr26\nnext", &["fakeCr26"]),
+    ("authorization-header", "a\nAuthorization: \n", &[]),
+    ("secret-header", "x-api-key: \t\n\n", &[]),
 ];
 
 mod redaction {
@@ -2027,6 +2032,34 @@ mod redaction {
             let kept = r.redact_keeping_lines(&crlf);
             assert_eq!(kept.matches("\r\n").count(), crlf.matches("\r\n").count());
             assert_eq!(kept.matches('\n').count(), crlf.matches('\n').count());
+        }
+    }
+
+    /// WP-128 round 2: a user pattern's match is replaced whole, a `\r` in
+    /// it too, so a pattern that matches a bare `\r` gives the same text
+    /// on a second pass (`seldon log` redacts a note, then the ledger
+    /// does).
+    #[test]
+    fn a_user_pattern_that_matches_a_cr_is_stable() {
+        for pattern in ["\r", "[ \t\r]+"] {
+            let r = Redactor::with_patterns(&[pattern.into()]).unwrap();
+            for text in ["a token: abc\r\nb \r\n", "x\r\n\r\ny\r"] {
+                let once = r.redact(text);
+                assert!(!once.contains('\r'), "{pattern}: {once:?}");
+                assert_eq!(r.redact(&once), once, "{pattern}: {text:?}");
+            }
+        }
+    }
+
+    /// WP-128 round 2: a lone `\r` (classic Mac line ends) is no line end:
+    /// HTTPie's gap after the command word is not one.
+    #[test]
+    fn a_lone_cr_is_no_line_end() {
+        let r = Redactor::builtin();
+        for word in ["http", "https", "xh", "xhs"] {
+            let input = format!("{word}\r-a a:b");
+            assert_eq!(r.redact(&input), input);
+            assert!(r.matching_rules(&input).is_empty(), "{input:?}");
         }
     }
 
@@ -2516,7 +2549,12 @@ mod commands {
         for (rule, lf, secrets) in super::CONTINUED {
             for text in [lf.to_string(), lf.replace('\n', "\r\n")] {
                 let v = run(&env, &["log", "--", &text]);
-                assert_eq!(v["event"]["detail"], r.redact(&text).as_str(), "{rule}");
+                // `log` trims the note first
+                assert_eq!(
+                    v["event"]["detail"],
+                    r.redact(text.trim()).as_str(),
+                    "{rule}"
+                );
                 assert_eq!(last_ledger_line(&root)["detail"], v["event"]["detail"]);
             }
             all.extend_from_slice(secrets);
