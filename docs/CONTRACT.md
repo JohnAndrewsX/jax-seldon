@@ -55,6 +55,9 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
      The panel marks the case and filters the Completed column by it.
    - `reopens:<caseId>` — `seldon plan reopen <caseId>` made this case.
    - `imported` — `seldon import task` made this case (WP-102).
+   - `proposed-by:agent:<name>` — `seldon drift apply` made this completed
+     case from that agent's proposed explanation (ADR-0036 §3): the words
+     are the agent's, though the user applied them.
    A user's own tag with one of these values means the same to the plugin.
 9. Contract 2 (ADR-0035). The index adds, all written by the engine:
    - kinds `case-updated` (`seldon plan set`: zone, risk or area changed;
@@ -117,6 +120,10 @@ seldon drift link <eventId> <caseId> [--only] --json
 seldon drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <slug>] --json -- <text>
 seldon drift dismiss <eventId> [--only] --json -- <reason>   # same rule as explain: text after `--`
 seldon drift show <eventId> --json          # full member list of a group (ADR-0013)
+seldon agent ask triage --json                  # WP-124, ADR-0036: launches the default agent to sort the open changes; ids only in its prompt
+seldon agent ask drift|case <id> --json          # Ask agent on an event (open drift only) or a case detail
+seldon drift apply <proposalId> [--item <eventId>]… --json   # applies index.triage's proposal as the user; a crisis only by --item
+seldon drift discard <proposalId> --json         # removes the proposal file; the logbook is untouched
 seldon decide --no-edit --json -- <title>        # then `open <newId> --editor --json` from the result
 seldon rebuild --json
 seldon update-impact --json
@@ -124,5 +131,6 @@ seldon doctor --only rules --json               # WP-101: read-only, on panel op
 seldon rules update --json                      # WP-101: the rules banner's one click; rewrites only the engine's block
 ```
 
-IDs are validated by regex in QML before being passed. Free text is passed
+The plugin never runs `seldon drift propose` (the agent's command; ADR-0036
+§2). IDs are validated by regex in QML before being passed. Free text is passed
 as a single argv element, never interpolated into a shell string.
