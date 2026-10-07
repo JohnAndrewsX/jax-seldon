@@ -1109,6 +1109,156 @@ mod plugin_commits {
         );
     }
 
+    /// WP-136 round 2 (B1): the clone's `info/grafts` is never read: it
+    /// would fake parents (a pull would read as a reset), and each bad
+    /// line of it is a line of stderr (a 63 MB file made 132 MB).
+    #[test]
+    fn a_grafts_file_is_not_read() {
+        let Some(mut c) = Clone::new("commits-grafts") else {
+            return;
+        };
+        for s in ["A", "B", "C"] {
+            c.commit(s);
+        }
+        let head = c.head();
+        // the new HEAD made a root commit, then a flood of bad lines
+        let mut grafts = format!("{head}\n");
+        grafts.push_str(&"not a graft line\n".repeat(200_000));
+        write(&c.dir.join(".git/info/grafts"), grafts);
+        let started = std::time::Instant::now();
+        let e = c.update("2026-10-02T10:00:00+02:00");
+        assert!(started.elapsed() < std::time::Duration::from_secs(8));
+        assert_eq!(extra(&e, "git"), Some("pull"));
+        assert_eq!(extra(&e, "commits"), Some("C\nB\nA"));
+    }
+
+    /// WP-136 round 2 (N1): a partial clone whose promisor remote is an
+    /// `ext::` command, allowed by the clone's own
+    /// `protocol.ext.allow=always` (which beats `-c protocol.allow=never`),
+    /// with the old HEAD's object missing: git would run the command to
+    /// fetch it. It never runs; the update has no commits.
+    #[test]
+    fn a_partial_clone_never_fetches() {
+        let Some(mut c) = Clone::new("commits-lazy") else {
+            return;
+        };
+        let old = c.head();
+        c.commit("Second");
+        let marker = c.p.b.path("fetched");
+        let fetch = c.p.b.path("fetch.sh");
+        script(&fetch, &format!("touch '{}'\nexit 1", marker.display()));
+        for (key, value) in [
+            ("core.repositoryformatversion", "1".to_string()),
+            ("extensions.partialClone", "origin".to_string()),
+            ("remote.origin.url", format!("ext::{}", fetch.display())),
+            ("remote.origin.promisor", "true".to_string()),
+            ("protocol.ext.allow", "always".to_string()),
+        ] {
+            c.git(&["config", key, &value]).unwrap();
+        }
+        // from here on the test's own git is never run (it would fetch)
+        let object = c.dir.join(".git/objects").join(&old[..2]).join(&old[2..]);
+        std::fs::remove_file(&object).unwrap();
+        let e = c.update("2026-10-02T10:00:00+02:00");
+        assert!(!marker.exists(), "git ran the promisor's ext:: command");
+        assert!(e.meta.extra.is_empty(), "{:?}", e.meta.extra);
+    }
+
+    /// WP-136 round 2 (N2): a `.git` that can make git read another
+    /// repository is not read; the update keeps its version step and says
+    /// why the commits are missing.
+    #[test]
+    fn a_repository_pointing_outside_names_no_commits() {
+        /// Makes the clone's `.git` point outside the plugin folder.
+        type PointOutside = fn(&Clone);
+        let cases: [(&str, PointOutside); 6] = [
+            ("link", |c| {
+                let elsewhere = c.p.b.path("elsewhere.git");
+                std::fs::rename(c.dir.join(".git"), &elsewhere).unwrap();
+                std::os::unix::fs::symlink(&elsewhere, c.dir.join(".git")).unwrap();
+            }),
+            ("gitdir", |c| {
+                let elsewhere = c.p.b.path("elsewhere.git");
+                std::fs::rename(c.dir.join(".git"), &elsewhere).unwrap();
+                write(
+                    &c.dir.join(".git"),
+                    format!("gitdir: {}\n", elsewhere.display()),
+                );
+            }),
+            ("alternates", |c| {
+                let other = c.p.b.path("other.git/objects");
+                write(
+                    &c.dir.join(".git/objects/info/alternates"),
+                    format!("{}\n", other.display()),
+                );
+            }),
+            ("commondir", |c| {
+                write(&c.dir.join(".git/commondir"), "../../other.git\n");
+            }),
+            ("include", |c| {
+                c.git(&["config", "include.path", "/dev/null"]).unwrap();
+            }),
+            ("includeIf", |c| {
+                c.git(&["config", "includeIf.gitdir:/nowhere/.path", "/dev/null"])
+                    .unwrap();
+            }),
+        ];
+        for (name, point_outside) in cases {
+            let Some(mut c) = Clone::new(&format!("commits-outside-{name}")) else {
+                return;
+            };
+            let from = c.short();
+            c.p.manifest(WEATHER, Some("2.0.0"));
+            c.commit("Release 2.0.0");
+            point_outside(&c);
+            let e = c.update("2026-10-02T10:00:00+02:00");
+            assert_eq!(
+                e.detail.as_deref(),
+                Some(format!("{from} → 2.0.0, {}", seldon::collectors::plugins::OUTSIDE).as_str()),
+                "{name}"
+            );
+            assert!(e.meta.extra.is_empty(), "{name}: {:?}", e.meta.extra);
+            assert!(
+                c.p.b.cursors["plugins"]["plugins"][WEATHER]
+                    .get("head")
+                    .is_none(),
+                "{name}"
+            );
+        }
+    }
+
+    /// WP-136 round 2 (N4): the clone's `i18n.logOutputEncoding` does not
+    /// change the output (UTF-16 would put NULs into the `-z` list); a
+    /// subject that is not UTF-8 comes out as git converts it (here Latin-1
+    /// to UTF-8; the lossy read of bytes git passes through is a unit test
+    /// in `collectors/plugins.rs`).
+    #[test]
+    fn the_log_is_utf8_whatever_the_clone_says() {
+        let Some(mut c) = Clone::new("commits-encoding") else {
+            return;
+        };
+        c.git(&["config", "i18n.logOutputEncoding", "UTF-16"])
+            .unwrap();
+        c.commit("Plain subject");
+        let message = c.p.b.path("message");
+        write(&message, b"Caf\xe9 au lait\n");
+        let manifest = c.dir.join("manifest.json");
+        let mut text = std::fs::read_to_string(&manifest).unwrap();
+        text.push(' ');
+        write(&manifest, text);
+        c.git(&["add", "manifest.json"]).unwrap();
+        c.git(&[
+            "commit",
+            "-q",
+            "--cleanup=verbatim",
+            "-F",
+            &message.to_string_lossy(),
+        ])
+        .unwrap();
+        let e = c.update("2026-10-02T10:00:00+02:00");
+        assert_eq!(extra(&e, "commits"), Some("Café au lait\nPlain subject"));
+    }
+
     #[test]
     fn a_broken_git_dir_inside_another_repository_is_no_clone() {
         let mut p = plugins::story_in("commits-ceiling");

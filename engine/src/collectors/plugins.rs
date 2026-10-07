@@ -30,7 +30,10 @@
 //! ([`commit_subject`]); the detail has the count and the newest subject.
 //! The HEAD is read from the clone's files ([`head_from_files`]), else
 //! from git; git runs read-only with a fixed argv ([`Git`]); when it fails
-//! or times out the event is the same without the commits.
+//! or times out the event is the same without the commits. Only a `.git`
+//! whose repository stays inside the plugin folder is read
+//! ([`GitDir`]); for any other the update says so ([`OUTSIDE`]) (WP-136
+//! round 2).
 //!
 //! `plugin-add` and `plugin-update` are timed by the later mtime of the
 //! plugin directory and its manifest, clamped to `[last check, now]`, so
@@ -84,11 +87,23 @@ const COMMIT_SUBJECT_COLUMNS: usize = 200;
 /// Time one git query of a plugin clone may take.
 const GIT_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Options before every git query: no pager, no hooks, no file system
-/// monitor, no transport (so no fetch of a missing object), no signature
-/// check (gpg), no colour, no replace refs.
-const GIT_OPTIONS: [&str; 12] = [
+/// Most bytes kept of each output pipe of a git query; the rest is read
+/// and dropped ([`sys::run_command_capped`]), and a cut stdout is no
+/// answer. A query's real output is a few KiB.
+const GIT_OUTPUT_MAX: usize = 64 * 1024;
+
+/// Options before every git query: no pager; no lazy fetch of a missing
+/// object in a partial clone (git 2.44 or later; an older git refuses the
+/// option and the query names nothing); no replace refs; no hooks; no file
+/// system monitor; `protocol.allow=never` as the default for protocols the
+/// clone's config does not name (a repository-local `protocol.<name>.allow`
+/// beats it: [`GIT_ENV`]'s `GIT_ALLOW_PROTOCOL` is what refuses them all);
+/// no signature check (gpg); no colour; the log in UTF-8 whatever the
+/// clone's `i18n.logOutputEncoding` says (no NUL of UTF-16 in `-z`
+/// output).
+const GIT_OPTIONS: [&str; 15] = [
     "--no-pager",
+    "--no-lazy-fetch",
     "--no-replace-objects",
     "-c",
     "core.hooksPath=/dev/null",
@@ -100,19 +115,31 @@ const GIT_OPTIONS: [&str; 12] = [
     "log.showSignature=false",
     "-c",
     "color.ui=false",
+    "-c",
+    "i18n.logOutputEncoding=UTF-8",
 ];
 
-/// Environment of every git query besides [`REPOSITORY_VARS`] removed and
-/// `GIT_CEILING_DIRECTORIES`: no system and no global config (the answer
-/// depends on the clone alone), no prompt, no lock taken for an index
-/// refresh, no lazy fetch of a partial clone.
-const GIT_ENV: [(&str, &str); 5] = [
+/// Environment of every git query, set after [`REPOSITORY_VARS`] are
+/// removed, besides `GIT_CEILING_DIRECTORIES`: no system and no global
+/// config (the answer depends on the clone alone); no grafts (the clone's
+/// `info/grafts` would fake parents, and each bad line of it is a line of
+/// stderr); no protocol at all, overriding any configuration (`none` is no
+/// protocol's name); no prompt; no lock taken for an index refresh; no lazy
+/// fetch (as `--no-lazy-fetch`).
+const GIT_ENV: [(&str, &str); 7] = [
     ("GIT_CONFIG_NOSYSTEM", "1"),
     ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_GRAFT_FILE", "/dev/null"),
+    ("GIT_ALLOW_PROTOCOL", "none"),
     ("GIT_TERMINAL_PROMPT", "0"),
     ("GIT_OPTIONAL_LOCKS", "0"),
     ("GIT_NO_LAZY_FETCH", "1"),
 ];
+
+/// The detail's part for a plugin whose `.git` could lead git out of the
+/// plugin's folder ([`GitDir::Outside`]).
+pub const OUTSIDE: &str =
+    "commit history not read (the repository points outside the plugin folder)";
 
 pub struct Plugins;
 
@@ -179,8 +206,11 @@ struct Seen {
     /// Later mtime of the plugin directory and its manifest.
     touched: Option<SystemTime>,
     /// The plugin's directory when it is a third-party plugin's own git
-    /// clone.
+    /// clone ([`GitDir::Contained`]).
     repo: Option<PathBuf>,
+    /// A third-party plugin's `.git` that git is not asked about
+    /// ([`GitDir::Outside`]).
+    outside: bool,
 }
 
 impl Plugins {
@@ -250,7 +280,9 @@ impl Plugins {
             let dir = manifest
                 .and_then(|m| m.parent())
                 .map_or_else(|| plugins_dir.join(&p.id), Path::to_path_buf);
-            let repo = (!p.first_party && is_clone(&dir)).then_some(dir);
+            let git_dir = git_dir(&dir);
+            let outside = !p.first_party && git_dir == GitDir::Outside;
+            let repo = (!p.first_party && git_dir == GitDir::Contained).then_some(dir);
             let head = repo.as_deref().and_then(|dir| {
                 // from the clone's files (no process), else from git
                 // (asked already when the version came from it); unreadable
@@ -267,6 +299,7 @@ impl Plugins {
                     first_party: p.first_party,
                     touched,
                     repo,
+                    outside,
                 },
             );
             snapshot.insert(
@@ -422,9 +455,61 @@ fn asked(heads: &mut BTreeMap<PathBuf, Option<Head>>, dir: &Path) -> Option<Head
 
 /// Whether `dir` is a git clone of its own: only the plugin's own clone,
 /// never a repository further up (a dotfiles repo in ~/.config would
-/// answer for every plugin).
+/// answer for every plugin), and only one git reads inside the folder.
 fn is_clone(dir: &Path) -> bool {
-    dir.join(".git").exists()
+    git_dir(dir) == GitDir::Contained
+}
+
+/// What the `.git` of a plugin directory is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GitDir {
+    /// None: not a clone.
+    None,
+    /// A real directory whose repository stays inside it: read.
+    Contained,
+    /// One that can make git read another repository: a link, a
+    /// `gitdir:` file (a linked work tree), `objects/info/alternates`,
+    /// `commondir`, or an `include`/`includeIf` section in its config
+    /// (`config`, `config.worktree`) or a config that cannot be read.
+    /// Its HEAD and commits would be another repository's; not read.
+    Outside,
+}
+
+/// Largest config of a clone scanned for `include` sections; a larger one
+/// counts as [`GitDir::Outside`].
+const GIT_CONFIG_MAX: u64 = 1024 * 1024;
+
+/// [`GitDir`] of `dir`.
+fn git_dir(dir: &Path) -> GitDir {
+    let git = dir.join(".git");
+    let meta = match std::fs::symlink_metadata(&git) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return GitDir::None,
+        Err(_) => return GitDir::Outside,
+    };
+    if !meta.is_dir() {
+        return GitDir::Outside;
+    }
+    let exists = |rel: &str| std::fs::symlink_metadata(git.join(rel)).is_ok();
+    if exists("objects/info/alternates") || exists("commondir") {
+        return GitDir::Outside;
+    }
+    for name in ["config", "config.worktree"] {
+        match sys::read_small_file(&git.join(name), GIT_CONFIG_MAX) {
+            Ok(None) => {}
+            Ok(Some(text)) if !includes(&text) => {}
+            _ => return GitDir::Outside,
+        }
+    }
+    GitDir::Contained
+}
+
+/// Whether a git config text has an `include` or `includeIf` section
+/// (section names are case-insensitive).
+fn includes(config: &str) -> bool {
+    config
+        .lines()
+        .any(|l| l.trim_start().to_ascii_lowercase().starts_with("[include"))
 }
 
 /// The HEAD of a plugin's clone.
@@ -504,8 +589,10 @@ fn is_hash(s: &str) -> bool {
 /// with a fixed argv and `-C <clone>`, [`GIT_OPTIONS`] and [`GIT_ENV`],
 /// the variables that select another repository removed, the clone's
 /// parent as ceiling (a broken `.git` never makes git walk up into a
-/// repository around the plugins), in its own process group, bounded by
-/// `timeout`. The program is a field so that tests can put a slow one in.
+/// repository around the plugins), in its own process group (killed
+/// whole at the deadline), bounded by `timeout` and in memory by
+/// [`GIT_OUTPUT_MAX`]. The program is a field so that tests can put a
+/// slow one in.
 #[derive(Debug, Clone, Copy)]
 struct Git<'a> {
     program: &'a str,
@@ -533,14 +620,17 @@ impl Git<'_> {
         cmd
     }
 
-    /// The output of a query that exited 0.
+    /// The output of a query that exited 0 with stdout under
+    /// [`GIT_OUTPUT_MAX`] (invalid UTF-8 read lossily).
     fn stdout(&self, dir: &Path, args: &[&str]) -> Option<String> {
-        match sys::run_command(self.command(dir, args), self.timeout) {
+        let (run, cut) =
+            sys::run_command_capped(self.command(dir, args), self.timeout, GIT_OUTPUT_MAX);
+        match run {
             Run::Exited {
                 code: Some(0),
                 stdout,
                 ..
-            } => Some(stdout),
+            } if !cut => Some(stdout),
             _ => None,
         }
     }
@@ -637,7 +727,7 @@ fn step(git: Git, redactor: &Redactor, dir: &Path, old: &str, new: &str) -> Opti
     })
 }
 
-/// A commit subject as an event holds it: control characters become
+/// A commit subject as an event holds it: control characters and the line and paragraph separators become
 /// spaces, direction and invisible format characters are dropped (the
 /// set of ADR-0038), white space at the ends trimmed, then redacted
 /// (before the clip: a secret at the cut is masked whole) and clipped to
@@ -647,7 +737,7 @@ fn commit_subject(raw: &str, redactor: &Redactor) -> String {
     let clean: String = raw
         .chars()
         .filter(|c| !invisible(*c))
-        .map(|c| if c.is_control() { ' ' } else { c })
+        .map(|c| if breaks(c) { ' ' } else { c })
         .collect();
     let clean = clean.trim();
     if clean.is_empty() {
@@ -661,6 +751,14 @@ fn commit_subject(raw: &str, redactor: &Redactor) -> String {
     cut.truncate(cut.trim_end().len());
     cut.push('…');
     cut
+}
+
+/// A character that breaks a line or controls a terminal: a control
+/// character, or the line and paragraph separators U+2028 and U+2029,
+/// which the desk's plain text breaks on (one subject would look like
+/// two).
+fn breaks(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')
 }
 
 /// A character that turns the direction of the text around it or is an
@@ -757,6 +855,9 @@ fn diff(
                         (Some(dir), Some(old), Some(new)) => step(GIT, redactor, dir, old, new),
                         _ => None,
                     };
+                    if seen_of(id).outside {
+                        detail = format!("{detail}, {OUTSIDE}");
+                    }
                     if let Some(step) = moved {
                         detail = format!("{detail}, {}", step.summary());
                         meta.extra.insert("git".into(), step.how.into());
@@ -862,6 +963,7 @@ mod tests {
         let args: Vec<&OsStr> = cmd.get_args().collect();
         let want = [
             "--no-pager",
+            "--no-lazy-fetch",
             "--no-replace-objects",
             "-c",
             "core.hooksPath=/dev/null",
@@ -873,6 +975,8 @@ mod tests {
             "log.showSignature=false",
             "-c",
             "color.ui=false",
+            "-c",
+            "i18n.logOutputEncoding=UTF-8",
             "-C",
             "/plugins/p",
             "rev-parse",
@@ -882,13 +986,15 @@ mod tests {
         assert_eq!(args, want);
         let envs: BTreeMap<&OsStr, Option<&OsStr>> = cmd.get_envs().collect();
         for var in REPOSITORY_VARS {
-            if var != "GIT_CEILING_DIRECTORIES" {
+            if !["GIT_CEILING_DIRECTORIES", "GIT_GRAFT_FILE"].contains(&var) {
                 assert_eq!(envs.get(OsStr::new(var)), Some(&None), "{var} removed");
             }
         }
         for (k, v) in [
             ("GIT_CONFIG_NOSYSTEM", "1"),
             ("GIT_CONFIG_GLOBAL", "/dev/null"),
+            ("GIT_GRAFT_FILE", "/dev/null"),
+            ("GIT_ALLOW_PROTOCOL", "none"),
             ("GIT_TERMINAL_PROMPT", "0"),
             ("GIT_OPTIONAL_LOCKS", "0"),
             ("GIT_NO_LAZY_FETCH", "1"),
@@ -919,6 +1025,145 @@ mod tests {
             "{:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn the_timeout_is_two_seconds_and_the_program_git() {
+        assert_eq!(GIT.timeout, Duration::from_secs(2));
+        assert_eq!(GIT.program, "git");
+    }
+
+    #[test]
+    fn a_slow_git_is_killed_with_what_it_started() {
+        // a child of the fake git holds the output pipes; the whole
+        // process group goes at the deadline
+        let s = Scratch::new("group");
+        let pid_file = s.0.join("pid");
+        let program = s.program(
+            "git",
+            &format!("sleep 3 & echo $! > '{}'; wait", pid_file.display()),
+        );
+        let git = Git {
+            program: &program,
+            timeout: Duration::from_millis(300),
+        };
+        let (old, new) = ("a".repeat(40), "b".repeat(40));
+        assert_eq!(
+            step(git, &Redactor::builtin(), &s.clone_dir(), &old, &new),
+            None
+        );
+        let pid = std::fs::read_to_string(&pid_file).unwrap();
+        let alive = || {
+            std::fs::read_to_string(format!("/proc/{}/stat", pid.trim()))
+                .is_ok_and(|stat| !stat.contains(") Z "))
+        };
+        let until = Instant::now() + Duration::from_secs(1);
+        while alive() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!alive(), "the fake git's child outlived the deadline");
+    }
+
+    #[test]
+    fn a_flooding_git_is_no_answer_and_costs_no_memory() {
+        let s = Scratch::new("flood");
+        let program = s.program(
+            "git",
+            "head -c 33554432 /dev/zero >&2; head -c 1048576 /dev/zero | tr '\\0' 'x'",
+        );
+        let git = Git {
+            program: &program,
+            timeout: Duration::from_secs(10),
+        };
+        let started = Instant::now();
+        assert_eq!(git.stdout(&s.clone_dir(), &["log"]), None, "a cut stdout");
+        assert!(started.elapsed() < Duration::from_secs(10));
+        // the same bytes under the cap are an answer
+        let program = s.program("git", "head -c 1000 /dev/zero | tr '\\0' 'x'");
+        let git = Git {
+            program: &program,
+            timeout: GIT_TIMEOUT,
+        };
+        assert_eq!(git.stdout(&s.clone_dir(), &["log"]), Some("x".repeat(1000)));
+    }
+
+    #[test]
+    fn bytes_that_are_not_utf8_are_read_lossily() {
+        let s = Scratch::new("lossy");
+        let program = s.program(
+            "git",
+            "case \"$*\" in *rev-list*) printf '0\\t1\\n';; *) printf 'Caf\\351 au lait\\0';; esac",
+        );
+        let git = Git {
+            program: &program,
+            timeout: GIT_TIMEOUT,
+        };
+        let (old, new) = ("a".repeat(40), "b".repeat(40));
+        let step = step(git, &Redactor::builtin(), &s.clone_dir(), &old, &new).unwrap();
+        assert_eq!(step.subjects, ["Caf\u{FFFD} au lait"]);
+        assert_eq!(step.how, "pull");
+    }
+
+    #[test]
+    fn a_git_dir_that_points_outside_is_not_read() {
+        let s = Scratch::new("outside");
+        let dir = s.clone_dir();
+        let git = dir.join(".git");
+        assert_eq!(git_dir(&dir), GitDir::Contained);
+        assert_eq!(git_dir(&s.0), GitDir::None);
+        let write = |rel: &str, text: &str| {
+            let path = git.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+            path
+        };
+        let config = "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = x\n";
+        write("config", config);
+        assert_eq!(git_dir(&dir), GitDir::Contained);
+        for (rel, text) in [
+            ("objects/info/alternates", "/elsewhere/objects\n"),
+            ("commondir", "../elsewhere\n"),
+            ("config", "[include]\n\tpath = /elsewhere/config\n"),
+            (
+                "config",
+                "[core]\n  [includeIf \"gitdir:/x/\"]\n\tpath = y\n",
+            ),
+            ("config", "[Include]\n\tpath = y\n"),
+            ("config.worktree", "[include]\n\tpath = y\n"),
+        ] {
+            let path = write(rel, text);
+            assert_eq!(git_dir(&dir), GitDir::Outside, "{rel}: {text:?}");
+            if rel == "config" {
+                write("config", config);
+            } else {
+                std::fs::remove_file(path).unwrap();
+            }
+            assert_eq!(git_dir(&dir), GitDir::Contained, "{rel} undone");
+        }
+        // a config that is not UTF-8, or a link; a `.git` that is a link or
+        // a file
+        std::fs::write(git.join("config"), [0xff, 0xfe, b'\n']).unwrap();
+        assert_eq!(git_dir(&dir), GitDir::Outside);
+        std::fs::remove_file(git.join("config")).unwrap();
+        std::os::unix::fs::symlink("/dev/null", git.join("config")).unwrap();
+        assert_eq!(git_dir(&dir), GitDir::Outside);
+        std::fs::remove_file(git.join("config")).unwrap();
+        let elsewhere = s.0.join("elsewhere.git");
+        std::fs::rename(&git, &elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &git).unwrap();
+        assert_eq!(git_dir(&dir), GitDir::Outside, "a linked .git");
+        std::fs::remove_file(&git).unwrap();
+        std::fs::write(&git, format!("gitdir: {}\n", elsewhere.display())).unwrap();
+        assert_eq!(git_dir(&dir), GitDir::Outside, "a gitdir: file");
+        // and git is never asked about it
+        let marker = s.0.join("ran");
+        let program = s.program("git", &format!("touch '{}'", marker.display()));
+        let fake = Git {
+            program: &program,
+            timeout: GIT_TIMEOUT,
+        };
+        assert_eq!(head(fake, &dir), None);
+        assert!(!marker.exists());
     }
 
     #[test]
@@ -1067,6 +1312,15 @@ mod tests {
         let r = Redactor::builtin();
         assert_eq!(commit_subject("   ", &r), "(no subject)");
         assert_eq!(commit_subject("\u{1b}\u{200B}\u{202E}", &r), "(no subject)");
+        // isolates dropped; line and paragraph separators are spaces
+        assert_eq!(
+            commit_subject("a\u{2066}b\u{2067}c\u{2068}d\u{2069}e", &r),
+            "abcde"
+        );
+        assert_eq!(
+            commit_subject("one\u{2028}two\u{2029}three", &r),
+            "one two three"
+        );
         assert_eq!(commit_subject("  Fix it  ", &r), "Fix it");
         let long = "ä".repeat(150);
         let cut = commit_subject(&long, &r);
