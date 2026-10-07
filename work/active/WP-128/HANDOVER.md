@@ -223,3 +223,34 @@ findings. The orchestrator asked for N1–N4 before stage 2.
   only this section.
 - `git diff 109d02eb..HEAD` holds no home path, user name or host name
   (grepped).
+
+## Merge of next
+
+Stage 2 (Fable) approved 9788bc11. Then `next` was merged twice, both
+times without conflicts:
+
+1. `origin/next` 00d5f73e was merged as `530a3769`. The orchestrator then
+   said that GitHub rejects pushes right now, so `origin/next` was
+   stale. The check for this merge (`check-wp128-merge1.log`) was
+   cancelled by its own PID before it got the lock, so it never ran.
+2. The local `next` d65c523e (WP-113, WP-127) was merged on top as
+   `9903db55`.
+
+Read after the merges:
+- `next` changed neither `engine/src/redact.rs` nor any rule regex. It
+  adds new callers of `Redactor`: proposals, the desk's `shown_text`,
+  the import's source. The fixtures changed with WP-113/WP-127.
+- My parts are intact: the import comment
+  (`commands/import/task.rs`), SPEC §3 ("since WP-128") and §7 (CRLF,
+  lone `\r`), and the CHANGELOG entry.
+- `engine/tests/redaction.rs` from `next` merged cleanly. It now has 33
+  tests: 32 run and green, 1 ignored.
+
+- **`flock /tmp/seldon-check.lock just check` at `9903db55`: exit 0**
+  (`check: ok`; log `check-wp128-merge2.log`). 90 test binaries `ok`;
+  install 209/0, deploy-test-host 190/0, real-home-guard 11/0,
+  service-states 328/0, desk-view 1481/0, bar-view 194/0, model.test.js
+  143; qmllint ok (46 files), docs-check ok. The commit after it adds
+  only this section.
+- `git diff next..HEAD` holds no home path, user name or host name
+  (grepped).
