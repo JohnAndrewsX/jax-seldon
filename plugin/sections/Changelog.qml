@@ -38,6 +38,8 @@ Section {
   property bool chipKeepsSelection: false
   // Created: the chip's first value is no chip change.
   property bool made: false
+  // A chip change waits for its rows (Qt.callLater) to start at the top.
+  property bool chipPending: false
 
   readonly property var prepared: root.service ? root.service.deskChangelog : null
   readonly property var hidden: root.service ? root.service.deskHidden : ({})
@@ -105,6 +107,8 @@ Section {
   function select(id) {
     var target = String(id)
     if (!Model.changelogRow(root.prepared, target)) return false
+    // A payload's chip and its selection arrive together: keep this one.
+    if (root.chipPending) root.chipKeepsSelection = true
     if (root.rowIndex(target) === -1 && root.chip !== "all") {
       root.chipKeepsSelection = true
       root.chip = "all"
@@ -158,7 +162,13 @@ Section {
   // A new chip starts at its first row (once its rows are there); a new
   // index or search keeps the selection by id; an empty selection takes
   // the first row.
-  onChipChanged: if (root.made) Qt.callLater(function() {
+  onChipChanged: if (root.made) {
+    root.chipPending = true
+    Qt.callLater(root.chipSettled)
+  }
+
+  function chipSettled() {
+    root.chipPending = false
     if (root.chipKeepsSelection) {
       root.chipKeepsSelection = false
       var i = root.rowIndex(root.selectedId)
@@ -167,7 +177,7 @@ Section {
     }
     root.selectRow(0)
     list.view.positionViewAtBeginning()
-  })
+  }
   onRowsChanged: {
     var i = root.rowIndex(root.selectedId)
     if (i >= 0) root.cursorRow = i
@@ -238,7 +248,8 @@ Section {
         anchors.rightMargin: Style.spacing.sm
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
-        text: Model.plural(root.rows.length, "event", "events") + " · newest first"
+        text: (Model.DRIFT_CHIPS.indexOf(root.chip) !== -1 ? Model.plural(root.rows.length, "change", "changes")
+          : Model.plural(root.rows.length, "event", "events")) + " · newest first"
         color: root.dim
         wrapMode: Text.Wrap
         font.family: Style.font.family
