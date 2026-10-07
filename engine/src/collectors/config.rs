@@ -20,9 +20,13 @@
 //!   hashed whatever its content or size (WP-113: a hook with a NUL after
 //!   its first line, or over 1 MB, still runs);
 //! - sockets, FIFOs and devices; symlinks to directories, except one at or
-//!   below a persistence path, which is followed with a loop guard and at
-//!   most [`LINKED_FILES`] files (WP-113: a linked hook directory still
-//!   runs). Symlinks to files are followed (stow-style dotfiles);
+//!   below a persistence path, which is followed (WP-113: a linked hook
+//!   directory still runs): every real directory at most once per walk,
+//!   at most [`LINKED_ENTRIES`] entries below links per walk, a link cut
+//!   off at that budget recorded as [`CUT_OFF`]. Symlinks to files are
+//!   followed (stow-style dotfiles); no link into the logbook, the state
+//!   directory or Seldon's config directory is followed (it would change
+//!   with every capture);
 //! - files whose `~`-path cannot be an event subject (control characters,
 //!   longer than [`SUBJECT_MAX`]): counted in the collector's message.
 //!
@@ -98,10 +102,27 @@ const BINARY_PROBE: usize = 8000;
 /// Directory depth below a watch path; deeper trees are not walked.
 const MAX_DEPTH: usize = 32;
 
-/// Files one walk records below a followed directory link (WP-113): a link
-/// may point at a large tree. The rest is listed as skipped (no hash, no
-/// removal) and counted in the message.
-pub const LINKED_FILES: usize = 1024;
+/// Entries (files, directories, links) one walk reads below followed
+/// directory links, all links together (WP-113 round 2): a link may point
+/// at a large tree. A link whose walk reaches it is cut off
+/// ([`CUT_OFF`]).
+pub const LINKED_ENTRIES: usize = 4096;
+
+/// Where every file is hashed (the persistence paths, plugin trees), a
+/// file larger than this is not read: its hash is a fingerprint of its
+/// size, modification time and inode ([`stat_hash`], WP-113 round 2).
+pub const STAT_HASH_ABOVE: u64 = 64 * 1024 * 1024;
+
+/// What the manifest records for a followed directory link that was cut
+/// off: its `~`-path with the SHA-256 of this text. The link then is one
+/// config event of its own (a crisis: it lies under a persistence path)
+/// instead of a silent partial view; the files below it keep their last
+/// hashes until it is walked in full again.
+pub const CUT_OFF: &str = "seldon: linked directory cut off\n";
+
+/// The `meta` key that says how a hash was made when not from the content
+/// (`stat`: [`stat_hash`]).
+pub const HASH_BASIS_KEY: &str = "hashBasis";
 
 pub struct ConfigFiles;
 
@@ -400,10 +421,12 @@ fn own_hash(dirs: &Dirs, config: &Config, path: &Path) -> Option<String> {
         return None;
     }
     let persistent = SkipPaths::new(&dirs.home, &config.drift.always_red_paths).matches(path);
-    std::fs::metadata(path)
-        .ok()
-        .filter(|m| m.is_file())
-        .and_then(|m| hash_content(path, m.len(), persistent))
+    let meta = std::fs::metadata(path).ok().filter(|m| m.is_file())?;
+    if persistent {
+        persistent_hash(path, &meta)
+    } else {
+        hash_file(path, meta.len())
+    }
 }
 
 /// Adds `(path, hash)` records by `by` to `owned.json`; returns their
@@ -613,10 +636,18 @@ struct Scan {
     stats: BTreeMap<String, FileStat>,
     /// Files left out because their `~`-path cannot be a subject.
     unnamed: usize,
-    /// Files left out below a followed directory link past [`LINKED_FILES`].
-    unlinked: usize,
-    /// Directory links not followed because they lead back into the walk.
+    /// Followed directory links cut off at [`LINKED_ENTRIES`] (`~`-paths).
+    cut: BTreeSet<String>,
+    /// Directory links not followed because their target was walked
+    /// already.
     loops: usize,
+    /// Links not followed because they lead into Seldon's own files.
+    own: usize,
+    /// Files under a persistence path that could not be read: their last
+    /// hash is kept (WP-113 round 2, N1).
+    unreadable: usize,
+    /// Files hashed by [`stat_hash`] (larger than [`STAT_HASH_ABOVE`]).
+    stat_hashed: BTreeSet<String>,
 }
 
 /// The rules of one walk.
@@ -631,29 +662,51 @@ struct Walker<'a> {
     known: Option<&'a Manifest>,
     /// When the walk started (the system clock, for [`FileStat::of`]).
     started: SystemTime,
+    /// Seldon's own directories, canonical: the logbook, the state
+    /// directory, `~/.config/seldon`. No link into them is followed.
+    own: &'a [PathBuf],
 }
 
-/// The directory links a walk follows: the canonical targets on the way
-/// down (the loop guard) and how many more files it may record below them.
-#[derive(Default)]
+/// One walk's state of the directory links it follows.
 struct Follow {
-    stack: Vec<PathBuf>,
-    /// `None` outside a followed link.
-    left: Option<usize>,
+    /// Device and inode of every directory walked so far. A link to one
+    /// of them is not followed, and below a link none is walked twice:
+    /// each real directory at most once, whatever the links.
+    visited: std::collections::HashSet<(u64, u64)>,
+    /// Entries the walk may still read below links ([`LINKED_ENTRIES`]).
+    left: usize,
+    /// Inside a followed link.
+    inside: bool,
+    /// The budget ran out inside the current outermost link.
+    cut: bool,
+}
+
+impl Default for Follow {
+    fn default() -> Self {
+        Follow {
+            visited: Default::default(),
+            left: LINKED_ENTRIES,
+            inside: false,
+            cut: false,
+        }
+    }
 }
 
 impl Walker<'_> {
     fn scan(&self, roots: &[PathBuf]) -> Scan {
         let mut scan = Scan::default();
+        let mut follow = Follow::default();
         for root in roots {
             if self.ignored(root) {
                 continue;
             }
-            let mut follow = Follow::default();
             // a watch path may itself be a symlink (dotfile managers)
             match std::fs::metadata(root) {
-                Ok(m) if m.is_dir() => self.walk(root, 0, &mut scan, &mut follow),
-                Ok(m) if m.is_file() => self.file(root, &m, &mut scan, &mut follow),
+                Ok(m) if m.is_dir() => {
+                    follow.visited.insert((m.dev(), m.ino()));
+                    self.walk(root, 0, &mut scan, &mut follow);
+                }
+                Ok(m) if m.is_file() => self.file(root, &m, &mut scan),
                 _ => {}
             }
         }
@@ -671,16 +724,27 @@ impl Walker<'_> {
         self.persist.matches(path) || self.persist.matches(&path.join("x"))
     }
 
+    /// Whether the link `path` leads into Seldon's own files.
+    fn leads_into_own(&self, path: &Path) -> bool {
+        std::fs::canonicalize(path).is_ok_and(|t| self.own.iter().any(|o| t.starts_with(o)))
+    }
+
     fn walk(&self, dir: &Path, depth: usize, scan: &mut Scan, follow: &mut Follow) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
         let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
         paths.sort();
-        // a directory's files before its subdirectories: below a followed
-        // link the budget goes to the files a hook directory runs
+        // a directory's files before its subdirectories
         let mut dirs = Vec::new();
         for path in paths {
+            if follow.inside {
+                if follow.left == 0 {
+                    follow.cut = true;
+                    return;
+                }
+                follow.left -= 1;
+            }
             if path.file_name().is_some_and(|n| n == ".git") || self.ignored(&path) {
                 continue;
             }
@@ -691,52 +755,80 @@ impl Walker<'_> {
                 // follow links to files; into directories only where
                 // something that runs at login may lie (WP-113)
                 match std::fs::metadata(&path) {
-                    Ok(target) if target.is_file() => self.file(&path, &target, scan, follow),
+                    Ok(_) if self.leads_into_own(&path) => scan.own += 1,
+                    Ok(target) if target.is_file() => self.file(&path, &target, scan),
                     Ok(target) if target.is_dir() && self.may_persist(&path) => {
-                        dirs.push((path, true));
+                        dirs.push((path, true, (target.dev(), target.ino())));
                     }
                     _ => {}
                 }
             } else if meta.is_dir() {
-                dirs.push((path, false));
+                dirs.push((path, false, (meta.dev(), meta.ino())));
             } else if meta.is_file() {
-                self.file(&path, &meta, scan, follow);
+                self.file(&path, &meta, scan);
             }
         }
         if depth >= MAX_DEPTH {
             return;
         }
-        for (path, linked) in dirs {
+        for (path, linked, id) in dirs {
+            if follow.cut {
+                return;
+            }
+            // a directory walked already: not again through a link, nor
+            // below one (outside links the tree itself has no loops)
+            let first = follow.visited.insert(id);
             if linked {
-                self.follow(dir, &path, depth, scan, follow);
-            } else {
+                if first {
+                    self.follow(&path, depth, scan, follow);
+                } else {
+                    scan.loops += 1;
+                }
+            } else if first || !follow.inside {
                 self.walk(&path, depth + 1, scan, follow);
             }
         }
     }
 
-    /// Walks the directory link `link` in `dir` under the link's own name,
-    /// unless its target holds `dir` or is already on the way down.
-    fn follow(&self, dir: &Path, link: &Path, depth: usize, scan: &mut Scan, follow: &mut Follow) {
-        let (Ok(target), Ok(here)) = (std::fs::canonicalize(link), std::fs::canonicalize(dir))
-        else {
-            return;
-        };
-        if here.starts_with(&target) || follow.stack.contains(&target) {
-            scan.loops += 1;
+    /// Walks the directory link `link` under the link's own name. The
+    /// outermost link of a walk is cut off when the budget runs out below
+    /// it: what was read below it is dropped, the files the manifest had
+    /// there keep their hashes, and the link is recorded as [`CUT_OFF`].
+    fn follow(&self, link: &Path, depth: usize, scan: &mut Scan, follow: &mut Follow) {
+        if follow.inside {
+            self.walk(link, depth + 1, scan, follow);
             return;
         }
-        let outer = follow.left;
-        follow.left = Some(outer.unwrap_or(LINKED_FILES));
-        follow.stack.push(target);
+        follow.inside = true;
+        follow.cut = false;
         self.walk(link, depth + 1, scan, follow);
-        follow.stack.pop();
-        if outer.is_none() {
-            follow.left = None;
+        follow.inside = false;
+        if !follow.cut {
+            return;
         }
+        let key = self.dirs.display(link);
+        let prefix = format!("{key}/");
+        let below = |k: &String| k.starts_with(&prefix);
+        scan.files.retain(|k, _| !below(k));
+        scan.skipped.retain(|k| !below(k));
+        scan.stats.retain(|k, _| !below(k));
+        scan.mtimes.retain(|k, _| !below(k));
+        scan.stat_hashed.retain(|k| !below(k));
+        if let Some(m) = self.known {
+            scan.files.extend(
+                m.current
+                    .files
+                    .range(prefix.clone()..)
+                    .take_while(|(k, _)| below(k))
+                    .map(|(k, h)| (k.clone(), h.clone())),
+            );
+        }
+        scan.files
+            .insert(key.clone(), sys::sha256_hex(CUT_OFF.as_bytes()));
+        scan.cut.insert(key);
     }
 
-    fn file(&self, path: &Path, meta: &std::fs::Metadata, scan: &mut Scan, follow: &mut Follow) {
+    fn file(&self, path: &Path, meta: &std::fs::Metadata, scan: &mut Scan) {
         let key = self.dirs.display(path);
         // cannot be an event subject; a control character could also
         // rewrite the terminal that shows it
@@ -744,32 +836,47 @@ impl Walker<'_> {
             scan.unnamed += 1;
             return;
         }
-        if let Some(left) = follow.left.as_mut() {
-            if *left == 0 {
-                // seen, not hashed: leaving the budget is no removal
-                scan.unlinked += 1;
-                scan.skipped.insert(key);
-                return;
-            }
-            *left -= 1;
-        }
         if let Ok(t) = meta.modified() {
             scan.mtimes.insert(key.clone(), t);
         }
+        let persistent = self.persist.matches(path);
+        if persistent && meta.len() > STAT_HASH_ABOVE {
+            scan.stat_hashed.insert(key.clone());
+        }
         let stat = FileStat::of(meta, self.started);
+        let last = self.known.and_then(|m| m.current.files.get(&key));
         let known = stat.and_then(|s| {
-            let m = self.known?;
-            (m.stats.get(&key) == Some(&s))
-                .then(|| m.current.files.get(&key).cloned())
+            (self.known?.stats.get(&key) == Some(&s))
+                .then(|| last.cloned())
                 .flatten()
         });
-        let persistent = self.persist.matches(path);
-        match known.or_else(|| hash_content(path, meta.len(), persistent)) {
+        let hash = known.or_else(|| {
+            if persistent {
+                persistent_hash(path, meta)
+            } else {
+                hash_file(path, meta.len())
+            }
+        });
+        match hash {
             Some(hash) => {
                 if let Some(s) = stat {
                     scan.stats.insert(key.clone(), s);
                 }
                 scan.files.insert(key, hash);
+            }
+            // unreadable under a persistence path: the last hash stays, so
+            // the content it has when readable again is compared with it
+            // (WP-113 round 2, N1); never seen readable: skipped
+            None if persistent => {
+                scan.unreadable += 1;
+                match last {
+                    Some(h) => {
+                        scan.files.insert(key, h.clone());
+                    }
+                    None => {
+                        scan.skipped.insert(key);
+                    }
+                }
             }
             None => {
                 scan.skipped.insert(key);
@@ -778,14 +885,25 @@ impl Walker<'_> {
     }
 }
 
-/// [`hash_file`], or for a file under a persistence path (`any`) the
-/// SHA-256 of whatever it holds, streamed ([`hash_any`]).
-fn hash_content(path: &Path, len: u64, any: bool) -> Option<String> {
-    if any {
-        hash_any(path)
+/// The hash of a file where every file is hashed: [`hash_any`], or
+/// [`stat_hash`] above [`STAT_HASH_ABOVE`].
+pub(crate) fn persistent_hash(path: &Path, meta: &std::fs::Metadata) -> Option<String> {
+    if meta.len() > STAT_HASH_ABOVE {
+        Some(stat_hash(meta))
     } else {
-        hash_file(path, len)
+        hash_any(path)
     }
+}
+
+/// SHA-256 of a file's size, modification time (ns) and inode: the hash
+/// of a file too large to read (WP-113 round 2). A `touch` changes it.
+pub(crate) fn stat_hash(meta: &std::fs::Metadata) -> String {
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    sys::sha256_hex(format!("stat {} {} {}\n", meta.len(), mtime, meta.ino()).as_bytes())
 }
 
 /// SHA-256 of the whole file at `path`, any size and content, read in
@@ -914,6 +1032,31 @@ fn mark_evidence(ctx: &Ctx, events: &mut [Event]) {
     }
 }
 
+/// WP-113 round 2: what the walk knows of an event's hash beyond the
+/// content — a linked directory cut off ([`CUT_OFF`]: its own detail,
+/// `meta.cutOff`), or watched in full again; a file hashed by
+/// [`stat_hash`] (`meta.hashBasis = "stat"`).
+fn mark_walk(scan: &Scan, events: &mut [Event]) {
+    let cut = sys::sha256_hex(CUT_OFF.as_bytes());
+    for e in events.iter_mut() {
+        let added = matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange);
+        if added && scan.cut.contains(&e.subject) {
+            e.detail = Some(format!(
+                "linked directory cut off: more than {LINKED_ENTRIES} entries below links"
+            ));
+            e.meta.extra.insert("cutOff".into(), Value::Bool(true));
+            // a link into /usr/ is no evidence for what it hides
+            e.meta.extra.remove(MATCHES_KEY);
+        } else if e.meta.hash_from.as_deref() == Some(cut.as_str()) {
+            e.detail = Some("linked directory watched in full again".into());
+        } else if added && scan.stat_hashed.contains(&e.subject) {
+            e.meta
+                .extra
+                .insert(HASH_BASIS_KEY.into(), Value::String("stat".into()));
+        }
+    }
+}
+
 /// Who must own Omarchy's tree for its files to count as evidence: root;
 /// under `SELDON_TEST_GUARD` the guard directory's owner (a test stands in
 /// for root; nothing else changes).
@@ -1014,7 +1157,7 @@ pub fn evidence(
 /// of it ([`omarchy_copies`]) in the trusted tree `omarchy`.
 fn is_omarchy_copy(dirs: &Dirs, omarchy: &Path, owner: u32, path: &Path, hash: &str) -> bool {
     omarchy_copies(dirs, omarchy, path).iter().any(|copy| {
-        std::fs::metadata(copy).is_ok_and(|m| m.is_file())
+        std::fs::metadata(copy).is_ok_and(|m| m.is_file() && m.len() <= STAT_HASH_ABOVE)
             && hash_any(copy).is_some_and(|h| h == hash)
             && copy_trusted(copy, omarchy, owner)
     })
@@ -1382,6 +1525,15 @@ impl ConfigFiles {
         let skip_paths = &ctx.config.redaction.skip_paths;
         let skip = SkipPaths::new(&ctx.dirs.home, skip_paths);
         let persist = SkipPaths::new(&ctx.dirs.home, &ctx.config.drift.always_red_paths);
+        let own: Vec<PathBuf> = [
+            ctx.ledger.dir().parent().map(Path::to_path_buf),
+            Some(ctx.dirs.state_dir.clone()),
+            Some(ctx.dirs.xdg_config_home.join("seldon")),
+        ]
+        .into_iter()
+        .flatten()
+        .filter_map(|p| std::fs::canonicalize(p).ok())
+        .collect();
         let scope = WatchScope::new(ctx.dirs, roots, excluded, skip_paths);
         let scan = Walker {
             dirs: ctx.dirs,
@@ -1390,6 +1542,7 @@ impl ConfigFiles {
             persist: &persist,
             known: stored.as_ref(),
             started: SystemTime::now(),
+            own: &own,
         }
         .scan(roots);
         let current = Generation {
@@ -1436,16 +1589,28 @@ impl ConfigFiles {
                 scan.unnamed
             ));
         }
-        if scan.unlinked > 0 {
+        if !scan.cut.is_empty() {
             notes.push(format!(
-                "{} file(s) not watched: more than {LINKED_FILES} below one linked directory",
-                scan.unlinked
+                "{} linked director(ies) cut off: more than {LINKED_ENTRIES} entries below links",
+                scan.cut.len()
             ));
         }
         if scan.loops > 0 {
             notes.push(format!(
-                "{} linked director(ies) not followed: they lead back into the watched tree",
+                "{} linked director(ies) not followed: walked already",
                 scan.loops
+            ));
+        }
+        if scan.own > 0 {
+            notes.push(format!(
+                "{} link(s) into Seldon's own files not followed",
+                scan.own
+            ));
+        }
+        if scan.unreadable > 0 {
+            notes.push(format!(
+                "{} file(s) under persistence paths could not be read; their last hash is kept",
+                scan.unreadable
             ));
         }
         let since = prev.as_ref().map(|p| p.checked);
@@ -1489,6 +1654,7 @@ impl ConfigFiles {
                 }
                 let mut events = diff(ctx, &base, &scan, prev.checked);
                 mark_evidence(ctx, &mut events);
+                mark_walk(&scan, &mut events);
                 events
             }
             (Some(_), None) => {
