@@ -3190,6 +3190,41 @@ mod privileged {
                 "sudo cryptsetup open /dev/sdb1 vault",
                 "sudo cryptsetup open /dev/sdb1 vault",
             ),
+            // round 2: a key file the line writes (B1), and a write that
+            // holds none
+            (
+                "printf hunter2 > k; sudo cryptsetup open /dev/sdb1 vault -d k",
+                "cryptsetup ‹redacted›",
+            ),
+            (
+                "sudo cryptsetup open /dev/sdb1 vault -d /root/key 2>/dev/null",
+                "sudo cryptsetup open /dev/sdb1 vault -d /root/key 2>/dev/null",
+            ),
+            // passwd fed from the line (B2); its status stays
+            (
+                "printf 'hunter2\\nhunter2' | sudo passwd alice",
+                "passwd ‹redacted›",
+            ),
+            (
+                "sudo passwd alice <<< $'hunter2\\nhunter2'",
+                "passwd ‹redacted›",
+            ),
+            ("sudo passwd -S alice", "sudo passwd -S alice"),
+            // the long option's prefix and a hash made on the line (N1)
+            (
+                "sudo usermod --passw=hunter2hash alice",
+                "usermod ‹redacted›",
+            ),
+            (
+                "sudo useradd -m --password $(openssl passwd -6 hunter2) alice",
+                "useradd ‹redacted›",
+            ),
+            // more programs
+            ("sudo openssl passwd -6 hunter2", "openssl ‹redacted›"),
+            (
+                "sudo wpa_passphrase Home hunter2 > /etc/wpa_supplicant/w.conf",
+                "wpa_passphrase ‹redacted›",
+            ),
         ];
         for (n, (line, _)) in lines.iter().enumerate() {
             bash(&h, line, &format!("toolu_args_{n}"));
