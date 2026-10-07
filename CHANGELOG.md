@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Code the collectors could not see (WP-113, ADR-0028 WP-E; hashes
+  only, never content).** A third-party plugin edited in place is now one
+  `plugin-update` (detail `files changed (sha256 … → …)`): the plugins
+  collector hashes each listed third-party plugin's folder under
+  `~/.config/omarchy/plugins/` as one whole and skips reading an
+  unchanged one. Omarchy's toggle folder
+  `~/.local/state/omarchy/toggles` joins the default `watchPaths` (a list
+  that is still 0.1.4's default gains it at the next capture); a flag
+  turned on through `omarchy-hyprland-toggle` is routine by evidence,
+  other Lua there is quiet attention, and turning a flag off is quiet
+  attention for now. `~/.ssh/authorized_keys` joins the default
+  `alwaysRedPaths`: add it to `watchPaths` and a change to it without a
+  case is a crisis. Under the persistence paths the config collector now
+  hashes every file — a hook with a NUL byte after its first line or
+  over 1 MiB used to be skipped — and follows a linked hook folder (at
+  most 1024 files below one link, no loops); the first capture after the
+  upgrade records nothing for files that were skipped before.
+- A full upgrade with a yay or paru option that takes a value
+  (`--answerdiff None`, `--mflags …`, `--editor …`) no longer counts the
+  value as a package: it is routine like any plain full upgrade
+  (WP-113).
+
 - `seldon agent start` launches the agent with `SELDON_ACTOR=agent:`
   and the launcher's name, and `SELDON_ATTENDED=1` (ADR-0027). `plan`,
   `log`, `drift` and `event` record `SELDON_ACTOR` when `--actor` is not
