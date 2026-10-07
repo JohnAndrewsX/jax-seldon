@@ -1824,17 +1824,18 @@ graph_tick_ok() {
   [[ $slow == "[]" ]] || echo "     $1 #$2: ticks over the budget: $slow"
 }
 
-# 11a. Settle and sleep: 200 ticks at most, then the Timer stops; nothing
-#      more after a pause; the legend, the date, the footer.
-run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:1000"
+# 11a. Settle and sleep: 200 ticks at most, then the Timer stops; no tick
+#      and no paint after that; the legend, the date, the footer.
+run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:300;pause:1000"
 expect graph-settle 2 .view.section graph
 expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "67,26,67,0"
 expect graph-settle 2 '[.view.graph.sleeping, .view.graph.timer] | map(tostring) | join(",")' "false,true"
 expect graph-settle 3 '[.view.graph.sleeping, .view.graph.timer, .view.graph.ticks, .view.graph.run] | map(tostring) | join(",")' "true,false,200,200"
 expect graph-settle 3 '.view.graph.tickSamples > 150' true
 graph_tick_ok graph-settle 3
-expect graph-settle 4 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
-check "graph-settle: no paint while asleep" "$(sed -n 4p "$work/graph-settle.steps" | jq .view.graph.paints)" "$(sed -n 3p "$work/graph-settle.steps" | jq .view.graph.paints)"
+expect graph-settle 5 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
+# (the last tick's paint may still be pending at step 3: compare 4 and 5)
+check "graph-settle: no paint while asleep" "$(sed -n 5p "$work/graph-settle.steps" | jq .view.graph.paints)" "$(sed -n 4p "$work/graph-settle.steps" | jq .view.graph.paints)"
 for t in "Graph" "Play growth" "2026-10-01 · 67 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
   "Newest 75 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
   shows graph-settle 3 "$t"

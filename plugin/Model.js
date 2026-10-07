@@ -4368,6 +4368,25 @@ function graphFill(n) {
   return a
 }
 
+// Run the layout's functions a few times on a six-node graph, once per
+// Model.js instance: QV4 compiles a function only after a few calls, so
+// without this the first real ticks ran interpreted (the first tick of a
+// 400-node layout took 8 ms on the test host, the later ones half of it).
+var graphWarmed = false
+function graphWarm() {
+  if (graphWarmed) return
+  graphWarmed = true
+  var b = { nodes: [], edges: [{ a: 0, b: 1 }, { a: 1, b: 2 }], first: 0, span: 0 }
+  for (var i = 0; i < 6; i++) b.nodes.push({ id: "warm" + i, r: 4, day: 0 })
+  var s = graphState(b, null)
+  for (var k = 0; k < 4; k++) {
+    graphRepelExact(s, 1)
+    graphRepelTree(s, 1)
+    s.sleeping = false
+    graphStep(s, 1000)
+  }
+}
+
 // The layout state of a build: positions, velocities and radii in arrays, the edges as index pairs, the visible set (day ≤ cut), alpha and
 // the tick counters. Positions of nodes `prev` already had (same id) are
 // kept; a new node starts beside a placed neighbour, else on a sunflower
@@ -4375,6 +4394,7 @@ function graphFill(n) {
 // day (a replay in progress), else the new last day. `added` counts the
 // nodes `prev` did not have, `removed` those it had that are gone.
 function graphState(build, prev) {
+  graphWarm()
   var n = build.nodes.length
   var m = build.edges.length
   var s = {
@@ -4573,9 +4593,17 @@ function graphRepelTree(s, charge) {
     t.cx[c] /= t.mass[c]
     t.cy[c] /= t.mass[c]
   }
-  var vx = s.vx
-  var vy = s.vy
-  var stack = t.stack
+  // A cell opens while its size² / θ² is at least the distance².
+  var tOpen = t.open
+  for (var o = 0; o < t.count; o++) tOpen[o] = t.size[o] * t.size[o] / GRAPH_THETA2
+  for (var u = 0; u < m; u++) graphTreeForce(t, x, y, s.vx, s.vy, list[u], charge)
+}
+
+// The tree's push on body i, added to its velocity. A function of its own,
+// called once per body: QV4 compiles a function after a few calls, so the
+// first tick already runs this loop compiled (as one loop over all bodies
+// it ran interpreted on the first ticks: 8 ms against 2–3, test host).
+function graphTreeForce(t, x, y, vx, vy, i, charge) {
   // Locals, not t.<name>[k]: a property lookup per read costs QV4 more
   // than the arithmetic.
   var tMass = t.mass
@@ -4583,49 +4611,44 @@ function graphRepelTree(s, charge) {
   var tCx = t.cx
   var tCy = t.cy
   var tChild = t.child
-  // A cell opens while its size² / θ² is at least the distance².
   var tOpen = t.open
-  for (var o = 0; o < t.count; o++) tOpen[o] = t.size[o] * t.size[o] / GRAPH_THETA2
-  for (var u = 0; u < m; u++) {
-    var i = list[u]
-    var xi = x[i]
-    var yi = y[i]
-    var fx = 0
-    var fy = 0
-    var sp = 0
-    stack[sp++] = 0
-    while (sp > 0) {
-      var k = stack[--sp]
-      var mass = tMass[k]
-      var body = tBody[k]
-      if (body === i) continue
-      var dx = xi - tCx[k]
-      var dy = yi - tCy[k]
-      var d2 = dx * dx + dy * dy
-      if (body < 0 && tOpen[k] >= d2) {
-        var ch = 4 * k
-        var c0 = tChild[ch]
-        var c1 = tChild[ch + 1]
-        var c2 = tChild[ch + 2]
-        var c3 = tChild[ch + 3]
-        if (c0 >= 0) stack[sp++] = c0
-        if (c1 >= 0) stack[sp++] = c1
-        if (c2 >= 0) stack[sp++] = c2
-        if (c3 >= 0) stack[sp++] = c3
-        continue
-      }
-      if (d2 < 0.01) {
-        dx = ((i * 7 + k) % 5) - 2 || 1
-        dy = ((i + k * 3) % 5) - 2 || 1
-        d2 = dx * dx + dy * dy
-      }
-      var f = charge * mass / d2
-      fx += dx * f
-      fy += dy * f
+  var stack = t.stack
+  var xi = x[i]
+  var yi = y[i]
+  var fx = 0
+  var fy = 0
+  var sp = 0
+  stack[sp++] = 0
+  while (sp > 0) {
+    var k = stack[--sp]
+    var body = tBody[k]
+    if (body === i) continue
+    var dx = xi - tCx[k]
+    var dy = yi - tCy[k]
+    var d2 = dx * dx + dy * dy
+    if (body < 0 && tOpen[k] >= d2) {
+      var ch = 4 * k
+      var c0 = tChild[ch]
+      var c1 = tChild[ch + 1]
+      var c2 = tChild[ch + 2]
+      var c3 = tChild[ch + 3]
+      if (c0 >= 0) stack[sp++] = c0
+      if (c1 >= 0) stack[sp++] = c1
+      if (c2 >= 0) stack[sp++] = c2
+      if (c3 >= 0) stack[sp++] = c3
+      continue
     }
-    vx[i] += fx
-    vy[i] += fy
+    if (d2 < 0.01) {
+      dx = ((i * 7 + k) % 5) - 2 || 1
+      dy = ((i + k * 3) % 5) - 2 || 1
+      d2 = dx * dx + dy * dy
+    }
+    var f = charge * tMass[k] / d2
+    fx += dx * f
+    fy += dy * f
   }
+  vx[i] += fx
+  vy[i] += fy
 }
 
 // Add body i to the quadtree `t` (cells in flat arrays; masses as sums of

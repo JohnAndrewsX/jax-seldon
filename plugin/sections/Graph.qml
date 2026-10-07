@@ -183,11 +183,20 @@ Section {
         trackColor: Style.selectedFillFor(root.foreground, Color.accent)
         fillColor: Color.accent
         knobColor: Color.accent
+        // No knob animation while the replay moves it: a running QML
+        // animation throttles the shell thread to the display's frames
+        // (gaps of a frame, ~17 ms, measured on the test host; WP-125).
+        // PanelSlider animates only while not `dragging`; its own press
+        // sets that, so the release hands it back to the replay.
+        dragging: canvas.playing
         onMoved: function(v) {
           canvas.pause()
           canvas.setCut(Math.round(v), Math.round(v) > canvas.cut)
         }
-        onReleased: function(v) { if (root.desk) root.desk.giveKeys() }
+        onReleased: function(v) {
+          slider.dragging = Qt.binding(function() { return canvas.playing })
+          if (root.desk) root.desk.giveKeys()
+        }
       }
 
       Text {
