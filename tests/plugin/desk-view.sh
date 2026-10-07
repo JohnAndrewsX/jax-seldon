@@ -2249,7 +2249,7 @@ node -e '
     applied: null, items }))' "$PROPOSAL" "$long" >"$fx_work/big/proposals/$PROPOSAL.json"
 check "triage-big: the text is 256 characters" "${#long}" 256
 run triage-big "$fx_work/big/index.json" 1920x1080 \
-  "fresh:$cl;view;timedClickName:proposalRow;wait:sectionView.triage.detail.built=true;resize:960x900;pause:300;resize:700x900;pause:300"
+  "fresh:$cl;view;timedClickName:proposalRow;wait:sectionView.triage.detail.built=true;resize:960x900;pause:300;resize:700x900;pause:300;resize:1920x1080;select:$THEME;view"
 expect triage-big 2 "[$ttd.built, $tt.shown, (.firstFrame.createMs < 1500)] | map(tostring) | join(\",\")" "false,false,true"
 # the click returns before the items are built (incubated in slices)
 expect triage-big 3 "(.call | tonumber) < 200" true
@@ -2257,6 +2257,8 @@ expect triage-big 4 "[$ttd.built, ($ttd.regular | length), ($ttd.crises | length
   "true,199,1"
 expect triage-big 4 "$ttd.regular[0].evidence[0]" "Journal 2026-10-01 14:10: $long"
 for i in 4 6 8; do expect triage-big $i '.overflow | join(" | ")' ""; done
+# an event selected: the proposal's items are dropped again
+expect triage-big 11 "[$tt.shown, $ttd.built] | map(tostring) | join(\",\")" "false,false"
 clean_log triage-big
 echo "     triage-big: desk created in $(sed -n 2p "$work/triage-big.steps" | jq -r '.firstFrame.createMs') ms," \
   "the click took $(sed -n 3p "$work/triage-big.steps" | jq -r '.call') ms"
