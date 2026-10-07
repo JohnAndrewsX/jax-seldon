@@ -704,7 +704,14 @@ each armed then run, Open in editor, the engine's refusal, `x x`, hand to
 agent and its refusal, a locked new case, Run and its refusal, Reopen and
 `r`); a section change gives the keys back from a field and keeps its
 draft; the Changelog's selection follows its event across an index update
-(the acceptance's cursor stability); Capture now over a lock retry; the
+(the acceptance's cursor stability); Capture now over a lock retry; one
+count everywhere (chips = sidebar = header = the quiet line, a group once,
+after a Hide too); the "why loud" callout from the engine's rule (`drift
+show`, live; the fake names `always-red-paths` for config, `always-red` for
+pacman, `attention-all` with `FAKE_SELDON_ATTENTION_ALL`), a planned
+crisis, a group from a member; free text with surrounding blanks in every
+field (the argv keeps them); Open case for a case the index no longer
+lists; key/values at 50 %; the
 sticky bar (its scene position unchanged while the detail scrolls, in
 Work and the Changelog); the stacked layout. Every case ends with a log
 free of warnings, `TypeError`s and binding loops. `DESK_SHOTS=<dir>` also

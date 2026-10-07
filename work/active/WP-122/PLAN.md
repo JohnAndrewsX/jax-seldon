@@ -102,3 +102,13 @@ merges into `next`.
     sheet, `e` the case in the editor, `a` hand to agent, `x` drop, `r`
     reopen, Enter the primary action. Esc closes an inline form (draft
     kept) before the desk's own Esc order.
+
+## Round 2 (review 1, orchestrator's decisions)
+
+- Decision 1 amended: Enter takes the first action that launches nothing;
+  on an active case that is To verification (0.1's habit). *Hand to
+  agent* stays the first button and runs only from `a` or a click.
+- Decision 2 amended: the drift chips count and list changes, a group
+  once as its leader, so every count on the screen agrees.
+- Decision 6 replaced: the "why loud" callout takes the engine's rule from
+  `seldon drift show --json`; until it answers, only class and source.

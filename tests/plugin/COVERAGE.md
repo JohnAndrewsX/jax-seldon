@@ -29,7 +29,7 @@ the sheets (scenario 35); `bar-view.sh` keeps the pill.
 | 8 | The engine refuses a note: message shown, text kept | `desk-view.sh` today-refuse | done (WP-122) |
 | 9 | Work on the sample: columns, WIP text, badge, card actions by status, cursor | `desk-view.sh` work (groups, WIP line, the proposed count, the case detail, the bar by status, dev mode refuses to arm) | done (WP-122) |
 | 10 | Work live: new case sheet with keys, start → verify → done with Enter twice | `desk-view.sh` work-live (the sheet by keys, start → to verification → complete armed then run, Open in editor, the refusal, `x x`) | done (WP-122) |
-| 10b | Start agent: arm with `a`, Enter re-arms the first action, `agent start <id>` | `desk-view.sh` work-agent (*Hand to agent*: `a` twice, a selection change disarms, click + Confirm, the refusal) | done (WP-122) |
+| 10b | Start agent: arm with `a`, Enter re-arms the first action, `agent start <id>` | `desk-view.sh` work-agent (*Hand to agent*: `a` twice, Enter after `a` re-arms To verification — the 0.1 assertion, kept: Enter never starts an agent —, a selection change disarms, click + Confirm, the refusal) | done (WP-122) |
 | 11 | New case refused (lock held): message, title kept, Esc, `+` back | `desk-view.sh` work-locked | done (WP-122) |
 | 12 | Drift sheet on the sample: defaults per item, group members, IPC route | `desk-view.sh` changelog (defaults per item, the case list, group members and *Only <row>*, the shim's `resolve`; the red strip's click is Today's NEEDS YOU: today) | done (WP-122) |
 | 13 | ADR-0020: fewer drift items listed than counted ("+N more") | `desk-view.sh` changelog-capped | done (WP-122) |

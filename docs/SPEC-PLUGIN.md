@@ -292,7 +292,7 @@ icons only; the search is then reached by widening it).
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search (filters the current section's list); Enter leaves it and keeps the filter, Esc clears it and leaves |
 | `↑`/`↓`, `k`/`j` | move in the list |
-| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action — Work arms, then runs the case's primary action; on open drift (Today, Changelog) the default form opens; Today's yesterday row opens or closes |
+| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; Today's yesterday row opens or closes. ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
@@ -376,7 +376,13 @@ until WP-124b), the chips **open · crisis · attention · routine · in
 case · all** with their counts (`f` / `F` the next / previous; default
 open). A row's class: open drift with `crisis` → crisis; other open drift,
 group members included → attention; else with a case → in case; else
-routine. Then "N events · newest first" with *Ledger* (`e`, this month's
+routine. **One count everywhere**: the drift chips (open, crisis,
+attention) list and count changes, a pacman group once as its leader
+("mesa +2"; its members are in the leader's detail), so open equals the
+sidebar's Changelog count, crisis and attention the header's figures and
+the quiet line, and Hide counts a group once; routine, in case and all
+list and count ledger events, a group's members as their own rows. The
+count line says "N changes" on a drift chip, "N events" on the others. Then "N events · newest first" with *Ledger* (`e`, this month's
 ledger) and *Capture now* (`c`; it reads "Capturing" with a spinner while
 the capture, its status or a lock retry is pending, and a click then
 captures at once), the quiet "N changes without a case" (dim, no colour,
@@ -397,13 +403,30 @@ The detail (`EventDetail.qml`; prototype `eventDetail`): the sticky bar
 `agent ask` (WP-124b; `Service.askAgentAvailable`, false until then),
 *Link to case…* (*Link to C-… …* when the engine proposes one), *Explain…*,
 *Dismiss…*, and for attention *Hide* / *Show*; an event with a case: *Open
-case* (Work with the case selected); routine: none; the class at the right.
+case* (Work with the case selected; for a case the index no longer lists
+— it keeps the last 50 completed — one line says so and offers *Open in
+editor*, whose engine answer replaces the line: only the engine can tell
+whether the file is still there); routine: none; the class at the right.
 Then "source · kind", the full subject, its class, for a crisis the **Why
-loud?** callout (from what the index carries — the item's `crisis` and its
-source: a path that runs code at login, boot or from a hook; a package that
-can stop boot or login, changed by name; else boot, login or the shell —
-because the index has no rule field), the key/values When · Who · What ·
-Case (or "proposed: C-…") · Rule · Source · Zone · Resolved · Event, a
+loud?** callout from the engine's rule: the index has none, so the detail
+asks `seldon drift show <id> --json` (in CONTRACT.md's table, read-only;
+for a group its leader) once for a selected crisis and keeps the answer
+while the item stays a crisis (`Service.driftRules`). `always-red` → "A
+package on your crisis list ([drift] alwaysRed in
+~/.config/seldon/config.toml) was installed, removed or downgraded by name
+in this transaction."; `always-red-paths` → "The path matches your crisis
+list ([drift] alwaysRedPaths …)."; `attention-all` → "[drift] attention =
+"all" is set: every change without a case is open drift, and a crisis is
+a change in the red zone."; another rule is named as it is. Until the
+answer (and in dev mode, without an engine) it says only what the index
+proves: "The engine classed this <source> change as a crisis" and how to
+ask for the rule. Then, from `proposedCase`, "C-… plans it (its plan names
+this change); nothing has linked it yet." or "No open case plans it, and no
+case is linked." — the Case row ("proposed: C-…") and the Rule row
+("crisis · rule … · planned by C-…, not linked" or "· no case") say the
+same. The key/values When · Who · What · Case · Rule · Source · Zone ·
+Resolved · Event (values wrap at word boundaries; a longer token breaks
+anywhere), a
 group's members (`seldon drift show` for those the index no longer lists),
 "proposed for C-…", and "None of this is required. An agent explains only
 what it can prove." The bar's Link, Explain and Dismiss only open the
@@ -447,11 +470,16 @@ verification*, *Drop*; verification: *Complete*, *Drop*; completed:
 `open <id> --editor --json`), last; id · risk at the right. Every writing
 action but Reopen arms on the first press or click and runs on the second
 (`Arm.qml`; the button reads "Confirm …", the bar's hint names the key:
-"Hand to agent C-2026-003? Press a or Enter again or click Confirm.",
-"Drop C-2026-004? Press x again or click Confirm. This is final."); any
-other key, another selection or a new index disarms. Enter arms and runs
-the first action, `a` Hand to agent, `x` Drop, `r` Reopen (one press: it
-creates a case and destroys nothing). A step's case moves to its new group
+"Hand to agent C-2026-003? Press a again or click Confirm.", "To
+verification C-2026-003? Press Enter again or click Confirm.", "Drop
+C-2026-004? Press x again or click Confirm. This is final."); any other
+key, another selection or a new index disarms. Enter arms and runs the
+first action that launches nothing (`Model.caseEnterAction`: Start, To
+verification, Complete, Reopen, Open in editor) — **Enter never starts an
+agent** (operator, WP-122 round 2): on an active case Enter twice is To
+verification, as in 0.1, while *Hand to agent* stays the first button and
+runs only from `a` twice or a click and Confirm. `x` Drop, `r` Reopen (one
+press: it creates a case and destroys nothing). A step's case moves to its new group
 with the next index and stays selected; a Run, a reopen or the sheet's new
 case is selected. Without write access (dev mode, no engine, not
 initialised) nothing arms and the bar says why. Under the bar what the

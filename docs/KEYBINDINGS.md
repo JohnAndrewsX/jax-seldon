@@ -17,7 +17,7 @@ the checks in `tests/plugin/desk-view.sh` together.
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search: filters the current list; Enter leaves the field and keeps the filter, Esc clears it and leaves |
 | `↑`/`↓`, `k`/`j` | move in the list |
-| `Enter`, `Space` | on a narrow desk: show the selected row's detail; otherwise the detail's first action (Work: arm, then run; open drift: its form; Today's yesterday row: open or close) |
+| `Enter`, `Space` | on a narrow desk: show the selected row's detail; otherwise the detail's first action that launches nothing (Work: arm, then run — on an active case *To verification*; open drift: its form; Today's yesterday row: open or close). Enter never starts an agent |
 | `Esc` | leave a section's form, then clear the search filter, then go back to the list (narrow desk), then close |
 | `c` | capture now |
 | `n` | Today's note field |
@@ -25,7 +25,7 @@ the checks in `tests/plugin/desk-view.sh` together.
 | `i` | Today's New case field, Work's intent field |
 | `e` | open in the editor: Today the journal, Changelog this month's ledger, Work the case |
 | `f` / `F` | Changelog: the next / previous chip (open, crisis, attention, routine, in case, all) |
-| `a` | Work: hand the case to the agent (twice) |
+| `a` | Work: hand the case to the agent (twice; the only key that starts one) |
 | `x` | Work: drop the case (twice; final) |
 | `r` | Work: reopen a completed case (once) |
 | `d` | Decisions: new decision (WP-123) |
