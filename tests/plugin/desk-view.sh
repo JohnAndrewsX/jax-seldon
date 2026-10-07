@@ -8,8 +8,10 @@
 # one write per release, the notices under the header (today's banners
 # with their fixes), and the sections built so far: Decisions, System,
 # Memory and the Prime Radiant (WP-123; its charts' first-frame and paint
-# counters, hover read-outs and grid at every desk width). The old panel's and overlay's scenarios and where each
-# went are listed in tests/plugin/COVERAGE.md.
+# counters, hover read-outs and grid at every desk width), the graph
+# (WP-125; its layout ticks and their time, replay, hover, drag). The old
+# panel's and overlay's scenarios and where each went are listed in
+# tests/plugin/COVERAGE.md.
 #
 # Like the old panel and overlay harnesses, it builds a temp config root with
 # copies of the installed shell's Commons/ and Ui/, so `import qs.*`
@@ -21,7 +23,7 @@
 #
 # DESK_SHOTS=<dir> also renders the desk in three themes at 100 % and 50 %
 # into <dir> (offscreen renders, not live screenshots).
-# Needs quickshell, jq and the installed shell (host check; docs/TESTING.md).
+# Needs quickshell, jq, node and the installed shell (host check; docs/TESTING.md).
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -32,6 +34,7 @@ shell_dir="$omarchy/shell"
 qs_bin=$(command -v quickshell || command -v qs || true)
 [[ -n $qs_bin ]] || { echo "desk-view: quickshell not found" >&2; exit 1; }
 command -v jq >/dev/null || { echo "desk-view: jq not found" >&2; exit 1; }
+command -v node >/dev/null || { echo "desk-view: node not found" >&2; exit 1; }
 [[ -d $shell_dir/Commons && -d $shell_dir/Ui ]] || { echo "desk-view: shell not found at $shell_dir" >&2; exit 1; }
 timeout_bin=$(command -v timeout) || { echo "desk-view: timeout not found" >&2; exit 1; }
 
@@ -1796,10 +1799,168 @@ for W in 1366 3840; do
 done
 
 # ---------------------------------------------------------------------------
+# 11. The graph, section 8 (ADR-0034 §5, SPEC-PLUGIN §5.4; WP-125): the
+#     machine's memory as a network from the index alone, laid out by
+#     Model.graphStep on a Timer. On the sample: it settles and sleeps
+#     within the budget (every tick's tickMs ≤ 8, step plus drawing calls on
+#     the shell thread), nothing ticks while another section is shown or
+#     the desk is closed, a reopened desk keeps the settled layout; the
+#     replay adds nodes monotonically; hover, the card and Open case; drag
+#     wakes the layout, pan and zoom only repaint; `select` keeps a card.
+#     A busy index (tests/plugin/graph-index.js, 400 nodes after folding)
+#     draws within the budget too, but on a shared build host its ticks
+#     are reported, not gated one by one (see 11f). No index, an empty
+#     index; a narrow desk.
+# graph_tick_ok <case> <step>: the tick the view reports is within the
+# budget (tickMs ≤ 8: Model.graphStep plus the drawing calls, both on the
+# shell thread), and so are all ticks so far but at most two of them. The
+# dev host builds other work packages at the same time: a compile that
+# takes the core preempts a tick now and then (seen: 9–16 ms on the
+# 67-node sample, whose ticks take 1–3 ms). slowTicks names them in the log.
+graph_tick_ok() {
+  expect "$1" "$2" '[.view.graph.tickMs <= 8, .view.graph.ticksOver <= 2] | map(tostring) | join(",")' "true,true"
+  local slow
+  slow=$(sed -n "${2}p" "$work/$1.steps" | jq -c '.view.graph.slowTicks // []')
+  [[ $slow == "[]" ]] || echo "     $1 #$2: ticks over the budget: $slow"
+}
+
+# 11a. Settle and sleep: 200 ticks at most, then the Timer stops; nothing
+#      more after a pause; the legend, the date, the footer.
+run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:1000"
+expect graph-settle 2 .view.section graph
+expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "67,26,67,0"
+expect graph-settle 2 '[.view.graph.sleeping, .view.graph.timer] | map(tostring) | join(",")' "false,true"
+expect graph-settle 3 '[.view.graph.sleeping, .view.graph.timer, .view.graph.ticks, .view.graph.run] | map(tostring) | join(",")' "true,false,200,200"
+expect graph-settle 3 '.view.graph.tickSamples > 150' true
+graph_tick_ok graph-settle 3
+expect graph-settle 4 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
+check "graph-settle: no paint while asleep" "$(sed -n 4p "$work/graph-settle.steps" | jq .view.graph.paints)" "$(sed -n 3p "$work/graph-settle.steps" | jq .view.graph.paints)"
+for t in "Graph" "Play growth" "2026-10-01 · 67 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
+  "Newest 75 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
+  shows graph-settle 3 "$t"
+done
+expect graph-settle 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis"
+expect graph-settle 3 '.overflow | join(" | ")' ""
+clean_log graph-settle
+
+# 11b. Nothing while hidden: another section stops the Timer at once (the
+#      tick count stands still), coming back resumes to sleep; a closed and
+#      reopened desk (the loader makes a new one) shows the settled layout
+#      from the service without a tick.
+run graph-hidden "$sample" 1920x1080 "summon;text:8;pause:300;text:1;pause:1500;text:8;wait:graph.sleeping=true;hide;summon;pause:800"
+t4=$(sed -n 4p "$work/graph-hidden.steps" | jq .view.graph.ticks)
+expect graph-hidden 3 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "graph,true"
+expect graph-hidden 4 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "today,false"
+expect graph-hidden 5 .view.graph.ticks "$t4"
+check "graph-hidden: ticks before the switch" "$( ((t4 > 0 && t4 < 200)) && echo yes)" yes
+expect graph-hidden 7 '[.view.graph.sleeping, .view.graph.ticks] | map(tostring) | join(",")' "true,200"
+graph_tick_ok graph-hidden 7
+expect graph-hidden 8 .view.opened false
+expect graph-hidden 8 .view.graph null
+for i in 9 10; do
+  expect graph-hidden $i '[.view.section, .view.graph.sleeping, .view.graph.timer, .view.graph.ticks] | map(tostring) | join(",")' "graph,true,false,200"
+done
+expect graph-hidden 10 '.view.graph.paints <= 2' true
+clean_log graph-hidden
+
+# 11c. Replay: Play from day 0 to the last day adds nodes monotonically and
+#      ends with all of them; the slider's day (graphCut) and ←/→; Space.
+run graph-replay "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphPlay;wait:graph.playing=false;graphCut:0;key:Right;key:Space;pause:300;key:Escape;wait:graph.sleeping=true"
+expect graph-replay 4 '[.view.graph.playing, .view.graph.cut] | map(tostring) | join(",")' "true,0"
+expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 67)' true
+expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,67"
+expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 67"
+expect graph-replay 7 '[.view.graph.cut, .view.graph.sleeping] | map(tostring) | join(",")' "1,false"
+expect graph-replay 8 .view.graph.playing true
+expect graph-replay 9 '.view.graph.cut > 1' true
+expect graph-replay 10 '[.view.graph.playing, .view.opened] | map(tostring) | join(",")' "false,true"
+expect graph-replay 11 .view.graph.sleeping true
+graph_tick_ok graph-replay 11
+clean_log graph-replay
+
+# 11d. Hover: the pointer on a case lights it and shows its card; the card
+#      stays while the pointer travels to Open case, which shows the case
+#      in Work. `select` keeps a card (IPC); Esc lets it go; unknown ids.
+run graph-hover "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphHover:C-2026-003;leave;click:Open case;text:8;select:ADR-0003;select:C-2026-999;key:Escape;key:Escape"
+expect graph-hover 4 '[.view.graph.hovered, .view.graph.card.title, .view.graph.card.caseId] | join(",")' "C-2026-003,C-2026-003 Omarchy auf 4.0.7 aktualisieren,C-2026-003"
+expect graph-hover 4 '.view.graph.card.line | test("^Case · since 2026-09-26 · day 25 · [0-9]+ links$")' true
+shows graph-hover 4 "Open case"
+shows graph-hover 4 "active · R3 · shell"
+expect graph-hover 4 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
+expect graph-hover 5 '[.view.graph.hovered, .view.graph.cardNode] | join(",")' ",C-2026-003"
+expect graph-hover 6 '[.view.section, .view.selected] | join(",")' "work,C-2026-003"
+expect graph-hover 8 '[.call, .view.selected, .view.graph.pinned, .view.graph.card.title] | join(",")' "ok,ADR-0003,ADR-0003,ADR-0003 Zed statt VS Code als Zweiteditor"
+expect graph-hover 8 '[.texts[] | select(. == "Open case")] | length' 0
+expect graph-hover 9 '[.call, .view.graph.pinned] | join(",")' "not found,ADR-0003"
+expect graph-hover 10 '[.view.opened, .view.graph.pinned, .view.graph.card] | map(tostring) | join(",")' "true,,null"
+expect graph-hover 11 .view.opened false
+clean_log graph-hover
+
+# 11e. Drag a node: it follows the pointer, the layout wakes (and sleeps
+#      again), the view stops fitting; a drag beside the nodes pans, the
+#      wheel zooms, neither ticks; 0 fits again.
+run graph-drag "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphDrag:C-2026-004:160,90;wait:graph.sleeping=true;graphDrag:empty:-100,40;wheel:graphCanvas:120;text:0"
+expect graph-drag 4 '(.call | fromjson | (.to.x - .from.x - 160 | fabs) <= 8 and (.to.y - .from.y - 90 | fabs) <= 8)' true
+expect graph-drag 4 '[.view.graph.sleeping, .view.graph.wakes > 0, .view.graph.view.fit] | map(tostring) | join(",")' "false,true,false"
+expect graph-drag 5 '[.view.graph.sleeping, .view.graph.run <= 200] | map(tostring) | join(",")' "true,true"
+graph_tick_ok graph-drag 5
+t5=$(sed -n 5p "$work/graph-drag.steps" | jq .view.graph.ticks)
+v5=$(sed -n 5p "$work/graph-drag.steps" | jq -c '[.view.graph.view.x, .view.graph.view.y]')
+expect graph-drag 6 '[.view.graph.ticks, .view.graph.sleeping] | map(tostring) | join(",")' "$t5,true"
+expect graph-drag 6 "[.view.graph.view.x, .view.graph.view.y] == ($v5 | .[0] -= 100 | .[1] += 40)" true
+expect graph-drag 7 '[.view.graph.ticks, .view.graph.view.k > 0] | map(tostring) | join(",")' "$t5,true"
+k6=$(sed -n 6p "$work/graph-drag.steps" | jq .view.graph.view.k)
+expect graph-drag 7 "(.view.graph.view.k / $k6 * 100 | round)" 115
+expect graph-drag 8 .view.graph.view.fit true
+clean_log graph-drag
+
+# 11f. A busy index: 500 events, 50 completed cases, 66 cases, 20
+#      decisions → 400 nodes, 295 changes folded into 99 groups; the legend
+#      gains "Folded"; a folded group's card lists its changes. Its ticks
+#      run Barnes–Hut at 400 nodes (about 2–4 ms of step in QV4 on the dev
+#      host); a build host shared with compiles preempts single ticks, so
+#      the gate here is "at most 5 of 200 ticks over 8 ms" — the strict
+#      every-tick gate is the sample (11a) and the test host's measurement.
+node "$root/tests/plugin/graph-index.js" >"$work/graph-big.json"
+cluster=$(node -e '
+  const fs = require("fs"), vm = require("vm"), M = {}; vm.createContext(M)
+  vm.runInContext(fs.readFileSync(process.argv[1] + "/plugin/Model.js", "utf8"), M)
+  const b = M.graphBuild(M.parseIndex(fs.readFileSync(process.argv[2], "utf8")).index, 400)
+  process.stdout.write(b.nodes.filter((n) => n.kind === "cluster").sort((x, y) => y.count - x.count)[0].id)' "$root" "$work/graph-big.json")
+run graph-big "$work/graph-big.json" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphHover:$cluster"
+expect graph-big 3 '[.view.graph.nodes, .view.graph.folded, .view.graph.clusters, .view.graph.ticks] | map(tostring) | join(",")' "400,295,99,200"
+expect graph-big 3 '.view.graph.ticksOver <= 5' true
+expect graph-big 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis,Folded"
+shows graph-big 3 "Newest 500 events · 50 completed cases in the index · older ones are only in the logbook · 295 changes folded into 99"
+expect graph-big 4 '[.view.graph.card.members > 0, (.view.graph.card.title | test("^[0-9]+ changes · 20[0-9-]+ · [a-z]+$"))] | map(tostring) | join(",")' "true,true"
+expect graph-big 4 '.view.graph.card.line | startswith("Folded changes · since ")' true
+expect graph-big 4 '.overflow | join(" | ")' ""
+echo "     graph-big: tickMsMax $(sed -n 3p "$work/graph-big.steps" | jq -c '[.view.graph.tickMsMax, .view.graph.stepMsMax, .view.graph.ticksOver, .view.graph.slowTicks]')"
+clean_log graph-big
+
+# 11g. No index (not initialised) and an index with nothing to draw.
+run graph-uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon;text:8"
+expect graph-uninit 2 '[.view.graph.nodes, .view.graph.timer, .view.sectionView.empty] | map(tostring) | join(",")' "0,false,No index to show"
+clean_log graph-uninit
+jq '.events = [] | .drift = [] | .decisions = [] | .system.areas = [] | .cases = {queued: [], active: [], verification: [], completed: []}' "$sample" >"$work/graph-nothing.json"
+run graph-nothing "$work/graph-nothing.json" 1920x1080 "summon;text:8;pause:500"
+expect graph-nothing 3 '[.view.graph.nodes, .view.graph.ticks, .view.sectionView.empty] | map(tostring) | join(",")' "0,0,Nothing to draw yet: no areas, cases, decisions or changes in the index"
+clean_log graph-nothing
+
+# 11h. Narrow desks: 50 % on 1366 (the 960 px floor) and the stacked
+#      window; nothing leaves its box, the desk or the window.
+run graph-narrow "$sample" 1366x900 "summon;width:50;text:8;wait:graph.sleeping=true;resize:700x900;pause:300"
+expect graph-narrow 4 '.overflow | join(" | ")' ""
+expect graph-narrow 6 '.overflow | join(" | ")' ""
+graph_tick_ok graph-narrow 4
+clean_log graph-narrow
+
+# ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live
 # screenshots): Today at 100 % and 50 %, Settings, the Changelog, Work,
 # Decisions, System, Memory, the Prime Radiant at 100 % and 50 % (and a
-# hover), and a not-initialised logbook with its notice.
+# hover), the graph (settled, a hover, 50 %, the replay at day 12), and a
+# not-initialised logbook with its notice.
 if [[ -n ${DESK_SHOTS:-} ]]; then
   mkdir -p "$DESK_SHOTS"
   for theme in tokyo-night kanagawa catppuccin-latte; do
@@ -1816,6 +1977,11 @@ if [[ -n ${DESK_SHOTS:-} ]]; then
       HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
     rfits "shot-sections-$theme" 15
     clean_log "shot-sections-$theme"
+    run "shot-graph-$theme" "$sample" 1920x1080 \
+      "summon;text:8;wait:graph.sleeping=true;shot:desk-$theme-graph;graphHover:C-2026-004;shot:desk-$theme-graph-hover;leave;width:50;pause:400;shot:desk-$theme-graph-50;width:100;graphCut:12;wait:graph.sleeping=true;shot:desk-$theme-graph-replay" \
+      HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
+    expect "shot-graph-$theme" 5 .view.graph.hovered C-2026-004
+    clean_log "shot-graph-$theme"
     run "shot-uninit-$theme" "$fx/index-variants/not-initialised.json" 1920x1080 "summon;shot:desk-$theme-uninit" \
       HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
     clean_log "shot-uninit-$theme"
