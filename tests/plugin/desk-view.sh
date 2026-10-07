@@ -674,7 +674,7 @@ clean_log today-new
 run changelog "$sample" 1920x1080 \
   "summon:$cl;text:f;text:F;text:F;select:$MESA;key:Return;key:Escape;shim:filter:pacman;key:Escape;shim:resolve:$LIB32;key:Return;key:Escape;shim:resolve:crisis;select:$THEME;click:Hide;text:f;click:Show"
 expect changelog 1 "[.view.section, $tv.chip] | join(\",\")" "changelog,open"
-expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 30,case 37,all 75"
+expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 31,case 37,all 76"
 expect changelog 1 "[$tv.rows, $tv.cursor] | map(tostring) | join(\",\")" "6,0"
 # One count everywhere (B2): the open chip = the sidebar's Changelog count,
 # crisis = the header's crises, attention = the header's attention = the
@@ -698,7 +698,7 @@ for text in "6 changes · newest first" "4 changes without a case" "proposed for
 done
 expect changelog 2 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "crisis,2,$UNIT"
 expect changelog 3 "$tv.chip" open
-expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,75"
+expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,76"
 expect changelog 5 "[.call, $tv.selected, $tf.subject, $tf.badge] | join(\",\")" "ok,$MESA,mesa,+2"
 expect changelog 5 "$tf.members | join(\" | \")" \
   "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
@@ -709,12 +709,12 @@ shows changelog 6 "Only mesa"
 shows changelog 6 "EXPLAIN"
 expect changelog 7 "[$tf.shown, $tf.editing, .view.keys, .view.opened] | map(tostring) | join(\",\")" "false,false,true,true"
 expect changelog 8 "[.call, $tv.chip, .view.search.text, $tv.rows] | map(tostring) | join(\",\")" "ok,all,pacman,16"
-expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",75,true"
+expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",76,true"
 expect changelog 10 "[$tv.selected, $tf.eventId, $tf.subject] | join(\",\")" "$LIB32,$LIB32,mesa"
 shows changelog 11 "Only lib32-mesa"
 expect changelog 13 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "crisis,2"
 expect changelog 14 "[.call, $tv.chip, $tv.selected] | join(\",\")" "ok,all,$THEME"
-expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,75"
+expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,76"
 expect changelog 15 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Show"
 shows changelog 15 "attention · hidden this session"
 expect changelog 16 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "open,5,$UNIT"
@@ -1069,11 +1069,11 @@ jq '.events = [
   ] + .events' "$sample" >"$work/after-two.json"
 mkdir -p "$work/home-cursor-follow"
 run cursor-follow "" 1920x1080 \
-  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=77;key:Return;key:Escape;text:F' \
+  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=78;key:Return;key:Escape;text:F' \
   HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
 expect cursor-follow 1 "[$tv.chip, $tv.cursor] | map(tostring) | join(\",\")" "all,0"
 expect cursor-follow 2 "[$tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "4,$THEME"
-expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "77,6,$THEME"
+expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "78,6,$THEME"
 expect cursor-follow 5 "[$tv.detail.form.shown, $tv.detail.form.eventId] | map(tostring) | join(\",\")" "true,$THEME"
 expect cursor-follow 7 "[$tv.chip, $tv.cursor, $tv.selected != \"$THEME\"] | map(tostring) | join(\",\")" "case,0,true"
 clean_log cursor-follow
@@ -1268,9 +1268,9 @@ rpaints() {
 
 plan_s="2 active cases · 6 of 9 steps done"
 risk_s="8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time"
-drift_s="12 opened · 7 resolved in 5 weeks · peak 2026-W40"
-s30="70 events on 14 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
-s90="75 events on 15 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+drift_s="13 opened · 8 resolved in 5 weeks · peak 2026-W40"
+s30="71 events on 15 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+s90="76 events on 16 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
 s365=${s90/of 90 days/of 365 days}
 sall=${s90/of 90 days/of 366 days}
 radiant='{"section":"radiant"}'
@@ -1291,7 +1291,7 @@ expect radiant-ipc 1 '.view.sectionView.window.from + " " + .view.sectionView.wi
 expect radiant-ipc 1 .view.sectionView.caption "90 d · 2026-07-04 – 2026-10-01"
 for text in "Prime Radiant" "90 d · 2026-07-04 – 2026-10-01" "30 d" "90 d" "365 d" "All" \
   Heatmap Series DriftBars RiskDonut Timeline "The Plan" releases snapshots cases crises \
-  "75 events on 15 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
+  "76 events on 16 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
   "C-2026-003 · R3" "Omarchy auf 4.0.7 aktualisieren" "4/5 steps · agent: claude-code" "2/4 steps · agent: claude-code"; do
   shows radiant-ipc 1 "$text"
 done
@@ -1873,7 +1873,7 @@ graph_tick_ok() {
 #      and no paint after that; the legend, the date, the footer.
 graph_run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:300;pause:1000"
 expect graph-settle 2 .view.section graph
-expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "67,26,67,0"
+expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "68,26,68,0"
 expect graph-settle 2 '[.view.graph.sleeping, .view.graph.timer] | map(tostring) | join(",")' "false,true"
 expect graph-settle 3 '[.view.graph.sleeping, .view.graph.timer, .view.graph.ticks, .view.graph.run] | map(tostring) | join(",")' "true,false,200,200"
 expect graph-settle 3 '.view.graph.tickSamples > 150' true
@@ -1881,8 +1881,8 @@ graph_tick_ok graph-settle 3
 expect graph-settle 5 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
 # (the last tick's paint may still be pending at step 3: compare 4 and 5)
 check "graph-settle: no paint while asleep" "$(sed -n 5p "$work/graph-settle.steps" | jq .view.graph.paints)" "$(sed -n 4p "$work/graph-settle.steps" | jq .view.graph.paints)"
-for t in "Graph" "Play growth" "2026-10-01 · 67 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
-  "Newest 75 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
+for t in "Graph" "Play growth" "2026-10-01 · 68 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
+  "Newest 76 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
   shows graph-settle 3 "$t"
 done
 expect graph-settle 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis"
@@ -1896,7 +1896,7 @@ clean_log graph-settle
 graph_run graph-hidden "$sample" 1920x1080 "summon;text:8;pause:300;text:1;pause:1500;text:8;wait:graph.sleeping=true;hide;summon;pause:800"
 # The service builds the graph only for a shown section 8.
 expect graph-hidden 1 '[.graphBuilds, .graphNodes, .view.graph] | map(tostring) | join(",")' "0,0,null"
-expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,67"
+expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,68"
 t4=$(sed -n 4p "$work/graph-hidden.steps" | jq .view.graph.ticks)
 expect graph-hidden 3 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "graph,true"
 expect graph-hidden 4 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "today,false"
@@ -1921,7 +1921,7 @@ run graph-dirty "" 1920x1080 "summon;settle;text:8;wait:graph.sleeping=true;text
 expect graph-dirty 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "0,0"
 expect graph-dirty 4 '[.graphBuilds, .graphDirty, .view.graph.sleeping, .view.graph.ticks] | map(tostring) | join(",")' "1,false,true,200"
 expect graph-dirty 11 '[.view.section, .graphBuilds, .graphDirty] | map(tostring) | join(",")' "radiant,1,true"
-expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,67"
+expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,68"
 expect graph-dirty 12 '[.view.graph.sleeping, .view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "true,200,false"
 clean_log graph-dirty
 
@@ -1929,9 +1929,9 @@ clean_log graph-dirty
 #      ends with all of them; the slider's day (graphCut) and ←/→; Space.
 graph_run graph-replay "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphPlay;wait:graph.playing=false;graphCut:0;key:Right;key:Space;pause:300;key:Escape;wait:graph.sleeping=true"
 expect graph-replay 4 '[.view.graph.playing, .view.graph.cut] | map(tostring) | join(",")' "true,0"
-expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 67)' true
-expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,67"
-expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 67"
+expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 68)' true
+expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,68"
+expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 68"
 expect graph-replay 7 '[.view.graph.cut, .view.graph.sleeping] | map(tostring) | join(",")' "1,false"
 expect graph-replay 8 .view.graph.playing true
 expect graph-replay 9 '.view.graph.cut > 1' true
@@ -2016,10 +2016,16 @@ graph_run graph-narrow "$sample" 1366x900 "summon;width:50;text:8;wait:graph.sle
 expect graph-narrow 4 '.overflow | join(" | ")' ""
 expect graph-narrow 6 '.overflow | join(" | ")' ""
 graph_tick_ok graph-narrow 4
-# A label at the right edge goes to the left of its node (the sample's
-# backup-dotfiles.sh crisis at 50 %), not past the canvas.
-expect graph-narrow 4 '.view.graph.flipped >= 1' true
 clean_log graph-narrow
+# A label at the right edge goes to the left of its node, not past the
+# canvas. The settled layout of the sample decides which node lies there
+# (before WP-113's fixture event the backup-dotfiles.sh crisis did at
+# 50 %), so the case drags a case node past the right edge itself.
+graph_run graph-flip "$sample" 1366x900 "summon;width:50;text:8;wait:graph.sleeping=true;graphDrag:C-2026-004:600,0;wait:graph.sleeping=true"
+expect graph-flip 4 '.view.graph.flipped' 0
+expect graph-flip 6 '.view.graph.flipped >= 1' true
+expect graph-flip 6 '.overflow | join(" | ")' ""
+clean_log graph-flip
 
 # 11i. More fixed nodes than the cap (2000 more areas: 2022 nodes): a still
 #      picture in node order — no tick, ever (no Timer; a cut and a drag do
