@@ -18,12 +18,13 @@ use seldon::sys::sha256_hex;
 use serde_json::{Value, json};
 
 const ASSETS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/skills/seldon");
-const FILES: [&str; 5] = [
+const FILES: [&str; 6] = [
     "SKILL.md",
     "case.md",
     "drift.md",
     "snapshot.md",
     "update.md",
+    "triage.md",
 ];
 const MANIFEST: &str = ".seldon-skill.json";
 
@@ -690,14 +691,18 @@ fn own_writes_under_a_watched_path_leave_no_drift() {
     // only the watched folder is recorded
     assert_eq!(own, want, "{v}");
     let c = ok(&env, &["capture", "--all"]);
-    assert_eq!(c["explainedOwn"], 6, "{c}");
+    assert_eq!(c["explainedOwn"], FILES.len() + 1, "{c}");
     let d = ok(&env, &["drift"]);
     assert_eq!(d["openDrift"], 0, "{d}");
 
     let v = uninstall(&env);
-    assert_eq!(v["ownWrites"].as_array().unwrap().len(), 6, "{v}");
+    assert_eq!(
+        v["ownWrites"].as_array().unwrap().len(),
+        FILES.len() + 1,
+        "{v}"
+    );
     let c = ok(&env, &["capture", "--all"]);
-    assert_eq!(c["explainedOwn"], 6, "{c}");
+    assert_eq!(c["explainedOwn"], FILES.len() + 1, "{c}");
     let d = ok(&env, &["drift"]);
     assert_eq!(d["openDrift"], 0, "{d}");
     let details: Vec<String> = common::ledger(&root)
@@ -706,8 +711,8 @@ fn own_writes_under_a_watched_path_leave_no_drift() {
         .map(|e| e["detail"].as_str().unwrap_or_default().to_string())
         .collect();
     for (by, n) in [
-        ("installed by seldon hook install skills", 6),
-        ("removed by seldon hook uninstall skills", 6),
+        ("installed by seldon hook install skills", FILES.len() + 1),
+        ("removed by seldon hook uninstall skills", FILES.len() + 1),
     ] {
         assert_eq!(
             details.iter().filter(|d| *d == by).count(),

@@ -69,6 +69,8 @@ Read the matching guide before the step:
 - [`update.md`](update.md) - package transactions, the R3 check, install routes
 - [`snapshot.md`](snapshot.md) - the snapshot before an R2 or R3 change
 - [`drift.md`](drift.md) - changes without a case: what you may explain
+- [`triage.md`](triage.md) - sort the open changes: a proposal with
+  evidence, for the user to apply
 
 ## Who You Are
 
