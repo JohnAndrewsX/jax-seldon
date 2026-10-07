@@ -117,6 +117,12 @@ Sprache des nächsten Logbuchs fest, das `seldon init` anlegt.
 Jeder Collector liest nur. Mit `false` schaltest du einen aus;
 `seldon capture --source <name>` startet ihn trotzdem bei Bedarf.
 
+Ein Shell-Plugin, das du mit `omarchy plugin add` hinzugefügt hast, ist
+ein git-Klon. Seine Aktualisierung nennt die Commits: wie viele ein Pull
+gebracht oder ein Zurücksetzen entfernt hat, und bis zu 20 ihrer
+Betreffzeilen, die der Desk mit der Änderung zeigt. Seldon liest den Klon
+mit `git` nur; es holt nie etwas aus dem Netz.
+
 Ein Collector, der seine Quelle nicht lesen kann, ist `degraded`: Die
 Erfassung läuft weiter, und `seldon doctor` nennt die Abhilfe. Zwei Fälle
 sind normal:
