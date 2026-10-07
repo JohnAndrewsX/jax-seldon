@@ -149,8 +149,8 @@ open: [PLAN.md](PLAN.md); the same decisions are listed below.
   engine built here (musl, disk target), copied with the plugin to
   `~/.cache/seldon-smoke-wp125` (removed afterwards); a scratch HOME,
   `seldon init --non-interactive --since 2026-07-09 --baseline --no-git`
-  — the ADR-0033 90 days: 2267 events (the host's install burst of
-  2026-08-14 and seven weeks), the index's newest 500. Then
+  — the ADR-0033 90 days: 2267 events (the host's install and seven
+  weeks), the index's newest 500. Then
   `tests/plugin/graph-live.sh` on that index and on the busy index, the
   real layer-shell desk (1528×830 on HDMI-A-2):
   - real backfill, 152 nodes (one "+355" upgrade day): `tickMsMax`
@@ -183,8 +183,9 @@ open: [PLAN.md](PLAN.md); the same decisions are listed below.
 - Commit 6afbb3b (the model) already deleted `SectionStub.qml`, which
   `Graph.qml` used until 7d342e1: the tree between them does not load
   section 8 (for a bisect).
-- `~/Work/johnandrewsx/jax-seldon-private/gates/target-wp125` holds the
-  engine build and the check's target (disk); remove it after the merge.
+- The WP's own cargo target (on disk, outside the repository) holds the
+  engine build and the check's target; the orchestrator was told where,
+  for the cleanup after the merge.
 
 ## Security (for stage 2)
 
@@ -207,3 +208,98 @@ ok, qmllint ok 46 files, model.test.js 137, model.bench ok (graphStep
 0.35 ms at 400 nodes), real-home-guard 11, service-states 328,
 desk-view 1431 (the busy index's slowest tick 4 ms), bar-view 194).
 Only this handover and PLAN.md's decisions were added after that commit.
+
+## Round 2
+
+Review 1 (stage 1): SEND BACK on B1; N1–N6 and the orchestrator's
+answers to the review's questions in the round-2 brief. Commits 5116bb9
+(plugin), c1ec425 (tests), fd94b41 (docs), and this handover.
+
+- **B1 — a private path.** The last bullet of "What was not done / open"
+  named the WP's cargo target by its full path; it now says "the WP's
+  own cargo target (on disk, outside the repository)". The install date
+  of the test host is gone too. `git diff 7ac3bda` has no `/home/`,
+  `~/Work`, private folder, host name or address left.
+- **Question 4 — the build waits for the section.** `Service.graph` is
+  no longer a binding: an index change sets `graphDirty`, and section 8
+  calls `graphRefresh()` when it is shown and when the graph gets dirty
+  while it is shown (after the index's other bindings settle,
+  `Qt.callLater`). `graphBuilds` counts builds. Case `graph-dirty`
+  (live, the fake engine rewrites the index on each capture): no build
+  before section 8 is shown; two captures while the Prime Radiant is
+  shown leave it dirty and unbuilt; showing 8 builds once, and the same
+  nodes keep their settled layout (200 ticks, asleep, no Timer).
+- **Question 3 / N5 — fixed nodes above the cap.** When areas, cases,
+  decisions and crises together exceed 400, `graphBuild` sets `still`:
+  a still picture in node order (the start layout), no force step and
+  no wake ever; changes fold as far as they go. The caption says "A
+  still picture: N areas, cases, decisions and crises are more than the
+  400 nodes the layout moves". Hover, drag (the node moves at once:
+  `graphPin` now sets the position itself), pan, zoom and the cut still
+  work. A unit test and case `graph-many` (2000 more areas, 2022 nodes):
+  no tick after a cut or a drag, no Timer, drawing 4 ms.
+- **Question 1 — the harness gate**, accepted as it was, with one
+  addition: a case that misses the gate runs once more and must pass
+  then (`graph_run`, `graph_tick_ok`). The cause found this round: the
+  harness's own polling (`wait:` builds the desk's whole `view()` every
+  100 ms) makes QV4 collect garbage, and its collections grew to 16 ms;
+  one that lands in a paint shows as a slow tick (always in `drawMs`,
+  never in the step, which allocates nothing). Without the polling a
+  200-tick settle ran no collection at all (`QV4_MM_STATS`). Under a host
+  load of 7 one case had 5 slow ticks of 200 (8–25 ms), so the 2-of-200
+  tolerance alone is not enough there. Mutants: forcing the retry for
+  every case still passes (5 re-runs); a graph 20 ms slower per tick is
+  re-run once and fails, in all five cases. SPEC and TESTING say both.
+- **Question 2 — D7.** SPEC-PLUGIN §5.4 now quotes ADR-0034 §5's "drag,
+  pan, zoom, hover and replay wake it" and reads it as "pan, zoom and
+  hover repaint (the layout stays asleep)".
+- **N1 — prototype keys.** `graphBuild` and `graphState` use maps
+  without a prototype (`Object.create(null)`: `byId`, `crisisIds`,
+  `proposed`, `seen`, `clusterOf`, `edgeAt`, `s.at`), and a case
+  reference (`event.case`, `drift.proposedCase`, `decisions[].cases`)
+  links only when it matches `CASE_ID`. A unit test covers
+  `constructor`, `__proto__`, `toString`, `hasOwnProperty` and `valueOf`
+  as case refs and as an area name, `__proto__` as an event id, and
+  `ADR-0003` / `area:themes` as case refs (no edge to a decision or an
+  area, no *Open case*). `select constructor` now answers "not found".
+- **N2 — Barnes–Hut held.** `graphStep` counts `exactSteps` and
+  `treeSteps`. A unit test checks exact pairs on the sample, the tree at
+  400 nodes, and exact again on a replay's early days; `model.bench.js`
+  fails when the 400-node step ran exact pairs.
+- **N3 — the sleep test is bounded** (`ticks < GRAPH_TICKS_MAX + 50`):
+  without sleep it fails instead of hanging.
+- **N4 — labels at the edge.** A label that would leave the canvas on
+  the right goes to the left of its node (`measureText` only when a
+  rough width says it may not fit); labels stay inside it vertically.
+  `view().graph.flipped` counts them; `graph-narrow` expects the
+  sample's crisis label at 50 % to flip. DESK_SHOTS renders at 50 % in
+  Kanagawa and Catppuccin Latte: "backup-dotfiles.sh" is whole, to the
+  left of its node.
+- **N6.** `DESK_SECTIONS` lost the stubs' `wp` fields; the count of
+  section 11 is now in TESTING by case, not by number.
+- The harness's `graphDrag` takes ids with colons (`area:<name>`).
+
+Mutants on copies (scratch scripts; a disk directory outside the
+repository, removed afterwards), each killed:
+- `byId` plain object: the prototype-keys test.
+- No `CASE_ID` test on `event.case`, on `proposedCase` or on
+  `decisions[].cases`: each is killed by the other-node refs.
+- Exact pairs always: the unit test and the bench.
+- No sleep: the bounded test (it fails, no hang).
+- Still ignored in `graphState`: the still-picture test.
+- Still layout woken by `graphWake`: `graph-many` (Timer on).
+- Eager build on every index change: `graph-dirty`.
+- No label flip: `graph-narrow`.
+- A gate of `tickMs ≤ -1`: `graph-settle`.
+- A graph 20 ms slower: re-run, then five failures.
+
+Verified: `omarchy plugin validate plugin/` ok; `just qmllint` ok (46
+files); `model.test.js` 140; `model.bench.js` ok. `flock
+/tmp/seldon-check.lock just check` on fd94b41 (log `check-wp125-r2.log`,
+disk cargo target): **exit 0** (`check: ok`; install.test 209,
+deploy-test-host 190, docs-check ok, qmllint 46 files, model.test.js
+140, real-home-guard 11, service-states 328, desk-view 1447 (no case
+needed a second run; the busy index's slowest tick 4 ms), bar-view 194).
+Only this handover changed after that commit. The test host was not
+touched this round (the changes are a build trigger, a guard, labels and
+a still-picture branch, all measured in the harness).
