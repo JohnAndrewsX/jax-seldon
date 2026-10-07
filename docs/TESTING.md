@@ -454,16 +454,22 @@ reads the `decide --json` shape and passes on only an id matching
 `^ADR-[0-9]{4}$`; `openArgs` and `validateArgs` take `logbook` and a
 decision id (not `ADR-4`, `adr-0004`, a padded id, a path or `memory`);
 `memoryRows` gives the sample's three lessons and two topics (path and
-`updated`), every part optional, all opening the fixed target `logbook`. For the Prime Radiant (WP-030): the period ids, keys `1`–`4` and
-←/→ wrapping, the summon payload (`{"period":"30"}`, anything else keeps
-the period); `periodWindow` (inclusive days ending on the index's today,
+`updated`), every part optional, all opening the fixed target `logbook`.
+For the desk's sections 4–6 (WP-123): `deskFilter` (every word, any
+field, case-insensitive); `decisionDetail` (Accept only while proposed,
+nothing enabled for a malformed id, the notes); `decisionCases` (null on
+contract 1, titles and status from the case lists, an unknown case by
+its id, non-text entries dropped); `systemTiles` (five tiles, big values
+and leads on the sample, a failing collector's stripe, "—" and "Not in
+the index" for an empty or sparse `system`); `memoryDetail` (file and
+date). For the Prime Radiant (WP-030): the period ids and ←/→ wrapping;
+`periodWindow` (inclusive days ending on the index's today,
 across a leap day, *All* unbounded); `isoWeekMonday` (week 53 only in long
 years); `seriesInPeriod` (heatmap and packages by date, a drift week that
 touches the window, case spans that overlap it, open cases, broken rows
 left out); `periodTable` on the sample (rows per slot for 30/90/365/All:
 `30,2,5,3,17`, `90,3,5,3,18`, `365,3,5,3,18`, `366,3,5,3,18`, with the
-count and detail lines) and without an index; `overlayMeta`;
-`overlayBanner` keeps only *Copy*; `overlayGrid` in its three modes (exact
+count and detail lines) and without an index; `overlayGrid` in its three modes (exact
 gaps, rows by weight, minimum heights that make the grid scroll).
 For the charts (WP-031): six slots (The Plan last, `…,plan=2`); the grid
 gives rows at their minimum height first and shares the rest by weight,
@@ -655,11 +661,16 @@ handler), `call`, `section`, `select`, `width:<pct>` and `sidebar:<mode>`
 [Alt+]<Name>`, `text`, `type`), `click`, `clickName`, `clickAt`, `drag`/
 `release` (the width slider), `wheel:<objectName>:<delta>`, `hover`,
 `settle`, `wait:<path>=<v>` (`^=` for a prefix), `pause:<ms>`, `shot`,
-`view`; `HARNESS_NO_PILL` runs without the pill (the plugin not in the
-bar). The facade stand-in answers `false` when the entry would not
-change, as `shell.qml` does. After each it prints `Desk.view()`,
-the facade's calls and writes, every visible text and every text outside
-the window or the desk.
+`view`; for the Prime Radiant (WP-123) `fresh[:<json>]` (drop the desk and
+summon a new one, as the loader does from closed; the report's
+`firstFrame` holds the aggregation passes and paints sampled on its first
+swapped frames and the frame by which every chart has painted),
+`hoverItem:<slot>:<i>` (the pointer onto item i of that chart,
+`chart.locate`) and `leave`; `HARNESS_NO_PILL` runs without the pill (the
+plugin not in the bar). The facade stand-in answers `false` when the
+entry would not change, as `shell.qml` does. After each it prints
+`Desk.view()`, the facade's calls and writes, every visible text and
+every text outside the window, the desk or its Prime Radiant slot.
 
 Checks: the width at 50 / 67 / 75 / 100 % on 1366, 1920, 2560 and 3840 px
 windows (the ADR-0034 §1 clamp, centred within a pixel); the sidebar's
@@ -679,10 +690,28 @@ section remembered across a hide, `{"period":"30"}` on section 7); the
 stacked Esc order; and the notices under the header with their fixes
 (snapper, not initialised and the chip, the restart notice and its one
 launch, the rules update live with doctor beside the queue, capture
-warnings and `c`). Every case ends with a log free of warnings,
-`TypeError`s and binding loops. `DESK_SHOTS=<dir>` also renders the desk
-in Tokyo Night, Kanagawa and Catppuccin Latte (Today at 100 % and 50 %,
-Settings, not initialised).
+warnings and `c`). The Prime Radiant (WP-123, the old `overlay-view.sh`
+scenarios): periods with ←/→, h/l and chip clicks, 90 d on every entry,
+`setPeriod` from another section, `hover` only while shown; entering
+from closed aggregates nothing on the first frame, has painted nothing
+then and every chart once by frame 2, a period switch repaints only the
+charts with a period (`2,2,2,1,2,1`), a hover nothing, a resize each once;
+hover read-outs from mouse moves and `call hover` with every malformed
+argument; the grid at 2560×1440, 1.25-scaled outputs and
+`QT_SCALE_FACTOR=1.25`, at 50 % (medium) and under 960 px (narrow,
+scrolling) with no text outside its slot; not initialised; every index
+variant. Decisions, System, Memory (WP-123, the old panel's scenarios
+5–7 and 20–23): the sample's rows, details and sticky bars, the search,
+`select`, decision cases when the index carries them, the new-decision
+form live against the fake engine (Enter arms, a change disarms, the
+exact argv and editor paths of decide, Accept, `e`, Open in editor on
+all three) and its refusals (title kept), System's five tiles with every
+field optional and a failing collector, Memory, not initialised, the
+stacked layout and label fit at 1366 and 3840 px. Every case ends with a
+log free of warnings, `TypeError`s and binding loops. `DESK_SHOTS=<dir>`
+also renders the desk in Tokyo Night, Kanagawa and Catppuccin Latte
+(Today at 100 % and 50 %, Settings, Decisions, System, Memory, the Prime
+Radiant at 100 % and 50 % and with a hover, not initialised).
 
 ### 3c. The pill (`BarWidget.qml`) in a private headless Quickshell
 
@@ -827,8 +856,8 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    omarchy-shell jax.seldon.panel filter all          # or a source
    omarchy-shell jax.seldon.panel resolve crisis      # or an event id: the drift sheet
    omarchy-shell jax.seldon.panel view       # tab, cursor, rows, badges, banners, strip
-   omarchy-shell shell toggle jax.seldon     # Prime Radiant
-   omarchy-shell shell call jax.seldon view ""   # while it is open: period, slots, geometry, charts
+   omarchy-shell shell summon jax.seldon '{"section":"radiant"}'   # the desk at the Prime Radiant
+   omarchy-shell shell call jax.seldon view ""   # while it is open; sectionView: period, slots, geometry, charts
    omarchy-shell shell call jax.seldon setPeriod 30
    omarchy-shell shell call jax.seldon hover "series 0.5,0.5"    # a chart's read-out at a point
    omarchy-shell shell call jax.seldon hover "heatmap 0.15,0.5"  # a heatmap cell: see below
