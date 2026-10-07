@@ -3596,8 +3596,16 @@ function deskToday(index, prepared) {
 // Today's list rows: NEEDS YOU, then JOURNAL (today's entries or the
 // empty line, the yesterday row, yesterday's entries when open). `id`:
 // the event id for a crisis, "entry:N", "yesterday:N", "toggle", "empty".
-function todayRows(today, yesterdayOpen) {
+// With a sidebar search: the crises and entries (yesterday's too) whose
+// text or meta holds it, nothing else.
+function todayRows(today, yesterdayOpen, search) {
   var t = isObject(today) ? today : { needs: [], entries: [], yesterday: [] }
+  var q = String(search || "").trim().toLowerCase()
+  if (q !== "") {
+    return todayRows(t, true, "").filter(function(r) {
+      return (r.type === "crisis" || r.type === "entry") && (r.title + " " + r.meta).toLowerCase().indexOf(q) !== -1
+    })
+  }
   var out = t.needs.slice()
   var i
   for (i = 0; i < t.entries.length; i++)

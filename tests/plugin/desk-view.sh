@@ -579,6 +579,13 @@ expect today 7 "[.view.section, .view.selected] | join(\",\")" "work,C-2026-004"
 for i in 1 2 5 7; do expect today $i '.overflow | join(" | ")' ""; done
 clean_log today
 
+# The sidebar search filters Today's crises and entries (yesterday's too).
+run today-search "$sample" 1920x1080 "summon;text:/;type:ollama;key:Return;key:Down;key:Escape"
+expect today-search 4 "[$tv.rows, .view.search.text, .view.keys] | map(tostring) | join(\",\")" "2,ollama,true"
+expect today-search 5 "[$tv.selected, $tv.shown] | join(\",\")" "$UNIT,event"
+expect today-search 6 "[.view.search.text, $tv.rows] | map(tostring) | join(\",\")" ",7"
+clean_log today-search
+
 jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00", source: "manual", kind: "note",
   subject: "journal", detail: "Written by the harness after Capture now", zone: "green", actor: "human", case: null}] + .events' \
   "$sample" >"$work/after.json"

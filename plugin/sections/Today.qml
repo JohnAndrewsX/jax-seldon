@@ -36,7 +36,7 @@ Section {
   property string sentIntent: ""
 
   readonly property var today: root.service ? root.service.deskToday : null
-  readonly property var rows: Model.todayRows(root.today, root.yesterdayOpen)
+  readonly property var rows: Model.todayRows(root.today, root.yesterdayOpen, root.searchText)
   readonly property int cursor: root.rowIndex(root.selectedId)
   readonly property var current: root.cursor >= 0 ? root.rows[root.cursor] : null
   readonly property bool eventShown: !!root.current && root.current.type === "crisis"

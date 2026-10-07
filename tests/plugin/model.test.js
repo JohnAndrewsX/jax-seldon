@@ -2020,6 +2020,10 @@ test("deskToday and todayRows: needs you, journal, yesterday, the overview", () 
   const none = M.deskToday(null, null)
   same([none.headline, none.tiles, none.needs, none.state], ["No index to show", [], [], null])
   same(M.todayRows(none, false).map(r => r.id), ["empty"])
+  // the sidebar search: crises and entries, yesterday's too
+  same(M.todayRows(t, false, "snapshot").map(r => r.id), ["entry:0", "entry:2", "yesterday:0"])
+  same(M.todayRows(t, false, "OLLAMA").map(r => r.id), [UNIT, "entry:2"])
+  same(M.todayRows(t, false, "no such words").length, 0)
 })
 
 test("deskWork and workView: groups in order, labels, the By agent filter, search", () => {
