@@ -427,8 +427,11 @@ ask for the rule. Then, from `proposedCase`, "C-… plans it (its plan names
 this change); nothing has linked it yet." or "No open case plans it, and no
 case is linked." — the Case row ("proposed: C-…") and the Rule row
 ("crisis · rule … · planned by C-…, not linked" or "· no case") say the
-same. The key/values When · Who · What · Case · Rule · Source · Zone ·
-Resolved · Event (values wrap at word boundaries; a longer token breaks
+same. The key/values When · Who · What (· Commits) · Case · Rule · Source · Zone ·
+Resolved · Event (Commits, WP-136: a plugin update's `meta.commits` as
+plain text, one subject per line, keyed "Rolled back" when `meta.git` is
+`rollback`; absent when the event has no such string;
+values wrap at word boundaries; a longer token breaks
 anywhere; a detail the index clipped — the event's `meta.truncated` or the
 drift item's `truncated`, contract 2 — reads "(clipped in the index; the
 ledger has it in full)"), a

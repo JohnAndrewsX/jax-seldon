@@ -3657,8 +3657,8 @@ function whyLoud(row, proposedCase, info) {
 
 // One event as the detail shows it (prototype `eventDetail`): heading
 // "source · kind", the full subject, the class, the callout, and the
-// key/value rows When · Who · What · Case · Rule · Source (· Zone ·
-// Resolved · Event). `info`: the engine's rule (driftRuleInfo). null when
+// key/value rows When · Who · What (· Commits) · Case · Rule · Source (·
+// Zone · Resolved · Event). `info`: the engine's rule (driftRuleInfo). null when
 // the index has no such event.
 function eventDetail(index, prepared, id, info) {
   var row = changelogRow(prepared, id)
@@ -3691,6 +3691,11 @@ function eventDetail(index, prepared, id, info) {
     ["Rule", rule],
     ["Source", SOURCE_TEXTS[row.source] !== undefined ? SOURCE_TEXTS[row.source] : row.source]
   ]
+  // WP-136: the commits of a plugin clone's update as the engine named
+  // them (meta.commits, one subject per line, newest first; meta.git
+  // pull | rollback | reset), plain text after What
+  var commits = isObject(e.meta) ? str(e.meta.commits) : ""
+  if (commits !== "") kv.splice(3, 0, [e.meta.git === "rollback" ? "Rolled back" : "Commits", commits])
   if (row.zone !== "") kv.push(["Zone", row.zone])
   if (row.resolution !== "") kv.push(["Resolved", rowStatus(row)])
   kv.push(["Event", row.id])
