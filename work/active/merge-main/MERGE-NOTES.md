@@ -73,3 +73,10 @@ follow-up WP can reword them to "desk".
 `bash tests/plugin/terminal-scripts.sh` (65 passed) before the commit; the
 full `just check` result is in the handover reply (log
 `check-merge-main.log`).
+
+Gate round 2: `service-states.sh` old-plugin expected the v0.1.3 wording
+on both paths, but without git (an archive copy) the case falls back to
+this plugin at contract 1, which prints main's new sentence. The
+expectation now follows the path the case took (tag → the 0.1.3 wording,
+fallback → this plugin's wording); both paths were run (worktree with the
+tag, `git archive` copy without `.git`).
