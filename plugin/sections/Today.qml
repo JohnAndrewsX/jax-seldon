@@ -39,7 +39,10 @@ Section {
   readonly property var rows: Model.todayRows(root.today, root.yesterdayOpen, root.searchText)
   readonly property int cursor: root.rowIndex(root.selectedId)
   readonly property var current: root.cursor >= 0 ? root.rows[root.cursor] : null
-  readonly property bool eventShown: !!root.current && root.current.type === "crisis"
+  // A crisis stays shown once resolved here (it leaves NEEDS YOU), with the
+  // engine's answer, while the index has the event.
+  readonly property bool eventShown: Model.EVENT_ID.test(root.selectedId)
+    && !!Model.changelogRow(root.service ? root.service.deskChangelog : null, root.selectedId)
   readonly property var result: root.service && root.service.planResult && root.service.planResult.action === "agent-new"
     ? root.service.planResult : null
   readonly property bool pending: !!root.service && !!root.service.planResult && root.service.planResult.pending
@@ -83,7 +86,7 @@ Section {
 
   function focusIntent() {
     if (!root.canWrite) return
-    root.selectedId = root.eventShown ? "" : root.selectedId
+    if (root.eventShown) root.selectedId = ""
     if (root.desk && root.stacked) root.desk.showDetail()
     Qt.callLater(function() { intentField.forceActiveFocus() })
   }
@@ -155,7 +158,7 @@ Section {
     }
   }
 
-  onRowsChanged: if (root.selectedId !== "" && root.rowIndex(root.selectedId) === -1) root.selectedId = ""
+  onRowsChanged: if (root.selectedId !== "" && root.rowIndex(root.selectedId) === -1 && !root.eventShown) root.selectedId = ""
   // A Run made the case: the field empties.
   onResultChanged: {
     var r = root.result

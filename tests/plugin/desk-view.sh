@@ -579,6 +579,17 @@ expect today 7 "[.view.section, .view.selected] | join(\",\")" "work,C-2026-004"
 for i in 1 2 5 7; do expect today $i '.overflow | join(" | ")' ""; done
 clean_log today
 
+# A crisis resolved from Today stays shown with the engine's answer after
+# it leaves NEEDS YOU (live).
+mkdir -p "$work/home-today-resolve"
+run today-resolve "" 1920x1080 "summon;key:Down;key:Return;type:hook test;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle" \
+  HOME="$work/home-today-resolve" FAKE_SELDON_FIXTURE="$sample"
+expect today-resolve 3 "[$tv.detail.form.shown, $tv.detail.form.action, .view.keys] | map(tostring) | join(\",\")" "true,explain,false"
+expect today-resolve 8 "[$tv.selected, $tv.shown, ($tv.needs | join(\"+\")), $tv.headline] | join(\",\")" "$UNIT,event,$HOOK_EVENT,Seldon is recording. 1 change needs you."
+expect today-resolve 8 "[$tv.detail.form.result, ($tv.detail.actions | join(\"+\")), .view.keys] | map(tostring) | join(\",\")" "Explained 1 event · created C-2026-009,Open case,true"
+argv_check today-resolve "$work/home-today-resolve" "$(printf '%s\n' "$startup" "$(q drift explain $UNIT --json -- "hook test")")"
+clean_log today-resolve
+
 # The sidebar search filters Today's crises and entries (yesterday's too).
 run today-search "$sample" 1920x1080 "summon;text:/;type:ollama;key:Return;key:Down;key:Escape"
 expect today-search 4 "[$tv.rows, .view.search.text, .view.keys] | map(tostring) | join(\",\")" "2,ollama,true"
