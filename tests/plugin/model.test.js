@@ -2898,4 +2898,73 @@ test("triage results: ask, apply (done/skipped/refused, gone), discard", () => {
   same([M.discardResult(0, "{}", "").ok, M.discardResult(1, JSON.stringify({ error: { message: "no proposal x" } }), "").gone], [true, true])
 })
 
+test("parseProposal follows proposal.schema.json (WP-124b round 2, R1)", () => {
+  const ix = M.parseIndex(sample).index
+  const bad = (change) => {
+    const d = JSON.parse(proposalFile)
+    change(d)
+    return M.parseProposal(JSON.stringify(d), ix.triage)
+  }
+  for (const [why, change] of [
+    ["unknown top key", (d) => { d.note = "x" }],
+    ["unknown item key", (d) => { d.items[0].note = "x" }],
+    ["unknown evidence key", (d) => { d.items[0].evidence[0].by = "human" }],
+    ["no logbook", (d) => { delete d.logbook }],
+    ["empty logbook", (d) => { d.logbook = "" }],
+    ["at not a date-time", (d) => { d.at = "yesterday" }],
+    ["applied not a date-time", (d) => { d.applied = "soon" }],
+    ["applied missing", (d) => { delete d.applied }],
+    ["title too long", (d) => { d.items[1].title = "x".repeat(257) }],
+    ["intent too long", (d) => { d.items[1].intent = "x".repeat(4097) }],
+    ["text too long", (d) => { d.items[0].evidence[0].text = "x".repeat(257) }],
+    ["ref too long", (d) => { d.items[0].evidence[0].ref = "x".repeat(65) }],
+    ["link with a title", (d) => { d.items[0].title = "t" }],
+    ["link with an intent", (d) => { d.items[0].intent = "i" }],
+    ["explain with a case", (d) => { d.items[1].caseId = "C-2026-005" }],
+    ["too many refs", (d) => { d.items[0].evidence = Array(11).fill(d.items[0].evidence[0]) }],
+    ["too many items", (d) => { d.items = Array(201).fill(d.items[0]) }],
+  ]) assert.strictEqual(bad(change), null, why)
+  assert.ok(bad((d) => { d.applied = "2026-10-01T17:10:00+02:00" }))
+  assert.ok(bad((d) => { d.items[0].evidence[0].text = "x".repeat(256) }))
+  // larger than the engine reads: not even parsed
+  assert.strictEqual(M.parseProposal(proposalFile + " ".repeat(4 * 1024 * 1024), ix.triage), null)
+})
+
+test("triageSeen: the proposal the user opened against the index's (B1)", () => {
+  const ix = M.parseIndex(sample).index
+  same(M.triageSeen(ix, ""), { state: "none", text: "" })
+  same(M.triageSeen(ix, PID), { state: "current", text: "" })
+  const newer = Object.assign({}, ix, { triage: Object.assign({}, ix.triage,
+    { id: "01M3W1000000000000000000AA", actor: "agent:codex", at: "2026-10-01T17:30:00+02:00" }) })
+  same(M.triageSeen(newer, PID), { state: "replaced",
+    text: "Replaced by a newer proposal by agent:codex at 2026-10-01 17:30 — review it" })
+  same(M.triageSeen(Object.assign({}, ix, { triage: undefined }), PID), { state: "gone",
+    text: "Proposal " + PID + " is not there any more: applied and replaced, or discarded." })
+})
+
+test("evidence authors: anchored, every author, refused outcomes", () => {
+  assert.strictEqual(M.evidenceAuthor("by human · x"), "human")
+  assert.strictEqual(M.evidenceAuthor("by human, agent:codex · x"), "human, agent:codex")
+  assert.strictEqual(M.evidenceAuthor("the note says by agent:codex · x"), "")
+  assert.strictEqual(M.evidenceAuthor(" by human · x"), "")
+  for (const a of ["human, agent:codex", "agent:codex, human", "human, unknown", "unknown",
+      "human (worked by agent:claude-code)", ""])
+    assert.strictEqual(M.evidenceFlagged(a), true, a)
+  for (const a of ["human", "system", "human, system", "unknownish"]) assert.strictEqual(M.evidenceFlagged(a), false, a)
+  const r = { done: [{ eventId: "A" }], skipped: [{ eventId: "B", reason: "s" }], refused: [{ eventId: "C", reason: "r" }] }
+  same(M.itemOutcome(r, "C"), { state: "refused", reason: "r" })
+  same(M.itemOutcome(r, "B"), { state: "skipped", reason: "s" })
+  assert.strictEqual(M.itemOutcome(r, "D"), null)
+})
+
+test("TriageDetail shows logbook and agent text as plain text, never clipped (R3)", () => {
+  const qml = fs.readFileSync(path.join(root, "plugin/components/desk/TriageDetail.qml"), "utf8")
+  assert.ok(!/StyledText|RichText|MarkdownText|AutoText/.test(qml), "only Text.PlainText")
+  assert.ok(!/\belide\s*:/.test(qml), "no elide anywhere: evidence is never clipped")
+  // every Text block (the Line component included) states PlainText
+  const blocks = qml.split(/\n\s*(?:component \w+: )?Text \{/).slice(1)
+  assert.ok(blocks.length >= 2, String(blocks.length))
+  for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

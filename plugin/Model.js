@@ -3786,47 +3786,77 @@ function triagePath(indexPath, index) {
   return cut < 0 ? "" : p.slice(0, cut + 1) + t.path
 }
 
-// The proposal file as the desk needs it, checked like its schema
-// (proposal.schema.json); null when it is not the proposal `triage` names
-// or any part of it is off — the engine wrote it, so a deviation is an edit
-// the desk does not show.
+// The proposal file as the desk needs it, checked against
+// proposal.schema.json: only its properties, `logbook` present, `at` and
+// `applied` date-times, the length limits, a link without title or intent
+// and an explanation without a case. null when it is not the proposal
+// `triage` names, larger than the engine reads (4 MiB), or off in any part
+// — the engine wrote it, so a deviation is an edit the desk does not show.
+var PROPOSAL_TEXT_MAX = 4 * 1024 * 1024
+var DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
+
+function onlyKeys(obj, keys) {
+  for (var k in obj) if (keys.indexOf(k) === -1) return false
+  return true
+}
+
+function textUpTo(value, max, min) {
+  return typeof value === "string" && value.length >= (min || 0) && value.length <= max
+}
+
 function parseProposal(text, triage) {
   if (!isObject(triage)) return null
-  var data = parseJson(text)
-  if (!data || data.id !== triage.id || typeof data.actor !== "string" || !AGENT_ACTOR.test(data.actor)
+  var raw = String(text || "")
+  if (raw.length > PROPOSAL_TEXT_MAX) return null
+  var data = parseJson(raw)
+  if (!data || !onlyKeys(data, ["id", "at", "actor", "logbook", "applied", "items"])) return null
+  if (data.id !== triage.id || typeof data.actor !== "string" || !AGENT_ACTOR.test(data.actor)
+      || !textUpTo(data.logbook, 4096, 1) || typeof data.at !== "string" || !DATE_TIME.test(data.at)
+      || !(data.applied === null || (typeof data.applied === "string" && DATE_TIME.test(data.applied)))
       || !Array.isArray(data.items) || data.items.length > TRIAGE_ITEMS_MAX) return null
   var items = []
   for (var i = 0; i < data.items.length; i++) {
     var it = data.items[i]
-    if (!isObject(it) || typeof it.eventId !== "string" || !EVENT_ID.test(it.eventId)
+    if (!isObject(it) || !onlyKeys(it, ["eventId", "action", "caseId", "title", "intent", "crisis", "evidence"])
+        || typeof it.eventId !== "string" || !EVENT_ID.test(it.eventId)
         || (it.action !== "link" && it.action !== "explain") || typeof it.crisis !== "boolean"
         || !Array.isArray(it.evidence) || it.evidence.length < 1 || it.evidence.length > TRIAGE_REFS_MAX) return null
-    if (it.action === "link" && (typeof it.caseId !== "string" || !CASE_ID.test(it.caseId))) return null
-    if (it.action === "explain" && (!hasText(it.title) || !hasText(it.intent))) return null
+    if (it.action === "link" && (typeof it.caseId !== "string" || !CASE_ID.test(it.caseId)
+        || it.title !== undefined || it.intent !== undefined)) return null
+    if (it.action === "explain" && (it.caseId !== undefined || !textUpTo(it.title, 256, 1)
+        || !textUpTo(it.intent, 4096, 1))) return null
     var evidence = []
     for (var j = 0; j < it.evidence.length; j++) {
       var e = it.evidence[j]
-      if (!isObject(e) || EVIDENCE_KINDS.indexOf(e.kind) === -1 || typeof e.ref !== "string" || e.ref === ""
-          || e.ref.length > 64 || (e.text !== undefined && typeof e.text !== "string")) return null
+      if (!isObject(e) || !onlyKeys(e, ["kind", "ref", "text"]) || EVIDENCE_KINDS.indexOf(e.kind) === -1
+          || !textUpTo(e.ref, 64, 1) || (e.text !== undefined && !textUpTo(e.text, 256))) return null
       evidence.push({ kind: e.kind, ref: e.ref, text: typeof e.text === "string" ? e.text : "" })
     }
     items.push({
       eventId: it.eventId,
       action: it.action,
       caseId: it.action === "link" ? it.caseId : "",
-      title: it.action === "explain" ? String(it.title) : "",
-      intent: it.action === "explain" ? String(it.intent) : "",
+      title: it.action === "explain" ? it.title : "",
+      intent: it.action === "explain" ? it.intent : "",
       crisis: it.crisis,
       evidence: evidence
     })
   }
-  return {
-    id: data.id,
-    at: typeof data.at === "string" ? data.at : "",
-    actor: data.actor,
-    applied: typeof data.applied === "string" ? data.applied : "",
-    items: items
-  }
+  return { id: data.id, at: data.at, actor: data.actor, applied: data.applied === null ? "" : data.applied, items: items }
+}
+
+// The proposal the user opened (`seenId`, WP-124b round 2) against the
+// one the index names now: { state: none|current|replaced|gone, text }.
+// Apply and Discard act only on the current one: a replaced or gone
+// proposal is never applied unseen.
+function triageSeen(index, seenId) {
+  var id = String(seenId || "")
+  if (id === "") return { state: "none", text: "" }
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (t && t.id === id) return { state: "current", text: "" }
+  if (t && typeof t.id === "string")
+    return { state: "replaced", text: "Replaced by a newer proposal by " + str(t.actor) + " at " + stamp(t.at) + " — review it" }
+  return { state: "gone", text: "Proposal " + id + " is not there any more: applied and replaced, or discarded." }
 }
 
 // The author the engine wrote in front of an evidence text (`by <author> ·
@@ -3836,11 +3866,11 @@ function evidenceAuthor(text) {
   return m ? m[1] : ""
 }
 
-// Evidence the user should read twice: an agent's words, an unknown
-// author, a Plan an agent worked on, or a text without its author.
+// Evidence the user should read twice: any author is an agent or unknown
+// (the engine names every author, WP-124b round 2), a Plan an agent worked
+// on, or a text without its authors.
 function evidenceFlagged(author) {
-  return author === "" || author.indexOf("agent:") === 0 || author.indexOf("unknown") === 0
-    || author.indexOf("worked by agent:") !== -1
+  return author === "" || author.indexOf("agent:") !== -1 || /(^|, )unknown(,|$| )/.test(author)
 }
 
 // What the last apply did with an item: { state: done|skipped|refused,
