@@ -523,6 +523,13 @@ fn resolve(
     let commit = autocommit(ctx, &config, &logbook, &summary);
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
+    if let Some(e) = &done.case_error {
+        return Err(Error::user(format!(
+            "{} {} event(s) in the ledger, but the case file did not follow: {e}",
+            capitalise(done.verb()),
+            done.resolved
+        )));
+    }
 
     let mut human = format!(
         "{} {} event(s){}",
@@ -576,6 +583,9 @@ pub(super) struct Resolved {
     pub case: Option<CaseFile>,
     pub case_id: Option<String>,
     pub area_created: Option<String>,
+    /// The case file could not follow the ledger lines, which are written
+    /// (the caller still commits and rebuilds, then reports it).
+    pub case_error: Option<Error>,
 }
 
 impl Resolved {
@@ -678,24 +688,31 @@ pub(super) fn write_resolution(
     }
     let written = emit(lock, config, logbook, events)?;
 
-    if let Some(file) = case_file.as_mut() {
-        attach(file);
-        match action {
-            Action::Explain(explain) => {
-                area_created = explain
-                    .area
-                    .as_deref()
-                    .map(|a| cases::ensure_area(logbook, a))
-                    .transpose()?
-                    .flatten();
-                let text = crate::model::render_new(&file.case, &file.doc.body);
-                write_new(&file.path, &text)?;
-            }
-            _ => {
-                file.save(logbook)?;
+    // the ledger lines are written and win; a case file that cannot follow
+    // is reported with them, never as "nothing written" (WP-124 round 2)
+    let mut after = || -> Result<()> {
+        fail_after_ledger()?;
+        if let Some(file) = case_file.as_mut() {
+            attach(file);
+            match action {
+                Action::Explain(explain) => {
+                    area_created = explain
+                        .area
+                        .as_deref()
+                        .map(|a| cases::ensure_area(logbook, a))
+                        .transpose()?
+                        .flatten();
+                    let text = crate::model::render_new(&file.case, &file.doc.body);
+                    write_new(&file.path, &text)?;
+                }
+                _ => {
+                    file.save(logbook)?;
+                }
             }
         }
-    }
+        Ok(())
+    };
+    let case_error = after().err();
 
     let done = Resolved {
         event_id: sel.event.event.id.to_string(),
@@ -706,6 +723,7 @@ pub(super) fn write_resolution(
         case: case_file,
         case_id,
         area_created,
+        case_error,
     };
     let verb = done.verb();
     for (before, ids) in &moved {
@@ -731,6 +749,17 @@ pub(super) fn write_resolution(
         }
     }
     Ok(done)
+}
+
+/// Debug builds only: `SELDON_TEST_DRIFT_FAIL_AFTER_LEDGER=1` fails a
+/// resolving write right after its ledger lines, as a case file that
+/// cannot be written would (the tests of that path).
+fn fail_after_ledger() -> Result<()> {
+    #[cfg(debug_assertions)]
+    if std::env::var("SELDON_TEST_DRIFT_FAIL_AFTER_LEDGER").is_ok_and(|v| v == "1") {
+        return Err(anyhow::anyhow!("the case file was not written (test)").into());
+    }
+    Ok(())
 }
 
 /// ADR-0028 §3, enforced: an agent actor may not explain or dismiss a

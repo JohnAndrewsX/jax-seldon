@@ -278,13 +278,23 @@ pub(crate) fn required_text(what: &str, text: &str) -> Result<String> {
     Ok(text.to_string())
 }
 
-/// A one-line free text (titles, reasons): blank or multi-line is an error.
+/// A one-line free text (titles, reasons): blank or multi-line is an error,
+/// and so are the Unicode line and paragraph separators and the bidi
+/// controls, which break or reorder a line where it is shown (WP-124
+/// round 2).
 pub(crate) fn one_line(what: &str, text: &str) -> Result<String> {
     let text = required_text(what, text)?;
-    if text.contains(['\n', '\r']) {
-        return Err(Error::user(format!("{what} must be one line")));
+    if text.contains(['\n', '\r']) || text.chars().any(is_line_breaking) {
+        return Err(Error::user(format!(
+            "{what} must be one line (no line or paragraph separator, no bidi control)"
+        )));
     }
     Ok(text)
+}
+
+/// U+2028, U+2029 and the bidi controls U+202A–U+202E, U+2066–U+2069.
+pub(crate) fn is_line_breaking(c: char) -> bool {
+    matches!(c, '\u{2028}' | '\u{2029}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
 /// Creates `path` with `text`; an existing file is a user error, never
@@ -305,4 +315,28 @@ pub(crate) fn write_new(path: &Path, text: &str) -> Result<()> {
     file.write_all(text.as_bytes())
         .with_context(|| format!("cannot write {}", path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_line_refuses_separators_and_bidi_controls() {
+        assert_eq!(one_line("t", " a b ").unwrap(), "a b");
+        for bad in [
+            "a\nb",
+            "a\rb",
+            "a\u{2028}b",
+            "a\u{2029}b",
+            "a\u{202A}b",
+            "a\u{202E}b",
+            "a\u{2066}b",
+            "a\u{2069}b",
+        ] {
+            let e = one_line("the title", bad).unwrap_err().to_string();
+            assert!(e.contains("the title must be one line"), "{bad:?}: {e}");
+        }
+        assert!(one_line("t", "a\u{2027}b\u{206A}c").is_ok());
+    }
 }
