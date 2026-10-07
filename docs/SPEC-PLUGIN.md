@@ -51,13 +51,15 @@ plugin/
 ├── components/
 │   ├── desk/           DeskWindow (layer shell), Header, KpiStrip, Notices, Sidebar,
 │   │                   NavIcon, Search, Section (the section base), ListColumn, ListRow,
-│   │                   DetailPane, ActionBar, KeyValues, Arm (arm twice)
+│   │                   GroupedRow, DetailPane, ActionBar, KeyValues, Arm (arm twice),
+│   │                   Progress, CaseTile; the sections' parts: EventDetail, DriftForm,
+│   │                   JournalField, NewCaseSheet
 │   ├── overlay/        the Prime Radiant's charts (§6): Heatmap, Series, DriftBars,
 │   │                   RiskDonut, Timeline, ThePlan, OverlaySlot, ChartCanvas
 │   ├── Banner.qml  MaskIcon.qml
-│   └── the 0.1 panel's tab components (TodayTab, ChangelogTab, WorkTab, DecisionsTab,
-│       SystemTab, MemoryTab, EventRow, CaseCard, QuickEntry, NewCaseSheet, DriftSheet,
-│       NewDecisionSheet): unreferenced since WP-121; WP-122 and WP-123 port and delete them
+│   └── the 0.1 panel's tab components still to port (DecisionsTab, SystemTab,
+│       MemoryTab, NewDecisionSheet): unreferenced since WP-121; WP-123 ports and deletes
+│       them (WP-122 did Today, Changelog and Work)
 ├── sections/           Today, Changelog, Work, Decisions, System, Memory, Radiant, Graph,
 │                       Settings (+ SectionStub for the sections not built yet)
 ├── README.md  LICENSE  SECURITY.md  preview.png  assets/
@@ -290,11 +292,11 @@ icons only; the search is then reached by widening it).
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search (filters the current section's list); Enter leaves it and keeps the filter, Esc clears it and leaves |
 | `↑`/`↓`, `k`/`j` | move in the list |
-| `Enter`, `Space` | select the cursor's row (in the stacked layout: show its detail) |
+| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; Today's yesterday row opens or closes. ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
-| other letters | the current section's (`i`, `e`, `a`, `r`, `f`/`F`, `x`, `d` as ADR-0034 §2 lists them, built in WP-122/123) |
+| other letters | the current section's (`i`, `e`, `a`, `r`, `f`/`F`, `x`, `d` as ADR-0034 §2 lists them; sections 1–3 in §5.4, `d` in WP-123) |
 
 Every character goes to the current section first (`Section.textKey`);
 the desk takes `c`, `n`, `+` only when the section did not. A focused
@@ -322,7 +324,7 @@ up (ADR-0034 §3); lists are `ListView`s.
 
 | # | Section | Built in |
 |---|---|---|
-| 1–3 | Today, Changelog, Work | WP-122 (§5.7 is their behaviour until then) |
+| 1–3 | Today, Changelog, Work | WP-122 (below) |
 | 4–6 | Decisions, System, Memory | WP-123 (§5.7) |
 | 7 | Prime Radiant | WP-123 (§6) |
 | 8 | Graph | WP-125 (ADR-0034 §5) |
@@ -330,6 +332,176 @@ up (ADR-0034 §3); lists are `ListView`s.
 
 Until a section is built it is a stub (`SectionStub.qml`): its title and
 "Coming in WP-12x." in the list and the detail.
+
+In every section the **selection is the cursor**: ↑/↓ (`k`/`j`) move it
+and the detail follows; it is an id, so it stays on its item when a new
+index adds rows above it. Lists are `ListView`s of `GroupedRow`s (a
+`ListRow` with an optional group header: the day, NEEDS YOU, ACTIVE · 2).
+The rows of sections 1–3 come from `Service.deskChangelog`, `deskToday`
+and `deskWork`, built once per index (`Model.deskChangelog`, `deskToday`,
+`deskWork`); a section only filters them (chip, sidebar search) and looks
+details up by id. A field of a section that is hidden gives the keys back
+to the desk (`Desk.takeKeys`) and keeps its draft. No section runs an
+engine command the 0.1 panel did not run; every argv is a CONTRACT.md form
+built in `Model.js`.
+
+#### Today (1)
+
+The list: the date beside the day's state pictogram (A11, §5.6) and *Open
+in editor* (`e`, today's journal), the tiles events today and 7 days, the
+journal field (`JournalField.qml`, the 0.1 QuickEntry: `n` focuses it;
+`seldon log [--case <id>] --json -- <text>`, the text one argument after
+`--`, a picker of the open cases, Enter saves, the field empties only once
+the engine has saved the note, its refusal is the line under the field and
+the text stays, Esc gives the keys back), then **NEEDS YOU** — the
+crises, newest first, a group by its leader (the 0.1 red strip's
+successor) — and **JOURNAL**: today's entries, "Nothing in today's journal
+yet.", the yesterday row (Enter or a click opens it in place). The sidebar
+search filters the crises and entries, yesterday's included. Nothing is
+selected on entry, so the detail is the **overview**: an empty slot for
+WP-119's setup card (`todaySetupSlot`), one sentence ("Seldon is
+recording. 2 changes need you." / "… Nothing needs you."), a lead on what
+stays quiet, the active cases as tiles (id · risk, title, the plan's
+progress, "2/4 steps · claude-code"; a click opens the case in Work) and
+**New case**: one sentence → `seldon agent start --new --json --
+<intent>` (`i` focuses it; the call and the result line Work's *Run*
+shares; the field keeps its text until the engine has made the case). A
+selected crisis shows the event (`EventDetail.qml`, as in the Changelog);
+resolved here, it leaves NEEDS YOU and stays shown with the engine's answer.
+
+#### Changelog (2)
+
+The list: the slot of "Agent sorts N open changes" (`triageSlot`, empty
+until WP-124b), the chips **open · crisis · attention · routine · in
+case · all** with their counts (`f` / `F` the next / previous; default
+open). A row's class: open drift with `crisis` → crisis; other open drift,
+group members included → attention; else with a case → in case; else
+routine. **One count everywhere**: the drift chips (open, crisis,
+attention) list and count changes, a pacman group once as its leader
+("mesa +2"; its members are in the leader's detail), so open equals the
+sidebar's Changelog count, crisis and attention the header's figures and
+the quiet line, and Hide counts a group once; routine, in case and all
+list and count ledger events, a group's members as their own rows. The
+count line says "N changes" on a drift chip, "N events" on the others. Then "N events · newest first" with *Ledger* (`e`, this month's
+ledger) and *Capture now* (`c`; it reads "Capturing" with a spinner while
+the capture, its status or a lock retry is pending, and a click then
+captures at once), the quiet "N changes without a case" (dim, no colour,
+ADR-0028 §4b), "+N more changes without a case not listed here" (ADR-0020),
+"N changes hidden this session" with *Show*, "Last capture: …". Rows,
+newest first under their day: the subject's last path segment (a group's
+leader with "+N"), "source · kind · case", the time today or "30 Sep
+17:00", a stripe on open drift (crisis urgent, attention accent; nothing
+else is coloured, whatever its zone). A new chip starts at its first row;
+when the selected event leaves the chip (it was just linked) it stays shown
+in the detail and the list has no highlighted row; ↑/↓ continue from where
+it was. The shim's `filter <source>` and a payload `filter` that is a
+source name show "all" with the source in the sidebar search; a chip id
+selects that chip.
+
+The detail (`EventDetail.qml`; prototype `eventDetail`): the sticky bar
+(`Model.eventActions`) — open drift: *Ask agent* first once the engine has
+`agent ask` (WP-124b; `Service.askAgentAvailable`, false until then),
+*Link to case…* (*Link to C-… …* when the engine proposes one), *Explain…*,
+*Dismiss…*, and for attention *Hide* / *Show*; an event with a case: *Open
+case* (Work with the case selected; for a case the index no longer lists
+— it keeps the last 50 completed — one line says so and offers *Open in
+editor*, whose engine answer replaces the line: only the engine can tell
+whether the file is still there); routine: none; the class at the right.
+Then "source · kind", the full subject, its class, for a crisis the **Why
+loud?** callout from the engine's rule: the index has none, so the detail
+asks `seldon drift show <id> --json` (in CONTRACT.md's table, read-only;
+for a group its leader) once for a selected crisis and keeps the answer
+while the item stays a crisis (`Service.driftRules`). `always-red` → "A
+package on your crisis list ([drift] alwaysRed in
+~/.config/seldon/config.toml) was installed, removed or downgraded by name
+in this transaction."; `always-red-paths` → "The path matches your crisis
+list ([drift] alwaysRedPaths …)."; `attention-all` → "[drift] attention =
+"all" is set: every change without a case is open drift, and a crisis is
+a change in the red zone."; another rule is named as it is. Until the
+answer (and in dev mode, without an engine) it says only what the index
+proves: "The engine classed this <source> change as a crisis" and how to
+ask for the rule. Then, from `proposedCase`, "C-… plans it (its plan names
+this change); nothing has linked it yet." or "No open case plans it, and no
+case is linked." — the Case row ("proposed: C-…") and the Rule row
+("crisis · rule … · planned by C-…, not linked" or "· no case") say the
+same. The key/values When · Who · What · Case · Rule · Source · Zone ·
+Resolved · Event (values wrap at word boundaries; a longer token breaks
+anywhere; a detail the index clipped — the event's `meta.truncated` or the
+drift item's `truncated`, contract 2 — reads "(clipped in the index; the
+ledger has it in full)"), a
+group's members (`seldon drift show` for those the index no longer lists),
+"proposed for C-…", and "None of this is required. An agent explains only
+what it can prove." The bar's Link, Explain and Dismiss only open the
+inline form (`DriftForm.qml`, the 0.1 drift sheet's logic and API): Link
+(the open cases, the proposed one first and preselected; a group offers
+*All N* / *Only <package>*, `--only` naming exactly the selected row),
+Explain (why; zone pre-filled with the ledger zone, risk R1, an optional
+area slug), Dismiss (the reason). Enter on an open drift row opens the
+default form (Link when proposed, else Explain; none is required, ADR-0028
+§3). The form's own button writes: Enter in a field or on the button arms
+it ("Press Enter again: Link firefox and 2 more to C-2026-005", in the form
+and the sticky bar), the second Enter runs it, a click runs at once; any
+change to the form disarms, a new index does not. The text stays until the
+engine has resolved the item (its refusal and the busy text are the line
+under the form); Esc or *Cancel* hides the form and keeps the draft, per
+event. A no-op says "Already resolved: …". Resolved, the form goes, the
+keys return to the desk, and the detail shows "Resolved: …" and the
+engine's answer. *Hide* writes nothing: the item leaves the open and
+attention chips for this shell session (`Service.deskHidden`; a group as
+one); a crisis has no Hide (ADR-0028 §3); *Dismiss* is the recorded way.
+
+#### Work (3)
+
+The list: the one-sentence start — an intent field and *Run* (`i`;
+`seldon agent start --new --json -- <intent>`, "Running" with a spinner
+while the engine works, its refusal (no default agent, with its fix) the
+result line and the text kept, then the field empties and the new case is
+selected); the WIP line "2 / 3 active" against the bar setting `wipLimit`
+(default 3; "· at the limit" in the accent, "· over the limit" urgent;
+warns, never blocks); *By agent* (the Completed group narrowed to the cases
+an agent closed, a spot check, ADR-0027 §5; its header then reads
+"COMPLETED · 1 / 2"); *New case* (`+`); the engine's answer to the last
+case action. Then the cases by group — ACTIVE · VERIFICATION · QUEUED ·
+COMPLETED (completed and dropped, the index's last 50) — with "id · risk ·
+area · closed by agent · reopens … · N proposed" and the plan's steps.
+
+The detail: the sticky bar by status (`Model.caseDeskActions`) — queued:
+*Start*, *Drop*; active: *Hand to agent* (`agent start <id> --json`), *To
+verification*, *Drop*; verification: *Complete*, *Drop*; completed:
+*Reopen* (`plan reopen <id> --json`); every case *Open in editor* (`e`,
+`open <id> --editor --json`), last; id · risk at the right. Every writing
+action but Reopen arms on the first press or click and runs on the second
+(`Arm.qml`; the button reads "Confirm …", the bar's hint names the key:
+"Hand to agent C-2026-003? Press a again or click Confirm.", "To
+verification C-2026-003? Press Enter again or click Confirm.", "Drop
+C-2026-004? Press x again or click Confirm. This is final."); any other
+key, another selection or a new index disarms. Enter arms and runs the
+first action that launches nothing (`Model.caseEnterAction`: Start, To
+verification, Complete, Reopen, Open in editor) — **Enter never starts an
+agent** (operator, WP-122 round 2): on an active case Enter twice is To
+verification, as in 0.1, while *Hand to agent* stays the first button and
+runs only from `a` twice or a click and Confirm. `x` Drop, `r` Reopen (one
+press: it creates a case and destroys nothing). A step's case moves to its new group
+with the next index and stays selected; a Run, a reopen or the sheet's new
+case is selected. Without write access (dev mode, no engine, not
+initialised) nothing arms and the bar says why. Under the bar what the
+index carries (`Model.caseDetail`; the plugin never reads the case file,
+AGENTS.md §3): the title, "completed by agent" / "reopens C-…", the
+key/values Status · Risk (R3: "every step that can break boot needs your
+go") · Zone · Area · Priority · Agent · Rollback (the snapshot) · Dates ·
+Reopens · Proposed · File, PLAN (the steps' progress; "The steps, the
+Intent and the Result are in the case file." with *Open in editor*), LOG
+(this case's lifecycle events and notes in the index, newest first, with
+the risk a `case-created`/`case-started`/`case-updated` line carries,
+contract 2) and
+LINKED CHANGES · N (the case's `events` the index still lists, "+N older
+changes the index no longer lists"). *New case* puts the 0.1 sheet in the
+detail (`NewCaseSheet.qml`: title, zone, risk, priority, an optional area
+slug refused in the plugin when malformed → `plan new --zone <z> --risk
+<r> [--area <a>] [--priority <p>] --json -- <title>`; Enter creates; the
+fields keep their text until the engine has made the case; Esc closes the
+sheet with its draft, `+` brings it back). "Back to active" (prototype) is
+not built: no engine verb moves a case from verification to active.
 
 ### 5.5 Settings
 
@@ -452,8 +624,9 @@ crisis, else case active (accent) when active cases, else all clear
 
 ### 5.7 Behaviour carried over from the 0.1 panel
 
-Normative for sections 1–6 until WP-122 and WP-123 rewrite it into the
-section's own paragraph. Superseded by §5.1–§5.4 already: the
+Normative for sections 4–6 until WP-123 rewrites it into the section's own
+paragraph; sections 1–3 are §5.4 (WP-122), which supersedes what this
+section says about the Today, Changelog and Work tabs. Superseded by §5.1–§5.4 already: the
 `KeyboardPanel` popup and its width, the tab strip and its cells, Tab /
 Shift-Tab handing over to the bar, ←/→ between tabs, the red strip. The
 text as the 0.1 panel had it:
@@ -649,8 +822,10 @@ loaded. Routes the plugin honours:
 
 - The desk (overlay entry point): `open(payloadJson)`, `close()`,
   `opened`. Payload (`Model.deskPayload`): `{"section": <id>, "select":
-  <id>, "filter": <source>, "period": <30|90|365|all>}`, every key
-  optional; section ids `today`, `changelog`, `work`, `decisions`,
+  <id>, "filter": <chip or source>, "period": <30|90|365|all>}`, every key
+  optional (`filter`: a Changelog chip — `open`, `crisis`, `attention`,
+  `routine`, `case`, `all` — or a source name, which shows `all` with the
+  source in the sidebar search); section ids `today`, `changelog`, `work`, `decisions`,
   `system`, `memory`, `radiant`, `graph`, `settings`; a `period` alone
   means `radiant`; unknown values are ignored. While loaded, `shell call
   jax.seldon view ""` returns the desk as JSON (opened, section,
@@ -668,7 +843,8 @@ loaded. Routes the plugin honours:
   → summon at that section ("ok" / "unknown tab"); `resolve crisis` → the
   Changelog with the crisis filter, `resolve <eventId>` → the Changelog
   with that event selected ("unknown target" for anything else); `filter
-  <source>` → the Changelog with that filter ("unknown source"); `view`
+  <source>` → the Changelog's `all` chip with the source in the sidebar
+  search ("unknown source"); `view`
   → the desk's `view` while it is loaded, else `{"opened":false}`; `pill`
   → what the pill shows. None runs the engine. The bar builds the widget
   once per monitor (plus a zero-size, hidden placeholder in the bar's

@@ -60,6 +60,7 @@ Item {
 
   Flickable {
     id: flick
+    objectName: "deskDetailScroll"
     anchors.top: bar.bottom
     anchors.bottom: parent.bottom
     width: parent.width

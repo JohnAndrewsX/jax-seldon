@@ -4,7 +4,7 @@
 // Nothing here touches Qt, files or processes, so the same file runs under
 // node (tests/plugin/model.test.js). Service.qml owns all I/O; BarWidget.qml,
 // Desk.qml and components/ only render what these functions return,
-// including the rows of the Today, Changelog and System tabs.
+// including the rows of the desk's sections.
 
 var CONTRACT_VERSION = 2
 
@@ -1722,7 +1722,7 @@ function driftShowResult(exitCode, stdoutText, stderrText) {
     if (isObject(m) && typeof m.id === "string" && EVENT_ID.test(m.id))
       members.push({ id: m.id, kind: str(m.kind), subject: str(m.subject), detail: str(m.detail) })
   }
-  return { ok: true, text: "", members: members }
+  return { ok: true, text: "", members: members, rule: data ? str(data.rule) : "", cls: data ? str(data["class"]) : "" }
 }
 
 // The member lines the sheet shows: at most DRIFT_MEMBERS_SHOWN, then
@@ -3311,3 +3311,597 @@ function deskPresetLabel(pct) {
 
 // The old `jax.seldon.panel` tab names and their sections (the shim, §7).
 var PANEL_TABS = ["today", "changelog", "work", "decisions", "system", "memory"]
+
+// ---- Desk sections Today, Changelog, Work (WP-122; ADR-0034 §2, §3) ----------
+//
+// The service builds deskChangelog, deskToday and deskWork once per index
+// (ADR-0034 §3: no section aggregates on paint); the sections filter those
+// rows by chip and search text and look details up by id. No new engine
+// call: every action still goes through logArgs, openArgs, planArgs,
+// agentArgs, agentNewArgs and driftArgs.
+
+// The Changelog's chips (§2): an event's class, "open" = crisis + attention.
+var CHANGELOG_CHIPS = [
+  { id: "open", label: "open" },
+  { id: "crisis", label: "crisis" },
+  { id: "attention", label: "attention" },
+  { id: "routine", label: "routine" },
+  { id: "case", label: "in case" },
+  { id: "all", label: "all" }
+]
+var CHANGELOG_CHIP_DEFAULT = "open"
+var EVENT_CLASS_LABELS = { crisis: "crisis", attention: "attention", "case": "in case", routine: "routine" }
+
+function isChangelogChip(id) {
+  for (var i = 0; i < CHANGELOG_CHIPS.length; i++) if (CHANGELOG_CHIPS[i].id === id) return true
+  return false
+}
+
+// Keys `f` / `F`: the next or previous chip, wrapping.
+function cycleChip(current, direction) {
+  var n = CHANGELOG_CHIPS.length
+  var at = 0
+  for (var i = 0; i < n; i++) if (CHANGELOG_CHIPS[i].id === current) at = i
+  return CHANGELOG_CHIPS[(at + (direction < 0 ? n - 1 : 1)) % n].id
+}
+
+// A Changelog row's class: open drift by its item's `crisis` (a group's
+// open members too, ADR-0013), else "case" when it has one, else routine.
+function eventClass(row) {
+  if (row.drift) return row.crisis ? "crisis" : "attention"
+  return row.caseId !== "" ? "case" : "routine"
+}
+
+// The last segment of a path subject ("~/.config/hypr/bindings.conf" →
+// "bindings.conf"); other subjects as they are.
+function lastSegment(subject) {
+  var s = str(subject)
+  var parts = s.split("/").filter(function(p) { return p !== "" })
+  return parts.length > 0 ? parts[parts.length - 1] : s
+}
+
+// The age at a row's right: the time today, else "30 Sep 17:00" (the year
+// too when it is not the index's).
+function rowAge(day, time, today) {
+  if (day === "") return time
+  if (day === today) return time
+  var d = utcDate(day)
+  if (!d) return (day + " " + time).trim()
+  var label = d.getUTCDate() + " " + MONTHS[d.getUTCMonth()]
+  if (String(today || "").slice(0, 4) !== day.slice(0, 4)) label += " " + day.slice(0, 4)
+  return (label + " " + time).trim()
+}
+
+// The key Hide uses: a group hides as one, from its leader or a member.
+function hideKey(row) {
+  return row.groupLeader !== "" ? row.groupLeader : row.id
+}
+
+// Every index event as a desk row (changelogRows plus class, list title,
+// meta, age and the lowercased text the sidebar search matches), and a
+// lookup by id. Built once per index by the service.
+function deskChangelog(index) {
+  var base = changelogRows(index, "all")
+  var today = todayDate(index)
+  var rows = []
+  var byId = {}
+  for (var i = 0; i < base.length; i++) {
+    var r = base[i]
+    var row = {}
+    for (var k in r) row[k] = r[k]
+    row.cls = eventClass(r)
+    row.title = lastSegment(r.subject) + (r.badge !== "" ? " " + r.badge : "")
+    row.listMeta = [r.source, r.kind, r.caseId].filter(function(p) { return p !== "" }).join(" · ")
+    row.age = rowAge(r.day, r.time, today)
+    row.stripe = row.cls === "crisis" ? "crisis" : row.cls === "attention" ? "attention" : ""
+    row.hideKey = hideKey(r)
+    row.search = [r.subject, row.listMeta, r.detail, r.actor, r.resolution, r.resolutionDetail].join(" ").toLowerCase()
+    if (row.id !== "" && byId[row.id] === undefined) byId[row.id] = rows.length
+    rows.push(row)
+  }
+  return { rows: rows, byId: byId, today: today }
+}
+
+function changelogRow(prepared, id) {
+  if (!prepared || !prepared.byId) return null
+  var at = prepared.byId[String(id || "")]
+  return at === undefined ? null : prepared.rows[at]
+}
+
+// Hide (attention only, a session's quiet; never a crisis, ADR-0028 §3).
+function isHidden(row, hidden) {
+  return row.cls === "attention" && isObject(hidden) && hidden[row.hideKey] === true
+}
+
+// One count everywhere (the sidebar, the header, the quiet line): open
+// drift counts a group once. The drift chips (open, crisis, attention)
+// list and count changes — a pacman group as its leader ("mesa +2"; its
+// members are in the leader's detail); routine, in case and all list and
+// count ledger events, one row each, group members included.
+var DRIFT_CHIPS = ["open", "crisis", "attention"]
+
+function chipHas(chip, row, hidden) {
+  if (chip === "all") return true
+  if (DRIFT_CHIPS.indexOf(chip) !== -1 && row.groupLeader !== "") return false
+  if (chip === "open") return row.cls === "crisis" || (row.cls === "attention" && !isHidden(row, hidden))
+  if (chip === "attention") return row.cls === "attention" && !isHidden(row, hidden)
+  return row.cls === chip
+}
+
+// The rows of one chip, without the hidden ones, matching the sidebar
+// search (case-insensitive, anywhere in subject, meta, detail, actor,
+// resolution).
+function changelogView(prepared, chip, hidden, search) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var c = isChangelogChip(chip) ? chip : CHANGELOG_CHIP_DEFAULT
+  var q = String(search || "").trim().toLowerCase()
+  return rows.filter(function(r) {
+    return chipHas(c, r, hidden) && (q === "" || r.search.indexOf(q) !== -1)
+  })
+}
+
+// The chips with their counts (hidden rows left out of open and attention).
+function changelogChips(prepared, hidden) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  return CHANGELOG_CHIPS.map(function(c) {
+    var n = 0
+    for (var i = 0; i < rows.length; i++) if (chipHas(c.id, rows[i], hidden)) n++
+    return { id: c.id, label: c.label, count: n }
+  })
+}
+
+// How many changes Hide keeps out of the open list this session (a group
+// once).
+function hiddenCount(prepared, hidden) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var n = 0
+  for (var i = 0; i < rows.length; i++) if (rows[i].groupLeader === "" && isHidden(rows[i], hidden)) n++
+  return n
+}
+
+// Where an event's source reads from (the detail's "Source" row).
+var SOURCE_TEXTS = {
+  pacman: "/var/log/pacman.log",
+  snapper: "snapper, the root config",
+  omarchy: "omarchy version",
+  plugins: "omarchy plugin list",
+  theme: "Omarchy's current theme",
+  config: "the watched paths (hashes only)",
+  agent: "an agent's command log",
+  manual: "the journal",
+  seldon: "Seldon itself"
+}
+
+// The engine's rule for an open drift item, from `seldon drift show <id>
+// --json` (`rule`, `class`; engine/src/commands/drift.rs), which the
+// index does not carry. `rules`: Service.driftRules ({ <id>: { rule,
+// cls } }, the answers for this index); `shown`: Service.driftShown (the
+// call in flight). { state: "known", rule, cls }, or state "pending"
+// (asked, no answer yet) or "unknown" (not asked, or not answerable: dev
+// mode, no engine, a refusal).
+function driftRuleInfo(rules, shown, eventId) {
+  var known = isObject(rules) && isObject(rules[eventId]) ? rules[eventId] : null
+  if (known && str(known.rule) !== "") return { state: "known", rule: str(known.rule), cls: str(known.cls) }
+  if (isObject(shown) && shown.eventId === eventId && shown.pending) return { state: "pending", rule: "", cls: "" }
+  return { state: "unknown", rule: "", cls: "" }
+}
+
+// The rules to keep for a new index: those whose item it still lists as
+// an open crisis (by the item's event id, a group's leader). A copy; the
+// same object when nothing goes, so an unchanged index changes nothing.
+function keptDriftRules(rules, index) {
+  var r = isObject(rules) ? rules : {}
+  var keys = Object.keys(r)
+  if (keys.length === 0) return r
+  var crises = {}
+  var list = index && Array.isArray(index.drift) ? index.drift : []
+  for (var i = 0; i < list.length; i++)
+    if (isObject(list[i]) && list[i].crisis === true && typeof list[i].eventId === "string") crises[list[i].eventId] = true
+  var out = {}
+  var dropped = false
+  for (var k = 0; k < keys.length; k++) {
+    if (crises[keys[k]] === true) out[keys[k]] = r[keys[k]]
+    else dropped = true
+  }
+  return dropped ? out : r
+}
+
+// The crisis rules (engine/src/index/class.rs, SPEC-ENGINE §5): what each
+// says, naming the user's lists rather than what they are meant to hold.
+var CRISIS_RULE_TEXTS = {
+  "always-red": "A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml) was installed, removed or downgraded by name in this transaction.",
+  "always-red-paths": "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml).",
+  "attention-all": "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."
+}
+
+// Why a crisis is loud (§2's callout): the engine's rule when `drift
+// show` has answered (`info`, driftRuleInfo), else only what the index
+// proves — the class and the source, never a cause; then whether an open
+// case's plan names it (`proposedCase`, SPEC-ENGINE §5), which the Case
+// row says too. "" for anything that is not a crisis.
+function whyLoud(row, proposedCase, info) {
+  if (!row || row.cls !== "crisis") return ""
+  var i = isObject(info) ? info : { state: "unknown" }
+  var cause = i.state === "known"
+    ? (CRISIS_RULE_TEXTS[i.rule] !== undefined ? CRISIS_RULE_TEXTS[i.rule] : "The engine's rule: " + i.rule + ".")
+    : "The engine classed this " + row.source + " change as a crisis"
+      + (i.state === "pending" ? "; asking it for the rule." : "; `seldon drift show " + row.id + "` names the rule.")
+  var plan = proposedCase !== ""
+    ? proposedCase + " plans it (its plan names this change); nothing has linked it yet."
+    : "No open case plans it, and no case is linked."
+  return cause + " " + plan
+}
+
+// One event as the detail shows it (prototype `eventDetail`): heading
+// "source · kind", the full subject, the class, the callout, and the
+// key/value rows When · Who · What · Case · Rule · Source (· Zone ·
+// Resolved · Event). `info`: the engine's rule (driftRuleInfo). null when
+// the index has no such event.
+function eventDetail(index, prepared, id, info) {
+  var row = changelogRow(prepared, id)
+  if (!row) return null
+  var e = findEvent(index, row.id) || {}
+  var proposed = row.proposedCase
+  if (proposed === "" && row.groupLeader !== "") {
+    var leader = changelogRow(prepared, row.groupLeader)
+    if (leader) proposed = leader.proposedCase
+  }
+  var r = isObject(info) ? info : { state: "unknown" }
+  var ruleName = r.state === "known" ? "rule " + r.rule : r.state === "pending" ? "rule: asking the engine" : ""
+  var caseState = proposed !== "" ? "planned by " + proposed + ", not linked" : "no case"
+  var rule = row.cls === "crisis" ? ["crisis", ruleName, caseState].filter(function(p) { return p !== "" }).join(" · ")
+    : row.cls === "attention" ? "attention · " + caseState + "; quiet until you say something"
+    : row.cls === "case" ? "in case · recorded for " + row.caseId
+    : "routine · history, nothing to do"
+  if (row.txId !== "" || row.groupLeader !== "") rule += " · one pacman transaction (ADR-0013)"
+  // Contract 2 (ADR-0035 §3): a detail the index clipped says so; the
+  // ledger line has it in full.
+  var item = row.drift ? driftItemFor(index, row.id) : null
+  var lead = item && index && Array.isArray(index.drift)
+    ? index.drift.filter(function(d) { return isObject(d) && d.eventId === item.leaderId })[0] : null
+  var clipped = (isObject(e.meta) && e.meta.truncated === true) || (isObject(lead) && lead.truncated === true)
+  var kv = [
+    ["When", stamp(e.ts)],
+    ["Who", str(e.actor) !== "" ? str(e.actor) : "—"],
+    ["What", (row.detail !== "" ? row.detail : "—") + (clipped ? " (clipped in the index; the ledger has it in full)" : "")],
+    ["Case", row.caseId !== "" ? row.caseId : proposed !== "" ? "proposed: " + proposed : "—"],
+    ["Rule", rule],
+    ["Source", SOURCE_TEXTS[row.source] !== undefined ? SOURCE_TEXTS[row.source] : row.source]
+  ]
+  if (row.zone !== "") kv.push(["Zone", row.zone])
+  if (row.resolution !== "") kv.push(["Resolved", rowStatus(row)])
+  kv.push(["Event", row.id])
+  return {
+    id: row.id,
+    heading: row.source + " · " + row.kind,
+    title: row.subject,
+    cls: row.cls,
+    classLabel: EVENT_CLASS_LABELS[row.cls],
+    open: row.drift,
+    caseId: row.caseId,
+    proposedCase: proposed,
+    hideKey: row.hideKey,
+    whyLoud: whyLoud(row, proposed, r),
+    kv: kv
+  }
+}
+
+// The sticky bar of an event (§2): open drift → [Ask agent], Link to
+// case…, Explain…, Dismiss… (attention also Hide / Show); with a case →
+// Open case; routine → none. opts: { askAgent, hidden }. The first is
+// primary. Link names the proposed case when the engine has one.
+function eventActions(detail, opts) {
+  if (!detail) return []
+  var o = isObject(opts) ? opts : {}
+  var out = []
+  if (detail.open) {
+    if (o.askAgent === true) out.push({ id: "ask", label: "Ask agent" })
+    out.push({ id: "link", label: detail.proposedCase !== "" ? "Link to " + detail.proposedCase + "…" : "Link to case…" })
+    out.push({ id: "explain", label: "Explain…" })
+    out.push({ id: "dismiss", label: "Dismiss…" })
+    if (detail.cls === "attention") out.push({ id: "hide", label: o.hidden === true ? "Show" : "Hide" })
+  } else if (detail.caseId !== "") {
+    out.push({ id: "case", label: "Open case" })
+  }
+  for (var i = 0; i < out.length; i++) out[i].primary = i === 0
+  return out
+}
+
+// ---- Today
+
+// Today's list and overview (prototype `today`): the date and the day's
+// state, the tiles, NEEDS YOU (the crises, a group by its leader), the
+// journal of today and yesterday, the active cases as tiles, and the
+// overview's sentence.
+function deskToday(index, prepared) {
+  var v = todayView(index)
+  var summary = index && isObject(index.summary) ? index.summary : {}
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var needs = []
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    if (r.cls !== "crisis" || r.groupLeader !== "") continue
+    needs.push({ id: r.id, type: "crisis", title: r.title, meta: r.kind + " · " + (r.actor !== "" ? r.actor : r.source),
+      aside: r.age, stripe: "crisis", group: "needs" })
+  }
+  var cases = []
+  var active = index && isObject(index.cases) && Array.isArray(index.cases.active) ? index.cases.active : []
+  for (var k = 0; k < active.length; k++) {
+    if (!isObject(active[k])) continue
+    var c = workCase(active[k], "active", "active")
+    var steps = isObject(active[k].steps) ? active[k].steps : null
+    var total = steps ? count(steps.total) : 0
+    var done = steps ? Math.min(count(steps.done), total) : 0
+    cases.push({
+      id: c.id, risk: c.risk, title: c.title, progress: total > 0 ? done / total : 0,
+      text: (total > 0 ? done + "/" + total + " steps" : "no steps yet") + " · "
+        + (c.agents.length > 0 ? c.agents.map(actorLabel).join(", ") : "you")
+    })
+  }
+  var c0 = counts(index)
+  var crises = c0 ? c0.crisis : 0
+  return {
+    date: v.date,
+    title: v.title,
+    state: todayState(c0),
+    tiles: index ? [
+      { label: "events today", value: count(summary.eventsToday) },
+      { label: "7 days", value: count(summary.events7d) }
+    ] : [],
+    needs: needs,
+    entries: v.entries,
+    yesterday: v.yesterday,
+    cases: cases,
+    headline: !index ? "No index to show"
+      : crises > 0 ? "Seldon is recording. " + plural(crises, "change needs", "changes need") + " you."
+      : "Seldon is recording. Nothing needs you.",
+    lead: "Routine — updates, the theme, plugin switches — stays quiet in the Changelog. A crisis is a change without a case that can affect boot, login or the shell."
+  }
+}
+
+// Today's list rows: NEEDS YOU, then JOURNAL (today's entries or the
+// empty line, the yesterday row, yesterday's entries when open). `id`:
+// the event id for a crisis, "entry:N", "yesterday:N", "toggle", "empty".
+// With a sidebar search: the crises and entries (yesterday's too) whose
+// text or meta holds it, nothing else.
+function todayRows(today, yesterdayOpen, search) {
+  var t = isObject(today) ? today : { needs: [], entries: [], yesterday: [] }
+  var q = String(search || "").trim().toLowerCase()
+  if (q !== "") {
+    return todayRows(t, true, "").filter(function(r) {
+      return (r.type === "crisis" || r.type === "entry") && (r.title + " " + r.meta).toLowerCase().indexOf(q) !== -1
+    })
+  }
+  var out = t.needs.slice()
+  var i
+  for (i = 0; i < t.entries.length; i++)
+    out.push({ id: "entry:" + i, type: "entry", title: t.entries[i].text, meta: entryMeta(t.entries[i]), aside: "",
+      stripe: "", group: "journal" })
+  if (t.entries.length === 0)
+    out.push({ id: "empty", type: "empty", title: "Nothing in today's journal yet.", meta: "", aside: "", stripe: "", group: "journal" })
+  if (t.yesterday.length > 0) {
+    out.push({ id: "toggle", type: "toggle", title: (yesterdayOpen ? "▾ " : "▸ ") + "Yesterday · "
+      + plural(t.yesterday.length, "entry", "entries"), meta: "", aside: "", stripe: "", group: "journal" })
+    if (yesterdayOpen)
+      for (i = 0; i < t.yesterday.length; i++)
+        out.push({ id: "yesterday:" + i, type: "entry", title: t.yesterday[i].text, meta: entryMeta(t.yesterday[i]),
+          aside: "", stripe: "", group: "journal" })
+  }
+  return out
+}
+
+// ---- Work
+
+var WORK_GROUPS = [
+  { id: "active", label: "Active" },
+  { id: "verification", label: "Verification" },
+  { id: "queued", label: "Queued" },
+  { id: "completed", label: "Completed" }
+]
+
+// Every case as a desk row, by group (Active · Verification · Queued ·
+// Completed, the last completed and dropped, newest closed first as the
+// index lists them).
+function deskWork(index) {
+  var cases = index && isObject(index.cases) ? index.cases : {}
+  var rows = []
+  for (var g = 0; g < WORK_GROUPS.length; g++) {
+    var group = WORK_GROUPS[g].id
+    var list = Array.isArray(cases[group]) ? cases[group] : []
+    for (var i = 0; i < list.length; i++) {
+      if (!isObject(list[i])) continue
+      var c = workCase(list[i], group, group)
+      var steps = isObject(list[i].steps) ? list[i].steps : null
+      var total = steps ? count(steps.total) : 0
+      c.group = group
+      c.progress = total > 0 ? Math.min(count(steps.done), total) / total : 0
+      c.listMeta = [c.id, c.risk, c.area, c.status === "dropped" ? "dropped" : "",
+        c.closedByAgent ? "closed by agent" : "", c.reopens !== "" ? "reopens " + c.reopens : "",
+        c.proposed > 0 ? c.proposed + " proposed" : ""].filter(function(p) { return p !== "" }).join(" · ")
+      c.stripe = group === "active" ? "attention" : ""
+      c.search = [c.id, c.title, c.area, c.status, c.risk].join(" ").toLowerCase()
+      rows.push(c)
+    }
+  }
+  return { rows: rows }
+}
+
+// The rows the Work list shows: the By agent filter on Completed
+// (ADR-0027 §5), the sidebar search, and each group's header ("ACTIVE ·
+// 2", "COMPLETED · 1 / 2" while the filter hides some).
+function workView(prepared, filter, search) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var q = String(search || "").trim().toLowerCase()
+  var shown = []
+  var totals = {}
+  var counts0 = {}
+  for (var g = 0; g < WORK_GROUPS.length; g++) {
+    totals[WORK_GROUPS[g].id] = 0
+    counts0[WORK_GROUPS[g].id] = 0
+  }
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    totals[r.group]++
+    if (r.group === "completed" && filter === COMPLETED_FILTER_AGENT && !r.closedByAgent) continue
+    if (q !== "" && r.search.indexOf(q) === -1) continue
+    counts0[r.group]++
+    shown.push(r)
+  }
+  var labels = {}
+  for (var k = 0; k < WORK_GROUPS.length; k++) {
+    var id = WORK_GROUPS[k].id
+    labels[id] = WORK_GROUPS[k].label.toUpperCase() + " · " + counts0[id]
+      + (counts0[id] !== totals[id] ? " / " + totals[id] : "")
+  }
+  return { rows: shown, labels: labels, counts: counts0, totals: totals }
+}
+
+function findWorkRow(prepared, id) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  for (var i = 0; i < rows.length; i++) if (rows[i].id === id) return rows[i]
+  return null
+}
+
+// The case's sticky bar by status (§2): queued → Start · Drop; active →
+// Hand to agent · To verification · Drop; verification → Complete · Drop;
+// completed → Reopen; every case → Open in editor, last. `arm`: the first
+// press or click arms, the second runs (Arm.qml); `final`: Drop, whose
+// hint says so; Reopen runs at once (it creates a case and destroys
+// nothing, WP-101). The first is primary (drawn selected, the
+// prototype's); Enter takes the first that launches nothing (`enter`):
+// Enter never starts an agent (operator decision, WP-122 round 2), so on
+// an active case Enter twice is To verification, as in 0.1, and only `a`
+// or a click hands it to the agent.
+var CASE_DESK_ACTIONS = {
+  start: { id: "start", label: "Start", write: true, arm: true, key: "Enter" },
+  agent: { id: "agent", label: "Hand to agent", write: true, arm: true, key: "a", launches: true },
+  verify: { id: "verify", label: "To verification", write: true, arm: true, key: "" },
+  done: { id: "done", label: "Complete", write: true, arm: true, key: "Enter" },
+  drop: { id: "drop", label: "Drop", write: true, arm: true, key: "x", final: true },
+  reopen: { id: "reopen", label: "Reopen", write: true, arm: false, key: "r" },
+  open: { id: "open", label: "Open in editor", write: false, arm: false, key: "e" }
+}
+var CASE_DESK_BY_STATUS = {
+  queued: ["start", "drop", "open"],
+  active: ["agent", "verify", "drop", "open"],
+  verification: ["done", "drop", "open"],
+  completed: ["reopen", "open"],
+  dropped: ["open"]
+}
+
+function caseDeskActions(c) {
+  if (!c || !c.actionable || CASE_DESK_BY_STATUS[c.status] === undefined) return []
+  var ids = CASE_DESK_BY_STATUS[c.status]
+  var enter = ""
+  for (var k = 0; k < ids.length && enter === ""; k++) if (CASE_DESK_ACTIONS[ids[k]].launches !== true) enter = ids[k]
+  return ids.map(function(id, i) {
+    var a = CASE_DESK_ACTIONS[id]
+    var isEnter = id === enter && a.arm
+    return { id: a.id, label: a.label, write: a.write, arm: a.arm, final: a.final === true, primary: i === 0,
+      enter: id === enter, launches: a.launches === true,
+      key: isEnter ? (a.key !== "" && a.key !== "Enter" ? a.key + " or Enter" : "Enter") : a.key }
+  })
+}
+
+// The action Enter takes on a case: the first that launches nothing.
+function caseEnterAction(c) {
+  var list = caseDeskActions(c)
+  for (var i = 0; i < list.length; i++) if (list[i].enter) return list[i]
+  return null
+}
+
+function caseDeskAction(c, id) {
+  var list = caseDeskActions(c)
+  for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]
+  return null
+}
+
+// The sticky bar's hint while a case action is armed.
+function caseArmHint(action, caseId) {
+  if (!action) return ""
+  var again = action.key !== "" ? "Press " + action.key + " again or click Confirm" : "Click Confirm"
+  return action.label + " " + caseId + "? " + again + (action.final ? ". This is final." : ".")
+}
+
+// The plan verb or agent call an action id runs ("" for none).
+function caseActionVerb(id) {
+  return id === "start" || id === "verify" || id === "done" || id === "drop" || id === "reopen" ? id : ""
+}
+
+// One case as the detail shows it (prototype `work`), from the index only
+// (AGENTS.md §3): key/values, the plan's progress, the log (this case's
+// lifecycle events and notes in the index, newest first), the linked
+// changes (its `events` the index still lists, and how many it no longer
+// does). Intent and Result live in the case file, which the plugin never
+// reads. null when the index has no such case.
+function caseDetail(index, prepared, id) {
+  var wc = findWorkRow(prepared, id)
+  if (!wc) return null
+  var raw = null
+  var cases = index && isObject(index.cases) ? index.cases : {}
+  for (var g = 0; g < WORK_GROUPS.length && !raw; g++) {
+    var list = Array.isArray(cases[WORK_GROUPS[g].id]) ? cases[WORK_GROUPS[g].id] : []
+    for (var i = 0; i < list.length; i++) if (isObject(list[i]) && list[i].id === id) raw = list[i]
+  }
+  raw = raw || {}
+  var steps = isObject(raw.steps) ? raw.steps : null
+  var total = steps ? count(steps.total) : 0
+  var done = steps ? Math.min(count(steps.done), total) : 0
+  var snap = isInt(raw.snapshotBefore) ? "snapshot " + raw.snapshotBefore : "—"
+  var kv = [
+    ["Status", wc.status + (wc.closedByAgent ? " by agent" : "")],
+    ["Risk", wc.risk + (wc.risk === "R3" ? " · every step that can break boot needs your go" : "")],
+    ["Zone", wc.zone !== "" ? wc.zone : "—"],
+    ["Area", wc.area !== "" ? wc.area : "—"],
+    ["Priority", wc.priority !== "" ? wc.priority : "normal"],
+    ["Agent", wc.agents.length > 0 ? wc.agents.join(", ") : "—"],
+    ["Rollback", snap],
+    ["Dates", caseDates(wc) !== "" ? caseDates(wc) : "—"]
+  ]
+  if (wc.reopens !== "") kv.push(["Reopens", wc.reopens])
+  if (wc.proposed > 0) kv.push(["Proposed", plural(wc.proposed, "open change", "open changes") + " the engine thinks belong here"])
+  if (wc.path !== "") kv.push(["File", wc.path])
+  var all = events(index)
+  var log = []
+  var byId = {}
+  for (var k = 0; k < all.length; k++) {
+    var e = all[k]
+    if (!isObject(e)) continue
+    if (typeof e.id === "string") byId[e.id] = e
+    if (e.case !== id) continue
+    if (e.source !== "seldon" && e.kind !== "note" && e.kind !== "correction") continue
+    log.push([stamp(e.ts), [str(e.kind), str(e.actor),
+      isObject(e.meta) && RISKS.indexOf(e.meta.risk) !== -1 ? e.meta.risk : "",
+      e.kind === "note" || e.kind === "correction" ? str(e.detail) : ""]
+      .filter(function(p) { return p !== "" }).join(" · ")])
+  }
+  var ids = Array.isArray(raw.events) ? raw.events : []
+  var linked = []
+  var missing = 0
+  for (var m = ids.length - 1; m >= 0; m--) {
+    var le = byId[ids[m]]
+    if (!le) {
+      missing++
+      continue
+    }
+    linked.push([stamp(le.ts), str(le.source) + " " + str(le.kind) + " · " + str(le.subject)])
+  }
+  return {
+    id: wc.id,
+    title: wc.title,
+    status: wc.status,
+    heading: wc.id + " · " + wc.status + (wc.closedByAgent ? " by agent" : ""),
+    meta: [wc.id, wc.risk].filter(function(p) { return p !== "" }).join(" · "),
+    actionable: wc.actionable,
+    closedByAgent: wc.closedByAgent,
+    reopens: wc.reopens,
+    path: wc.path,
+    kv: kv,
+    plan: { done: done, total: total, progress: total > 0 ? done / total : 0,
+      text: total > 0 ? done + " of " + total + " steps done" : "No steps in the plan yet" },
+    log: log,
+    linked: linked,
+    linkedMore: missing > 0 ? "+" + plural(missing, "older change", "older changes") + " the index no longer lists" : "",
+    row: wc
+  }
+}

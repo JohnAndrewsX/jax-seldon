@@ -3,50 +3,42 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "../Model.js" as Model
+import "../../Model.js" as Model
 
-// The drift sheet on the Changelog tab (SPEC-PLUGIN §5, WP-021): resolve one
-// open drift item. Opened by Enter on an open drift row, the row's
-// *Resolve…* button, or the crisis strip (the first crisis). Labels follow
-// the item's `crisis`, never its zone (ADR-0028 §4b): a crisis reads
-// "RESOLVE A CRISIS" and "<zone> · crisis" in the urgent colour whatever
-// its zone; anything else "RESOLVE DRIFT" and its zone in the accent.
+// Resolve one open drift item, inline in an event's detail (desk sections
+// 1 and 2, SPEC-PLUGIN §5.4; the 0.1 DriftSheet without its card, same
+// API). The detail's sticky bar opens it on Link to case…, Explain… or
+// Dismiss… (showForm); Enter on an open drift row opens the default one
+// (Link when the engine proposes a case, else Explain; ADR-0028 §3: none
+// is required). Always shown, the form or not: a group's members (ADR-0013,
+// `seldon drift show` for those the index no longer lists), "proposed for
+// C-…", and once resolved the folded resolution and the engine's answer.
 //
-//   RESOLVE A CRISIS                                  (else RESOLVE DRIFT)
-//   ▌ glyph kind subject [+N]                      yellow · crisis
-//   ▌ detail · actor · day time
-//   ▌ · upgrade libinput 1.29.1-1 → 1.29.2-1     (a group's members)
-//   ▌ proposed for C-2026-005
-//   [Ask agent]                       (the slot, first; the button is WP-095)
-//   [Link] [Explain] [Dismiss]
 //   Link:    Case [the proposed case first]    Resolve [All 3] [Only libinput]
 //   Explain: why it changed; zone (the item's), risk (R1), area (optional)
 //   Dismiss: the reason
-//   [Link] [Cancel] [Open case]
+//   [Link] [Cancel]
 //   Press Enter again: Link firefox and 2 more to C-2026-005
 //   <the engine's answer>
 //
 // Every call goes through Service.drift() with a fixed argument list built
 // by Model.driftArgs(): the event id and case id checked against their
 // schema patterns, the text one argument after `--`, exactly as typed. The
-// sheet names the event it was opened from, so *Only …* (`--only`)
-// resolves exactly that row; without it the engine resolves the whole
-// group. A group's members come from index.events; when the index no
-// longer lists all of them, `seldon drift show` fills in the rest.
+// form names the event it was opened for, so *Only …* (`--only`) resolves
+// exactly that row; without it the engine resolves the whole group.
 //
-// Writing follows the Work tab (WP-020): Enter in a text field or on the
-// action button arms the call and shows "Press Enter again: …", the second
-// Enter runs it; a click runs it at once. Any change to the form disarms;
-// a new index with the same item does not. The fields keep their text
-// until the engine has resolved the item, so a refusal never loses it;
-// Esc closes the sheet and keeps the draft (per event). The resolved rows arrive with the next index (Service.qml's
-// FileView); then the sheet shows the folded resolution and, for a linked
-// or explained item, *Open case*.
+// Writing arms twice: Enter in a text field or on the action button arms
+// the call and shows "Press Enter again: …", the second Enter runs it; a
+// click runs it at once. Any change to the form disarms; a new index with
+// the same item does not. The fields keep their text until the engine has
+// resolved the item, so a refusal never loses it; Esc or Cancel hides the
+// form and keeps the draft (per event). The resolved rows arrive with the
+// next index (Service.qml's FileView).
 //
-// Keyboard: while anything in the sheet has focus, Panel.qml blocks its own
-// keys (`editing`). Tab walks action → case / scope (Link), text, zone,
-// risk, area (Explain), text (Dismiss) → the action button → Cancel → Open
-// case; in a picker ←/→ (h/l) move and Enter or Space picks.
+// Keyboard: while anything in the form has focus the section is `editing`
+// and the desk keeps out. Tab walks the case / scope (Link), text, zone,
+// risk, area (Explain), text (Dismiss) → the action button → Cancel; in a
+// picker ←/→ (h/l) move and Enter or Space picks.
 FocusScope {
   id: root
 
@@ -118,32 +110,27 @@ FocusScope {
   readonly property string resolution: Model.eventResolution(indexData, eventId)
   readonly property string resultText: root.notice !== "" ? root.notice : result ? result.text : ""
   readonly property bool resultOk: root.notice !== "" ? root.notice === Model.BUSY_TEXT : !!result && result.ok
-  readonly property string caseToOpen: result && result.ok && !result.pending && result.caseId !== "" ? result.caseId : ""
   readonly property string hint: !root.isOpen ? ""
     : !root.canWrite ? root.writeBlocker
     : root.armed ? "Press Enter again: " + root.summary
     : ""
   readonly property color dim: Util.alpha(foreground, 0.65)
-  readonly property color toneColor: shown && shown.tone === "urgent" ? urgent : shown && shown.tone === "accent" ? accent : muted
   readonly property real labelWidth: Style.space(64)
-  readonly property string heading: shown && shown.crisis ? "RESOLVE A CRISIS" : "RESOLVE DRIFT"
-  readonly property string zoneLabel: shown ? [shown.zone, shown.crisis ? "crisis" : ""]
-    .filter(function(p) { return p !== "" }).join(" · ") : ""
-  // ADR-0028 §4b: *Ask agent* comes before Link / Explain / Dismiss.
-  readonly property bool askSlotFirst: formColumn.children[0] === askAgentSlot
-  // Empty until WP-095: hidden and no height (read-out).
-  readonly property bool askSlotVisible: askAgentSlot.visible
-  readonly property real askSlotHeight: askAgentSlot.height
-  property alias askAgentSlot: askAgentSlot
+  // The form under the sticky bar is shown (showForm); the members, the
+  // resolution and the answer show without it.
+  property bool formShown: false
 
+  // The keys leave the form (Esc, Cancel, the item resolved).
   signal leaveRequested()
 
-  // Show event `id`: its draft if it has one, else the defaults for its
+  // Bind to event `id`: its draft if it has one, else the defaults for its
   // item (Link with the proposed case when there is one, else Explain).
+  // Another event hides the form; the keys move only through showForm().
   function openFor(id) {
     var next = String(id || "")
     if (next !== root.eventId) {
       root.saveDraft()
+      root.formShown = false
       root.eventId = next
       root.lastItem = root.item
       root.loadDraft()
@@ -151,7 +138,24 @@ FocusScope {
     root.armedSig = ""
     root.notice = ""
     root.fetchMembers()
+  }
+
+  // Show the form for `action` (link, explain, dismiss; "" the current
+  // one) and give it the keys.
+  function showForm(action) {
+    if (!root.isOpen) return false
+    if (action) root.setAction(action)
+    root.formShown = true
     Qt.callLater(root.focusFirst)
+    return true
+  }
+
+  // Hide the form, keep the draft, hand the keys back.
+  function hideForm() {
+    if (casePicker.popupOpen) casePicker.close()
+    root.saveDraft()
+    root.formShown = false
+    root.leaveRequested()
   }
 
   function saveDraft() {
@@ -193,17 +197,10 @@ FocusScope {
   }
 
   function focusFirst() {
-    if (!root.visible) return
-    if (!root.isOpen) root.focusDone()
-    else if (root.action === "explain") intentField.forceActiveFocus()
+    if (!root.visible || !root.formShown || !root.isOpen) return
+    if (root.action === "explain") intentField.forceActiveFocus()
     else if (root.action === "dismiss") reasonField.forceActiveFocus()
     else submitKey.forceActiveFocus()
-  }
-
-  // Once the item is resolved, the keys sit on Open case or Close.
-  function focusDone() {
-    if (openCaseButton.visible) openCaseButton.forceActiveFocus()
-    else cancelButton.forceActiveFocus()
   }
 
   function setAction(a) {
@@ -247,18 +244,19 @@ FocusScope {
     return sent
   }
 
-  function openCase() {
-    if (root.caseToOpen !== "" && root.service) root.service.openInEditor(root.caseToOpen)
-  }
-
   onFormKeyChanged: {
     root.armedSig = ""
     root.notice = ""
   }
   onActionChanged: root.armedSig = ""
+  // Resolved: the form goes and the keys go back to the desk.
   onItemChanged: {
-    if (root.item) root.lastItem = root.item
-    else if (root.activeFocus) Qt.callLater(root.focusDone)
+    if (root.item) {
+      root.lastItem = root.item
+    } else if (root.formShown) {
+      root.formShown = false
+      root.leaveRequested()
+    }
   }
   // A case that is no longer offered drops out of the form.
   onOptionsChanged: {
@@ -266,8 +264,6 @@ FocusScope {
       if (root.options[i].value === root.caseId) return
     root.caseId = root.options.length > 0 ? root.options[0].value : ""
   }
-  // The index can arrive before the engine's answer: Open case appears last.
-  onCaseToOpenChanged: if (root.caseToOpen !== "" && !root.isOpen && root.activeFocus) Qt.callLater(root.focusDone)
   onResultChanged: {
     if (!root.result || root.result.pending || root.sentSig === "") return
     root.sentSig = ""
@@ -276,9 +272,7 @@ FocusScope {
   onVisibleChanged: if (!visible) root.armedSig = ""
 
   Keys.onEscapePressed: function(event) {
-    if (casePicker.popupOpen) casePicker.close()
-    root.saveDraft()
-    root.leaveRequested()
+    root.hideForm()
     event.accepted = true
   }
 
@@ -317,180 +311,80 @@ FocusScope {
     }
   }
 
+
   Column {
     id: column
     width: parent.width
     spacing: Style.spacing.md
 
-    PanelSectionHeader {
-      text: root.heading
-      foreground: root.foreground
-      fontFamily: root.fontFamily
+    // A group's members (ADR-0013): what the index lists, the rest from
+    // `seldon drift show`.
+    Text {
+      width: parent.width
+      visible: root.memberLines.length > 0
+      textFormat: Text.PlainText
+      text: root.shown ? Model.plural(root.shown.members, "package", "packages") + " in one transaction:" : ""
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
     }
 
-    // What the item is.
-    BorderSurface {
-      id: card
-      width: parent.width
-      visible: !!root.shown
-      implicitHeight: cardColumn.implicitHeight + Style.spacing.lg * 2
-      radius: Style.cornerRadius
-      color: Style.selectedFillFor(root.foreground, root.accent)
-      borderSpec: Border.controlSpec("normal", root.foreground, root.accent)
+    Repeater {
+      model: root.memberLines
 
-      Rectangle {
-        x: Style.spacing.sm
-        y: Style.spacing.lg
-        width: Style.spacing.xs
-        height: card.height - Style.spacing.lg * 2
-        radius: width / 2
-        visible: !!root.shown && root.shown.tone !== ""
-        color: root.toneColor
-      }
+      Text {
+        required property string modelData
 
-      Column {
-        id: cardColumn
-        x: Style.spacing.sm + Style.spacing.xs + Style.spacing.lg
-        y: Style.spacing.lg
-        width: card.width - x - Style.spacing.lg
-        spacing: Style.spacing.xxs
-
-        Item {
-          width: parent.width
-          implicitHeight: Math.max(itemSubject.implicitHeight, itemZone.implicitHeight)
-
-          Text {
-            id: itemSubject
-            anchors.left: parent.left
-            anchors.right: itemZone.left
-            anchors.rightMargin: Style.spacing.md
-            anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: root.shown ? root.shown.glyph + "  " + root.shown.kind + "  " + root.shown.subject
-              + (root.shown.badge !== "" ? "  " + root.shown.badge : "") : ""
-            color: root.foreground
-            elide: Text.ElideMiddle
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            font.bold: true
-          }
-
-          Text {
-            id: itemZone
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: root.zoneLabel
-            color: root.toneColor
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
-          }
-        }
-
-        Text {
-          width: parent.width
-          visible: text !== ""
-          textFormat: Text.PlainText
-          text: root.shown ? [root.shown.detail, root.shown.actor, root.shown.day + " " + root.shown.time]
-            .filter(function(p) { return p.trim() !== "" }).join(" · ") : ""
-          color: root.dim
-          elide: Text.ElideRight
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
-        Text {
-          width: parent.width
-          visible: root.memberLines.length > 0
-          textFormat: Text.PlainText
-          text: root.shown ? Model.plural(root.shown.members, "package", "packages") + " in one transaction:" : ""
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
-        Repeater {
-          model: root.memberLines
-
-          Text {
-            required property string modelData
-
-            width: cardColumn.width
-            leftPadding: Style.spacing.lg
-            textFormat: Text.PlainText
-            text: modelData
-            color: root.dim
-            elide: Text.ElideRight
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-        }
-
-        Text {
-          width: parent.width
-          visible: text !== ""
-          textFormat: Text.PlainText
-          text: root.isOpen && root.shown && root.shown.proposedCase !== "" ? "proposed for " + root.shown.proposedCase : ""
-          color: root.accent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
-        Text {
-          width: parent.width
-          visible: text !== ""
-          textFormat: Text.PlainText
-          text: root.isOpen ? "" : root.resolution !== "" ? "Resolved: " + root.resolution : root.shown ? "No longer open drift" : ""
-          color: root.foreground
-          wrapMode: Text.Wrap
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          font.italic: true
-        }
+        width: column.width
+        leftPadding: Style.spacing.lg
+        textFormat: Text.PlainText
+        text: modelData
+        color: root.dim
+        elide: Text.ElideRight
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
       }
     }
 
     Text {
       width: parent.width
-      visible: !root.shown
+      visible: text !== ""
       textFormat: Text.PlainText
-      text: "This event is not open drift in the index."
-      color: root.dim
-      wrapMode: Text.Wrap
+      text: root.isOpen && root.shown && root.shown.proposedCase !== "" ? "proposed for " + root.shown.proposedCase : ""
+      color: root.accent
       font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
+      font.pixelSize: Style.font.caption
     }
 
-    // The form, while the item is open.
+    Text {
+      width: parent.width
+      visible: text !== ""
+      textFormat: Text.PlainText
+      text: root.isOpen || root.eventId === "" ? "" : root.resolution !== "" ? "Resolved: " + root.resolution : root.shown ? "No longer open drift" : ""
+      color: root.foreground
+      wrapMode: Text.Wrap
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.italic: true
+    }
+
+    // The form, while shown and the item is open.
     Column {
       id: formColumn
+      objectName: "driftForm"
       width: parent.width
       spacing: Style.spacing.md
-      visible: root.isOpen
+      visible: root.formShown && root.isOpen
 
-      // The *Ask agent* slot (ADR-0028 §4b): first, before the human's own
-      // actions, because the agent explains with evidence and the human
-      // never has to. Empty until WP-095 puts its button here; an empty
-      // slot takes no space.
-      Item {
-        id: askAgentSlot
-        objectName: "askAgentSlot"
+      Text {
         width: parent.width
-        visible: children.length > 0
-        implicitHeight: childrenRect.height
-      }
-
-      ButtonGroup {
-        id: actionGroup
-        options: Model.DRIFT_ACTIONS.map(function(a) { return { value: a, label: Model.DRIFT_ACTION_LABELS[a] } })
-        value: root.action
-        enabled: root.canWrite
-        foreground: root.foreground
-        accent: root.accent
-        fontFamily: root.fontFamily
-        fontSize: Style.font.caption
-        onChanged: function(v) { root.setAction(v) }
+        textFormat: Text.PlainText
+        text: root.action === "link" ? "LINK TO A CASE" : root.action === "explain" ? "EXPLAIN" : "DISMISS"
+        color: Color.muted
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        font.letterSpacing: Style.space(1)
+        font.bold: true
       }
 
       FormRow {
@@ -622,86 +516,67 @@ FocusScope {
         font.pixelSize: Style.font.bodySmall
         onAccepted: root.enterKey()
       }
-    }
 
-    Row {
-      spacing: Style.spacing.sm
+      Row {
+        spacing: Style.spacing.sm
 
-      // The action button: a Tab stop whose Enter arms first (a qs.Ui
-      // Button's own Enter would run at once); a click runs.
-      Item {
-        id: submitKey
-        visible: root.isOpen
-        activeFocusOnTab: true
-        implicitWidth: submitButton.implicitWidth
-        implicitHeight: submitButton.implicitHeight
-        Keys.onReturnPressed: root.enterKey()
-        Keys.onEnterPressed: root.enterKey()
-        Keys.onSpacePressed: root.enterKey()
+        // The action button: a Tab stop whose Enter arms first (a qs.Ui
+        // Button's own Enter would run at once); a click runs.
+        Item {
+          id: submitKey
+          activeFocusOnTab: true
+          implicitWidth: submitButton.implicitWidth
+          implicitHeight: submitButton.implicitHeight
+          Keys.onReturnPressed: root.enterKey()
+          Keys.onEnterPressed: root.enterKey()
+          Keys.onSpacePressed: root.enterKey()
+
+          Button {
+            id: submitButton
+            anchors.fill: parent
+            text: root.pending ? Model.DRIFT_ACTION_LABELS[root.action] + "ing" : Model.DRIFT_ACTION_LABELS[root.action]
+            iconText: root.pending ? "󰦖" : ""
+            iconSpinning: root.pending
+            iconSize: Style.font.caption
+            enabled: root.canWrite && !root.pending
+            hasCursor: submitKey.activeFocus || root.armed
+            selected: true
+            bordered: true
+            foreground: root.action === "dismiss" ? root.urgent : root.foreground
+            accent: root.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            verticalPadding: Style.spacing.xs
+            tooltipText: "Enter twice, or click"
+            onClicked: root.clickSubmit()
+          }
+        }
 
         Button {
-          id: submitButton
-          anchors.fill: parent
-          text: root.pending ? Model.DRIFT_ACTION_LABELS[root.action] + "ing" : Model.DRIFT_ACTION_LABELS[root.action]
-          iconText: root.pending ? "󰦖" : ""
-          iconSpinning: root.pending
-          iconSize: Style.font.caption
-          enabled: root.canWrite && !root.pending
-          hasCursor: submitKey.activeFocus || root.armed
-          selected: true
+          id: cancelButton
+          text: "Cancel"
+          focusable: true
           bordered: true
-          foreground: root.action === "dismiss" ? root.urgent : root.foreground
+          foreground: root.foreground
           accent: root.accent
           fontFamily: root.fontFamily
           fontSize: Style.font.caption
           verticalPadding: Style.spacing.xs
-          tooltipText: "Enter twice, or click"
-          onClicked: root.clickSubmit()
+          tooltipText: "Esc; the fields keep their text"
+          onClicked: root.hideForm()
         }
       }
 
-      Button {
-        id: cancelButton
-        text: root.isOpen ? "Cancel" : "Close"
-        focusable: true
-        bordered: true
-        foreground: root.foreground
-        accent: root.accent
-        fontFamily: root.fontFamily
-        fontSize: Style.font.caption
-        verticalPadding: Style.spacing.xs
-        tooltipText: "Esc; the fields keep their text"
-        onClicked: {
-          root.saveDraft()
-          root.leaveRequested()
-        }
+      Text {
+        width: parent.width
+        visible: text !== ""
+        textFormat: Text.PlainText
+        text: root.hint
+        color: root.armed ? root.accent : root.dim
+        wrapMode: Text.Wrap
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
       }
-
-      Button {
-        id: openCaseButton
-        visible: root.caseToOpen !== ""
-        text: "Open " + root.caseToOpen
-        focusable: true
-        bordered: true
-        foreground: root.foreground
-        accent: root.accent
-        fontFamily: root.fontFamily
-        fontSize: Style.font.caption
-        verticalPadding: Style.spacing.xs
-        tooltipText: "Open the case file in the editor"
-        onClicked: root.openCase()
-      }
-    }
-
-    Text {
-      width: parent.width
-      visible: text !== ""
-      textFormat: Text.PlainText
-      text: root.hint
-      color: root.armed ? root.accent : root.dim
-      wrapMode: Text.Wrap
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
     }
 
     Text {

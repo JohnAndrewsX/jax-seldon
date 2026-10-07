@@ -950,7 +950,7 @@ fi
 
 # 35. The sheets (WP-068), in a headless window against the installed
 #     shell's Commons/ and Ui/ (copied, as desk-view.sh does) and the fake
-#     engine. A small harness written here drives NewCaseSheet, DriftSheet
+#     engine. A small harness written here drives NewCaseSheet, DriftForm
 #     and NewDecisionSheet through their own functions and prints each step.
 #       busy    a pending `plan start`, then Create in the new-case sheet; a
 #               pending `drift dismiss` on another event, then the drift
@@ -982,7 +982,7 @@ import QtQuick.Window
 import Quickshell
 
 // Sheet harness (tests/plugin/service-states.sh, scenario 35). Loads
-// Service.qml as the shell does, NewCaseSheet, DriftSheet and
+// Service.qml as the shell does, NewCaseSheet, DriftForm and
 // NewDecisionSheet in an
 // offscreen window, then runs HARNESS_SHEETS ("busy" or "rearm") step by
 // step: each step waits until the service is idle (and, after an index
@@ -1132,8 +1132,8 @@ ShellRoot {
     }
     root.service = component.createObject(null)
     root.service.parsedChanged.connect(function() { root.reloads++ })
-    root.newCase = root.load("components/NewCaseSheet.qml", column, { service: root.service, width: 440 })
-    root.drift = root.load("components/DriftSheet.qml", column, { service: root.service, width: 440 })
+    root.newCase = root.load("components/desk/NewCaseSheet.qml", column, { service: root.service, width: 440 })
+    root.drift = root.load("components/desk/DriftForm.qml", column, { service: root.service, width: 440 })
     root.decision = root.load("components/NewDecisionSheet.qml", column, { service: root.service, width: 440 })
     if (root.drift) root.drift.indexData = Qt.binding(function() { return root.service.index })
   }

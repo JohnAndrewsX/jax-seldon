@@ -203,28 +203,48 @@ ShellRoot {
   }
 
   // Every visible text that reaches outside the window, or outside the
-  // desk card it sits in. An elided text counts by its box. Tolerance 1 px.
-  function overflow(item, box, out) {
+  // desk card it sits in. An elided text counts by its box. Inside an item
+  // that clips (a list scrolled, a detail flicked), only the part inside
+  // the clip counts: rows scrolled out of a list are not on screen.
+  // Tolerance 1 px.
+  function overflow(item, box, out, clipBox) {
     if (!item || item.visible === false) return out
     if (String(item.objectName || "") === "desk") {
       var at = item.mapToItem(win.contentItem, 0, 0)
       box = { name: "desk", x: at.x, y: at.y, w: item.width, h: item.height }
     }
+    if (item.clip === true) {
+      var c = item.mapToItem(win.contentItem, 0, 0)
+      clipBox = root.intersect(clipBox, { x: c.x, y: c.y, w: item.width, h: item.height })
+    }
     if (root.isText(item)) {
       var p = item.mapToItem(win.contentItem, 0, 0)
       var w = item.elide !== Text.ElideNone ? item.width : Math.max(item.width, item.contentWidth)
       var h = Math.max(item.height, item.contentHeight)
+      var rect = root.intersect(clipBox, { x: p.x, y: p.y, w: w, h: h })
       var boxes = [{ name: "window", x: 0, y: 0, w: win.width, h: win.height }]
       if (box) boxes.push(box)
-      for (var b = 0; b < boxes.length; b++) {
+      for (var b = 0; rect && b < boxes.length; b++) {
         var r = boxes[b]
-        if (p.x < r.x - 1 || p.y < r.y - 1 || p.x + w > r.x + r.w + 1 || p.y + h > r.y + r.h + 1)
+        if (rect.x < r.x - 1 || rect.y < r.y - 1 || rect.x + rect.w > r.x + r.w + 1 || rect.y + rect.h > r.y + r.h + 1)
           out.push(item.text + " @" + r.name)
       }
     }
     var kids = item.children
-    for (var i = 0; kids && i < kids.length; i++) overflow(kids[i], box, out)
+    for (var i = 0; kids && i < kids.length; i++) overflow(kids[i], box, out, clipBox)
     return out
+  }
+
+  // The overlap of a clip and a box: b itself without a clip (undefined),
+  // null when the clip is empty (null) or they do not overlap.
+  function intersect(a, b) {
+    if (a === undefined) return b
+    if (a === null) return null
+    var x = Math.max(a.x, b.x)
+    var y = Math.max(a.y, b.y)
+    var w = Math.min(a.x + a.w, b.x + b.w) - x
+    var h = Math.min(a.y + a.h, b.y + b.h) - y
+    return w > 0 && h > 0 ? { x: x, y: y, w: w, h: h } : null
   }
 
   function find(item, test) {
@@ -265,7 +285,7 @@ ShellRoot {
       view: root.viewObject(), calls: fakeShell.calls, writes: fakeShell.writes, entry: root.entry,
       call: root.lastCall, bare: root.bare, pill: root.widget ? JSON.parse(root.widget.pillReadout()) : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
-      texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [])
+      texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined)
     }))
   }
 
