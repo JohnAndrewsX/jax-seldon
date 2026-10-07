@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Bulk triage and Ask agent (ADR-0036).** `seldon agent ask triage`
+  starts your agent to sort the open changes; `agent ask drift <EVENT>`
+  and `agent ask case <ID>` ask it about one change or one case. The
+  prompt names only ids, the logbook and the skill's guide, never
+  logbook text, and hands the agent no case to work. The agent stores a
+  proposal with `seldon drift propose` (JSON on stdin): every item needs
+  evidence the engine looks up itself (a journal entry, an event, a
+  snapshot, a case, a case's Plan line), or the proposal is refused.
+  `seldon drift apply <PROPOSAL>` applies it as you, checking every item
+  again, with `proposed by agent:<name> — <evidence>` in the ledger; a
+  crisis only one by one with `--item`; a second run changes nothing.
+  `seldon drift discard` throws a proposal away. The skill gains
+  `triage.md` (WP-124).
+
 - The harm guard of the planned-and-active link (ADR-0029) reads a
   case's risk from its ledger lines, to the second, for every case this
   engine creates; an edited Log no longer changes the answer. Cases from
