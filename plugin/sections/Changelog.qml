@@ -61,6 +61,10 @@ Section {
   // The detail shows the proposal instead of an event (its row in the list
   // head selected); a row click, a selection or a gone proposal ends it.
   property bool triageShown: false
+  // The proposal the user opened (its row, or Review in its bar): Apply
+  // and Discard are bound to it, never to whatever the index names by the
+  // time of the click (WP-124b round 2).
+  property string seenProposalId: ""
   // What the list head's slot shows (from the data: a child's `visible`
   // reads false while its parent is hidden).
   readonly property bool triageAskShown: !!root.triageButton && root.triageButton.visible
@@ -101,6 +105,7 @@ Section {
 
   function showTriage() {
     if (!root.triageView) return
+    root.seenProposalId = root.triageView.id
     root.triageShown = true
     if (root.desk) root.desk.showDetail()
   }
@@ -207,7 +212,6 @@ Section {
     root.selectRow(0)
     list.view.positionViewAtBeginning()
   }
-  onTriageViewChanged: if (!root.triageView) root.triageShown = false
   onRowsChanged: {
     var i = root.rowIndex(root.selectedId)
     if (i >= 0) root.cursorRow = i
@@ -483,8 +487,10 @@ Section {
     width: root.width - x
     height: root.height
     visible: root.triageShown && (!root.stacked || root.detailShown)
+    shown: visible
     backVisible: root.stacked
     section: root
+    seenId: root.seenProposalId
     onBackRequested: if (root.desk) root.desk.back()
   }
 
