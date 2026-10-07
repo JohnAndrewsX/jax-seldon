@@ -337,3 +337,14 @@ files WP-140..148). Merged as b67b3ae3; one conflict, DECISIONS.md
   only, three Markdown files); merged without conflict. `just check` was
   not re-run for it: no engine, plugin, schema, fixture or doc page
   changed (docs-check ok).
+
+## Merge of next (2)
+
+- Merged next 2ad42a43 (WP-128, redaction CRLF: `redact.rs`,
+  `tests/redaction.rs`, `import/task.rs`, SPEC-ENGINE §7, CHANGELOG) as
+  f96c70e7. No conflict; CHANGELOG.md and SPEC-ENGINE.md merged
+  automatically. This WP's hook tests (`privileged::`, 10) pass on top of
+  WP-128's redaction, the `ipp://…` userinfo and the `sudo -S` line
+  redaction included.
+- `flock /tmp/seldon-check.lock just check` on f96c70e7: `check: ok`
+  (exit 0; log `target/check-wp129-merge2-1.log`).
