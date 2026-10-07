@@ -20,7 +20,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[agent] workdir` (`"inherit"`, default, not written: the launcher starts where `agent start` was called, by `omarchy-agent`'s rule; `"logbook"`: in the logbook, the folder before ADR-0030; §3 `agent start`; WP-116); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve besides the ones `agent start` launched, §8; WP-063, ADR-0030; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
+| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` — the last two, sshd's default `AuthorizedKeysFile` entries, only once the user adds them to `watchPaths`, WP-113, ADR-0037 §3); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[agent] workdir` (`"inherit"`, default, not written: the launcher starts where `agent start` was called, by `omarchy-agent`'s rule; `"logbook"`: in the logbook, the folder before ADR-0030; §3 `agent start`; WP-116); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve besides the ones `agent start` launched, §8; WP-063, ADR-0030; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
@@ -1292,7 +1292,36 @@ git itself is killed, with the same bounded pipe wait. Rules:
   `manifestPath`, else `~/.config/omarchy/plugins/<id>/manifest.json`, else
   the plugin directory's own git HEAD short hash, else the last version
   seen (ADR-0014 §3). `plugin-update` only for `firstParty: false`
-  (ADR-0018); enable/disable fire for every plugin. `plugin-add|update`
+  (ADR-0018); enable/disable fire for every plugin. **Plugin trees
+  (WP-113, ADR-0028 §8 WP-E; hashes only):** the directory
+  `~/.config/omarchy/plugins/<id>/` of every listed third-party plugin is
+  hashed as one tree — SHA-256 over the sorted lines `<relative path> NUL
+  <file sha256> LF` of every regular file at any size and content, `.git`
+  left out (the git HEAD is the version), `[redaction] skipPaths`
+  honoured, links to files followed (their content), any other link as
+  `link <sha256 of its target as written>` and not walked (Omarchy's
+  `omarchy-plugin-validate` refuses links inside a plugin folder); the
+  plugin directory itself may be a link. A tree-hash change is **one**
+  `plugin-update`: `meta.hashFrom`/`hashTo` (the tree hashes), with
+  `from`/`to` and the detail `<from> → <to>` when the version moved too,
+  else no `from`/`to` and the detail `files changed (sha256 <8> → <8>)`.
+  The cursor keeps the tree hash per plugin and, outside the hash that
+  decides whether to diff, a fingerprint of every entry's path, size,
+  mtime, ctime and inode (WP-069's rule, 2 s racy window): while it holds,
+  the tree is not read. A plugin seen without a tree hash (a cursor from
+  before WP-113, a new plugin) takes it without an event. **WP-113 round
+  2:** an entry that cannot be read (a file that cannot be opened, a
+  directory that cannot be listed) is the line `<rel> NUL unreadable
+  <sha256 of size, mtime, ctime, mode>` (a directory's `<rel>` ends in `/`), so
+  the tree changes once and an edit elsewhere still shows; a file over
+  64 MiB is `stat <sha256 of size, mtime, ctime, inode>` (event `meta.hashBasis
+  = "stat"`); the walk is sorted and reads at most 10 000 entries, past
+  which the tree is cut off (a last line `NUL cut`). A tree with an
+  unreadable entry or a cut is `partial: true` in the cursor and in the
+  event's meta; the collector's message counts both. Only a plugin
+  directory that cannot be read keeps the last hash. First-party plugins have
+  no tree (the `omarchy` package covers them). The tree's newest file
+  mtime counts for the `plugin-add|update` `ts` below. `plugin-add|update`
   `ts` = the plugin directory's mtime clamped to [last check, now], like
   theme and config, so the ADR-0017 window can match the agent's command;
   `plugin-remove|enable|disable` get the capture time (the attribution
@@ -1314,10 +1343,16 @@ git itself is killed, with the same bounded pipe wait. Rules:
   built from are watched), and the persistence paths of ADR-0028 §4d
   `~/.config/systemd/user`, `~/.config/autostart`,
   `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
-  `~/.bash_profile` (WP-109; `init` writes all twelve into a new config;
-  user list). **Upgrade (ADR-0028 §4d):** a `config.toml` whose
+  `~/.bash_profile` (WP-109), and Omarchy's toggle state directory
+  `~/.local/state/omarchy/toggles` (WP-113; Hyprland loads every `.lua`
+  under its `hypr/`, operator decision 2026-10-06: hashes only; `init`
+  writes all thirteen into a new config; user list).
+  `~/.ssh/authorized_keys` and `~/.ssh/authorized_keys2` are no default:
+  the user opts in by adding both (they are in the default
+  `alwaysRedPaths`). **Upgrade (ADR-0028 §4d):** a `config.toml` whose
   `watchPaths` equals the default list of an earlier engine, in any order
-  (0.1.0–0.1.3: the first five; WP-089: the first six), gains the current
+  (0.1.0–0.1.3: the first five; WP-089: the first six; 0.1.4: the first
+  twelve), gains the current
   defaults it lacks at the next `capture`, which saves the file under the
   lock and says so once (`note: config.toml now also watches …`,
   `watchPathsAdded`). Only the `watchPaths` array is edited: the paths
@@ -1335,11 +1370,17 @@ git itself is killed, with the same bounded pipe wait. Rules:
   equals Omarchy's shipped copy (`omarchy-default`: `$OMARCHY_PATH/config/
   <rel>` for `~/.config/<rel>`; for `~/.local/share/applications/<name>`
   `$OMARCHY_PATH/applications/<name>`, and for `Alacritty.desktop`
-  `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`), or it lies in a
+  `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`; for a toggle
+  `~/.local/state/omarchy/toggles/<app>/<rel>`
+  `$OMARCHY_PATH/default/<app>/toggles/<rel>`, the flag
+  `omarchy-hyprland-toggle` copies, WP-113), or it lies in a
   theme directory `~/.config/omarchy/themes/<slug>/` that is no link and
   holds a real `.git` directory, not a file and not a link (`theme-repo`:
   `omarchy theme install` clones there and strips a theme's code;
-  Omarchy's own test, WP-109 round 2). Only the fact is recorded, never the link target or the
+  Omarchy's own test, WP-109 round 2). A `config-remove` in the toggles
+  directory whose `hashFrom` is Omarchy's flag (a toggle turned off)
+  carries `omarchy-default` too (WP-113): the one removal whose mark the
+  classifier reads (§5, ADR-0037 §1). Only the fact is recorded, never the link target or the
   content; old events have no mark and classify by path. `OMARCHY_PATH`
   defaults to `/usr/share/omarchy` (under `SELDON_TEST_GUARD` without
   the variable: `<guard>/omarchy`); the files there are only read and
@@ -1354,9 +1395,48 @@ git itself is killed, with the same bounded pipe wait. Rules:
   removed → `config-add|config-change|config-remove` with the path written
   with `~` and both hashes (`detail` `sha256 <8> → <8>`). Binary files (a
   NUL in the first 8000 bytes) and files over 1 MiB are listed as
-  `skipped` without a hash, so growing past the limit is not a removal;
-  `.git` directories are never walked, symlinked directories are not
-  followed, `~/.config/omarchy/plugins/` and
+  `skipped` without a hash, so growing past the limit is not a removal —
+  except under `[drift] alwaysRedPaths` (as configured, at capture),
+  where every file is hashed whatever its content, read in pieces
+  (WP-113: `omarchy-hook` runs `bash <file>`, which runs a script with a
+  NUL after its first line or over 1 MiB), and a file over 64 MiB by
+  its size, mtime (ns), ctime (s, ns) and inode instead of its content
+  (WP-113 rounds 2 and 3; the event carries `meta.hashBasis = "stat"`; a
+  `touch` changes it, and so does an in-place write whose mtime was put
+  back, as no user can reset the ctime). Every file under
+  `~/.local/state/omarchy/toggles/` is hashed the same way (WP-113 round
+  3: Hyprland loads its Lua whatever it holds); a
+  file that moves between `skipped` and hashed is no event either way,
+  so the upgrade writes nothing. A file under a persistence path that
+  cannot be read keeps the hash it had when it last could, so its
+  content is compared when it is readable again (counted: `N file(s)
+  under persistence paths could not be read; their last hash is kept`;
+  one never read is `skipped`). `.git` directories are never walked;
+  symlinked directories are not followed, except one at or below a
+  persistence path (a pattern matches the link or what lies below it):
+  it is walked under the link's own name, with one walk-wide set of the
+  directories walked (device and inode) — a link to one of them is not
+  followed (counted: `N linked director(ies) not followed: walked
+  already`) and below a link none is walked twice — and one walk-wide
+  budget of 4096 entries (files, directories, links) read below links. A
+  link whose walk runs out of it is **cut off**: nothing read below it is
+  kept, the files the manifest had below it keep their hashes (no
+  removal, and a change made meanwhile shows once the link fits again),
+  and the link itself is recorded as one entry with the hash of the text
+  `seldon: linked directory cut off` (event detail `linked directory cut
+  off: more than 4096 entries below links`, `meta.cutOff: true`, never an
+  evidence mark) — under its persistence path that is a crisis: nobody
+  can see into it, so decoys cannot hide a payload (counted: `N linked
+  director(ies) cut off`). When it fits again, its entry is removed
+  (`linked directory watched in full again`). A directory's files are
+  taken before its subdirectories. No link — to a file or a directory —
+  whose canonical target lies in the logbook, the state directory or
+  `~/.config/seldon` is followed, and below a link no directory whose
+  canonical path holds one of them (a link to `~/.local` walks beside the
+  state directory, not into it) is walked (WP-113 rounds 2 and 3: it
+  would change with every capture; counted: `N link(s) into Seldon's own
+  files not followed`). A cut stays with its link: the walk above it and
+  the later watch paths go on. `~/.config/omarchy/plugins/` and
   `~/.local/share/applications/mimeinfo.cache` are excluded wherever the
   watch paths reach them. Known secret-bearing
   files are listed in `config.toml [redaction] skipPaths` and are never
@@ -1469,7 +1549,13 @@ After every capture:
    ids (`drift show`): pacman in a plain full upgrade (argv `-S` with
    `-u` naming no package and no `-` that reads targets from stdin,
    pacman, yay or paru: `-Syu`, `-Syyuu`, `-Su`,
-   bare `yay`, Omarchy's `pacman -Syu --noconfirm --overwrite …`) —
+   bare `yay`, Omarchy's `pacman -Syu --noconfirm --overwrite …`; an
+   option with a value consumes the next word — pacman's, yay's and
+   paru's (`--answerdiff`, `--mflags`, `--editor`, `--sudo`, `--fm`, …,
+   WP-113; `engine/src/pkgcmd.rs` `LONG_WITH_ARG`; yay's from `man 8
+  yay`, paru's unchecked — paru was not installed where they were
+  written); an unknown option
+   takes none, so its word is a package) —
    `upgrade`, `reinstall`, `install` and a removal (`:: Replace`) are
    `sysupgrade`, `alwaysRed` subjects included; a downgrade or removal of
    an `alwaysRed` member is attention `sysupgrade-red`, another downgrade
@@ -1490,8 +1576,12 @@ After every capture:
    (a bare `dev`, a downgrade, unattributed). Plugins: `plugin-enable`/
    `-disable` routine `plugin-toggle`; `-add`/`-remove`/`-update`
    attention `plugin`. `theme-set` routine `theme`. Config, in this order
-   (ADR-0028 §2; WP-109 round 2): `meta.matches` `omarchy-default`/
-   `system-link` routine (not for a removal); then, for an addition or
+   (ADR-0028 §2; WP-109 round 2): under `~/.local/state/omarchy/toggles/`
+   (ADR-0037 §1) an event whose content — `hashTo`, for a
+   removal `hashFrom` — is empty routine `toggle-flag`, a removal with
+   `meta.matches` `omarchy-default` routine `omarchy-default`; then
+   `meta.matches` `omarchy-default`/`system-link` routine (not for a
+   removal); then, for an addition or
    change, `alwaysRedPaths` **crisis** `always-red-paths` (a `*.sample`
    file under `~/.config/omarchy/hooks/` is not: `omarchy-hook` never
    runs it) — a file there that also matches `routinePaths` (a
@@ -1901,9 +1991,9 @@ warning naming the case, which still loads.
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. `cargo bench --bench index` (`just bench`, CI) asserts the index
-build in-process on the fixture logbook scaled ×10 and prints ×150 (12 750
+build in-process on the fixture logbook scaled ×10 and prints ×150 (13 050
 ledger lines, 1 200 cases); `just check-perf` (opt-in, quiet host) asserts
-×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 540 ledger
+×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 788 ledger
 lines, 304 cases and 365 journal files, median wall time of 11 runs,
 process start included. A median over budget is measured once more before
 a check fails (release, 2026-10-04 on the dev host: ×150 build 80 ms,

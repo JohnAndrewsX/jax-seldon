@@ -533,7 +533,7 @@ mod tests {
                 n += 1;
             }
         }
-        assert_eq!(n, 85, "fixtures/README.md: 85 ledger lines");
+        assert_eq!(n, 87, "fixtures/README.md: 87 ledger lines");
     }
 
     /// WP-120 round 2, B1: a 0.1.x line with a user `meta.risk` loads;
