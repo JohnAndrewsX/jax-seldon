@@ -154,6 +154,20 @@ fn checked_env_actor(
         .map_err(|e| Error::user(format!("{ACTOR_ENV} (the actor when none is named): {e}")))
 }
 
+/// `$SELDON_ACTOR` for an act only the user may do (`decide accept`,
+/// `drift apply|discard`; WP-135 round 2): a value that is set but does
+/// not read is refused whatever `--actor` says, because the session may be
+/// an agent's and the act would be recorded as human. `refused` begins the
+/// message (what was not done).
+pub fn session_actor_for_user_act(refused: &str) -> Result<Option<String>> {
+    env_actor(parse_person).map_err(|e| {
+        Error::user(format!(
+            "{refused}: {e}. A session whose actor cannot be read may be an agent's, and this \
+             act is recorded as human: fix or unset {ACTOR_ENV}"
+        ))
+    })
+}
+
 /// clap value parser: `C-YYYY-NNN`.
 pub fn parse_case_id(s: &str) -> Result<String, String> {
     if is_case_id(s) {

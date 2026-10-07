@@ -34,7 +34,7 @@ use serde_json::{Value, json};
 use ulid::Ulid;
 
 use super::drift::{Action, Explain, not_open, warn, write_resolution};
-use super::event::{ACTOR_ENV, actor_or_env, clip, env_actor, parse_person};
+use super::event::{ACTOR_ENV, actor_or_env, clip, parse_person, session_actor_for_user_act};
 use super::{Context, Output, autocommit, one_line};
 use crate::config::{Config, Dirs};
 use crate::error::{Error, Result};
@@ -606,11 +606,13 @@ pub fn parse_proposal_id(s: &str) -> Result<String, String> {
 
 /// The actor of the user's act on a proposal (apply, discard): human only.
 /// An agent proposes; applying is the user's (ADR-0036 §4), and an agent's
-/// act is never recorded as human (ADR-0028 §3).
+/// act is never recorded as human (ADR-0028 §3). A `$SELDON_ACTOR` that
+/// is set but does not read is refused too, with `--actor human` as well
+/// (WP-135 round 2, N3).
 fn user_actor(flag: Option<String>, what: &str) -> Result<String> {
+    let session = session_actor_for_user_act(&format!("`seldon drift {what}` refused"))?;
     if flag.as_deref() == Some(ACTOR_HUMAN)
-        && let Ok(Some(session)) = env_actor(parse_person)
-        && is_agent(&session)
+        && let Some(session) = session.filter(|s| is_agent(s))
     {
         return Err(Error::user(format!(
             "`--actor human` in a session of {session} ({ACTOR_ENV}): an agent's act is \

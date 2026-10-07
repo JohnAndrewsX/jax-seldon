@@ -69,6 +69,23 @@ M = [
      "    crate::sys::write_atomic(&path, doc.render().as_bytes())?;\n",
      "",
      T, "accepts_a_proposed_decision"),
+    # round 2
+    ("M14 the file before the ledger (B1)", D,
+     "    let event = emit_one(&lock, &config, &logbook, event)?;\n    crate::sys::write_atomic(&path, doc.render().as_bytes())?;\n",
+     "    crate::sys::write_atomic(&path, doc.render().as_bytes())?;\n    let event = emit_one(&lock, &config, &logbook, event)?;\n",
+     T, "a_ledger_failure_accepts_nothing"),
+    ("M15 an unreadable file is an engine error (N1)", D,
+     "        model::load::<Decision>(&path).map_err(|e| Error::user(format!(\"{e:#}\")))?;",
+     "        model::load::<Decision>(&path)?;",
+     T, "refuses_a_decision_that_is_not_proposed"),
+    ("M16 an unreadable session actor ignored (N3)", D,
+     "        session_actor_for_user_act(&format!(\"{id} is not accepted\"))?.filter(|s| is_agent(s));",
+     "        session_actor_for_user_act(&format!(\"{id} is not accepted\")).ok().flatten().filter(|s| is_agent(s));",
+     T, "an_agent_never_accepts"),
+    ("M17 drift apply ignores an unreadable session actor (N3)", "engine/src/commands/triage.rs",
+     "    let session = session_actor_for_user_act(&format!(\"`seldon drift {what}` refused\"))?;",
+     "    let session = session_actor_for_user_act(&format!(\"`seldon drift {what}` refused\")).ok().flatten();",
+     ["--test", "triage"], "apply_and_discard_are_the_user_s_and_check_the_file"),
 ]
 
 

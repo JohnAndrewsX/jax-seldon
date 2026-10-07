@@ -663,6 +663,18 @@ fn apply_and_discard_are_the_user_s_and_check_the_file() {
             vec![("SELDON_ACTOR", AGENT)],
             "`--actor human` in a session of agent:claude-code",
         ),
+        // a session whose actor does not read may be an agent's: refused,
+        // `--actor human` too (WP-135 round 2, N3)
+        (
+            vec!["drift", "apply", id.as_str(), "--actor", "human"],
+            vec![("SELDON_ACTOR", "agent:Not Valid")],
+            "`seldon drift apply` refused: SELDON_ACTOR",
+        ),
+        (
+            vec!["drift", "discard", id.as_str(), "--actor", "human"],
+            vec![("SELDON_ACTOR", "system")],
+            "`seldon drift discard` refused: SELDON_ACTOR",
+        ),
         (
             vec!["drift", "discard", id.as_str(), "--actor", AGENT],
             vec![],

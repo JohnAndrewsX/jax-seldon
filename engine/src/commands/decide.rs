@@ -11,7 +11,8 @@ use clap::{Args, Subcommand};
 use serde_json::json;
 
 use super::event::{
-    ACTOR_ENV, actor_or_env, emit_one, env_actor, event_json, parse_case_id, parse_person,
+    ACTOR_ENV, actor_or_env, emit_one, event_json, parse_case_id, parse_person,
+    session_actor_for_user_act,
 };
 use super::index::warnings_human;
 use super::open::{edit, editor_json};
@@ -133,13 +134,12 @@ fn new(ctx: &Context, args: DecideArgs) -> Result<Output> {
 /// Accepting a decision is the user's act (ADR-0040; the B2 pattern of
 /// WP-102 and WP-124): an agent actor (`--actor`, or `$SELDON_ACTOR`
 /// without it) is refused, and so is `--actor human` in an agent's session
-/// (an agent's act is never recorded as human, ADR-0027 §5). Checked
+/// (an agent's act is never recorded as human, ADR-0027 §5), and so is a
+/// `$SELDON_ACTOR` that is set but does not read (round 2, N3). Checked
 /// before anything is read.
 fn user_actor(flag: Option<String>, id: &str) -> Result<String> {
-    let session = env_actor(parse_person)
-        .ok()
-        .flatten()
-        .filter(|s| is_agent(s));
+    let session =
+        session_actor_for_user_act(&format!("{id} is not accepted"))?.filter(|s| is_agent(s));
     let actor = actor_or_env(flag, parse_person, ACTOR_HUMAN)?;
     if is_agent(&actor) {
         return Err(Error::user(format!(

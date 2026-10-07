@@ -201,6 +201,22 @@ fn refuses_a_decision_that_is_not_proposed() {
     );
     assert!(tree(&root) == files);
 
+    // a frontmatter that does not read (round 2, N1): refused, not rewritten
+    std::fs::write(
+        &path,
+        read(&path).replace("id: ADR-0007\n", "id: [ADR-0001\n"),
+    )
+    .unwrap();
+    let files = tree(&root);
+    let out = env.at(T1, &["decide", "accept", "ADR-0001"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("invalid frontmatter"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(tree(&root) == files);
+
     // ids are checked by the parser; --json reports it as JSON
     let out = env.at(T1, &["decide", "accept", "ADR-1", "--json"]);
     assert_eq!(out.status.code(), Some(1));
@@ -240,6 +256,22 @@ fn an_agent_never_accepts() {
             vec!["decide", "accept", "ADR-0001", "--actor", "system"],
             vec![],
             "`system` cannot write this",
+        ),
+        // a session whose actor does not read may be an agent's (round 2, N3)
+        (
+            vec!["decide", "accept", "ADR-0001", "--actor", "human"],
+            vec![("SELDON_ACTOR", "agent:Not Valid")],
+            "ADR-0001 is not accepted: SELDON_ACTOR",
+        ),
+        (
+            vec!["decide", "accept", "ADR-0001", "--actor", "human"],
+            vec![("SELDON_ACTOR", "system")],
+            "fix or unset SELDON_ACTOR",
+        ),
+        (
+            vec!["decide", "accept", "ADR-0001"],
+            vec![("SELDON_ACTOR", "nobody")],
+            "ADR-0001 is not accepted: SELDON_ACTOR",
         ),
     ] {
         let out = env
@@ -296,5 +328,58 @@ fn accept_is_a_subcommand_only_before_the_separator() {
         assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stderr(&out));
     }
     let (d, _) = model::load::<Decision>(&root.join("decisions/ADR-0001-accept.md")).unwrap();
+    assert_eq!(d.status, DecisionStatus::Proposed);
+}
+
+/// The ledger first, as a plan step (round 2, B1): when the ledger cannot
+/// be written, the decision stays proposed and nothing else changes.
+#[test]
+fn a_ledger_failure_accepts_nothing() {
+    let env = Env::new(Snapper::Missing);
+    let (root, path) = proposed(&env);
+
+    // 1. the ledger refuses to start: an invalid redaction pattern (exit 1)
+    let bad = env.tmp.path().join("bad-redaction.toml");
+    std::fs::write(
+        &bad,
+        format!(
+            "logbook = \"{}\"\n[redaction]\npatterns = [\"(\"]\n",
+            root.display()
+        ),
+    )
+    .unwrap();
+    let files = tree(&root);
+    let commit = env.has_git.then(|| head(&env, &root));
+    let config = bad.to_str().unwrap();
+    let out = env.at(T1, &["--config", config, "decide", "accept", "ADR-0001"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("[redaction] patterns"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(tree(&root) == files, "nothing written, the decision too");
+    assert_eq!(env.has_git.then(|| head(&env, &root)), commit);
+
+    // 2. the ledger cannot be written: a new month in a read-only ledger/
+    //    (exit 2); skipped where permissions do not bind (root)
+    let ledger_dir = root.join("ledger");
+    let mut perms = std::fs::metadata(&ledger_dir).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o555);
+    std::fs::set_permissions(&ledger_dir, perms.clone()).unwrap();
+    let probe = ledger_dir.join(".probe");
+    if std::fs::write(&probe, "").is_ok() {
+        let _ = std::fs::remove_file(&probe);
+    } else {
+        let out = env.at(
+            "2026-11-02T08:00:00+01:00",
+            &["decide", "accept", "ADR-0001"],
+        );
+        assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+        assert!(tree(&root) == files, "nothing written, the decision too");
+    }
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    std::fs::set_permissions(&ledger_dir, perms).unwrap();
+    let (d, _) = model::load::<Decision>(&path).unwrap();
     assert_eq!(d.status, DecisionStatus::Proposed);
 }
