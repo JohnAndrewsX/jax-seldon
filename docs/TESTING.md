@@ -502,7 +502,14 @@ mid-replay), `graphSetCut` (visible = day ≤ cut, monotonic over every
 day), `graphStep` (200 ticks then asleep, nothing overlaps, links
 shorter than the mean, a pinned node held, its neighbours following),
 Barnes–Hut within 5 % of the exact repulsion, `graphPick`, `graphInfo`,
-`graphFit`, `graphShape`.
+`graphFit`, `graphShape`. Round 2: the step's path counters (exact
+pairs for the sample, the quadtree for 400 nodes, exact again for a
+replay's early days); case references that are prototype keys
+(`constructor`, `__proto__`, `toString`, …) or name another node
+(`ADR-0003`, `area:themes`) link nothing and throw nothing; 2000 more
+areas give a still picture that never steps or wakes; the sleep test is
+bounded (a layout that never sleeps fails after 250 ticks instead of
+hanging).
 
 `node tests/plugin/model.bench.js` times `periodTable` (what the service
 does on every index write) on the sample, the sample ×10 and 7000 timeline
@@ -515,7 +522,10 @@ It also times one `graphStep` at 400 nodes (the cap, on the busy index
 of `tests/plugin/graph-index.js`) and fails over 8 ms (fastest of 31
 plain runs; about 0.25 ms under node — the shell's QV4 is about ten
 times slower, which `desk-view.sh` and the live run below measure), and
-reports `graphBuild` (the service's work per index, about 0.7 ms).
+reports `graphBuild` (the service's work per index, about 0.7 ms). It
+also fails when the 400-node step ran exact pairs instead of the
+quadtree (its path counter): under node that loss costs 0.3 ms and no
+time gate sees it, under QV4 it costs 10 ms per tick.
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -788,12 +798,22 @@ initialised).
 The graph (WP-125, section 11): on the sample it settles and sleeps
 (200 ticks, the Timer off, no tick and no paint after), each reported
 `tickMs` ≤ 8 and at most 2 of the ticks over it (`slowTicks` names
-them: the dev host compiles other work packages at the same time and
-preempts a tick now and then; the sample's ticks take 1–3 ms); a switch
+them). A case that misses runs once more and must pass then: the
+sample's ticks take 1–3 ms, but this host compiles other work packages
+at the same time, and the harness's own polling (`wait:` builds the
+desk's whole `view()` every 100 ms) makes the garbage collector run —
+QV4's collections grew to 16 ms over a run here, and one that lands in a
+paint shows as a slow tick. Without the polling a 200-tick settle ran no
+collection at all (`QV4_MM_STATS=1` with `QT_LOGGING_RULES=
+qt.qml.gc.allocatorStats=true`). A slower graph misses twice; the
+strict "every tick" is the live run's (§3d). A switch
 to another section stops the ticks at once and coming back resumes
 them; a closed and reopened desk shows the settled layout from the
 service without a tick; the service builds no graph before section 8
-was opened (the report's `graphWanted`, `graphNodes`); the replay from day 0 grows monotonically to all
+is shown, and none while two live captures rewrite the index with the
+Prime Radiant shown — showing section 8 then builds once and keeps the
+settled layout (the report's `graphBuilds`, `graphDirty`,
+`graphNodes`); the replay from day 0 grows monotonically to all
 67 nodes, `graphCut`, ←/→, Space and Esc; hover (the card, its line,
 *Open case* into Work with the case selected after the pointer left the
 node), `select` and Esc; a node dragged by 160,90 px lands there and
@@ -801,7 +821,10 @@ wakes the layout, which sleeps again; a pan and a wheel zoom only
 repaint; `0` fits. On the busy index: 400 nodes, 295 changes folded into
 99, the legend's *Folded*, a folded group's card, at most 5 of 200 ticks
 over the budget (its ticks print). Not initialised, nothing to draw, and
-50 % on 1366 and a 700 px window without a text outside its box.
+50 % on 1366 (the right-edge crisis label goes left of its node) and a
+700 px window without a text outside its box. 2000 more areas: a still
+picture (2022 nodes) with its caption, no tick after a cut or a drag,
+the dragged node exactly where it was put, drawing ≤ 8 ms.
 
 ### 3c. The pill (`BarWidget.qml`) in a private headless Quickshell
 

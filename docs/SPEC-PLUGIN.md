@@ -570,11 +570,16 @@ and no action runs.
 network, from the index alone; `sections/Graph.qml` with
 `components/graph/GraphCanvas.qml`.
 
-- **Data.** `Service.graph` = `Model.graphBuild(index, GRAPH_CAP)`, built
-  when the index changes (empty while the index means nothing in the
-  status) — once section 8 has been opened in this shell session
-  (`graphWanted`, set by its canvas; about 5 ms of QV4 on 500 events,
-  which a user who never opens the graph does not pay per capture). Nodes: the logbook's areas (`system.areas`, and any area a case
+- **Data.** `Service.graph` = `Model.graphBuild(index, GRAPH_CAP)`
+  (empty while the index means nothing in the status), built only for a
+  shown section 8: an index change marks it dirty (`graphDirty`), and the
+  section calls `graphRefresh()` when it is shown and when the graph gets
+  dirty while it is shown (`graphBuilds` counts the builds). A build
+  costs about 5 ms of QV4 on 500 events, which no capture pays while the
+  graph is not on screen. Ids are looked up in maps without a prototype,
+  and a case reference (`event.case`, `drift.proposedCase`,
+  `decisions[].cases`) must match `CASE_ID` before it links: a foreign
+  index's `constructor` or `ADR-0003` as a case links nothing. Nodes: the logbook's areas (`system.areas`, and any area a case
   names that the list lacks), the cases of all four lists, the decisions,
   and the events whose kind is a change (`Model.GRAPH_CHANGE_KINDS` and
   `plugin-*`; not case lifecycle, notes, corrections, resolutions, state
@@ -591,7 +596,14 @@ network, from the index alone; `sections/Graph.qml` with
   else by day, ISO week, month: the finest level that fits, the biggest
   groups first and only as many as the cap needs. Areas, cases, decisions
   and crises never fold. A cluster carries its members' links; its card
-  lists up to 12 of its changes, newest first.
+  lists up to 12 of its changes, newest first. **More fixed nodes than
+  the cap** (areas, cases, decisions and crises together over 400):
+  `build.still` — a still picture in node order (the start layout: a
+  node beside a placed neighbour, else on the spiral), no force step and
+  no tick ever (ADR-0034 §5's static escalation), the caption says "A
+  still picture: N areas, cases, decisions and crises are more than the
+  400 nodes the layout moves"; hover, drag (the node moves at once),
+  pan, zoom and the replay's cut still work.
 - **Layout.** `Model.graphState(build, prev)` (plain arrays: QV4 reads
   them faster than typed ones; positions kept by id across index
   updates; a new node starts beside a placed neighbour, else on a
@@ -599,7 +611,9 @@ network, from the index alone; `sections/Graph.qml` with
   budgetMs)`: one force iteration — repulsion (each pair exactly up to
   160 visible nodes, a Barnes–Hut quadtree with θ 0.9 above), a pull to
   the centre, springs along the edges, all scaled by alpha, which decays
-  from 1 to 0.001 over 200 ticks; then the layout sleeps. `graphWarm`
+  from 1 to 0.001 over 200 ticks; then the layout sleeps (the state
+  counts which repulsion ran, `exactSteps` and `treeSteps`: the tests
+  hold 400 nodes to the tree). `graphWarm`
   runs the functions on a six-node graph once, so the first real tick
   is not interpreted. The service keeps the layout (`graphLayout`): a
   reopened desk shows it settled, without a tick.
@@ -613,8 +627,10 @@ network, from the index alone; `sections/Graph.qml` with
   node (one path with 400 antialiased discs took 20 ms to fill, 400
   paths 2 ms), and a paint allocates nothing on the JS heap but the
   focus's neighbour set. Dragging a node and the replay wake the layout
-  (alpha at least 0.3, the tick count from zero); pan, zoom and hover
-  only repaint. TESTING.md has the measurements.
+  (alpha at least 0.3, the tick count from zero). ADR-0034 §5's "drag,
+  pan, zoom, hover and replay wake it" is read as: pan, zoom and hover
+  repaint (the layout stays asleep) — they move no node, so a tick would
+  change nothing. TESTING.md has the measurements.
 - **Screen.** Row 1: "Graph", the caption, *Play growth* (*Pause* while
   playing), the date slider (the cut-off day: nodes of later days are
   hidden and take no part in the layout) and "YYYY-MM-DD · N nodes [of
@@ -630,7 +646,9 @@ network, from the index alone; `sections/Graph.qml` with
   a fit returns to that. A node keeps a few pixels on screen however far
   out the zoom is. Labels: areas and crises always; cases, decisions and
   folded groups from zoom 0.5 once the layout rests; at most 40, by that
-  priority; a change only with the focus.
+  priority; a change only with the focus. A label that would leave the
+  canvas at the right goes to the left of its node; labels stay inside
+  it vertically.
 - **Pointer and card.** Hover lights a node and its links (the rest at
   25 %) and shows its card at the top right: the title, "Kind · since
   YYYY-MM-DD · day N · M links", status · risk · area (a case) or source
@@ -1010,7 +1028,8 @@ section is shown, so a check can see that nothing ticks there (null
 before): nodes, edges, folded, clusters, numbers, visible, cut, span,
 date, ticks (all), run (since the last wake), alpha, sleeping, timer,
 stepMs, drawMs, paintMs, tickMs, tickMsMax, tickSamples, slowTicks,
-ticksOver, over (steps over the budget), stepMsMax, paints, wakes,
+ticksOver, flipped (labels the last paint drew left of their node), over
+(steps over the budget), stepMsMax, paints, wakes,
 playing, replay (the visible count after each step of the last replay),
 hovered, pinned, cardNode, card, view `{ x, y, k, fit }`. `select <id>`
 with section 8 shown keeps that node's card ("not found" for an unknown
