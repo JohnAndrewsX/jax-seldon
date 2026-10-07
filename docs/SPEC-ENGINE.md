@@ -22,7 +22,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 |---|---|
 | `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` — the last two, sshd's default `AuthorizedKeysFile` entries, only once the user adds them to `watchPaths`, WP-113, ADR-0037 §3); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[agent] workdir` (`"inherit"`, default, not written: the launcher starts where `agent start` was called, by `omarchy-agent`'s rule; `"logbook"`: in the logbook, the folder before ADR-0030; §3 `agent start`; WP-116); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve besides the ones `agent start` launched, §8; WP-063, ADR-0030; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
-| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
+| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions + the HEADs of third-party clones (WP-136); config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/autocommit.json` | `{logbook, ok, at, message}`: the last autocommit the engine attempted (a commit or a git failure; a skip is no attempt), written by every writing command after its autocommit, bound to the canonical logbook path; `index.logbook.git.autocommit` (§6, ADR-0035 §2). Best effort: a record that cannot be written leaves the previous one. Read only when it is a regular file (no symbolic link, FIFO or device; checked before it is opened) of at most 4 MiB; anything else, an unreadable file or one that is not a record leaves the field out with a build warning (WP-120 round 3) |
@@ -1325,7 +1325,64 @@ git itself is killed, with the same bounded pipe wait. Rules:
   `ts` = the plugin directory's mtime clamped to [last check, now], like
   theme and config, so the ADR-0017 window can match the agent's command;
   `plugin-remove|enable|disable` get the capture time (the attribution
-  window below reaches back to the last check for them). Events the
+  window below reaches back to the last check for them). A third-party
+  plugin whose directory is its own git clone keeps its full HEAD in the
+  cursor (WP-136). Its own clone: `<dir>/.git` is a real directory (not a
+  link, not a `gitdir:` file) whose repository stays inside it — no link
+  at `.git/objects`, `.git/refs`, `.git/packed-refs` or `.git/HEAD`, no
+  `objects/info/alternates`, no `commondir`, no `include`/`includeIf`
+  section in `config` or `config.worktree` (an unreadable, linked or
+  non-UTF-8 config counts as one); never a repository further up. The
+  include scan looks for `[include` anywhere in the text,
+  case-insensitive, not at line starts, because git's parser reads a
+  section header where a line scan would not: after a UTF-8 byte order
+  mark (git skips EF BB BF), after a lone CR (white space to git, no line
+  end to a line scan) or another header on the same line, and on the
+  line after a value continued with a backslash; `[include` in a comment
+  or a value refuses a clone it need not, never the other way round. Any other `.git` is not read at all (no HEAD, no git version): its
+  `plugin-update` keeps the version step and adds `commit history not read
+  (the repository points outside the plugin folder)`. A clone's
+  `plugin-add` has `meta.git: clone` and the detail `<version>, installed
+  by git clone`; its `plugin-update` (a version or a tree change, so also
+  a pull that leaves the manifest's version as it is) whose HEAD moved
+  names the commits —
+  `pull` (the old HEAD is an ancestor of the new one) and `reset`
+  (another history) the ones that came in, `rollback` (the new HEAD is an
+  ancestor) the ones that left — as `meta.git`, `meta.commits` (at most
+  20 subjects, newest first, one per line; control characters and
+  U+2028/U+2029 → spaces, direction and invisible format characters
+  dropped, redacted (§7), then clipped to 100 characters with `…`; an
+  empty one `(no subject)`) and the detail `<from> → <to>, pulled N
+  commits: <newest> …` (`rolled back N commits: …`, `reset: N commits
+  in, M out: …`; no `…` for one commit).
+  git runs read-only with a fixed argv and `-C <clone>`. What each setting
+  stops: `--no-pager` a pager; `--no-lazy-fetch` and
+  `GIT_NO_LAZY_FETCH=1` the fetch of an object a partial clone lacks
+  (git 2.44 or later; an older git refuses the option, and the query
+  names nothing); `GIT_ALLOW_PROTOCOL=none` every transport, overriding
+  the clone's own `protocol.<name>.allow` (`-c protocol.allow=never` is
+  only the default for protocols the config does not name, so a clone's
+  `protocol.ext.allow=always` beats it); `--no-replace-objects` replace
+  refs; `GIT_GRAFT_FILE=/dev/null` the clone's `info/grafts` (fake parents,
+  and a line of stderr per bad line); `core.hooksPath=/dev/null` hooks;
+  `core.fsmonitor=false` a monitor program; `log.showSignature=false`
+  gpg; `color.ui=false` colour; `i18n.logOutputEncoding=UTF-8` a log in
+  another encoding (UTF-16 puts NULs into `-z` output); output that is not
+  UTF-8 is read lossily; `GIT_CONFIG_NOSYSTEM=1` and
+  `GIT_CONFIG_GLOBAL=/dev/null` the system and the user's config;
+  `GIT_TERMINAL_PROMPT=0` a prompt; `GIT_OPTIONAL_LOCKS=0` an index
+  refresh lock; the repository variables (`GIT_DIR` …) removed and the
+  clone's parent as `GIT_CEILING_DIRECTORIES` another repository. Own
+  process group, killed whole at 2 s per call; at most 64 KiB kept of
+  each output pipe, the rest read and dropped (`sys::run_command_capped`),
+  and a cut stdout is no answer. The HEAD is read from the clone's files without a
+  process (`.git/HEAD`, a plain `refs/heads/…` loose or in `packed-refs`;
+  reftable or any other ref name: git's `rev-parse HEAD --short HEAD`,
+  which also gives the short version fallback); per moved update a
+  `rev-list --left-right --count` and a `log --max-count=20`. A HEAD in
+  the cursor that is not an object name never reaches git. git missing,
+  failing or timing out: the same event without `meta.git`/`meta.commits`.
+  The index clips `meta.commits` like every meta string (ADR-0025). Events the
   ledger already holds since the cursor's last check (same kind, id,
   version, enabled state and `from`/`to`) are dropped, so a capture
   whose cursor save failed after its ledger write repeats nothing
@@ -2281,7 +2338,9 @@ sub-commands inside the XDG config home or the logbook, a snapshot command
 (`snapper [-c CONFIG] … create`, `omarchy-snapshot create`, `omarchy
 snapshot create`: green, subject `snapper`, recorded only with a case;
 the capture after it fills the case's `snapshotBefore` when it is empty,
-§5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed. Limits of this reading: the
+§5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed; a
+shell reserved word before a command (`do`, `if`, `!`, `{`; also `then`,
+`elif`, `else`, `while`, `until`) is read past. Limits of this reading: the
 commands inside `$(…)`, backticks and `<(…)` are not classified (their
 words count only for `skipPaths`); the string of `env -S` is not opened
 as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like
@@ -2296,7 +2355,35 @@ line stays when commands follow it, so the record reads as the same
 commands; `<<` inside `((…))`, `$((…))` and `$[…]` is a shift, not a
 heredoc (WP-071). Redaction runs before the
 4096-character cut. Green events per ADR-0019 only while a case is set.
-Non-mutating commands produce no event. A command line that names a path
+Non-mutating commands produce no event, except privileged commands
+(below).
+**Privileged commands (ADR-0039, WP-129):** a simple command that runs
+under `sudo`, `doas`, `pkexec` or `run0` — its own wrapper, or the one of
+the `sh -c`/`eval` it was opened from (`pkexec sh -c 'lpadmin …'`) — a
+program that is no probe is recorded even when no class above names it.
+Probes record nothing: the wrappers' own (`sudo -l|-v|-K|-V`, `pkexec
+--version|--help`, `run0 --help`, `doas -C|-L`, `command -v|-V`) and
+`true`, `false`, `:`, `id`, `whoami`, `test`, `[` (`sudo -n true`). No
+privileged record when a class records the command by itself (a record
+that needs no case, or a snapshot command); a green record that would
+need a case (`sudo tee /etc/x`) gives way to it. One per line, for its
+first privileged command, beside the line's class record when another
+command has one (`pkexec pacman -S cups && pkexec lpadmin …`: two events
+of one tool call). The record: `agent/command`, subject the program's
+last path component (`lpadmin`), zone red, `meta.command` the redacted
+line as above, `detail` the same after `asked to run: ` (the hook runs
+at PreToolUse, before the password prompt: a refused or cancelled prompt
+still leaves the record; nothing confirms that the command ran),
+`meta.wrapper` the first wrapper it runs under (only privileged records
+carry the key); with or without a case, linked to the active one. A line
+in which any command has sudo read the password from stdin (`-S`,
+`--stdin` or an abbreviation of it, also in a cluster such as `-Su` and
+beside a probe: `echo PW | sudo -S …`) is recorded as `<program>
+‹redacted›`, every record of it, as for `skipPaths` below; `doas`,
+`pkexec` and `run0` read no password from stdin. A privileged `snapper`
+command is no snapshot command for §5's case notes. It is not drift in
+contract 2: `drift[].source` admits no `agent`; the system change it
+makes is drift through its own collector (ADR-0039 §3). A command line that names a path
 `[redaction] skipPaths` matches (§7) is recorded as `<program>
 ‹redacted›` (the event's subject), as an `Edit` of such a file is
 recorded as `Edit ‹redacted›`; the line is read for such paths more

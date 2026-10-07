@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 98bb9e4 -->
+<!-- source: en/04-working-with-agents.md @ 38018fd -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -304,6 +304,22 @@ nicht aufgezeichnet.
 | red | Pakete installieren, entfernen und aktualisieren (auch `pacman -Syu` und `omarchy update`), `omarchy`-Befehle, die das System ändern, `systemctl enable`, `disable`, `start`, `stop`, `mask`, `unmask` |
 | yellow | Schreibzugriffe in beobachtete Pfade: `cp`, `mv`, `tee`, `sed -i`, `rm`, Umleitungen sowie die Werkzeuge Edit und Write von Claude Code |
 | green | jeder andere ändernde Befehl (`npm install`, `git push`, Dateien anderswo), nur solange ein Case aktiv ist |
+
+Jeder Befehl, den ein Agent mit `sudo`, `doas`, `pkexec` oder `run0`
+ausführen will, wird ebenfalls aufgezeichnet, rot und mit oder ohne
+Case, auch wenn Seldon das Programm nicht kennt. Richtet ein Agent mit
+`pkexec lpadmin -p Office … -E` einen Drucker ein, zeigt der Eintrag
+`lpadmin` als Gegenstand, die Befehlszeile (bekannte Geheimnis-Formen
+entfernt) als Text und `pkexec` als Wrapper. Ein Befehl, den die Tabelle
+oben schon aufzeichnet (`pkexec pacman -S cups`), wird wie bisher einmal
+aufgezeichnet. Prüfungen, die nichts ändern (`sudo -l`, `sudo -n true`,
+`pkexec --version`, `command -v sudo`), zeichnen nichts auf. Der Hook
+läuft vor dem Befehl, deshalb sagt der Eintrag „asked to run“: Er steht
+auch dann da, wenn du den Passwortdialog abbrichst. Eine Zeile, die ein
+Passwort an `sudo -S` weiterreicht, wird nur als Programm und
+`‹redacted›` aufgezeichnet. Ein solcher Eintrag steht im Case und im
+Changelog; als Drift wird er nicht gelistet (die Änderung, die er
+bewirkt, schon, durch den Collector, der sie sieht).
 
 Ein Hook zeichnet die Befehlszeile und den Pfad auf. Er zeichnet nie die
 Ausgabe eines Befehls oder den Inhalt einer Datei auf. Vor dem Schreiben

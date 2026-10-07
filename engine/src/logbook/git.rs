@@ -34,8 +34,9 @@ const FALLBACK_IDENTITY: [&str; 4] = [
 /// Variables that point git at another repository, index or object store
 /// (`git rev-parse --local-env-vars`, plus `GIT_NAMESPACE`,
 /// `GIT_CEILING_DIRECTORIES` and `GIT_QUARANTINE_PATH`). The ceiling is set
-/// again to the logbook's parent when the command runs in the logbook.
-const REPOSITORY_VARS: [&str; 18] = [
+/// again to the logbook's parent when the command runs in the logbook. The
+/// plugins collector's queries of a plugin's clone remove them too.
+pub const REPOSITORY_VARS: [&str; 18] = [
     "GIT_DIR",
     "GIT_WORK_TREE",
     "GIT_IMPLICIT_WORK_TREE",

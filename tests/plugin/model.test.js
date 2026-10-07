@@ -2146,6 +2146,26 @@ test("eventDetail: heading, class, the key/values; why loud from the engine's ru
   assert.ok(M.eventDetail(cut, M.deskChangelog(cut), UNIT).kv[2][1].endsWith("(clipped in the index; the ledger has it in full)"))
 })
 
+test("eventDetail: a plugin update names its commits as plain text after What (WP-136)", () => {
+  const WEATHER_UPDATE = "01M3A5RK9GGCM0KRRCQ47NGCN0"
+  const idx = M.parseIndex(sample).index
+  const d = M.eventDetail(idx, M.deskChangelog(idx), WEATHER_UPDATE)
+  same(d.kv.map(r => r[0]).slice(0, 4), ["When", "Who", "What", "Commits"])
+  same(d.kv[2][1], "1.2.0 → 1.3.0, pulled 3 commits: Release 1.3.0 …")
+  same(d.kv[3][1], "Release 1.3.0\nAdd a wind gust row\nFix the unit toggle in the panel")
+  const variant = edit => {
+    const v = JSON.parse(sample)
+    edit(v.events.find(e => e.id === WEATHER_UPDATE).meta)
+    return M.eventDetail(v, M.deskChangelog(v), WEATHER_UPDATE).kv.map(r => r[0])
+  }
+  same(variant(m => { m.git = "rollback" })[3], "Rolled back")
+  // no list, or one that is not text: no row
+  assert.ok(!variant(m => { delete m.commits }).includes("Commits"))
+  assert.ok(!variant(m => { m.commits = 3 }).includes("Commits"))
+  // an event of another kind is unchanged
+  assert.ok(!M.eventDetail(idx, M.deskChangelog(idx), THEME).kv.some(r => r[0] === "Commits"))
+})
+
 test("driftRuleInfo and driftShowResult: the rule from `drift show`", () => {
   same(M.driftRuleInfo({ [UNIT]: { rule: "always-red-paths", cls: "crisis" } }, null, UNIT),
     { state: "known", rule: "always-red-paths", cls: "crisis" })
