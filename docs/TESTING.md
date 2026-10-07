@@ -308,7 +308,7 @@ file takes ~12 s; the timing assertions allow 4 s of slack for a loaded
 machine. `Watch::start` consumes the `watching` line and the rebuild at
 start, so each test sees only the rebuilds its own writes cause.
 
-**Memory bound (PLAN.md: RSS < 10 MB).** The test runs the watcher on the
+**Memory bound (PLAN.md: RSS < 10 MB; 11 MB since 2026-10-07).** The test runs the watcher on the
 ×10 fixture (`tests/common/scale.rs`) with the state lock held (so the
 rebuild at start waits), reads the idle size, releases the lock, lets the
 rebuild at start and one change-triggered rebuild run (500 events in the
@@ -320,7 +320,10 @@ growth of the heap (`RssAnon`) over the idle watcher is bounded (< 6 MB;
 information only: most of them are the debug binary's file-mapped pages,
 whose idle share moves by up to ~0.8 MB between builds of the same code
 (WP-091 round 3). `just check-rss` runs
-the test under `--profile bench`, where the peak must stay under 10 MB.
+the test under `--profile bench`, where the peak must stay under 11 MB
+(operator decision 2026-10-07: the 10 MB peak was exceeded by 0.3–0.6 MB
+of the binary's own pages on the dev host before any 0.2.0 change; the
+heap-growth bound above stays the real limit).
 It is not part of `just check` and CI does not run it; run it before the
 handover of any WP that touches `engine/src/index/` or
 `engine/src/commands/watch.rs`. To measure another binary, e.g. the musl release build with the

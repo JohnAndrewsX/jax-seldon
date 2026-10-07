@@ -501,8 +501,8 @@ mod with_feature {
     /// (large blocks are unmapped at once) is not in it, which the bench
     /// run's peak bound covers.
     #[test]
-    fn rss_stays_under_10_mb_on_the_x10_fixture() {
-        const LIMIT_KB: u64 = 10 * 1024;
+    fn rss_stays_under_11_mb_on_the_x10_fixture() {
+        const LIMIT_KB: u64 = 11 * 1024;
         let env = Env::new(Snapper::Missing);
         let tmp = TempDir::new("watch-x10");
         let root = tmp.path().join("logbook");

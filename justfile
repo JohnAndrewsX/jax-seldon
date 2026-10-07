@@ -38,9 +38,9 @@ check-watch:
 
 # Not part of `check` (it needs an optimised compile); required before the
 # handover of a WP that touches engine/src/index/ or commands/watch.rs.
-# `seldon watch` RSS < 10 MB on the x10 fixture, bench profile.
+# `seldon watch` RSS < 11 MB on the x10 fixture, bench profile (10 MB until 2026-10-07).
 check-rss:
-    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_stays_under_10_mb
+    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_stays_under_11_mb
 
 # Not part of `check` (optimised compile, timing on a quiet host); required
 # before the handover of a WP that touches the index build, `status` or the
