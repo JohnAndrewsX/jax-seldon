@@ -657,9 +657,15 @@ handler), `call`, `section`, `select`, `width:<pct>` and `sidebar:<mode>`
 `settle`, `wait:<path>=<v>` (`^=` for a prefix), `pause:<ms>`, `shot`,
 `view`; `HARNESS_NO_PILL` runs without the pill (the plugin not in the
 bar). The facade stand-in answers `false` when the entry would not
-change, as `shell.qml` does. After each it prints `Desk.view()`,
-the facade's calls and writes, every visible text and every text outside
-the window or the desk.
+change, as `shell.qml` does. After each it prints `Desk.view()` (with
+the current section's own `view()` as `sectionView`), the facade's calls
+and writes, every visible text and every text outside the window or the
+desk. Inside an item that clips (a list, a scrolled detail) only the part
+of a text inside the clip counts: rows scrolled out of a list are not on
+screen. Live cases run Service.qml without `SELDON_INDEX` against the
+fake engine (`tests/plugin/fake-seldon`, in a temp `HOME`) and compare its
+`argv.log` argument by argument with the CONTRACT.md forms; the editor and
+terminal launchers are `fake-recorder`s (`HARNESS_RECORD`).
 
 Checks: the width at 50 / 67 / 75 / 100 % on 1366, 1920, 2560 and 3840 px
 windows (the ADR-0034 §1 clamp, centred within a pixel); the sidebar's
@@ -679,10 +685,31 @@ section remembered across a hide, `{"period":"30"}` on section 7); the
 stacked Esc order; and the notices under the header with their fixes
 (snapper, not initialised and the chip, the restart notice and its one
 launch, the rules update live with doctor beside the queue, capture
-warnings and `c`). Every case ends with a log free of warnings,
-`TypeError`s and binding loops. `DESK_SHOTS=<dir>` also renders the desk
-in Tokyo Night, Kanagawa and Catppuccin Latte (Today at 100 % and 50 %,
-Settings, not initialised).
+warnings and `c`). Sections 1–3 (WP-122; the 0.1 panel's scenarios for
+these tabs, one to one): Today on the sample (state, tiles, NEEDS YOU, the
+journal, yesterday in place, the overview and its case tiles, the sidebar
+search) and live (the journal field with `--help 2` as one argument, a
+blank note refused in the plugin, the case picker by keys, a refusal that
+keeps the text, Open in editor, New case → `agent start --new`); the
+Changelog on the sample (chips and counts, rows by class, the event
+detail and its bar, `f`/`F`, groups and members, Enter opens the form and
+Esc hides it, the shim's `filter` and `resolve`, Hide and Show, "+N
+more"), the quiet surfaces (a crisis in the yellow zone, attention alone),
+and live link / explain / dismiss, `--only` with a refusal in the plugin,
+an already resolved re-run, a lock refusal with per-event drafts, `drift
+show` from the leader and a member; Work on the sample (groups, the case
+detail, the bar by status, dev mode's refusal, By agent, a reopen) and
+live (the new-case sheet by keys, start → to verification → complete,
+each armed then run, Open in editor, the engine's refusal, `x x`, hand to
+agent and its refusal, a locked new case, Run and its refusal, Reopen and
+`r`); a section change gives the keys back from a field and keeps its
+draft; the Changelog's selection follows its event across an index update
+(the acceptance's cursor stability); Capture now over a lock retry; the
+sticky bar (its scene position unchanged while the detail scrolls, in
+Work and the Changelog); the stacked layout. Every case ends with a log
+free of warnings, `TypeError`s and binding loops. `DESK_SHOTS=<dir>` also
+renders the desk in Tokyo Night, Kanagawa and Catppuccin Latte (Today at
+100 % and 50 %, Settings, the Changelog, Work, not initialised).
 
 ### 3c. The pill (`BarWidget.qml`) in a private headless Quickshell
 
