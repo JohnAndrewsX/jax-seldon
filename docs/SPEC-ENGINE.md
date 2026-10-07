@@ -411,8 +411,9 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # the logbook, at most 1 MiB, UTF-8; neither the path as given nor the
                                                # resolved path may hold a control character or a text-direction character
                                                # (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible
-                                               # format character (U+00AD, U+180E, U+200B–U+200D, U+2060–U+2064,
-                                               # U+206A–U+206F, U+FEFF, U+FFF9–U+FFFB, U+E0000–U+E007F; WP-140)
+                                               # format character (U+00AD, U+0600–U+0605, U+180E, U+200B–U+200D,
+                                               # U+2060–U+2064, U+206A–U+206F, U+FEFF, U+FFF9–U+FFFB,
+                                               # U+1BCA0–U+1BCA3, U+1D173–U+1D17A, U+E0000–U+E007F; WP-140)
                                                # (`import::is_direction_or_format`; a linked folder cannot bring
                                                # one in); a directory is refused ("name the Markdown files in it"). The same
                                                # file named twice is read once. Each file is redacted before it is parsed:
@@ -2041,10 +2042,12 @@ case (tag `imported`) whose first paragraph is exactly its `Imported from
 … — read before you start this case.` line takes the next paragraph. Each
 text: control characters other than `\n` and `\t` become spaces and
 direction and format characters (`import::is_direction_or_format`:
-U+00AD, U+061C, U+180E, U+200B–U+200F, U+202A–U+202E, U+2060–U+2064,
-U+2066–U+206F, U+FEFF, U+FFF9–U+FFFB, U+E0000–U+E007F; WP-140 added
-U+00AD, U+061C, U+180E, U+2061–U+2064, U+206A–U+206F, U+FFF9–U+FFFB and
-the tags) are dropped, so none splits a secret from its rule, then the
+U+00AD, U+0600–U+0605, U+061C, U+180E, U+200B–U+200F, U+202A–U+202E,
+U+2060–U+2064, U+2066–U+206F, U+FEFF, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
+U+1D173–U+1D17A, U+E0000–U+E007F; WP-140 added U+00AD, U+0600–U+0605,
+U+061C, U+180E, U+2061–U+2064, U+206A–U+206F, U+FFF9–U+FFFB,
+U+1BCA0–U+1BCA3, U+1D173–U+1D17A and the tags; `scripts/validate-fixtures.py`
+holds the same set, tested) are dropped, so none splits a secret from its rule, then the
 logbook's redaction (before
 the clip, so a secret at the cut is masked whole) (`[redaction] patterns` included; patterns that do not
 compile withhold all four fields), then the clip of rule 5 with `… (N more
@@ -2126,7 +2129,11 @@ quoted key (`"Authorization": …`, `\"Authorization\": …`,
 a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
 `X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`): the
 header's value is a quoted string closed on its line (`"…"` with `\"`
-inside, `\"…\"` inside a shell string, or `'…'`; WP-140) after white
+inside, `\"…\"` inside a shell string, or `'…'`; WP-140), also after a
+Python string prefix (`f'Bearer {t}'`, `r`, `b`, `u`, two of them) and
+with the text glued after its closing quote up to white space, a quote,
+a backslash, `,`, `;`, a closing bracket or a marker (`"Bearer "SECRET`;
+round 2), after white
 space or after a quoted name (`"Authorization":"Bearer x"`), else the
 rest of the line up to a quote; a quote right after the colon of a
 bare name closes the shell word around it (`curl -H 'Authorization:'`,
@@ -2201,12 +2208,18 @@ twice gives the same text for the built-in rules: a match that lies
 inside an existing `‹redacted›` is left alone, and so is a match whose
 masked part (the match without the groups its replacement keeps, the
 option or header name) holds a `‹redacted›` and else only markers and
-white space (WP-140), so a second pass after a user pattern masked a gap
-next to a built-in marker (`--password ‹redacted›‹redacted›` after a
-pattern for `;`, `Authorization: ‹redacted›‹redacted›` after one for
-`\r`) merges no markers, and no rule counts on such text in the import
-report (a user pattern that
-matches across the marker's edge is applied as written). Each built-in
+white space (WP-140), so no rule counts on such text in the import
+report. With user patterns, two passes give the same text when a pattern
+masks a gap at the end of a built-in value, followed by white space, a
+line end or the end of the text (`--password x;` with a pattern for `;`
+gives `--password ‹redacted›‹redacted›` both times, `Authorization: x`
+with CRLF and a pattern for `\r` gives `Authorization:
+‹redacted›‹redacted›`): the second pass merges no markers. They do not
+when text is glued after the masked gap: the second pass reads it as
+part of the value and masks it too (`--password x;tail` with a pattern
+for `;` gives `--password ‹redacted›‹redacted›tail`, then `--password
+‹redacted›`; more, never less), and a user pattern that matches across
+a marker's edge is applied as written (WP-140 round 2). Each built-in
 rule is compiled once per process, and only when the text holds one of
 its literal triggers (`redact::triggers`), checked on the text in lower
 case with the Kelvin sign and the long s folded onto `k` and `s`, as
@@ -2442,10 +2455,18 @@ any command (after its wrappers, `sh -c` opened) takes its secret as a
 plain argument or from stdin the line feeds, which no §7 rule can tell
 from its other words (WP-140): `chpasswd` and `chgpasswd` (always);
 `htpasswd` with `-b` or `-i`; `smbpasswd` with `-s` or `-w`; `passwd`
-with `-s` or `--stdin` (not `-S`); `useradd`, `usermod`, `groupadd` and
-`groupmod` with `-p` (their `--password` is §7's); `cryptsetup` on a
-line that holds `|`, `<<<` or `<(` (a key piped in, a here-string, a
-process substitution as `--key-file`); a short option also in a cluster
+with `-s` or `--stdin` (not `-S`), or on a line that feeds it (PAM reads
+the new password from stdin without a terminal: `printf 'PW\nPW' |
+passwd alice`, `passwd alice <<< …`); `useradd`, `usermod`, `groupadd`
+and `groupmod` with `-p` or `--password` (also a prefix such as
+`--passw`, and a value §7 cannot read whole, `--password $(openssl
+passwd -6 PW)`); `cryptsetup` on a line that feeds it; `openssl passwd`
+and `wpa_passphrase` (always). A line feeds a command when its text holds
+`|`, `<<<` or `<(` (a key piped in, a here-string, a process substitution
+as `--key-file`) or one of its commands writes a file (`printf PW > k;
+cryptsetup … -d k`; a write to `/dev/null`, `/dev/stdout` or
+`/dev/stderr` is none; round 2); a heredoc's body is cut from the line
+before it is recorded. A short option counts also in a cluster
 (`-Bbc`, `-mp`), a long one also as a prefix getopt takes (`--std`).
 nmcli's secrets are a §7 rule (`nmcli-secret`), so its line keeps its
 other words. A privileged `snapper`

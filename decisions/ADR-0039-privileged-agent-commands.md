@@ -171,9 +171,10 @@ decision. Besides a password on sudo's stdin, a line is recorded as
 `<program> ‹redacted›` when any command takes its secret as a plain
 argument or from stdin that the line feeds, in a form no SPEC-ENGINE §7
 rule can tell from its other words: `chpasswd`, `chgpasswd`, `htpasswd
--b`/`-i`, `smbpasswd -s`/`-w`, `passwd -s`/`--stdin`, `useradd`,
-`usermod`, `groupadd` and `groupmod` with `-p`, and `cryptsetup` on a
-line with a pipe, a here-string or a process substitution (SPEC-ENGINE
-§8). The list is hook-local, as the stdin check is. nmcli's secrets are
+-b`/`-i`, `smbpasswd -s`/`-w`, `passwd -s`/`--stdin` or fed from the
+line, `useradd`, `usermod`, `groupadd` and `groupmod` with `-p` or
+`--password`, `cryptsetup` on a line that feeds it (a pipe, a
+here-string, a process substitution, or a file the line writes),
+`openssl passwd` and `wpa_passphrase` (SPEC-ENGINE §8). The list is hook-local, as the stdin check is. nmcli's secrets are
 named by their property, so they are a §7 rule (`nmcli-secret`) and an
 nmcli line keeps its other words.

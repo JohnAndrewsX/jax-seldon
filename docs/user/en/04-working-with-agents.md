@@ -291,8 +291,9 @@ run": it is there even if you cancel the password prompt. A line that
 pipes a password into `sudo -S` is recorded only as the program and
 `‹redacted›`, and so is a line that gives a password as a plain argument
 or pipes it into the program (`htpasswd -b`, `echo user:pw | chpasswd`,
-`usermod -p`, `smbpasswd -s`, `passwd --stdin`, a key piped into
-`cryptsetup`). Such a record is on the case and in the Changelog; it is
+`usermod -p`, `smbpasswd -s`, `passwd` fed from the line, `openssl
+passwd`, a key piped into `cryptsetup` or written to a file on the same
+line). Such a record is on the case and in the Changelog; it is
 not listed as drift (the change it makes is, by the collector that sees
 it).
 
