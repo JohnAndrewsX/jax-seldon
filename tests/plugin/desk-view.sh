@@ -585,6 +585,9 @@ for text in "Prime Radiant" "90 d · 2026-07-04 – 2026-10-01" "30 d" "90 d" "3
   shows radiant-ipc 1 "$text"
 done
 expect radiant-ipc 1 '[.texts[] | select(. == "Releases, snapshots, cases, crises")] | length' 0
+# The period keys beside the chips (round 2, N4).
+expect radiant-ipc 1 .view.sectionView.keyHint "←/→ period"
+shows radiant-ipc 1 "←/→ period"
 rsummaries radiant-ipc 1 "$s90"
 expect radiant-ipc 1 '[.view.sectionView.slots[] | .chart.empty] | any' false
 expect radiant-ipc 1 .view.sectionView.mode wide
@@ -623,6 +626,18 @@ expect radiant-ipc 20 .view.opened false
 expect radiant-ipc 19 .view.sectionView.aggregations.section 0
 expect radiant-ipc 19 .view.sectionView.aggregations.service "$(sed -n 1p "$work/radiant-ipc.steps" | jq .view.sectionView.aggregations.service)"
 clean_log radiant-ipc
+
+# 8a'. `setPeriod` with an unknown id changes nothing (SPEC-PLUGIN §8;
+#     WP-123 round 2, N3): not the section, not the period. Before the
+#     first visit of section 7 it answers ""; afterwards its period.
+run radiant-setperiod "$sample" 1920x1080 \
+  "summon;call:setPeriod:7;text:4;call:setPeriod:bogus;call:setPeriod:all;text:4;call:setPeriod:x;call:setPeriod:"
+expect radiant-setperiod 2 '[.call, .view.section, (.view.visited | index("radiant") != null)] | map(tostring) | join(",")' ",today,false"
+expect radiant-setperiod 4 '[.call, .view.section] | join(",")' ",decisions"
+expect radiant-setperiod 5 '[.call, .view.section, .view.sectionView.period] | join(",")' "all,radiant,all"
+expect radiant-setperiod 7 '[.call, .view.section] | join(",")' "all,decisions"
+expect radiant-setperiod 8 '[.call, .view.section] | join(",")' "all,decisions"
+clean_log radiant-setperiod
 
 # 8b. Entering the section from closed, as the shell's loader does it (a
 #     new Desk.qml, created bare, `service` injected afterwards; overlay
@@ -735,6 +750,13 @@ for step in 1 2 3 4 5 6 7; do rfits radiant-half $step; done
 expect radiant-half 5 '(.view.sectionView.slots[0].y < (.view.sectionView.area.y))' true
 expect radiant-half 7 '[.view.sectionView.slots[] | select(.chart.w + 36 > .w)] | length' 0
 expect radiant-half 7 .view.sectionView.aggregations.section 0
+# The RiskDonut's "all time" under its count only where the hole holds it
+# (round 2, N5): at 100 % yes, in the 50 % medium grid no (the caption
+# still says "all time").
+donut='[.view.sectionView.slots[] | select(.id == "riskDonut") | .chart.readout.centreLabel] | first | tostring'
+expect radiant-half 1 "$donut" true
+expect radiant-half 2 "$donut" false
+expect radiant-half 2 '[.view.sectionView.slots[] | select(.id == "riskDonut") | .chart.summary] | first' "$risk_s"
 clean_log radiant-half
 run radiant-reflow "$sample" 1920x1080 "fresh:$radiant;view;width:50;view;resize:560x1080;view"
 rpaints radiant-reflow 2 "1,1,1,1,1,1"
@@ -988,6 +1010,26 @@ expect memory 4 .view.sectionView.cursor "topic:hyprland"
 expect memory 5 .view.sectionView.openResult "dev mode (SELDON_INDEX): engine calls are disabled"
 for i in 2 3 4; do expect memory $i '.overflow | join(" | ")' ""; done
 clean_log memory
+
+# 9f'. The search in System and Memory (WP-123 round 2, N1, N2): `/aur`
+#     finds Packages by its lead, `/installed` by its value, `/memory/hyp`
+#     the hyprland topic by its path; Esc clears. With the selection
+#     filtered out the detail shows the first row, and the first `j` moves
+#     on from it (it used to select that row again); a search that only
+#     hid the selection gives it back when it is cleared.
+run search-sections "$sample" 1920x1080 \
+  "summon;text:5;text:/;type:aur;key:Return;key:Escape;text:/;type:installed;key:Return;key:Escape;text:6;text:/;type:hyprland;key:Return;text:j;text:k;key:Escape;text:/;type:memory/hyp;key:Return"
+expect search-sections 5 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "packages|packages|true"
+expect search-sections 6 '[(.view.sectionView.rows | length), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "5|omarchy|false"
+expect search-sections 9 '.view.sectionView.rows | join(",")' "packages"
+expect search-sections 14 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor] | join("|")' "lesson:Hyprland reload nach bindings.conf,topic:hyprland|lesson:Hyprland reload nach bindings.conf"
+expect search-sections 14 .view.selected 'lesson:`omarchy pkg add` statt yay direkt'
+expect search-sections 15 .view.sectionView.cursor "topic:hyprland"
+expect search-sections 16 .view.sectionView.cursor "lesson:Hyprland reload nach bindings.conf"
+expect search-sections 17 '[(.view.sectionView.rows | length), .view.sectionView.cursor] | map(tostring) | join("|")' "5|lesson:Hyprland reload nach bindings.conf"
+expect search-sections 20 '.view.sectionView.rows | join(",")' "topic:hyprland"
+for i in 5 14 20; do expect search-sections $i '.overflow | join(" | ")' ""; done
+clean_log search-sections
 
 # 9g. Not initialised (panel scenario 5): sections 4–6 say there is no
 #     index, `d` opens no form, `e` runs nothing; the Prime Radiant is 8f.
