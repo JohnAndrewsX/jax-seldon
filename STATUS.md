@@ -600,6 +600,28 @@ submission). (see `work/queued/`)
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
 
+## Decided 2026-10-07 (operator, all as recommended)
+- E1 WP-130 guard merged into main after the table review. E2 Omarchy
+  routes by a read-only allow-list → WP-132. E3 the guard also checks
+  Write/Edit by path → WP-133.
+- E4 ADR-0037 accepted (toggles routine, bounded link walk, authorized_keys
+  opt-in) → WP-113 merges into `next`. E5 ADR-0035 (contract v2) confirmed.
+  E13 ADR-0036 accepted (bulk triage) → WP-124a merges into `next`.
+- E6 the desk's Enter never launches an agent. E11 an imported case is
+  started only by the user (the engine refuses an agent). E12 "only a human
+  applies" is a speed bump, stated honestly — enough for 0.2.0.
+- E7 `seldon decide accept` in 0.2.0, with WP-127. E8 `check-rss` bound
+  11 MB (8bdfbbc).
+- E9 guardrails: the R3 ask yes, default off until a test week shows ≈ 0
+  asks, honest recovery card; posture card later → WP-134.
+- E10 recipes (0.3): own machines first; backgrounds by reference; the
+  "why" left out by default; Lua and hooks per-file approval, never in the
+  community tier; REBUILD.md becomes the recipe's rendering; organisation
+  tier by git signatures; the user clones, the engine stays offline.
+- E14 printers: (a) the hook records an agent's privileged commands → WP-129
+  (running); (b) printer configuration hashes after (a) → WP-131, AGENTS.md
+  §6 amended (4def856).
+
 ## Decided 2026-10-06
 - Operator, 2026-10-06 night ("all as recommended"): (1) v0.1.4 may be
   tagged by the orchestrator once WP-117 and WP-118 are merged, the main
