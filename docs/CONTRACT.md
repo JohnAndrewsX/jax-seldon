@@ -151,6 +151,7 @@ seldon agent ask drift|case <id> --json          # Ask agent on an event (open d
 seldon drift apply <proposalId> [--item <eventId>]… --json   # applies index.triage's proposal as the user; a crisis only by --item
 seldon drift discard <proposalId> --json         # removes the proposal file; the logbook is untouched
 seldon decide --no-edit --json -- <title>        # then `open <newId> --editor --json` from the result
+seldon decide accept <ADR-NNNN> --json           # WP-135, ADR-0040: Accept, armed twice; a proposed decision only; the user's act (an agent is refused)
 seldon rebuild --json
 seldon update-impact --json
 seldon doctor --only rules --json               # WP-101: read-only, on panel open (own process, not the queue); runs no probe

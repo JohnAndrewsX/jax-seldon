@@ -124,7 +124,8 @@ plugin/
   carries the JSON; only exits above 1 log a warning line. The banner's
   click queues `["seldon", "rules", "update", "--json"]` like any write,
   then forces a new check.
-- One call at a time per family (plan and agent, drift, decide): a call
+- One call at a time per family (plan and agent, drift, decide, decide
+  accept): a call
   refused because one of its family is pending returns false and sets
   `busyRefusal` to `{ family, action, caseId, eventId, text }` with the
   text "Another action is running — try again in a moment"; the new-case,
@@ -540,11 +541,19 @@ and no action runs.
   it in Work; "This decision names no case." for an empty list); an index
   without the field hides the block.
   Sticky bar: *Accept* (only while proposed, primary) and *Open in
-  editor*, the id at the right. **Accept is the existing path:** the
-  engine accepts no decision itself; the user sets `status: accepted` in
-  the frontmatter, so Accept runs `seldon open ADR-NNNN --editor --json`
-  as Open in editor does (id validated) and the index follows on the next
-  capture. Neither writes, so neither arms. `e` opens; `d` or *New
+  editor*, the id at the right. **Accept writes (WP-135, ADR-0040)**, so
+  it arms: the first click arms it — the bar reads *Confirm accept* and
+  shows "Accept ADR-NNNN? Click Confirm: it becomes accepted with today's
+  date." — the second runs `seldon decide accept ADR-NNNN --json`
+  (`Service.acceptDecision`, id validated; one accept at a time, the busy
+  text of §3 otherwise). Any key, another selection, another section or
+  a new index disarms. Accept has no key of its own; it is disabled while
+  nothing can write (dev mode, no engine, not initialised) and while an
+  accept is pending. The engine's answer ("Accepted ADR-NNNN · title",
+  "ADR-NNNN is accepted already" or its refusal) shows at the top of that
+  decision's detail; the accepted decision arrives with the index (no
+  Accept any more). Open in editor writes nothing and does not arm. `e`
+  opens; `d` or *New
   decision* shows the form (`components/desk/NewDecisionForm.qml`) in the
   detail pane: title → Enter arms ("Press Enter again: create the
   decision “…”"), Enter again (or a click on *Create*) runs `seldon decide

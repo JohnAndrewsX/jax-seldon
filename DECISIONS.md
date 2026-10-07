@@ -39,5 +39,6 @@
 | ADR-0035 | Contract v2: the case's risk in the ledger (`case-updated`, `meta.risk`), the autocommit result, `meta.truncated`, the `state-loss` kind, `decisions[].cases`, the triage proposal | accepted |
 | ADR-0036 | Agent prompts carry identifiers, never logbook text; proposals are evidence or nothing (`agent ask`, `drift propose|apply|discard`) | accepted |
 | ADR-0038 | The index carries what the desk's details show: `drift[].rule`, `cases[].intent`/`result`/`source`, `decisions[].lead` (optional, contract 2) | accepted |
+| ADR-0040 | Accepting a decision is the user's act: `seldon decide accept`, one click in the desk | proposed |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

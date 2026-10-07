@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **`seldon decide accept ADR-NNNN` (ADR-0040).** Accepts a proposed
+  decision: `status: accepted` and today's date in its frontmatter, a
+  `seldon` note in the ledger, `DECISIONS.md`, the commit and the index.
+  A second run changes nothing; a superseded decision is refused.
+  Accepting is the user's: an agent actor or an agent's session is
+  refused. A decision titled "accept" is now made with `seldon decide --
+  accept` (WP-135).
 - **Bulk triage and Ask agent (ADR-0036).** `seldon agent ask triage`
   starts your agent to sort the open changes; `agent ask drift <EVENT>`
   and `agent ask case <ID>` ask it about one change or one case. The
@@ -503,6 +510,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **Accept accepts.** *Accept* on a proposed decision in the desk's
+  Decisions section no longer opens the editor: the first click arms it
+  (*Confirm accept*), the second runs `seldon decide accept`, and the
+  decision shows as accepted with the next index (WP-135).
 - The desk's "Why loud?" callout reads the rule from the index: selecting
   a crisis in the Changelog no longer runs `seldon drift show` (it still
   does against an engine whose index has no rule). Work's case detail

@@ -234,6 +234,19 @@ seldon drift discard <PROPOSAL> [--actor A] [--json]       # removes the proposa
 # link, explain and dismiss (exit 1 naming the conflict; WP-109 round 2,
 # as WP-101 for `plan done`)
 seldon decide "<title>" [--case ID] [--no-edit] # creates ADR, opens $EDITOR unless --no-edit
+                                               # (a title `accept` goes after `--`: `decide -- accept`)
+seldon decide accept <ADR-NNNN> [--actor A]    # WP-135, ADR-0040: a proposed decision → `status: accepted`
+# and `date` today (only these two frontmatter keys change; read back before
+# anything is written), one ledger line `source: seldon`, `kind: note`,
+# `subject` the id, `detail` `accepted: <title>`, actor human, no case (the
+# ledger first, then the file, as a plan step); the `decisions.index` fence of
+# DECISIONS.md, autocommit `seldon: ADR-NNNN accepted`, index rebuilt.
+# Accepted already: exit 0, nothing written (`already: true`). Superseded, an
+# unknown id, a file that does not read or whose frontmatter names another id:
+# exit 1, nothing written. The user's act (as `drift apply`, WP-124, and an
+# imported case's start, WP-102): an agent `--actor`, an agent SELDON_ACTOR
+# without `--actor`, and `--actor human` in an agent's session are exit 1,
+# before anything is read; `system` is refused by the parser
 seldon status                                  # regenerates STATUS.md + index
 # decide and status (WP-050) fill the `decisions.index` fence of the logbook's
 # DECISIONS.md from decisions/*.md frontmatter: `| [[id]] | title | status |
@@ -893,7 +906,9 @@ verify|done` did; WP-050, WP-115) and, for `plan verify|done`, `capture`
 (above); `decide --json` returns
 `{"decision": {id, title, status, date, cases, path}, "editor", "git",
 "warnings"}` (`warnings`: the `decisions.index` fill, WP-050)
-(no ledger event). `plan new` defaults:
+(no ledger event); `decide accept --json` returns `{"decision": {id,
+title, status, date, cases, path}, "already", "event" (the ledger line,
+null when already), "git", "warnings"}`. `plan new` defaults:
 `--zone yellow --risk R1 --priority normal`; `--actor` is accepted on every
 plan step so agents identify themselves; without `--actor`, `plan`, `log`,
 `drift` and `event` take `$SELDON_ACTOR` (WP-096, ADR-0027 §5; `seldon agent
@@ -913,8 +928,8 @@ NEL, U+2028, U+2029; leading and trailing ones are trimmed first) with exit 1 an
 line, before anything is read or written; a person's note may have
 several lines (WP-058). `SELDON_NOW=<RFC 3339>` overrides
 the clock for tests and demos; `SELDON_CONFIG=FILE` is the config
-override. `decide` writes no ledger event (no fitting kind; revisit with
-WP-008). `.seldon/active-case` names the case started last; `done`/`drop`
+override. `decide` writes no ledger event for a new decision (no fitting
+kind); `decide accept` writes the `seldon` note above (ADR-0040). `.seldon/active-case` names the case started last; `done`/`drop`
 clear it only when it names that case.
 
 ```

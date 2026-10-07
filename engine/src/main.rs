@@ -105,7 +105,7 @@ enum Command {
     /// Plan and track cases: new, start, verify, done, drop, list, show
     Plan(commands::plan::PlanArgs),
 
-    /// Create a decision record (ADR) and open it in the editor
+    /// Create a decision record (ADR) and open it in the editor; accept a proposed one
     Decide(commands::decide::DecideArgs),
 
     /// Print the path of a logbook file; --editor opens it
