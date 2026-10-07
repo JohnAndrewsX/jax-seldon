@@ -29,7 +29,7 @@
 | ADR-0025 | The index clips long texts of events and drift items with a visible marker (extends ADR-0020); the reference clip followed in WP-077 | accepted |
 | ADR-0026 | Snapper access by a read grant on the snapshot directory; doctor prints the revert of the old opt-in (supersedes ADR-0011) | accepted |
 | ADR-0027 | Act, then account: a case the user started authorises the agent; the agent verifies and closes; only steps that can make the machine unbootable need the user's go | accepted; H2 amended in part by ADR-0029, §1 prompt target by ADR-0031 |
-| ADR-0028 | Attention is earned by consequence: routine changes are history, not drift; crisis by the harm test | accepted; four §2 rows amended by ADR-0037 |
+| ADR-0028 | Attention is earned by consequence: routine changes are history, not drift; crisis by the harm test | accepted; four §2 rows amended by ADR-0037, two rows added by ADR-0042 (proposed) |
 | ADR-0029 | A change made while exactly one case planned it is that case's; a case captures before it closes | accepted |
 | ADR-0030 | The Seldon agent starts like the Omarchy agent: from the caller's folder, hooks user-wide, served by a launch marker | accepted; §1 clause (b), §3 and §5 amended in part by ADR-0032 |
 | ADR-0031 | Password prompts follow Omarchy: as few as the route allows; snapshot `root` only | accepted |
@@ -40,5 +40,6 @@
 | ADR-0036 | Agent prompts carry identifiers, never logbook text; proposals are evidence or nothing (`agent ask`, `drift propose|apply|discard`) | accepted |
 | ADR-0037 | ADR-0028 amended: toggles are routine both ways, `system-link` narrowed, the `authorized_keys` files default persistence paths | accepted |
 | ADR-0038 | The index carries what the desk's details show: `drift[].rule`, `cases[].intent`/`result`/`source`, `decisions[].lead` (optional, contract 2) | accepted |
+| ADR-0042 | ADR-0028 amended: a file pacman left is attention, a crisis beside the boot and login files (mkinitcpio, Limine, PAM) | proposed |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
