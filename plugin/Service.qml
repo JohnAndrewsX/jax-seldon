@@ -115,6 +115,12 @@ Item {
   readonly property var deskChangelog: Model.deskChangelog(root.indexShown ? root.index : null)
   readonly property var deskToday: Model.deskToday(root.indexShown ? root.index : null, root.deskChangelog)
   readonly property var deskWork: Model.deskWork(root.indexShown ? root.index : null)
+  // The graph (section 8, ADR-0034 §5, WP-125): nodes, edges, day index and
+  // folding, built when the index changes; the section only lays it out.
+  readonly property var graph: Model.graphBuild(root.indexShown ? root.index : null, Model.GRAPH_CAP)
+  // The graph's layout (Model.graphState), kept here so a reopened desk
+  // shows the settled layout; written by components/graph/GraphCanvas.qml.
+  property var graphLayout: null
   // Hide in the Changelog (WP-122): the attention items kept out of the
   // open list for this shell session, by Model.hideKey; nothing written.
   property var deskHidden: ({})

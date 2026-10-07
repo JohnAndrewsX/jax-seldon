@@ -4488,11 +4488,17 @@ function graphWake(s, alpha) {
   s.sleeping = s.visCount === 0
 }
 
-// Hold node i at (x, y) while it is dragged (-1: let go).
+// Hold node i at (x, y) while it is dragged, there at once (-1: let go,
+// the node stays where it was put).
 function graphPin(s, i, x, y) {
   s.pinned = i >= 0 && i < s.n && s.vis[i] ? i : -1
   s.px = x
   s.py = y
+  if (s.pinned < 0) return
+  s.x[i] = x
+  s.y[i] = y
+  s.vx[i] = 0
+  s.vy[i] = 0
 }
 
 // Repulsion between every pair of visible nodes, exactly (each pair once).
@@ -4810,10 +4816,15 @@ function graphInfo(build, i) {
     members: node.members || [], more: node.more || 0 }
 }
 
-// The box around the visible nodes (with their radii), null when none.
-function graphBounds(s) {
+// The box around the visible nodes (with their radii), null when none;
+// filled into `out` when given (the canvas reuses one per paint).
+function graphBounds(s, out) {
   if (s.visCount === 0) return null
-  var b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+  var b = out || {}
+  b.x0 = Infinity
+  b.y0 = Infinity
+  b.x1 = -Infinity
+  b.y1 = -Infinity
   for (var p = 0; p < s.visCount; p++) {
     var i = s.visList[p]
     b.x0 = Math.min(b.x0, s.x[i] - s.r[i])
@@ -4826,13 +4837,23 @@ function graphBounds(s) {
 
 // The view { x, y, k } that fits `bounds` into a w × h canvas with `pad`
 // on every side, zoom at most kMax (the view's origin is the canvas
-// centre: screen = world × k + (w / 2 + x, h / 2 + y)).
-function graphFit(bounds, w, h, pad, kMax) {
-  if (!bounds || w <= 0 || h <= 0) return { x: 0, y: 0, k: 1 }
+// centre: screen = world × k + (w / 2 + x, h / 2 + y)); into `out` when
+// given.
+function graphFit(bounds, w, h, pad, kMax, out) {
+  var v = out || {}
+  if (!bounds || w <= 0 || h <= 0) {
+    v.x = 0
+    v.y = 0
+    v.k = 1
+    return v
+  }
   var bw = Math.max(1, bounds.x1 - bounds.x0)
   var bh = Math.max(1, bounds.y1 - bounds.y0)
   var k = Math.min(Math.max(1, w - 2 * pad) / bw, Math.max(1, h - 2 * pad) / bh, kMax || 2)
-  return { x: -(bounds.x0 + bounds.x1) / 2 * k, y: -(bounds.y0 + bounds.y1) / 2 * k, k: k }
+  v.x = -(bounds.x0 + bounds.x1) / 2 * k
+  v.y = -(bounds.y0 + bounds.y1) / 2 * k
+  v.k = k
+  return v
 }
 
 // Add the shape of a node of `kind` at (x, y), radius r, to ctx's current
