@@ -47,7 +47,21 @@ mod collectors {
     fn pacman_offsets_match_the_fixture_readme() {
         let log = std::fs::read(fixture("logs/pacman.log")).unwrap();
         let parsed = pacman::parse(&log, 0, false, cest());
-        assert_eq!(parsed.resume, 11832, "complete lines end at byte 11832");
+        assert_eq!(parsed.resume, 12053, "complete lines end at byte 12053");
+        // both forms of a file pacman left (WP-141): the `.pacsave` before
+        // the baseline, the `.pacnew` in the 10-01 `omarchy update`
+        let left: Vec<&str> = parsed
+            .txs
+            .iter()
+            .flat_map(|t| t.left.iter().map(|l| l.left.as_str()))
+            .collect();
+        assert_eq!(
+            left,
+            [
+                "/etc/ayatana/indicator.conf.pacsave",
+                "/etc/mkinitcpio.conf.pacnew"
+            ]
+        );
         // the unterminated last line is never read, even with pacman idle
         assert!(
             parsed
@@ -56,7 +70,7 @@ mod collectors {
                 .all(|t| t.lines.iter().all(|l| !l.name.starts_with("nv")))
         );
 
-        // from init's baseline cursor (6129): exactly the ledger's events
+        // from init's baseline cursor (6245): exactly the ledger's events
         let mut b = Bench::new("offset");
         b.seed(&[Source::Agent]);
         let inode = std::fs::metadata(fixture("logs/pacman.log")).unwrap().ino();
@@ -64,7 +78,7 @@ mod collectors {
             "pacman",
             to_cursor(&PacmanCursor {
                 inode,
-                offset: 6129,
+                offset: 6245,
             }),
         );
         b.baseline = support::ts("2100-01-01T00:00:00+00:00"); // ignored with a cursor
@@ -77,7 +91,7 @@ mod collectors {
             out.cursor,
             Some(to_cursor(&PacmanCursor {
                 inode,
-                offset: 11832
+                offset: 12053
             }))
         );
     }
@@ -109,7 +123,7 @@ mod collectors {
                 .any(|e| e.subject == "omarchy" && e.meta.to.as_deref() == Some("4.0.6-1")),
             "the repeated 09-15 upgrade is not emitted twice"
         );
-        assert_eq!(second.events.len(), 13);
+        assert_eq!(second.events.len(), 14);
         assert_eq!(
             normalised_sorted(&b.ledger_events(Source::Pacman)),
             normalised_sorted(&fixture_events(Source::Pacman))
@@ -146,7 +160,7 @@ mod collectors {
             .filter(|e| e.subject == "omarchy")
             .collect();
         assert_eq!(omarchy.len(), 2, "4.0.6 once (from the old file) and 4.0.7");
-        assert_eq!(out.events.len(), 14);
+        assert_eq!(out.events.len(), 15);
     }
 
     #[test]
