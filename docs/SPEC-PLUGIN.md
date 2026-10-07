@@ -418,7 +418,10 @@ stays a crisis (`Service.driftRules`). `always-red` → "A
 package on your crisis list ([drift] alwaysRed in
 ~/.config/seldon/config.toml) was installed, removed or downgraded by name
 in this transaction."; `always-red-paths` → "The path matches your crisis
-list ([drift] alwaysRedPaths …)."; `attention-all` → "[drift] attention =
+list ([drift] alwaysRedPaths …)."; `pacnew-red` → "pacman left a .pacnew,
+.pacsave or .pacorig beside a file that boot, login or security depend on
+(mkinitcpio, Limine, systemd, PAM); until the two are merged, one of them
+is not in use." (WP-141); `attention-all` → "[drift] attention =
 "all" is set: every change without a case is open drift, and a crisis is
 a change in the red zone."; another rule is named as it is. Until the
 answer (and in dev mode, without an engine, when the index has no rule)
@@ -431,7 +434,12 @@ same. The key/values When · Who · What · Case · Rule · Source · Zone ·
 Resolved · Event (values wrap at word boundaries; a longer token breaks
 anywhere; a detail the index clipped — the event's `meta.truncated` or the
 drift item's `truncated`, contract 2 — reads "(clipped in the index; the
-ledger has it in full)"), a
+ledger has it in full)"; for a file pacman left — a pacman `note` whose
+subject ends in `.pacnew`, `.pacsave` or `.pacorig`, SPEC-ENGINE §4,
+WP-141 — a row **Hint** after What: "Merge with pacdiff (from
+pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot
+tell whether that happened since." — text only, never a button or a
+command the plugin runs, AGENTS.md §8), a
 group's members (`seldon drift show` for those the index no longer lists),
 "proposed for C-…", and "None of this is required. An agent explains only
 what it can prove." The bar's Link, Explain and Dismiss only open the
@@ -591,8 +599,8 @@ network, from the index alone; `sections/Graph.qml` with
   index's `constructor` or `ADR-0003` as a case links nothing. Nodes: the logbook's areas (`system.areas`, and any area a case
   names that the list lacks), the cases of all four lists, the decisions,
   and the events whose kind is a change (`Model.GRAPH_CHANGE_KINDS` and
-  `plugin-*`; not case lifecycle, notes, corrections, resolutions, state
-  loss): the index's events, then open drift items it no longer lists
+  `plugin-*`, and a pacman `note` — a file pacman left, WP-141; not case
+  lifecycle, other notes, corrections, resolutions, state loss): the index's events, then open drift items it no longer lists
   among them. A change is a crisis when its id is in `drift[]` with
   `crisis: true`. Edges, once each (a solid one wins over a dashed one):
   `event.case` → case, `case.area` → area, `decisions[].cases` → case
