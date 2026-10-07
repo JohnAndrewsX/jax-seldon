@@ -166,3 +166,48 @@ Brief: `WP-113-round-3-brief.md` (Fable stage 2: SEND BACK for a small round; B2
 - `omarchy-toggle-input-device`'s non-empty `<kind>-disabled-name` flag (N-b): measure it on the test host before widening ADR-0037 §1.
 - A stat line with the change time for unreadable persistence files that only the hook can read (N1 rest).
 - From earlier rounds: ADR-0037 acceptance (operator; merging into `next` waits for it), §2's evidence check on the test host and its implementation, attributing an agent's in-place plugin edit to its case.
+
+## Accepted and merged next
+
+- **ADR-0037 accepted** (operator decision 2026-10-07, E4): status line
+  `accepted (operator decision 2026-10-07, after Opus and Fable stage 2)`,
+  §1 and §3 implemented by WP-113, §2 left to the follow-up WP; the
+  "Amends" note now says four rows (it names four); DECISIONS.md: ADR-0037
+  accepted, ADR-0028's row "four §2 rows amended by ADR-0037"; SPEC §5
+  drops "proposed" (`09240a85`).
+- **Merged `origin/next` at `448669ad`** (contract v2, the desk, WP-102a,
+  WP-125) as `7a544938`. Conflicts and how they were resolved:
+  - `CHANGELOG.md`, `DECISIONS.md`: both sides kept (ADR-0035, then
+    ADR-0037).
+  - `engine/src/model/event.rs`: next's new test kept; the ledger count
+    is 87 (next's 85 plus WP-113's two lines).
+  - Fixtures: the two WP-113 ledger lines (09-22) and their view lines
+    merged cleanly; every derived index file re-derived with
+    `python3 scripts/validate-fixtures.py --write-index`; the
+    `drift-explained-case` overlay index moved 69 → 70.
+    `fixtures/README.md`: 87 ledger lines (11 resolutions), 76 index
+    events (9 with `resolutionDetail`).
+  - Derived pins: ×10 870 lines, stated scale 10 788 (justfile,
+    TESTING.md, SPEC §6 incl. ×150 13 050, `scale.rs`, `tests/index.rs`);
+    `tests/plugin/model.test.js` (76 events, 71 in 30 days on 15 days,
+    13 opened · 8 resolved, desk chips `routine 31 … all 76`, graph 68
+    nodes / 48 changes).
+- **Desk harness after the merge** (`08e02362`): the first gate on the
+  merge (`check-wp113-merged.log`) failed only in `tests/plugin/
+  desk-view.sh`, 23 of 1448: the counts above, a `wait:sectionView.
+  rows=77` that became 78, and one layout-dependent check. With one more
+  graph node the settled layout no longer puts a label at the right edge
+  at 50 % (`graph-narrow #4 .view.graph.flipped >= 1`; probed in a copy:
+  `flipped` stays 0 in steps 3–6). The check moved to a new case
+  `graph-flip`: it drags case `C-2026-004` 600 px right (400 px is not
+  enough) and expects no flip before the drag, a flip after it and no
+  overflow. `graph-narrow`'s step numbers and overflow checks are
+  unchanged. No plugin code changed.
+- **Gate:** `flock /tmp/seldon-check.lock just check` at `08e02362`
+  → **exit 0** (`check-wp113-merged2.log`: `check: ok`; 88 test
+  binaries ok, `qmllint: ok (46 files)`, `model.test.js` 140 passed,
+  `desk-view` 1451 passed / 0 failed). `check-perf` not rerun: the merge
+  does not touch the walk or the collectors.
+- **Process note:** one probe this round put an inline `rm -f` into a
+  command (the brief asks for runner scripts); the later probe used a
+  runner script in the scratchpad.
