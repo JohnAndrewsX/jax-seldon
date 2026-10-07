@@ -2600,4 +2600,30 @@ mod tests {
             red("pacman")
         );
     }
+
+    /// Round 3: a shell reserved word before a command (`do`, `if`, `!`,
+    /// `{`) is read past, so the command after it is classified.
+    #[test]
+    fn reserved_words_are_read_past() {
+        for line in [
+            "for p in a b; do sudo lpadmin -x $p; done",
+            "if ! sudo lpadmin -x X; then echo no; fi",
+            "while true; do sudo lpadmin -x X; done",
+            "until false; do sudo lpadmin -x X; done",
+            "if true; then sudo lpadmin -x X; fi",
+            "if false; then :; elif true; then sudo lpadmin -x X; fi",
+            "if false; then :; else sudo lpadmin -x X; fi",
+            "{ sudo lpadmin -x X; }",
+        ] {
+            assert_eq!(records(line), [privileged("lpadmin", "sudo")], "{line}");
+        }
+        assert_eq!(
+            class("for p in a; do sudo pacman -S $p; done"),
+            red("pacman")
+        );
+        assert_eq!(class("if ! pacman -S x; then echo no; fi"), red("pacman"));
+        for line in ["do", "if", "!", "{", "then fi", "do done"] {
+            assert_eq!(records(line), [], "{line}");
+        }
+    }
 }

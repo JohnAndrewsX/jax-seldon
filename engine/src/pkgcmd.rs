@@ -357,6 +357,14 @@ pub fn omarchy_route(argv: &[String]) -> Option<Vec<&str>> {
 /// Packages `omarchy update` names besides the full upgrade.
 pub const OMARCHY_UPDATE_NAMES: [&str; 2] = ["archlinux-keyring", "omarchy-keyring"];
 
+/// Shell reserved words a command can follow in one simple command as the
+/// parser splits it (`for p in a; do sudo lpadmin …; done`, `if ! sudo …`):
+/// read past like an assignment, so the command after them is the one
+/// classified.
+const RESERVED_BEFORE_COMMAND: [&str; 9] = [
+    "if", "then", "elif", "else", "do", "while", "until", "!", "{",
+];
+
 fn is_assignment(word: &str) -> bool {
     word.split_once('=').is_some_and(|(k, _)| {
         !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
@@ -972,7 +980,7 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
     let mut password_on_stdin = false;
     let mut i = 0;
     while let Some(w) = words.get(i) {
-        if is_assignment(w) {
+        if is_assignment(w) || RESERVED_BEFORE_COMMAND.contains(&w.as_str()) {
             i += 1;
             continue;
         }
