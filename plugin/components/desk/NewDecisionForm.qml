@@ -1,34 +1,34 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "../Model.js" as Model
+import "../../Model.js" as Model
 
-// The new-decision sheet on the Decisions tab (SPEC-PLUGIN §5, WP-023): one
-// title. It sends `seldon decide --no-edit --json -- <title>` through
-// Service.decide(); the title is one argument after `--`, exactly as typed.
-// Once the engine has created the decision, the service opens it in the
-// editor (`seldon open <id> --editor --json`, the id from the engine's
-// answer, checked against the schema pattern).
+// New decision, in the Decisions section's detail pane (ADR-0034 §2,
+// WP-123; the 0.1 panel's NewDecisionSheet, WP-023): one title. It sends
+// `seldon decide --no-edit --json -- <title>` through Service.decide(); the
+// title is one argument after `--`, exactly as typed. Once the engine has
+// created the decision, the service opens it in the editor (`seldon open
+// <id> --editor --json`, the id from the engine's answer, checked against
+// the schema pattern).
 //
-// Writing follows the drift sheet (WP-021): Enter in the title field or on
+// Writing arms twice (SPEC-PLUGIN §5): Enter in the title field or on
 // *Create* arms the call and shows "Press Enter again: …", the second Enter
 // runs it; a click on *Create* runs it at once. Any change to the title
 // disarms. The title stays until the engine has created the decision, so a
-// refusal never loses it; then the sheet empties and reports
-// `created(decisionId)`. While a decision another panel sent (the bar
-// builds one panel per monitor, all on one service) is pending, Create
-// still asks the service, which refuses; the sheet then shows its busy
-// text (Service.busyRefusal) in the neutral tone until the next Create or
-// a change to the title, like the new-case and drift sheets (WP-078).
+// refusal never loses it; then the form empties and reports
+// `created(decisionId)`. While another decision is pending, Create still
+// asks the service, which refuses; the form then shows its busy text
+// (Service.busyRefusal) in the neutral tone until the next Create or a
+// change to the title (WP-078).
 //
-// Keyboard: while anything in the sheet has focus, Panel.qml blocks its own
-// keys (`editing`). Tab walks title → Create → Cancel; Esc closes the sheet,
-// gives the keys back and keeps the title.
+// Keyboard: while anything in the form has focus, the desk stays out of
+// the keys (Section.editing). Tab walks title → Create → Cancel; Esc
+// leaves the form, gives the keys back and keeps the title.
 FocusScope {
   id: root
 
   property var service: null
-  property color foreground: Color.foreground
+  property color foreground: Color.popups.text
   property color accent: Color.accent
   property color urgent: Color.urgent
   property string fontFamily: Style.font.family
@@ -48,15 +48,15 @@ FocusScope {
   readonly property string writeBlocker: service ? service.writeBlocker : "The Seldon service is not running"
   readonly property var result: service ? service.decideResult : null
   readonly property bool pending: !!result && result.pending
-  // This sheet's own decision is pending (the guard of Enter and Create).
+  // This form's own decision is pending (the guard of Enter and Create).
   readonly property bool ownPending: root.pending && root.sentTitle !== ""
-  // Create takes a click unless this sheet's own decision is pending, so a
-  // click during another panel's call gets the busy text.
+  // Create takes a click unless this form's own decision is pending, so a
+  // click during another call of the service gets the busy text.
   readonly property bool submitEnabled: root.canWrite && !root.ownPending
   readonly property var built: Model.decideArgs(root.title)
   readonly property string sig: built.args ? JSON.stringify(built.args) : ""
   readonly property bool armed: sig !== "" && armedSig === sig
-  // A created decision is reported on the tab; the sheet shows progress and refusals.
+  // A created decision is reported by the section; the form shows progress and refusals.
   readonly property string resultText: root.notice !== "" ? root.notice
     : result && (result.pending || !result.ok) ? result.text : ""
   readonly property bool resultOk: root.notice !== "" ? root.notice === Model.BUSY_TEXT : !!result && result.ok
@@ -139,20 +139,25 @@ FocusScope {
     width: parent.width
     spacing: Style.spacing.md
 
-    PanelSectionHeader {
-      text: "NEW DECISION"
-      foreground: root.foreground
-      fontFamily: root.fontFamily
+    Text {
+      width: parent.width
+      textFormat: Text.PlainText
+      text: "New decision"
+      color: root.foreground
+      wrapMode: Text.Wrap
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.title
+      font.bold: true
     }
 
     Text {
       width: parent.width
       textFormat: Text.PlainText
       text: "The engine writes it to decisions/ as proposed and opens it in the editor."
-      color: root.dim
+      color: Color.muted
       wrapMode: Text.Wrap
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.bodySmall
     }
 
     TextField {

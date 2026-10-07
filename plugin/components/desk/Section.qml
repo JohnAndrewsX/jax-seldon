@@ -39,6 +39,8 @@ Item {
 
   // ↑/↓ (j/k) in the list.
   function move(dy) { return false }
+  // ←/→ (the Prime Radiant's periods).
+  function moveAcross(dx) { return false }
   // Enter / Space on the cursor's row.
   function activate() { return false }
   // A typed character the desk does not own (letters, `+`).
