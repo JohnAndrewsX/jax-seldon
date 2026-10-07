@@ -269,5 +269,7 @@ conflicts.
   2.55 ms; 900 lines with the rebuild — 3.25 ms, 4.40 ms, 4.73 ms (worst,
   budget 5 ms; r1's 4.37 ms, the line now also runs the stdin check);
   unrelated session 0.87–0.89 ms (budget 1 ms).
-- `git diff c1ee5d27 HEAD`: no added `/home/` but the `/home/user`
-  fixture placeholder.
+- `git log -p --no-merges next..HEAD` (this WP's own commits): no added
+  `/home/` but the `/home/user` fixture placeholder. (`git diff
+  c1ee5d27 HEAD` also shows three `/home/<user>`-style placeholder lines
+  from other WPs' handovers that came in with `next`.)
