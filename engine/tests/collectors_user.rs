@@ -222,14 +222,14 @@ mod plugins {
     /// A bench with a stub `omarchy` that prints `list.json` for `plugin
     /// list --json` (or fails with `fail-list` present) and `catalog.json`
     /// for `plugin catalog` (or fails without it).
-    struct PluginBench {
-        b: Bench,
+    pub(super) struct PluginBench {
+        pub(super) b: Bench,
         omarchy: String,
-        plugins_dir: PathBuf,
+        pub(super) plugins_dir: PathBuf,
     }
 
     impl PluginBench {
-        fn new(tag: &str) -> Self {
+        pub(super) fn new(tag: &str) -> Self {
             let b = Bench::new(tag);
             let stub = b.path("bin/omarchy");
             let list = b.path("list.json");
@@ -260,7 +260,7 @@ mod plugins {
             write(&self.b.path("list.json"), json);
         }
 
-        fn list_fixture(&self, name: &str) {
+        pub(super) fn list_fixture(&self, name: &str) {
             self.list(&std::fs::read_to_string(fixture(name)).unwrap());
         }
 
@@ -283,7 +283,7 @@ mod plugins {
             }
         }
 
-        fn manifest(&self, id: &str, version: Option<&str>) {
+        pub(super) fn manifest(&self, id: &str, version: Option<&str>) {
             let mut m = json!({"id": id, "name": id, "kinds": ["bar-widget"]});
             if let Some(v) = version {
                 m["version"] = json!(v);
@@ -294,7 +294,7 @@ mod plugins {
             );
         }
 
-        fn run(&mut self, now: &str) -> Outcome {
+        pub(super) fn run(&mut self, now: &str) -> Outcome {
             let (omarchy, dir) = (self.omarchy.clone(), self.plugins_dir.clone());
             self.b.run("plugins", now, |ctx, cursor| {
                 Plugins.collect_from(ctx, cursor, &omarchy, &dir)
@@ -304,7 +304,12 @@ mod plugins {
 
     /// The fixture story's user plugins at their 10-01 versions.
     fn story() -> PluginBench {
-        let p = PluginBench::new("plugins");
+        story_in("plugins")
+    }
+
+    /// [`story`] in a bench named `tag`.
+    pub(super) fn story_in(tag: &str) -> PluginBench {
+        let p = PluginBench::new(tag);
         p.catalog_fixture();
         p.manifest("io.github.example.weather-plus", Some("1.3.0"));
         p.manifest("user.clock", Some("1.0.0"));
@@ -658,7 +663,12 @@ mod plugins {
         let out = p.run("2026-10-01T16:10:00+02:00");
         assert_eq!(out.events.len(), 1);
         assert_eq!(out.events[0].meta.version.as_deref(), Some(head.as_str()));
-        assert_eq!(out.events[0].detail.as_deref(), Some(head.as_str()));
+        // WP-136: the add of a clone says so
+        assert_eq!(
+            out.events[0].detail.as_deref(),
+            Some(format!("{head}, installed by git clone").as_str())
+        );
+        assert_eq!(out.events[0].meta.extra["git"], "clone");
 
         // a plugin directory without its own .git has no version, even
         // inside another repository
@@ -673,6 +683,312 @@ mod plugins {
         assert_eq!(
             p.b.cursors["plugins"]["plugins"]["user.clock"]["version"], "1.0.0",
             "kept from the last readable manifest"
+        );
+    }
+}
+
+/// Plugin updates name their incoming commits (WP-136): a third-party
+/// plugin's own clone, built with the host's `git` in the bench's home
+/// (no system or global config). Skipped without `git`.
+mod plugin_commits {
+    use super::*;
+    use std::process::{Command, Output};
+
+    const WEATHER: &str = "io.github.example.weather-plus";
+
+    struct Clone {
+        p: plugins::PluginBench,
+        dir: PathBuf,
+    }
+
+    impl Clone {
+        /// The story with weather-plus as a clone whose manifest has no
+        /// version (the short HEAD is the version), one commit, and a
+        /// baseline taken. `None` without git on this host.
+        fn new(tag: &str) -> Option<Self> {
+            let p = plugins::story_in(tag);
+            let dir = p.plugins_dir.join(WEATHER);
+            p.manifest(WEATHER, None);
+            let c = Clone { p, dir };
+            c.git(&["init", "-q", "-b", "main"])?;
+            c.commit("Initial import");
+            c.p.list_fixture("logs/plugin-list-after.json");
+            let mut c = c;
+            let first = c.p.run("2026-10-02T09:00:00+02:00");
+            assert!(first.ok && first.events.is_empty(), "{:?}", first.events);
+            Some(c)
+        }
+
+        fn git(&self, args: &[&str]) -> Option<Output> {
+            let out = git_in(&self.p.b.dirs.home, &self.dir, args)?;
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            Some(out)
+        }
+
+        /// A commit that touches the manifest, with `message` verbatim.
+        fn commit(&self, message: &str) {
+            let manifest = self.dir.join("manifest.json");
+            let mut text = std::fs::read_to_string(&manifest).unwrap();
+            text.push(' ');
+            write(&manifest, text);
+            self.git(&["add", "manifest.json"]).unwrap();
+            self.git(&["commit", "-q", "--cleanup=verbatim", "-m", message])
+                .unwrap();
+        }
+
+        fn head(&self) -> String {
+            let out = self.git(&["rev-parse", "HEAD"]).unwrap();
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        }
+
+        fn short(&self) -> String {
+            let out = self.git(&["rev-parse", "--short", "HEAD"]).unwrap();
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        }
+
+        /// One capture; its only event, a plugin-update of weather-plus.
+        fn update(&mut self, now: &str) -> Event {
+            let out = self.p.run(now);
+            assert!(out.ok, "{:?}", out.message);
+            assert_eq!(out.events.len(), 1, "{:?}", out.events);
+            let e = self.p.b.written.last().unwrap().clone();
+            assert_eq!((e.kind, e.subject.as_str()), (Kind::PluginUpdate, WEATHER));
+            e
+        }
+    }
+
+    /// `git args…` in `dir` with `home` as HOME and no system or global
+    /// config; `None` when there is no git.
+    fn git_in(home: &Path, dir: &Path, args: &[&str]) -> Option<Output> {
+        let out = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+            .args(args)
+            .current_dir(dir)
+            .env("HOME", home)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .output();
+        match out {
+            Ok(out) => Some(out),
+            Err(_) => {
+                eprintln!("skipped: no git on this host");
+                None
+            }
+        }
+    }
+
+    fn extra<'a>(e: &'a Event, key: &str) -> Option<&'a str> {
+        e.meta.extra.get(key).and_then(Value::as_str)
+    }
+
+    #[test]
+    fn pull_rollback_and_reset_are_named_with_their_commits() {
+        let Some(mut c) = Clone::new("commits-steps") else {
+            return;
+        };
+        let base = c.short();
+
+        // update by pull: three commits came in
+        for s in [
+            "Add wind gusts",
+            "Fix the unit toggle",
+            "Update translations",
+        ] {
+            c.commit(s);
+        }
+        let pulled = c.short();
+        let e = c.update("2026-10-02T10:00:00+02:00");
+        assert_eq!(extra(&e, "git"), Some("pull"));
+        assert_eq!(
+            extra(&e, "commits"),
+            Some("Update translations\nFix the unit toggle\nAdd wind gusts")
+        );
+        assert_eq!(
+            e.detail.as_deref(),
+            Some(format!("{base} → {pulled}, pulled 3 commits: Update translations …").as_str())
+        );
+        assert_eq!(
+            (e.meta.from.as_deref(), e.meta.to.as_deref()),
+            (Some(base.as_str()), Some(pulled.as_str()))
+        );
+        assert_eq!(
+            c.p.b.cursors["plugins"]["plugins"][WEATHER]["head"],
+            c.head()
+        );
+
+        // idempotent: nothing moved, nothing new
+        let again = c.p.run("2026-10-02T10:05:00+02:00");
+        assert!(again.events.is_empty(), "{:?}", again.events);
+
+        // rollback by reset: two commits left
+        c.git(&["reset", "-q", "--hard", "HEAD~2"]).unwrap();
+        let back = c.short();
+        let e = c.update("2026-10-02T11:00:00+02:00");
+        assert_eq!(extra(&e, "git"), Some("rollback"));
+        assert_eq!(
+            extra(&e, "commits"),
+            Some("Update translations\nFix the unit toggle")
+        );
+        assert_eq!(
+            e.detail.as_deref(),
+            Some(
+                format!("{pulled} → {back}, rolled back 2 commits: Update translations …").as_str()
+            )
+        );
+
+        // reset to another history: one commit in, one out
+        c.git(&["reset", "-q", "--hard", "HEAD~1"]).unwrap();
+        c.commit("Rewrite the forecast panel");
+        let other = c.short();
+        let e = c.update("2026-10-02T12:00:00+02:00");
+        assert_eq!(extra(&e, "git"), Some("reset"));
+        assert_eq!(extra(&e, "commits"), Some("Rewrite the forecast panel"));
+        assert_eq!(
+            e.detail.as_deref(),
+            Some(
+                format!("{back} → {other}, reset: 1 commit in, 1 out: Rewrite the forecast panel")
+                    .as_str()
+            )
+        );
+
+        // one commit: no ellipsis; more than 20: the count, 20 subjects
+        c.commit("Only one");
+        let e = c.update("2026-10-02T13:00:00+02:00");
+        assert!(
+            e.detail
+                .as_deref()
+                .unwrap()
+                .ends_with(", pulled 1 commit: Only one"),
+            "{:?}",
+            e.detail
+        );
+        for k in 1..=25 {
+            c.commit(&format!("Step {k}"));
+        }
+        let e = c.update("2026-10-02T14:00:00+02:00");
+        let commits: Vec<&str> = extra(&e, "commits").unwrap().split('\n').collect();
+        assert_eq!(commits.len(), seldon::collectors::plugins::COMMITS_MAX);
+        assert_eq!((commits[0], commits[19]), ("Step 25", "Step 6"));
+        assert!(
+            e.detail
+                .as_deref()
+                .unwrap()
+                .ends_with(", pulled 25 commits: Step 25 …")
+        );
+    }
+
+    #[test]
+    fn a_hostile_subject_is_cleaned_redacted_and_clipped() {
+        let Some(mut c) = Clone::new("commits-hostile") else {
+            return;
+        };
+        let long = "x".repeat(300);
+        c.commit("\u{1b}[31mred\u{1b}[0m\rover\u{7}written\ttab");
+        c.commit("evil \u{202E}txt.exe\u{202C} and to\u{200B}ken=ghp_EXAMPLEsecret123 here");
+        c.commit(&format!("token=ghp_EXAMPLEsecret456 {long}"));
+        c.commit(&format!("{} token=ghp_EXAMPLEsecret789", "y".repeat(95)));
+        let e = c.update("2026-10-02T10:00:00+02:00");
+        let commits = extra(&e, "commits").unwrap();
+        let lines: Vec<&str> = commits.split('\n').collect();
+        assert_eq!(lines.len(), 4, "{commits:?}");
+        for line in &lines {
+            assert!(!line.chars().any(char::is_control), "{line:?}");
+            assert!(
+                line.chars().count() <= seldon::collectors::plugins::COMMIT_SUBJECT_MAX,
+                "{line:?}"
+            );
+            assert!(!line.contains("ghp_EXAMPLE"), "{line:?}");
+        }
+        // redacted before the clip: a secret at the cut is masked whole
+        assert_eq!(
+            lines[0],
+            format!("{} token=‹redacted›", "y".repeat(95))
+                .chars()
+                .take(99)
+                .collect::<String>()
+                + "…"
+        );
+        assert!(
+            lines[1].starts_with("token=‹redacted› xxx") && lines[1].ends_with('…'),
+            "{:?}",
+            lines[1]
+        );
+        assert_eq!(lines[2], "evil txt.exe and token=‹redacted› here");
+        assert_eq!(lines[3], "[31mred [0m over written tab");
+        assert!(!e.detail.as_deref().unwrap().contains("ghp_EXAMPLE"));
+        assert!(!e.detail.as_deref().unwrap().chars().any(char::is_control));
+    }
+
+    #[test]
+    fn without_a_clone_or_a_known_head_there_is_no_list() {
+        // a plugin without git: the version step only
+        let mut p = plugins::story_in("commits-none");
+        p.list_fixture("logs/plugin-list-after.json");
+        p.run("2026-10-02T09:00:00+02:00");
+        p.manifest(WEATHER, Some("1.4.0"));
+        let out = p.run("2026-10-02T10:00:00+02:00");
+        assert_eq!(out.events.len(), 1);
+        let e = &out.events[0];
+        assert_eq!(e.detail.as_deref(), Some("1.3.0 → 1.4.0"));
+        assert!(e.meta.extra.is_empty(), "{:?}", e.meta.extra);
+        assert!(
+            p.b.cursors["plugins"]["plugins"][WEATHER]
+                .get("head")
+                .is_none()
+        );
+
+        // a cursor from before WP-136 (no head): no list for this step,
+        // then the next one has it
+        let Some(mut c) = Clone::new("commits-legacy") else {
+            return;
+        };
+        let cursor = c.p.b.cursors.get_mut("plugins").unwrap();
+        cursor["plugins"][WEATHER]
+            .as_object_mut()
+            .unwrap()
+            .remove("head");
+        c.commit("Before the head was known");
+        let e = c.update("2026-10-02T10:00:00+02:00");
+        assert!(e.meta.extra.is_empty(), "{:?}", e.meta.extra);
+        c.commit("After");
+        let e = c.update("2026-10-02T11:00:00+02:00");
+        assert_eq!(extra(&e, "commits"), Some("After"));
+
+        // a head git no longer has, or one shaped like an option: the
+        // event without the list, and git never sees it as an option
+        for bad in ["0123456789abcdef0123456789abcdef01234567", "--output=pwned"] {
+            let cursor = c.p.b.cursors.get_mut("plugins").unwrap();
+            cursor["plugins"][WEATHER]["head"] = json!(bad);
+            c.commit(&format!("After {bad}"));
+            let e = c.update("2026-10-02T12:00:00+02:00");
+            assert!(e.meta.extra.is_empty(), "{bad}: {:?}", e.meta.extra);
+            assert!(!c.dir.join("pwned").exists());
+        }
+    }
+
+    #[test]
+    fn a_broken_git_dir_inside_another_repository_is_no_clone() {
+        let mut p = plugins::story_in("commits-ceiling");
+        let home = p.b.dirs.home.clone();
+        if git_in(&home, &p.plugins_dir, &["init", "-q"]).is_none() {
+            return;
+        }
+        // the outer repository has commits; the plugin's `.git` is empty
+        let outer = |args: &[&str]| git_in(&home, &p.plugins_dir, args).unwrap();
+        assert!(outer(&["add", "."]).status.success());
+        assert!(outer(&["commit", "-q", "-m", "dotfiles"]).status.success());
+        std::fs::create_dir_all(p.plugins_dir.join(WEATHER).join(".git")).unwrap();
+        p.manifest(WEATHER, None);
+        p.list_fixture("logs/plugin-list-after.json");
+        p.run("2026-10-02T09:00:00+02:00");
+        let state = &p.b.cursors["plugins"]["plugins"][WEATHER];
+        assert!(
+            state.get("head").is_none() && state.get("version").is_none(),
+            "{state}"
         );
     }
 }
