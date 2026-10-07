@@ -201,7 +201,9 @@ enum Entry {
     Unreadable(std::fs::Metadata),
 }
 
-/// SHA-256 of an unreadable entry's size, modification time (ns) and mode.
+/// SHA-256 of an unreadable entry's size, modification time (ns), change
+/// time and mode: an in-place write with the modification time put back
+/// changes it (WP-113 round 3), and so does a `chmod` round trip.
 fn unreadable_hash(meta: &std::fs::Metadata) -> String {
     use std::os::unix::fs::MetadataExt as _;
     let mtime = meta
@@ -209,7 +211,17 @@ fn unreadable_hash(meta: &std::fs::Metadata) -> String {
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_nanos());
-    sys::sha256_hex(format!("{} {} {:o}\n", meta.len(), mtime, meta.mode()).as_bytes())
+    sys::sha256_hex(
+        format!(
+            "{} {} {} {} {:o}\n",
+            meta.len(),
+            mtime,
+            meta.ctime(),
+            meta.ctime_nsec(),
+            meta.mode()
+        )
+        .as_bytes(),
+    )
 }
 
 /// The tree of the plugin directory `dir` ([`Tree`]); `known` is the last

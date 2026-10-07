@@ -155,7 +155,7 @@ ROUTINE_PACKAGES = ["archlinux-keyring", "omarchy-keyring"]
 EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 ALWAYS_RED_PATHS = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**",
                     "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile",
-                    "~/.ssh/authorized_keys"]
+                    "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
 CLASS_ORDER = {"routine": 0, "attention": 1, "crisis": 2}
 THEME_CODE = {"alacritty.toml", "foot.ini", "ghostty.conf", "kitty.conf", "vscode.json"}
 OMARCHY_LOOKBACK = dt.timedelta(days=31)

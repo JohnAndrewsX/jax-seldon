@@ -785,6 +785,9 @@ impl Walker<'_> {
                 } else {
                     scan.loops += 1;
                 }
+            } else if follow.inside && self.leads_into_own(&path) {
+                // below a link to an ancestor of Seldon's own directories
+                scan.own += 1;
             } else if first || !follow.inside {
                 self.walk(&path, depth + 1, scan, follow);
             }
@@ -827,6 +830,9 @@ impl Walker<'_> {
         scan.files
             .insert(key.clone(), sys::sha256_hex(CUT_OFF.as_bytes()));
         scan.cut.insert(key);
+        // the cut belongs to this link: the walk above it and the later
+        // roots go on (WP-113 round 3)
+        follow.cut = false;
     }
 
     fn file(&self, path: &Path, meta: &std::fs::Metadata, scan: &mut Scan) {
@@ -841,7 +847,10 @@ impl Walker<'_> {
             scan.mtimes.insert(key.clone(), t);
         }
         let persistent = self.persist.matches(path);
-        if persistent && meta.len() > STAT_HASH_ABOVE {
+        // the toggles directory too: Hyprland loads its Lua whatever it
+        // holds (WP-113 round 3); a dozen files
+        let every = persistent || path.starts_with(self.dirs.home.join(TOGGLES_DIR));
+        if every && meta.len() > STAT_HASH_ABOVE {
             scan.stat_hashed.insert(key.clone());
         }
         let stat = FileStat::of(meta, self.started);
@@ -852,7 +861,7 @@ impl Walker<'_> {
                 .flatten()
         });
         let hash = known.or_else(|| {
-            if persistent {
+            if every {
                 persistent_hash(path, meta)
             } else {
                 hash_file(path, meta.len())
@@ -896,15 +905,27 @@ pub(crate) fn persistent_hash(path: &Path, meta: &std::fs::Metadata) -> Option<S
     }
 }
 
-/// SHA-256 of a file's size, modification time (ns) and inode: the hash
-/// of a file too large to read (WP-113 round 2). A `touch` changes it.
+/// SHA-256 of a file's size, modification time (ns), change time and
+/// inode: the hash of a file too large to read (WP-113 rounds 2 and 3). A
+/// `touch` changes it, and so does an in-place write whose modification
+/// time was put back: no user can reset the change time.
 pub(crate) fn stat_hash(meta: &std::fs::Metadata) -> String {
     let mtime = meta
         .modified()
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_nanos());
-    sys::sha256_hex(format!("stat {} {} {}\n", meta.len(), mtime, meta.ino()).as_bytes())
+    sys::sha256_hex(
+        format!(
+            "stat {} {} {} {} {}\n",
+            meta.len(),
+            mtime,
+            meta.ctime(),
+            meta.ctime_nsec(),
+            meta.ino()
+        )
+        .as_bytes(),
+    )
 }
 
 /// SHA-256 of the whole file at `path`, any size and content, read in

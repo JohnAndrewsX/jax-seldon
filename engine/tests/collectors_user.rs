@@ -877,6 +877,29 @@ mod plugins {
         assert_eq!(out.events.len(), 1, "readable again: one step back");
         assert!(!out.events[0].meta.extra.contains_key("partial"));
 
+        // round 3: an unreadable file written in place with its
+        // modification time put back (`touch -d`) — the change time shows it
+        let junk = dir.join("junk");
+        mode(&junk, 0o200);
+        assert_eq!(p.run("2026-10-07T10:42:00+02:00").events.len(), 1);
+        let before = std::fs::metadata(&junk).unwrap();
+        {
+            use std::io::Write as _;
+            let mut f = std::fs::File::options().write(true).open(&junk).unwrap();
+            f.write_all(b"y\n").unwrap();
+            f.set_modified(before.modified().unwrap()).unwrap();
+        }
+        let after = std::fs::metadata(&junk).unwrap();
+        assert_eq!(
+            (after.len(), after.modified().unwrap()),
+            (before.len(), before.modified().unwrap())
+        );
+        let out = p.run("2026-10-07T10:44:00+02:00");
+        assert_eq!(out.events.len(), 1, "{:?}", out.events);
+        assert_eq!(out.events[0].meta.extra["partial"], true);
+        mode(&junk, 0o644);
+        p.run("2026-10-07T10:46:00+02:00");
+
         // the plugin directory itself unreadable: the last hash is kept
         let tree = p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"].clone();
         mode(&dir, 0o000);

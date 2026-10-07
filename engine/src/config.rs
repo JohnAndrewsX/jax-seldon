@@ -670,9 +670,11 @@ pub const DEFAULT_ROUTINE_PACKAGES: [&str; 2] = ["archlinux-keyring", "omarchy-k
 
 /// Default `[drift] alwaysRedPaths`: code that runs at login or on events
 /// without being configuration (ADR-0028 §2), and `~/.ssh/authorized_keys`
-/// (WP-113, operator decision 2026-10-06), which only matters once the
-/// user adds it to `watchPaths` (opt-in; it is no default watch path).
-pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 8] = [
+/// and `~/.ssh/authorized_keys2`, sshd's two default `AuthorizedKeysFile`
+/// entries (WP-113, operator decision 2026-10-06; ADR-0037 §3), which only
+/// matter once the user adds them to `watchPaths` (opt-in; no default
+/// watch path).
+pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 9] = [
     "~/.config/systemd/user/**",
     "~/.config/omarchy/hooks/**",
     "~/.config/autostart/**",
@@ -681,6 +683,7 @@ pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 8] = [
     "~/.profile",
     "~/.bash_profile",
     "~/.ssh/authorized_keys",
+    "~/.ssh/authorized_keys2",
 ];
 
 fn strings(list: &[&str]) -> Vec<String> {

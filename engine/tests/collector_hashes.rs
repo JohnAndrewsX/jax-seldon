@@ -416,6 +416,97 @@ fn a_link_past_the_budget_is_cut_off_and_a_crisis() {
     );
 }
 
+/// Round 3 (R1), Fable's probe: a link cut off at the budget is one event
+/// of its own and nothing else — the walk above it and the later roots go
+/// on, so no file elsewhere looks removed.
+#[test]
+fn a_cut_stays_in_its_link() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let home = &env.home;
+    write(home.join(".config/omarchy/themes/t/theme.lua"), "-- t\n");
+    write(
+        home.join(".config/omarchy/hooks/zz.d/z.sh"),
+        "#!/bin/bash\n",
+    );
+    write(home.join(".config/waybar/sub/x.css"), "* {}\n");
+    write(
+        home.join(".config/systemd/user/default.target.wants/u.service"),
+        "[Service]\n",
+    );
+    capture_config(&env); // baseline
+    let target = env.tmp.path().join("decoys");
+    for i in 0..=seldon::collectors::config::LINKED_ENTRIES {
+        write(target.join(format!("{i:05}")), format!("{i}\n"));
+    }
+    let key = "~/.config/omarchy/hooks/post-update.d";
+    symlink(&target, &home.join(".config/omarchy/hooks/post-update.d"));
+    capture_config(&env);
+    let events: Vec<String> = config_events(&env)
+        .into_iter()
+        .map(|e| format!("{} {}", e.0, e.1))
+        .collect();
+    assert_eq!(events, [format!("config-add {key}")]);
+    capture_config(&env);
+    assert_eq!(config_events(&env).len(), 1, "idempotent");
+}
+
+/// Round 3 (R3): a link to an ancestor of Seldon's own directories (here
+/// `~/.local`, above the state directory) does not walk into them: four
+/// captures, no event.
+#[test]
+fn a_link_to_an_ancestor_of_seldons_dirs_stays_out_of_them() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    capture_config(&env); // baseline
+    symlink(
+        &env.home.join(".local"),
+        &env.home.join(".config/omarchy/hooks/post-update.d"),
+    );
+    for _ in 0..4 {
+        let c = capture_config(&env);
+        assert!(
+            message(&c).contains("1 link(s) into Seldon's own files not followed"),
+            "{c}"
+        );
+    }
+    // what the link reaches beside the state directory is watched once
+    let events = config_events(&env);
+    assert!(
+        events.iter().all(|e| !e.1.contains("/seldon/")),
+        "{:?}",
+        events.iter().map(|e| &e.1).collect::<Vec<_>>()
+    );
+    let n = events.len();
+    capture_config(&env);
+    assert_eq!(config_events(&env).len(), n, "idempotent");
+}
+
+/// Round 3 (N-a): every file in the toggles directory is hashed — a
+/// binary and a Lua file over 1 MiB there are attention, not invisible.
+#[test]
+fn every_file_in_the_toggles_directory_is_hashed() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let hypr = env.home.join(".local/state/omarchy/toggles/hypr");
+    write(hypr.join("flags.lua"), "-- flags\n");
+    capture_config(&env); // baseline
+    write(hypr.join("blob.lua"), b"-- x\n\0\0payload");
+    let mut big = b"hl.exec('x')\n".to_vec();
+    big.resize(2 << 20, b'-');
+    write(hypr.join("big.lua"), &big);
+    capture_config(&env);
+    let key = |n: &str| format!("~/.local/state/omarchy/toggles/hypr/{n}");
+    assert_eq!(
+        class_of(&env, &key("blob.lua"), "config-add"),
+        "attention config"
+    );
+    assert_eq!(
+        class_of(&env, &key("big.lua"), "config-add"),
+        "attention config"
+    );
+}
+
 /// N3: a persistence-path link into the logbook (or the state directory,
 /// or `~/.config/seldon`) is not followed: it would change with every
 /// capture.
@@ -509,11 +600,28 @@ fn a_huge_hook_is_hashed_by_its_metadata() {
     assert_eq!(events[0].2["hashBasis"], "stat");
     let meta = std::fs::metadata(&hook).unwrap();
     assert_eq!(events[0].2["hashTo"], seldon_stat_hash(&meta));
+    // round 3: written in place, modification time put back (`touch -d`):
+    // the change time still shows it
+    {
+        use std::io::Write as _;
+        let mut f = std::fs::File::options().write(true).open(&hook).unwrap();
+        f.write_all(b"#!/bin/bash\nevil\n").unwrap();
+        f.set_modified(meta.modified().unwrap()).unwrap();
+    }
+    let after = std::fs::metadata(&hook).unwrap();
+    assert_eq!(
+        (after.len(), after.modified().unwrap()),
+        (meta.len(), meta.modified().unwrap())
+    );
+    capture_config(&env);
+    let events = config_events(&env);
+    assert_eq!(events.len(), 2, "{events:?}");
+    assert_eq!(events[1].0, "config-change");
     std::fs::remove_file(&hook).unwrap();
 }
 
 /// The fingerprint `stat_hash` writes, recomputed: `stat <size> <mtime ns>
-/// <inode>`.
+/// <ctime s> <ctime ns> <inode>`.
 fn seldon_stat_hash(meta: &std::fs::Metadata) -> String {
     use std::os::unix::fs::MetadataExt as _;
     let mtime = meta
@@ -522,7 +630,17 @@ fn seldon_stat_hash(meta: &std::fs::Metadata) -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    seldon::sys::sha256_hex(format!("stat {} {} {}\n", meta.len(), mtime, meta.ino()).as_bytes())
+    seldon::sys::sha256_hex(
+        format!(
+            "stat {} {} {} {} {}\n",
+            meta.len(),
+            mtime,
+            meta.ctime(),
+            meta.ctime_nsec(),
+            meta.ino()
+        )
+        .as_bytes(),
+    )
 }
 
 /// Upgrading to WP-113 hashes a binary or large hook that an earlier
@@ -664,7 +782,7 @@ fn authorized_keys_is_a_crisis_once_watched() {
     let text = read(&env.config_file());
     let opted = text.replacen(
         "watchPaths = [",
-        "watchPaths = [\"~/.ssh/authorized_keys\", ",
+        "watchPaths = [\"~/.ssh/authorized_keys\", \"~/.ssh/authorized_keys2\", ",
         1,
     );
     assert_ne!(opted, text);
@@ -686,6 +804,19 @@ fn authorized_keys_is_a_crisis_once_watched() {
     assert_eq!(events[0].1, "~/.ssh/authorized_keys");
     assert_eq!(
         class(&env, "~/.ssh/authorized_keys"),
+        "crisis always-red-paths"
+    );
+    // round 3: sshd's second default `AuthorizedKeysFile`
+    let keys2 = env.home.join(".ssh/authorized_keys2");
+    write(
+        &keys2,
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLE4 attacker@example\n",
+    );
+    capture_config(&env);
+    let events = config_events(&env);
+    assert_eq!(events.len(), 2, "{events:?}");
+    assert_eq!(
+        class_of(&env, "~/.ssh/authorized_keys2", "config-add"),
         "crisis always-red-paths"
     );
     let ledger = common::ledger(&env.tmp.path().join("logbook"));
