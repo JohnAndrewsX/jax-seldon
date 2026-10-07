@@ -316,6 +316,6 @@ files WP-140..148). Merged as b67b3ae3; one conflict, DECISIONS.md
   merge): `check: ok` (log `target/check-wp129-r3-1.log`).
 - The same on b67b3ae3 (after the merge): `check: ok` (log
   `target/check-wp129-r3-2.log`).
-- `check-perf` not re-run: the change adds a 9-entry slice lookup per
-  word read past in `unwrap_command`; round 2's numbers (worst 4.73 ms)
+- `check-perf` not re-run: the change adds a 9-entry slice lookup for
+  each word the wrapper loop of `unwrap_command` looks at; round 2's numbers (worst 4.73 ms)
   stand.
