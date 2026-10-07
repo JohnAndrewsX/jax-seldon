@@ -916,7 +916,12 @@ def case_intent(fm, body):
     return ps[0] if ps else None
 
 
-DIRECTION_OR_FORMAT = re.compile("[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
+# engine: import::is_direction_or_format (ADR-0038 §2, the set WP-140 widened)
+FORMAT_SET = (
+    "\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff"
+    "\ufff9-\ufffb\U000e0000-\U000e007f"
+)
+DIRECTION_OR_FORMAT = re.compile(f"[{FORMAT_SET}]")
 
 
 def shown_text(text):
@@ -932,7 +937,7 @@ def shown_text(text):
     return text if text.strip(WHITE_SPACE) else None
 
 
-BAD_PATH = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
+BAD_PATH = re.compile(f"[\x00-\x1f\x7f-\x9f{FORMAT_SET}]")
 
 
 def case_source(fm, problems, where):
