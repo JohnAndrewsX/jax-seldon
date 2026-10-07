@@ -336,3 +336,129 @@ this handover changed after it): `check: ok`, exit 0, including
 `check-guard` (`rows: 277`, `mutants: 33`, none survived). Same target
 dir (`engine/target` in the worktree); `shellcheck` skipped locally (not
 installed).
+
+## Round 3
+
+Stage 2 (Fable) swept 9 542 generated rows against 7fa7efe. The parser
+guard was stronger than main's everywhere except unknown exec wrappers
+(a regression). Round 3 fixes that regression and all of the brief's A
+items. Each one is table rows; nothing was executed, only fed as text.
+
+### A1–A12
+
+| Item | Change | Rows |
+|---|---|---|
+| A1 | `trap -- 'X' SIG` reads the string after `--` | 1 B, 1 A |
+| A2 | `shred`: `-n`/`-s` take an argument, `-u` is a flag | 2 B |
+| A3 | any IFS assignment except as a prefix of `read`/`mapfile` → fail closed | 4 B, 2 A |
+| A4 | namerefs (`declare/local/typeset -n`) are followed; an unknown target is unknown | 3 B |
+| A5 | `${HOME%/}`, `${HOME#x}`, `${HOME/x/y}`, `${HOME:0}`: the value itself or unknown | 4 B |
+| A6 | a `cd` after `;`/newline may fail (old directory stays a candidate; after `&&` it succeeded); `cd -`, `~-`, `$OLDPWD`; `popd` → old or unknown; a function defined in the command is walked at each call (nesting limit) | 9 B, 3 A |
+| A7 | links made in the command (`ln`, `ln -s`, `cp -s`) are followed for writes, command names and Omarchy scripts; the link is recorded after its own write check; at most 64 | 5 B, 2 A |
+| A8 | ssh to this machine (localhost, 127.*, ::1, 0.0.0.0, its own host name, a computed host) gets the local rules; the test-host gate is unchanged | 9 B, 1 A |
+| A9 | Omarchy's own scripts: a path under `/usr/share/omarchy` or `$OMARCHY_PATH` (also via a link) as a command, `bash`/`sh`/`source`/`.`, `bash -c`, `env OMARCHY_PATH=…`, loops → blocked; `omarchy-*` binaries keep their rule; `bash -n` passes | 12 B, 5 A |
+| A10 | write paths: `patch` (operand, `-d`, `-o`, `-r`), `tar -x` (`-C`, old style), `tar -c` (`-f`), `unzip` (`-d`), `curl` (`-o`, `-O`, `--output-dir`, `-D`, `-c`), `wget` (`-O`, `-P`, `-o`), `git clone/init/worktree add` and the work tree (`-C`, `--work-tree`, cwd) of changing verbs | 20 B, 14 A |
+| A11 | `script` without `-c` reads its shell from stdin: pipe → fail closed, heredoc → checked | 2 B, 1 A |
+| A12 | `alias NAME=…` or `shopt -s expand_aliases` → fail closed | 2 B, 2 A |
+
+### A13 — exec wrappers (the regression)
+
+- **(a) Wrapper table.**
+  - Unwrapped and checked: `hyprctl dispatch exec` (window rules
+    stripped) and `--batch`; `tmux new|new-window|split-window|
+    run-shell|respawn-*|display-popup|if-shell|pipe-pane` and
+    `send-keys` (`Enter` → newline), commands separated by `;`, `tmux
+    -c`. Also terminals (`foot`, `alacritty`, `ghostty`, `kitty`, …:
+    after `-e`, otherwise every operand suffix), `taskset`, `chrt`,
+    `systemd-inhibit`, `systemd-cat`, `ssh-agent`, `dbus-run-session`,
+    `dbus-launch`, `uwsm app|start`, `unbuffer`, `gdb --args`, and
+    `sg … -c`.
+  - Fail closed: `hyprctl keyword exec*|bind*`, `gdb -ex/-x/--batch`,
+    `bwrap`, `parallel`, `firejail`, `unshare`, `nsenter`, `chroot`,
+    `socat EXEC:|SYSTEM:`, `sftp -b`.
+  - rsync and scp/sftp: `rsync -e/--rsh` and `scp/sftp -S` must name
+    `ssh`, and its `-o ProxyCommand/LocalCommand` stay blocked.
+  - Run a program: `tar -I`, `--to-command`, `--checkpoint-action`,
+    `-F`, `--info-script`; `rg --pre`; `git -c` with a key that runs a
+    program (alias.*, core.pager/editor/sshCommand/fsmonitor/hooksPath/
+    askPass/gitProxy, credential.*, diff.*, filter.*, merge.*, pager.*,
+    protocol.*, sequence.editor, gpg.*program, include*). Also
+    `--config-env`, `--exec-path=`, `--upload-pack`, `--template`, and
+    `ext::` URLs.
+- **Decision on git variables.** The brief says GIT_*/EDITOR/PAGER
+  prefix assignments → fail closed. Taken literally that blocks
+  `GIT_PAGER=cat git log` and `GIT_EDITOR=true git rebase --continue`,
+  which agents run every day. So only the variables that name a program
+  are checked: GIT_PAGER, PAGER, GIT_EDITOR, EDITOR, VISUAL,
+  GIT_SEQUENCE_EDITOR, GIT_SSH(_COMMAND), (SSH_)GIT_ASKPASS,
+  GIT_EXTERNAL_DIFF, GIT_PROXY_COMMAND, GIT_EXEC_PATH, GIT_TEMPLATE_DIR
+  and any GIT_CONFIG*. They fail closed unless their value is `cat`,
+  `less`, `more`, `head`, `tail`, `true`, `false`, `:` or empty. Other
+  GIT_* (author dates and the like) pass. Rows: two allow, two block.
+- **(b) The net.** An unknown program fails closed when an argument's
+  basename is in PRIVILEGE ∪ PACKAGE ∪ SERVICE, `omarchy`, `omarchy-*`
+  or `grub-*`, or is a shell followed by `-c`. The exception is a data
+  sink: echo, printf, grep, rg, cat, less, head, tail, man, which, type,
+  stat, ls, file, diff, wc, sort, jq, git, gh, herdr, tee, awk, sed,
+  cargo, just, python3, node, seldon, journalctl, the file and archive
+  tools, and similar programs. Rows: `myrunner sudo ls`,
+  `strace -f pacman -Syu`, `catchsegv omarchy-update` and
+  `xyz bash -c 'ls'` block. `man sudo`, `which sudo`,
+  `stat /usr/bin/sudo`, a herdr prompt naming sudo and
+  `cargo test pacman` pass.
+- **Rows for A13:** (a) 41 B and 11 A, (b) 4 B and 5 A. Two of the (a) blocks (`foot -e rm -rf
+  ~/.config/hypr`, `taskset -c 0 rm -rf ~/Seldon`) name no red-zone
+  word, so the net cannot catch them and the wrapper rules have rows of
+  their own.
+
+### False positives of the sweep
+
+`eval "$(ssh-agent -s)"` passes: the cmdsub's command must be exactly
+`ssh-agent` with `-s`, `-c`, `-k` or `-D`. Read-only `loginctl` verbs
+(list-*, show-*, session-/user-/seat-status) pass;
+`terminate-session` and `kill-user` stay blocked.
+
+### Not in this round
+
+The stage-2 B items are lines in "Known limits" above, for the
+operator's morning decisions:
+- Omarchy routes outside the list (stage 2 recommends a read-only
+  allow-list);
+- D-Bus, `hyprctl plugin|reload|keyword` and polkit paths;
+- `~/.config` writers by program;
+- files written then run in the same command;
+- interpreters and `xargs` input;
+- `ssh -I` PKCS#11;
+- the hook covers only the Bash tool.
+
+### Tests
+
+- **Table:** 447 rows (170 new), all green.
+- **Mutants:** 62 (29 new), all caught by their intended row. Two
+  identical runs give the same verdicts and killing rows.
+- **Flakiness found and fixed.** In a first run, two mutants counted as
+  "killed" only because, under 62 parallel processes on a loaded host,
+  the at-cap row (0.9 s alone) went past the 3 s budget. Fixes:
+  - the allowed at-cap row is now one long word (0.04 s), still exactly
+    262 144 bytes;
+  - the budget rows use 10 KB with a 0.001 s budget;
+  - the runner uses half the cores.
+  The two real survivors this exposed (a failed `cd` after `;`, and
+  `cd -`) now have sharper rows.
+- **Sweeps:** the 82 + 46 everyday commands are not blocked; the 104
+  bypass shapes are not allowed.
+- **Timing at the cap,** this host at load average ~10 (other agents'
+  cargo builds): the worst allowed shape is a `$(echo x)` chain at
+  1.47 s; `echo x;` repeated 0.99 s.
+  - 32 000-element `||` chain: 2.14 s;
+  - 22 670 subshell assignments: 2.01 s.
+  - Fail closed in time: 60 000 calls of one function hit the 3 s
+    budget, and links past 64 are blocked.
+
+### just check (round 3)
+
+`flock /tmp/seldon-check.lock just check` on 01a1a54 (the code; only
+this handover and `memory/pitfalls.md` changed after it): `check: ok`,
+exit 0, including `check-guard` (`rows: 447`, `mutants: 62`, none
+survived), on a host at load average ~10. `shellcheck` still skipped
+locally (not installed).

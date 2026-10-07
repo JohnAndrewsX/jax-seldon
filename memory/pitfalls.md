@@ -2247,3 +2247,9 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   than 3 s of checking. Write big files with the Write/Edit tools, not a
   giant heredoc. `GUARD_HOSTS_FILE` only counts with `SELDON_TEST_GUARD`
   set (the test table).
+- **The guard follows the shell further (WP-130 round 3).** A changed
+  IFS, an alias, `git -c core.pager=…`, `tar -I`, `rg --pre`, `gdb -ex`,
+  `bwrap` and `parallel` fail closed; an unknown program whose arguments
+  name `sudo`/`pacman`/`systemctl`/`omarchy` fails closed too (`man`,
+  `which`, `stat`, `cargo test pacman` pass). Omarchy's own scripts never
+  run (`bash -n` on them passes). `GIT_PAGER=cat`/`GIT_EDITOR=true` pass.
