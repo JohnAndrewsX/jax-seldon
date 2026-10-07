@@ -226,7 +226,7 @@ const RACY: Duration = Duration::from_secs(2);
 impl FileStat {
     /// `None` for a file modified less than [`RACY`] before `started` (or
     /// either time before 1970): its hash is not reused.
-    fn of(meta: &std::fs::Metadata, started: SystemTime) -> Option<Self> {
+    pub(crate) fn of(meta: &std::fs::Metadata, started: SystemTime) -> Option<Self> {
         let mtime = meta.modified().ok()?;
         let ctime = UNIX_EPOCH.checked_add(Duration::new(
             u64::try_from(meta.ctime()).ok()?,

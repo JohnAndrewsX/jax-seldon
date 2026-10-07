@@ -394,10 +394,14 @@ mod plugins {
             update,
             "plugin-update",
             "io.github.example.weather-plus",
-            &[
-                "ts", "source", "kind", "subject", "detail", "actor", "zone", "meta",
-            ],
+            &["ts", "source", "kind", "subject", "detail", "actor", "zone"],
         );
+        // the fixture line is from before WP-113: the version step as
+        // there, plus the tree's hashes (the manifest is part of the tree)
+        let theirs = fixture_event("plugin-update", "io.github.example.weather-plus");
+        assert_eq!(update.meta.from.as_deref(), theirs["meta"]["from"].as_str());
+        assert_eq!(update.meta.to.as_deref(), theirs["meta"]["to"].as_str());
+        assert!(update.meta.hash_from.is_some() && update.meta.hash_to.is_some());
         // first-party versions come from the catalog's manifestPath, which
         // does not exist here: no version, but still the enabled state
         let disable = &p.b.written[1];
@@ -674,6 +678,164 @@ mod plugins {
             p.b.cursors["plugins"]["plugins"]["user.clock"]["version"], "1.0.0",
             "kept from the last readable manifest"
         );
+    }
+
+    /// The fixture story's plugins with a few more files each.
+    fn trees() -> PluginBench {
+        let p = story();
+        for id in ["io.github.example.weather-plus", "io.github.example.tyme"] {
+            let dir = p.plugins_dir.join(id);
+            write(&dir.join("Widget.qml"), "import QtQuick\nItem {}\n");
+            write(&dir.join("assets/icon.png"), b"\x89PNG\0\0\x01");
+        }
+        p.list_fixture("logs/plugin-list-after.json");
+        p
+    }
+
+    fn short(h: &Option<String>) -> String {
+        h.as_deref().unwrap().chars().take(8).collect()
+    }
+
+    /// WP-113: an in-place edit of a third-party plugin (no version
+    /// change, no git) is one `plugin-update` carrying the tree's hashes;
+    /// a second capture writes nothing.
+    #[test]
+    fn an_in_place_edit_of_a_plugin_is_one_update() {
+        let mut p = trees();
+        assert!(p.run("2026-10-07T10:00:00+02:00").events.is_empty());
+        let cursor = &p.b.cursors["plugins"]["plugins"];
+        assert!(
+            cursor["io.github.example.tyme"]["tree"].is_string(),
+            "{cursor}"
+        );
+        assert!(
+            cursor["omarchy.clock"].get("tree").is_none(),
+            "first-party plugins have no tree: {cursor}"
+        );
+
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        write(
+            &dir.join("Widget.qml"),
+            "import QtQuick\nItem { Component.onCompleted: run() }\n",
+        );
+        write(&dir.join("lib/helper.so"), b"\x7fELF\0\0");
+        let out = p.run("2026-10-07T10:10:00+02:00");
+        assert_eq!(
+            out.events.len(),
+            1,
+            "one event per tree, not per file: {:?}",
+            out.events
+        );
+        let e = &out.events[0];
+        assert_eq!(
+            (e.kind, e.subject.as_str()),
+            (Kind::PluginUpdate, "io.github.example.tyme")
+        );
+        assert_eq!((e.meta.from.as_ref(), e.meta.to.as_ref()), (None, None));
+        assert_ne!(e.meta.hash_from, e.meta.hash_to);
+        assert_eq!(
+            e.detail.as_deref().unwrap(),
+            format!(
+                "files changed (sha256 {} → {})",
+                short(&e.meta.hash_from),
+                short(&e.meta.hash_to)
+            )
+        );
+        assert!(
+            p.run("2026-10-07T10:20:00+02:00").events.is_empty(),
+            "idempotent"
+        );
+
+        // a version bump with its files: still one event, with both steps
+        p.manifest("io.github.example.tyme", Some("1.2.0"));
+        write(&dir.join("Widget.qml"), "import QtQuick\nItem {}\n");
+        let out = p.run("2026-10-07T10:30:00+02:00");
+        assert_eq!(out.events.len(), 1, "{:?}", out.events);
+        let e = &out.events[0];
+        assert_eq!(e.detail.as_deref(), Some("1.1.0 → 1.2.0"));
+        assert!(e.meta.hash_from.is_some() && e.meta.hash_to.is_some());
+        assert!(p.run("2026-10-07T10:40:00+02:00").events.is_empty());
+    }
+
+    /// `.git` and `[redaction] skipPaths` are not part of a tree; a link
+    /// that is not to a file counts by its target, not walked.
+    #[test]
+    fn what_a_tree_holds() {
+        let mut p = trees();
+        let dir = p.plugins_dir.join("io.github.example.weather-plus");
+        write(&dir.join(".git/HEAD"), "ref: refs/heads/main\n");
+        p.run("2026-10-07T10:00:00+02:00");
+        write(&dir.join(".git/FETCH_HEAD"), "x\n");
+        // a default skipPaths pattern (`~/.config/omarchy/**/state.json`)
+        write(&dir.join("state.json"), "{}\n");
+        assert!(p.run("2026-10-07T10:10:00+02:00").events.is_empty());
+
+        let elsewhere = p.b.path("elsewhere");
+        write(&elsewhere.join("Evil.qml"), "Item {}\n");
+        std::os::unix::fs::symlink(&elsewhere, dir.join("extra")).unwrap();
+        let out = p.run("2026-10-07T10:20:00+02:00");
+        assert_eq!(out.events.len(), 1, "a link arrived: {:?}", out.events);
+        write(&elsewhere.join("Evil.qml"), "Item { x: 1 }\n");
+        assert!(
+            p.run("2026-10-07T10:30:00+02:00").events.is_empty(),
+            "a linked directory is not walked"
+        );
+        std::fs::remove_file(dir.join("extra")).unwrap();
+        std::os::unix::fs::symlink(p.b.path("other"), dir.join("extra")).unwrap();
+        assert_eq!(
+            p.run("2026-10-07T10:40:00+02:00").events.len(),
+            1,
+            "a new target"
+        );
+    }
+
+    /// A cursor from before WP-113 has no tree: the first capture takes it
+    /// without an event. A tree that cannot be read keeps its last hash.
+    #[test]
+    fn a_tree_is_taken_without_an_event_and_kept_when_unreadable() {
+        let mut p = trees();
+        p.run("2026-10-07T10:00:00+02:00");
+        let mut old = p.b.cursors["plugins"].clone();
+        old.as_object_mut().unwrap().remove("stats");
+        for (_, plugin) in old["plugins"].as_object_mut().unwrap() {
+            plugin.as_object_mut().unwrap().remove("tree");
+        }
+        p.b.cursors.insert("plugins", old);
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        write(&dir.join("Widget.qml"), "Item { y: 2 }\n");
+        assert!(p.run("2026-10-07T10:10:00+02:00").events.is_empty());
+        let tree = p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"].clone();
+        assert!(tree.is_string());
+
+        // unreadable (a user, not root: root reads it anyway)
+        use std::os::unix::fs::PermissionsExt as _;
+        let assets = dir.join("assets");
+        std::fs::set_permissions(&assets, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read_dir(&assets).is_err() {
+            assert!(p.run("2026-10-07T10:20:00+02:00").events.is_empty());
+            assert_eq!(
+                p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"],
+                tree
+            );
+        }
+        std::fs::set_permissions(&assets, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(p.run("2026-10-07T10:30:00+02:00").events.is_empty());
+    }
+
+    /// A capture whose cursor save failed after its ledger write repeats
+    /// no tree update (the ledger holds it).
+    #[test]
+    fn a_lost_cursor_save_repeats_no_tree_update() {
+        let mut p = trees();
+        p.run("2026-10-07T10:00:00+02:00");
+        let before = p.b.cursors["plugins"].clone();
+        write(
+            &p.plugins_dir.join("io.github.example.tyme/Widget.qml"),
+            "Item { z: 3 }\n",
+        );
+        assert_eq!(p.run("2026-10-07T10:10:00+02:00").events.len(), 1);
+        p.b.cursors.insert("plugins", before);
+        assert!(p.run("2026-10-07T10:20:00+02:00").events.is_empty());
     }
 }
 

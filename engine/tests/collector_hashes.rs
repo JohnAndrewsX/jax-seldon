@@ -389,3 +389,63 @@ fn authorized_keys_is_a_crisis_once_watched() {
         "hashes only"
     );
 }
+
+/// A third-party plugin edited in place is quiet attention (ADR-0028 §2,
+/// `plugin-*` row); Seldon's own plugin edited in place is explained by
+/// SPEC-ENGINE §5 rule 8 (the dev install, an update through Omarchy).
+#[test]
+fn plugin_tree_changes_classify_by_the_plugin_rows() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    env.stub(
+        "omarchy",
+        r#"case "$2" in
+list) printf '%s\n' '[{"id":"jax.seldon","enabled":true,"firstParty":false},{"id":"io.github.example.x","enabled":true,"firstParty":false}]';;
+*) exit 1;;
+esac"#,
+    );
+    let plugins = env.home.join(".config/omarchy/plugins");
+    for id in ["jax.seldon", "io.github.example.x"] {
+        write(
+            plugins.join(id).join("manifest.json"),
+            format!("{{\"id\":\"{id}\",\"version\":\"1.0.0\"}}"),
+        );
+        write(plugins.join(id).join("Widget.qml"), "Item {}\n");
+    }
+    let capture = || {
+        let c = ok(&env, &["capture", "--source", "plugins", "--json"]);
+        assert_eq!(c["ok"], true, "{c}");
+    };
+    capture(); // baseline
+    for id in ["jax.seldon", "io.github.example.x"] {
+        write(
+            plugins.join(id).join("Widget.qml"),
+            "Item { visible: false }\n",
+        );
+    }
+    capture();
+    let ledger = common::ledger(&env.tmp.path().join("logbook"));
+    let updates: Vec<&Value> = ledger
+        .iter()
+        .filter(|e| e["kind"] == "plugin-update")
+        .collect();
+    assert_eq!(updates.len(), 2, "{ledger:?}");
+    let own = updates
+        .iter()
+        .find(|e| e["subject"] == "jax.seldon")
+        .unwrap();
+    assert!(
+        ledger.iter().any(|r| r["kind"] == "resolution"
+            && r["refersTo"] == own["id"]
+            && r["detail"] == "seldon's own plugin"),
+        "{ledger:?}"
+    );
+    assert_eq!(class(&env, "io.github.example.x"), "attention plugin");
+    let open: Vec<String> = ok(&env, &["drift", "--json"])["drift"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["subject"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(open, ["io.github.example.x"]);
+}
