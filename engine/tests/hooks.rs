@@ -3135,6 +3135,83 @@ mod privileged {
         assert_eq!(events[0]["meta"]["wrapper"], "doas");
     }
 
+    /// WP-140: a program that takes its secret as a plain argument, or from
+    /// stdin the line feeds, is recorded as `<program> ‹redacted›`, as a
+    /// password piped into `sudo -S` is; an nmcli secret is masked by its
+    /// SPEC-ENGINE §7 rule and the rest of the line stays; a line of the
+    /// same programs without a secret stays whole.
+    #[test]
+    fn a_secret_given_as_an_argument_is_never_recorded() {
+        let h = Hooks::new();
+        let lines = [
+            (
+                "echo 'alice:hunter2' | sudo chpasswd",
+                "chpasswd ‹redacted›",
+            ),
+            (
+                "sudo htpasswd -b /etc/nginx/.htpasswd alice hunter2",
+                "htpasswd ‹redacted›",
+            ),
+            (
+                "echo hunter2 | sudo passwd --stdin alice",
+                "passwd ‹redacted›",
+            ),
+            (
+                "sudo usermod -aG wheel -p 'hunter2hash' alice",
+                "usermod ‹redacted›",
+            ),
+            (
+                "(echo hunter2; echo hunter2) | sudo smbpasswd -s -a alice",
+                "smbpasswd ‹redacted›",
+            ),
+            (
+                "echo -n hunter2 | sudo cryptsetup open /dev/sdb1 vault -d -",
+                "cryptsetup ‹redacted›",
+            ),
+            // the first command of the script is the privileged record's
+            // (WP-129 decision 6)
+            (
+                "sudo sh -c 'echo alice:hunter2 | chpasswd'",
+                "echo ‹redacted›",
+            ),
+            (
+                "sudo nmcli dev wifi connect Home password hunter2 ifname wlan0",
+                "sudo nmcli dev wifi connect Home password ‹redacted› ifname wlan0",
+            ),
+            (
+                "sudo nmcli con mod Home wifi-sec.psk 'hunter2 x' ipv4.dns 9.9.9.9",
+                "sudo nmcli con mod Home wifi-sec.psk ‹redacted› ipv4.dns 9.9.9.9",
+            ),
+            (
+                "sudo usermod -aG wheel alice",
+                "sudo usermod -aG wheel alice",
+            ),
+            (
+                "sudo cryptsetup open /dev/sdb1 vault",
+                "sudo cryptsetup open /dev/sdb1 vault",
+            ),
+        ];
+        for (n, (line, _)) in lines.iter().enumerate() {
+            bash(&h, line, &format!("toolu_args_{n}"));
+        }
+        let events = h.commands();
+        let got: Vec<&str> = events
+            .iter()
+            .map(|e| e["meta"]["command"].as_str().unwrap())
+            .collect();
+        let want: Vec<&str> = lines.iter().map(|(_, c)| *c).collect();
+        assert_eq!(got, want);
+        for e in &events {
+            let shown = format!("asked to run: {}", e["meta"]["command"].as_str().unwrap());
+            assert_eq!(e["detail"], shown.as_str());
+        }
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(!ledger.contains("hunter2"), "{ledger}");
+        let index = read(&h.home().join(".local/state/seldon/index.json"));
+        assert!(index.contains("chpasswd ‹redacted›"), "{index}");
+        assert!(!index.contains("hunter2"), "{index}");
+    }
+
     /// Round 2, B1: a password piped into `sudo -S` is somewhere in the
     /// line, in a form no redaction rule knows: the line is recorded as
     /// `<program> ‹redacted›`, every record of it, as for skipPaths.

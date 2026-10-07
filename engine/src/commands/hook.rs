@@ -97,6 +97,7 @@ pub const CLAUDE_CODE: &str = "agent:claude-code";
 pub(crate) const LOCK_PATIENCE: Duration = Duration::from_secs(8);
 
 mod context;
+mod secret_args;
 pub use context::{DATA_NOTE, quote, session_start};
 
 /// `seldon hook <command>`.
@@ -1009,16 +1010,20 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
 /// path `[redaction] skipPaths` matches is recorded as `<program>
 /// ‹redacted›` (the program of [`Mutation::subject`]), as an `Edit` of such
 /// a file is recorded as `Edit ‹redacted›`; so is a line in which a wrapper
-/// reads the password from stdin (`echo PW | sudo -S …`, ADR-0039): the
-/// password is somewhere in the line, in a form no rule of SPEC-ENGINE §7
-/// knows.
+/// reads the password from stdin (`echo PW | sudo -S …`, ADR-0039), and a
+/// line that runs a program which takes its secret as a plain argument or
+/// from stdin the line feeds (`htpasswd -b`, `echo u:pw | chpasswd`,
+/// `usermod -p`, [`secret_args`], WP-140): the secret is somewhere in the
+/// line, in a form no rule of SPEC-ENGINE §7 knows.
 fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
     let line = parse_shell(command);
     let found = mutations(&line, &setup.scope, cwd);
     if found.is_empty() {
         return Vec::new();
     }
-    let skipped = password_on_stdin(&line) || names_skipped_path(&line, setup, cwd);
+    let skipped = password_on_stdin(&line)
+        || secret_args::secret_on_the_line(&line)
+        || names_skipped_path(&line, setup, cwd);
     found
         .into_iter()
         .map(|mutation| Record {
