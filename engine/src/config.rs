@@ -644,9 +644,9 @@ impl AttentionMode {
     }
 }
 
-/// The routine rule ids of ADR-0028 §2 (and WP-109's theme rules), the
-/// default of `[drift] routine`.
-pub const ROUTINE_RULES: [&str; 11] = [
+/// The routine rule ids of ADR-0028 §2 (and WP-109's theme rules,
+/// ADR-0037's `toggle-flag`), the default of `[drift] routine`.
+pub const ROUTINE_RULES: [&str; 12] = [
     "sysupgrade",
     "upgrade",
     "keyring",
@@ -658,6 +658,7 @@ pub const ROUTINE_RULES: [&str; 11] = [
     "routine-paths",
     "theme-assets",
     "theme-repo",
+    "toggle-flag",
 ];
 
 /// Default `[drift] routinePaths`: the shell's own state file and backups

@@ -149,9 +149,10 @@ def routine(e):
 # ADR-0028 §2 (WP-109): the class of a drift-eligible event, routine < attention < crisis. Keep in
 # step with engine/src/index/class.rs and the [drift] defaults of engine/src/config.rs.
 ROUTINE_RULES = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "theme",
-                 "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo"]
+                 "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
 ROUTINE_PATHS = ["~/.config/omarchy/shell.json", "**/*.bak.*"]
 ROUTINE_PACKAGES = ["archlinux-keyring", "omarchy-keyring"]
+EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 ALWAYS_RED_PATHS = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**",
                     "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile",
                     "~/.ssh/authorized_keys"]
@@ -335,6 +336,13 @@ class Classifier:
         if src == "config":
             mark = meta.get("matches")
             removed = kind == "config-remove"
+            # ADR-0037 §1: a flag file in the toggles directory, created or removed
+            if subject.startswith("~/.local/state/omarchy/toggles/"):
+                h = meta.get("hashFrom") if removed else meta.get("hashTo")
+                if h == EMPTY_SHA256:
+                    return ("routine", "toggle-flag")
+                if removed and mark == "omarchy-default":
+                    return ("routine", "omarchy-default")
             if not removed and mark in ("omarchy-default", "system-link"):
                 return ("routine", mark)
             # the persistence paths right after the evidence rows; a backup there needs evidence
