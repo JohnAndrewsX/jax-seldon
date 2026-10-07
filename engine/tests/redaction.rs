@@ -2378,6 +2378,32 @@ mod commands {
         for secret in [&intent, &result, &lead, &path, "Geheimprojekt", "bob@"] {
             assert!(!text.contains(secret), "{secret} in the index");
         }
+
+        // a pattern that does not compile: the engine does not know what to
+        // hide, so the index withholds the four texts (ADR-0038 §2)
+        let broken =
+            read(&config).replace("patterns = [\"Geheimprojekt\\\\w*\"]", "patterns = [\"(\"]");
+        assert!(broken.contains("patterns = [\"(\"]"));
+        std::fs::write(&config, broken).unwrap();
+        let out = env.at(T0, &["--json", "index"]);
+        let index: Value =
+            serde_json::from_str(&read(&env.home.join(".local/state/seldon/index.json"))).unwrap();
+        let c = &index["cases"]["queued"][0];
+        assert_eq!(
+            (c.get("intent"), c.get("result"), c.get("source")),
+            (None, None, None),
+            "exit {:?}: {}",
+            out.status.code(),
+            stderr(&out)
+        );
+        assert_eq!(index["decisions"][0].get("lead"), None);
+        assert!(
+            index["drift"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|d| d["rule"].is_string())
+        );
     }
 
     fn last_ledger_line(logbook: &Path) -> Value {
