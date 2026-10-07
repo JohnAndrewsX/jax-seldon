@@ -134,29 +134,53 @@ Every command below was **allowed** before:
 10. **`check-guard` runs in `just check`/CI** so a guard change cannot
     merge with a red table or a surviving mutant.
 
-## Known limits (unchanged from before, now written down)
+## Known limits (current as of round 3; show next to the table)
 
-- **Files a shell runs are not inspected.** `bash script.sh`,
-  `source x`, `ssh h bash -s < file`. Generated ones are blocked
-  (`source <(…)`, `bash <(…)`).
-- **Other interpreters are data.** `python3 -c`, `perl -i`, `node -e`,
+What the guard does **not** protect. Each line is a decision for the
+operator, not a hidden gap.
+
+- **Only the Bash tool is guarded.** The hook's matcher is `Bash`. The
+  Write and Edit tools are not checked by this guard; they are covered
+  only by the settings deny list (`/etc`, `~/.config/hypr`,
+  `shell.json`).
+- **Files a shell runs are not inspected** (`bash script.sh`,
+  `source x`, `ssh h bash -s < file`). Generated ones are blocked
+  (`source <(…)`, `bash <(…)`), and so are Omarchy's own scripts (round
+  3). A file written earlier in the same command and then run
+  (`cat > x.sh <<EOF … EOF; bash x.sh`) is not inspected either.
+- **Other interpreters are data**: `python3 -c`, `perl -i`, `node -e`,
   `awk 'system()'`.
 - **`xargs` input is unknown.** `xargs rm -rf < list` decides nothing
   about the targets.
-- **Other write paths are not covered.** `git -C ~/.config/x checkout`,
-  `curl -o`, `tar -C`, `unzip -d`. Symlinks are not resolved.
-- **Text sent to another agent or pane is data**
-  (`herdr agent prompt`, as the WP says); the receiving session's guard
-  decides.
-- **Omarchy commands outside the route list stay allowed.** Round 2
-  added `plugin enable|disable`, `hook`, `branch`, `channel set`; any
-  other system-changing Omarchy command needs its own route.
-- **Big or heavy commands are blocked, not checked** (round 2). Hook
-  input over 256 KB, more than 256 variables, or more than 3 s of
-  checking fails closed. That is a usability limit, not a hole.
+- **Writers to `~/.config` by program, not by path**: `gsettings`,
+  `dconf`, `xdg-mime`, `xdg-settings`, `sort -o`, `mktemp -p`, editors,
+  `wtype` into a terminal. The write rules know file commands; these
+  programs choose their own files.
+- **Omarchy routes outside the list stay allowed.** Stage 2 recommends
+  inverting to a read-only allow-list (`omarchy version`, `commands`,
+  `… --help`, `plugin list|validate|catalog`, `theme current`,
+  `channel current`, `agent usage`, …), so every new Omarchy command is
+  blocked until it is listed. **Operator decision.**
+- **D-Bus, Hyprland and polkit service paths**: `busctl`, `gdbus`,
+  `dbus-send` to systemd or logind, `hyprctl plugin load`, `hyprctl
+  reload`, `hyprctl keyword` other than `exec`/`bind`, `pkaction`, are
+  not modelled.
+- **`ssh -I` / PKCS#11 provider libraries** load a local `.so`; not
+  modelled.
+- **ssh host aliases**: an alias in `~/.ssh/config` that points at this
+  machine is treated as another host.
+- **Links on disk**: the guard reads no files. A symlink made in the
+  same command is followed (round 3); one that already exists
+  (`/tmp/cfg → ~/.config`) is not.
+- **Text sent to another agent or pane is data** (`herdr agent prompt`,
+  as the WP says; `wtype`); the receiving session's guard decides.
+- **Big or heavy commands are blocked, not checked.** Hook input over
+  256 KB, more than 256 variables, more than 64 links, functions or
+  nesting too deep, or more than 3 s of checking fails closed. That is a
+  usability limit, not a hole.
 - **`scripts/deploy-test-host.sh` still honours `GUARD_HOSTS_FILE`**
   without `SELDON_TEST_GUARD` (its own refusal gate, not the hook). See
-  round 2, open question.
+  the round 2 open question.
 
 ## How it was verified
 

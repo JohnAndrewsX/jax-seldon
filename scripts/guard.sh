@@ -9,28 +9,41 @@
 # - Commands are found after `;` `&` `&&` `||` `|` and newlines, inside
 #   `$(…)`, backticks, `<(…)`, compound commands and functions, behind
 #   wrappers (`env`, `command`, `exec`, `nice`, `nohup`, `time`, `timeout`,
-#   `flock`, `xargs`, `find -exec`, `watch`, `VAR=…` prefixes), and in
-#   strings that are code: `bash -c`/`sh -c` bodies, `eval` and `trap`
-#   strings, heredocs and here-strings fed to a shell or to `ssh`, and the
-#   remote command of `ssh` (checked by the same rules).
+#   `flock`, `xargs`, `find -exec`, `watch`, `taskset`, `chrt`,
+#   `systemd-inhibit`, `ssh-agent`, `dbus-run-session`, `uwsm app`,
+#   terminals with `-e`, `VAR=…` prefixes), in functions at their call,
+#   and in strings that are code: `bash -c`/`sh -c` bodies, `eval`, `trap`,
+#   `script -c`, `hyprctl dispatch exec`, `tmux new|run-shell|send-keys`
+#   strings, heredocs and here-strings fed to a shell, `script` or `ssh`,
+#   and the remote command of `ssh` (checked by the same rules; to this
+#   machine — localhost, its own name, a computed host — by the local
+#   rules).
+# - An unknown program whose arguments name a red-zone command (`strace
+#   pacman …`) or `<shell> -c` fails closed, unless it only reads its
+#   arguments as data (`man sudo`, `which sudo`).
 # - Everything else is data: quoted strings, heredoc bodies written to a
 #   file or fed to any other program, `echo`/`printf`/`grep`/`jq`/`git
 #   commit -m`/`herdr agent prompt` arguments.
 # - Blocked at a command position: sudo/doas/su/pkexec/run0; pacman except
 #   `-Q…` and `-S` with `-p`/`--print` (no -y/-u/-c/-w); yay, paru, makepkg,
 #   pacstrap; systemctl except status/show/cat/is-*/list-*; loginctl,
-#   reboot, shutdown, mkinitcpio, grub-*, systemd-run; Omarchy commands
+#   reboot, shutdown, mkinitcpio, grub-*, systemd-run (read-only loginctl
+#   and systemctl verbs pass); Omarchy commands
 #   that change the system (pkg, update, install, theme set, plugin
 #   add/remove/update/clone/enable/disable, snapshot, migrate, refresh,
 #   hook, dev link, branch, channel set; also as omarchy-* binaries) or
-#   launch agents/apps (`omarchy … --help` only prints help); writes
-#   (redirections, tee, cp/mv/ln/install, rm, mkdir, touch, chmod, sed -i,
-#   dd of=, rsync/scp destinations, find -delete)
-#   under /etc /usr /boot /var, under ~/.config outside
-#   ~/.config/omarchy/plugins/jax.seldon, and under the real ~/Seldon and
-#   ~/.local/state/seldon. `~`, `$HOME` and `cd` are resolved; a scratch
-#   HOME set earlier in the command (`export HOME=/tmp/x; mkdir
-#   ~/.config/…`) is not the real home.
+#   launch agents/apps (`omarchy … --help` only prints help); Omarchy's own
+#   scripts (`$OMARCHY_PATH/install.sh`, `migrations/…`; `bash -n` passes);
+#   writes (redirections, tee, cp/mv/ln/install, rm, mkdir, touch, chmod,
+#   sed -i, dd of=, rsync/scp destinations, find -delete, patch, tar -x,
+#   unzip, curl -o/-O, wget, git clone/init/worktree add and git commands
+#   that change a work tree) under /etc /usr /boot /var, under ~/.config
+#   outside ~/.config/omarchy/plugins/jax.seldon, and under the real
+#   ~/Seldon and ~/.local/state/seldon. `~`, `$HOME`, `cd` (a cd that may
+#   fail keeps the old directory as a candidate, `cd -`, `$OLDPWD`) and
+#   links made earlier in the command are resolved; a scratch HOME set
+#   earlier in the command (`export HOME=/tmp/x; mkdir ~/.config/…`) is
+#   not the real home.
 # - Over ssh, the remote command runs on another machine: agent and app
 #   launchers pass; `omarchy theme set` passes when the ssh call is the
 #   whole command; writes under ~/.config/seldon pass when the ssh call is
@@ -47,8 +60,10 @@
 # - The two makepkg forms packaging/README.md uses on the test host over
 #   ssh pass as exact strings (ORCHESTRATION.md §11, WP-040 review).
 # - Fail closed: input it cannot parse, a computed command name, a shell
-#   reading commands from a pipe, `env -S` or an internal error is blocked
-#   with the reason. So is work the hook's 5 s timeout could cut off (a
+#   reading commands from a pipe, `env -S`, a changed IFS, an alias, an
+#   exec option the guard cannot follow (`git -c core.pager=…`, `tar -I`,
+#   `rg --pre`, `gdb -ex`, `bwrap`, `parallel`) or an internal error is
+#   blocked with the reason. So is work the hook's 5 s timeout could cut off (a
 #   timed-out hook does not block): hook input over 256 KB, more than 256
 #   variables in one command, more than 3 s of checking.
 # The parser and the rules live in guard.py (Python 3 standard library);
