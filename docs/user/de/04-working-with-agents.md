@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 943cdb5 -->
+<!-- source: en/04-working-with-agents.md @ 98bb9e4 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -440,8 +440,11 @@ Journal-Eintrag mit seiner Uhrzeit (`2026-10-01 14:40`), ein anderes
 Ereignis, eine Snapshot-Nummer, einen Case oder einen Case, dessen
 *Plan* die Änderung nennt. Die Engine schlägt jeden Beleg selbst nach und
 lehnt einen Vorschlag mit einem Eintrag ab, den sie nicht belegen kann;
-eine Änderung, die niemand erklären kann, bleibt also offen. Ins Logbuch
-wird noch nichts geschrieben. Am Ende nennt dir der Agent die Id des
+eine Änderung, die niemand erklären kann, bleibt also offen. Jeder Beleg
+zeigt, wer ihn geschrieben hat (`by human`, `by agent:codex`), und Belege,
+die der vorschlagende Agent selbst geschrieben hat, lehnt die Engine ab:
+seine eigenen Notizen, Ereignisse, Cases oder Pläne. Ins Logbuch wird noch
+nichts geschrieben. Am Ende nennt dir der Agent die Id des
 Vorschlags.
 
 Du wendest ihn an, als du selbst:
@@ -462,7 +465,12 @@ seldon drift apply <PROPOSAL> --item <EVENT>
 
 Ein zweites `apply` ändert nichts. Ein neuer Vorschlag ersetzt den alten;
 `seldon drift discard <PROPOSAL>` verwirft einen. Anwenden und verwerfen
-darfst nur du: Einen Agenten lehnt die Engine ab.
+darfst nur du: Die Engine lehnt einen Agenten ab, der sich als Agent
+ausweist, wie es ein von Seldon gestarteter tut (`SELDON_ACTOR`). Das
+schützt vor einem Versehen, ist aber kein Schloss: Jedes Programm, das du
+als du selbst startest, kann die Variable weglassen, so wie es Drift auch
+direkt auflösen könnte; *Apply* im Desk läuft aus der Shell, nie aus der
+Sitzung eines Agenten.
 
 Um stattdessen nach einer einzelnen Änderung oder einem Case zu fragen:
 
@@ -632,8 +640,8 @@ haben, erscheint dort.
   `seldon rules update` nur ausführen, wenn du genau das verlangst. Die
   `AGENTS.md` des Logbuchs sagt dasselbe.
 - `seldon drift apply` und `seldon drift discard` gehören dir: Ein
-  Agent schlägt nur vor, und die Engine lehnt einen Agenten ab, der
-  anwendet.
+  Agent schlägt nur vor, und die Engine lehnt einen Agenten ab, der unter
+  seinem eigenen Namen anwendet.
 - Schreib eigene Grenzen unter `## Your rules` in `AGENTS.md`, zum
   Beispiel „nie aus dem AUR installieren“.
 - Lies das *Result* eines Case und seine Spur, wenn du die Arbeit des
