@@ -28,6 +28,9 @@ pub struct Index {
     pub system: System,
     pub memory: MemoryInfo,
     pub series: Series,
+    /// The newest triage proposal of this logbook (ADR-0035 §6).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triage: Option<Triage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -46,6 +49,17 @@ pub struct GitInfo {
     /// `None` when unknown (the fast rebuild path spawns no git).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
+    /// The last autocommit attempted in this logbook (ADR-0035 §2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub autocommit: Option<AutocommitInfo>,
+}
+
+/// `logbook.git.autocommit`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AutocommitInfo {
+    pub ok: bool,
+    pub at: String,
+    pub message: String,
 }
 
 /// `state.status`.
@@ -179,6 +193,9 @@ pub struct DriftItem {
     pub tx_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub members: Option<usize>,
+    /// `Some(true)` when `detail` was clipped (ADR-0035 §3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -240,6 +257,26 @@ pub struct DecisionRow {
     pub status: String,
     pub date: String,
     pub path: String,
+    /// The frontmatter's `cases`, as written, without repeats (ADR-0035 §5).
+    pub cases: Vec<String>,
+}
+
+/// `triage`: the newest proposal of this logbook (ADR-0035 §6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Triage {
+    pub id: String,
+    pub at: String,
+    pub actor: String,
+    pub counts: TriageCounts,
+    /// `proposals/<id>.json`, relative to the directory of `index.json`.
+    pub path: String,
+    pub applied: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct TriageCounts {
+    pub items: usize,
+    pub crises: usize,
 }
 
 /// `system`: every member is optional; an empty logbook has `{}`.

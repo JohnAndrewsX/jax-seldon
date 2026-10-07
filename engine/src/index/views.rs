@@ -117,16 +117,18 @@ fn is_case_kind(kind: Kind) -> bool {
             | Kind::CaseVerified
             | Kind::CaseCompleted
             | Kind::CaseDropped
+            | Kind::CaseUpdated
     )
 }
 
 /// Whether the month view shows `detail`: versions, hashes, snapshot
-/// descriptions; not note texts, command lines or reasons.
+/// descriptions, what `plan set` changed; not note texts, command lines,
+/// reasons or case titles.
 fn shows_detail(kind: Kind) -> bool {
     !matches!(
         kind,
         Kind::Note | Kind::Correction | Kind::Command | Kind::Resolution
-    ) && !is_case_kind(kind)
+    ) && (!is_case_kind(kind) || kind == Kind::CaseUpdated)
 }
 
 fn one_line(s: &str) -> String {
@@ -775,6 +777,7 @@ mod tests {
             status: "accepted".into(),
             date: "2026-10-01".into(),
             path: format!("decisions/{id}-x.md"),
+            cases: Vec::new(),
         };
         let rows = [row("ADR-0002", "a | b"), row("ADR-0001", "One")];
         let fresh = "| ID | Title | Status | Date |\n|---|---|---|---|\n\

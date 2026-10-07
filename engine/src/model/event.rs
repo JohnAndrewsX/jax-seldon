@@ -17,14 +17,19 @@ use chrono::{DateTime, FixedOffset, SecondsFormat};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ulid::Ulid;
 
-pub use super::case::Zone;
 use super::case::str_enum;
+pub use super::case::{Risk, Zone};
 use super::{is_agent, is_case_id};
 
 /// Longest `subject` the schema accepts (characters).
 pub const SUBJECT_MAX: usize = 512;
 /// Longest `detail` the schema accepts (characters).
 pub const DETAIL_MAX: usize = 4096;
+/// The index-only `meta` key that marks a clipped text (ADR-0035 §3).
+pub const TRUNCATED: &str = "truncated";
+/// The subject of every `state-loss` line (ADR-0035 §4;
+/// `collectors::STATE_RESET`).
+pub const STATE_LOSS_SUBJECT: &str = "state-reset";
 
 str_enum!(
     /// Who produced the event (`event.schema.json#/properties/source`).
@@ -70,6 +75,8 @@ str_enum!(
         CaseVerified = "case-verified",
         CaseCompleted = "case-completed",
         CaseDropped = "case-dropped",
+        CaseUpdated = "case-updated",
+        StateLoss = "state-loss",
     }
 );
 
@@ -156,9 +163,30 @@ pub struct Meta {
     /// resolution only: the drift group's txId (ADR-0013 §4).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_id: Option<String>,
+    /// case-created, case-started, case-updated: the case's risk after the
+    /// event (ADR-0035 §1); absent on lines written before contract 2.
+    /// Read leniently: 0.1.x let `seldon event --meta risk=…` write any
+    /// value on any kind, and such a line must still load; a value that is
+    /// not R0–R3 reads as none (the line is never rewritten), and the index
+    /// drops one on another kind (`index::build::clipped`).
+    #[serde(
+        default,
+        deserialize_with = "lenient_risk",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub risk: Option<Risk>,
     /// Any other scalar key.
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
+}
+
+/// `meta.risk` as a line holds it: `R0`–`R3`, else none (ADR-0035 §1).
+fn lenient_risk<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Risk>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(d)?;
+    Ok(value
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .and_then(|s| s.parse().ok()))
 }
 
 impl Meta {
@@ -245,6 +273,12 @@ impl Event {
         self
     }
 
+    /// `meta.risk`: a case line's risk after the event (ADR-0035 §1).
+    pub fn risk(mut self, risk: Risk) -> Self {
+        self.meta.risk = Some(risk);
+        self
+    }
+
     /// `ts` as written to the ledger: RFC 3339, offset kept, whole seconds
     /// unless the source had fractions.
     pub fn ts_string(&self) -> String {
@@ -308,6 +342,29 @@ impl Event {
         }
         if self.meta.tx_id.is_some() && self.kind != Kind::Resolution {
             return Err("meta.txId is only allowed on a resolution".into());
+        }
+        // ADR-0035 §1, §3, §4
+        let risked = matches!(
+            self.kind,
+            Kind::CaseCreated | Kind::CaseStarted | Kind::CaseUpdated
+        );
+        if self.meta.risk.is_some() && !risked {
+            return Err("meta.risk is only allowed on case-created, -started and -updated".into());
+        }
+        if self.kind == Kind::CaseUpdated && (self.meta.risk.is_none() || self.case.is_none()) {
+            return Err("a case-updated line needs meta.risk and case".into());
+        }
+        if matches!(self.kind, Kind::CaseUpdated | Kind::StateLoss) && self.source != Source::Seldon
+        {
+            return Err(format!("{} is written by seldon only", self.kind));
+        }
+        if self.kind == Kind::StateLoss && self.subject != STATE_LOSS_SUBJECT {
+            return Err(format!(
+                "a state-loss line has the subject `{STATE_LOSS_SUBJECT}`"
+            ));
+        }
+        if self.meta.extra.contains_key(TRUNCATED) {
+            return Err("meta.truncated is index-only (ADR-0035 §3)".into());
         }
         if let Some((k, v)) = self
             .meta
@@ -476,7 +533,31 @@ mod tests {
                 n += 1;
             }
         }
-        assert_eq!(n, 83, "fixtures/README.md: 83 ledger lines");
+        assert_eq!(n, 85, "fixtures/README.md: 85 ledger lines");
+    }
+
+    /// WP-120 round 2, B1: a 0.1.x line with a user `meta.risk` loads;
+    /// a value that is not R0–R3 reads as none, the line keeps its other
+    /// keys.
+    #[test]
+    fn a_user_risk_reads_leniently() {
+        let line = |risk: &str| {
+            format!(
+                r#"{{"id":"01K6Y00000000000000000000A","ts":"2026-10-06T09:00:00+02:00","source":"manual","kind":"note","subject":"journal","actor":"human","meta":{{"risk":{risk},"mine":"kept"}}}}"#
+            )
+        };
+        for (risk, want) in [
+            ("\"R1\"", Some(Risk::R1)),
+            ("\"banana\"", None),
+            ("\"high\"", None),
+            ("3", None),
+            ("null", None),
+        ] {
+            let e: Event =
+                serde_json::from_str(&line(risk)).unwrap_or_else(|e| panic!("{risk}: {e}"));
+            assert_eq!(e.meta.risk, want, "{risk}");
+            assert_eq!(e.meta.extra["mine"], "kept");
+        }
     }
 
     #[test]
@@ -534,6 +615,27 @@ mod tests {
         assert!(e.validate().unwrap_err().contains("case"));
         e.case = Some("C-2026-001".into());
         e.validate().unwrap();
+        // ADR-0035 §4 (WP-120 round 2, N4): a state-loss line is seldon's,
+        // subject `state-reset`
+        assert!(
+            ok(Event::new(
+                ts,
+                Source::Seldon,
+                Kind::StateLoss,
+                "state-reset"
+            ))
+            .validate()
+            .is_ok()
+        );
+        let e = ok(Event::new(ts, Source::Seldon, Kind::StateLoss, "config"));
+        assert!(e.validate().unwrap_err().contains("state-reset"));
+        let e = ok(Event::new(
+            ts,
+            Source::Manual,
+            Kind::StateLoss,
+            "state-reset",
+        ));
+        assert!(e.validate().is_err());
         let e = ok(Event::new(ts, Source::Pacman, Kind::Install, "x").actor("agent:Claude"));
         assert!(e.validate().is_err());
         let e = ok(Event::new(ts, Source::Pacman, Kind::Install, ""));

@@ -13,7 +13,9 @@ vm.runInContext(fs.readFileSync(path.join(root, "plugin/Model.js"), "utf8"), M, 
 
 const sample = fs.readFileSync(path.join(root, "fixtures/index.sample.json"), "utf8")
 const notInit = fs.readFileSync(path.join(root, "fixtures/index-variants/not-initialised.json"), "utf8")
-const v2 = fs.readFileSync(path.join(root, "fixtures/invalid/index.contract-v2.json"), "utf8")
+const v3 = fs.readFileSync(path.join(root, "fixtures/invalid/index.contract-v3.json"), "utf8")
+// a contract-1 index (a 0.1.x engine): the sample as v1 wrote it
+const v1 = JSON.stringify(Object.assign(JSON.parse(sample), { contractVersion: 1 }))
 
 let passed = 0
 function test(name, fn) {
@@ -86,11 +88,35 @@ test("parseIndex accepts the sample and reads its counts", () => {
 })
 
 test("parseIndex reports a contract mismatch with the version found", () => {
-  const r = M.parseIndex(v2)
+  const r = M.parseIndex(v3)
   assert.strictEqual(r.ok, false)
   assert.strictEqual(r.error, "contract")
-  assert.strictEqual(r.contractVersion, 2)
+  assert.strictEqual(r.contractVersion, 3)
   assert.strictEqual(r.index, null)
+  const old = M.parseIndex(v1)
+  assert.strictEqual(old.error, "contract")
+  assert.strictEqual(old.contractVersion, 1)
+})
+
+// ADR-0035: the plugin reads contract 2 and accepts its new fields; the
+// surfaces that show them come with the desk (WP-122–125)
+test("parseIndex accepts the contract-2 fields of the sample", () => {
+  assert.strictEqual(M.CONTRACT_VERSION, 2)
+  const r = M.parseIndex(sample)
+  assert.strictEqual(r.ok, true)
+  const ix = r.index
+  same(ix.logbook.git.autocommit, { ok: true, at: "2026-10-01T17:00:01+02:00", message: "seldon: note C-2026-004" })
+  same(ix.triage.counts, { items: 3, crises: 1 })
+  assert.strictEqual(ix.triage.path.indexOf("proposals/"), 0)
+  same(ix.decisions.filter((d) => d.cases.length === 2).map((d) => d.id), ["ADR-0003"])
+  assert.strictEqual(ix.events.filter((e) => e.meta && e.meta.truncated === true).length, 1)
+  same(ix.events.filter((e) => e.kind === "state-loss" || e.kind === "case-updated").map((e) => e.kind),
+    ["case-updated", "state-loss"])
+  // a minimal v2 index without the optional fields is fine too
+  const bare = JSON.parse(sample)
+  delete bare.triage
+  delete bare.logbook.git
+  assert.strictEqual(M.parseIndex(JSON.stringify(bare)).ok, true)
 })
 
 test("parseIndex rejects empty, broken and non-object input", () => {
@@ -98,7 +124,7 @@ test("parseIndex rejects empty, broken and non-object input", () => {
   assert.strictEqual(M.parseIndex(null).error, "empty")
   assert.strictEqual(M.parseIndex("{").error, "parse")
   assert.strictEqual(M.parseIndex("[1]").error, "shape")
-  assert.strictEqual(M.parseIndex('{"contractVersion":1}').error, "shape")
+  assert.strictEqual(M.parseIndex('{"contractVersion":2}').error, "shape")
 })
 
 const ok = M.parseIndex(sample)
@@ -115,7 +141,8 @@ test("deriveStatus: every state, in precedence order", () => {
   assert.strictEqual(status({ file: "loading", parse: null }), "indexMissing")
   assert.strictEqual(status({ file: "invalid", parse: M.parseIndex("{") }), "indexMissing")
   assert.strictEqual(status({ file: "missing", parse: null, engineNotInitialised: true }), "notInitialised")
-  assert.strictEqual(status({ parse: M.parseIndex(v2) }), "contractMismatch")
+  assert.strictEqual(status({ parse: M.parseIndex(v3) }), "contractMismatch")
+  assert.strictEqual(status({ parse: M.parseIndex(v1) }), "contractMismatch")
   assert.strictEqual(status({ parse: M.parseIndex(notInit) }), "notInitialised")
   assert.strictEqual(status({ engineNotInitialised: true }), "notInitialised")
   assert.strictEqual(status({ nowMs: gen + 2 * H + 1000 }), "indexStale")
@@ -190,9 +217,13 @@ test("bannerFor engineMissing: the GitHub one-liner while the AUR package does n
 })
 
 test("bannerFor contractMismatch names the side to update", () => {
-  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 2 }).command, M.UPDATE_PLUGIN_COMMAND)
+  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 3 }).command, M.UPDATE_PLUGIN_COMMAND)
+  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 1 }).command, M.UPDATE_ENGINE_COMMAND)
   assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 0 }).command, M.UPDATE_ENGINE_COMMAND)
-  assert.ok(M.bannerFor("contractMismatch", { indexContractVersion: 2 }).detail.indexOf("v2") !== -1)
+  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 3 }).detail,
+    "The index uses contract v3, this plugin reads v2. Update the plugin.")
+  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 1 }).detail,
+    "The index uses contract v1, this plugin reads v2. Update the engine.")
 })
 
 test("bannerFor indexStale shows the age", () => {
@@ -341,9 +372,9 @@ test("snapperBanner: Check again is a capture, the hint follows Run in terminal 
   assert.strictEqual(M.snapperBanner(null, true), null)
 })
 
-test("changelogRows: 73 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
+test("changelogRows: 75 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
-  assert.strictEqual(rows.length, 73)
+  assert.strictEqual(rows.length, 75)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
@@ -418,7 +449,7 @@ test("changelogRows: 73 events newest first, one +2 group (3 members), folded re
 
 test("changelogRows: the source filter narrows the list", () => {
   const counts = M.sourceCounts(sampleIndex)
-  assert.strictEqual(counts.all, 73)
+  assert.strictEqual(counts.all, 75)
   let total = 0
   for (const s of M.SOURCES) {
     const rows = M.changelogRows(sampleIndex, s)
@@ -426,10 +457,10 @@ test("changelogRows: the source filter narrows the list", () => {
     assert.ok(rows.every((r) => r.source === s), s)
     total += rows.length
   }
-  assert.strictEqual(total, 73)
+  assert.strictEqual(total, 75)
   assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 15)
   assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 10)
-  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 73)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 75)
   same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
   assert.strictEqual(M.cycleFilter("all", 1), "pacman")
   assert.strictEqual(M.cycleFilter("seldon", 1), "all")
@@ -468,7 +499,7 @@ test("todayView: today's and yesterday's journal and the summary counts", () => 
   assert.strictEqual(M.entryMeta(t.entries[2]), "14:40 · human")
   // "without a case" is the attention count: 6 open drift − 2 crises
   same(t.stats.map((s) => s.label), ["events today", "in 7 days", "active", "queued", "without a case"])
-  same(t.stats.map((s) => s.value), [30, 51, 2, 3, 4])
+  same(t.stats.map((s) => s.value), [32, 53, 2, 3, 4])
   const over = JSON.parse(sample)
   over.summary.crisis = 9
   assert.strictEqual(M.todayView(over).stats[4].value, 0, "never negative")
@@ -1114,10 +1145,10 @@ test("periodTable: the sample's counts per period", () => {
   assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
-  same(s30.map((s) => s.detail), ["68 events", "Explicit 324 → 327", "12 opened · 7 resolved",
+  same(s30.map((s) => s.detail), ["70 events", "Explicit 324 → 327", "12 opened · 7 resolved",
     "R0 1 · R1 3 · R2 3 · R3 1 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
-  assert.strictEqual(table.periods["90"].slots[0].detail, "73 events")
+  assert.strictEqual(table.periods["90"].slots[0].detail, "75 events")
   same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 3, R3: 1 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
@@ -1276,16 +1307,16 @@ test("heatmapChart: weeks × weekdays, steps, months, hover text, layout and hit
   const table = M.periodTable(ok.index)
   const h30 = table.periods["30"].charts.heatmap
   assert.strictEqual(h30.empty, false)
-  same(h30.numbers, { days: 30, events: 68, activeDays: 14, max: 30, busiest: "2026-10-01" })
-  assert.strictEqual(h30.summary, "68 events on 14 of 30 days · busiest 2026-10-01 (30)")
+  same(h30.numbers, { days: 30, events: 70, activeDays: 14, max: 32, busiest: "2026-10-01" })
+  assert.strictEqual(h30.summary, "70 events on 14 of 30 days · busiest 2026-10-01 (32)")
   // 2026-09-02 is a Wednesday: the first column starts at row 2.
   same([h30.offset, h30.weeks, h30.cells.length], [2, 5, 30])
   same([h30.cells[0].date, h30.cells[0].col, h30.cells[0].row], ["2026-09-02", 0, 2])
   const last = h30.cells[29]
-  same([last.date, last.col, last.row, last.total, last.step], ["2026-10-01", 4, 3, 30, 5])
+  same([last.date, last.col, last.row, last.total, last.step], ["2026-10-01", 4, 3, 32, 5])
   same(h30.months.map((m) => m.col + m.label), ["0Sep", "4Oct"])
   assert.strictEqual(M.heatmapCellText(last),
-    "Thu 2026-10-01 · 30 events · pacman 7 · agent 6 · seldon 6 · snapper 4 · config 2 · manual 2 · omarchy 1 · plugins 1 · theme 1")
+    "Thu 2026-10-01 · 32 events · seldon 8 · pacman 7 · agent 6 · snapper 4 · config 2 · manual 2 · omarchy 1 · plugins 1 · theme 1")
   assert.strictEqual(M.heatmapCellText(h30.cells[1]), "Thu 2026-09-03 · 1 event · pacman 1")
   assert.strictEqual(M.heatmapCellText(null), "")
   same([365, 366].map((n) => table.periods[n === 365 ? "365" : "all"].charts.heatmap.weeks), [53, 53])
@@ -1874,7 +1905,7 @@ test("deskKpis and deskCounts on the sample; nothing without an index", () => {
   same(M.deskKpis(null), [])
   const c = M.deskCounts(idx)
   same(Object.keys(c), M.DESK_SECTIONS.map(s => s.id))
-  same(c.today, { text: "30", tone: "" })
+  same(c.today, { text: "32", tone: "" })
   same(c.changelog, { text: "6", tone: "urgent" })
   same(c.work, { text: "2 · 1 · 3", tone: "" })
   same(c.decisions, { text: "1 new", tone: "" })

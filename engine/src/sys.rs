@@ -74,6 +74,49 @@ pub fn create_new_private(path: &Path) -> std::io::Result<File> {
     Ok(file)
 }
 
+/// Most bytes a state file the index reads beside the logbook may hold
+/// (`proposals/*.json`, `autocommit.json`; ADR-0035 §6, WP-120 round 3).
+pub const STATE_FILE_MAX: u64 = 4 * 1024 * 1024;
+
+/// The text of `path` when it is a regular file (not a symbolic link, a
+/// FIFO, a device or a directory) of at most `max` bytes; else why not, in
+/// words for a warning. `Ok(None)` when it does not exist. The type is
+/// checked with `symlink_metadata` before the file is opened, so a FIFO is
+/// never opened (it would block) and `/dev/zero` behind a link never read;
+/// the read itself stops after `max + 1` bytes, in case the file grew.
+pub fn read_small_file(path: &Path, max: u64) -> Result<Option<String>, String> {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    let kind = meta.file_type();
+    if !kind.is_file() {
+        let what = if kind.is_symlink() {
+            "a symbolic link"
+        } else if kind.is_dir() {
+            "a directory"
+        } else {
+            "not a regular file"
+        };
+        return Err(what.to_string());
+    }
+    if meta.len() > max {
+        return Err(format!("{} bytes, more than {max}", meta.len()));
+    }
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    file.take(max + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > max {
+        return Err(format!("more than {max} bytes"));
+    }
+    String::from_utf8(bytes)
+        .map(Some)
+        .map_err(|_| "not UTF-8".to_string())
+}
+
 /// Writes `bytes` to a temp file next to `path` and renames it over `path`.
 /// A symbolic link at `path` is followed: its target is replaced and the
 /// link stays. The target keeps its permission bits; a new file gets
@@ -584,6 +627,35 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// WP-120 round 3: [`read_small_file`] reads a small regular file,
+    /// refuses a link, a directory and a file over the limit, and says
+    /// nothing for a missing one.
+    #[test]
+    fn small_regular_files_only() {
+        let dir = std::env::temp_dir().join(format!("seldon-small-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.json");
+        std::fs::write(&file, "{}").unwrap();
+        assert_eq!(read_small_file(&file, 2), Ok(Some("{}".to_string())));
+        // the size is checked before the file is opened (the read's own cap
+        // would say "more than 1 bytes")
+        assert_eq!(
+            read_small_file(&file, 1),
+            Err("2 bytes, more than 1".to_string())
+        );
+        let link = dir.join("b.json");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        assert!(
+            read_small_file(&link, 10)
+                .unwrap_err()
+                .contains("symbolic link")
+        );
+        assert!(read_small_file(&dir, 10).unwrap_err().contains("directory"));
+        assert_eq!(read_small_file(&dir.join("none.json"), 10), Ok(None));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     #[test]

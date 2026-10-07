@@ -24,7 +24,7 @@ use serde_json::Value;
 const ID_BASE: &str = "https://github.com/JohnAndrewsX/jax-seldon/schema/";
 
 /// The contract schemas: (file name, text).
-pub const SCHEMAS: [(&str, &str); 3] = [
+pub const SCHEMAS: [(&str, &str); 4] = [
     (
         "index.schema.json",
         include_str!("../../../schema/index.schema.json"),
@@ -36,6 +36,10 @@ pub const SCHEMAS: [(&str, &str); 3] = [
     (
         "case.schema.json",
         include_str!("../../../schema/case.schema.json"),
+    ),
+    (
+        "proposal.schema.json",
+        include_str!("../../../schema/proposal.schema.json"),
     ),
 ];
 

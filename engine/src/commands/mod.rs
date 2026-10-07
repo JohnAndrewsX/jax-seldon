@@ -175,6 +175,17 @@ impl Commit {
         }
     }
 
+    /// Keeps an attempt for `logbook.git.autocommit` (ADR-0035 §2); a
+    /// skip is no attempt.
+    pub fn record(&self, ctx: &Context, config: &Config, logbook: &Logbook) {
+        let (ok, message) = match self {
+            Commit::Committed(m) => (true, m),
+            Commit::Failed(e) | Commit::Warned(e) => (false, e),
+            Commit::Skipped(_) => return,
+        };
+        crate::index::autocommit::record(&ctx.dirs, config, &logbook.root, ctx.now, ok, message);
+    }
+
     /// A line for the human output, empty when there is nothing to say.
     pub fn human(&self) -> String {
         match self {
@@ -200,9 +211,10 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
     if !git::is_repo(&logbook.root) {
         return Commit::Skipped("the logbook is not a git repository");
     }
-    match git::commit_all(&logbook.root, summary) {
+    let commit = match git::commit_all(&logbook.root, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
         Err(e) => {
+            let e = redacted_git_error(config, &e);
             // not eprintln!: a closed stderr must not abort the command
             let _ = writeln!(
                 std::io::stderr(),
@@ -210,7 +222,17 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
             );
             Commit::Warned(e)
         }
-    }
+    };
+    commit.record(ctx, config, logbook);
+    commit
+}
+
+/// A git error as the engine shows it — on stderr, in `--json` `git.error`
+/// and in `autocommit.json` — through the logbook's redaction (SPEC-ENGINE
+/// §7; WP-120 round 2, N6): a hook's output or a remote URL may carry a
+/// secret. An invalid `[redaction] patterns` entry withholds it.
+fn redacted_git_error(config: &Config, error: &str) -> String {
+    crate::collectors::ShownMessages::new(Some(config)).show(error)
 }
 
 /// [`autocommit`] of `paths` alone (relative to the logbook): a commit of
@@ -231,16 +253,19 @@ pub fn autocommit_paths(
     if !git::is_repo(&logbook.root) {
         return Commit::Skipped("the logbook is not a git repository");
     }
-    match git::commit_paths(&logbook.root, paths, summary) {
+    let commit = match git::commit_paths(&logbook.root, paths, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
         Err(e) => {
+            let e = redacted_git_error(config, &e);
             let _ = writeln!(
                 std::io::stderr(),
                 "seldon: warning: git: not committed: {e}"
             );
             Commit::Warned(e)
         }
-    }
+    };
+    commit.record(ctx, config, logbook);
+    commit
 }
 
 /// The text of a free-text argument, or a user error when it is blank.

@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Contract 2 (ADR-0035).** `index.json` says `contractVersion: 2`;
+  engine and plugin must be updated together: a 0.1.x plugin shows the
+  "Index format mismatch" banner against this engine, and this plugin
+  against a 0.1.x engine, each naming both versions and the side to
+  update. New in the index: a case's risk in the ledger (`meta.risk` on
+  `case-created`/`case-started`, and the new kind `case-updated`, which
+  `seldon plan set` now writes), the kind `state-loss` (formerly a
+  `note` `state-reset`), `logbook.git.autocommit` (the last autocommit,
+  ok or the git error), `meta.truncated` beside a clipped text,
+  `decisions[].cases` and `triage` (the agent's proposal, ADR-0034).
+  Old ledger lines are not rewritten and still index. A 0.1.x engine
+  skips the new kinds as unreadable lines: going back is not supported
+  (WP-120).
+
 ### Engine
+
+- The harm guard of the planned-and-active link (ADR-0029) reads a
+  case's risk from its ledger lines, to the second, for every case this
+  engine creates; an edited Log no longer changes the answer. Cases from
+  before keep the Log as their record (WP-120).
 
 - `seldon agent start` launches the agent with `SELDON_ACTOR=agent:`
   and the launcher's name, and `SELDON_ATTENDED=1` (ADR-0027). `plan`,

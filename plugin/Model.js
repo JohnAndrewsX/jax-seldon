@@ -6,7 +6,7 @@
 // Desk.qml and components/ only render what these functions return,
 // including the rows of the Today, Changelog and System tabs.
 
-var CONTRACT_VERSION = 1
+var CONTRACT_VERSION = 2
 
 // The version of the code that is running: always equal to `version` in
 // plugin/manifest.json, set by hand with it (docs/VERSIONING.md, tag flow;

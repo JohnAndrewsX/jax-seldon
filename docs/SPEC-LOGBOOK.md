@@ -237,6 +237,10 @@ Free Markdown, frontmatter `type: memory, topic, updated`. Agents append.
 One JSON object per line, validated against `schema/event.schema.json`.
 Never edited; corrections are new events (`kind: resolution`,
 `kind: correction`). Month files roll over by event timestamp.
+Since contract 2 (ADR-0035) the case lines carry the case's risk
+(`meta.risk` on `case-created`, `case-started` and `case-updated`, the
+line `plan set` writes beside its `set …` Log line), and a lost state
+directory is a `state-loss` line; older lines stay as they were written.
 
 ## 5. Generated view (`ledger/YYYY-MM.md`)
 

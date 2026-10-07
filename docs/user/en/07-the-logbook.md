@@ -198,8 +198,9 @@ was gone is not recorded as deleted. The collectors that compare states
 new starting point, and a change made while the state was gone is not
 recorded.
 
-The capture that starts over says so. It writes a note with the subject
-`state-reset` to the ledger, naming the collectors that started over,
+The capture that starts over says so. It writes a `state-loss` line
+with the subject `state-reset` to the ledger (a note in 0.1.x), naming
+the collectors that started over,
 prints a warning, and `seldon doctor` shows a `state` row until the next
 capture. The same happens when only `manifest.json` or `owned.json` is
 corrupt. See [A state reset was recorded](10-troubleshooting.md#a-state-reset-was-recorded).

@@ -25,6 +25,8 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
+| `~/.local/state/seldon/autocommit.json` | `{logbook, ok, at, message}`: the last autocommit the engine attempted (a commit or a git failure; a skip is no attempt), written by every writing command after its autocommit, bound to the canonical logbook path; `index.logbook.git.autocommit` (§6, ADR-0035 §2). Best effort: a record that cannot be written leaves the previous one. Read only when it is a regular file (no symbolic link, FIFO or device; checked before it is opened) of at most 4 MiB; anything else, an unreadable file or one that is not a record leaves the field out with a build warning (WP-120 round 3) |
+| `~/.local/state/seldon/proposals/<id>.json` | triage proposals (`schema/proposal.schema.json`, ADR-0034 §6, ADR-0035 §6), written by `drift propose` and marked by `drift apply` (WP-124); the index points at the newest of this logbook (`index.triage`, §6). Read only when it is a regular file of at most 4 MiB (no symbolic link, FIFO or device; checked before it is opened); anything else is skipped with a build warning. Nothing in a proposal is in the logbook until it is applied |
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
 
@@ -77,6 +79,13 @@ seldon event <source> <kind> --subject S [--detail D] [--case ID] [--actor A] [-
 # be refused (WP-066) fails the command before the ledger or the journal changes
 # (exit 1; a hook records nothing and says so on stderr) (WP-077)
 seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
+# Contract 2 (ADR-0035 §1): every `case-created` (plan new, plan reopen,
+# agent start --new, drift explain's completed case) and every `case-started`
+# carries `meta.risk`, the case's risk at that step; `case-verified`,
+# `case-completed` and `case-dropped` carry none. Lines written before contract
+# 2 are never rewritten. `seldon event` refuses the kinds `case-*`,
+# `state-loss` and `resolution`/`correction` (engine-only) and the `--meta`
+# keys `txId`, `risk` (engine-only) and `truncated` (index-only).
 seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A] [--no-capture]
 # ADR-0029 §2 (WP-115): `plan verify` and `plan done` run a default `seldon
 # capture` first — a complete capture under its own lock hold (waiting for a
@@ -116,14 +125,17 @@ seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor 
 # so does an agent's `drift explain` to the completed case it makes.
 seldon plan set <ID> (--zone Z | --risk R | --area A)… [--actor A]
 # WP-101 (ADR-0027 §2c): an open case's zone, risk or area (at least one; a new
-# area gets its README); one Log line `set risk R1 → R3, zone yellow → red`; no
-# ledger event (no kind fits, a new kind would be a contract change: the Log
-# line and the commit `<ID> set …` are the record); a value equal to the
-# current one is no change, and with nothing changed nothing is written
-# (exit 0, `changed: []`). A completed or dropped case: exit 1 (a completed
-# one names `plan reopen`). R2/R3 without `snapshotBefore` gets a warning
-# naming `plan snapshot`. --json → {case, changed: [{key, from, to}],
-# areaCreated, git, warnings}
+# area gets its README); one Log line `set risk R1 → R3, zone yellow → red`
+# and, before it, one ledger line `case-updated` (ADR-0035 §1, contract 2:
+# `source: seldon`, subject and `case` the id, detail the Log line's words,
+# `meta.risk` the case's risk after it, also when only zone or area changed;
+# a new area's README is written before the line, so a failure there writes
+# nothing);
+# a value equal to the current one is no change, and with nothing changed
+# nothing is written (exit 0, `changed: []`, `event: null`). A completed or
+# dropped case: exit 1 (a completed one names `plan reopen`). R2/R3 without
+# `snapshotBefore` gets a warning naming `plan snapshot`. --json → {case,
+# changed: [{key, from, to}], event, areaCreated, git, warnings}
 seldon plan snapshot <ID> <N> [--actor A]
 # WP-101 (ADR-0027 §3): records snapper snapshot N (1 or more) as the open
 # case's rollback, `snapshotBefore`, when it is empty; Log line `snapshot N`;
@@ -855,7 +867,9 @@ its first baseline without a note, even when the ledger holds events of
 its source that the theme hook or an agent wrote. When the ledger already
 holds at least one event of the losing collector's source, the changes
 since its last capture may be lost, and the capture appends, with its
-other events, one `note` with `source: seldon`, `actor: system`, subject
+other events, one `state-loss` line (contract 2, ADR-0035 §4; a `note`
+before it — every reader takes both, and an old note still counts as the
+record of its loss) with `source: seldon`, `actor: system`, subject
 `state-reset`, detail `state directory missing, unreadable or bound to
 another logbook: new baseline for <source> (<files>), … at <baseline>,
 recorded <capture time>; changes made in between may not be recorded`
@@ -1471,12 +1485,18 @@ After every capture:
    subject `[drift] alwaysRed` matches, or an event the classifier makes a
    crisis (a persistence path under `[drift] alwaysRedPaths`, rule
    `always-red-paths`), links only when `C` was **R3 at the event's
-   time** — read from the case's own record: the risk of its `created`
-   Log line, then each `set … risk A → B` line, to the minute in the local
-   time the Log is written in; a change in the event's own minute, or a
-   Log without a `created` line naming a risk, or one whose last risk is
-   not the frontmatter's `risk` (an inconsistent record, fail-safe),
-   cannot tell it and counts as below R3. Below R3 the event stays drift
+   time** — read from the case's own record (ADR-0035 §1): when its
+   `case-created` ledger line carries `meta.risk` (every case of a
+   contract-2 engine), the `meta.risk` of its `case-created`,
+   `case-started` and `case-updated` lines, to the second — the last one
+   strictly before the event, and those at the event's very second only
+   if they agree; otherwise (a case from before contract 2) the risk of its
+   `created` Log line, then each `set … risk A → B` line, to the minute in
+   the local time the Log is written in, a change in the event's own minute
+   telling nothing. No record (no such line, no `created` Log line naming a
+   risk), or one whose last risk is not the frontmatter's `risk` (an
+   inconsistent record, a hand edit: fail-safe), cannot tell it and counts
+   as below R3; an edited Log does not change a ledger record. Below R3 the event stays drift
    (a crisis stays a crisis) and `C` gets one advisory Log line, also when
    closed: `advisory: not linked: <source> <kind> <subject> at HH:MM:SS
    is `alwaysRed` | can affect boot, login or the shell (`[drift]
@@ -1628,8 +1648,11 @@ of `drift show` keep the full text; `drift list` and the `item` of `drift
 show` come from `index.drift` and are clipped. `subject` (at most 512
 characters) is never cut. With the counts of rule 4 this bounds both
 sections: 500 events and 200 drift items with 4096-character texts come
-to about 520 KB. No field marks the cut (`meta.truncated` stays reserved,
-ADR-0020, ADR-0025). Open cases, decisions and
+to about 520 KB. Beside a cut the index says so (contract 2, ADR-0035 §3):
+an event with any clipped text has `meta.truncated: true`, a drift item
+with a clipped `detail` has `truncated: true`; an uncut one has neither.
+`truncated` is index-only: the ledger refuses it on write, and one a
+hand-edited line carries is dropped. Open cases, decisions and
 memory topics are not capped: an index of 1 000 000 bytes or more makes
 `index` and `status` warn (`warnings`, stderr) and name the largest
 section. The R3 advisory (WP-101, §5) is a build warning too, in the same
@@ -1638,11 +1661,30 @@ warning: …` on stderr; `index`, `status` and `dossier` also in their
 `warnings`), once per open case below R3 and red `alwaysRed` subject, no
 index field (no contract change).
 
+Contract 2 (ADR-0035): `meta.risk` stays only on the engine's
+`case-created|started|updated` lines; one a 0.1.x `seldon event --meta
+risk=…` wrote on another kind, or any value not R0–R3 (read as none, the
+line still loads), is dropped from `index.events`. `decisions[].cases` is the frontmatter's `cases`
+as written without repeats (`[]` when it names none; ids are copied, not
+resolved). `logbook.git.autocommit` is `{ok, at, message}` of the last
+autocommit the engine attempted in this logbook, from
+`autocommit.json` (§2): present only when `logbook.git` is, `[git]
+autocommit` is on and the record is this logbook's; `message` is one
+line, redacted again at build time, at most 256 characters. `triage`
+points at the newest valid proposal of this logbook in `proposals/` (§2),
+by id: `{id, at, actor, counts: {items, crises}, path, applied}`, `path`
+relative to the directory of `index.json`, `counts` as proposed; a
+`.json` file not named `<ULID>.json`, a file that fails
+`proposal.schema.json`, whose name is not its id, or that cannot be read
+is skipped with a build warning, another logbook's silently (other
+files pass silently); no proposal, no field. `index --check` validates against the
+schemas compiled into the binary, `proposal.schema.json` included.
+
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. `cargo bench --bench index` (`just bench`, CI) asserts the index
-build in-process on the fixture logbook scaled ×10 and prints ×150 (10 650
+build in-process on the fixture logbook scaled ×10 and prints ×150 (12 750
 ledger lines, 1 200 cases); `just check-perf` (opt-in, quiet host) asserts
-×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 292 ledger
+×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 540 ledger
 lines, 304 cases and 365 journal files, median wall time of 11 runs,
 process start included. A median over budget is measured once more before
 a check fails (release, 2026-10-04 on the dev host: ×150 build 80 ms,
@@ -1658,7 +1700,10 @@ same redaction before
 the first write, so the ledger, the journal, case and decision files,
 `STATUS.md` and the index hold the same redacted text (WP-062). The
 `seldon` notes (§3 state reset, §4 snapper) are events and are redacted
-the same way (WP-099). A collector's message (snapper's stderr, for
+the same way (WP-099). A failed autocommit's git error goes through the
+logbook's redaction before the engine shows it anywhere: the stderr
+warning, `--json` `git.error` and `autocommit.json` (whose message the
+index build redacts once more; WP-120 round 2). A collector's message (snapper's stderr, for
 example) goes through the same redaction once, before the capture saves
 it in `cursors.json`, prints it (`capture` and `capture --json`) or
 embeds it in the snapper note. A capture also redacts the messages an
