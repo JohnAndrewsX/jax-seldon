@@ -106,6 +106,19 @@ impl Logbook {
         md_files(&self.path("decisions"), "ADR-")
     }
 
+    /// The file of decision `id` (`decisions/<id>-*.md` or `<id>.md`), the
+    /// first in sorted order; `None` when there is none.
+    pub fn decision_file(&self, id: &str) -> anyhow::Result<Option<PathBuf>> {
+        let prefix = format!("{id}-");
+        let exact = format!("{id}.md");
+        Ok(self.decision_files()?.into_iter().find(|p| {
+            p.file_name().is_some_and(|n| {
+                let n = n.to_string_lossy();
+                n.starts_with(&prefix) || n == exact
+            })
+        }))
+    }
+
     /// Journal files `journal/YYYY/*.md`, sorted.
     pub fn journal_files(&self) -> anyhow::Result<Vec<PathBuf>> {
         let mut out = Vec::new();
