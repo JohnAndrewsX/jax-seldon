@@ -293,9 +293,11 @@ impl Default for Config {
 
 /// SPEC-ENGINE §4 (config collector). `~/.config/omarchy/plugins/` and
 /// the desktop entries' `mimeinfo.cache` are excluded by the collector;
-/// missing paths are skipped. The last six are the persistence paths of
-/// ADR-0028 §4d (`[drift] alwaysRedPaths`).
-pub const DEFAULT_WATCH_PATHS: [&str; 12] = [
+/// missing paths are skipped. Six are the persistence paths of ADR-0028
+/// §4d (`[drift] alwaysRedPaths`); the last is Omarchy's toggle state
+/// directory, whose `hypr/*.lua` Hyprland loads (WP-113, operator decision
+/// 2026-10-06: hashes only).
+pub const DEFAULT_WATCH_PATHS: [&str; 13] = [
     "~/.config/hypr",
     "~/.config/omarchy",
     "~/.config/waybar",
@@ -308,12 +310,13 @@ pub const DEFAULT_WATCH_PATHS: [&str; 12] = [
     "~/.config/uwsm",
     "~/.profile",
     "~/.bash_profile",
+    "~/.local/state/omarchy/toggles",
 ];
 
-/// The default `watchPaths` of earlier engines: 0.1.0 to 0.1.3, and the
-/// unreleased list of WP-089. A config whose list still equals one of
-/// them (in any order) gains the current defaults (ADR-0028 §4d).
-pub const EARLIER_DEFAULT_WATCH_PATHS: [&[&str]; 2] = [
+/// The default `watchPaths` of earlier engines: 0.1.0 to 0.1.3, the
+/// unreleased list of WP-089, and 0.1.4. A config whose list still equals
+/// one of them (in any order) gains the current defaults (ADR-0028 §4d).
+pub const EARLIER_DEFAULT_WATCH_PATHS: [&[&str]; 3] = [
     &[
         "~/.config/hypr",
         "~/.config/omarchy",
@@ -328,6 +331,20 @@ pub const EARLIER_DEFAULT_WATCH_PATHS: [&[&str]; 2] = [
         "~/.bashrc",
         "~/.zshrc",
         "~/.local/share/applications",
+    ],
+    &[
+        "~/.config/hypr",
+        "~/.config/omarchy",
+        "~/.config/waybar",
+        "~/.bashrc",
+        "~/.zshrc",
+        "~/.local/share/applications",
+        "~/.config/systemd/user",
+        "~/.config/autostart",
+        "~/.config/environment.d",
+        "~/.config/uwsm",
+        "~/.profile",
+        "~/.bash_profile",
     ],
 ];
 
@@ -651,8 +668,10 @@ pub const DEFAULT_ROUTINE_PATHS: [&str; 2] = ["~/.config/omarchy/shell.json", "*
 pub const DEFAULT_ROUTINE_PACKAGES: [&str; 2] = ["archlinux-keyring", "omarchy-keyring"];
 
 /// Default `[drift] alwaysRedPaths`: code that runs at login or on events
-/// without being configuration (ADR-0028 §2).
-pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 7] = [
+/// without being configuration (ADR-0028 §2), and `~/.ssh/authorized_keys`
+/// (WP-113, operator decision 2026-10-06), which only matters once the
+/// user adds it to `watchPaths` (opt-in; it is no default watch path).
+pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 8] = [
     "~/.config/systemd/user/**",
     "~/.config/omarchy/hooks/**",
     "~/.config/autostart/**",
@@ -660,6 +679,7 @@ pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 7] = [
     "~/.config/uwsm/**",
     "~/.profile",
     "~/.bash_profile",
+    "~/.ssh/authorized_keys",
 ];
 
 fn strings(list: &[&str]) -> Vec<String> {

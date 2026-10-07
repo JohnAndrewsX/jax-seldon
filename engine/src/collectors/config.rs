@@ -15,9 +15,14 @@
 //!   ([`SkipPaths`]); they do not appear in the manifest at all;
 //! - binary files (a NUL byte in the first 8000 bytes, as git decides) and
 //!   files larger than 1 MB: listed as `skipped` without a hash, so a file
-//!   that grows past the limit is not reported as removed;
-//! - sockets, FIFOs and devices; symlinks to directories (no loops).
-//!   Symlinks to files are followed (stow-style dotfiles);
+//!   that grows past the limit is not reported as removed — except under
+//!   the persistence paths (`[drift] alwaysRedPaths`), where every file is
+//!   hashed whatever its content or size (WP-113: a hook with a NUL after
+//!   its first line, or over 1 MB, still runs);
+//! - sockets, FIFOs and devices; symlinks to directories, except one at or
+//!   below a persistence path, which is followed with a loop guard and at
+//!   most [`LINKED_FILES`] files (WP-113: a linked hook directory still
+//!   runs). Symlinks to files are followed (stow-style dotfiles);
 //! - files whose `~`-path cannot be an event subject (control characters,
 //!   longer than [`SUBJECT_MAX`]): counted in the collector's message.
 //!
@@ -92,6 +97,11 @@ const BINARY_PROBE: usize = 8000;
 
 /// Directory depth below a watch path; deeper trees are not walked.
 const MAX_DEPTH: usize = 32;
+
+/// Files one walk records below a followed directory link (WP-113): a link
+/// may point at a large tree. The rest is listed as skipped (no hash, no
+/// removal) and counted in the message.
+pub const LINKED_FILES: usize = 1024;
 
 pub struct ConfigFiles;
 
@@ -389,10 +399,11 @@ fn own_hash(dirs: &Dirs, config: &Config, path: &Path) -> Option<String> {
     if !is_watched(dirs, config, path) {
         return None;
     }
+    let persistent = SkipPaths::new(&dirs.home, &config.drift.always_red_paths).matches(path);
     std::fs::metadata(path)
         .ok()
         .filter(|m| m.is_file())
-        .and_then(|m| hash_file(path, m.len()))
+        .and_then(|m| hash_content(path, m.len(), persistent))
 }
 
 /// Adds `(path, hash)` records by `by` to `owned.json`; returns their
@@ -602,6 +613,10 @@ struct Scan {
     stats: BTreeMap<String, FileStat>,
     /// Files left out because their `~`-path cannot be a subject.
     unnamed: usize,
+    /// Files left out below a followed directory link past [`LINKED_FILES`].
+    unlinked: usize,
+    /// Directory links not followed because they lead back into the walk.
+    loops: usize,
 }
 
 /// The rules of one walk.
@@ -609,10 +624,22 @@ struct Walker<'a> {
     dirs: &'a Dirs,
     excluded: &'a [PathBuf],
     skip: &'a SkipPaths,
+    /// The persistence paths (`[drift] alwaysRedPaths`): every file there
+    /// is hashed, and a directory link there is followed.
+    persist: &'a SkipPaths,
     /// The stored manifest: hashes to reuse by [`FileStat`].
     known: Option<&'a Manifest>,
     /// When the walk started (the system clock, for [`FileStat::of`]).
     started: SystemTime,
+}
+
+/// The directory links a walk follows: the canonical targets on the way
+/// down (the loop guard) and how many more files it may record below them.
+#[derive(Default)]
+struct Follow {
+    stack: Vec<PathBuf>,
+    /// `None` outside a followed link.
+    left: Option<usize>,
 }
 
 impl Walker<'_> {
@@ -622,10 +649,11 @@ impl Walker<'_> {
             if self.ignored(root) {
                 continue;
             }
+            let mut follow = Follow::default();
             // a watch path may itself be a symlink (dotfile managers)
             match std::fs::metadata(root) {
-                Ok(m) if m.is_dir() => self.walk(root, 0, &mut scan),
-                Ok(m) if m.is_file() => self.file(root, &m, &mut scan),
+                Ok(m) if m.is_dir() => self.walk(root, 0, &mut scan, &mut follow),
+                Ok(m) if m.is_file() => self.file(root, &m, &mut scan, &mut follow),
                 _ => {}
             }
         }
@@ -636,12 +664,22 @@ impl Walker<'_> {
         self.excluded.iter().any(|x| path.starts_with(x)) || self.skip.matches(path)
     }
 
-    fn walk(&self, dir: &Path, depth: usize, scan: &mut Scan) {
+    /// Whether the directory `path` is, or may hold, a persistence path: a
+    /// pattern matches it or what lies below it (`hooks/**` covers the
+    /// link `hooks` itself).
+    fn may_persist(&self, path: &Path) -> bool {
+        self.persist.matches(path) || self.persist.matches(&path.join("x"))
+    }
+
+    fn walk(&self, dir: &Path, depth: usize, scan: &mut Scan, follow: &mut Follow) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
         let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
         paths.sort();
+        // a directory's files before its subdirectories: below a followed
+        // link the budget goes to the files a hook directory runs
+        let mut dirs = Vec::new();
         for path in paths {
             if path.file_name().is_some_and(|n| n == ".git") || self.ignored(&path) {
                 continue;
@@ -650,29 +688,70 @@ impl Walker<'_> {
                 continue;
             };
             if meta.file_type().is_symlink() {
-                // follow links to files, never into directories
-                if let Ok(target) = std::fs::metadata(&path)
-                    && target.is_file()
-                {
-                    self.file(&path, &target, scan);
+                // follow links to files; into directories only where
+                // something that runs at login may lie (WP-113)
+                match std::fs::metadata(&path) {
+                    Ok(target) if target.is_file() => self.file(&path, &target, scan, follow),
+                    Ok(target) if target.is_dir() && self.may_persist(&path) => {
+                        dirs.push((path, true));
+                    }
+                    _ => {}
                 }
             } else if meta.is_dir() {
-                if depth < MAX_DEPTH {
-                    self.walk(&path, depth + 1, scan);
-                }
+                dirs.push((path, false));
             } else if meta.is_file() {
-                self.file(&path, &meta, scan);
+                self.file(&path, &meta, scan, follow);
+            }
+        }
+        if depth >= MAX_DEPTH {
+            return;
+        }
+        for (path, linked) in dirs {
+            if linked {
+                self.follow(dir, &path, depth, scan, follow);
+            } else {
+                self.walk(&path, depth + 1, scan, follow);
             }
         }
     }
 
-    fn file(&self, path: &Path, meta: &std::fs::Metadata, scan: &mut Scan) {
+    /// Walks the directory link `link` in `dir` under the link's own name,
+    /// unless its target holds `dir` or is already on the way down.
+    fn follow(&self, dir: &Path, link: &Path, depth: usize, scan: &mut Scan, follow: &mut Follow) {
+        let (Ok(target), Ok(here)) = (std::fs::canonicalize(link), std::fs::canonicalize(dir))
+        else {
+            return;
+        };
+        if here.starts_with(&target) || follow.stack.contains(&target) {
+            scan.loops += 1;
+            return;
+        }
+        let outer = follow.left;
+        follow.left = Some(outer.unwrap_or(LINKED_FILES));
+        follow.stack.push(target);
+        self.walk(link, depth + 1, scan, follow);
+        follow.stack.pop();
+        if outer.is_none() {
+            follow.left = None;
+        }
+    }
+
+    fn file(&self, path: &Path, meta: &std::fs::Metadata, scan: &mut Scan, follow: &mut Follow) {
         let key = self.dirs.display(path);
         // cannot be an event subject; a control character could also
         // rewrite the terminal that shows it
         if key.chars().count() > SUBJECT_MAX || key.chars().any(char::is_control) {
             scan.unnamed += 1;
             return;
+        }
+        if let Some(left) = follow.left.as_mut() {
+            if *left == 0 {
+                // seen, not hashed: leaving the budget is no removal
+                scan.unlinked += 1;
+                scan.skipped.insert(key);
+                return;
+            }
+            *left -= 1;
         }
         if let Ok(t) = meta.modified() {
             scan.mtimes.insert(key.clone(), t);
@@ -684,7 +763,8 @@ impl Walker<'_> {
                 .then(|| m.current.files.get(&key).cloned())
                 .flatten()
         });
-        match known.or_else(|| hash_file(path, meta.len())) {
+        let persistent = self.persist.matches(path);
+        match known.or_else(|| hash_content(path, meta.len(), persistent)) {
             Some(hash) => {
                 if let Some(s) = stat {
                     scan.stats.insert(key.clone(), s);
@@ -694,6 +774,32 @@ impl Walker<'_> {
             None => {
                 scan.skipped.insert(key);
             }
+        }
+    }
+}
+
+/// [`hash_file`], or for a file under a persistence path (`any`) the
+/// SHA-256 of whatever it holds, streamed ([`hash_any`]).
+fn hash_content(path: &Path, len: u64, any: bool) -> Option<String> {
+    if any {
+        hash_any(path)
+    } else {
+        hash_file(path, len)
+    }
+}
+
+/// SHA-256 of the whole file at `path`, any size and content, read in
+/// pieces; `None` when it cannot be read.
+pub fn hash_any(path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = sys::Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => return Some(hasher.finish_hex()),
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return None,
         }
     }
 }
@@ -790,11 +896,16 @@ fn mark_evidence(ctx: &Ctx, events: &mut [Event]) {
     let trusted = omarchy_trust(omarchy, owner)
         .is_ok()
         .then_some((omarchy.as_path(), owner));
-    for e in events
-        .iter_mut()
-        .filter(|e| matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange))
-    {
-        let mark = evidence(ctx.dirs, trusted, &e.subject, e.meta.hash_to.as_deref());
+    for e in events.iter_mut() {
+        let mark = match e.kind {
+            Kind::ConfigAdd | Kind::ConfigChange => {
+                evidence(ctx.dirs, trusted, &e.subject, e.meta.hash_to.as_deref())
+            }
+            Kind::ConfigRemove => {
+                removed_toggle(ctx.dirs, trusted, &e.subject, e.meta.hash_from.as_deref())
+            }
+            _ => None,
+        };
         if let Some(mark) = mark {
             e.meta
                 .extra
@@ -880,14 +991,7 @@ pub fn evidence(
     }
     if let Some(hash) = hash
         && let Some((omarchy, owner)) = omarchy
-        && omarchy_copies(dirs, omarchy, &path).iter().any(|copy| {
-            std::fs::metadata(copy)
-                .ok()
-                .filter(|m| m.is_file())
-                .and_then(|m| hash_file(copy, m.len()))
-                .is_some_and(|h| h == hash)
-                && copy_trusted(copy, omarchy, owner)
-        })
+        && is_omarchy_copy(dirs, omarchy, owner, &path, hash)
     {
         return Some(MATCHES_OMARCHY_DEFAULT);
     }
@@ -906,15 +1010,62 @@ pub fn evidence(
     None
 }
 
+/// Whether the content `hash` of `path` is one of Omarchy's shipped copies
+/// of it ([`omarchy_copies`]) in the trusted tree `omarchy`.
+fn is_omarchy_copy(dirs: &Dirs, omarchy: &Path, owner: u32, path: &Path, hash: &str) -> bool {
+    omarchy_copies(dirs, omarchy, path).iter().any(|copy| {
+        std::fs::metadata(copy).is_ok_and(|m| m.is_file())
+            && hash_any(copy).is_some_and(|h| h == hash)
+            && copy_trusted(copy, omarchy, owner)
+    })
+}
+
+/// Omarchy's toggle state directory relative to `$HOME`
+/// (`omarchy-hyprland-toggle` copies a flag there and deletes it to turn
+/// it off; Hyprland loads every `.lua` under `hypr/`).
+pub const TOGGLES_DIR: &str = ".local/state/omarchy/toggles";
+
+/// WP-113: the capture-time evidence of a `config-remove` in the toggles
+/// directory whose removed content (`hash`) is Omarchy's shipped flag — a
+/// toggle turned off. Recorded as `omarchy-default` because the ledger
+/// cannot gain it later; the classifier reads marks on removals only once
+/// ADR-0028's row allows it (WP-113 proposed amendment B).
+fn removed_toggle(
+    dirs: &Dirs,
+    omarchy: Option<(&Path, u32)>,
+    key: &str,
+    hash: Option<&str>,
+) -> Option<&'static str> {
+    let path = key_path(dirs, key);
+    let (omarchy, owner) = omarchy?;
+    (path.starts_with(dirs.home.join(TOGGLES_DIR))
+        && is_omarchy_copy(dirs, omarchy, owner, &path, hash?))
+    .then_some(MATCHES_OMARCHY_DEFAULT)
+}
+
 /// Omarchy's shipped copies of `path`: `$OMARCHY_PATH/config/<rel>` for
 /// `~/.config/<rel>` (`omarchy refresh config`, migrations), and for a
 /// desktop entry `~/.local/share/applications/<name>` the file of that
 /// name under `$OMARCHY_PATH/applications/`, or for `Alacritty.desktop`
 /// `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`
-/// (`omarchy-refresh-applications`).
+/// (`omarchy-refresh-applications`), and for a toggle
+/// `~/.local/state/omarchy/toggles/<app>/<rel>`
+/// `$OMARCHY_PATH/default/<app>/toggles/<rel>` (`omarchy-hyprland-toggle`,
+/// WP-113).
 fn omarchy_copies(dirs: &Dirs, omarchy: &Path, path: &Path) -> Vec<PathBuf> {
     if let Ok(rel) = path.strip_prefix(dirs.home.join(".config")) {
         return vec![omarchy.join("config").join(rel)];
+    }
+    if let Ok(rel) = path.strip_prefix(dirs.home.join(TOGGLES_DIR)) {
+        let mut parts = rel.components();
+        let Some(app) = parts.next() else {
+            return Vec::new();
+        };
+        let rest = parts.as_path();
+        if rest.as_os_str().is_empty() {
+            return Vec::new();
+        }
+        return vec![omarchy.join("default").join(app).join("toggles").join(rest)];
     }
     if let Ok(rel) = path.strip_prefix(dirs.home.join(".local/share/applications")) {
         let mut copies = vec![omarchy.join("applications").join(rel)];
@@ -1230,11 +1381,13 @@ impl ConfigFiles {
         };
         let skip_paths = &ctx.config.redaction.skip_paths;
         let skip = SkipPaths::new(&ctx.dirs.home, skip_paths);
+        let persist = SkipPaths::new(&ctx.dirs.home, &ctx.config.drift.always_red_paths);
         let scope = WatchScope::new(ctx.dirs, roots, excluded, skip_paths);
         let scan = Walker {
             dirs: ctx.dirs,
             excluded,
             skip: &skip,
+            persist: &persist,
             known: stored.as_ref(),
             started: SystemTime::now(),
         }
@@ -1281,6 +1434,18 @@ impl ConfigFiles {
             notes.push(format!(
                 "{} file(s) not watched: the name holds a control character or is longer than {SUBJECT_MAX} characters",
                 scan.unnamed
+            ));
+        }
+        if scan.unlinked > 0 {
+            notes.push(format!(
+                "{} file(s) not watched: more than {LINKED_FILES} below one linked directory",
+                scan.unlinked
+            ));
+        }
+        if scan.loops > 0 {
+            notes.push(format!(
+                "{} linked director(ies) not followed: they lead back into the watched tree",
+                scan.loops
             ));
         }
         let since = prev.as_ref().map(|p| p.checked);
