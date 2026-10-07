@@ -545,7 +545,7 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # SIGTERM/SIGINT → exit 0 after the rebuild in progress; exit 3 when
                                                # the logbook is not initialised; watcher error at start (inotify
                                                # limit) → exit 2; a failing re-watch later is an error line. RSS
-                                               # budget: < 10 MB on the ×10 fixture (`just check-rss`). User unit:
+                                               # budget: < 11 MB on the ×10 fixture (`just check-rss`). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
                                                # rollbacks, collectors, state, skills, omarchy, snapper,
@@ -930,7 +930,7 @@ seldon init --json   → {logbook, config, machineId, language, files, obsidian,
                                  baseline:{reason, items, events}|null, git} | {ran:false, reason|error},
                         dossier:{ran:true, files, sections, counts, git, warnings} | {ran:false, reason|error},
                         themeHook:{requested, installed, already?, script?, hook?, error?, fix?,
-                                   ownWrites?: ["~/path"] | {error}}, nextSteps}
+                                   ownWrites?: ["~/path"] | {error}}, nextSteps, optionalSteps}
 seldon agent start <caseId> --json → {launched, launcher, program, argv (with the "{prompt}" placeholder,
                         never the prompt), actor, case, cwd, previousActiveCase}; exit 1 for a case that is not
                         active (queued → hint `seldon plan start`), an unknown launcher, or a launcher
@@ -2685,9 +2685,15 @@ Interactive via `dialoguer` (no `gum` dependency; gum is optional eye candy
 later). The wizard asks: path (the options of ADR-0010: `~/Seldon`,
 `~/Documents/Seldon`, a detected project folder, custom) → language →
 Obsidian config yes/no → collectors (all on by default) → watched config
-paths (defaults shown) → harnesses (`claude-code`, `omarchy-agent`) →
-theme hook yes/no (default no) → git → backfill (a note explains the
-drift consequence, then a date or empty). Then `init` runs, in order
+paths (defaults shown) → agent setup (`claude-code`, `skills`, and
+`omarchy-agent` only when the kit directory exists, labelled as a private
+template, WP-118) → theme hook (a note above a short yes/no question,
+default no) → git → backfill (a note: older changes are mostly routine
+history, the rest can be marked as the baseline; then a date or empty).
+Every question and list item, dialoguer's marks included, fits on one
+line of a 70-column terminal (Omarchy's presentation terminal is wider);
+an explanation is a plain line above it (a prompt or item that wraps is
+drawn twice). Then `init` runs, in order
 (WP-024): `config.toml` saved with the choices (first, WP-074: a save that
 fails writes nothing into the logbook folder, so the same `init` runs
 again once it is fixed; `[git] autocommit = false` when git is declined,
@@ -2720,8 +2726,20 @@ for it is explained and opens no drift (WP-038); the step takes the
 state lock before it writes the script and holds it through `omarchy
 hook install` and the record (WP-074, as `hook install` since WP-049), so
 no capture sees the copy before its record, and while another `seldon`
-holds the lock it writes nothing and is reported without a fix → next steps (`seldon
-drift` when drift stays open). A failure after the layout is reported, never fatal.
+holds the lock it writes nothing and is reported without a fix → the
+result (WP-118): aligned rows `Logbook` (path, language, git, Obsidian),
+`Config` (the file, where noisy files go), `Recording` (the collectors,
+the theme hook), `Agents` (the harnesses set up; one more line per
+harness that is not), `History` (the first capture, the backfill and its
+baseline, open drift, degraded collectors), `Snapshots`; then `Next
+steps:` with only what is left to do (`seldon capture --all`, `seldon
+dossier`, `seldon drift` when drift stays open, `seldon doctor` for a
+degraded collector or git, `seldon hook install <harness>`, the theme
+hook's manual command), or "Seldon is recording. Nothing else to do.";
+last the optional snapshot read grant (or, for a user in `ALLOW_USERS`,
+the recommended revert and grant) with what it grants. No machine id,
+file count or hook counts (`--json` has them). A failure after the layout
+is reported, never fatal.
 
 `seldon init --remove-theme-hook` (WP-049) undoes the theme hook: it
 deletes `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh` (a name

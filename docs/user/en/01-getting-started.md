@@ -42,6 +42,9 @@ less install.sh
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
 ```
 
+The script first says what it installs and where, and ends with the steps
+that are left: `seldon init` and the plugin, unless you have them already.
+
 Check that your shell finds the engine:
 
 ```sh
@@ -78,32 +81,40 @@ take it. In a list, Space ticks or unticks an item and Enter confirms.
 | Collectors | keep all six |
 | Watched config paths | keep the defaults |
 | More paths | leave empty |
-| Agent harnesses | tick Claude Code hooks with Space, if you use Claude Code; else none |
-| Record theme switches the moment they happen? | no (you can add it later) |
-| Make the logbook a git repository with a first commit? | yes |
-| Backfill since | leave empty |
+| Agent setup | tick Claude Code hooks with Space, if you use Claude Code; else none |
+| Record theme switches instantly? | no (the next capture records them anyway) |
+| Keep the logbook in git, with a first commit? | yes |
+| Backfill since | a date about three months back, or empty to start from now |
+| Mark them as the pre-Seldon baseline? | yes (asked only after a backfill that found something) |
 
-For the backfill, empty means Seldon records from now on. A date makes
-the first capture also record older changes. None of those belong to a
-case, so each one shows up as drift. The wizard then
-offers to mark them as the pre-Seldon baseline. Leave the backfill for
-later; [Concepts](02-concepts.md#baseline) explains it.
+A backfill records older changes too: the package log and the snapshots.
+Most of them are routine history. The rest opens as drift, changes that
+no case covers; the wizard then offers to mark them as the pre-Seldon
+baseline, which dismisses them and keeps the events.
+[Concepts](02-concepts.md#baseline) explains it.
 
-The wizard ends with a summary like this (shortened):
+The wizard ends with what it set up, for example (your numbers differ):
 
 ```text
-Logbook created at ~/Seldon (machine <machine>, language en, 31 files).
-Config: ~/.config/seldon/config.toml
-Git: repository initialised, first commit "seldon: init logbook"
-Snapper: degraded — No permissions. Snapshots are not recorded until you grant your user read access to the snapshot directory once (ADR-0026). The fix grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion.
-First capture: 0 event(s); degraded: snapper (see seldon doctor); 0 open drift item(s), 0 crisis
-Dossier: Wrote system/hardware.md, system/omarchy.md, system/packages.md, system/plugins.md, system/services.md (7 fence(s) changed)
-Next steps:
-  seldon doctor
+Logbook     ~/Seldon (English, git repository)
+Config      ~/.config/seldon/config.toml; list noisy or secret files in its [redaction] skipPaths
+Recording   snapshots, packages, Omarchy updates, plugins, themes, config files
+Agents      Claude Code hooks (user-wide)
+History     1500 event(s) since 2026-07-01; 40 drift item(s) marked as the pre-Seldon baseline
+Snapshots   not readable yet; optional, Seldon works without them
+
+Seldon is recording. Nothing else to do.
+
+Optional, snapshots in the timeline: read access to the snapshot list
+and info files, nothing else. Asks for your password once:
+  sudo setfacl -m u:$USER:rx /.snapshots
 ```
 
-`Snapper: degraded` is normal on Omarchy. Your user may not list
-snapshots by default. Seldon works without them; step 3 shows the fix.
+When something is left to do, for example a collector that could not
+read its source, "Next steps:" lists the commands instead of "Nothing
+else to do". Snapshots that are not readable yet are normal on Omarchy:
+your user may not list them by default. Seldon works without them; step 3
+shows the grant.
 
 To answer no questions at all, run `seldon init --non-interactive`. It
 takes `~/Seldon`, the language of your locale, all collectors and git,

@@ -425,6 +425,13 @@ Item {
       kpis: Model.deskKpis(root.indexData).map(function(k) { return k.id + " " + k.value }),
       counts: Model.deskCounts(root.indexData),
       notices: notices.items.map(function(n) { return n.banner.title }),
+      // the snapper notice's hover text: the engine's message and what the
+      // grant gives (WP-117)
+      snapperTip: {
+        text: notices.snapperBanner.visible ? notices.snapperBanner.tooltipText : "",
+        shown: notices.snapperBanner.tooltipShown,
+        fits: notices.snapperBanner.tooltipFits
+      },
       noticesFolded: root.noticesFolded,
       chip: header.chipText,
       chipShown: header.chipShown,
