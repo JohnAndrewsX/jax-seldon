@@ -250,9 +250,9 @@ only under `$S`. Never pass `--theme-hook` on the dev host: it runs
 ```
 $B init --non-interactive --path $S/logbook --language de \
    --harness claude-code --harness omarchy-agent --since "$(date -d '-7 days' +%F)"
-#   First capture: N event(s) since …; M open drift item(s), M crisis  (dev host
+#   History     N event(s) since …; M open drift item(s), M crisis  (dev host
 #   2026-10-01: 1230 events, 22 items, all crises — WP-013 FINDINGS §2.2)
-#   Harness omarchy-agent: no kit at $S/data/seldon/harness/omarchy-agent; nothing copied …
+#               Omarchy-Agent kit: no kit at $S/data/seldon/harness/omarchy-agent; nothing copied …
 rm -rf $S/logbook $S/state $S/config
 $B --json init --non-interactive --path $S/logbook --since "$(date -d '-7 days' +%F)" --baseline
 #   capture.baseline {"items": 22, "events": 1230, "reason": "pre-Seldon baseline"}, openDrift 0
@@ -274,10 +274,10 @@ export SELDON_OMARCHY=$S/omarchy-stub    # a script that only records "$*"
 (sleep 1; for k in '\r' '\r' '\r' '\r' '\r' ' ' '\r' '\r' '\r'; do printf "$k"; sleep 0.4; done
  printf "$(date -d '-3 days' +%F)\r"; sleep 4; printf '\r'; sleep 3) \
   | script -qec "$B init --path $S/logbook" /dev/null
-# language, Obsidian, collectors, watched paths, more paths, harnesses (Space:
-# claude-code), theme hook (no), git (yes), backfill date, then after the
-# capture: "The backfill opened N drift item(s) … Mark them as the pre-Seldon
-# baseline?" (Enter: yes)
+# language, Obsidian, collectors, watched paths, more paths, agent setup
+# (Space: claude-code; the kit item only with the kit), theme hook (no), git
+# (yes), backfill date, then after the capture: "The backfill opened N drift
+# item(s) …" and "Mark them as the pre-Seldon baseline?" (Enter: yes)
 ```
 
 Why the guard: on 2026-10-01 a wizard run with only `HOME` overridden

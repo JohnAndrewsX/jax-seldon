@@ -476,6 +476,7 @@ shell plugin. This is everything it does outside its own window:
 |---|---|
 | No pill in the bar | `omarchy plugin list` (is `jax.seldon` there and enabled?), `omarchy plugin enable jax.seldon`, `omarchy bar move jax.seldon --section right` |
 | A banner instead of data | its button is the fix; see [States](#states) |
+| The panel's install button runs `omarchy pkg aur add jax-seldon`, which fails | that is plugin 0.1.0: its button points to an AUR package that does not exist yet. Update the plugin first, `omarchy plugin update jax.seldon` (Omarchy shows the changes and asks `Update jax.seldon?`; answer yes), then `omarchy-restart-shell`; the new panel installs the engine from the GitHub release |
 | A key or `shell toggle jax.seldon` opens the overlay, not the panel | by design; the panel is `omarchy-shell jax.seldon.panel toggle` |
 | An action says the index is behind your logbook | you changed the logbook elsewhere (a terminal); *Capture now* or `seldon status`, then try again |
 | Changes to plugin files do not show, or an update does not | `omarchy-restart-shell` (the shell caches plugin components; see [Update](#update)) |

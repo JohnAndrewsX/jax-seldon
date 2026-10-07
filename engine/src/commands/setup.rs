@@ -73,9 +73,9 @@ pub const THEME_HOOK_NAME: &str = "seldon-theme-set.sh";
 pub const THEME_HOOK_SCRIPT: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/hooks/theme-set.sh"));
 
-/// The line `init` prints under the config file: how to keep a file that
+/// The end of `init`'s Config row: how to keep a file that
 /// changes all the time, or holds secrets, out of the config collector.
-pub const SKIP_PATHS_HINT: &str = "Watched files that change all the time or hold secrets: list them in [redaction] skipPaths there.";
+pub const SKIP_PATHS_HINT: &str = "list noisy or secret files in its [redaction] skipPaths";
 
 /// How long `omarchy hook install` may take.
 const OMARCHY_TIMEOUT: Duration = Duration::from_secs(30);

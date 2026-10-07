@@ -2679,10 +2679,7 @@ mod messages {
             common::stdout(&out)
         };
         let text = init(false);
-        assert!(
-            text.contains(&format!("Snapper: degraded — {row}")),
-            "{text}"
-        );
+        assert!(text.contains(&format!("\nSnapshots   {row}\n")), "{text}");
         let json: serde_json::Value = serde_json::from_str(&init(true)).unwrap();
         assert_eq!(json["snapper"]["message"], row, "{json}");
         for text in [text, json.to_string()] {

@@ -123,12 +123,13 @@ mod doctor {
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
         let text = stdout(&out);
         assert!(
-            text.contains("Snapper: degraded — No permissions."),
+            text.contains("\nSnapshots   not readable yet; optional, Seldon works without them\n"),
             "{text}"
         );
         assert!(
-            text.contains(&format!(
-                "{}   # optional: snapshots in the timeline (ADR-0026)",
+            text.ends_with(&format!(
+                "{}\n  {}\n",
+                seldon::commands::init::SNAPPER_OPTIONAL,
                 seldon::commands::doctor::SNAPPER_FIX
             )),
             "{text}"
