@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 190989e -->
+<!-- source: en/06-configuration.md @ 8809c5b -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -148,8 +148,9 @@ Desktop-Einträge deiner Web-Apps und TUIs) und die Persistenzpfade
 `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
 `~/.bash_profile` (Dateien, die bei der Anmeldung laufen; eine neue dort
 ist eine Krise, siehe [Drift](#drift)) sowie Omarchys Toggle-Ordner
-`~/.local/state/omarchy/toggles` (die Schalter, die
-`omarchy-hyprland-toggle` einschaltet; Omarchys eigene sind Routine).
+`~/.local/state/omarchy/toggles` (die Schalter aus Omarchys
+*Toggle*-Menü und Hyprlands Flags; ein- oder ausschalten ist Routine,
+alles andere dort wird gelistet).
 Fehlende Pfade überspringt der Collector. Ein relativer Pfad wie `.config/nvim` bedeutet
 `~/.config/nvim`; der Assistent speichert getippte Pfade in dieser Form.
 Ergänze eigene, zum Beispiel:
@@ -192,11 +193,16 @@ Immer ausgenommen:
   wird;
 - `.git`-Ordner und Ordner, die über einen Symlink erreicht werden —
   außer in den Persistenzpfaden (`alwaysRedPaths`): Dort folgt der
-  Collector einem verlinkten Ordner (höchstens 1024 Dateien unter einem
-  Link; einem Link zurück in den Baum nicht);
+  Collector einem verlinkten Ordner, jedem Ordner einmal, mit höchstens
+  4096 Einträgen unter Links pro Erfassung. Ein Link mit mehr wird als
+  abgeschnitten aufgezeichnet, und das ist eine Krise: Niemand sieht,
+  was von dort läuft. Links in dein Logbuch oder Seldons eigene Ordner
+  verfolgt er nie;
 - Binärdateien und Dateien über 1 MiB (als übersprungen gelistet, ohne
   Hash) — außer in den Persistenzpfaden, wo jede Datei gehasht wird: Ein
-  Hook läuft, egal was er enthält;
+  Hook läuft, egal was er enthält. Eine Datei dort über 64 MiB wird aus
+  Größe, Zeit und Inode gehasht statt gelesen, und eine, die sich nicht
+  lesen lässt, behält ihren letzten Hash, bis sie es wieder tut;
 - Dateien, deren Name ein Steuerzeichen enthält oder deren Pfad länger
   als 512 Zeichen ist: Die Erfassung zählt sie in einer Warnung;
 - alles in `[redaction] skipPaths`. Die Vorgabe enthält die Dateien, die
@@ -342,7 +348,7 @@ Shell brechen kann, ist eine Krise.
 |---|---|---|
 | `alwaysRed` | `linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`, `quickshell` | Pakete, die Boot, Anmeldung oder die Shell brechen können: außerhalb eines Case mit Namen installiert oder entfernt eine Krise; mit dem System aktualisiert Routine |
 | `attention` | `"normal"` | `"all"`: jede Änderung ohne Case ist Drift, eine Krise, wenn ihre Zone rot ist (das Verhalten bis 0.1.3) |
-| `routine` | alle Regeln | die Routine-Regeln, die gelten: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo` |
+| `routine` | alle Regeln | die Routine-Regeln, die gelten: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag` |
 | `routinePaths` | `~/.config/omarchy/shell.json`, `**/*.bak.*` | Konfigurationsdateien, deren Änderungen Routine sind |
 | `routinePackages` | `archlinux-keyring`, `omarchy-keyring` | Pakete, deren eigene Transaktionen Routine sind |
 | `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys` | Persistenzpfade: eine Änderung dort ohne Case ist eine Krise (`authorized_keys` erst, wenn du es beobachtest) |
@@ -352,7 +358,7 @@ Willst du mehr? Ein paar Beispiele:
 ```toml
 [drift]
 # theme switches are drift again
-routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo"]
+routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
 # a kernel from NVIDIA counts too
 alwaysRed = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell", "nvidia*"]
 ```
