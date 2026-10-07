@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """WP-102 manual mutants: each change must make `--test import_task` fail."""
 import os, subprocess, sys
-WT = "/home/eandres/Work/johnandrewsx/jax-seldon/wt/WP-102"
+from pathlib import Path
+# the checkout this script lives in: work/active/WP-102/mutants.py
+WT = str(Path(__file__).resolve().parents[3])
 F = "engine/src/commands/import/task.rs"
 # a target dir of its own: a mutated binary must never reach another run
 TARGET = f"{WT}/engine/target/mutants"
