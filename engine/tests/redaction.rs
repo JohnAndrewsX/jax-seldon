@@ -1503,6 +1503,135 @@ const CLEAR: &[&str] = &[
     "Bild icon@2x",
 ];
 
+/// (rule, text with `\n` line ends, secrets): one row for each place where
+/// a rule reads a line end, the `\` continuations first. Each row is also
+/// checked with `\r\n` line ends, which must give the same text with
+/// `\r\n` (WP-128).
+const CONTINUED: &[(&str, &str, &[&str])] = &[
+    // `\` between an option and its value (`GAP`)
+    (
+        "password-option",
+        "tool --password \\\n  fakeCr01 --verbose",
+        &["fakeCr01"],
+    ),
+    ("curl-user", "curl -u \\\n  a:fakeCr02", &["fakeCr02"]),
+    (
+        "sshpass-password",
+        "sshpass -p \\\n  fakeCr03 ssh me@host",
+        &["fakeCr03"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin \\\n  pass:fakeCr04",
+        &["fakeCr04"],
+    ),
+    // `\` inside an option value (`WORD`): bare, in `"…"`, in `$'…'`
+    (
+        "curl-user",
+        "curl -u admin:fake\\\nCr05 https://h.example",
+        &["Cr05"],
+    ),
+    (
+        "password-option",
+        "tool --password \"ab\\\nfakeCr06\" --verbose",
+        &["fakeCr06"],
+    ),
+    (
+        "password-option",
+        "tool --password $'ab\\\nfakeCr07' --verbose",
+        &["fakeCr07"],
+    ),
+    // … and inside a `pass:` value (`PASS_ARG`), each of its forms
+    (
+        "openssl-pass",
+        "openssl rsa -passin \"pass:ab\\\nfakeCr08\" -in k.pem",
+        &["fakeCr08"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin $'pass:ab\\\nfakeCr09' -in k.pem",
+        &["fakeCr09"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:\"ab\\\nfakeCr10\" -in k.pem",
+        &["fakeCr10"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:$'ab\\\nfakeCr11' -in k.pem",
+        &["fakeCr11"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:ab\\\nfakeCr12 -in k.pem",
+        &["fakeCr12"],
+    ),
+    // `\` between the command word and the option (`COMMAND_REST`)
+    (
+        "curl-user",
+        "curl -sS \\\n  -H 'Accept: a;b' \\\n  -u admin:fakeCr13 https://h.example",
+        &["fakeCr13"],
+    ),
+    (
+        "registry-login-password",
+        "docker login \\\n  -p fakeCr14 r.example",
+        &["fakeCr14"],
+    ),
+    (
+        "sshpass-password",
+        "sshpass \\\n  -p fakeCr15 ssh me@host",
+        &["fakeCr15"],
+    ),
+    // HTTPie's gap after the command word (`HTTPIE_GAP`)
+    ("httpie-auth", "http \\\n  -a a:fakeCr16", &["fakeCr16"]),
+    ("httpie-auth", "http\\\n  -a a:fakeCr17", &["fakeCr17"]),
+    ("httpie-auth", "xh\n-a a:fakeCr18", &["fakeCr18"]),
+    // `mysql … \`: before `-p` and after its value
+    (
+        "db-client-password",
+        "mysql -u root \\\n  -pfakeCr19 shop",
+        &["fakeCr19"],
+    ),
+    (
+        "db-client-password",
+        "mysql -u root -pfakeCr20a \\\n  shop --init-command=fakeCr20b\nnext",
+        &["fakeCr20a", "fakeCr20b"],
+    ),
+    // line ends inside quotes and around a JSON `:`, and rules that take
+    // the rest of a line, whose `\r` stays
+    (
+        "proxy-option",
+        "curl -X POST -d '{\n  \"a\": 1\n}' -U bob:fakeCr21 https://h.example",
+        &["fakeCr21"],
+    ),
+    (
+        "cookie-option",
+        "curl -d \"line 1\nline 2\" -b 'sid=fakeCr22' https://h.example",
+        &["fakeCr22"],
+    ),
+    (
+        "json-secret",
+        "{\"password\":\n  \"fakeCr23\"}\nnext",
+        &["fakeCr23"],
+    ),
+    (
+        "authorization-header",
+        "Authorization: Bearer fakeCr24\nnext",
+        &["fakeCr24"],
+    ),
+    (
+        "password-option",
+        "tool --password 'fakeCr25\nnext",
+        &["fakeCr25"],
+    ),
+    // a header value ends before the `\r` of a CRLF line end, also an
+    // empty one (round 2)
+    ("secret-header", "X-Api-Key: fakeCr26\nnext", &["fakeCr26"]),
+    ("authorization-header", "a\nAuthorization: \n", &[]),
+    ("secret-header", "x-api-key: \t\n\n", &[]),
+];
+
 mod redaction {
     use super::*;
 
@@ -1859,14 +1988,78 @@ mod redaction {
             assert_eq!(r.redact(&out), out, "`{input}`");
         }
         // each HTTPie command word with each gap its triggers name
-        // (WP-097 round 2)
+        // (WP-097 round 2), the CRLF line ends too (WP-128)
         for word in ["http", "https", "xh", "xhs"] {
-            for gap in [" ", "\t", "\n", "\\\n"] {
+            for gap in [" ", "\t", "\n", "\\\n", "\r\n", "\\\r\n"] {
                 let input = format!("{word}{gap}-a a:fakeGap2");
                 let out = r.redact(&input);
                 assert_eq!(out, format!("{word}{gap}-a {REDACTED}"), "`{input}`");
                 assert_eq!(r.matching_rules(&input), vec!["httpie-auth"]);
             }
+        }
+    }
+
+    /// WP-128: a rule that reads a line end reads `\r\n` as it reads `\n`.
+    /// Each row of [`CONTINUED`] with CRLF line ends loses its secrets,
+    /// matches the same rules and gives the text of the LF row with CRLF
+    /// line ends, through `redact` and `redact_keeping_lines`; the latter
+    /// keeps the number of lines, and a second pass changes nothing.
+    #[test]
+    fn crlf_line_ends_continue_as_lf_line_ends_do() {
+        let r = Redactor::builtin();
+        for (rule, lf, secrets) in CONTINUED {
+            let crlf = lf.replace('\n', "\r\n");
+            assert!(r.matching_rules(lf).contains(rule), "{rule}: `{lf}`");
+            assert_eq!(r.matching_rules(&crlf), r.matching_rules(lf), "`{lf}`");
+            for (how, f) in [
+                ("redact", Redactor::redact as fn(&Redactor, &str) -> String),
+                ("redact_keeping_lines", Redactor::redact_keeping_lines),
+            ] {
+                let from_lf = f(&r, lf);
+                let from_crlf = f(&r, &crlf);
+                for text in [&from_lf, &from_crlf] {
+                    for secret in *secrets {
+                        assert!(!text.contains(secret), "{rule} {how}: `{text:?}`");
+                    }
+                }
+                assert_eq!(
+                    from_crlf,
+                    from_lf.replace('\n', "\r\n"),
+                    "{rule} {how}: `{lf}`"
+                );
+                assert_eq!(f(&r, &from_crlf), from_crlf, "{rule} {how}: `{lf}`");
+            }
+            let kept = r.redact_keeping_lines(&crlf);
+            assert_eq!(kept.matches("\r\n").count(), crlf.matches("\r\n").count());
+            assert_eq!(kept.matches('\n').count(), crlf.matches('\n').count());
+        }
+    }
+
+    /// WP-128 round 2: a user pattern's match is replaced whole, a `\r` in
+    /// it too, so a pattern that matches a bare `\r` gives the same text
+    /// on a second pass (`seldon log` redacts a note, then the ledger
+    /// does).
+    #[test]
+    fn a_user_pattern_that_matches_a_cr_is_stable() {
+        for pattern in ["\r", "[ \t\r]+"] {
+            let r = Redactor::with_patterns(&[pattern.into()]).unwrap();
+            for text in ["a token: abc\r\nb \r\n", "x\r\n\r\ny\r"] {
+                let once = r.redact(text);
+                assert!(!once.contains('\r'), "{pattern}: {once:?}");
+                assert_eq!(r.redact(&once), once, "{pattern}: {text:?}");
+            }
+        }
+    }
+
+    /// WP-128 round 2: a lone `\r` (classic Mac line ends) is no line end:
+    /// HTTPie's gap after the command word is not one.
+    #[test]
+    fn a_lone_cr_is_no_line_end() {
+        let r = Redactor::builtin();
+        for word in ["http", "https", "xh", "xhs"] {
+            let input = format!("{word}\r-a a:b");
+            assert_eq!(r.redact(&input), input);
+            assert!(r.matching_rules(&input).is_empty(), "{input:?}");
         }
     }
 
@@ -2319,6 +2512,177 @@ mod commands {
         }
     }
 
+    /// ADR-0038: a case's Intent and Result, a decision's lead and an
+    /// imported case's source reach the index through the logbook's
+    /// redaction (the built-in rules and `[redaction] patterns`), whatever
+    /// a hand edit put into the files.
+    #[test]
+    fn the_index_masks_intent_result_lead_and_source() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let config = env.config_file();
+        let text = read(&config).replace("patterns = []", "patterns = [\"Geheimprojekt\\\\w*\"]");
+        assert!(text.contains("Geheimprojekt"));
+        std::fs::write(&config, text).unwrap();
+        run(&env, &["plan", "new", "--", "Zed"]);
+        run(&env, &["decide", "--no-edit", "--", "Zed statt VS Code"]);
+        let (intent, result, lead, path) =
+            (token("int"), token("res"), token("lead"), token("src"));
+        let case = find_file(&root.join("work/queued"), "C-2026-001");
+        let body = read(&case)
+            .replace(
+                "## Intent\n",
+                &format!("## Intent\nZed für Geheimprojekt7, token {intent}.\n"),
+            )
+            .replace(
+                "## Result\n",
+                &format!("## Result\nfertig, bob@example.org {result}\n"),
+            )
+            .replace(
+                "tags: []\n",
+                &format!("tags: []\nsource: \"~/notes/{path}/todo.md#3\"\n"),
+            );
+        std::fs::write(&case, body).unwrap();
+        let adr = find_file(&root.join("decisions"), "ADR-0001");
+        let body = read(&adr).replace(
+            "## Decision\n",
+            &format!("## Decision\nZed, Schlüssel {lead}.\n"),
+        );
+        std::fs::write(&adr, body).unwrap();
+
+        run(&env, &["status"]);
+        let index: Value =
+            serde_json::from_str(&read(&env.home.join(".local/state/seldon/index.json"))).unwrap();
+        let c = &index["cases"]["queued"][0];
+        assert_eq!(
+            c["intent"],
+            format!("Zed für {REDACTED}, token {REDACTED}.")
+        );
+        assert_eq!(
+            c["result"],
+            format!("fertig, {REDACTED}@example.org {REDACTED}")
+        );
+        assert_eq!(c["source"], format!("~/notes/{REDACTED}/todo.md#3"));
+        assert_eq!(
+            index["decisions"][0]["lead"],
+            format!("Zed, Schlüssel {REDACTED}.")
+        );
+        let text = read(&env.home.join(".local/state/seldon/index.json"));
+        for secret in [&intent, &result, &lead, &path, "Geheimprojekt", "bob@"] {
+            assert!(!text.contains(secret), "{secret} in the index");
+        }
+
+        // a pattern that does not compile: the engine does not know what to
+        // hide, so the index withholds the four texts (ADR-0038 §2)
+        let broken =
+            read(&config).replace("patterns = [\"Geheimprojekt\\\\w*\"]", "patterns = [\"(\"]");
+        assert!(broken.contains("patterns = [\"(\"]"));
+        std::fs::write(&config, broken).unwrap();
+        let out = env.at(T0, &["--json", "index"]);
+        let index: Value =
+            serde_json::from_str(&read(&env.home.join(".local/state/seldon/index.json"))).unwrap();
+        let c = &index["cases"]["queued"][0];
+        assert_eq!(
+            (c.get("intent"), c.get("result"), c.get("source")),
+            (None, None, None),
+            "exit {:?}: {}",
+            out.status.code(),
+            stderr(&out)
+        );
+        assert_eq!(index["decisions"][0].get("lead"), None);
+        assert!(
+            index["drift"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|d| d["rule"].is_string())
+        );
+    }
+
+    /// WP-127 round 2 (B1): the redaction runs before the clip. A token
+    /// that straddles the 256-byte cut of intent, result and lead is
+    /// masked whole, never cut into a prefix the rule no longer knows;
+    /// secrets continued over lines and a token split by a zero-width
+    /// space (N4) are masked too.
+    #[test]
+    fn a_secret_at_the_cut_or_over_lines_is_masked_before_the_clip() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        run(&env, &["plan", "new", "--", "Cut"]);
+        run(&env, &["plan", "new", "--", "Lines"]);
+        run(&env, &["decide", "--no-edit", "--", "Cut"]);
+        // 200 bytes, then the token across the 256-byte cut
+        let at_cut = |tag: &str| format!("{} {} {}", "a".repeat(200), token(tag), "b".repeat(50));
+        let edit = |path: &Path, pairs: &[(&str, String)]| {
+            let mut text = read(path);
+            for (section, add) in pairs {
+                text = text.replacen(section, &format!("{section}{add}\n"), 1);
+            }
+            std::fs::write(path, text).unwrap();
+        };
+        let queued = root.join("work/queued");
+        edit(
+            &find_file(&queued, "C-2026-001"),
+            &[
+                ("## Intent\n", at_cut("cutint")),
+                ("## Result\n", at_cut("cutres")),
+            ],
+        );
+        edit(
+            &find_file(&root.join("decisions"), "ADR-0001"),
+            &[("## Decision\n", at_cut("cutlead"))],
+        );
+        edit(
+            &find_file(&queued, "C-2026-002"),
+            &[
+                (
+                    "## Intent\n",
+                    "mysql -u root \\\n  -pHunter2secretX \\\n  --host db".to_string(),
+                ),
+                (
+                    "## Result\n",
+                    format!(
+                        "{{\"password\":\n  \"jsonSecret9X\"}} gh\u{200B}{}",
+                        &token("zw")[2..]
+                    ),
+                ),
+            ],
+        );
+
+        run(&env, &["status"]);
+        let text = read(&env.home.join(".local/state/seldon/index.json"));
+        let index: Value = serde_json::from_str(&text).unwrap();
+        let cut = &index["cases"]["queued"][0];
+        for t in [
+            &cut["intent"],
+            &cut["result"],
+            &index["decisions"][0]["lead"],
+        ] {
+            let t = t.as_str().unwrap();
+            assert!(t.ends_with(" more characters in the file)"), "{t}");
+            assert!(t.contains(REDACTED), "{t}");
+            assert!(!t.contains("ghp_"), "{t}");
+        }
+        let lines = &index["cases"]["queued"][1];
+        let intent = lines["intent"].as_str().unwrap();
+        assert!(
+            intent.starts_with("mysql -u root \\\n") && intent.contains(REDACTED),
+            "{intent}"
+        );
+        let result = lines["result"].as_str().unwrap();
+        assert!(result.contains(REDACTED), "{result}");
+        for secret in [
+            "ghp_",
+            "Hunter2secretX",
+            "jsonSecret9X",
+            "cutint",
+            "cutres",
+            "cutlead",
+        ] {
+            assert!(!text.contains(secret), "{secret} in the index");
+        }
+    }
+
     fn last_ledger_line(logbook: &Path) -> Value {
         let text = read(&logbook.join("ledger/2026-10.jsonl"));
         serde_json::from_str(text.lines().last().unwrap()).unwrap()
@@ -2342,6 +2706,31 @@ mod commands {
         let day = read(&root.join("journal/2026/2026-10-03.md"));
         assert!(day.contains(&masked), "{day}");
         assert_nowhere(&env, &root, &[&secret]);
+    }
+
+    /// WP-128: a person's note over several lines, with `\n` and with
+    /// `\r\n` line ends, loses the secrets of every row of `CONTINUED`;
+    /// the ledger holds the note as the redaction gives it.
+    #[test]
+    fn log_masks_continued_lines_with_lf_and_crlf_line_ends() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let r = super::Redactor::builtin();
+        let mut all = Vec::new();
+        for (rule, lf, secrets) in super::CONTINUED {
+            for text in [lf.to_string(), lf.replace('\n', "\r\n")] {
+                let v = run(&env, &["log", "--", &text]);
+                // `log` trims the note first
+                assert_eq!(
+                    v["event"]["detail"],
+                    r.redact(text.trim()).as_str(),
+                    "{rule}"
+                );
+                assert_eq!(last_ledger_line(&root)["detail"], v["event"]["detail"]);
+            }
+            all.extend_from_slice(secrets);
+        }
+        assert_nowhere(&env, &root, &all);
     }
 
     #[test]

@@ -25,6 +25,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Code the collectors could not see (WP-113, ADR-0028 WP-E; hashes
+  only, never content).** A third-party plugin edited in place is now one
+  `plugin-update` (detail `files changed (sha256 … → …)`): the plugins
+  collector hashes each listed third-party plugin's folder under
+  `~/.config/omarchy/plugins/` as one whole and skips reading an
+  unchanged one. Omarchy's toggle folder
+  `~/.local/state/omarchy/toggles` joins the default `watchPaths` (a list
+  that is still 0.1.4's default gains it at the next capture); turning a
+  switch of Omarchy's *Toggle* menu or a Hyprland flag on or off is
+  routine (new rule `toggle-flag`, ADR-0037), anything else there is
+  quiet attention; every file there is hashed. `~/.ssh/authorized_keys`
+  and `~/.ssh/authorized_keys2` join the default `alwaysRedPaths`: add
+  both to `watchPaths` and a change to either without a case is a
+  crisis. Under the persistence paths the config collector now
+  hashes every file — a hook with a NUL byte after its first line or
+  over 1 MiB used to be skipped — and follows a linked hook folder (each
+  folder once, at most 4096 entries below links; a link with more is a
+  crisis of its own; links into the logbook or Seldon's folders are not
+  followed); a file over 64 MiB is hashed from its size, modification and
+  change time and inode,
+  and an unreadable one keeps its last hash. A plugin tree counts an
+  unreadable file by its size, time and mode and holds at most 10 000
+  entries. The first capture after the upgrade records nothing for files
+  that were skipped before.
+- A full upgrade with a yay or paru option that takes a value
+  (`--answerdiff None`, `--mflags …`, `--editor …`) no longer counts the
+  value as a package: it is routine like any plain full upgrade
+  (WP-113).
 - **Bulk triage and Ask agent (ADR-0036).** `seldon agent ask triage`
   starts your agent to sort the open changes; `agent ask drift <EVENT>`
   and `agent ask case <ID>` ask it about one change or one case. The
@@ -47,12 +75,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   like a note; a second run creates nothing, a reworded item makes a new
   case that names the earlier one; `--include-done`, `--dry-run`,
   `--zone`, `--risk`, `--area`. Files outside your home or inside the
-  logbook are refused (WP-102).
+  logbook are refused (WP-102). Each imported case records its task as
+  `source: "~/…/file.md#line"` in its frontmatter, which the index
+  carries for the desk (WP-127).
+- The index carries what the desk's details show, all optional within
+  contract 2 (ADR-0038): each open change's `rule` (what `seldon drift
+  show` reports), the first paragraph of a case's Intent and Result and
+  of a decision's Decision (redacted on every build, clipped at 256
+  bytes with "… (N more characters in the file)"), and an imported
+  case's `source` (WP-127).
 
 - The harm guard of the planned-and-active link (ADR-0029) reads a
   case's risk from its ledger lines, to the second, for every case this
   engine creates; an edited Log no longer changes the answer. Cases from
   before keep the Log as their record (WP-120).
+- Redaction reads Windows line ends: a secret on a line continued with
+  `\` and a CRLF line end (`mysql -u root \` then `-p secret`,
+  `curl -u \` then the credentials, a quoted value over two lines) is
+  masked as with LF, in notes, cases, hooks and imports. A CRLF note
+  keeps its line ends; the task import reads CRLF as LF first, as
+  before (WP-128).
 
 - `seldon agent start` launches the agent with `SELDON_ACTOR=agent:`
   and the launcher's name, and `SELDON_ATTENDED=1` (ADR-0027). `plan`,
@@ -495,6 +537,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- The desk's "Why loud?" callout reads the rule from the index: selecting
+  a crisis in the Changelog no longer runs `seldon drift show` (it still
+  does against an engine whose index has no rule). Work's case detail
+  shows the first paragraph of Intent and Result and where an imported
+  case came from; the Decisions detail shows the first paragraph of the
+  decision. *Open in editor* stays for the rest (WP-127).
 - **Quiet surfaces (ADR-0028).** The bar's second number now counts
   crises only: changes that can affect boot, login or the shell and have
   no case. Other changes without a case no longer show in the bar; the

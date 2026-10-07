@@ -842,6 +842,7 @@ fn retroactive_case(
             }
             tags
         },
+        source: None,
     };
     let body = cases::new_body(logbook, &id, title)?;
     let body = reconcile::append_to_section(&body, "Intent", intent);

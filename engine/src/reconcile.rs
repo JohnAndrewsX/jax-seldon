@@ -1120,6 +1120,7 @@ mod tests {
                 agents: Vec::new(),
                 events: events.iter().map(|e| e.id.to_string()).collect(),
                 tags: Vec::new(),
+                source: None,
             },
             doc: Document {
                 frontmatter: None,
