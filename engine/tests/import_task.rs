@@ -886,8 +886,8 @@ fn the_marker_not_the_source_keeps_an_import_idempotent() {
     assert_eq!(queued[1].get("source"), None);
 }
 
-/// A path of more than 512 characters keeps `~/…` and its end: the file
-/// name and the line (ADR-0038 §3).
+/// A path of more than 512 bytes keeps `~/…` and its end: the file name
+/// and the line (ADR-0038 §3).
 #[test]
 fn a_long_source_keeps_its_end() {
     let (env, root) = setup();
@@ -905,10 +905,29 @@ fn a_long_source_keeps_its_end() {
         .find(|l| l.starts_with("source: "))
         .unwrap_or_else(|| panic!("{text}"));
     let source: String = serde_json::from_str(line.trim_start_matches("source: ")).unwrap();
-    assert_eq!(source.chars().count(), 512, "{source}");
+    assert_eq!(source.len(), 512, "{source}");
     assert!(
         source.starts_with("~/…a") && source.contains("/bbb") && source.ends_with("ccc/todo.md#1"),
         "{source}"
     );
     assert_eq!(index(&env)["cases"]["queued"][0]["source"], source);
+}
+
+/// `plan show --json` carries a case's `source` only while it has its
+/// shape (ADR-0038 §3; WP-127 round 2, R2): a hand-edited one with a
+/// direction character, or one not under `~/`, is left out.
+#[test]
+fn plan_show_carries_only_a_source_in_shape() {
+    let (env, root) = setup();
+    task_file(&env, "TODO.md", "- [ ] Fix it\n");
+    ok(&import(&env, NOW, &["~/TODO.md"]));
+    let show =
+        |env: &Env| ok(&env.at(LATER, &["plan", "show", "C-2026-001", "--json"]))["case"].clone();
+    assert_eq!(show(&env)["source"], "~/TODO.md#1");
+    let file = find_file(&root.join("work/queued"), "C-2026-001");
+    let good = read(&file);
+    for bad in ["~/a\u{202E}b.md#1", "/etc/passwd", "notes.md#1"] {
+        std::fs::write(&file, good.replace("~/TODO.md#1\"", &format!("{bad}\""))).unwrap();
+        assert_eq!(show(&env).get("source"), None, "{bad:?}");
+    }
 }

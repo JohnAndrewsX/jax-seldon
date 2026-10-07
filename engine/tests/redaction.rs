@@ -2406,6 +2406,90 @@ mod commands {
         );
     }
 
+    /// WP-127 round 2 (B1): the redaction runs before the clip. A token
+    /// that straddles the 256-byte cut of intent, result and lead is
+    /// masked whole, never cut into a prefix the rule no longer knows;
+    /// secrets continued over lines and a token split by a zero-width
+    /// space (N4) are masked too.
+    #[test]
+    fn a_secret_at_the_cut_or_over_lines_is_masked_before_the_clip() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        run(&env, &["plan", "new", "--", "Cut"]);
+        run(&env, &["plan", "new", "--", "Lines"]);
+        run(&env, &["decide", "--no-edit", "--", "Cut"]);
+        // 200 bytes, then the token across the 256-byte cut
+        let at_cut = |tag: &str| format!("{} {} {}", "a".repeat(200), token(tag), "b".repeat(50));
+        let edit = |path: &Path, pairs: &[(&str, String)]| {
+            let mut text = read(path);
+            for (section, add) in pairs {
+                text = text.replacen(section, &format!("{section}{add}\n"), 1);
+            }
+            std::fs::write(path, text).unwrap();
+        };
+        let queued = root.join("work/queued");
+        edit(
+            &find_file(&queued, "C-2026-001"),
+            &[
+                ("## Intent\n", at_cut("cutint")),
+                ("## Result\n", at_cut("cutres")),
+            ],
+        );
+        edit(
+            &find_file(&root.join("decisions"), "ADR-0001"),
+            &[("## Decision\n", at_cut("cutlead"))],
+        );
+        edit(
+            &find_file(&queued, "C-2026-002"),
+            &[
+                (
+                    "## Intent\n",
+                    "mysql -u root \\\n  -pHunter2secretX \\\n  --host db".to_string(),
+                ),
+                (
+                    "## Result\n",
+                    format!(
+                        "{{\"password\":\n  \"jsonSecret9X\"}} gh\u{200B}{}",
+                        &token("zw")[2..]
+                    ),
+                ),
+            ],
+        );
+
+        run(&env, &["status"]);
+        let text = read(&env.home.join(".local/state/seldon/index.json"));
+        let index: Value = serde_json::from_str(&text).unwrap();
+        let cut = &index["cases"]["queued"][0];
+        for t in [
+            &cut["intent"],
+            &cut["result"],
+            &index["decisions"][0]["lead"],
+        ] {
+            let t = t.as_str().unwrap();
+            assert!(t.ends_with(" more characters in the file)"), "{t}");
+            assert!(t.contains(REDACTED), "{t}");
+            assert!(!t.contains("ghp_"), "{t}");
+        }
+        let lines = &index["cases"]["queued"][1];
+        let intent = lines["intent"].as_str().unwrap();
+        assert!(
+            intent.starts_with("mysql -u root \\\n") && intent.contains(REDACTED),
+            "{intent}"
+        );
+        let result = lines["result"].as_str().unwrap();
+        assert!(result.contains(REDACTED), "{result}");
+        for secret in [
+            "ghp_",
+            "Hunter2secretX",
+            "jsonSecret9X",
+            "cutint",
+            "cutres",
+            "cutlead",
+        ] {
+            assert!(!text.contains(secret), "{secret} in the index");
+        }
+    }
+
     fn last_ledger_line(logbook: &Path) -> Value {
         let text = read(&logbook.join("ledger/2026-10.jsonl"));
         serde_json::from_str(text.lines().last().unwrap()).unwrap()

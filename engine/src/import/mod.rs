@@ -37,39 +37,47 @@ pub fn marker_path(source: &str) -> String {
 /// (zero-width space, joiners, word joiner, BOM): a path is shown in the
 /// Log, the report and the desk (WP-102, ADR-0038 §3).
 pub fn bad_path_char(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{200B}'..='\u{200F}'
-                | '\u{202A}'..='\u{202E}'
-                | '\u{2060}'
-                | '\u{2066}'..='\u{2069}'
-                | '\u{FEFF}'
-        )
+    c.is_control() || is_direction_or_format(c)
 }
 
-/// The most characters of a case's `source` (ADR-0038 §3).
+/// A character that turns the direction of the text around it (U+200E,
+/// U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible format character
+/// (U+200B–U+200D, U+2060, U+FEFF). The index drops them from the texts
+/// it shows (ADR-0038 §2): a reordered or split line can mislead.
+pub fn is_direction_or_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{FEFF}'
+    )
+}
+
+/// The most bytes (UTF-8) of a case's `source`, so also the most
+/// characters (ADR-0038 §3).
 pub const SOURCE_MAX: usize = 512;
 
 /// `source` as `import task` writes it into a case's frontmatter: as it
-/// is when it has at most [`SOURCE_MAX`] characters, else `~/…` and its
-/// last characters, so the file name and the line survive.
+/// is when it has at most [`SOURCE_MAX`] bytes, else `~/…` and as many of
+/// its last characters as fit, so the file name and the line survive.
 pub fn case_source(source: &str) -> String {
-    let n = source.chars().count();
-    if n <= SOURCE_MAX {
+    if source.len() <= SOURCE_MAX {
         return source.to_string();
     }
-    let keep = SOURCE_MAX - "~/…".chars().count();
-    let tail: String = source.chars().skip(n - keep).collect();
-    format!("~/…{tail}")
+    let room = SOURCE_MAX - "~/…".len();
+    let mut start = source.len() - room;
+    while !source.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("~/…{}", &source[start..])
 }
 
 /// Whether `source` has the shape a case's `source` must have (ADR-0038
-/// §3): `~/…`, at most [`SOURCE_MAX`] characters, no [`bad_path_char`].
+/// §3): `~/…`, at most [`SOURCE_MAX`] bytes, no [`bad_path_char`].
 pub fn is_case_source(source: &str) -> bool {
-    source.starts_with("~/")
-        && source.chars().count() <= SOURCE_MAX
-        && !source.chars().any(bad_path_char)
+    source.starts_with("~/") && source.len() <= SOURCE_MAX && !source.chars().any(bad_path_char)
 }
 
 /// One redacted line of a source file (the report names the rule, never
@@ -394,13 +402,26 @@ mod tests {
         assert_eq!(case_source("~/a/b.md#3"), "~/a/b.md#3");
         let long = format!("~/{}/todo.md#12", "x".repeat(600));
         let short = case_source(&long);
-        assert_eq!(short.chars().count(), SOURCE_MAX);
+        assert_eq!(short.len(), SOURCE_MAX);
         assert!(short.starts_with("~/…xx") && short.ends_with("x/todo.md#12"));
         assert!(is_case_source(&short));
-        // characters count, not bytes
+        // bytes count (WP-127 round 2): 255 two-byte characters fit, 256
+        // do not, and a cut never splits a character
+        let fits = format!("~/{}", "ä".repeat(255));
+        assert_eq!(case_source(&fits), fits);
+        assert!(is_case_source(&fits));
         let wide = format!("~/{}", "ä".repeat(510));
-        assert_eq!(case_source(&wide), wide);
-        assert!(is_case_source(&wide));
+        assert!(!is_case_source(&wide));
+        let short = case_source(&wide);
+        assert!(
+            short.len() <= SOURCE_MAX && short.len() >= SOURCE_MAX - 1,
+            "{}",
+            short.len()
+        );
+        assert!(short.starts_with("~/…ä") && short.ends_with('ä') && is_case_source(&short));
+        let four = format!("~/{}x", "🚀".repeat(200));
+        let short = case_source(&four);
+        assert!(short.len() <= SOURCE_MAX && short.ends_with("🚀x") && is_case_source(&short));
         for bad in [
             "/etc/x",
             "~x/y",

@@ -479,30 +479,66 @@ pub fn strip_comments(text: &str) -> String {
 /// line up to the next blank one, each trimmed at the end, joined by
 /// `\n`. `None` without the section or without such a line.
 pub fn first_paragraph(body: &str, name: &str) -> Option<String> {
-    let text = strip_comments(&body[section(body, name)?]);
-    paragraphs(&text).into_iter().next()
+    paragraphs(&body[section(body, name)?], 1)
+        .into_iter()
+        .next()
 }
 
-/// The paragraphs of `text` as [`first_paragraph`] reads them: blocks of
-/// non-blank lines; a heading line (`#` to `######` and a space) ends one
-/// and is no paragraph text.
-pub fn paragraphs(text: &str) -> Vec<String> {
+/// The first `max` paragraphs of `text` as [`first_paragraph`] reads them:
+/// HTML comments left out (an unclosed one runs to the end, as in
+/// [`strip_comments`]), then blocks of non-blank lines; a heading line
+/// (`#` to `######` and a space) ends one and is no paragraph text. The
+/// scan stops after the `max`-th paragraph, and only the paragraphs
+/// returned are copied: a whole task file imported as an Intent costs no
+/// more than its first paragraphs on every index build (WP-127 round 2).
+pub fn paragraphs(text: &str, max: usize) -> Vec<String> {
     let mut out = Vec::new();
-    let mut lines: Vec<&str> = Vec::new();
-    for line in text.lines() {
-        let line = line.trim_end();
-        if line.trim().is_empty() || is_heading(line.trim_start()) {
-            if !lines.is_empty() {
-                out.push(lines.join("\n").trim_start().to_string());
-                lines.clear();
+    let mut block: Vec<String> = Vec::new();
+    let mut line = String::new();
+    let mut pos = 0;
+    // one line of text without comments ends: text joins the block, a
+    // blank or heading line closes it
+    fn end_line(line: &mut String, block: &mut Vec<String>, out: &mut Vec<String>) {
+        let l = line.trim_end();
+        if l.trim().is_empty() || is_heading(l.trim_start()) {
+            if !block.is_empty() {
+                out.push(block.join("\n").trim_start().to_string());
+                block.clear();
             }
-            continue;
+        } else {
+            block.push(l.to_string());
         }
-        lines.push(line);
+        line.clear();
     }
-    if !lines.is_empty() {
-        out.push(lines.join("\n").trim_start().to_string());
+    while pos < text.len() && out.len() < max {
+        let rest = &text[pos..];
+        let nl = rest.find('\n').unwrap_or(rest.len());
+        // a comment opening on this line: everything up to its close is
+        // left out, line breaks inside it too
+        match rest[..nl].find("<!--") {
+            Some(open) => {
+                line.push_str(&rest[..open]);
+                match rest[open + 4..].find("-->") {
+                    Some(close) => pos += open + 4 + close + 3,
+                    None => pos = text.len(),
+                }
+            }
+            None => {
+                line.push_str(&rest[..nl]);
+                pos += (nl + 1).min(rest.len());
+                end_line(&mut line, &mut block, &mut out);
+            }
+        }
     }
+    if out.len() < max {
+        if !line.is_empty() {
+            end_line(&mut line, &mut block, &mut out);
+        }
+        if !block.is_empty() {
+            out.push(block.join("\n").trim_start().to_string());
+        }
+    }
+    out.truncate(max);
     out
 }
 
@@ -1013,6 +1049,52 @@ mod tests {
             first_paragraph("## Result\r\nok\r\n\r\nmore\r\n", "Result").as_deref(),
             Some("ok")
         );
-        assert_eq!(paragraphs("a\n\n\nb\nc\n"), ["a", "b\nc"]);
+        assert_eq!(paragraphs("a\n\n\nb\nc\n", 9), ["a", "b\nc"]);
+        assert_eq!(paragraphs("a\n\n\nb\nc\n", 1), ["a"]);
+        assert_eq!(paragraphs("a\n\nb", 0), Vec::<String>::new());
+    }
+
+    /// The streaming [`paragraphs`] reads as `strip_comments` and then the
+    /// lines would (WP-127 round 2, N5): comments within a line, over line
+    /// breaks, unclosed, back to back, at a paragraph's edge.
+    #[test]
+    fn paragraphs_leave_comments_out_as_strip_comments_does() {
+        fn whole(text: &str) -> Vec<String> {
+            let text = strip_comments(text);
+            let mut out = Vec::new();
+            let mut block: Vec<&str> = Vec::new();
+            for line in text.lines() {
+                let line = line.trim_end();
+                if line.trim().is_empty() || is_heading(line.trim_start()) {
+                    if !block.is_empty() {
+                        out.push(block.join("\n").trim_start().to_string());
+                        block.clear();
+                    }
+                    continue;
+                }
+                block.push(line);
+            }
+            if !block.is_empty() {
+                out.push(block.join("\n").trim_start().to_string());
+            }
+            out
+        }
+        for text in [
+            "a<!-- x -->b\nc",
+            "a<!-- x\n\ny -->b\n\nc",
+            "<!-- only -->\n\nreal\n",
+            "a\n<!-- open\nnever closed\n\nmore",
+            "a<!--1--><!--2-->b<!--3\n-->\n\nc\r\nd\r\n",
+            "x\n<!--\n-->\ny\n\n## H\nz",
+            "  lead\n\t\n# h\n<!-- c -->tail\n\n",
+            "a-->b<!--c-->d<!--",
+            "",
+        ] {
+            assert_eq!(paragraphs(text, usize::MAX), whole(text), "{text:?}");
+            for max in 0..3 {
+                let want: Vec<String> = whole(text).into_iter().take(max).collect();
+                assert_eq!(paragraphs(text, max), want, "{text:?} max {max}");
+            }
+        }
     }
 }

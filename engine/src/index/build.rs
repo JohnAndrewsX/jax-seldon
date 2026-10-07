@@ -14,7 +14,7 @@ use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
 use crate::config::{AttentionMode, DriftConfig};
-use crate::import::is_case_source;
+use crate::import::{is_case_source, is_direction_or_format};
 use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, TRUNCATED, format_ts};
 use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
 use crate::redact::Redactor;
@@ -738,13 +738,16 @@ fn cap_drift(drift: Vec<DriftItem>) -> Vec<DriftItem> {
 }
 
 /// A case's or decision's text as the index carries it (ADR-0038 §2):
-/// control characters other than line breaks and tabs as spaces, then
-/// redacted, then [`clip_with`] the file marker. `None` without a
-/// redactor (withheld) or without text.
+/// control characters other than line breaks and tabs as spaces, direction
+/// and format characters dropped (so a zero-width space cannot split a
+/// secret from its rule either), then redacted, then [`clip_with`] the
+/// file marker: redaction first, so a cut never leaves a secret's prefix.
+/// `None` without a redactor (withheld) or without text.
 pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
     let redactor = redactor?;
     let plain: String = text
         .chars()
+        .filter(|c| !is_direction_or_format(*c))
         .map(|c| {
             if c.is_control() && c != '\n' && c != '\t' {
                 ' '
@@ -760,7 +763,7 @@ pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
 
 /// An imported case's `source` as the index carries it (ADR-0038 §3):
 /// redacted once more, then copied only while it is a clean `~/` path of
-/// at most 512 characters; otherwise a warning and no field.
+/// at most 512 bytes; otherwise a warning and no field.
 fn shown_source(
     redactor: Option<&Redactor>,
     case: &Case,
@@ -771,7 +774,7 @@ fn shown_source(
         return Some(source);
     }
     warnings.push(format!(
-        "{}: its source is not a ~/ path of at most 512 characters without control or direction characters; not shown",
+        "{}: its source is not a ~/ path of at most 512 bytes without control or direction characters; not shown",
         case.id
     ));
     None

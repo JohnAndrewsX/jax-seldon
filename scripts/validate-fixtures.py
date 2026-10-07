@@ -900,12 +900,17 @@ def case_intent(fm, body):
     return ps[0] if ps else None
 
 
+DIRECTION_OR_FORMAT = re.compile("[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
+
+
 def shown_text(text):
     """engine: build::shown_text without the redaction (the fixture holds no secret in these
-    texts; the engine's golden test redacts with the built-in rules and must agree): control
-    characters other than line breaks and tabs as spaces, clipped with `in the file`."""
+    texts; the engine's golden test redacts with the built-in rules and must agree): direction
+    and format characters dropped, control characters other than line breaks and tabs as spaces,
+    clipped with `in the file`."""
     if text is None:
         return None
+    text = DIRECTION_OR_FORMAT.sub("", text)
     text = "".join(" " if (ord(c) < 0x20 or 0x7f <= ord(c) <= 0x9f) and c not in "\n\t" else c for c in text)
     text = clip(text, "in the file")
     return text if text.strip(WHITE_SPACE) else None
@@ -915,12 +920,12 @@ BAD_PATH = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2060\u2066
 
 
 def case_source(fm, problems, where):
-    """ADR-0038 §3: the frontmatter's `source` while it is a ~/ path of at most 512 characters
+    """ADR-0038 §3: the frontmatter's `source` while it is a ~/ path of at most 512 bytes (UTF-8)
     without control, direction or format characters; a non-string is no source."""
     s = fm.get("source")
     if not isinstance(s, str):
         return None
-    if s.startswith("~/") and len(s) <= 512 and not BAD_PATH.search(s):
+    if s.startswith("~/") and len(s.encode("utf-8")) <= 512 and not BAD_PATH.search(s):
         return s
     problems.append(f"{where}: source {s!r} is not shown")
     return None

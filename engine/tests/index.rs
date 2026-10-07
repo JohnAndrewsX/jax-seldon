@@ -1993,6 +1993,15 @@ fn case_and_decision_texts_are_clipped_with_the_file_marker() {
             .unwrap();
         c1.intent = Some(long.clone());
         c1.result = Some("a\u{1b}[31mb\u{7}c\r\nzwei\tdrei".into());
+        // round 2: direction and format characters go (N4), a text of
+        // control characters only is no text (R3)
+        let c4 = l
+            .cases
+            .iter_mut()
+            .find(|c| c.case.id == "C-2026-004")
+            .unwrap();
+        c4.intent = Some("x\u{202E}evil\u{200B}zw\u{7}bell\u{2066}\u{FEFF}\u{200F}!".into());
+        c4.result = Some("\u{7}\u{1b}\u{200B}\t\u{85}".into());
         let adr = l
             .decisions
             .iter_mut()
@@ -2034,10 +2043,13 @@ fn case_and_decision_texts_are_clipped_with_the_file_marker() {
         "{lead}"
     );
     assert!(json_bytes(lead) <= build::TEXT_MAX);
+    let c4 = find_case(&ix, "C-2026-004");
+    assert_eq!(c4.intent.as_deref(), Some("xevilzw bell!"));
+    assert_eq!(c4.result, None);
     // nothing else changed: the other cases keep the fixture's texts
     assert_eq!(
-        find_case(&ix, "C-2026-004").intent.as_deref(),
-        Some("Zed als zweiter Editor neben Neovim, für größere Refactorings.")
+        find_case(&ix, "C-2026-005").intent.as_deref(),
+        Some("Ein Theme überall: Omarchy, Zed und Neovim in Tokyo Night.")
     );
 }
 
@@ -2096,6 +2108,7 @@ fn without_a_redaction_the_texts_are_withheld() {
 
 #[test]
 fn a_source_out_of_shape_is_dropped_with_a_warning() {
+    let wide = format!("~/{}", "ä".repeat(300));
     let long = format!("~/{}.md", "a".repeat(510));
     for bad in [
         "/etc/passwd",
@@ -2104,6 +2117,8 @@ fn a_source_out_of_shape_is_dropped_with_a_warning() {
         "~/a\u{200B}b.md",
         "~/a\nb.md",
         long.as_str(),
+        // 302 characters, 602 bytes: the cap is in bytes (round 2)
+        wide.as_str(),
     ] {
         let mut loaded = fixture_loaded();
         loaded
@@ -2128,7 +2143,7 @@ fn a_source_out_of_shape_is_dropped_with_a_warning() {
             built.warnings
         );
     }
-    // 512 characters are still a source
+    // 512 bytes are still a source
     let fits = format!("~/{}", "a".repeat(510));
     let mut loaded = fixture_loaded();
     loaded
@@ -2214,4 +2229,39 @@ fn the_new_fields_are_optional_and_checked() {
         );
         assert!(!common::index_errors(&x).is_empty(), "{at} = {value}");
     }
+}
+
+/// WP-127 round 2 (N5): reading an Intent's first paragraphs stops after
+/// them. A whole task file imported as an Intent (up to 1 MiB) costs the
+/// index build no more than its first paragraphs, whatever follows.
+#[test]
+#[ignore = "release timing at scale: `just check-perf`"]
+fn the_first_paragraphs_of_a_large_intent_cost_what_they_hold() {
+    common::assert_optimised();
+    let mut body = String::from(
+        "## Intent\nImported from ~/x.md — read before you start this case.\n\nFix it.\n\n",
+    );
+    while body.len() < 1 << 20 {
+        body.push_str(&"word ".repeat(20));
+        body.push_str("\n<!-- a comment -->\n\n");
+    }
+    body.push_str("## Plan\n- x\n");
+    let section = seldon::logbook::cases::section(&body, "Intent").unwrap();
+    let text = &body[section];
+    assert_eq!(
+        seldon::logbook::cases::paragraphs(text, 2)[1],
+        "Fix it.",
+        "the intent after the provenance line"
+    );
+    common::assert_within_budget(
+        "paragraphs(…, 2) of a 1 MiB Intent",
+        Duration::from_micros(50),
+        21,
+        || {
+            std::hint::black_box(seldon::logbook::cases::paragraphs(
+                std::hint::black_box(text),
+                2,
+            ));
+        },
+    );
 }

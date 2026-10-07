@@ -262,7 +262,8 @@ pub fn journal_entries(text: &str) -> Vec<Entry> {
 /// the index carries the source in `source`.
 fn intent(case: &Case, body: &str) -> Option<String> {
     let section = cases::section(body, "Intent")?;
-    let mut paragraphs = cases::paragraphs(&cases::strip_comments(&body[section])).into_iter();
+    // at most two: the provenance line and the intent after it
+    let mut paragraphs = cases::paragraphs(&body[section], 2).into_iter();
     let first = paragraphs.next()?;
     let imported = case.tags.iter().any(|t| t == TAG_IMPORTED);
     if imported && is_provenance(&first) {
