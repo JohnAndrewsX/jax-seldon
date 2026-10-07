@@ -5,10 +5,11 @@
 //! `just check-perf` (`--profile bench --ignored`); the budgets are
 //! generous ceilings, the printed medians are the numbers.
 //!
-//! The synthetic home is the size of a lived-in Omarchy desktop: 120
-//! files under the default watch paths, 6 toggles, a 4 MiB binary and a
-//! 2 MiB script in the hook directory, 8 third-party plugins of 40 files
-//! and one 2 MiB image each. Everything lives in a temp dir; nothing
+//! The synthetic home is the size of a lived-in Omarchy desktop: 115
+//! files under the earlier default watch paths, then per line item 6
+//! toggles, a 4 MiB binary and a 2 MiB script in a hook directory, an
+//! `authorized_keys`; and 8 third-party plugins of 41 files plus one
+//! 2 MiB image each. Everything lives in a temp dir; nothing
 //! reads the real home (AGENTS.md §6).
 
 mod common;
@@ -220,20 +221,62 @@ fn capture_cost_of_the_watched_files_and_plugin_trees() {
     common::assert_optimised();
     let home = Home::new();
 
-    // config, cold: no manifest, every file read and hashed
-    let budget = Duration::from_millis(100);
-    common::assert_within_budget("config capture, cold", budget, RUNS, || {
+    // config per line item (WP-113): what the files under the earlier
+    // default watch paths cost, then each item added on top
+    let toggles = "~/.local/state/omarchy/toggles".to_string();
+    let hooks = home.dirs.home.join(".config/omarchy/hooks/post-update.d");
+    let blobs = ["blob", "big.sh"].map(|n| (hooks.join(n), std::fs::read(hooks.join(n)).unwrap()));
+    let keys = home.dirs.home.join(".ssh/authorized_keys");
+    let mut home = home;
+    let full = home.config.watch_paths.clone();
+    let step = |home: &Home, what: &str, cold: u64, warm: u64| {
+        common::assert_within_budget(
+            &format!("config capture, cold, {what}"),
+            Duration::from_millis(cold),
+            RUNS,
+            || {
+                let _ = std::fs::remove_file(home.manifest());
+                assert!(home.config(None).ok);
+            },
+        );
         let _ = std::fs::remove_file(home.manifest());
-        assert!(home.config(None).ok);
-    });
-    // config, warm: the stat cache holds every hash
-    let first = home.config(None);
-    let cursor = first.cursor.clone().unwrap();
-    let budget = Duration::from_millis(20);
-    common::assert_within_budget("config capture, warm", budget, RUNS, || {
-        let out = home.config(Some(&cursor));
-        assert!(out.ok && out.events.is_empty(), "{:?}", out.message);
-    });
+        let cursor = home.config(None).cursor.unwrap();
+        common::assert_within_budget(
+            &format!("config capture, warm, {what}"),
+            Duration::from_millis(warm),
+            RUNS,
+            || {
+                let out = home.config(Some(&cursor));
+                assert!(out.ok && out.events.is_empty(), "{:?}", out.message);
+            },
+        );
+    };
+    home.config.watch_paths.retain(|p| *p != toggles);
+    for (path, _) in &blobs {
+        std::fs::remove_file(path).unwrap();
+    }
+    step(&home, "earlier default paths", 50, 20);
+    home.config.watch_paths = full.clone();
+    step(&home, "+ toggles directory", 50, 20);
+    for (path, bytes) in &blobs {
+        std::fs::write(path, bytes).unwrap();
+    }
+    let old = std::time::SystemTime::now() - Duration::from_secs(3600);
+    set_mtimes(&hooks, old);
+    step(
+        &home,
+        "+ a 4 MiB binary and a 2 MiB script in a hook directory",
+        100,
+        20,
+    );
+    write(&keys, text(700, 2048));
+    set_mtimes(&home.dirs.home.join(".ssh"), old);
+    home.config
+        .watch_paths
+        .push("~/.ssh/authorized_keys".into());
+    step(&home, "+ ~/.ssh/authorized_keys (opt-in)", 100, 20);
+    home.config.watch_paths = full;
+    let home = home;
 
     // plugins: the stub `omarchy` (one process) plus the trees
     let first = home.plugins(None);
