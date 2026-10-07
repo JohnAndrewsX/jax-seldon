@@ -55,7 +55,9 @@ use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::config::{FileStat, SkipPaths, changed_at, hash_any};
+use super::config::{
+    FileStat, HASH_BASIS_KEY, STAT_HASH_ABOVE, SkipPaths, changed_at, persistent_hash,
+};
 use super::{Collector, Ctx, Lost, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::sys::{self, Run};
@@ -103,6 +105,10 @@ struct PluginState {
     /// SHA-256 of the plugin's tree (third-party plugins, WP-113).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tree: Option<String>,
+    /// The tree counts some entries by their metadata only ([`Tree`]:
+    /// unreadable, or cut off).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    partial: bool,
 }
 
 /// The plugins collector's cursor: the last snapshot, its hash and the
@@ -140,8 +146,12 @@ impl PluginsCursor {
 /// A plugin's tree as one capture saw it.
 #[derive(Debug)]
 struct Tree {
-    /// SHA-256 over the sorted lines `<relative path> NUL <file sha256> LF`
-    /// (`link <sha256 of the target>` for a link that is not to a file).
+    /// SHA-256 over the sorted lines `<relative path> NUL <entry> LF`: the
+    /// file's SHA-256, `stat <hash>` for a file over
+    /// [`STAT_HASH_ABOVE`], `link <sha256 of the target>` for a link that
+    /// is not to a file, `unreadable <hash>` for an entry that cannot be
+    /// read, and a last line `NUL cut` when the tree has more than
+    /// [`TREE_ENTRIES`] entries.
     hash: String,
     /// SHA-256 over every entry's relative path and [`FileStat`]; `None`
     /// when a file changed too recently to trust it (the next capture
@@ -149,10 +159,29 @@ struct Tree {
     stat: Option<String>,
     /// The latest modification time of a file in it.
     newest: Option<SystemTime>,
+    /// Entries that could not be read.
+    unreadable: usize,
+    /// Cut off at [`TREE_ENTRIES`].
+    cut: bool,
+    /// A file hashed by [`stat_hash`].
+    stat_hashed: bool,
+}
+
+impl Tree {
+    /// Some entries count by their metadata only: unreadable, or past
+    /// the cut.
+    fn partial(&self) -> bool {
+        self.unreadable > 0 || self.cut
+    }
 }
 
 /// Directory depth below a plugin's directory; deeper trees are not walked.
 const TREE_DEPTH: usize = 32;
+
+/// Entries one plugin tree walk reads; the rest is cut off (WP-113 round
+/// 2): the tree is hashed from the first ones in walk order and marked
+/// partial.
+pub const TREE_ENTRIES: usize = 10_000;
 
 /// One entry of a plugin's tree.
 enum Entry {
@@ -162,11 +191,27 @@ enum Entry {
     /// links inside a plugin folder (`omarchy-plugin-validate`), so a link
     /// to a directory is not walked; its arrival changes the tree.
     Link(String),
+    /// A file that cannot be opened or a directory that cannot be read:
+    /// counted by its size, modification time and mode, so it changes the
+    /// tree once and visibly and the rest is still seen.
+    Unreadable(std::fs::Metadata),
+}
+
+/// SHA-256 of an unreadable entry's size, modification time (ns) and mode.
+fn unreadable_hash(meta: &std::fs::Metadata) -> String {
+    use std::os::unix::fs::MetadataExt as _;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    sys::sha256_hex(format!("{} {} {:o}\n", meta.len(), mtime, meta.mode()).as_bytes())
 }
 
 /// The tree of the plugin directory `dir` ([`Tree`]); `known` is the last
-/// fingerprint and hash, reused while the fingerprint holds. `None` when a
-/// file cannot be read (the caller keeps the last hash).
+/// fingerprint and hash, reused while the fingerprint holds. `None` when
+/// the plugin directory itself cannot be read (the caller keeps the last
+/// hash).
 fn tree(
     dir: &Path,
     skip: &SkipPaths,
@@ -174,68 +219,101 @@ fn tree(
     started: SystemTime,
 ) -> Option<Tree> {
     let mut entries = Vec::new();
-    walk_tree(dir, Path::new(""), skip, 0, &mut entries)?;
+    let mut left = TREE_ENTRIES;
+    std::fs::read_dir(dir).ok()?;
+    let cut = !walk_tree(dir, Path::new(""), skip, 0, &mut left, &mut entries);
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     let newest = entries
         .iter()
         .filter_map(|(_, e)| match e {
             Entry::File(_, meta) => meta.modified().ok(),
-            Entry::Link(_) => None,
+            _ => None,
         })
         .max();
+    let unreadable = entries
+        .iter()
+        .filter(|(_, e)| matches!(e, Entry::Unreadable(_)))
+        .count();
+    let stat_hashed = entries
+        .iter()
+        .any(|(_, e)| matches!(e, Entry::File(_, m) if m.len() > STAT_HASH_ABOVE));
     let stat = entries
         .iter()
         .map(|(rel, e)| {
             Some(match e {
-                Entry::File(_, meta) => (rel.as_str(), Some(FileStat::of(meta, started)?), None),
+                Entry::File(_, meta) | Entry::Unreadable(meta) => {
+                    (rel.as_str(), Some(FileStat::of(meta, started)?), None)
+                }
                 Entry::Link(hash) => (rel.as_str(), None, Some(hash.as_str())),
             })
         })
         .collect::<Option<Vec<_>>>()
-        .map(|stats| sys::sha256_hex(&serde_json::to_vec(&stats).expect("stats serialise")));
-    if let (Some(stat), Some((known_stat, known_hash))) = (&stat, known)
-        && stat == known_stat
-    {
-        return Some(Tree {
-            hash: known_hash.to_string(),
-            stat: Some(stat.clone()),
-            newest,
-        });
-    }
-    let mut lines = sys::Sha256::new();
-    for (rel, e) in &entries {
-        let hash = match e {
-            Entry::File(path, _) => hash_any(path)?,
-            Entry::Link(hash) => format!("link {hash}"),
-        };
-        lines.update(rel.as_bytes());
-        lines.update(b"\0");
-        lines.update(hash.as_bytes());
-        lines.update(b"\n");
-    }
+        .map(|stats| sys::sha256_hex(&serde_json::to_vec(&(stats, cut)).expect("stats serialise")));
+    let reuse = match (&stat, known) {
+        (Some(stat), Some((known_stat, known_hash))) if stat == known_stat => {
+            Some(known_hash.to_string())
+        }
+        _ => None,
+    };
+    let hash = reuse.unwrap_or_else(|| {
+        let mut lines = sys::Sha256::new();
+        for (rel, e) in &entries {
+            let hash = match e {
+                Entry::File(path, meta) => match persistent_hash(path, meta) {
+                    Some(h) if meta.len() > STAT_HASH_ABOVE => format!("stat {h}"),
+                    Some(h) => h,
+                    // opened a moment ago, unreadable now
+                    None => format!("unreadable {}", unreadable_hash(meta)),
+                },
+                Entry::Link(hash) => format!("link {hash}"),
+                Entry::Unreadable(meta) => format!("unreadable {}", unreadable_hash(meta)),
+            };
+            lines.update(rel.as_bytes());
+            lines.update(b"\0");
+            lines.update(hash.as_bytes());
+            lines.update(b"\n");
+        }
+        if cut {
+            lines.update(b"\0cut\n");
+        }
+        lines.finish_hex()
+    });
     Some(Tree {
-        hash: lines.finish_hex(),
+        hash,
         stat,
         newest,
+        unreadable,
+        cut,
+        stat_hashed,
     })
 }
 
-/// Collects the entries below `dir` (relative path `rel`); `None` when a
-/// directory cannot be read (a partial tree would look like a change).
+/// Collects the entries below `dir` (relative path `rel`), in sorted
+/// order; `false` when the budget `left` ran out (the tree is cut off).
 fn walk_tree(
     dir: &Path,
     rel: &Path,
     skip: &SkipPaths,
     depth: usize,
+    left: &mut usize,
     entries: &mut Vec<(String, Entry)>,
-) -> Option<()> {
-    for entry in std::fs::read_dir(dir).ok()? {
-        let entry = entry.ok()?;
-        let path = entry.path();
-        let name = entry.file_name();
+) -> bool {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return true;
+    };
+    let mut paths: Vec<PathBuf> = read.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    paths.sort();
+    for path in paths {
+        let Some(name) = path.file_name().map(|n| n.to_os_string()) else {
+            continue;
+        };
         if name == ".git" || skip.matches(&path) {
             continue;
         }
+        if *left == 0 {
+            return false;
+        }
+        *left -= 1;
         let rel = rel.join(&name);
         let Ok(meta) = std::fs::symlink_metadata(&path) else {
             continue;
@@ -243,7 +321,7 @@ fn walk_tree(
         let key = || rel.to_string_lossy().into_owned();
         if meta.file_type().is_symlink() {
             match std::fs::metadata(&path) {
-                Ok(target) if target.is_file() => entries.push((key(), Entry::File(path, target))),
+                Ok(target) if target.is_file() => entries.push(file_entry(key(), path, target)),
                 _ => {
                     let target = std::fs::read_link(&path).unwrap_or_default();
                     let hash = sys::sha256_hex(target.as_os_str().as_encoded_bytes());
@@ -251,18 +329,34 @@ fn walk_tree(
                 }
             }
         } else if meta.is_file() {
-            entries.push((key(), Entry::File(path, meta)));
+            entries.push(file_entry(key(), path, meta));
         } else if meta.is_dir() && depth < TREE_DEPTH {
-            walk_tree(&path, &rel, skip, depth + 1, entries)?;
+            if std::fs::read_dir(&path).is_err() {
+                entries.push((format!("{}/", key()), Entry::Unreadable(meta)));
+            } else if !walk_tree(&path, &rel, skip, depth + 1, left, entries) {
+                return false;
+            }
         }
     }
-    Some(())
+    true
+}
+
+/// A file of a tree: [`Entry::File`], or [`Entry::Unreadable`] when it
+/// cannot be opened.
+fn file_entry(key: String, path: PathBuf, meta: std::fs::Metadata) -> (String, Entry) {
+    if std::fs::File::open(&path).is_ok() {
+        (key, Entry::File(path, meta))
+    } else {
+        (key, Entry::Unreadable(meta))
+    }
 }
 
 /// What this run saw of a plugin beyond its cursor state.
 #[derive(Debug, Clone, Copy, Default)]
 struct Seen {
     first_party: bool,
+    /// The tree has a file hashed by its metadata ([`Tree::stat_hashed`]).
+    stat_hashed: bool,
     /// Later mtime of the plugin directory and its manifest, and of the
     /// files of its tree.
     touched: Option<SystemTime>,
@@ -303,6 +397,7 @@ impl Plugins {
         let mut snapshot = BTreeMap::new();
         let mut stats = BTreeMap::new();
         let mut seen = BTreeMap::new();
+        let (mut unreadable, mut cut) = (0, 0);
         for p in listed {
             if p.id.is_empty() || p.id.chars().count() > SUBJECT_MAX {
                 continue;
@@ -342,17 +437,27 @@ impl Plugins {
             if let Some(stat) = tree.as_ref().and_then(|t| t.stat.clone()) {
                 stats.insert(p.id.clone(), stat);
             }
-            let tree = match tree {
-                Some(t) => Some(t.hash),
-                // unreadable this time: keep the last one (a tree that is
-                // gone is a removed plugin, which the list tells)
-                None if !p.first_party => last.and_then(|l| l.tree.clone()),
-                None => None,
+            if let Some(t) = &tree {
+                unreadable += t.unreadable;
+                cut += usize::from(t.cut);
+            }
+            let stat_hashed = tree.as_ref().is_some_and(|t| t.stat_hashed);
+            let (tree, partial) = match tree {
+                Some(t) => (Some(t.hash.clone()), t.partial()),
+                // the plugin directory cannot be read: keep the last one
+                // (a tree that is gone is a removed plugin, which the list
+                // tells)
+                None if !p.first_party => (
+                    last.and_then(|l| l.tree.clone()),
+                    last.is_some_and(|l| l.partial),
+                ),
+                None => (None, false),
             };
             seen.insert(
                 p.id.clone(),
                 Seen {
                     first_party: p.first_party,
+                    stat_hashed,
                     touched,
                 },
             );
@@ -362,6 +467,7 @@ impl Plugins {
                     enabled: p.enabled,
                     version,
                     tree,
+                    partial,
                 },
             );
         }
@@ -380,8 +486,20 @@ impl Plugins {
             }
             _ => (Vec::new(), None), // baseline, or nothing changed
         };
+        let mut notes = Vec::new();
+        if unreadable > 0 {
+            notes.push(format!(
+                "{unreadable} entr(ies) of plugin trees could not be read; counted by size, time and mode"
+            ));
+        }
+        if cut > 0 {
+            notes.push(format!(
+                "{cut} plugin tree(s) cut off at {TREE_ENTRIES} entries"
+            ));
+        }
         Outcome {
             since,
+            message: (!notes.is_empty()).then(|| notes.join("; ")),
             ..Outcome::ok(events, to_cursor(&next))
         }
         .baseline(prev.is_none().then_some(Lost::Cursor))
@@ -597,6 +715,22 @@ fn diff(
                     };
                     let (from, to) = version.unzip();
                     let (hash_from, hash_to) = tree.unzip();
+                    let mut meta = Meta {
+                        from,
+                        to,
+                        hash_from,
+                        hash_to,
+                        ..Meta::default()
+                    };
+                    // WP-113 round 2: how far the tree hash rests on
+                    // metadata
+                    if n.partial {
+                        meta.extra.insert("partial".into(), Value::Bool(true));
+                    }
+                    if seen_of(id).stat_hashed {
+                        meta.extra
+                            .insert(HASH_BASIS_KEY.into(), Value::String("stat".into()));
+                    }
                     events.push(
                         Event::new(
                             changed(id),
@@ -605,13 +739,7 @@ fn diff(
                             id.as_str(),
                         )
                         .detail(detail)
-                        .meta(Meta {
-                            from,
-                            to,
-                            hash_from,
-                            hash_to,
-                            ..Meta::default()
-                        }),
+                        .meta(meta),
                     );
                 }
                 if o.enabled != n.enabled {

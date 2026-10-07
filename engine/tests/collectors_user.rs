@@ -802,9 +802,9 @@ mod plugins {
     }
 
     /// A cursor from before WP-113 has no tree: the first capture takes it
-    /// without an event. A tree that cannot be read keeps its last hash.
+    /// without an event.
     #[test]
-    fn a_tree_is_taken_without_an_event_and_kept_when_unreadable() {
+    fn a_tree_is_taken_without_an_event() {
         let mut p = trees();
         p.run("2026-10-07T10:00:00+02:00");
         let mut old = p.b.cursors["plugins"].clone();
@@ -816,22 +816,174 @@ mod plugins {
         let dir = p.plugins_dir.join("io.github.example.tyme");
         write(&dir.join("Widget.qml"), "Item { y: 2 }\n");
         assert!(p.run("2026-10-07T10:10:00+02:00").events.is_empty());
-        let tree = p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"].clone();
+        let tree = &p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"];
         assert!(tree.is_string());
+    }
 
-        // unreadable (a user, not root: root reads it anyway)
-        use std::os::unix::fs::PermissionsExt as _;
-        let assets = dir.join("assets");
-        std::fs::set_permissions(&assets, std::fs::Permissions::from_mode(0o000)).unwrap();
-        if std::fs::read_dir(&assets).is_err() {
-            assert!(p.run("2026-10-07T10:20:00+02:00").events.is_empty());
-            assert_eq!(
-                p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"],
-                tree
-            );
+    /// Whether the tests run as root (CI): root reads a file whatever its
+    /// mode, so the unreadable halves are skipped there.
+    fn root() -> bool {
+        use std::os::unix::fs::MetadataExt as _;
+        std::fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0)
+    }
+
+    /// WP-113 round 2 (B3), the reviewer's probe: one unreadable file must
+    /// not freeze the tree. It counts by its size, time and mode (the tree
+    /// changes once, `partial`), and an edit elsewhere is still one
+    /// `plugin-update`. An unreadable plugin directory keeps the last hash.
+    #[test]
+    fn an_unreadable_entry_does_not_freeze_the_tree() {
+        if root() {
+            eprintln!("skipped: root reads every file");
+            return;
         }
-        std::fs::set_permissions(&assets, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(p.run("2026-10-07T10:30:00+02:00").events.is_empty());
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = |p: &Path, m: u32| {
+            std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap()
+        };
+        let mut p = trees();
+        p.run("2026-10-07T10:00:00+02:00");
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        write(&dir.join("junk"), "x\n");
+        p.run("2026-10-07T10:05:00+02:00");
+        mode(&dir.join("junk"), 0o000);
+        write(&dir.join("Widget.qml"), "Item { visible: false }\n");
+        let out = p.run("2026-10-07T10:10:00+02:00");
+        assert_eq!(out.events.len(), 1, "{:?}", out.events);
+        assert_eq!(out.events[0].meta.extra["partial"], true);
+        assert!(
+            out.message
+                .as_deref()
+                .unwrap()
+                .contains("1 entr(ies) of plugin trees could not be read")
+        );
+        assert_eq!(
+            p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["partial"],
+            true
+        );
+        // still unreadable: an edit elsewhere is one more event
+        write(&dir.join("Widget.qml"), "Item { visible: true }\n");
+        assert_eq!(p.run("2026-10-07T10:20:00+02:00").events.len(), 1);
+        assert!(
+            p.run("2026-10-07T10:25:00+02:00").events.is_empty(),
+            "idempotent"
+        );
+        // an unreadable directory counts the same way
+        mode(&dir.join("assets"), 0o000);
+        assert_eq!(p.run("2026-10-07T10:30:00+02:00").events.len(), 1);
+        mode(&dir.join("assets"), 0o755);
+        mode(&dir.join("junk"), 0o644);
+        let out = p.run("2026-10-07T10:40:00+02:00");
+        assert_eq!(out.events.len(), 1, "readable again: one step back");
+        assert!(!out.events[0].meta.extra.contains_key("partial"));
+
+        // the plugin directory itself unreadable: the last hash is kept
+        let tree = p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"].clone();
+        mode(&dir, 0o000);
+        let out = p.run("2026-10-07T10:50:00+02:00");
+        mode(&dir, 0o755);
+        assert!(out.events.is_empty(), "{:?}", out.events);
+        assert_eq!(
+            p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"],
+            tree
+        );
+    }
+
+    /// N2: a tree holds at most `TREE_ENTRIES` entries; past them it is cut
+    /// off (hashed from the first ones in walk order, `partial`, counted).
+    /// A file over 64 MiB counts by its metadata — the reviewer's 2 GiB
+    /// sparse file returns at once.
+    #[test]
+    fn a_tree_is_capped_and_huge_files_count_by_metadata() {
+        let mut p = trees();
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        let huge = dir.join("assets/huge.bin");
+        std::fs::File::create(&huge)
+            .unwrap()
+            .set_len(2 << 30)
+            .unwrap();
+        let start = std::time::Instant::now();
+        p.run("2026-10-07T10:00:00+02:00");
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(2),
+            "{:?}",
+            start.elapsed()
+        );
+        let t: SystemTime = ts("2026-10-01T10:00:00+02:00").into();
+        std::fs::File::options()
+            .write(true)
+            .open(&huge)
+            .unwrap()
+            .set_modified(t)
+            .unwrap();
+        let out = p.run("2026-10-07T10:10:00+02:00");
+        assert_eq!(out.events.len(), 1, "a touch changes the fingerprint");
+        assert_eq!(out.events[0].meta.extra["hashBasis"], "stat");
+        std::fs::remove_file(&huge).unwrap();
+        p.run("2026-10-07T10:15:00+02:00");
+
+        let cap = seldon::collectors::plugins::TREE_ENTRIES;
+        for i in 0..cap {
+            write(&dir.join(format!("many/{i:05}")), "");
+        }
+        let out = p.run("2026-10-07T10:20:00+02:00");
+        assert_eq!(out.events.len(), 1, "{:?}", out.events);
+        assert_eq!(out.events[0].meta.extra["partial"], true);
+        assert!(
+            out.message
+                .as_deref()
+                .unwrap()
+                .contains("1 plugin tree(s) cut off at 10000 entries")
+        );
+        // within the cut an edit shows; past it (sorted walk order) not
+        write(&dir.join("Widget.qml"), "Item { opacity: 0 }\n");
+        assert_eq!(p.run("2026-10-07T10:30:00+02:00").events.len(), 1);
+        write(&dir.join("many/09999"), "late\n");
+        assert!(p.run("2026-10-07T10:40:00+02:00").events.is_empty());
+    }
+
+    /// N4: the stat fingerprint is used — and it does not hide an edit
+    /// that keeps the size and puts the modification time back (the
+    /// change time and inode catch it; the review's mutant "always reuse"
+    /// fails here).
+    #[test]
+    fn the_tree_fingerprint_is_reused_but_not_fooled() {
+        let mut p = trees();
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        let past: SystemTime = ts("2026-10-01T10:00:00+02:00").into();
+        let backdate = |path: &Path| {
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(past)
+                .unwrap()
+        };
+        for f in ["manifest.json", "Widget.qml", "assets/icon.png"] {
+            backdate(&dir.join(f));
+        }
+        p.run("2026-10-07T10:00:00+02:00");
+        let stats = &p.b.cursors["plugins"]["stats"];
+        assert!(
+            stats["io.github.example.tyme"].is_string(),
+            "fingerprint kept: {stats}"
+        );
+        assert!(p.run("2026-10-07T10:05:00+02:00").events.is_empty());
+
+        let widget = dir.join("Widget.qml");
+        let before = std::fs::read(&widget).unwrap();
+        let mut after = before.clone();
+        after[0] = after[0].to_ascii_uppercase();
+        assert_ne!(before, after);
+        std::fs::write(&widget, &after).unwrap();
+        backdate(&widget);
+        let out = p.run("2026-10-07T10:10:00+02:00");
+        assert_eq!(
+            out.events.len(),
+            1,
+            "same size, same mtime: {:?}",
+            out.events
+        );
     }
 
     /// A capture whose cursor save failed after its ledger write repeats
