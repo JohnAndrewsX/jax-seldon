@@ -182,9 +182,11 @@ Section {
     currentIndex: root.cursor
     emptyText: root.index ? "" : "No index to show"
 
+    // The date beside the day's state; *Open in editor* follows it on the
+    // same line when there is room, else under it.
     Item {
       width: parent.width
-      implicitHeight: Math.max(stateIcon.visible ? stateIcon.height : 0, dateText.implicitHeight, editButton.implicitHeight)
+      implicitHeight: Math.max(stateIcon.visible ? stateIcon.height : 0, dateFlow.implicitHeight)
 
       MaskIcon {
         id: stateIcon
@@ -197,34 +199,39 @@ Section {
           : root.today.state.tone === "urgent" ? Color.urgent : Color.accent
       }
 
-      Text {
-        id: dateText
+      Flow {
+        id: dateFlow
         anchors.left: stateIcon.visible ? stateIcon.right : parent.left
         anchors.leftMargin: stateIcon.visible ? Style.spacing.xl : 0
-        anchors.right: editButton.left
-        anchors.rightMargin: Style.spacing.md
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: root.today ? root.today.title : "Today"
-        color: root.foreground
-        wrapMode: Text.Wrap
-        font.family: Style.font.family
-        font.pixelSize: Style.font.subtitle
-        font.bold: true
-      }
-
-      Button {
-        id: editButton
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        text: "Open in editor"
-        tooltipText: "Today's journal (key e)"
-        bordered: true
-        foreground: root.foreground
-        fontFamily: Style.font.family
-        fontSize: Style.font.caption
-        verticalPadding: Style.spacing.xs
-        onClicked: if (root.service) root.service.openInEditor("journal")
+        spacing: Style.spacing.md
+
+        Text {
+          id: dateText
+          width: Math.min(implicitWidth, dateFlow.width)
+          height: editButton.implicitHeight
+          verticalAlignment: Text.AlignVCenter
+          textFormat: Text.PlainText
+          text: root.today ? root.today.title : "Today"
+          color: root.foreground
+          elide: Text.ElideRight
+          font.family: Style.font.family
+          font.pixelSize: Style.font.subtitle
+          font.bold: true
+        }
+
+        Button {
+          id: editButton
+          text: "Open in editor"
+          tooltipText: "Today's journal (key e)"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: Style.font.family
+          fontSize: Style.font.caption
+          verticalPadding: Style.spacing.xs
+          onClicked: if (root.service) root.service.openInEditor("journal")
+        }
       }
     }
 

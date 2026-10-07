@@ -1101,6 +1101,20 @@ expect stacked-sections 11 .view.detailShown false
 for i in 1 2 5 10; do expect stacked-sections $i '.overflow | join(" | ")' ""; done
 clean_log stacked-sections
 
+# Not initialised (panel 5): the three sections are empty and say so;
+# `+` opens no sheet, Enter does nothing.
+run sections-uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon;text:2;text:3;text:+;key:Return"
+expect sections-uninit 1 "[$tv.rows, $tv.headline, $tv.state] | map(tostring) | join(\",\")" "1,No index to show,"
+shows sections-uninit 1 "No index to show"
+expect sections-uninit 2 "[$tv.rows, ($tv.chips | join(\"+\")), $tv.detail.found] | map(tostring) | join(\",\")" "0,open 0+crisis 0+attention 0+routine 0+case 0+all 0,false"
+shows sections-uninit 2 "No index to show"
+expect sections-uninit 3 "[($tv.ids | length), $tv.case, $tv.wip] | map(tostring) | join(\",\")" "0,null,0 / 3 active"
+shows sections-uninit 3 "No index to show"
+expect sections-uninit 4 "$tv.sheet.open" false
+expect sections-uninit 5 "[.view.opened, .view.keys] | map(tostring) | join(\",\")" "true,true"
+for i in 1 2 3; do expect sections-uninit $i '.overflow | join(" | ")' ""; done
+clean_log sections-uninit
+
 # ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live
 # screenshots): Today at 100 % and 50 %, Settings, the Changelog, Work, and

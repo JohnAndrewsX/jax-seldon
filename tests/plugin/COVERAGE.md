@@ -19,41 +19,41 @@ the sheets (scenario 35); `bar-view.sh` keeps the pill.
 
 | # | Old scenario | Successor | Status |
 |---|---|---|---|
-| 1 | The sample: every tab renders its data, the strip on every tab, header mark, today's state | Header mark, KPI strip and counts: `desk-view.sh` widths, keys (`view.mark`, `view.kpis`, `view.counts`); the tabs' data: WP-122 (Today, Changelog), WP-123 (System); the red strip has no successor — the header's crises figure (urgent) and Today's "Needs you" (WP-122) carry it (ADR-0034 §2) | header done (WP-121); rest open |
-| 2 | Keyboard: Tab/Shift-Tab hand over to the bar, ←/→ h/l and digits switch tabs, ↑/↓ j/k cursor, Esc closes | `desk-view.sh` keys: digits 1–8 and `,`, Alt+↑/↓ with wrap, Tab does nothing (the desk is not a bar popup, ADR-0034 §2), Esc order; the list cursor: WP-122/123 per section | done (WP-121) for the desk's keys |
-| 3 | The yesterday row opens with Enter and stays in view | WP-122 (Today) | open |
+| 1 | The sample: every tab renders its data, the strip on every tab, header mark, today's state | Header mark, KPI strip and counts: `desk-view.sh` widths, keys (`view.mark`, `view.kpis`, `view.counts`); the tabs' data: WP-122 (Today, Changelog), WP-123 (System); the red strip has no successor — the header's crises figure (urgent) and Today's "Needs you" (WP-122) carry it (ADR-0034 §2) | header done (WP-121); Today and Changelog done (WP-122: `today`, `changelog`); System open (WP-123) |
+| 2 | Keyboard: Tab/Shift-Tab hand over to the bar, ←/→ h/l and digits switch tabs, ↑/↓ j/k cursor, Esc closes | `desk-view.sh` keys: digits 1–8 and `,`, Alt+↑/↓ with wrap, Tab does nothing (the desk is not a bar popup, ADR-0034 §2), Esc order; the list cursor: WP-122/123 per section | done (WP-121) for the desk's keys; the list cursor of sections 1–3 done (WP-122: `today`, `changelog`, `work`) |
+| 3 | The yesterday row opens with Enter and stays in view | `desk-view.sh` today (the yesterday row opens in place, the cursor on its entry) | done (WP-122) |
 | 4 | Snapper not readable: its banner on every tab, Run in terminal, Check again, the hint | `desk-view.sh` snapper (the notice under the header) | done (WP-121) |
-| 5 | Not initialised: banner and pictogram, no strip, empty tabs, `+` and `d` do nothing | `desk-view.sh` uninit (notice, no KPI figures, no counts, the chip folds); empty sections and `+`/`d`: WP-122, WP-123 | notice done (WP-121) |
+| 5 | Not initialised: banner and pictogram, no strip, empty tabs, `+` and `d` do nothing | `desk-view.sh` uninit (notice, no KPI figures, no counts, the chip folds); empty sections and `+`/`d`: WP-122, WP-123 | notice done (WP-121); Today, Changelog, Work empty and `+` inert: `sections-uninit` (WP-122); Decisions, Memory, `d`: WP-123 |
 | 6 | Every system field optional (empty and sparse system) | WP-123 (System) | open |
-| 7 | Live: QuickEntry, Open in editor on every tab, Capture now, argv | WP-122 (Today's journal field, `e` per section) and WP-123 (`e` in Decisions, System, Memory) | open |
-| 8 | The engine refuses a note: message shown, text kept | WP-122 (Today) | open |
-| 9 | Work on the sample: columns, WIP text, badge, card actions by status, cursor | WP-122 (Work) | open |
-| 10 | Work live: new case sheet with keys, start → verify → done with Enter twice | WP-122 (Work; Arm.qml) | open |
-| 10b | Start agent: arm with `a`, Enter re-arms the first action, `agent start <id>` | WP-122 (Work; Ask agent in WP-124b) | open |
-| 11 | New case refused (lock held): message, title kept, Esc, `+` back | WP-122 (Work) | open |
-| 12 | Drift sheet on the sample: defaults per item, group members, IPC route | WP-122 (Changelog event detail) | open |
-| 13 | ADR-0020: fewer drift items listed than counted ("+N more") | WP-122 (Changelog) | open |
-| 13b | Quiet surfaces, crisis in the yellow zone | WP-122 (Today, Changelog) | open |
-| 13c | Attention alone: no strip, no "crisis" anywhere | WP-122 (Today, Changelog); the header part: the crises figure is not urgent at 0 (`Model.deskKpis`, model.test.js) | open |
-| 14 | Drift sheet live: link, explain (text `--help`, risk, area), Open case | WP-122 (Changelog) | open |
-| 15 | `--only` and a refusal in the plugin | WP-122 (Changelog) | open |
-| 16 | Already resolved re-run | WP-122 (Changelog) | open |
-| 17 | Drift refused (lock held): message, text kept, draft back | WP-122 (Changelog) | open |
-| 18 | Group members beyond the index: `drift show` | WP-122 (Changelog) | open |
-| 19 | The same from a member row | WP-122 (Changelog) | open |
+| 7 | Live: QuickEntry, Open in editor on every tab, Capture now, argv | WP-122 (Today's journal field, `e` per section) and WP-123 (`e` in Decisions, System, Memory) | Today, Changelog, Work done (WP-122: `today-live` — the journal field, `e` journal and ledger, Capture now, the argv and the editor paths; `work-live` `e` on a case); Decisions, System, Memory: WP-123 |
+| 8 | The engine refuses a note: message shown, text kept | `desk-view.sh` today-refuse | done (WP-122) |
+| 9 | Work on the sample: columns, WIP text, badge, card actions by status, cursor | `desk-view.sh` work (groups, WIP line, the proposed count, the case detail, the bar by status, dev mode refuses to arm) | done (WP-122) |
+| 10 | Work live: new case sheet with keys, start → verify → done with Enter twice | `desk-view.sh` work-live (the sheet by keys, start → to verification → complete armed then run, Open in editor, the refusal, `x x`) | done (WP-122) |
+| 10b | Start agent: arm with `a`, Enter re-arms the first action, `agent start <id>` | `desk-view.sh` work-agent (*Hand to agent*: `a` twice, a selection change disarms, click + Confirm, the refusal) | done (WP-122) |
+| 11 | New case refused (lock held): message, title kept, Esc, `+` back | `desk-view.sh` work-locked | done (WP-122) |
+| 12 | Drift sheet on the sample: defaults per item, group members, IPC route | `desk-view.sh` changelog (defaults per item, the case list, group members and *Only <row>*, the shim's `resolve`; the red strip's click is Today's NEEDS YOU: today) | done (WP-122) |
+| 13 | ADR-0020: fewer drift items listed than counted ("+N more") | `desk-view.sh` changelog-capped | done (WP-122) |
+| 13b | Quiet surfaces, crisis in the yellow zone | `desk-view.sh` quiet-crisis | done (WP-122) |
+| 13c | Attention alone: no strip, no "crisis" anywhere | WP-122 (Today, Changelog); the header part: the crises figure is not urgent at 0 (`Model.deskKpis`, model.test.js) | done (WP-122: `quiet-attention`, `quiet-active`; the chip "crisis 0" and the header's "crises" label are the desk's, so the 0.1 "no word crisis anywhere" check reads: no "Why loud", no NEEDS YOU, no urgent stripe) |
+| 14 | Drift sheet live: link, explain (text `--help`, risk, area), Open case | `desk-view.sh` drift-live (Open case now goes to Work with the case selected; the editor stays one click away there) | done (WP-122) |
+| 15 | `--only` and a refusal in the plugin | `desk-view.sh` drift-only | done (WP-122) |
+| 16 | Already resolved re-run | `desk-view.sh` drift-already | done (WP-122) |
+| 17 | Drift refused (lock held): message, text kept, draft back | `desk-view.sh` drift-locked | done (WP-122) |
+| 18 | Group members beyond the index: `drift show` | `desk-view.sh` drift-show | done (WP-122) |
+| 19 | The same from a member row | `desk-view.sh` drift-show-member | done (WP-122) |
 | 20 | Decisions and Memory on the sample | WP-123 (Decisions, Memory) | open |
 | 21 | Decisions live: `d`, title typed, Enter twice creates, opens | WP-123 (Decisions) | open |
 | 22 | Decision refusals keep the title | WP-123 (Decisions) | open |
-| 23 | Label fit at font scale 1.0 and 1.25, narrow card | `desk-view.sh` widths and thresholds check that no text leaves the window or the desk at 1366–3840 px and under 960 / 760 px; label fit inside each section's rows: WP-122, WP-123; font scale 1.25 sweep: WP-126 (theme and scale sweep) | partly done (WP-121) |
-| 24 | Offscreen renders of the Today tab in three themes (PANEL_SHOTS) | `desk-view.sh` with `DESK_SHOTS` (Today at 100 % and 50 %, Settings, not initialised; Tokyo Night, Kanagawa, Catppuccin Latte) | done (WP-121) |
-| 25 | A tab change gives the keys back (hidden field keeps focus) | `desk-view.sh` keys (the search gives the keys back on Enter and Esc; a section change calls `giveKeys`); fields inside sections: WP-122 | desk part done (WP-121) |
-| 26 | The Changelog cursor follows its event across an index update | WP-122 (Changelog; acceptance "cursor stability") | open |
-| 27 | Capture now replaces a pending lock retry | WP-122 (Changelog's Capture now); the `c` key: `desk-view.sh` capture-warned | key done (WP-121) |
+| 23 | Label fit at font scale 1.0 and 1.25, narrow card | `desk-view.sh` widths and thresholds check that no text leaves the window or the desk at 1366–3840 px and under 960 / 760 px; label fit inside each section's rows: WP-122, WP-123; font scale 1.25 sweep: WP-126 (theme and scale sweep) | partly done (WP-121); rows and details of sections 1–3 at 1920 px and stacked: every WP-122 case checks `.overflow` (WP-122); Decisions, System, Memory: WP-123; font scale: WP-126 |
+| 24 | Offscreen renders of the Today tab in three themes (PANEL_SHOTS) | `desk-view.sh` with `DESK_SHOTS` (Today at 100 % and 50 %, Settings, the Changelog and Work (WP-122), not initialised; Tokyo Night, Kanagawa, Catppuccin Latte) | done (WP-121, WP-122) |
+| 25 | A tab change gives the keys back (hidden field keeps focus) | `desk-view.sh` keys (the search gives the keys back on Enter and Esc; a section change calls `giveKeys`); fields inside sections: WP-122 | done (WP-121 the desk, WP-122 `tab-focus`: Today's field, the new-case sheet and the picker give the keys back, drafts stay, nothing sent) |
+| 26 | The Changelog cursor follows its event across an index update | `desk-view.sh` cursor-follow (and drift-live: the linked event stays shown when it leaves the chip) | done (WP-122) |
+| 27 | Capture now replaces a pending lock retry | WP-122 (Changelog's Capture now); the `c` key: `desk-view.sh` capture-warned | done (WP-121 the key, WP-122 `capture-click`) |
 | 28 | Capture warnings: neutral notice, tooltip, gone after a clean capture | `desk-view.sh` capture-warned (notice, `c` captures, notice gone); the tooltip popup's geometry: no successor — the desk shows the notice at the desk's width, where the first lines already fit, and the full text stays in the notice's `full` (hover) as before; WP-126 checks it live | done (WP-121) |
 | 29 | Restart notice after a plugin update; Restart shell once | `desk-view.sh` restart-same, restart-updated | done (WP-121) |
-| 30 | Closed by agent: "by agent", Reopen beside Open, By agent filter | WP-122 (Work) | open |
-| 31 | Run: intent field, `--`, busy, refusal kept | WP-122 (Work, Today's New case) | open |
-| 32 | Reopen: one click, `r` | WP-122 (Work) | open |
+| 30 | Closed by agent: "by agent", Reopen beside Open, By agent filter | `desk-view.sh` work (By agent, "completed by agent", Reopen), work-reopened | done (WP-122) |
+| 31 | Run: intent field, `--`, busy, refusal kept | `desk-view.sh` work-run, work-run-refused, today-new | done (WP-122) |
+| 32 | Reopen: one click, `r` | `desk-view.sh` work-reopen | done (WP-122) |
 | 33 | Rules banner: doctor on open, Update rules, result line, damaged, failure, throttle | `desk-view.sh` rules-outdated, rules-fail; damaged and the 10-minute throttle stay covered by the service (`service-states.sh`, Model.rulesBanner unit tests) — the desk calls the same `checkRules(false)` on open | done (WP-121) |
 
 ## overlay-view.sh (the Prime Radiant overlay)
