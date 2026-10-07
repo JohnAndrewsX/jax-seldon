@@ -134,7 +134,7 @@ Every command below was **allowed** before:
 10. **`check-guard` runs in `just check`/CI** so a guard change cannot
     merge with a red table or a surviving mutant.
 
-## Known limits (current as of round 3; show next to the table)
+## Known limits (current as of round 4; show next to the table)
 
 What the guard does **not** protect. Each line is a decision for the
 operator, not a hidden gap.
@@ -144,12 +144,19 @@ operator, not a hidden gap.
   only by the settings deny list (`/etc`, `~/.config/hypr`,
   `shell.json`).
 - **Files a shell runs are not inspected** (`bash script.sh`,
-  `source x`, `ssh h bash -s < file`). Generated ones are blocked
+  `source x`, `bash < cmds.txt`, `script /dev/null < cmds.txt`,
+  `ssh h bash -s < file`). Generated ones are blocked
   (`source <(…)`, `bash <(…)`), and so are Omarchy's own scripts (round
   3). A file written earlier in the same command and then run
   (`cat > x.sh <<EOF … EOF; bash x.sh`) is not inspected either.
 - **Other interpreters are data**: `python3 -c`, `perl -i`, `node -e`,
-  `awk 'system()'`.
+  `awk 'system()'`, and GNU `sed`'s `e` command (`sed 's/x/y/e'`).
+- **An unknown program's own write options** are not known
+  (`strace -o ~/.config/x ls`). Since round 4 the net blocks an unknown
+  program whose arguments name a red-zone command, a shell or an
+  Omarchy script, and checks arguments that start with a file command
+  as that command (`strace -f sed -i … /etc/x`). What is left is the
+  program's own writes.
 - **`xargs` input is unknown.** `xargs rm -rf < list` decides nothing
   about the targets.
 - **Writers to `~/.config` by program, not by path**: `gsettings`,
