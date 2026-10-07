@@ -18,7 +18,34 @@ Row {
 
   signal picked(string id)
 
+  // The strip's height from its fonts, at once: a Row sets its own height
+  // only in its polish, one frame late, which would move everything under
+  // the header after the first frame (and repaint the Prime Radiant's
+  // charts, WP-123). The header sizes itself by this.
+  readonly property real figureHeight: root.kpis.length > 0 ? numberProbe.implicitHeight + labelProbe.implicitHeight : 0
+
   spacing: Style.spacing.huge
+
+  Text {
+    id: numberProbe
+    visible: false
+    textFormat: Text.PlainText
+    text: "0"
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.display
+    font.bold: true
+    font.features: { "tnum": 1 }
+  }
+
+  Text {
+    id: labelProbe
+    visible: false
+    textFormat: Text.PlainText
+    text: "A"
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
+    font.letterSpacing: Style.space(1)
+  }
 
   Repeater {
     model: root.kpis
