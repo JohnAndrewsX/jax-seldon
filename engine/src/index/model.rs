@@ -196,6 +196,10 @@ pub struct DriftItem {
     /// `Some(true)` when `detail` was clipped (ADR-0035 §3).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
+    /// The ADR-0028 §2 rule that classified the item, as `drift show`
+    /// reports it (ADR-0038 §1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -218,7 +222,7 @@ impl Cases {
 }
 
 /// `case.schema.json` as the index has it: no `type`, plus `path`,
-/// `steps` and `proposedEvents`.
+/// `steps`, `proposedEvents`, `intent` and `result`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexCase {
@@ -242,6 +246,15 @@ pub struct IndexCase {
     pub steps: Steps,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub proposed_events: Vec<String>,
+    /// The first paragraph of `## Intent` and of `## Result`, redacted
+    /// and clipped (ADR-0038 §2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    /// An imported case's task, `~/…/file.md#line` (ADR-0038 §3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -259,6 +272,10 @@ pub struct DecisionRow {
     pub path: String,
     /// The frontmatter's `cases`, as written, without repeats (ADR-0035 §5).
     pub cases: Vec<String>,
+    /// The first paragraph of `## Decision`, redacted and clipped
+    /// (ADR-0038 §2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lead: Option<String>,
 }
 
 /// `triage`: the newest proposal of this logbook (ADR-0035 §6).
