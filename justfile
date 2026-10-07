@@ -197,7 +197,7 @@ qmllint:
     python3 tests/plugin/check-tokens.py "$shell_dir" "${files[@]}"
     echo "qmllint: ok (${#files[@]} files)"
 
-# Plugin logic: Model.js under node; Service.qml states, Panel.qml tabs, keys and banners, Overlay.qml and the pill (BarWidget.qml) in a private headless Quickshell (host only).
+# Plugin logic: Model.js under node; the banners' terminal scripts under bash with stubs; Service.qml states, Panel.qml tabs, keys and banners, Overlay.qml and the pill (BarWidget.qml) in a private headless Quickshell (host only).
 plugin-test:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -208,6 +208,7 @@ plugin-test:
     command -v node >/dev/null || { echo "plugin-test: node not found" >&2; exit 1; }
     node tests/plugin/model.test.js
     node tests/plugin/model.bench.js
+    bash tests/plugin/terminal-scripts.sh
     bash tests/plugin/real-home-guard.test.sh
     bash tests/plugin/service-states.sh
     bash tests/plugin/panel-view.sh

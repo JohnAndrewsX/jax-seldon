@@ -370,10 +370,10 @@ clean_log reflow
 #    state, nothing painted, no hover.
 run uninit "$fx/index-variants/not-initialised.json" 1920x1080 "toggle;hoverItem:heatmap:0;call:hover:timeline 0.5,0.5"
 expect uninit 1 .view.status notInitialised
-expect uninit 1 .view.banner "Logbook not initialised"
-shows uninit 1 "Logbook not initialised"
+expect uninit 1 .view.banner "Create your logbook"
+shows uninit 1 "Create your logbook"
 shows uninit 1 "Copy"
-expect uninit 1 '[.texts[] | select(. == "Run in terminal" or . == "Check again")] | length' 0
+expect uninit 1 '[.texts[] | select(. == "Create" or . == "Check again")] | length' 0
 shows uninit 1 "Fix it from the Seldon panel (click the Seldon mark in the bar)."
 fits uninit 1 1920 1080
 counts uninit 1 90 "0,0,0,0,0,0"
@@ -421,7 +421,7 @@ if [[ -n ${OVERLAY_SHOTS:-} ]]; then
     # The not-initialised banner with its 96 px pictogram (A11, WP-051).
     run "shot-uninit-$theme" "$fx/index-variants/not-initialised.json" 1920x1080 \
       "fresh;view;shot:offscreen-$theme-1920x1080-uninit" HOME="$home" HARNESS_SHOTS="$OVERLAY_SHOTS"
-    expect "shot-uninit-$theme" 2 .view.banner "Logbook not initialised"
+    expect "shot-uninit-$theme" 2 .view.banner "Create your logbook"
     clean_log "shot-uninit-$theme"
   done
 fi

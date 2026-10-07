@@ -14,7 +14,7 @@ var CONTRACT_VERSION = 1
 // manifest from disk on every rescan but keeps running the plugin code it
 // compiled first (WP-090), so a manifest that says otherwise means the
 // plugin was updated under a running shell (restartShellNotice).
-var PLUGIN_VERSION = "0.1.3"
+var PLUGIN_VERSION = "0.1.4"
 
 // SPEC-PLUGIN §3: an index older than two hours is stale.
 var STALE_AFTER_MS = 2 * 60 * 60 * 1000
@@ -57,7 +57,8 @@ var PLAN_STEPS = ["start", "verify", "done", "drop"]
 // this project's release, and the script checks the engine against
 // SHA256SUMS. Flip back to "omarchy pkg aur add jax-seldon" (ADR-0004,
 // ADR-0016: `omarchy pkg add` only reaches the official repositories) when
-// the AUR package is live, together with ENGINE_MISSING_DETAIL below.
+// the AUR package is live, together with ENGINE_MISSING_DETAIL and the
+// texts of INSTALL_ENGINE_SCRIPT below.
 var INSTALL_ENGINE_COMMAND = "curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash"
 // While the AUR package does not exist, updating the engine is the same
 // installer (ADR-0024); flip back together with INSTALL_ENGINE_COMMAND.
@@ -69,12 +70,143 @@ var INIT_COMMAND = "seldon init"
 // shell the user pastes it into (or by the terminal launcher's bash -c);
 // nothing else in it varies.
 var SNAPPER_FIX_COMMAND = "sudo setfacl -m u:$USER:rx /.snapshots"
-// What SNAPPER_FIX_COMMAND grants; the banner shows it under the engine's
-// message, like `seldon doctor` (SNAPPER_FIX_GRANTS there).
+// What SNAPPER_FIX_COMMAND grants; the snapper banner's hover text has it
+// under the engine's message, like `seldon doctor` (SNAPPER_FIX_GRANTS there).
 var SNAPPER_FIX_GRANTS = "The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
-// The engineMissing banner's text. The AUR package does not exist yet
-// (operator, 2026-10-02); flip this with INSTALL_ENGINE_COMMAND (WP-044).
-var ENGINE_MISSING_DETAIL = "The plugin needs the seldon command. AUR package: coming soon; until then install from GitHub: the command below downloads install.sh from the release, which checks the engine against SHA256SUMS. Then check again."
+// The engineMissing banner's text: what *Install* does, in one sentence.
+// Flip it with INSTALL_ENGINE_COMMAND when the AUR package is live (WP-044).
+var ENGINE_MISSING_DETAIL = "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it; runs as your user, no password."
+
+// ---- Terminal scripts (WP-117) ---------------------------------------------
+
+// A banner's *Install*, *Create*, *Grant* or *Update* opens Omarchy's
+// presentation terminal (logo, the script, "Done!"; it exports the theme's
+// gum colours) with one of the scripts below, never with anything else
+// (terminalArgv). Omarchy's own pattern (omarchy-system-factory-reset,
+// omarchy-update-confirm, omarchy-snapshot): a bold line says what
+// happens, one plain paragraph why and whether a password is asked, the
+// command is shown, then run, then one line says what changed, in the
+// terminal palette's green (2) or red (1). A result line never claims
+// more than happened (WP-117 round 2).
+//
+// Every script is built once, here, from the string literals below: nothing
+// from the index, the logbook or the environment goes in (AGENTS.md §8).
+// The texts are single-quoted, so `$USER` in the shown command stays as
+// the user would copy it; the run line (`run`, else the command) is
+// unquoted, so its `$USER` and pipe work. It runs with pipefail in a
+// subshell: a failed download in `curl … | bash` is a failure, not bash's
+// exit 0 on empty input.
+//
+// Ctrl+C (or TERM) is trapped: the trap only notes it, the script skips a
+// command that has not started, prints the `cancelled` line (palette 3)
+// and ends with 130, Omarchy's "cancelled" status, on which the wrapper
+// closes the window without "Done!". Every other ending is status 0 after
+// the result line, so "Done!" follows and the user closes the window.
+//
+// `after` runs only on success. With `partial`, its exit status picks the
+// line: `ok` when it succeeded, `partial` when not; without, it is a
+// best-effort step and `ok` follows either way.
+function shellQuoted(text) {
+  return "'" + String(text).split("'").join("'\\''") + "'"
+}
+
+function terminalScript(s) {
+  var line = function(colour, text) {
+    return "gum style --padding '1 0 0 0' --foreground " + colour + " " + shellQuoted(text)
+  }
+  var success = !s.after ? line(2, s.ok)
+    : s.partial ? "if " + s.after + "; then " + line(2, s.ok) + "; else " + line(2, s.partial) + "; fi"
+    : s.after + "; " + line(2, s.ok)
+  return [
+    "seldon_cancelled=",
+    "trap 'seldon_cancelled=1' INT TERM",
+    "gum style --bold " + shellQuoted(s.title),
+    "gum style --width 72 " + shellQuoted(s.what),
+    "gum style --padding '1 0 1 2' " + shellQuoted(s.command),
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; " + (s.run || s.command) + "); then "
+      + success + "; trap - INT TERM"
+      + "; elif [ -n \"$seldon_cancelled\" ]; then " + line(3, s.cancelled) + "; trap - INT TERM; (exit 130)"
+      + "; else " + line(1, s.failed) + "; trap - INT TERM; fi"
+  ].join("; ")
+}
+
+// install.sh can stop after it replaced the binary (unit, completions,
+// manifest), so a failure does not claim that nothing changed.
+var INSTALL_ENGINE_SCRIPT = terminalScript({
+  title: "Seldon: install the engine",
+  what: "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.",
+  command: INSTALL_ENGINE_COMMAND,
+  ok: "The engine is installed. In the Seldon panel, press Check again.",
+  failed: "The install did not finish. Run it again; your logbook is untouched.",
+  cancelled: "Cancelled. The install did not finish. Run it again; your logbook is untouched."
+})
+// After the update the new engine rewrites the index once, so an index in
+// an old contract version goes without waiting for the next capture; if
+// that fails, the next capture does it, and the line asks for Check again
+// anyway.
+var UPDATE_ENGINE_SCRIPT = terminalScript({
+  title: "Seldon: update the engine",
+  what: "Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.",
+  command: UPDATE_ENGINE_COMMAND,
+  after: "seldon status >/dev/null 2>&1 || true",
+  ok: "The engine is updated. In the Seldon panel, press Check again.",
+  failed: "The update did not finish. Run it again; your logbook is untouched.",
+  cancelled: "Cancelled. The update did not finish. Run it again; your logbook is untouched."
+})
+// Omarchy's update shows the diff and asks before it changes anything; a
+// "no" also exits 0, so the line does not claim an update.
+var UPDATE_PLUGIN_SCRIPT = terminalScript({
+  title: "Seldon: update the plugin",
+  what: "Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.",
+  command: UPDATE_PLUGIN_COMMAND,
+  ok: "If the plugin was updated, the Seldon panel offers Restart shell to load it.",
+  failed: "Nothing changed. The plugin stays at its version.",
+  cancelled: "Cancelled. The plugin update did not finish."
+})
+// `seldon init` writes the index; the service's FileView picks it up and
+// the banner goes (Service.ingest).
+var INIT_SCRIPT = terminalScript({
+  title: "Seldon: create your logbook",
+  what: "Sets up the logbook folder and starts recording. Asks a few questions; Enter takes the suggested answer. No password.",
+  command: INIT_COMMAND,
+  ok: "Your logbook is ready. The panel updates by itself.",
+  failed: "No logbook was created; the message above says why. Press Create in the panel to try again.",
+  cancelled: "Cancelled. Press Create in the panel to start again."
+})
+// After the grant a capture records the snapshots and rewrites the index,
+// so the banner goes without a click. Exit 4 (the plugin's own timed
+// capture holds the lock) gets one more try; only a capture that succeeded
+// says the snapshots are recorded, else the next timed capture does it.
+// The run line has `${USER:?}`: with an empty USER it stops before sudo
+// instead of granting `u::rx` (the owner bits); the shown command stays the
+// one Copy copies (ADR-0026: the engine never runs the grant itself; the
+// user's click runs it, in the user's terminal).
+var SNAPPER_FIX_SCRIPT = terminalScript({
+  title: "Seldon: let your user read the snapshot list",
+  what: "Grants read access to /.snapshots: the listing and the snapshot info files, nothing else. No snapshot is created, changed or deleted. Asks for your password once.",
+  command: SNAPPER_FIX_COMMAND,
+  run: "sudo setfacl -m u:${USER:?}:rx /.snapshots",
+  after: "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }",
+  ok: "Snapshots are now recorded. The panel updates by itself.",
+  partial: "Read access granted. Seldon records snapshots at its next capture.",
+  failed: "Nothing changed. Snapshots stay off; Seldon works without them.",
+  cancelled: "Cancelled. Nothing changed."
+})
+
+var TERMINAL_SCRIPTS = [INSTALL_ENGINE_SCRIPT, UPDATE_ENGINE_SCRIPT, UPDATE_PLUGIN_SCRIPT, INIT_SCRIPT, SNAPPER_FIX_SCRIPT]
+
+function isTerminalScript(script) {
+  return typeof script === "string" && TERMINAL_SCRIPTS.indexOf(script) !== -1
+}
+
+// The argv Service.fix starts for a banner's terminal action: the launcher
+// with the banner's script, only when that is one of TERMINAL_SCRIPTS;
+// null for anything else, so a banner object can never hand the launcher
+// another string.
+function terminalArgv(banner) {
+  var script = isObject(banner) ? banner.script : undefined
+  return isTerminalScript(script) ? ["omarchy-launch-floating-terminal-with-presentation", script] : null
+}
 
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -382,21 +514,28 @@ function tooltipText(status, c, lastCaptureText, nowMs) {
 
 // ---- Banners ----------------------------------------------------------------
 
-// One banner per non-ok status, each with its one-click fix (AGENTS.md §7).
-// Action ids are dispatched by Service.fix(): copy, terminal, recheck,
-// build, capture. `command` is always one of the constants above.
-// ctx: { indexContractVersion, parseError, generatedAt, nowMs }
+// One banner per non-ok status, each with its one-click fix (AGENTS.md §7),
+// its detail one sentence (WP-117). Action ids are dispatched by
+// Service.fix(): copy, terminal, recheck, build, capture. `command` (shown
+// and copied) is always one of the constants above, `script` (what the
+// terminal action runs) the matching terminal script.
+// ctx: { indexContractVersion, parseError, generatedAt, nowMs, indexExists }
+// indexExists: an index file is there, so the engine wrote one before and
+// is gone now (urgent); without one the user has not installed it yet, a
+// setup step (accent).
 function bannerFor(status, ctx) {
   ctx = ctx || {}
   if (status === "engineMissing") {
+    var gone = ctx.indexExists === true
     return {
       status: status,
-      tone: "urgent",
-      title: "Seldon engine not installed",
+      tone: gone ? "urgent" : "accent",
+      title: gone ? "Seldon engine missing" : "Install the engine",
       detail: ENGINE_MISSING_DETAIL,
       command: INSTALL_ENGINE_COMMAND,
+      script: INSTALL_ENGINE_SCRIPT,
       actions: [
-        { id: "terminal", label: "Install in terminal" },
+        { id: "terminal", label: "Install" },
         { id: "copy", label: "Copy" },
         { id: "recheck", label: "Check again" }
       ]
@@ -406,11 +545,12 @@ function bannerFor(status, ctx) {
     return {
       status: status,
       tone: "accent",
-      title: "Logbook not initialised",
-      detail: "Create your logbook once with seldon init.",
+      title: "Create your logbook",
+      detail: "Sets up your logbook and starts recording; the terminal asks a few questions, no password.",
       command: INIT_COMMAND,
+      script: INIT_SCRIPT,
       actions: [
-        { id: "terminal", label: "Run in terminal" },
+        { id: "terminal", label: "Create" },
         { id: "copy", label: "Copy" },
         { id: "recheck", label: "Check again" }
       ]
@@ -446,11 +586,12 @@ function bannerFor(status, ctx) {
       status: status,
       tone: "urgent",
       title: "Index format mismatch",
-      detail: "The index uses contract v" + found + ", this plugin reads v" + CONTRACT_VERSION
-        + ". Update the " + (pluginOlder ? "plugin" : "engine") + ".",
+      detail: "The index uses contract v" + found + " and this plugin reads v" + CONTRACT_VERSION
+        + ": update the " + (pluginOlder ? "plugin" : "engine") + ".",
       command: pluginOlder ? UPDATE_PLUGIN_COMMAND : UPDATE_ENGINE_COMMAND,
+      script: pluginOlder ? UPDATE_PLUGIN_SCRIPT : UPDATE_ENGINE_SCRIPT,
       actions: [
-        { id: "terminal", label: "Update in terminal" },
+        { id: "terminal", label: "Update" },
         { id: "copy", label: "Copy" }
       ]
     }
@@ -728,18 +869,16 @@ function collectors(index) {
   return index && isObject(index.state) && Array.isArray(index.state.collectors) ? index.state.collectors : []
 }
 
-// The snapper banner's hint after *Run in terminal* (WP-054, issue #2).
-var SNAPPER_HINT = "When the command has finished, press Check again"
-
 // ADR-0026: snapper runs degraded until the user grants read access. The
-// banner shows the engine's message as plain text, then what the fix grants
-// (SNAPPER_FIX_GRANTS), and offers the constant fix. Action ids are
-// dispatched by Service.fix(actionId, "snapper"). *Check again* is a capture
-// (the same call as *Capture now*): only a capture rewrites the collector
-// state this banner reads; reloading the index would not (WP-054).
-// `hinted`: Run in terminal was clicked and the index has not changed since;
-// the banner then carries SNAPPER_HINT in `hint`.
-function snapperBanner(index, hinted) {
+// banner says in one sentence what *Grant* does (WP-117); the engine's
+// message and what the grant grants (SNAPPER_FIX_GRANTS) are its hover text
+// (`full`). *Grant* runs SNAPPER_FIX_SCRIPT, which captures after the grant,
+// so the banner goes by itself. Action ids are dispatched by
+// Service.fix(actionId, "snapper"). *Check again* is a capture (the same
+// call as *Capture now*), for a grant run outside the panel: only a capture
+// rewrites the collector state this banner reads; reloading the index
+// would not (WP-054).
+function snapperBanner(index) {
   var list = collectors(index)
   for (var i = 0; i < list.length; i++) {
     var c = list[i]
@@ -747,17 +886,18 @@ function snapperBanner(index, hinted) {
     return {
       status: "snapperDegraded",
       tone: "accent",
-      title: "Snapshots not readable",
-      detail: (typeof c.message === "string" && c.message !== ""
+      title: "Read snapshots (optional)",
+      detail: "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it.",
+      full: (typeof c.message === "string" && c.message !== ""
         ? c.message
         : "The snapper collector has no permission to list snapshots.") + "\n" + SNAPPER_FIX_GRANTS,
       command: SNAPPER_FIX_COMMAND,
+      script: SNAPPER_FIX_SCRIPT,
       actions: [
-        { id: "terminal", label: "Run in terminal" },
+        { id: "terminal", label: "Grant" },
         { id: "copy", label: "Copy" },
         { id: "capture", label: "Check again" }
-      ],
-      hint: hinted === true ? SNAPPER_HINT : ""
+      ]
     }
   }
   return null
@@ -1054,7 +1194,7 @@ function todayView(index) {
     entries: journalEntries(today.entries),
     yesterday: journalEntries(today.yesterday),
     stats: [
-      { label: "events today", value: count(summary.eventsToday) },
+      { label: count(summary.eventsToday) === 1 ? "event today" : "events today", value: count(summary.eventsToday) },
       { label: "in 7 days", value: count(summary.events7d) },
       { label: "active", value: count(summary.activeCases) },
       { label: "queued", value: count(summary.queuedCases) },
@@ -2972,11 +3112,11 @@ function engineOutdatedBanner(status, engineVersion, engineMin) {
     status: "engineOutdated",
     tone: "urgent",
     title: "Engine too old",
-    detail: "This plugin needs engine " + engineMin + " or newer; seldon reports " + engineVersion
-      + ". Update the engine to at least " + engineMin + ", then check again.",
+    detail: "This plugin needs engine " + engineMin + " or newer and seldon reports " + engineVersion + ".",
     command: UPDATE_ENGINE_COMMAND,
+    script: UPDATE_ENGINE_SCRIPT,
     actions: [
-      { id: "terminal", label: "Update in terminal" },
+      { id: "terminal", label: "Update" },
       { id: "copy", label: "Copy" },
       { id: "recheck", label: "Check again" }
     ]

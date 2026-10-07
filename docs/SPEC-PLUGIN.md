@@ -63,12 +63,13 @@ plugin/
   banner's fix is the constant GitHub one-liner `curl -fsSL
   https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`
   (run only on the user's click, in the floating terminal; the script
-  checks the engine against `SHA256SUMS`), and its text says "AUR
-  package: coming soon; until then install from GitHub". Both are
+  checks the engine against `SHA256SUMS`), and its text says what the
+  button does: download from the Seldon release on GitHub into
+  `~/.local/bin`, checked, as the user, no password (WP-117). Both are
   constants in `Model.js`, `INSTALL_ENGINE_COMMAND` and
   `ENGINE_MISSING_DETAIL`; they flip back to `omarchy pkg aur add
   jax-seldon` and an AUR text together when the package is live
-  (WP-044).
+  (WP-044), with the texts of `INSTALL_ENGINE_SCRIPT` (§5).
 - Exposes `function run(args)` for other files; **only fixed argument
   arrays**, never strings assembled from index content except as single
   arguments (case ids, event ids validated by regex before use).
@@ -295,38 +296,41 @@ tone — engine missing → `engine-missing`, not initialised →
 `logbook-not-initialised`, index missing (or unreadable) →
 `index-missing`, index stale → `index-stale`; the contract mismatch and
 the snapper banner have none. The Today tab shows the day's state left of
-the date and the counts (events today, in 7 days, active, queued, and
+the date and the counts (events today — "1 event today" — in 7 days, active, queued, and
 "without a case", the attention count `openDrift − crisis`, the number the
 tooltip and the Changelog line show), `Style.space(48)`: crisis (urgent) when any
 crisis, else case active (accent) when active cases, else all clear
 (foreground); none without an index. Attention alone changes nothing
 (ADR-0028 §4b), so the drift-open pictogram is not shown.
 
-Banner states (top of every tab): engine missing → "Install the engine:"
-the GitHub one-liner while the AUR package does not exist (§3,
-ADR-0024), afterwards `omarchy pkg aur add jax-seldon` (ADR-0016;
-`omarchy pkg add` reaches the official repositories only), with *Install in
-terminal*, *Copy* and *Check again*; contract
+Banner states (top of every tab), each detail one sentence (WP-117):
+engine missing → the GitHub one-liner while the AUR package does not
+exist (§3, ADR-0024), afterwards `omarchy pkg aur add jax-seldon`
+(ADR-0016; `omarchy pkg add` reaches the official repositories only),
+with *Install*, *Copy* and *Check again*; without an index it is the
+first setup step, "Install the engine" in the accent tone, with an index
+(the engine was there and is gone) "Seldon engine missing" in the urgent
+tone; contract
 mismatch → `omarchy plugin update jax.seldon` when the plugin is older
 than the index, the GitHub installer one-liner when the engine is older (until the
-AUR package is live, ADR-0024); engine older than the manifest's
+AUR package is live, ADR-0024), with *Update* and *Copy*; engine older than the manifest's
 `engineMin` (§3; in place of every status banner but engine missing and
-contract mismatch) → "Engine too old", "Update the engine to at least
-X", the same installer one-liner with *Update in terminal*, *Copy* and
+contract mismatch) → "Engine too old", "This plugin needs engine X or
+newer and seldon reports Y.", the same installer one-liner with *Update*, *Copy* and
 *Check again* (WP-068); snapshots
-not readable (ADR-0026) → the one-line read grant
-`sudo setfacl -m u:$USER:rx /.snapshots` with *Run in terminal*, *Copy*
-and *Check again*; the detail is the engine's message, then on its own
-line what the fix grants (read access to the snapshot directory listing
-and the snapshot info files, no snapshot creation, change or deletion)
-(WP-054, issue #2); *Check again*
+not readable (ADR-0026) → "Read snapshots (optional)", "A one-time read
+grant on /.snapshots; it asks for your password once, and Seldon works
+without it.", the one-line read grant
+`sudo setfacl -m u:$USER:rx /.snapshots` with *Grant*, *Copy*
+and *Check again*; the engine's message and, on its own line, what the
+grant gives (read access to the snapshot directory listing and the
+snapshot info files, no snapshot creation, change or deletion) are the
+banner's hover text; *Check again*
 runs a capture, the same call as *Capture now* (`capture --all --json
 --quiet`, then `status --json`), because only a capture rewrites the
-collector state this banner reads (reloading the index would not); after
-*Run in terminal* the banner shows "When the command has finished, press
-Check again" under its buttons until the index next changes; not
-initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
-*Check again*; index stale →
+collector state this banner reads (reloading the index would not; WP-054);
+not initialised → "Create your logbook", `seldon init`, with *Create*,
+*Copy* and *Check again*; index stale →
 *Capture now*; outdated agent rules (WP-101, ADR-0027 migration) → "The
 logbook's agent rules are outdated (v1)" from the `rules` row of `seldon
 doctor --only rules --json`, which the service runs when the panel opens (and when the
@@ -344,6 +348,41 @@ runs the argv `["omarchy-restart-shell"]` once per service instance
 that can affect boot, login or the shell have no case" ("1 change … has
 no case"), only while `summary.crisis` > 0 (ADR-0028 §4b); a click opens
 the first crisis.
+
+Terminal scripts (WP-117). *Copy* puts the banner's plain command on the
+clipboard; *Install*, *Create*, *Grant* and *Update* open Omarchy's
+presentation terminal (`omarchy-launch-floating-terminal-with-presentation`:
+logo, the script, "Done!", the theme's gum colours) with the banner's
+script, one of five constants in `Model.js` (`INSTALL_ENGINE_SCRIPT`,
+`UPDATE_ENGINE_SCRIPT`, `UPDATE_PLUGIN_SCRIPT`, `INIT_SCRIPT`,
+`SNAPPER_FIX_SCRIPT`); the service launches nothing else
+(`Model.terminalArgv`). Each follows Omarchy's own scripts: a bold `gum
+style` line "Seldon: <what>", one paragraph (why; whether it asks for a
+password), the command indented as *Copy* copies it, the command run in
+`(set -o pipefail; …)`, then one line of what changed, green (palette 2)
+on success, red (palette 1) on failure. A result line never claims more
+than happened: after a failed install or engine update it says "The
+install (update) did not finish. Run it again; your logbook is
+untouched." (install.sh can stop after it replaced the binary). The
+script then ends with status 0, so the wrapper's "Done!" follows. Ctrl+C
+(or TERM) is trapped: the script skips a command that has not started,
+prints a "Cancelled. …" line (palette 3) and ends with 130, Omarchy's
+"cancelled" status, on which the wrapper prints no "Done!" and the window
+closes, as with Omarchy's own scripts. After a successful snapshot grant
+the script runs `seldon capture` (once more if the lock is held), which
+rewrites the index, so the banner goes without a click; only when a
+capture succeeded does it say "Snapshots are now recorded. The panel
+updates by itself.", else "Read access granted. Seldon records snapshots
+at its next capture." After an engine update it runs `seldon status`, so
+the new engine rewrites the index. `seldon init` writes the index itself.
+After an install or update the engine is probed only on *Check again*,
+and the result line says so. The scripts are built once from string
+literals: nothing from the index, the logbook or the environment is in
+them (AGENTS.md §8); `$USER` stays literal in the shown command and is
+expanded only where it runs, there as `${USER:?}` in the grant, which
+stops before `sudo` when USER is empty (a grant `u::rx` would change the
+owner bits). ADR-0026 holds: the engine never runs the grant, the user's
+click runs it in the user's terminal.
 
 ## 6. Overlay.qml — Prime Radiant
 
@@ -487,8 +526,9 @@ No network. No bundled binaries, units or installers. Reads one JSON file,
 and its own images under `plugin/assets/` (SVG and PNG artwork, no
 scripts; WP-051).
 Runs the `seldon` engine with fixed arguments (the forms in CONTRACT.md).
-Besides the engine it starts only `wl-copy` and Omarchy's floating-terminal
-launcher, each with one constant command, only on a banner click, and
+Besides the engine it starts only `wl-copy` with one constant command and
+Omarchy's floating-terminal launcher with one constant script (§5), only
+on a banner click, and
 `omarchy-restart-shell` without arguments on the restart notice's click
 (WP-090). Never a
 shell string built from logbook content. Documented in README under
