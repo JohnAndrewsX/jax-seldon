@@ -3,8 +3,10 @@
 
 Run from anywhere: python3 work/active/WP-141/mutants.py [M1 M7 …]
 The repository root comes from this file's place; the build goes to its own
-CARGO_TARGET_DIR ($SELDON_MUTANTS_TARGET, else ~/.cache/seldon-target-wp141-mutants),
-so a parallel `just check` is not disturbed. M12–M13 run the plugin's model
+CARGO_TARGET_DIR, so a parallel `just check` is not disturbed:
+$SELDON_MUTANTS_TARGET, else `target-mutants-wp141` in the gates dir
+($SELDON_GATES_DIR, else `gates/` in the private sibling `<repo>-private/` of
+the main checkout). Without either it stops rather than build elsewhere. M12–M13 run the plugin's model
 tests with node.
 """
 import os
@@ -92,11 +94,25 @@ def run(selection, test, env):
     return r.returncode != 0 and "test result: FAILED" in r.stdout, r
 
 
+def target_dir():
+    if os.environ.get("SELDON_MUTANTS_TARGET"):
+        return os.environ["SELDON_MUTANTS_TARGET"]
+    gates = os.environ.get("SELDON_GATES_DIR")
+    if not gates:
+        common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                capture_output=True, text=True, check=True, cwd=ROOT).stdout.strip()
+        main = Path(common).parent
+        gates = str(main.parent / f"{main.name}-private" / "gates")
+    if not Path(gates).is_dir():
+        sys.exit(f"no gates dir at {gates}; set SELDON_GATES_DIR or SELDON_MUTANTS_TARGET")
+    return str(Path(gates) / "target-mutants-wp141")
+
+
 def main():
     only = sys.argv[1:]
     os.chdir(ROOT)
-    target = os.environ.get("SELDON_MUTANTS_TARGET",
-                            str(Path.home() / ".cache" / "seldon-target-wp141-mutants"))
+    target = target_dir()
+    print("CARGO_TARGET_DIR", target)
     env = dict(os.environ, CARGO_TARGET_DIR=target)
     survivors = []
     for name, path, old, new, selection, test in M:
