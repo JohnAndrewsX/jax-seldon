@@ -618,6 +618,9 @@ fn check_item(
     seen: &mut HashSet<String>,
 ) -> std::result::Result<Item, String> {
     let built = ev.built;
+    if !is_ulid(&item.event_id) {
+        return Err("the eventId is not an event id (a ULID)".to_string());
+    }
     let event = crate::reconcile::find(built, &item.event_id).map_err(|e| e.to_string())?;
     let e = &event.event;
     let open = built.open_drift.contains(&e.id);
