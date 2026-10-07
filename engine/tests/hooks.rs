@@ -2959,7 +2959,7 @@ mod privileged {
         assert_eq!(e["ts"], NOW);
         assert_eq!(e["meta"]["wrapper"], "pkexec");
         assert_eq!(e["meta"]["command"], PRINTER);
-        assert_eq!(e["detail"], PRINTER);
+        assert_eq!(e["detail"], format!("asked to run: {PRINTER}"));
         assert_eq!(e["meta"]["toolUseId"], "toolu_printer");
         let file = h.case_file(&case);
         assert!(file.contains(e["id"].as_str().unwrap()), "{file}");
@@ -3111,7 +3111,7 @@ mod privileged {
         assert_eq!(events.len(), 1, "{events:?}");
         let redacted = "pkexec lpadmin -p Office -v ipp://‹redacted›@printer.local/ipp/print -E";
         assert_eq!(events[0]["meta"]["command"], redacted);
-        assert_eq!(events[0]["detail"], redacted);
+        assert_eq!(events[0]["detail"], format!("asked to run: {redacted}"));
         let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
         assert!(!ledger.contains("hunter2"), "{ledger}");
     }
@@ -3133,5 +3133,75 @@ mod privileged {
         assert_eq!(events[0]["actor"], "agent:codex");
         assert_eq!(events[0]["subject"], "lpadmin");
         assert_eq!(events[0]["meta"]["wrapper"], "doas");
+    }
+
+    /// Round 2, B1: a password piped into `sudo -S` is somewhere in the
+    /// line, in a form no redaction rule knows: the line is recorded as
+    /// `<program> ‹redacted›`, every record of it, as for skipPaths.
+    #[test]
+    fn a_password_on_the_wrappers_stdin_is_never_recorded() {
+        let h = Hooks::new();
+        let lines = [
+            ("echo hunter2 | sudo -S lpadmin -x Office", "lpadmin"),
+            (
+                "printf '%s\\n' hunter2 | sudo -Su root lpadmin -x Office",
+                "lpadmin",
+            ),
+            ("sudo --stdin lpadmin -x Office <<< hunter2", "lpadmin"),
+            (
+                "bash -c 'echo hunter2 | sudo --std nmcli con up x'",
+                "nmcli",
+            ),
+            // a probe that takes the password, then a class record
+            ("echo hunter2 | sudo -S -v && sudo pacman -S x", "pacman"),
+            ("echo hunter2 | sudo -vS; sudo pacman -S x", "pacman"),
+        ];
+        for (n, (line, _)) in lines.iter().enumerate() {
+            bash(&h, line, &format!("toolu_stdin_{n}"));
+        }
+        let events = h.commands();
+        let got: Vec<(&str, &str)> = events
+            .iter()
+            .map(|e| {
+                (
+                    e["subject"].as_str().unwrap(),
+                    e["meta"]["command"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        let want: Vec<(&str, String)> = lines
+            .iter()
+            .map(|(_, s)| (*s, format!("{s} ‹redacted›")))
+            .collect();
+        assert_eq!(
+            got,
+            want.iter()
+                .map(|(s, c)| (*s, c.as_str()))
+                .collect::<Vec<_>>()
+        );
+        for e in events.iter().filter(|e| e["meta"]["wrapper"] == "sudo") {
+            let shown = format!(
+                "asked to run: {} ‹redacted›",
+                e["subject"].as_str().unwrap()
+            );
+            assert_eq!(e["detail"], shown.as_str());
+        }
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(!ledger.contains("hunter2"), "{ledger}");
+        let index = read(&h.home().join(".local/state/seldon/index.json"));
+        assert!(index.contains("lpadmin ‹redacted›"), "{index}");
+        assert!(!index.contains("hunter2"), "{index}");
+    }
+
+    /// Round 2, N2: without a case the green write is dropped and the
+    /// privileged command is recorded, once.
+    #[test]
+    fn without_a_case_only_the_privileged_command_of_the_line() {
+        let h = Hooks::new();
+        bash(&h, "sudo lpadmin -x X; echo done > /tmp/log", "toolu_n2");
+        let events = h.commands();
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0]["subject"], "lpadmin");
+        assert_eq!(events[0]["meta"]["wrapper"], "sudo");
     }
 }

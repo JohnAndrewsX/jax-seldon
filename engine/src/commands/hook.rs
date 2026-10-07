@@ -83,7 +83,7 @@ use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, SUBJECT_MAX, Source, Zo
 use crate::model::is_agent;
 use crate::pkgcmd::{
     ShellLine, Target, Word, Workdir, globs_overlap, line_vars, omarchy_route, parse_command,
-    parse_shell, simple_commands, workdirs, write_targets,
+    parse_shell, simple_commands, unwrap_command, workdirs, write_targets,
 };
 use crate::redact::{REDACTED, Redactor};
 
@@ -263,6 +263,10 @@ pub struct Mutation {
     pub needs_case: bool,
     pub wrapper: Option<&'static str>,
 }
+
+/// How a privileged command's `detail` starts (ADR-0039): the hook knows
+/// what the agent asked to run, not whether the password was given.
+pub const ASKED_TO_RUN: &str = "asked to run: ";
 
 /// The `meta` key of a privileged command's wrapper (ADR-0039); only
 /// privileged command records carry it.
@@ -1004,14 +1008,17 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
 /// privileged command), none when it changes nothing. A line that names a
 /// path `[redaction] skipPaths` matches is recorded as `<program>
 /// ‹redacted›` (the program of [`Mutation::subject`]), as an `Edit` of such
-/// a file is recorded as `Edit ‹redacted›`.
+/// a file is recorded as `Edit ‹redacted›`; so is a line in which a wrapper
+/// reads the password from stdin (`echo PW | sudo -S …`, ADR-0039): the
+/// password is somewhere in the line, in a form no rule of SPEC-ENGINE §7
+/// knows.
 fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
     let line = parse_shell(command);
     let found = mutations(&line, &setup.scope, cwd);
     if found.is_empty() {
         return Vec::new();
     }
-    let skipped = names_skipped_path(&line, setup, cwd);
+    let skipped = password_on_stdin(&line) || names_skipped_path(&line, setup, cwd);
     found
         .into_iter()
         .map(|mutation| Record {
@@ -1023,6 +1030,15 @@ fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
             mutation,
         })
         .collect()
+}
+
+/// Whether a command of `line` (`sh -c` scripts opened) runs a wrapper that
+/// reads the password from stdin
+/// ([`crate::pkgcmd::Unwrapped::password_on_stdin`]).
+fn password_on_stdin(line: &ShellLine) -> bool {
+    simple_commands(line)
+        .iter()
+        .any(|s| unwrap_command(&s.words).password_on_stdin)
 }
 
 /// Whether `line` names a path that `[redaction] skipPaths` matches. Read
@@ -1400,9 +1416,10 @@ fn record(
                 .case(case_file.as_ref().map(|f| f.case.id.clone()))
                 .meta(meta);
             // a privileged command shows its line where an event shows its
-            // text (ADR-0039; the index clips it, ADR-0025)
+            // text (ADR-0039; the index clips it, ADR-0025); the hook runs
+            // before the command, which may still be refused its password
             if r.mutation.wrapper.is_some() {
-                e = e.detail(command);
+                e = e.detail(clip(&format!("{ASKED_TO_RUN}{command}"), DETAIL_MAX));
             }
             e.zone = r.mutation.zone;
             e

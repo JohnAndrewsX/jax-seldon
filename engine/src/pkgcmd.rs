@@ -946,13 +946,30 @@ pub struct Unwrapped<'a> {
     /// The first of [`PRIVILEGE_WRAPPERS`] read past (`env sudo lpadmin`:
     /// `sudo`); none for a probe, which runs nothing.
     pub privilege: Option<&'static str>,
+    /// A wrapper reads the password from stdin ([`STDIN_PASSWORD`]: `echo
+    /// PW | sudo -S …`), also when it only probes (`sudo -S -v`): the
+    /// password is then on the command line.
+    pub password_on_stdin: bool,
+}
+
+/// The wrapper option that reads the password from stdin: sudo's `-S`,
+/// `--stdin` (getopt also takes `--st`, `--std`, `--stdi`). `doas`,
+/// `pkexec` and `run0` have none: doas asks on the terminal, pkexec and
+/// run0 through the polkit agent.
+const STDIN_PASSWORD: (&str, char, &str) = ("sudo", 'S', "--stdin");
+
+/// Whether the long option `option` of `wrapper` is [`STDIN_PASSWORD`]'s,
+/// written whole or as an unambiguous prefix.
+fn is_stdin_password_long(wrapper: &str, option: &str) -> bool {
+    let (name, _, long) = STDIN_PASSWORD;
+    wrapper == name && option.len() >= "--st".len() && long.starts_with(option)
 }
 
 /// [`command_argv`], with the directories the wrappers move to.
 pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
-    let probe = Unwrapped::default();
     let mut chdirs = Vec::new();
     let mut privilege = None;
+    let mut password_on_stdin = false;
     let mut i = 0;
     while let Some(w) = words.get(i) {
         if is_assignment(w) {
@@ -967,6 +984,9 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
             privilege = privilege.or(Some(wrapper.name));
         }
         i += 1;
+        // a probe runs nothing; its other options are still read, for a
+        // password on stdin (`sudo -vS`)
+        let mut probing = false;
         while let Some(o) = words.get(i).filter(|o| o.starts_with('-')) {
             i += 1;
             if o == "--" {
@@ -982,8 +1002,10 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
                     Some((n, v)) => (n, Some(v)),
                     None => (o.as_str(), None),
                 };
+                password_on_stdin |= is_stdin_password_long(wrapper.name, option);
                 if wrapper.probe_long.contains(&option) {
-                    return probe;
+                    probing = true;
+                    continue;
                 }
                 if wrapper.long_value.contains(&option) {
                     let value = inline.or_else(next_word);
@@ -995,8 +1017,10 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
             }
             // a cluster: `-E`, `-Eu root`, `-uroot`
             for (k, letter) in o.char_indices().skip(1) {
+                password_on_stdin |= (wrapper.name, letter) == (STDIN_PASSWORD.0, STDIN_PASSWORD.1);
                 if wrapper.probe_short.contains(letter) {
-                    return probe;
+                    probing = true;
+                    continue;
                 }
                 if wrapper.short_value.contains(letter) {
                     let rest = &o[k + letter.len_utf8()..];
@@ -1012,12 +1036,19 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
                 }
             }
         }
+        if probing {
+            return Unwrapped {
+                password_on_stdin,
+                ..Unwrapped::default()
+            };
+        }
         i += wrapper.operands;
     }
     Unwrapped {
         argv: &words[i.min(words.len())..],
         chdirs,
         privilege,
+        password_on_stdin,
     }
 }
 
@@ -2197,6 +2228,44 @@ mod tests {
             "command -v sudo",
         ] {
             assert_eq!(one(probe), cmd("", None), "{probe}");
+        }
+    }
+
+    /// ADR-0039 round 2: sudo's `-S`/`--stdin` puts the password on the
+    /// command line; a probe that takes it still runs nothing.
+    #[test]
+    fn a_password_on_stdin_is_seen() {
+        let stdin = |line: &str| {
+            let words = &parse_shell(line).segments[0].words;
+            let u = unwrap_command(words);
+            (u.password_on_stdin, u.argv.join(" "))
+        };
+        for (line, argv) in [
+            ("sudo -S lpadmin -x X", "lpadmin -x X"),
+            ("sudo -Su root lpadmin", "lpadmin"),
+            ("sudo -u root -kS lpadmin", "lpadmin"),
+            ("sudo --stdin lpadmin", "lpadmin"),
+            ("sudo --st lpadmin", "lpadmin"),
+            ("sudo --stdi lpadmin", "lpadmin"),
+            ("env LANG=C sudo -S lpadmin", "lpadmin"),
+            ("sudo -S -v", ""),
+            ("sudo -vS", ""),
+            ("sudo -l -S", ""),
+        ] {
+            assert_eq!(stdin(line), (true, argv.to_string()), "{line}");
+        }
+        for line in [
+            "sudo lpadmin -S x",
+            "sudo -uS lpadmin",
+            "sudo -s lpadmin",
+            "sudo --set-home lpadmin",
+            "sudo --s lpadmin",
+            "doas -s lpadmin",
+            "pkexec lpadmin -S",
+            "run0 lpadmin -S",
+            "lpadmin -S",
+        ] {
+            assert!(!stdin(line).0, "{line}");
         }
     }
 }
