@@ -4,14 +4,22 @@
 //! `- [ ]` item, or one per file without checklist items.
 //!
 //! A task file is untrusted text: it is read, never written, moved or run;
-//! its words go through the logbook's redaction (SPEC-ENGINE §7) before
-//! anything is planned, and land as escaped text in the case's *Intent*.
+//! its words go through the logbook's redaction (SPEC-ENGINE §7, the whole
+//! text as a note's, so the multi-line rules apply) before anything is
+//! planned, and land as escaped text in the case's *Intent* below a fixed
+//! line that names the source (`Imported from … — read before you start
+//! this case.`): until the user starts the case, an agent treats it like
+//! fetched text (ADR-0027 §2(a)).
 //! Every path is checked before the first write: a regular `.md` file of
 //! at most 1 MiB under the home, never inside the logbook. The marker
 //! `.seldon/imports/tasks.json` remembers what was imported (file, line,
-//! hash of the redacted text, case), so a second run creates nothing.
+//! hash of the redacted text, case), so a second run creates nothing; an
+//! entry is written `pending` before its case and settled after it, so a
+//! crash or a failed write in between never makes the case twice.
 
 use std::collections::BTreeSet;
+
+use chrono::Datelike as _;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
@@ -20,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::commands::agent::title_of;
-use crate::commands::event::{ACTOR_ENV, actor_or_env, parse_person};
+use crate::commands::event::{ACTOR_ENV, actor_or_env, env_actor, parse_person};
 use crate::commands::plan::{Spec, case_json, create};
 use crate::commands::{Commit, Context, Output, autocommit};
 use crate::error::{Error, Result};
@@ -47,6 +55,38 @@ pub const MAX_CASES: usize = 200;
 
 /// The completed Log line of a `- [x]` item imported with `--include-done`.
 const DONE_LINE: &str = "completed: imported as done";
+
+/// The first line of an imported case's *Intent* (WP-102 round 2, N4).
+fn provenance(source: &str) -> String {
+    format!("Imported from {source} — read before you start this case.")
+}
+
+/// `SELDON_TEST_IMPORT_CRASH=after-create:<n>`: exit with
+/// [`CRASH_EXIT`] after the n-th case of the run is created, before its
+/// marker entry is settled; debug builds only.
+#[cfg(debug_assertions)]
+pub const CRASH_ENV: &str = "SELDON_TEST_IMPORT_CRASH";
+
+#[cfg(debug_assertions)]
+pub const CRASH_EXIT: i32 = 99;
+
+#[cfg(debug_assertions)]
+fn crash_point(point: &str) {
+    if std::env::var_os(CRASH_ENV).is_some_and(|v| v == point) {
+        std::process::exit(CRASH_EXIT);
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn crash_point(_: &str) {}
+
+/// A character a path may not hold: a control character, or one that
+/// turns the direction of the text around it (a path is shown in the Log,
+/// the report and later the desk).
+fn bad_path_char(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+}
 
 #[derive(Debug, Clone, Args)]
 pub struct TaskArgs {
@@ -101,6 +141,20 @@ struct Entry {
     hash: String,
     case: String,
     imported_at: String,
+    /// Written before the case, cleared after it: a pending entry whose
+    /// case exists (with this import's Log line) is settled on the next
+    /// run, one whose case does not is dropped.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pending: bool,
+}
+
+impl Entry {
+    fn source(&self) -> String {
+        match self.line {
+            Some(n) => format!("{}#{n}", self.file),
+            None => self.file.clone(),
+        }
+    }
 }
 
 /// A task file, read and redacted.
@@ -111,6 +165,8 @@ struct Source {
     /// The file name without `.md` (redacted), the title of a file
     /// without a heading.
     stem: String,
+    /// Lines the redaction changed.
+    redacted: usize,
 }
 
 /// A task found in a file.
@@ -146,10 +202,18 @@ enum Fate {
 
 pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
     let actor = actor_or_env(args.actor.clone(), parse_person, ACTOR_HUMAN)?;
-    if args.include_done && is_agent(&actor) {
-        return Err(Error::user(format!(
-            "--include-done makes completed cases, and an agent closes a case only with a Result (ADR-0027 §5); import the done items as a person (without --actor {actor} or ${ACTOR_ENV})"
-        )));
+    if args.include_done {
+        // as `plan done`: an agent's session cannot close as a person
+        // (ADR-0027 §5; an agent close is never recorded as human)
+        let session = env_actor(parse_person).ok().flatten();
+        if let Some(agent) = Some(&actor)
+            .filter(|a| is_agent(a))
+            .or(session.as_ref().filter(|s| is_agent(s)))
+        {
+            return Err(Error::user(format!(
+                "--include-done makes completed cases, and an agent closes a case only with a Result, never as a person (ADR-0027 §5); this is {agent}'s session (--actor or ${ACTOR_ENV}): import the done items as a person, outside it"
+            )));
+        }
     }
     if let Some(area) = args.area.as_deref()
         && !is_slug(area)
@@ -181,6 +245,13 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
     };
     let marker_rel = marker_path(MARKER);
     let mut marker = read_marker(&logbook.path(&marker_rel))?;
+    // what an earlier run left pending: settled in the file only when this
+    // run writes (never in a dry run)
+    let settled = settle(&logbook, &mut marker);
+    if settled && lock.is_some() {
+        write_marker(&logbook.path(&marker_rel), &marker)?;
+    }
+    let redacted: usize = sources.iter().map(|s| s.redacted).sum();
     let fates = decide(&tasks, &marker, args.include_done);
     let planned = fates
         .iter()
@@ -226,7 +297,7 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
                 "mode": "dry-run",
                 "created": created,
                 "skipped": skipped,
-                "redactedLines": redacted_lines(&scrubber),
+                "redactedLines": redacted,
                 "areaCreated": null,
                 "files": [],
                 "marker": null,
@@ -247,7 +318,33 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
         if let Some(earlier) = replaces {
             note.push_str(&format!(", changed since {earlier}"));
         }
-        let intent = cases::escape_lines(&task.intent);
+        let intent = format!(
+            "{}\n\n{}",
+            provenance(&task.source()),
+            cases::escape_lines(&task.intent)
+        );
+        // the entry first, pending: a crash or a failed write after the
+        // case never makes it again (the next run settles it)
+        let next = match cases::next_id(&logbook, ctx.now.year()) {
+            Ok(id) => id,
+            Err(e) => {
+                failure = Some(e);
+                break;
+            }
+        };
+        marker.items.push(Entry {
+            file: task.file.clone(),
+            line: task.line,
+            hash: task.hash.clone(),
+            case: next,
+            imported_at: crate::model::event::format_ts(&ctx.now),
+            pending: true,
+        });
+        if let Err(e) = write_marker(&logbook.path(&marker_rel), &marker) {
+            marker.items.pop();
+            failure = Some(e);
+            break;
+        }
         let spec = Spec {
             title: task.title.clone(),
             zone: args.zone,
@@ -255,7 +352,7 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
             area: args.area.clone(),
             priority: Priority::Normal,
             actor: actor.clone(),
-            intent: (!intent.trim().is_empty()).then_some(intent),
+            intent: Some(intent),
             tags: vec![TAG_IMPORTED.to_string()],
             note: Some(note),
             start: false,
@@ -265,20 +362,21 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
         let made = match create(ctx, &config, &logbook, &lock, spec) {
             Ok(made) => made,
             Err(e) => {
+                // no case: the pending entry goes (the next run would
+                // drop it anyway)
+                marker.items.pop();
+                let _ = write_marker(&logbook.path(&marker_rel), &marker);
                 failure = Some(e);
                 break;
             }
         };
         let id = made.file.case.id.clone();
         area_created = area_created.or(made.area_created.clone());
-        marker.items.push(Entry {
-            file: task.file.clone(),
-            line: task.line,
-            hash: task.hash.clone(),
-            case: id.clone(),
-            imported_at: crate::model::event::format_ts(&ctx.now),
-        });
-        // after every case: a failure further on never makes it again
+        if let Some(entry) = marker.items.last_mut() {
+            entry.case = id.clone();
+            entry.pending = false;
+        }
+        crash_point(&format!("after-create:{}", created.len() + 1));
         if let Err(e) = write_marker(&logbook.path(&marker_rel), &marker) {
             failure = Some(e);
         }
@@ -296,7 +394,7 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
             break;
         }
     }
-    let commit = if created.is_empty() {
+    let commit = if created.is_empty() && !settled {
         Commit::Skipped("nothing changed")
     } else {
         files.push(Value::String(marker_rel.clone()));
@@ -332,23 +430,40 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
             "mode": "apply",
             "created": created,
             "skipped": skipped,
-            "redactedLines": redacted_lines(&scrubber),
+            "redactedLines": redacted,
             "areaCreated": area_created,
             "files": files,
-            "marker": (!created.is_empty()).then_some(marker_rel),
+            "marker": (!created.is_empty() || settled).then_some(marker_rel),
             "git": commit.json(),
         }),
     ))
 }
 
-/// Lines with at least one redaction, over every file read.
-fn redacted_lines(scrubber: &Scrubber) -> usize {
-    scrubber
-        .hits
-        .iter()
-        .map(|h| (&h.file, h.line))
-        .collect::<BTreeSet<_>>()
-        .len()
+/// Settles the pending entries an earlier run left (a crash or a failed
+/// write between an entry and its case): an entry whose case exists and
+/// names this import in its Log is complete; any other is dropped, so its
+/// task is imported again. Whether anything changed.
+fn settle(logbook: &Logbook, marker: &mut Marker) -> bool {
+    let before = marker.items.len();
+    let mut changed = false;
+    marker.items.retain_mut(|e| {
+        if !e.pending {
+            return true;
+        }
+        changed = true;
+        // the Log line's words, up to what follows the source (` · actor`
+        // or `, changed since …`): `#1` is not `#12`
+        let line = format!("imported from {}", e.source());
+        let made = cases::find(logbook, &e.case).is_ok_and(|f| {
+            f.case.tags.iter().any(|t| t == TAG_IMPORTED)
+                && [" ·", ","]
+                    .iter()
+                    .any(|end| f.doc.body.contains(&format!("{line}{end}")))
+        });
+        e.pending = false;
+        made
+    });
+    changed || marker.items.len() != before
 }
 
 /// The human report: what was (or would be) created, then what was
@@ -389,11 +504,14 @@ fn report(head: &str, created: &[Value], skipped: &[Value]) -> String {
 /// The file `arg` names, resolved with its symbolic links, checked: under
 /// the home, outside the logbook, a regular `.md` file.
 fn resolve(ctx: &Context, logbook: &Logbook, arg: &Path) -> Result<PathBuf> {
-    let given = arg.to_string_lossy();
-    if given.chars().any(char::is_control) {
-        return Err(Error::user(
-            "a task file's path has a control character; rename the file".to_string(),
-        ));
+    let refuse_chars = || {
+        Error::user(
+            "a task file's path has a control or text-direction character; rename the file or its folder"
+                .to_string(),
+        )
+    };
+    if arg.to_string_lossy().chars().any(bad_path_char) {
+        return Err(refuse_chars());
     }
     let path = match arg.strip_prefix("~") {
         Ok(rest) => ctx.dirs.home.join(rest),
@@ -402,6 +520,10 @@ fn resolve(ctx: &Context, logbook: &Logbook, arg: &Path) -> Result<PathBuf> {
     let shown = ctx.dirs.display(&path);
     let real = std::fs::canonicalize(&path)
         .map_err(|e| Error::user(format!("{shown}: cannot read the task file: {e}")))?;
+    // the resolved path too: a linked folder may bring one in
+    if real.to_string_lossy().chars().any(bad_path_char) {
+        return Err(refuse_chars());
+    }
     let home = std::fs::canonicalize(&ctx.dirs.home).unwrap_or_else(|_| ctx.dirs.home.clone());
     if real == home || !real.starts_with(&home) {
         return Err(Error::user(format!(
@@ -459,7 +581,25 @@ fn read_source(
     }
     let text =
         String::from_utf8(bytes).map_err(|_| Error::user(format!("{shown} is not UTF-8 text")))?;
-    let text = scrubber.text(&shown, &text);
+    // the whole text, as a note's (the rules that span lines need it), its
+    // line breaks kept so every line number still points into the file;
+    // then line by line with the home paths (the vault import's scrubber)
+    let whole = redactor.redact_keeping_lines(&text);
+    if whole.matches('\n').count() != text.matches('\n').count() {
+        return Err(Error::from(anyhow::anyhow!(
+            "{shown}: the redaction changed the number of lines"
+        )));
+    }
+    let mut changed: BTreeSet<usize> = text
+        .split('\n')
+        .zip(whole.split('\n'))
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .map(|(i, _)| i + 1)
+        .collect();
+    let first_hit = scrubber.hits.len();
+    let text = scrubber.text(&shown, &whole);
+    changed.extend(scrubber.hits[first_hit..].iter().map(|h| h.line));
     let stem = path
         .file_stem()
         .map(|s| redactor.redact(&s.to_string_lossy()))
@@ -468,6 +608,7 @@ fn read_source(
         shown,
         tasks: parse(&text),
         stem,
+        redacted: changed.len(),
     })
 }
 

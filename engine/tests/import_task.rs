@@ -134,7 +134,7 @@ fn open_items_become_queued_cases_and_the_file_is_only_read() {
     );
     assert!(
         first.contains(
-            "## Intent\nFix the bar flicker. It happens on the second monitor.\nOnly after resume.\n\n- [ ] check hyprland.conf\n\nSection: Desk\n"
+            "## Intent\nImported from ~/proj/TODO.md#8 — read before you start this case.\n\nFix the bar flicker. It happens on the second monitor.\nOnly after resume.\n\n- [ ] check hyprland.conf\n\nSection: Desk\n"
         ),
         "{first}"
     );
@@ -205,7 +205,7 @@ fn a_file_without_items_is_one_case_titled_by_its_heading_or_name() {
     // case's own sections stay intact
     let text = case_text(&root, "queued", "C-2026-001");
     assert!(
-        text.contains("## Intent\nNotes first.\n\n\nDaily, to the NAS.\n\\## Plan\n- keep 7\n\\```\n\\## Log\n\\```\n"),
+        text.contains("## Intent\nImported from ~/proj/backup.md — read before you start this case.\n\nNotes first.\n\n\nDaily, to the NAS.\n\\## Plan\n- keep 7\n\\```\n\\## Log\n\\```\n"),
         "{text}"
     );
     assert_eq!(text.matches("\n## Log\n").count(), 1, "{text}");
@@ -305,6 +305,8 @@ fn the_same_item_twice_is_imported_once() {
     );
     let report = ok(&import(&env, NOW, &["~/a.md", "~/a.md"]));
     assert_eq!(ids(&report), ["C-2026-001"]);
+    // the file named twice is read once: one skip, not three
+    assert_eq!(report["skipped"].as_array().unwrap().len(), 1, "{report}");
     assert_eq!(report["skipped"][0]["reason"], "duplicate");
     assert_eq!(report["skipped"][0]["source"], "~/a.md#2");
 }
@@ -473,7 +475,7 @@ fn refused_paths_exit_1_and_write_nothing() {
         ("~/latin1.md", "not UTF-8"),
         ("~/big.md", "larger than 1024 KiB"),
         ("~/missing.md", "cannot read the task file"),
-        ("~/ctl\nname.md", "control character"),
+        ("~/ctl\nname.md", "control or text-direction character"),
     ];
     for (path, why) in cases {
         // a good file first: every path is checked before anything is written
@@ -559,4 +561,185 @@ fn a_path_after_double_dash_may_start_with_a_dash() {
         .unwrap();
     let report = ok(&out);
     assert_eq!(report["created"][0]["source"], "~/-notes.md#1");
+}
+
+#[test]
+fn multi_line_secrets_are_redacted_like_a_note() {
+    let (env, root) = setup();
+    task_file(
+        &env,
+        "TODO.md",
+        "- [ ] Connect to the db\n  mysql -u root \\\n    -p hunter2secret \\\n    --host db\n  config: {\"password\":\n     \"jsonpass123\"}\n- [ ] Next one\n",
+    );
+    let report = ok(&import(&env, NOW, &["~/TODO.md"]));
+    // the continued lines and the JSON value's line
+    assert_eq!(report["redactedLines"], 3, "{report}");
+    // the line numbers still point into the file
+    assert_eq!(report["created"][1]["source"], "~/TODO.md#7");
+    let text = case_text(&root, "queued", "C-2026-001");
+    assert!(text.contains("-p ‹redacted›"), "{text}");
+    assert!(text.contains("\"password\":\n   ‹redacted›}"), "{text}");
+    let secrets = ["hunter2secret", "jsonpass123"];
+    for (name, bytes) in tree(&root) {
+        let s = String::from_utf8_lossy(&bytes);
+        assert!(!secrets.iter().any(|x| s.contains(x)), "{name}");
+    }
+    let index = read(&env.home.join(".local/state/seldon/index.json"));
+    assert!(!secrets.iter().any(|x| index.contains(x)));
+    if env.has_git {
+        let log = env.git(&root, &["log", "-p", "--all"]);
+        let log = String::from_utf8_lossy(&log.stdout);
+        assert!(log.contains("import task"), "{log}");
+        assert!(!secrets.iter().any(|x| log.contains(x)));
+    }
+    // the hash is over the redacted text: the same item with another
+    // secret is the same task
+    let marker = read(&root.join(MARKER));
+    task_file(
+        &env,
+        "TODO.md",
+        "- [ ] Connect to the db\n  mysql -u root \\\n    -p otherpass456 \\\n    --host db\n  config: {\"password\":\n     \"other789\"}\n- [ ] Next one\n",
+    );
+    let report = ok(&import(&env, LATER, &["~/TODO.md"]));
+    assert_eq!(report["created"], serde_json::json!([]));
+    assert_eq!(read(&root.join(MARKER)), marker);
+}
+
+#[test]
+fn an_agent_session_cannot_record_done_items_as_human() {
+    let (env, root) = setup();
+    task_file(&env, "done.md", "- [x] Already done\n");
+    let before = ledger(&root).len();
+    let out = env
+        .command(&[
+            "import",
+            "task",
+            "~/done.md",
+            "--include-done",
+            "--actor",
+            "human",
+            "--json",
+        ])
+        .env("SELDON_NOW", NOW)
+        .env("SELDON_ACTOR", "agent:x")
+        .output()
+        .unwrap();
+    let why = refusal(&out);
+    assert!(
+        why.contains("agent:x") && why.contains("ADR-0027 §5"),
+        "{why}"
+    );
+    assert_eq!(ledger(&root).len(), before);
+    assert!(!root.join(MARKER).exists());
+    // without --include-done the session may import the open items
+    let out = env
+        .command(&["import", "task", "~/done.md", "--actor", "human", "--json"])
+        .env("SELDON_NOW", NOW)
+        .env("SELDON_ACTOR", "agent:x")
+        .output()
+        .unwrap();
+    assert_eq!(ok(&out)["skipped"][0]["reason"], "done");
+}
+
+#[test]
+fn a_linked_folder_cannot_bring_control_or_direction_characters_into_the_source() {
+    let (env, root) = setup();
+    for (i, dir) in ["x\n## Result\nevil", "a\u{202e}dm.txt"].iter().enumerate() {
+        let real = env.home.join(dir);
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("t.md"), "- [ ] hi\n").unwrap();
+        let link = format!("d{i}");
+        std::os::unix::fs::symlink(&real, env.home.join(&link)).unwrap();
+        let out = import(&env, NOW, &[&format!("~/{link}/t.md")]);
+        let why = refusal(&out);
+        assert!(why.contains("control or text-direction character"), "{why}");
+    }
+    assert!(!root.join(MARKER).exists());
+}
+
+#[test]
+fn a_crash_between_case_and_marker_never_makes_the_case_twice() {
+    let (env, root) = setup();
+    task_file(&env, "TODO.md", "- [ ] one\n- [ ] two\n- [ ] three\n");
+    let out = import_with(&env, &["~/TODO.md"], "after-create:2");
+    assert_eq!(out.status.code(), Some(99), "{}", stderr(&out));
+    let marker: serde_json::Value = serde_json::from_str(&read(&root.join(MARKER))).unwrap();
+    assert_eq!(marker["items"][0]["pending"], serde_json::Value::Null);
+    assert_eq!(marker["items"][1]["pending"], true);
+    assert_eq!(marker["items"][1]["case"], "C-2026-002");
+
+    let report = ok(&import(&env, LATER, &["~/TODO.md"]));
+    assert_eq!(ids(&report), ["C-2026-003"]);
+    assert_eq!(report["created"][0]["title"], "three");
+    let cases: Vec<&str> = report["skipped"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["case"].as_str().unwrap())
+        .collect();
+    assert_eq!(cases, ["C-2026-001", "C-2026-002"]);
+    let created = ledger(&root)
+        .iter()
+        .filter(|e| e["kind"] == "case-created")
+        .count();
+    assert_eq!(created, 3);
+    let marker = read(&root.join(MARKER));
+    assert!(!marker.contains("pending"), "{marker}");
+
+    // a pending entry whose case was never made is dropped: imported again
+    let mut m: serde_json::Value = serde_json::from_str(&marker).unwrap();
+    m["items"][2]["pending"] = serde_json::Value::Bool(true);
+    m["items"][2]["case"] = "C-2026-099".into();
+    std::fs::write(root.join(MARKER), serde_json::to_string(&m).unwrap()).unwrap();
+    let report = ok(&import(&env, LATER, &["~/TODO.md"]));
+    assert_eq!(ids(&report), ["C-2026-004"]);
+    assert_eq!(report["created"][0]["title"], "three");
+    // and an entry whose case lacks this import's Log line is no proof
+    let mut m: serde_json::Value = serde_json::from_str(&read(&root.join(MARKER))).unwrap();
+    m["items"][2]["pending"] = serde_json::Value::Bool(true);
+    m["items"][2]["line"] = 1.into();
+    std::fs::write(root.join(MARKER), serde_json::to_string(&m).unwrap()).unwrap();
+    let report = ok(&import(&env, LATER, &["~/TODO.md"]));
+    assert_eq!(ids(&report), ["C-2026-005"]);
+}
+
+fn import_with(env: &Env, args: &[&str], crash: &str) -> std::process::Output {
+    let mut all = vec!["import", "task"];
+    all.extend_from_slice(args);
+    all.push("--json");
+    env.command(&all)
+        .env("SELDON_NOW", NOW)
+        .env("SELDON_TEST_IMPORT_CRASH", crash)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn a_new_item_at_an_occupied_line_replaces_nothing() {
+    let (env, _root) = setup();
+    let file = task_file(&env, "TODO.md", "- [ ] alpha\n- [ ] beta\n");
+    ok(&import(&env, NOW, &["~/TODO.md"]));
+    std::fs::write(&file, "- [ ] gamma\n- [ ] alpha\n- [ ] beta\n").unwrap();
+    let report = ok(&import(&env, LATER, &["~/TODO.md"]));
+    assert_eq!(report["created"][0]["title"], "gamma");
+    assert_eq!(report["created"][0]["replaces"], serde_json::Value::Null);
+    assert_eq!(report["skipped"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn a_secret_in_the_path_is_redacted() {
+    let (env, root) = setup();
+    task_file(&env, "proj/token=s3cr3tpath42/TODO.md", "- [ ] hi\n");
+    let report = ok(&import(&env, NOW, &["~/proj/token=s3cr3tpath42/TODO.md"]));
+    let source = report["created"][0]["source"].as_str().unwrap();
+    assert!(
+        source.contains("‹redacted›") && !source.contains("s3cr3tpath42"),
+        "{source}"
+    );
+    for (name, bytes) in tree(&root) {
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains("s3cr3tpath42"),
+            "{name}"
+        );
+    }
 }
