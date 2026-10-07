@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 943cdb5 -->
+<!-- source: en/05-cli-reference.md @ 723ad84f -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -44,7 +44,7 @@ Commands:
   rebuild           Write outputs/REBUILD.md: the steps to rebuild this machine
   watch             Rebuild index.json when the logbook changes (feature "watch")
   dossier           Refresh the generated fences of system/*.md from read-only queries
-  import            Import an earlier logbook (dry run unless --apply)
+  import            Import an earlier logbook (dry run unless --apply) or your Markdown task files as cases
   rules             The agent rules in the logbook's AGENTS.md: update
   completions       Print a shell completion script for bash, zsh or fish
   mangen            Print the man page seldon(1), generated from this help
@@ -321,6 +321,11 @@ Options:
 Baut den Index und die Ansichten des Ledgers neu, ohne `STATUS.md` und
 ohne Commit. `--check` weigert sich, einen Index zu schreiben, der nicht
 zum Format passt (Exit 2).
+
+Der Graph des Desks (Abschnitt 8) entsteht aus diesem Index. Er zeigt
+deshalb die neuesten 500 Ereignisse und 50 abgeschlossenen Cases, nicht
+das ganze Logbuch. Einen Befehl, der das ganze Logbuch als Graph
+zeichnet, gibt es noch nicht.
 
 <!-- help: seldon index -->
 ```text
@@ -1247,12 +1252,13 @@ Options:
 
 <!-- help: seldon import -->
 ```text
-Import an earlier logbook (dry run unless --apply)
+Import an earlier logbook (dry run unless --apply) or your Markdown task files as cases
 
 Usage: seldon import [OPTIONS] <COMMAND>
 
 Commands:
   omarchy-agent  Import the omarchy-agent kit's Obsidian vault, which is only read (dry run unless --apply)
+  task           Import your Markdown task files as cases: one queued case per open `- [ ]` item (applies unless --dry-run; the files are only read)
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1277,6 +1283,33 @@ Arguments:
 Options:
       --dry-run        Only write the report outputs/IMPORT-omarchy-agent.md (the default)
       --apply          Import: cases, journal, memory and deviation rows, in one commit
+```
+<!-- /help -->
+
+### seldon import task
+
+Macht aus deinen eigenen Markdown-Aufgabendateien Cases: ein Case in
+queued pro offenem `- [ ]`-Punkt, oder ein Case für eine Datei ohne
+Checkboxen. Importiert sofort, außer mit `--dry-run`; die Dateien werden
+nur gelesen; ein zweiter Lauf überspringt, was schon importiert ist.
+Siehe [Aufgabendateien](09-import-from-omarchy-agent.md#aufgabendateien).
+
+<!-- help: seldon import task -->
+```text
+Import your Markdown task files as cases: one queued case per open `- [ ]` item (applies unless --dry-run; the files are only read)
+
+Usage: seldon import task [OPTIONS] <FILE>...
+
+Arguments:
+  <FILE>...  Markdown task files under your home: one case per open `- [ ]` item; a file without checklist items is one case
+
+Options:
+      --area <AREA>    Area slug of the new cases; created under areas/ on first use
+      --zone <ZONE>    green, yellow or red [default: yellow]
+      --risk <RISK>    R0 to R3 [default: R1]
+      --include-done   Also import `- [x]` items, as completed cases
+      --dry-run        List what would be created; write nothing
+      --actor <ACTOR>  Who imports: human or agent:NAME (default: $SELDON_ACTOR, else human)
 ```
 <!-- /help -->
 

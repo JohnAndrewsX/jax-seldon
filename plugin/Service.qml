@@ -115,12 +115,34 @@ Item {
   readonly property var deskChangelog: Model.deskChangelog(root.indexShown ? root.index : null)
   readonly property var deskToday: Model.deskToday(root.indexShown ? root.index : null, root.deskChangelog)
   readonly property var deskWork: Model.deskWork(root.indexShown ? root.index : null)
+  // The graph (section 8, ADR-0034 §5, WP-125): nodes, edges, day index and
+  // folding (Model.graphBuild); the section only lays it out. Built when
+  // section 8 is shown and the index changed since the last build
+  // (`graphDirty`; graphRefresh, called by the section): the build takes
+  // about 5 ms of the shell thread on 500 events, which no capture should
+  // pay while the graph is not on screen. `graphBuilds` counts them.
+  property var graph: Model.graphEmpty()
+  property bool graphDirty: true
+  property int graphBuilds: 0
+  // The graph's layout (Model.graphState), kept here so a reopened desk
+  // shows the settled layout; written by components/graph/GraphCanvas.qml.
+  property var graphLayout: null
   // Hide in the Changelog (WP-122): the attention items kept out of the
   // open list for this shell session, by Model.hideKey; nothing written.
   property var deskHidden: ({})
   // The engine has `agent ask` (Ask agent in an event's or a case's bar):
   // WP-124b sets this; no engine has it yet.
   readonly property bool askAgentAvailable: false
+
+  // Build the graph if the index changed since the last build.
+  function graphRefresh() {
+    if (!root.graphDirty) return
+    root.graphDirty = false
+    root.graphBuilds++
+    root.graph = Model.graphBuild(root.indexShown ? root.index : null, Model.GRAPH_CAP)
+  }
+  onIndexChanged: root.graphDirty = true
+  onIndexShownChanged: root.graphDirty = true
 
   // How many aggregation passes this service's Model.js ran (periodTable and
   // its chart builders); the overlay reports it so the harness can show that

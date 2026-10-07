@@ -98,4 +98,37 @@ for (const [name, index] of cases) {
     failed = true
   }
 }
+// The graph (WP-125, ADR-0034 §5): one layout tick (Model.graphStep) at
+// 400 nodes, the cap, on tests/plugin/graph-index.js's busy index; gate 8 ms
+// (fastest of 31 plain runs; the shell's own engine, QV4, is about 10× slower
+// than node here: desk-view.sh reports its tickMs at 400 nodes). Also
+// reports graphBuild, the service's work per index change.
+const G = new Function(source + "\nreturn { graphBuild, graphState, graphStep, graphWake, parseIndex }")()
+const { bigIndex } = require("./graph-index.js")
+const big = G.parseIndex(JSON.stringify(bigIndex())).index
+const GRAPH_BUDGET_MS = 8
+const build = G.graphBuild(big, 400)
+const state = G.graphState(build, null)
+for (let i = 0; i < 40; i++) G.graphStep(state, 1000)
+const tick = timed(() => {
+  G.graphWake(state, 0.5)
+  G.graphStep(state, 1000)
+}, 31)
+const built = timed(() => G.graphBuild(big, 400), 31)
+console.log(`model.bench: graph at ${build.nodes.length} nodes, ${build.edges.length} edges: graphStep ` +
+  `${tick.median.toFixed(2)} ms (median, plain), graphBuild ${built.median.toFixed(2)} ms`)
+if (build.nodes.length !== 400) {
+  console.error(`model.bench: the graph index gives ${build.nodes.length} nodes, not the cap of 400`)
+  failed = true
+}
+// Node is too fast to see exact pairs at 400 nodes (0.3 ms), QV4 is not
+// (10 ms): hold the step to the quadtree by its path counter.
+if (state.exactSteps !== 0 || state.treeSteps === 0) {
+  console.error(`model.bench: graphStep at 400 nodes ran exact pairs (${state.exactSteps}) instead of the quadtree`)
+  failed = true
+}
+if (tick.best > GRAPH_BUDGET_MS) {
+  console.error(`model.bench: graphStep over the ${GRAPH_BUDGET_MS} ms budget (fastest run ${tick.best.toFixed(2)} ms)`)
+  failed = true
+}
 process.exitCode = failed ? 1 : 0

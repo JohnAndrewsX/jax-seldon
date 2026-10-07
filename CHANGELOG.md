@@ -39,6 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `seldon drift discard` throws a proposal away. The skill gains
   `triage.md` (WP-124).
 
+- `seldon import task <FILE>…` turns your own Markdown task files into
+  cases: one queued case per open `- [ ]` item (title from its first
+  sentence, Intent from the item, its indented lines and its heading),
+  or one case for a file without checkboxes; tag `imported`, a Log line
+  that names the file and line. The files are only read and redacted
+  like a note; a second run creates nothing, a reworded item makes a new
+  case that names the earlier one; `--include-done`, `--dry-run`,
+  `--zone`, `--risk`, `--area`. Files outside your home or inside the
+  logbook are refused (WP-102).
+
 - The harm guard of the planned-and-active link (ADR-0029) reads a
   case's risk from its ledger lines, to the second, for every case this
   engine creates; an edited Log no longer changes the answer. Cases from

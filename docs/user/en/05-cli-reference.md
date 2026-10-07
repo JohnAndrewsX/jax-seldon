@@ -42,7 +42,7 @@ Commands:
   rebuild           Write outputs/REBUILD.md: the steps to rebuild this machine
   watch             Rebuild index.json when the logbook changes (feature "watch")
   dossier           Refresh the generated fences of system/*.md from read-only queries
-  import            Import an earlier logbook (dry run unless --apply)
+  import            Import an earlier logbook (dry run unless --apply) or your Markdown task files as cases
   rules             The agent rules in the logbook's AGENTS.md: update
   completions       Print a shell completion script for bash, zsh or fish
   mangen            Print the man page seldon(1), generated from this help
@@ -311,6 +311,10 @@ Options:
 Rebuilds the index and the ledger views without `STATUS.md` and without
 a commit. `--check` refuses to write an index that does not match the
 format (exit 2).
+
+The desk's graph (section 8) is drawn from this index. It therefore
+shows the newest 500 events and 50 completed cases, not the whole
+logbook. No command draws the whole logbook as a graph yet.
 
 <!-- help: seldon index -->
 ```text
@@ -1211,12 +1215,13 @@ Options:
 
 <!-- help: seldon import -->
 ```text
-Import an earlier logbook (dry run unless --apply)
+Import an earlier logbook (dry run unless --apply) or your Markdown task files as cases
 
 Usage: seldon import [OPTIONS] <COMMAND>
 
 Commands:
   omarchy-agent  Import the omarchy-agent kit's Obsidian vault, which is only read (dry run unless --apply)
+  task           Import your Markdown task files as cases: one queued case per open `- [ ]` item (applies unless --dry-run; the files are only read)
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1241,6 +1246,33 @@ Arguments:
 Options:
       --dry-run        Only write the report outputs/IMPORT-omarchy-agent.md (the default)
       --apply          Import: cases, journal, memory and deviation rows, in one commit
+```
+<!-- /help -->
+
+### seldon import task
+
+Turns your own Markdown task files into cases: one queued case per open
+`- [ ]` item, or one case for a file without checkboxes. Applies at once
+unless `--dry-run`; the files are only read; a second run skips what is
+already imported. See
+[Task files](09-import-from-omarchy-agent.md#task-files).
+
+<!-- help: seldon import task -->
+```text
+Import your Markdown task files as cases: one queued case per open `- [ ]` item (applies unless --dry-run; the files are only read)
+
+Usage: seldon import task [OPTIONS] <FILE>...
+
+Arguments:
+  <FILE>...  Markdown task files under your home: one case per open `- [ ]` item; a file without checklist items is one case
+
+Options:
+      --area <AREA>    Area slug of the new cases; created under areas/ on first use
+      --zone <ZONE>    green, yellow or red [default: yellow]
+      --risk <RISK>    R0 to R3 [default: R1]
+      --include-done   Also import `- [x]` items, as completed cases
+      --dry-run        List what would be created; write nothing
+      --actor <ACTOR>  Who imports: human or agent:NAME (default: $SELDON_ACTOR, else human)
 ```
 <!-- /help -->
 

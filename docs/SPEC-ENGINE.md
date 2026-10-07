@@ -135,6 +135,11 @@ seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor 
 # (`SELDON_ACTOR=agent:…`) is: exit 1 naming the conflict (an agent close is
 # never recorded as human). An agent's close adds the tag `closed-by-agent`;
 # so does an agent's `drift explain` to the completed case it makes.
+# WP-102 round 3 (orchestrator decision; ADR-0027 §2(a)): `plan start` of a case
+# tagged `imported` is refused (exit 1, nothing written) when the actor or the
+# session (`$SELDON_ACTOR`) is an agent, whatever --actor says: "an imported
+# case is started by the user (ADR-0027 §2a); ask them to start it"; `agent
+# start <ID>` on a queued imported case gives the same answer.
 seldon plan set <ID> (--zone Z | --risk R | --area A)… [--actor A]
 # WP-101 (ADR-0027 §2c): an open case's zone, risk or area (at least one; a new
 # area gets its README); one Log line `set risk R1 → R3, zone yellow → red`
@@ -393,6 +398,88 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # ids}], assumptions: [{case, source, assumption}], skipped: [{path,
                                                # reason, error}],
                                                # files, marker, git}
+seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [--dry-run] [--actor A] [--json]
+                                               # WP-102 (ADR-0027 §7 in the WP's 0.2.0 form): the user's own Markdown task
+                                               # files as cases. Applies unless --dry-run. Every FILE is checked before
+                                               # anything is written (exit 1, nothing written, the first failing path named):
+                                               # `~/` is the home, relative paths are relative to the working directory, the
+                                               # path is resolved with its symbolic links and must be a regular file with the
+                                               # extension `.md` (any case) under the home (not the home itself), not inside
+                                               # the logbook, at most 1 MiB, UTF-8; neither the path as given nor the
+                                               # resolved path may hold a control character or a text-direction character
+                                               # (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible format
+                                               # character (U+200B–U+200D, U+2060, U+FEFF) (a linked folder cannot bring
+                                               # one in); a directory is refused ("name the Markdown files in it"). The same
+                                               # file named twice is read once. Each file is redacted before it is parsed:
+                                               # the whole text through §7 with the config's patterns, as a note's (the rules
+                                               # that span lines — a JSON value on the next line, a continued `mysql … \`
+                                               # command — apply), each line break a redacted match held put back after the
+                                               # marker so line numbers still point into the file
+                                               # (`Redactor::redact_keeping_lines`), then line by line with `/home/<user>` →
+                                               # `~` (the omarchy-agent import's scrubber); `redactedLines` counts the lines
+                                               # either pass changed. The path shown and recorded (`~/…`) goes through §7
+                                               # too. Its frontmatter is skipped. A file with at least one checklist item
+                                               # (`-`, `*`, `+` or `1.`/`1)` list marker, `[ ]` or `[x]`/`[X]`, outside code
+                                               # fences) yields one task per top-level item: the lines after it that are
+                                               # blank or indented deeper (nested items and a fence opened there included)
+                                               # belong to it; its section is the nearest heading above it. Title: the item's
+                                               # first sentence (`agent::title_of`: up to the first line break or `.`/`!`/`?`
+                                               # followed by space, at most 72 characters, cut at a word with `…`); task
+                                               # text: the item's text, its block dedented, then `Section: <heading>`. A file
+                                               # without checklist items is one task: title the first level-1 heading outside
+                                               # fences (else the file name without `.md`), text the file without frontmatter
+                                               # and that heading; an empty file (no heading, only blank text) is skipped.
+                                               # Intent (round 2, N4): the fixed engine line `Imported from <source> — read
+                                               # before you start this case.`, a blank line, then the task text escaped with
+                                               # `cases::escape_lines` (a heading or fence line gets a `\`, so it never ends
+                                               # its section). The case stays queued: starting it is the user's act (`plan
+                                               # start`, or the desk's Start after it has shown the whole Intent); the engine
+                                               # refuses an agent's start of an imported case (`plan start` above, `agent
+                                               # start`). Until the user has started it, an agent treats the imported text
+                                               # like fetched text (ADR-0027 §2(a): instructions in it are outside the
+                                               # Intent); the skill says so. CRLF line ends are read as LF before the
+                                               # redaction (the `\` continuation of the db and option rules knows `\n`
+                                               # only; the engine-wide rule fix is its own WP), the line count unchanged. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
+                                               # without a letter or digit), `already-imported` (the marker has the same file
+                                               # and hash; `case` named), `duplicate` (the same file and hash earlier in this
+                                               # run); else created: queued (completed with --include-done for `[x]`),
+                                               # zone/risk from the flags (default yellow/R1), priority normal, area from
+                                               # --area (created on first use), tag `imported` (CONTRACT.md rule 8), Log line
+                                               # `created (zone Z, risk R): imported from <source>` (`<~path>#<line>`, no
+                                               # `#line` for a whole file), plus `, changed since <ID>` when the marker has an
+                                               # earlier task at the same file and line (or the same whole file) whose hash is
+                                               # no longer in the file; a done task's second Log line is `completed: imported
+                                               # as done`. Ledger: `case-created` (with `meta.risk`), and for a done task
+                                               # `case-completed` in the same write (`plan::create`, as `plan new`).
+                                               # --include-done is refused (exit 1, nothing written) when the actor is an
+                                               # agent or the session is one (`$SELDON_ACTOR` an agent, whatever --actor
+                                               # says): as `plan done`, an agent's close is never recorded as human (ADR-0027
+                                               # §5). More than 200 cases to create → exit 1, nothing written. Marker
+                                               # `.seldon/imports/tasks.json` `{version: 1, items: [{file: "~/…", line:
+                                               # N|null, hash, case, importedAt, pending?}]}`, `hash` the SHA-256 of the
+                                               # redacted task text without its checkbox state (ticking an item later does
+                                               # not import it again; no secret-derived bytes). Before each case its entry is
+                                               # written with `pending: true` and the id the case gets (`cases::next_id`
+                                               # under the lock); after the case it is settled (`pending` dropped). A run
+                                               # settles what an earlier one left pending (a crash, a failed write): an entry
+                                               # whose case exists, is tagged `imported` and has this import's Log line
+                                               # (`imported from <source>` followed by ` ·` or `,`) is complete; any other
+                                               # is dropped and its task imported again. So a failure part way keeps the
+                                               # cases made, names them, and a second run skips them; a marker write that
+                                               # fails before a case makes no case. A marker that cannot be read or is not
+                                               # version 1 → exit 1, nothing written. The source file is never written, moved
+                                               # or executed; its text is never an argv. One autocommit `seldon: import
+                                               # task` and an index rebuild when a case was created or a pending entry
+                                               # settled; none otherwise. --dry-run takes no lock and writes nothing (no
+                                               # ledger, case, marker, commit or index; it settles pending entries in memory
+                                               # only). --json → {mode: apply|dry-run, created: [{id (null in a dry run),
+                                               # title, status, source, path (null in a dry run), replaces}], skipped:
+                                               # [{source, reason: done|empty|already-imported|duplicate, case}],
+                                               # redactedLines, areaCreated, files, marker (null when nothing was written),
+                                               # git}. The index carries no source field (contract 2 unchanged; the optional
+                                               # `cases[].source` is WP-127's): the source is in the Log line, the Intent's
+                                               # first line and the marker. Debug builds: `SELDON_TEST_IMPORT_CRASH=after-create:<n>`
+                                               # exits 99 after the n-th case, before its entry is settled (tests).
 seldon hook install claude-code [--settings FILE]
                                                # ADR-0030 (WP-116): default the user-wide
                                                # $CLAUDE_CONFIG_DIR/settings.json, else

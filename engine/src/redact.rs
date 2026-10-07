@@ -287,6 +287,13 @@ impl Rule {
 
     /// `text` with every match this rule applies to replaced.
     fn replace(&self, text: &str) -> String {
+        self.replace_with(text, false)
+    }
+
+    /// [`Rule::replace`]; with `keep_lines`, every line break a replaced
+    /// match held (a continued command's `\` line end) is put back after
+    /// the replacement, so the text keeps its number of lines.
+    fn replace_with(&self, text: &str, keep_lines: bool) -> String {
         let markers = markers(text);
         let mut out = String::with_capacity(text.len());
         let mut last = 0;
@@ -295,7 +302,13 @@ impl Rule {
             let (start, end) = found.range();
             out.push_str(&text[last..start]);
             if self.applies(found, all.get(i + 1), text, &markers) {
+                let at = out.len();
                 found.caps.expand(&self.replacement, &mut out);
+                if keep_lines {
+                    let lost = text[start..end].matches('\n').count();
+                    let kept = out[at..].matches('\n').count();
+                    out.extend(std::iter::repeat_n('\n', lost.saturating_sub(kept)));
+                }
             } else {
                 out.push_str(&text[start..end]);
             }
@@ -951,6 +964,22 @@ impl Redactor {
         out
     }
 
+    /// [`Redactor::redact`] that keeps `text`'s line count: a match that
+    /// spans lines (a continued `mysql … \` command, a JSON value on the
+    /// next line) leaves its line breaks behind the marker. For text whose
+    /// line numbers are cited afterwards (`seldon import task`, WP-102).
+    pub fn redact_keeping_lines(&self, text: &str) -> String {
+        let mut out = text.to_string();
+        let lower = trigger_text(text);
+        for rule in self.rules() {
+            if !rule.triggered(text, &lower) || !rule.regex().is_match(&out) {
+                continue;
+            }
+            out = rule.replace_with(&out, true);
+        }
+        out
+    }
+
     /// Names of the rules that would replace something in `text`
     /// (diagnostics, tests, the import report).
     pub fn matching_rules(&self, text: &str) -> Vec<&'static str> {
@@ -972,6 +1001,27 @@ impl Redactor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-102: the multi-line rules redact the same values, and the text
+    /// keeps its lines (a continued command's lines become empty).
+    #[test]
+    fn redact_keeping_lines_keeps_the_line_count() {
+        let r = Redactor::builtin();
+        let text = "a\n  mysql -u root \\\n    -p hunter2secret \\\n    --host db\n  {\"password\":\n     \"jsonpass123\"}\nz\n";
+        let plain = r.redact(text);
+        let kept = r.redact_keeping_lines(text);
+        assert!(
+            !kept.contains("hunter2secret") && !kept.contains("jsonpass123"),
+            "{kept}"
+        );
+        // the plain redaction drops the continued lines
+        assert!(plain.lines().count() < text.lines().count(), "{plain}");
+        assert_eq!(kept.lines().count(), text.lines().count(), "{kept}");
+        assert_eq!(kept.replace('\n', ""), plain.replace('\n', ""));
+        assert_eq!(kept.lines().last(), Some("z"));
+        // nothing to redact: the same text
+        assert_eq!(r.redact_keeping_lines("x\ny\n"), "x\ny\n");
+    }
 
     /// WP-108: an option rule compiles `next` only when the rest of the
     /// command holds one of its `again` literals, and then finds the
