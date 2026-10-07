@@ -297,3 +297,22 @@ Engine side is fixed by 124a; the desk does this (no code in 124a):
   bar-view 194/0; plugin-test ok; docs-check ok). Log
   `check-wp124-merge1.log`.
 - 124b not started.
+
+## Accepted and merged next
+
+- ADR-0036 status: accepted (operator decision 2026-10-07, after Opus ×2
+  and Fable stage 2); DECISIONS.md row accepted (`7703960`).
+- `git fetch`; `git merge origin/next` (at `448669a`: WP-102a import
+  task, WP-125 graph): merge commit `953bb96`. Conflicts, both resolved
+  by keeping both sides: `CHANGELOG.md` (the triage entry and the
+  `import task` entry), `docs/user/de/05-cli-reference.md` (only the
+  source line; both sides' sections merged cleanly; the line now names
+  the merge, `b820e58`). CONTRACT.md was not touched by `next`;
+  SPEC-ENGINE, `agent.rs`, `main.rs`, `SKILL.md` and guide 05 (en)
+  auto-merged with both sides' text.
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at
+  `b820e58` (2100 Rust tests passed, 0 failed; desk-view 1448/0;
+  bar-view 194/0; plugin-test ok; docs-check ok, 53 commands). Log
+  `check-wp124-merge2.log`.
+- 124b waits for the orchestrator's word that this branch is merged
+  into `next`.
