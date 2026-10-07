@@ -159,3 +159,62 @@ docs-check ok, qmllint ok 47 files, model.test.js 110, real-home-guard
 `components/NewDecisionSheet.qml`, which this WP moved to
 `components/desk/NewDecisionForm.qml`; fixed in 62670fb. Only this
 handover and PLAN.md were added after the green run.
+
+## Round 2
+
+Review 1 (stage 1): APPROVE with N1–N6 non-blocking; the orchestrator
+asked for N1–N5 in a round 2 while WP-120 and WP-122 merge first (no
+merge of `next` here). Commits 865414b (plugin), 1136ba0 (tests),
+382bd8d (docs).
+
+- **N1 — first ↓/j after a search.** `ReadingSection.move` now starts
+  from the row the detail shows (`Math.max(0, cursor)`), so with the
+  selection filtered out the first `j` moves on from the first row. A
+  search that only hid the selection gives it back when cleared (the
+  selection changes only on a move or a click).
+- **N2 — System and Memory search tested.** New case `search-sections`:
+  System `/aur` (by the lead) and `/installed` (by the value) → Packages;
+  Memory `/hyprland` → the lesson and the topic, `j`/`k` from the shown
+  row, Esc gives the old selection back; `/memory/hyp` → the topic by its
+  path. TESTING.md's "the search" now says which fields per section.
+- **N3 — `setPeriod` with an unknown id changes nothing.** `Desk.setPeriod`
+  checks `Model.isPeriod` before showing section 7; it returns section
+  7's period ("" before its first visit). New case `radiant-setperiod`.
+  SPEC-PLUGIN §8 says so.
+- **N4 — the period keys on screen.** "←/→ period" beside the chips while
+  the row has room for the title too (`view.sectionView.keyHint`);
+  `radiant-ipc` #1 checks it; SPEC §6 row 1 names it.
+- **N5 — RiskDonut's centre label.** "all time" is drawn under the count
+  only where the hole holds it (`labelFits`, from a `TextMetrics`; the
+  caption says "all time" always). `ChartCanvas.readout` reports a
+  chart's own drawing decision in `view` (RiskDonut: `{ centreLabel }`);
+  `radiant-half` checks true at 100 %, false at 50 %. Checked by eye in
+  the Latte radiant-50 render (`DESK_SHOTS`): the ring is clean. The
+  chart's data, paints and hover are unchanged.
+- **N6 — note only.** The header sizes by `Style.spacing.controlHeight`,
+  not `tools.height`; a theme whose fonts make the Esc button taller than
+  the brand block and the KPI figure would clip it. Not changed (every
+  theme in the sweep has the brand and KPIs taller); WP-126's font-scale
+  sweep is the place to look.
+
+Mutants on an archive copy (scratchpad `mutants-r2.sh`), each killed:
+M7 (System search on the title only) → `search-sections` #5, #9; N1's
+old `move` → `search-sections` #15; N3's old `setPeriod` →
+`radiant-setperiod` #2, #4, #7, #8; no hint → `radiant-ipc` #1 (×2);
+the label always drawn → `radiant-half` #2.
+
+Verified: `omarchy plugin validate plugin/` ok; `just qmllint` ok (47
+files); `model.test.js` 110; `desk-view.sh` 904 passed with
+`DESK_SHOTS`, 886 without. `flock /tmp/seldon-check.lock just check` on
+382bd8d: **exit 0** (`check: ok`; install.test 209, deploy-test-host
+190, docs-check ok, qmllint ok 47 files, model.test.js 110,
+real-home-guard 11, service-states 316, desk-view 886, bar-view 194).
+Only this handover changed after that commit.
+
+For the merge onto `next` after WP-122 (the reviewer's trial merge): keep
+WP-122's `clipBox`/`intersect` in the harness's `overflow()` and add the
+`slot` box, then tighten `rfits`' scroll exemption; renumber this WP's
+desk-view sections to 9 and 10; take all three form moves in
+`service-states.sh`; `decision-cases` step 5 can then also expect
+`.view.selected == "C-2026-003"`; consider WP-122's `takeKeys()` in
+Decisions' `closeForm`. Full `just check` on the merged `next`.
