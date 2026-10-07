@@ -142,3 +142,27 @@ Brief: `WP-113-round-2-brief.md` with the stage-1 packet `WP-113-review-1.md` (S
 **Process note (review §5 Q6):** my logs this round have unique names (`perf-wp113-r2.log`, `check-wp113-r2.log`); round 1 used `scratchpad/check.log` in this session's own scratchpad.
 
 **Open:** ADR-0037 acceptance (operator); §2's evidence item (WP-D, test host) and its implementation; the agent-edit attribution follow-up (round 1, open question 3).
+
+## Round 3
+
+Brief: `WP-113-round-3-brief.md` (Fable stage 2: SEND BACK for a small round; B2, B3, N2 and N4 closed; Fable advises accepting ADR-0037 with the wording edits). Round-3 commits: `50ba134` … HEAD. Every fix was reverted alone once and its test failed (mutant column).
+
+| Item | Fix | Test | Mutant (fix reverted) |
+|---|---|---|---|
+| **R1** cut leaked out of its link | `Walker::follow` clears `follow.cut` after recording the cut, so the walk above the link and the later watch paths go on. | `a_cut_stays_in_its_link` (Fable's layout: theme Lua, `hooks/zz.d`, waybar, a user unit; `post-update.d` → 4097 decoys → exactly one event, the link's add; idempotent). `a_link_past_the_budget_is_cut_off_and_a_crisis` unchanged and green (clearing the cut gives only its expected events). | fails `a_cut_stays_in_its_link` |
+| **R2** stat hash without ctime | `stat_hash` = `stat <len> <mtime_ns> <ctime> <ctime_nsec> <ino>`; the plugin trees' `unreadable_hash` gets the change time the same way (a chmod round trip is a tree change). Test helper `seldon_stat_hash` updated. | `a_huge_hook_is_hashed_by_its_metadata` and `an_unreadable_entry_does_not_freeze_the_tree` gain the `touch -d` case (write in place, size and mtime restored → one event; the plugin case on a `chmod 200` file, `partial`) | config: fails `a_huge_hook_is_hashed_by_its_metadata`; plugins: fails `an_unreadable_entry_does_not_freeze_the_tree` |
+| **R3** link to an ancestor of Seldon's dirs | Below a link, a non-link directory that leads into the logbook, the state dir or `~/.config/seldon` is not walked (`scan.own += 1`). | `a_link_to_an_ancestor_of_seldons_dirs_stays_out_of_them` (`post-update.d` → `~/.local`: four captures, the message `1 link(s) into Seldon's own files not followed` each time, no `/seldon/` subject, idempotent) | fails that test |
+| **R4** `authorized_keys2` | `~/.ssh/authorized_keys2` in `DEFAULT_ALWAYS_RED_PATHS` and the fixture validator; SPEC §2/§4, guide 06 en/de ("add both lines"), concepts en/de, CHANGELOG. | `authorized_keys_is_a_crisis_once_watched` opts in both and checks the second file → crisis | — |
+| **N-a** every toggles file hashed | Files under `~/.local/state/omarchy/toggles/` are hashed whatever they hold (`hash_any`, the stat hash above 64 MiB). The general attention paths stay a follow-up. | `every_file_in_the_toggles_directory_is_hashed` (a binary and a 2 MiB Lua in `toggles/hypr` → attention `config`) | fails that test |
+| **ADR-0037 wording** | §3 title and text name both files and "adding both to `watchPaths`"; Consequences: stat hash with the change time ("a `touch` — and an in-place write, whose change time no user can reset — changes it") and every toggle-folder file hashed; §2 evidence gap adds `/etc/systemd/user/`; the §1 consequence stands without a qualifier; DECISIONS.md row follows. | docs-check ok | — |
+
+**Capture cost after round 3** (`just check-perf`, exit 0, `perf-wp113-r3.log`): config warm 1.13 / 1.14 / 1.21 / 1.35 ms and cold 2.14 / 2.15 / 24.2 / 23.7 ms (earlier defaults / + toggles / + hook blobs / + `authorized_keys`); plugins warm 22.5 ms, cold trees 87.0 ms; index ×10 4.6 ms, ×150 56.1 ms (first attempt), `status` 44.2 ms; hooks and redaction within budget.
+
+**Gate:** `flock /tmp/seldon-check.lock just check` → **exit 0** at `cad7ff3` (`check: ok`; 84 test binaries ok, `qmllint: ok (49 files)`, `model.test.js` 107 passed, plugin harness ok); only this handover followed (log `check-wp113-r3.log`).
+
+**Open (follow-ups, from the brief):**
+- A `doctor` row "N linked directories cut off" (N-c).
+- Hashing every file on attention paths in general (`~/.config/hypr/**`, themes), with a cost line for the operator.
+- `omarchy-toggle-input-device`'s non-empty `<kind>-disabled-name` flag (N-b): measure it on the test host before widening ADR-0037 §1.
+- A stat line with the change time for unreadable persistence files that only the hook can read (N1 rest).
+- From earlier rounds: ADR-0037 acceptance (operator; merging into `next` waits for it), §2's evidence check on the test host and its implementation, attributing an agent's in-place plugin edit to its case.
