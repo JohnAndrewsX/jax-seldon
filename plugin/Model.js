@@ -565,7 +565,11 @@ function validateArgs(args) {
     if (!withText && n === 3 && a[1] === "start" && CASE_ID.test(a[2]) && json) return ""
     // WP-101: one sentence creates, starts and hands a case to the agent
     if (withText && n === 3 && a[1] === "start" && a[2] === "--new" && json) return ""
+    // WP-156: the window of the agent working on a case; the live sessions
+    if (!withText && n === 3 && a[1] === "focus" && CASE_ID.test(a[2]) && json) return ""
+    if (!withText && n === 2 && a[1] === "sessions" && json) return ""
     return "agent must be: agent start <caseId> --json | agent start --new --json -- <intent>"
+      + " | agent focus <caseId> --json | agent sessions --json"
   case "doctor":
     // WP-101: read-only, the rules row only (Service.checkRules); no probe
     return !withText && n === 3 && a[1] === "--only" && a[2] === "rules" && json
@@ -677,12 +681,19 @@ function logResult(exitCode, stdoutText, stderrText) {
   return { ok: true, text: "Saved to " + where + id }
 }
 
-// `seldon open --json` → {"what", "path", "editor": {"launched", "program"}}.
+// `seldon open --json` → {"what", "path", "editor": {"launched", "program"}};
+// an editor the engine opened on the path before: {"launched": false,
+// "focused": true, …} (its window brought to the front) or {"launched":
+// false, "running": true, …} (still starting) (WP-156).
 function openResult(exitCode, stdoutText, stderrText) {
   if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
   var data = parseJson(stdoutText)
   var path = data && typeof data.path === "string" ? data.path : ""
   var editor = data && isObject(data.editor) ? data.editor : null
+  if (editor && editor.launched === false && editor.focused === true)
+    return { ok: true, path: path, text: (path !== "" ? path : "The file") + " is already open; its window is in front" }
+  if (editor && editor.launched === false && editor.running === true)
+    return { ok: true, path: path, text: (path !== "" ? path : "The file") + " is opening in the editor" }
   if (editor && editor.launched === false)
     return { ok: false, text: typeof editor.error === "string" ? editor.error : "The editor did not start" }
   var program = editor && typeof editor.program === "string" ? editor.program : "the editor"
@@ -3898,6 +3909,8 @@ function findWorkRow(prepared, id) {
 var CASE_DESK_ACTIONS = {
   start: { id: "start", label: "Start", write: true, arm: true, key: "Enter" },
   agent: { id: "agent", label: "Hand to agent", write: true, arm: true, key: "a", launches: true },
+  // WP-156: in place of Hand to agent while an agent works on the case
+  focus: { id: "focus", label: "Focus", write: false, arm: false, key: "a", launches: true },
   verify: { id: "verify", label: "To verification", write: true, arm: true, key: "" },
   done: { id: "done", label: "Complete", write: true, arm: true, key: "Enter" },
   drop: { id: "drop", label: "Drop", write: true, arm: true, key: "x", final: true },
@@ -3915,6 +3928,8 @@ var CASE_DESK_BY_STATUS = {
 function caseDeskActions(c) {
   if (!c || !c.actionable || CASE_DESK_BY_STATUS[c.status] === undefined) return []
   var ids = CASE_DESK_BY_STATUS[c.status]
+  // one agent per case (WP-156): Focus brings the working one to the front
+  if (c.working === true) ids = ids.map(function(id) { return id === "agent" ? "focus" : id })
   var enter = ""
   for (var k = 0; k < ids.length && enter === ""; k++) if (CASE_DESK_ACTIONS[ids[k]].launches !== true) enter = ids[k]
   return ids.map(function(id, i) {
@@ -4944,4 +4959,87 @@ function graphShape(ctx, kind, x, y, r) {
     ctx.moveTo(x + r, y)
     ctx.arc(x, y, r, 0, 2 * Math.PI, false)
   }
+}
+
+// ---- The desk steps aside; one agent per case (WP-156) -----------------------
+//
+// The desk is an overlay: a window it opens appears under it. After a call
+// that opened or focused one it closes, as Omarchy's menus do. The engine
+// knows which agents it launched still run (`seldon agent sessions`, their
+// environment marker); an active case with one shows Focus (`seldon agent
+// focus`) in place of a second Hand to agent.
+
+// How often the open desk asks for the live sessions, besides on open,
+// after every agent or open answer and when the index changes.
+var SESSIONS_POLL_MS = 15 * 1000
+// The same target is not opened again this soon after an open.
+var OPEN_REPEAT_MS = 2000
+
+// `seldon agent focus <caseId> --json`: { args } or { error }.
+function agentFocusArgs(caseId) {
+  var id = String(caseId || "")
+  if (!CASE_ID.test(id)) return { error: "Not a case id: " + id }
+  return { args: ["agent", "focus", id, "--json"] }
+}
+
+// `seldon agent sessions --json` → {"sessions": [{"case", "pids", "actor"}]}
+// → { <caseId>: { pid, actor } }; null when the answer is not one (the
+// caller keeps what it had). A case id or actor out of shape is left out.
+function sessionsResult(exitCode, stdoutText) {
+  if (exitCode !== 0) return null
+  var data = parseJson(stdoutText)
+  if (!data || !Array.isArray(data.sessions)) return null
+  var out = ({})
+  for (var i = 0; i < data.sessions.length; i++) {
+    var s = data.sessions[i]
+    if (!isObject(s) || typeof s.case !== "string" || !CASE_ID.test(s.case)) continue
+    var pids = Array.isArray(s.pids) ? s.pids.filter(isInt) : []
+    out[s.case] = { pid: pids.length > 0 ? pids[0] : 0,
+      actor: typeof s.actor === "string" && /^agent:[a-z0-9-]+$/.test(s.actor) ? s.actor : "" }
+  }
+  return out
+}
+
+// `seldon agent focus --json` → {"focused", "case", "address", "workspace"}.
+function focusResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "" }
+  var data = parseJson(stdoutText)
+  var id = data && typeof data.case === "string" && CASE_ID.test(data.case) ? data.case : ""
+  var ws = data && typeof data.workspace === "string" && data.workspace !== "" ? data.workspace : ""
+  return { ok: true, text: "The agent on " + (id !== "" ? id : "the case") + " is in front"
+    + (ws !== "" ? " · workspace " + ws : ""), caseId: id }
+}
+
+// Whether a finished call opened or focused a window: the desk steps aside.
+function opensWindow(args, result) {
+  if (!Array.isArray(args) || !result || result.ok !== true) return false
+  if (args[0] === "open") return true
+  return args[0] === "agent" && (args[1] === "start" || args[1] === "focus" || args[1] === "ask")
+}
+
+// An open of `what` at `nowMs` repeats the last successful one ({ what,
+// atMs }) within OPEN_REPEAT_MS.
+function openRepeated(last, what, nowMs) {
+  return isObject(last) && last.what === String(what) && nowMs - Number(last.atMs) < OPEN_REPEAT_MS
+}
+
+// The case detail (caseDetail) with what `sessions` (sessionsResult) says:
+// an active case an agent works on gets `row.working`, which turns Hand to
+// agent into Focus (caseDeskActions), "agent working" before its meta and
+// the "Agent" row "working now · <actor> · pid <n>" (the agents that
+// recorded on it are in the log). Any other detail comes back as it is.
+function withSession(detail, sessions) {
+  if (!detail || detail.status !== "active" || !isObject(sessions) || !isObject(sessions[detail.id])) return detail
+  var s = sessions[detail.id]
+  var out = ({})
+  for (var k in detail) out[k] = detail[k]
+  var row = ({})
+  for (var r in detail.row) row[r] = detail.row[r]
+  row.working = true
+  out.row = row
+  out.working = true
+  out.meta = ["agent working", detail.meta].filter(function(p) { return p !== "" }).join(" · ")
+  var line = "working now" + (s.actor !== "" ? " · " + s.actor : "") + (s.pid > 0 ? " · pid " + s.pid : "")
+  out.kv = detail.kv.map(function(kv) { return kv[0] === "Agent" ? ["Agent", line] : kv })
+  return out
 }

@@ -444,14 +444,15 @@ expect xdg-relative .indexPath "$work/home-xdg-rel/.local/state/seldon/index.jso
 #     text, quotes, a newline. Capture runs before status; a second "Capture
 #     now" while one is queued is dropped. Open hands the engine's path to
 #     the editor launcher (a recorder here) and the result line reads the
-#     engine's `open --json` output.
+#     engine's `open --json` output. One open at a time (WP-156): each waits
+#     for the one before.
 install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-tools/omarchy-launch-editor"
 mkdir -p "$work/home-actions"
 note2='a "b" c'
 note3=$'line one\nline two'
 actions=$(jq -cn --arg n2 "$note2" --arg n3 "$note3" '[
   ["log", "--help", ""], ["log", $n2, "C-2026-004"], ["log", $n3, ""],
-  ["open", "journal"], ["open", "ledger"], ["open", "status"], ["open", "C-2026-004"],
+  ["open", "journal"], ["wait"], ["open", "ledger"], ["wait"], ["open", "status"], ["wait"], ["open", "C-2026-004"],
   ["capture"], ["capture"]
 ]')
 run actions 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-actions" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
@@ -715,7 +716,7 @@ argv_check drift-dev "$(q --version --json)"
 mkdir -p "$work/home-decide"
 dtitle='Zed "second" editor'
 actions=$(jq -cn --arg t "$dtitle" '[["decide", "--help"], ["wait"], ["decide", $t], ["wait"],
-  ["open", "ADR-0004"], ["open", "logbook"]]')
+  ["open", "ADR-0004"], ["wait"], ["open", "logbook"]]')
 run decide 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/decide.record"
 argv_check decide "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \

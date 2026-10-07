@@ -23,7 +23,9 @@ import qs.Ui
 // shell's reload of shell.json does (the pill pushes it to the service).
 // Then it runs HARNESS_STEPS and prints after each: Desk.view() (or
 // {"opened":false} while unloaded), the facade's calls, the writes, the
-// last call's result, every visible text and every text outside the
+// last call's result, the service's launch read-out (`service`: how often
+// the desk stepped aside, the live sessions, the open and plan results;
+// WP-156), every visible text and every text outside the
 // window, the desk or the Prime Radiant slot it sits in.
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin copy (required)
@@ -331,6 +333,16 @@ ShellRoot {
       graphDirty: root.service ? root.service.graphDirty : null,
       graphNodes: root.service && root.service.graph ? root.service.graph.nodes.length : null,
       pill: root.widget ? JSON.parse(root.widget.pillReadout()) : null,
+      service: root.service ? {
+        stepAsides: root.service.stepAsides,
+        sessions: Object.keys(root.service.agentSessions || {}).sort(),
+        open: root.service.openResult ? root.service.openResult.text : "",
+        openPending: !!root.service.openResult && root.service.openResult.pending,
+        plan: root.service.planResult ? root.service.planResult.text : "",
+        planOk: !!root.service.planResult && root.service.planResult.ok,
+        planPending: !!root.service.planResult && root.service.planResult.pending,
+        busyRefusals: root.service.busyRefusals
+      } : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
       texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined)
     }))

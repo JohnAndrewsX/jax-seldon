@@ -762,7 +762,21 @@ detail, the bar by status, dev mode's refusal, By agent, a reopen) and
 live (the new-case sheet by keys, start → to verification → complete,
 each armed then run, Open in editor, the engine's refusal, `x x`, hand to
 agent and its refusal, a locked new case, Run and its refusal, Reopen and
-`r`); a section change gives the keys back from a field and keeps its
+`r`); the desk steps aside for what it opens (WP-156, section 8g; the
+report's `service` read-out: `stepAsides`, the live `sessions`, the open
+and plan results): a launch the engine answered closes the desk through
+the facade (Hand to agent by key and by click, Focus, Run and New case,
+every Open in editor, *Run in terminal*), a refusal keeps it open with
+the text; an active case an agent works on shows Focus in place of Hand
+to agent ("agent working" on its row and in the bar); a stale desk heals
+from the engine's "already working" and "no agent is working" refusals
+(`FAKE_SELDON_SESSIONS_LATE`, `FAKE_SELDON_FOCUS_GONE`); `a` four times
+and `e` three times send one call each, busy labels while in flight; the
+same open within 2 s sends nothing, after 2 s it is sent; an editor the
+engine focused (`FAKE_SELDON_OPEN_FOCUSED`) launches nothing. The fake
+engine keeps the live sessions in `$HOME/sessions` and logs `agent
+sessions` (its own process) to `sessions.log`, not `argv.log`; a section
+change gives the keys back from a field and keeps its
 draft; the Changelog's selection follows its event across an index update
 (the acceptance's cursor stability); Capture now over a lock retry; one
 count everywhere (chips = sidebar = header = the quiet line, a group once,

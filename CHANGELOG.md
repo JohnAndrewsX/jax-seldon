@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **One agent per case (WP-156).** `seldon agent start <ID>` refuses
+  (exit 1, nothing launched) while an agent it launched on the case still
+  runs, and names `seldon agent focus <ID>`, which brings that agent's
+  window to the front (Hyprland); `--again` starts another anyway. `seldon
+  agent sessions` lists the running ones. The engine finds them by the
+  `SELDON_CASE`/`SELDON_LOGBOOK` marker in their environment (the user's
+  own processes, only those keys); nothing is stored. `seldon open
+  --editor` from the desk focuses the editor it already opened on the same
+  file instead of starting a second one.
 - **Code the collectors could not see (WP-113, ADR-0028 WP-E; hashes
   only, never content).** A third-party plugin edited in place is now one
   `plugin-update` (detail `files changed (sha256 … → …)`): the plugins
@@ -531,6 +540,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **The desk steps aside for what it opens (WP-156).** After it starts
+  an agent, opens the editor or runs a fix in a terminal, the desk closes,
+  so the new window is in front instead of hidden behind it. An active
+  case an agent works on shows *Focus* in place of a second *Hand to
+  agent*; a button whose call is running is busy, and *Open in editor*
+  never sends the same file twice within 2 s.
 - The desk's "Why loud?" callout reads the rule from the index: selecting
   a crisis in the Changelog no longer runs `seldon drift show` (it still
   does against an engine whose index has no rule). Work's case detail

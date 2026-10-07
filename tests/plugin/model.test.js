@@ -2732,4 +2732,94 @@ test("graphShape: disc, square, spindle; legend kinds", () => {
   assert.ok(M.graphMinRadius("area") > M.graphMinRadius("change"))
 })
 
+test("WP-156: agent focus and sessions are the only new agent forms", () => {
+  assert.strictEqual(M.validateArgs(["agent", "focus", "C-2026-005", "--json"]), "")
+  assert.strictEqual(M.validateArgs(["agent", "sessions", "--json"]), "")
+  for (const bad of [
+    ["agent", "focus", "C-2026-005"],
+    ["agent", "focus", "C-26-5", "--json"],
+    ["agent", "focus", "--json", "--", "C-2026-005"],
+    ["agent", "sessions"],
+    ["agent", "sessions", "C-2026-005", "--json"],
+    ["agent", "start", "C-2026-005", "--again", "--json"],
+  ]) assert.notStrictEqual(M.validateArgs(bad), "", JSON.stringify(bad))
+  same(M.agentFocusArgs("C-2026-005"), { args: ["agent", "focus", "C-2026-005", "--json"] })
+  assert.ok(M.agentFocusArgs("C-2026-005; rm").error)
+  for (const a of [M.agentFocusArgs("C-2026-005").args, ["agent", "sessions", "--json"]])
+    assert.strictEqual(M.validateArgs(a), "")
+})
+
+test("WP-156: sessionsResult keeps checked ids, pids and actors", () => {
+  const out = JSON.stringify({ sessions: [
+    { case: "C-2026-005", pids: [41, 42], actor: "agent:default" },
+    { case: "C-2026-006", pids: ["x"], actor: "agent:Evil Name" },
+    { case: "not-a-case", pids: [1] },
+    "junk",
+  ] })
+  same(M.sessionsResult(0, out), { "C-2026-005": { pid: 41, actor: "agent:default" }, "C-2026-006": { pid: 0, actor: "" } })
+  same(M.sessionsResult(0, '{"sessions":[]}'), {})
+  assert.strictEqual(M.sessionsResult(1, out), null)
+  assert.strictEqual(M.sessionsResult(0, "{}"), null)
+  assert.strictEqual(M.sessionsResult(0, "not json"), null)
+})
+
+test("WP-156: focusResult and openResult's focused and running answers", () => {
+  same(M.focusResult(0, '{"focused":true,"case":"C-2026-005","address":"0x1","workspace":"3"}', ""),
+    { ok: true, text: "The agent on C-2026-005 is in front · workspace 3", caseId: "C-2026-005" })
+  const refused = M.focusResult(1, '{"error":{"message":"no agent is working on C-2026-005: none"}}', "")
+  assert.strictEqual(refused.ok, false)
+  assert.ok(refused.text.indexOf("no agent is working on C-2026-005") === 0, refused.text)
+  same(M.openResult(0, '{"path":"/l/STATUS.md","editor":{"launched":false,"focused":true,"address":"0x1","pid":4,"program":"e"}}', ""),
+    { ok: true, path: "/l/STATUS.md", text: "/l/STATUS.md is already open; its window is in front" })
+  same(M.openResult(0, '{"path":"/l/STATUS.md","editor":{"launched":false,"running":true,"pid":4,"program":"e"}}', ""),
+    { ok: true, path: "/l/STATUS.md", text: "/l/STATUS.md is opening in the editor" })
+  assert.strictEqual(M.openResult(0, '{"path":"/p","editor":{"launched":false,"error":"x"}}', "").ok, false)
+})
+
+test("WP-156: the desk steps aside for a window, not for a refusal", () => {
+  const ok = { ok: true }
+  for (const args of [["agent", "start", "C-2026-005", "--json"], ["agent", "start", "--new", "--json", "--", "x"],
+    ["agent", "focus", "C-2026-005", "--json"], ["agent", "ask", "triage", "--json"], ["open", "journal", "--editor", "--json"]])
+    assert.strictEqual(M.opensWindow(args, ok), true, args.join(" "))
+  for (const args of [["agent", "sessions", "--json"], ["plan", "start", "C-2026-005", "--json"], ["log", "--json", "--", "x"]])
+    assert.strictEqual(M.opensWindow(args, ok), false, args.join(" "))
+  assert.strictEqual(M.opensWindow(["agent", "start", "C-2026-005", "--json"], { ok: false }), false)
+  assert.strictEqual(M.opensWindow(["open", "journal", "--editor", "--json"], null), false)
+})
+
+test("WP-156: the same open is not sent twice within 2 s", () => {
+  const last = { what: "C-2026-005", atMs: 1000 }
+  assert.strictEqual(M.OPEN_REPEAT_MS, 2000)
+  assert.strictEqual(M.openRepeated(last, "C-2026-005", 2999), true)
+  assert.strictEqual(M.openRepeated(last, "C-2026-005", 3000), false)
+  assert.strictEqual(M.openRepeated(last, "journal", 1500), false)
+  assert.strictEqual(M.openRepeated(null, "C-2026-005", 1500), false)
+})
+
+test("WP-156: an active case with a session shows Focus, once, in place of Hand to agent", () => {
+  const ids = c => M.caseDeskActions(c).map(a => a.id + (a.arm ? "!" : "") + (a.primary ? "*" : "") + (a.enter ? "^" : ""))
+  same(ids({ status: "active", actionable: true, working: true }), ["focus*", "verify!^", "drop!", "open"])
+  same(ids({ status: "active", actionable: true }), ["agent!*", "verify!^", "drop!", "open"])
+  const focus = M.caseDeskAction({ status: "active", actionable: true, working: true }, "focus")
+  same([focus.label, focus.write, focus.arm, focus.key, focus.launches], ["Focus", false, false, "a", true])
+  assert.strictEqual(M.caseDeskAction({ status: "active", actionable: true, working: true }, "agent"), null)
+
+  const prepared = M.deskWork(JSON.parse(sample))
+  const detail = M.caseDetail(JSON.parse(sample), prepared, "C-2026-003")
+  const sessions = { "C-2026-003": { pid: 41, actor: "agent:default" } }
+  const w = M.withSession(detail, sessions)
+  assert.strictEqual(w.working, true)
+  assert.strictEqual(w.row.working, true)
+  assert.strictEqual(detail.row.working, undefined, "the prepared row is not changed")
+  assert.strictEqual(w.meta, "agent working · " + detail.meta)
+  same(w.kv.filter(kv => kv[0] === "Agent"), [["Agent", "working now · agent:default · pid 41"]])
+  same(M.caseDeskActions(w.row).map(a => a.label), ["Focus", "To verification", "Drop", "Open in editor"])
+  // another case's session, no session, a case that is not active: as it is
+  assert.strictEqual(M.withSession(detail, { "C-2026-004": { pid: 1, actor: "" } }), detail)
+  assert.strictEqual(M.withSession(detail, null), detail)
+  const queued = M.caseDetail(JSON.parse(sample), prepared, "C-2026-005")
+  assert.strictEqual(M.withSession(queued, { "C-2026-005": { pid: 1, actor: "" } }), queued)
+  assert.strictEqual(M.withSession(null, sessions), null)
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

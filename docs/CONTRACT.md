@@ -136,11 +136,13 @@ seldon --version --json
 seldon status --json
 seldon capture --all --json --quiet
 seldon log [--case <id>] --json -- <text>       # free text is one argument after `--`; --json before it
-seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # path reported as JSON; the engine launches the editor
+seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # path reported as JSON; the engine launches the editor (or focuses the one it opened on the path, WP-156)
 seldon plan new --zone <z> --risk <r> [--area <slug>] [--priority <p>] --json -- <title>
 seldon plan start|verify|done|drop <id> --json   # id validated by the schema regex; the engine enforces the transition
 seldon agent start <caseId> --json              # active case only; the engine launches the configured agent launcher detached (WP-022)
 seldon agent start --new --json -- <intent>     # WP-101: creates and starts a case from the sentence, then launches as above
+seldon agent focus <caseId> --json              # WP-156: Focus, in place of a second Hand to agent; brings the agent's window to the front
+seldon agent sessions --json                    # WP-156: read-only, own process beside the queue; which cases an agent works on now
 seldon plan reopen <caseId> --json              # WP-101: a completed case only; a new active case, nothing destroyed
 seldon drift link <eventId> <caseId> [--only] --json
 seldon drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <slug>] --json -- <text>

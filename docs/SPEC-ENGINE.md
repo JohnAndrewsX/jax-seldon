@@ -47,7 +47,15 @@ seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case o
                                                          # ADR-0030 (WP-116): starts the launcher
                                                          # where `omarchy agent prompt` would start
                                                          # the agent (PWD set to that folder), and
-                                                         # sets SELDON_CASE=<ID>
+                                                         # sets SELDON_CASE=<ID>. WP-156: refused
+                                                         # (exit 1, nothing launched, the active case
+                                                         # untouched) while an agent it launched on
+                                                         # <ID> runs; `--again` (not with --new)
+                                                         # starts another anyway
+seldon agent focus <caseId> [--json]           # WP-156: the window of the agent `agent start` launched on
+                                               # the case to the front (Hyprland); no lock, nothing written
+seldon agent sessions [--json]                 # WP-156: the agents `agent start` launched that still run,
+                                               # one per case; read-only, no lock
 seldon agent start --new [--zone Z] [--risk R] [--area A] [--launcher NAME] [--json] -- "<intent>"
                                                # WP-101 (ADR-0027 §6): one sentence. Title = the first
                                                # sentence (up to the first line break, or `.`/`!`/`?` before
@@ -597,7 +605,15 @@ seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--jso
 # path as one argument; without a terminal (the plugin) it launches
 # `omarchy-launch-editor <path>` DETACHED (null stdio, own process group, never
 # killed or waited for): a non-zero exit within 200 ms is an error (exit 1),
-# otherwise {"launched": true, "program": …} (WP-008 fix of the 10 s kill)
+# otherwise {"launched": true, "program": …} (WP-008 fix of the 10 s kill).
+# WP-156: that launch carries SELDON_OPEN=<path>; when an editor an earlier
+# `open --editor` started on the same path still runs (its marker in /proc, as
+# for `agent sessions`), nothing is launched: its window is focused as `agent
+# focus` does → {"launched": false, "focused": true, "address", "pid",
+# "program"}, or, while Hyprland lists no window of it yet, {"launched": false,
+# "running": true, "pid", "program"} (exit 0 both; the human line says which).
+# Without `hyprctl` (not a Hyprland session) it launches as before. The terminal
+# path is unchanged. `decide`'s editor follows the same rule.
 seldon --version / seldon contract-version
 seldon completions bash|zsh|fish               # WP-049: the completion script (clap_complete) on stdout;
                                                # --json → {shell, script}
@@ -961,6 +977,30 @@ seldon agent start <caseId> --json → {launched, launcher, program, argv (with 
                         mutating command is recorded."
 seldon agent start --new … --json -- "<intent>" → the same, plus created: {case, events (case-created,
                         case-started), areaCreated, git} (WP-101)
+                        One agent per case (WP-156): a session is a live process whose environment holds
+                        SELDON_CASE=<ID> and SELDON_LOGBOOK=<this logbook's root> — the launcher and
+                        everything it starts carry both, the terminal and the agent included, so no state
+                        file and no gap between the launch and the window (the launcher's own pid is no
+                        use: `omarchy-launch-tui` runs `setsid`, which forks). Only the user's own
+                        processes are readable in `/proc/<pid>/environ`; only SELDON_CASE, SELDON_LOGBOOK
+                        and SELDON_ACTOR are compared or kept. `agent start <ID>` while one lives: exit 1,
+                        "an agent is already working on <ID> (pid N); focus it with `seldon agent focus
+                        <ID>`, or start another with `seldon agent start <ID> --again`; nothing was
+                        launched", checked under the lock after the status check. `--new` is never
+                        refused (its case is new); `agent ask` sets no SELDON_CASE and is no session.
+seldon agent focus <ID> --json → {focused: true, case, pid (the oldest marked), pids, actor, address,
+                        workspace}. The window: the Hyprland client (`hyprctl clients -j`, read-only)
+                        whose pid is a marked process, else the nearest ancestor of one; several of one
+                        pid → class `org.omarchy.agent` first. Focused as `omarchy-launch-or-focus` does:
+                        `hyprctl dispatch 'hl.dsp.focus({ window = "address:<A>" })'`, then `hyprctl
+                        dispatch focuswindow address:<A>`; a dispatch counts when hyprctl prints `ok`. The
+                        address is checked (`0x` + 1–16 hex digits) before it reaches a dispatch. Exit 1:
+                        unknown case; "no agent is working on <ID>: none that `seldon agent start`
+                        launched still runs; start one with `seldon agent start <ID>`"; no `hyprctl`;
+                        no window of it; a refused dispatch.
+seldon agent sessions --json → {sessions: [{case, pids (oldest first), actor (SELDON_ACTOR or null)}]},
+                        by case id; human: "<ID> <actor> (pid N)" per line, or "No agent that `seldon
+                        agent start` launched is running."
 seldon agent ask triage|drift <EVENT>|case <ID> --json → {launched, ask: "triage"|"drift"|"case", target
                         (the id, null for triage), open (triage: the open items, else null), launcher,
                         program, argv (with "{prompt}"), actor, cwd, guide (the guide's path)}; exit 1

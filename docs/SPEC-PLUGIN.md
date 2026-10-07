@@ -200,6 +200,19 @@ toggle|summon jax.seldon [payload]` and by the `jax.seldon.panel` shim
 (§8). It replaced the 0.1 bar popup (`Panel.qml`) and the fullscreen
 Prime Radiant overlay (`Overlay.qml`) in WP-121.
 
+**The desk steps aside for what it opens (WP-156).** A window the desk
+starts would appear under the overlay. After the engine answers a call
+that opened or focused a window — `agent start` (also `--new`), `agent
+focus`, `open … --editor` (launched, focused or still opening; also the
+editor a new decision opens), and `agent ask` once the plugin runs it —
+the service closes the desk through the facade, as Esc does
+(`Service.stepAside`, `Model.opensWindow`); the notices' *Run in
+terminal* (a detached launch with no answer) closes it at once, as
+Omarchy's menus close before what they launch. A refusal keeps the desk
+open with the engine's text. The desk passes no window: the new window
+takes Hyprland's focus when it maps (no launcher reports an address).
+The selection is remembered, so the next open shows the case.
+
 ### 5.1 Window and width
 
 The shell's overlay loader creates `Desk.qml` without properties, then
@@ -502,7 +515,23 @@ the case file." when either text is shown, with *Open in editor*), LOG
 the risk a `case-created`/`case-started`/`case-updated` line carries,
 contract 2) and
 LINKED CHANGES · N (the case's `events` the index still lists, "+N older
-changes the index no longer lists"). *New case* puts the 0.1 sheet in the
+changes the index no longer lists").
+
+One agent per case (WP-156): the service knows which cases an agent works
+on now (`agent sessions --json`, its own process beside the queue, like
+`doctor`; asked when the desk opens, after every agent or open answer,
+when the index changes and every 15 s while the desk is open,
+`Model.SESSIONS_POLL_MS`). On such an active case the bar shows **Focus**
+(`agent focus <id> --json`; key `a`; runs at once, writes nothing; Enter
+still never takes it) in place of *Hand to agent*, "agent working" before
+id · risk, the Agent row reads "working now · <actor> · pid <n>", and the
+case's row says "agent working". A stale answer heals itself: the
+engine's "already working" refusal and its "no agent is working" both ask
+again. While a call is in flight its button is busy and disabled
+(*Starting…*, *Focusing…*, *Opening…*), as Run and Capture are; an open
+is refused while one is pending and the same target is not sent again
+within 2 s of a successful open (`Model.OPEN_REPEAT_MS`), for every
+*Open in editor* on the desk. *New case* puts the 0.1 sheet in the
 detail (`NewCaseSheet.qml`: title, zone, risk, priority, an optional area
 slug refused in the plugin when malformed → `plan new --zone <z> --risk
 <r> [--area <a>] [--priority <p>] --json -- <title>`; Enter creates; the
