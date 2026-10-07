@@ -380,6 +380,62 @@ fails, its error is in `~/.local/state/seldon/agent-launch.log`.
 
 `agent start` refuses a case that is not active. Start it first.
 
+## Let an agent sort the open changes
+
+Changes without a case wait in the Changelog. You never have to explain
+them, but an agent can sort them for you, with evidence, and you apply
+the result in one click. The panel's *Agent sorts N open changes* runs:
+
+```sh
+seldon agent ask triage
+```
+
+The engine starts your agent the way `agent start` does, with a prompt
+that names only the logbook and the skill's `triage.md`: no text from
+your logbook, and no case to work on. The agent reads the open changes,
+your cases, the journal and the ledger, and stores a **proposal**. For
+each change it can prove, it proposes a link to a case or an explanation
+(a new completed case with its title and reason), and names the
+evidence: a journal entry by its time (`2026-10-01 14:40`), another
+event, a snapshot number, a case, or a case whose *Plan* names the
+change. The engine looks up every piece of evidence itself and refuses a
+proposal with an item it cannot back, so a change nobody can explain
+stays open. Nothing is written to the logbook yet. The agent ends by
+telling you the proposal's id.
+
+You apply it, as yourself:
+
+```sh
+seldon drift apply <PROPOSAL>
+```
+
+Every item is checked again against the logbook first; an item whose
+evidence is gone is refused, one that is already resolved is skipped.
+Each resolution in the ledger reads `proposed by agent:<name> —
+<evidence>`. A crisis is never applied with the rest: read its evidence,
+then apply it on its own:
+
+```sh
+seldon drift apply <PROPOSAL> --item <EVENT>
+```
+
+Running `apply` again changes nothing. A new proposal replaces the old
+one; `seldon drift discard <PROPOSAL>` throws one away. Only you apply or
+discard: the engine refuses an agent.
+
+To ask about one change or one case instead:
+
+```sh
+seldon agent ask drift <EVENT>
+seldon agent ask case C-2026-003
+```
+
+The agent tells you in its window what the record shows and what it
+proposes; it resolves nothing unless you tell it to there. An ask never
+hands the agent a case to work on: that is `agent start`. Without an
+Omarchy default agent, or without the `seldon` skill (`seldon hook
+install skills`), nothing starts and the message names the fix.
+
 ## Other agents
 
 An agent started outside the logbook folder never reads the logbook's
@@ -455,6 +511,8 @@ at length:
   only: nothing there loosens the R3 stop or "unattended: record only";
 - explain drift only with evidence, and tell you about a crisis in one
   line;
+- sort the open changes into a proposal you apply, with evidence the
+  engine can look up, when you ask it to (`triage.md`);
 - for Omarchy itself (Hyprland, the bar, themes), follow Omarchy's own
   skill.
 
@@ -519,6 +577,8 @@ seeing it shows up there.
   `seldon import … --apply`, `seldon agent start` or
   `seldon rules update` unless you ask for exactly that. The logbook's
   `AGENTS.md` says the same.
+- `seldon drift apply` and `seldon drift discard` are yours: an agent
+  only proposes, and the engine refuses an agent that applies.
 - Add your own limits under `## Your rules` in `AGENTS.md`, for example
   "never install from the AUR".
 - Read a case's *Result* and its trace when you want to check the agent's
