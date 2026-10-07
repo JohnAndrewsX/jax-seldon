@@ -1015,6 +1015,11 @@ test("memoryRows: the sample's three lessons and two topics", () => {
     "lesson Hyprland reload nach bindings.conf", "topic omarchy", "topic hyprland"])
   same(rows.map((r) => r.section), ["LESSONS", "", "", "TOPICS", ""])
   same(rows.map((r) => r.meta), ["", "", "", "memory/omarchy.md · updated 2026-10-01", "memory/hyprland.md · updated 2026-09-13"])
+  same(rows.map((r) => r.path + "|" + r.updated), ["memory/lessons.md|", "memory/lessons.md|", "memory/lessons.md|",
+    "memory/omarchy.md|2026-10-01", "memory/hyprland.md|2026-09-13"])
+  same(M.memoryDetail(rows[0]), { heading: "Lesson", rows: [["File", "memory/lessons.md"]] })
+  same(M.memoryDetail(rows[3]), { heading: "Topic", rows: [["File", "memory/omarchy.md"], ["Updated", "2026-10-01"]] })
+  assert.strictEqual(M.memoryDetail(null), null)
   assert.ok(rows.every((r) => r.target === "logbook"))
   assert.strictEqual(M.validateArgs(M.openArgs(rows[0].target)), "")
   assert.strictEqual(M.memorySummary(rows), "3 lessons · 2 topics")
@@ -1031,20 +1036,90 @@ test("memoryRows: every part optional, broken entries left out", () => {
   assert.strictEqual(M.memorySummary(topicsOnly), "0 lessons · 1 topic")
 })
 
+// ---- Desk sections 4–6 (WP-123) ---------------------------------------------
+
+test("deskFilter: every word, any field, case-insensitive", () => {
+  const rows = M.decisionRows(sampleIndex)
+  const ids = (list) => list.map((r) => r.id).join(",")
+  assert.strictEqual(ids(M.deskFilter(rows, "", ["id", "title"])), "ADR-0004,ADR-0003,ADR-0002,ADR-0001")
+  assert.strictEqual(ids(M.deskFilter(rows, "  zed ", ["id", "title"])), "ADR-0003")
+  assert.strictEqual(ids(M.deskFilter(rows, "PROPOSED", ["status"])), "ADR-0004")
+  assert.strictEqual(ids(M.deskFilter(rows, "adr-000 snap", ["id", "title"])), "ADR-0002")
+  assert.strictEqual(ids(M.deskFilter(rows, "nothing", ["id", "title"])), "")
+  same(M.deskFilter(null, "x", ["id"]), [])
+})
+
+test("decisionDetail: Accept only while proposed; nothing writes", () => {
+  const rows = M.decisionRows(sampleIndex)
+  const proposed = M.decisionDetail(rows[0])
+  assert.strictEqual(proposed.heading, "ADR-0004 · proposed · 2026-10-01")
+  same(proposed.rows, [["Status", "proposed"], ["Date", "2026-10-01"], ["File", "decisions/ADR-0004-ollama-user-service.md"]])
+  same(proposed.actions.map((a) => a.id + ":" + a.primary + ":" + a.enabled), ["accept:true:true", "open:false:true"])
+  assert.ok(proposed.note.indexOf("set status: accepted in its frontmatter") !== -1)
+  const accepted = M.decisionDetail(rows[1])
+  same(accepted.actions.map((a) => a.id), ["open"])
+  assert.strictEqual(accepted.note, "")
+  const odd = M.decisionDetail(M.decisionRows({ decisions: [{ id: "ADR-1", title: "x", status: "superseded" }] })[0])
+  same(odd.actions.map((a) => a.id + ":" + a.enabled), ["open:false"])
+  assert.ok(odd.note.indexOf("Superseded") === 0)
+  assert.ok(odd.lead.indexOf("does not match") !== -1)
+  assert.strictEqual(M.decisionDetail(null), null)
+})
+
+test("decisionCases: v2 field only, titles from the case lists", () => {
+  assert.strictEqual(M.decisionCases(sampleIndex, "ADR-0004"), null, "contract 1 has no cases")
+  const idx = JSON.parse(sample)
+  idx.decisions[0].cases = ["C-2026-003", "C-2026-999", "", 7, "bad"]
+  idx.decisions[1].cases = []
+  same(M.decisionCases(idx, "ADR-0004").map((c) => [c.id, c.title, c.status, c.actionable].join("|")), [
+    "C-2026-003|Omarchy auf 4.0.7 aktualisieren|active|true", "C-2026-999|||true", "bad|||false"])
+  same(M.decisionCases(idx, "ADR-0003"), [])
+  assert.strictEqual(M.decisionCases(idx, "ADR-0099"), null)
+  assert.strictEqual(M.decisionCases(null, "ADR-0004"), null)
+})
+
+test("systemTiles: five tiles, big values, every field optional", () => {
+  const now = Date.parse("2026-10-01T17:05:12+02:00")
+  const t = M.systemTiles(sampleIndex, now)
+  same(t.map((x) => x.id), ["omarchy", "packages", "snapshots", "deviations", "collectors"])
+  same(t.map((x) => x.meta), ["4.0.7-1", "2009 installed", "115 newest", "5 files", "6/6 ok"])
+  same(t.map((x) => x.lead), ["theme tokyo-night · updated 7 h ago", "327 explicit · 41 from the AUR",
+    "6 snapshots in the index (the newest 10)", "Config files that differ from Omarchy's defaults; the list is in STATUS.md",
+    "last capture just now"])
+  same(t[0].rows, [["Version", "4.0.7-1"], ["Theme", "tokyo-night"], ["Last update", "2026-10-01 09:21 · 7 h ago"],
+    ["Plugins", "33 of 40 enabled"]])
+  same(t[1].rows, [["Explicit", "327"], ["Installed", "2009"], ["AUR", "41"]])
+  same(t[2].rows[0], ["#115", "2026-10-01 16:30 · tailscale: MagicDNS · post"])
+  same(t[3].rows, [])
+  same(t[4].rows.slice(0, 1).concat(t[4].rows.slice(6)), [["pacman", "ok"], ["Machine", "workstation-7f3a"],
+    ["Engine", "0.1.0"], ["Index written", "2026-10-01 17:05"], ["Area dev-env", "4 cases"], ["Area hyprland", "1 case · AGENTS.md"],
+    ["Area packages", "1 case"], ["Area plugins", "0 cases"], ["Area shell", "1 case"], ["Area themes", "1 case · AGENTS.md"]])
+  assert.ok(t.every((x) => x.stripe === "" && x.empty === false))
+  const fail = M.systemTiles(degraded, now)[4]
+  assert.strictEqual(fail.meta, "5/6 ok")
+  assert.strictEqual(fail.stripe, "attention")
+  assert.ok(fail.lead.indexOf("1 collector failing") === 0)
+  const bare = JSON.parse(sample)
+  bare.system = {}
+  delete bare.state.collectors
+  const b = M.systemTiles(bare, now)
+  same(b.map((x) => x.meta), ["—", "—", "—", "—", "—"])
+  same(b.map((x) => x.lead), ["Not in the index", "Not in the index", "Not in the index", "Not in the index", "last capture just now"])
+  same(b[4].rows, [["Machine", "workstation-7f3a"], ["Engine", "0.1.0"], ["Index written", "2026-10-01 17:05"]])
+  bare.system = { packages: { explicit: 3 }, deviations: 1 }
+  same(M.systemTiles(bare, now).map((x) => x.meta).slice(1, 4), ["3 explicit", "—", "1 file"])
+  same(M.systemTiles(null, now).map((x) => x.meta), ["—", "—", "—", "—", "—"])
+})
+
 // ---- Prime Radiant (WP-030) --------------------------------------------------
 
-test("periods: ids, keys 1–4, ←/→ wrap, payload", () => {
+test("periods: ids, ←/→ wrap", () => {
   same(M.PERIODS.map((p) => p.id), ["30", "90", "365", "all"])
   assert.strictEqual(M.PERIOD_DEFAULT, "90")
-  same(["1", "2", "3", "4", "0", "5", "", "12", "a"].map(M.periodForKey), ["30", "90", "365", "all", "", "", "", "", ""])
   assert.strictEqual(M.cyclePeriod("30", -1), "all")
   assert.strictEqual(M.cyclePeriod("all", 1), "30")
   assert.strictEqual(M.cyclePeriod("90", 1), "365")
   assert.strictEqual(M.cyclePeriod("bogus", 1), "365")
-  assert.strictEqual(M.overlayPayloadPeriod('{"period":"30"}', "90"), "30")
-  assert.strictEqual(M.overlayPayloadPeriod('{"period":"7"}', "90"), "90")
-  assert.strictEqual(M.overlayPayloadPeriod("", "365"), "365")
-  assert.strictEqual(M.overlayPayloadPeriod("{broken", "all"), "all")
   assert.strictEqual(M.isPeriod("all"), true)
   assert.strictEqual(M.isPeriod(30), false)
 })
@@ -1155,19 +1230,6 @@ test("periodView without a table: periodTable(null)'s period, no aggregation", (
   // Kept per period: the same object on every call.
   assert.strictEqual(M.periodView(null, "30"), M.periodView(undefined, "30"))
   assert.strictEqual(M.aggregationCount() - before, 0)
-})
-
-test("overlayMeta and overlayBanner", () => {
-  assert.strictEqual(M.overlayMeta(ok.index), "workstation-7f3a · Omarchy 4.0.7-1 · generated 2026-10-01 17:05")
-  assert.strictEqual(M.overlayMeta(null), "")
-  assert.strictEqual(M.overlayMeta({ generatedAt: "x" }), "")
-  assert.strictEqual(M.overlayBanner(null), null)
-  const b = M.bannerFor("notInitialised", {})
-  const o = M.overlayBanner(b)
-  same(o.actions.map((a) => a.id), ["copy"])
-  assert.strictEqual(o.title, b.title)
-  assert.strictEqual(b.actions.length, 3)
-  same(M.overlayBanner(M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00Z", nowMs: gen })).actions, [])
 })
 
 test("overlayGrid: 12 columns, three modes, six slots, minimum heights first, then scroll", () => {

@@ -1862,7 +1862,7 @@ function memoryRows(index) {
   var out = []
   for (var i = 0; i < lessons.length; i++) {
     if (!hasText(lessons[i])) continue
-    out.push({ section: "", kind: "lesson", title: lessons[i], meta: "", target: MEMORY_OPEN_TARGET })
+    out.push({ section: "", kind: "lesson", title: lessons[i], meta: "", path: "memory/lessons.md", updated: "", target: MEMORY_OPEN_TARGET })
   }
   if (out.length > 0) out[0].section = "LESSONS"
   var first = out.length
@@ -1872,7 +1872,8 @@ function memoryRows(index) {
     var meta = []
     if (hasText(t.path)) meta.push(t.path)
     if (hasText(t.updated)) meta.push("updated " + t.updated)
-    out.push({ section: "", kind: "topic", title: t.topic, meta: meta.join(" · "), target: MEMORY_OPEN_TARGET })
+    out.push({ section: "", kind: "topic", title: t.topic, meta: meta.join(" · "), path: hasText(t.path) ? t.path : "",
+      updated: hasText(t.updated) ? t.updated : "", target: MEMORY_OPEN_TARGET })
   }
   if (out.length > first) out[first].section = "TOPICS"
   return out
@@ -1884,6 +1885,148 @@ function memorySummary(rows) {
   var lessons = list.filter(function(r) { return r.kind === "lesson" }).length
   var topics = list.length - lessons
   return list.length === 0 ? "" : plural(lessons, "lesson", "lessons") + " · " + plural(topics, "topic", "topics")
+}
+
+// ---- Desk sections 4–6: Decisions, System, Memory (WP-123) -----------------
+
+// The sidebar search over a list (ADR-0034 §2, `/`): the rows whose
+// `fields` hold every word of `text`, case-insensitive; "" keeps all.
+function deskFilter(rows, text, fields) {
+  var list = Array.isArray(rows) ? rows : []
+  var words = String(text || "").toLowerCase().split(/\s+/).filter(function(w) { return w !== "" })
+  if (words.length === 0) return list
+  return list.filter(function(r) {
+    var hay = fields.map(function(f) { return str(r[f]) }).join(" ").toLowerCase()
+    return words.every(function(w) { return hay.indexOf(w) !== -1 })
+  })
+}
+
+// The cases a decision names (contract v2, `decisions[].cases`), each with
+// its title and status from the index's case lists: [{ id, title, status,
+// actionable }]. null when the index does not carry the field (contract 1):
+// the detail then hides the block. A case the index no longer lists (the
+// newest 50 completed, CONTRACT.md rule 4) keeps its id with an empty title.
+function decisionCases(index, decisionId) {
+  var list = index && Array.isArray(index.decisions) ? index.decisions : []
+  var d = null
+  for (var i = 0; i < list.length; i++) if (isObject(list[i]) && list[i].id === decisionId) d = list[i]
+  if (!d || !Array.isArray(d.cases)) return null
+  var known = {}
+  var groups = index && isObject(index.cases) ? index.cases : {}
+  for (var g = 0; g < CASE_STATUSES.length; g++) {
+    var cs = Array.isArray(groups[CASE_STATUSES[g]]) ? groups[CASE_STATUSES[g]] : []
+    for (var k = 0; k < cs.length; k++) if (isObject(cs[k]) && hasText(cs[k].id)) known[cs[k].id] = cs[k]
+  }
+  var out = []
+  for (var j = 0; j < d.cases.length; j++) {
+    var id = str(d.cases[j])
+    if (id === "") continue
+    var c = known[id] || {}
+    out.push({ id: id, title: str(c.title), status: str(c.status), actionable: CASE_ID.test(id) })
+  }
+  return out
+}
+
+// What a decision's detail shows besides its title (the index has no body:
+// the text is in the file). `actions` for the sticky bar: Accept while it
+// is proposed — the engine accepts nothing itself, the user sets the
+// status in the frontmatter, so Accept opens the file like Open in editor —
+// then Open in editor. Neither writes, so neither arms.
+function decisionDetail(row) {
+  if (!row) return null
+  var rows = []
+  if (row.status !== "") rows.push(["Status", row.status])
+  if (row.date !== "") rows.push(["Date", row.date])
+  if (row.path !== "") rows.push(["File", row.path])
+  var actions = []
+  if (row.status === "proposed") actions.push({ id: "accept", label: "Accept", primary: true, enabled: row.actionable })
+  actions.push({ id: "open", label: "Open in editor", primary: false, enabled: row.actionable })
+  return {
+    heading: [row.id, row.status, row.date].filter(function(p) { return p !== "" }).join(" · "),
+    rows: rows,
+    actions: actions,
+    note: row.status === "proposed"
+      ? "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture."
+      : row.status === "superseded" ? "Superseded by a later decision; kept for the record." : "",
+    lead: row.actionable ? "The text is in the file; Open in editor shows it." : "This id does not match ADR-NNNN; Seldon does not open it."
+  }
+}
+
+// System (ADR-0034 §2, section 5): five tiles, each with a big value, a
+// unit, a lead line and key/value rows, from Model.systemSections (every
+// field of index.system is optional). A tile without its data shows "—"
+// and says so. Collectors carries how Seldon sees the machine: each
+// collector, then machine, engine, index time and the logbook's areas.
+// `stripe` "attention" marks a tile with a failing collector.
+function systemTiles(index, nowMs) {
+  var sections = {}
+  var list = systemSections(index, nowMs)
+  for (var i = 0; i < list.length; i++) sections[list[i].title] = list[i].rows
+  var rowsOf = function(title) { return (sections[title] || []).map(function(p) { return [p.label, p.value] }) }
+  var sys = index && isObject(index.system) ? index.system : {}
+  var tiles = []
+
+  var om = isObject(sys.omarchy) ? sys.omarchy : {}
+  var omLead = []
+  if (hasText(om.theme)) omLead.push("theme " + om.theme)
+  if (hasText(om.lastUpdate)) omLead.push("updated " + relativeAge(timeMs(om.lastUpdate), nowMs))
+  tiles.push({ id: "omarchy", title: "Omarchy", big: hasText(om.version) ? om.version : "—", unit: "",
+    lead: omLead.join(" · "), rows: rowsOf("OMARCHY").concat(rowsOf("PLUGINS")) })
+
+  var pk = isObject(sys.packages) ? sys.packages : {}
+  var pkLead = []
+  if (isInt(pk.explicit)) pkLead.push(pk.explicit + " explicit")
+  if (isInt(pk.aur)) pkLead.push(pk.aur + " from the AUR")
+  tiles.push({ id: "packages", title: "Packages", big: isInt(pk.total) ? String(pk.total) : isInt(pk.explicit) ? String(pk.explicit) : "—",
+    unit: isInt(pk.total) ? "installed" : isInt(pk.explicit) ? "explicit" : "",
+    lead: pkLead.join(" · "), rows: rowsOf("PACKAGES").filter(function(r) { return r[0] !== "Deviations" }) })
+
+  var snapRows = rowsOf("SNAPSHOTS")
+  var newest = null
+  var snaps = Array.isArray(sys.snapshots) ? sys.snapshots : []
+  for (var s = 0; s < snaps.length; s++)
+    if (isObject(snaps[s]) && isInt(snaps[s].number) && (newest === null || snaps[s].number > newest)) newest = snaps[s].number
+  tiles.push({ id: "snapshots", title: "Snapshots", big: newest === null ? "—" : String(newest), unit: newest === null ? "" : "newest",
+    lead: snapRows.length > 0 ? plural(snapRows.length, "snapshot", "snapshots") + " in the index (the newest 10)" : "", rows: snapRows })
+
+  var dev = isInt(sys.deviations) ? sys.deviations : null
+  tiles.push({ id: "deviations", title: "Deviations", big: dev === null ? "—" : String(dev), unit: dev === null ? "" : dev === 1 ? "file" : "files",
+    lead: dev === null ? "" : "Config files that differ from Omarchy's defaults; the list is in STATUS.md", rows: [] })
+
+  var cs = collectors(index)
+  var enabled = 0
+  var ok = 0
+  for (var c = 0; c < cs.length; c++) {
+    if (!isObject(cs[c]) || cs[c].enabled === false) continue
+    enabled++
+    if (cs[c].ok !== false) ok++
+  }
+  var last = index && isObject(index.state) && hasText(index.state.lastCapture) ? timeMs(index.state.lastCapture) : NaN
+  var colLead = []
+  if (enabled > ok) colLead.push(plural(enabled - ok, "collector failing", "collectors failing"))
+  if (isFinite(last)) colLead.push("last capture " + relativeAge(last, nowMs))
+  var areaRows = rowsOf("AREAS").map(function(r) { return ["Area " + r[0], r[1] === "" ? "—" : r[1]] })
+  tiles.push({ id: "collectors", title: "Collectors", big: enabled === 0 ? "—" : ok + "/" + enabled, unit: enabled === 0 ? "" : "ok",
+    lead: colLead.join(" · "), rows: rowsOf("COLLECTORS").concat(rowsOf("SELDON"), areaRows),
+    stripe: enabled > ok ? "attention" : "" })
+
+  for (var t = 0; t < tiles.length; t++) {
+    if (tiles[t].stripe === undefined) tiles[t].stripe = ""
+    tiles[t].empty = tiles[t].big === "—"
+    if (tiles[t].empty && tiles[t].lead === "") tiles[t].lead = "Not in the index"
+    tiles[t].meta = (tiles[t].big + (tiles[t].unit !== "" ? " " + tiles[t].unit : ""))
+  }
+  return tiles
+}
+
+// What a memory row's detail shows: the kind as its heading, the file it
+// lives in and, for a topic, when it was updated.
+function memoryDetail(row) {
+  if (!row) return null
+  var rows = []
+  if (str(row.path) !== "") rows.push(["File", row.path])
+  if (str(row.updated) !== "") rows.push(["Updated", row.updated])
+  return { heading: row.kind === "lesson" ? "Lesson" : "Topic", rows: rows }
 }
 
 // ---- Prime Radiant (overlay) ------------------------------------------------
@@ -1926,24 +2069,11 @@ function periodById(id) {
   return periodById(PERIOD_DEFAULT)
 }
 
-// "1"–"4" → the period id, anything else → "".
-function periodForKey(text) {
-  var n = Number(text)
-  return String(text).length === 1 && n >= 1 && n <= PERIODS.length ? PERIODS[n - 1].id : ""
-}
-
 // The next period to the left (-1) or right (+1), wrapping like the tabs.
 function cyclePeriod(current, direction) {
   var i = PERIODS.indexOf(periodById(current))
   var n = PERIODS.length
   return PERIODS[((i + (direction < 0 ? -1 : 1)) % n + n) % n].id
-}
-
-// `summon jax.seldon '{"period":"30"}'` opens on that period; anything else
-// (no payload, broken JSON, an unknown id) opens on `fallback`.
-function overlayPayloadPeriod(payloadJson, fallback) {
-  var data = parseJson(payloadJson)
-  return data && isPeriod(data.period) ? data.period : fallback
 }
 
 // A real calendar date "YYYY-MM-DD" (no 2026-02-30).
@@ -2802,28 +2932,6 @@ function periodCaption(win) {
   var p = periodById(win ? win.period : "")
   if (!win || win.from === "") return p.label + " · everything in the index"
   return p.label + " · " + win.from + " – " + win.to
-}
-
-// The header's second line: machine · Omarchy version · generated time.
-function overlayMeta(index) {
-  if (!index) return ""
-  var parts = []
-  var logbook = isObject(index.logbook) ? index.logbook : {}
-  if (hasText(logbook.machine)) parts.push(logbook.machine)
-  var omarchy = isObject(index.system) && isObject(index.system.omarchy) ? index.system.omarchy : {}
-  if (hasText(omarchy.version)) parts.push("Omarchy " + omarchy.version)
-  if (dayOf(index.generatedAt) !== "") parts.push("generated " + dayOf(index.generatedAt) + " " + clockTime(index.generatedAt))
-  return parts.join(" · ")
-}
-
-// The overlay's banner: the service's banner, with only the fix that runs
-// no engine command (copying it); the overlay runs no engine command (WP-030).
-function overlayBanner(banner) {
-  if (!banner) return null
-  var out = {}
-  for (var k in banner) out[k] = banner[k]
-  out.actions = (banner.actions || []).filter(function(a) { return a.id === "copy" })
-  return out
 }
 
 // Slot geometry on a 12-column grid (SPEC-PLUGIN §6) inside `width` ×
