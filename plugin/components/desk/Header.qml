@@ -38,7 +38,9 @@ Item {
   signal chipClicked()
   signal kpiPicked(string id)
 
-  implicitHeight: Math.max(brand.height, kpiStrip.height, tools.height) + Style.spacing.xxl * 2
+  // From heights known at once (not the Rows', set in their polish a frame
+  // late): what sits under the header must not move after the first frame.
+  implicitHeight: Math.max(brand.height, kpiStrip.figureHeight, Style.spacing.controlHeight) + Style.spacing.xxl * 2
 
   TextMetrics {
     id: capMetrics
