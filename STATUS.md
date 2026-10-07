@@ -15,7 +15,6 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-130 | guard: stop false positives on text, keep every real block | Engine | `engine-130` (opus) | `wt/WP-130` · `wp/130-guard` | 2026-10-06 |
-| WP-118 | wizard, installer and docs texts (UX review) | Engine + Docs | `engine-118` (opus) | `wt/WP-118` · `wp/118-setup-texts` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -52,6 +51,13 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-07 WP-118 the first setup's terminal side says what it does:
+  install.sh announces first and names only the next steps still left;
+  the init wizard no longer promises a red pill, its prompts fit 70
+  columns, the private agent kit is hidden unless present, the summary is
+  six rows; guides 01/10/11 en/de (update the plugin first when coming
+  from 0.1.0; Omarchy shows the plugin diff); Opus review, one round,
+  Fable stage 2, CI shellcheck on PR #6; merged.
 - 2026-10-07 WP-117 every terminal the panel opens (engine install and
   update, logbook setup, snapshot grant, plugin update) says what it will
   do, shows the command and reports only what happened (failures, a
