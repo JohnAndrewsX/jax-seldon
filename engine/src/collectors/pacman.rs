@@ -683,15 +683,21 @@ mod tests {
             })
         };
         assert_eq!(
-            l("[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/pacman.conf installed as /etc/pacman.conf.pacnew"),
+            l(
+                "[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/pacman.conf installed as /etc/pacman.conf.pacnew"
+            ),
             left("/etc/pacman.conf", "/etc/pacman.conf.pacnew")
         );
         assert_eq!(
-            l("[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/ssh/sshd_config saved as /etc/ssh/sshd_config.pacsave"),
+            l(
+                "[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/ssh/sshd_config saved as /etc/ssh/sshd_config.pacsave"
+            ),
             left("/etc/ssh/sshd_config", "/etc/ssh/sshd_config.pacsave")
         );
         assert_eq!(
-            l("[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/my file.conf saved as /etc/my file.conf.pacorig\r"),
+            l(
+                "[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/my file.conf saved as /etc/my file.conf.pacorig\r"
+            ),
             left("/etc/my file.conf", "/etc/my file.conf.pacorig"),
             "a space in the path, a CRLF ending"
         );
