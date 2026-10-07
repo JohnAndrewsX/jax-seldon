@@ -59,7 +59,7 @@ merge into `next`. Plan and the decisions the WP left open:
   resolved from Today; `harness/desk.qml`'s overflow check honours clipping
   (rows scrolled out of a list are not on screen); `service-states.sh`
   scenario 35 loads the moved forms; `DESK_SHOTS` also renders the
-  Changelog and Work; 12 new unit tests in `model.test.js`.
+  Changelog and Work; 10 new unit tests in `model.test.js` (107 → 117; corrected in round 2).
 - **Docs**: SPEC-PLUGIN §2, §5.3, §5.4 (Today, Changelog, Work as their
   own paragraphs; §5.7 now covers sections 4–6 only), §8; KEYBINDINGS.md;
   TESTING.md; `tests/plugin/COVERAGE.md` — every row WP-122 owns is
@@ -179,3 +179,73 @@ no editor round trip?
 ok`; docs-check ok, qmllint ok 48 files, model.test 117, real-home-guard 11,
 service-states 316, desk-view 789, bar-view 194). Only this handover changed
 after that commit.
+
+## Round 2
+
+Review 1 (stage 1): SEND BACK on B1 and B2; brief
+`WP-122-round-2-brief.md` with the orchestrator's decisions. Not merged
+with `next` (WP-120 first, then one merge). Commits 7d78bbd (B1, N5),
+5bac4c9 (B2), 0765d33 (Enter, N4), c2c4cc6 (tests), the docs commit after.
+
+- **Enter never launches an agent.** `Model.caseEnterAction` (the first
+  action that launches nothing): on an active case Enter twice is To
+  verification; *Hand to agent* stays the first button, runs only from `a`
+  twice or click + Confirm. Tests: model.test "caseDeskActions … Enter
+  never launches" (every status), desk-view `work-agent` #6 (Enter after
+  `a` re-arms verify), `work-live` #26–#29 (Enter twice on an active case
+  → `plan verify`), `tab-focus` #6. SPEC §5.3, §5.4 Work; KEYBINDINGS.md;
+  COVERAGE 10b.
+- **B1 — why loud from the rule.** EventDetail asks `seldon drift show
+  <id> --json` (CONTRACT argv, read-only; a group's leader) for a selected
+  crisis; `Service.driftRules` keeps the answer while the item stays a
+  crisis (`Model.keptDriftRules`); `Model.whyLoud` words `always-red`,
+  `always-red-paths` (naming the config lists, not their meaning),
+  `attention-all` ("a crisis is a change in the red zone"); until the
+  answer only class and source. A planned crisis says "C-… plans it …;
+  nothing has linked it yet", and the Case and Rule rows agree. Tests:
+  model.test "eventDetail … why loud from the engine's rule only (B1)"
+  (incl. a proposed crisis), "driftRuleInfo and driftShowResult";
+  desk-view `why-loud`, `why-loud-planned`, `why-loud-all`,
+  `why-loud-group` (live, argv checked), `today`/`quiet-crisis` (dev mode:
+  the neutral text). The fake engine names `class`/`rule` in `drift show`
+  (`FAKE_SELDON_ATTENTION_ALL`). Live argv now includes one `drift show`
+  for a selected crisis (`today-resolve`, `drift-live`, `tab-focus`).
+- **B2 — one count.** The drift chips (open, crisis, attention) list and
+  count changes, a group once as its leader; Hide counts a group once;
+  the count line says "N changes" there. On the sample: open 6 = sidebar
+  6, crisis 2 = header crises, attention 4 = header attention = "4 changes
+  without a case"; Hide on mesa → "1 change hidden", chips 5/2/3. Tests:
+  model.test "one count everywhere …(B2)"; desk-view `changelog` #1 and
+  #16, `hide-group`.
+- **N2** — the unit-test count corrected above (10 new in round 1; round 2
+  adds 3 more: 120 in all).
+- **N3** — exactly as typed: model.test "free text goes exactly as typed,
+  surrounding blanks included" (note, note with case, intent, title,
+  explain, dismiss); desk-view with blanks in every field: `today-live`
+  (note "  --help 2 "), `today-new` (intent with a trailing blank),
+  `work-run` (leading), `work-live` (title " --help"), `drift-live`
+  (explain " --help ", dismiss "routine update  "), each argv compared.
+  Mutants `startAgentNew(text.trim())` in Today.qml and
+  `logArgs(String(text).trim(), …)` in Service.qml: killed (today-new,
+  today-live argv), run from a runner script on the worktree, restored.
+- **N4** — KeyValues: `Text.Wrap` (word boundaries, anywhere only for a
+  token longer than the line). desk-view `kv-wrap` (50 %, no overflow);
+  render checked by eye ("… can break boot / needs your go").
+- **N5** — Open case for a case outside Work's lists: one line "C-… is not
+  in the index any more (it keeps the last 50 completed cases)." and *Open
+  in editor*; the plugin cannot tell whether the file exists (it reads
+  only the index), so the button asks the engine and its answer replaces
+  the line. desk-view `case-gone` (live; the engine's refusal shown, argv
+  `open C-2026-001 --editor --json`).
+- Also: a payload's chip and its `select` arriving together keep the
+  selection (`Changelog.chipPending`), found while porting
+  `drift-show-member` to the new chips.
+
+Verified: `omarchy plugin validate plugin/` ok; `just qmllint` ok (48
+files); `model.test.js` 120; `desk-view.sh` 819 passed, 0 failed.
+
+Round 2 final check: `flock /tmp/seldon-check.lock just check` on a4e808d
+(log `check-wp122-r2.log`, a name of its own): **exit 0** (`check: ok`;
+docs-check ok, qmllint ok 48 files, model.test 120, real-home-guard 11,
+service-states 316, desk-view 819, bar-view 194). Only this handover
+changed after that commit.
