@@ -51,12 +51,15 @@ check-rss:
 # threshold < 5 ms (not recorded and recorded; the temp dir on tmpfs);
 # redaction of long lines (WP-084, WP-087): 16 KB < 1 ms, 64 KB < 2 ms
 # without a masked value, 128 KB with many masked values < 20 ms (two curl
-# option kinds) and < 10 ms (`--password`/`token=`).
+# option kinds) and < 10 ms (`--password`/`token=`);
+# capture cost of the config and plugins collectors (WP-113): config cold
+# < 100 ms and warm < 20 ms, plugins warm < 60 ms and with cold trees
+# < 150 ms on a synthetic home (the medians are the numbers to report).
 # Every check, the bench included, measures a median over budget once more
 # before it fails.
 check-perf:
     SELDON_BENCH_X150=1 cargo bench --manifest-path engine/Cargo.toml --locked --bench index
-    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --test index --test hooks --test redaction -- --ignored --test-threads=1 --nocapture
+    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --test index --test hooks --test redaction --test capture_cost -- --ignored --test-threads=1 --nocapture
 
 # The AUR package (WP-040): PKGBUILD and helper syntax, shellcheck when
 # installed, .SRCINFO in step with the PKGBUILD. Never runs makepkg.
