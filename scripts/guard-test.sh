@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # every row is literal command text; nothing is meant to expand
 # Expectation table for scripts/guard.sh: B = must block (exit 2), A = must allow (exit 0)
 # The guard only reads the command text; every row runs with a fixed fake
 # HOME and working directory, so nothing depends on this machine.
@@ -20,7 +21,7 @@ check() {
   rows=$((rows + 1))
   err=$(printf '{"tool_input":{"command":%s},"cwd":"%s"}' "$(printf '%s' "$cmd" | jq -Rs .)" "$cwd" | bash "$G" 2>&1 >/dev/null)
   local rc=$?
-  local got=?; [ $rc -eq 0 ] && got=A; [ $rc -eq 2 ] && got=B
+  local got='?'; [ $rc -eq 0 ] && got=A; [ $rc -eq 2 ] && got=B
   if [ -n "${GUARD_TEST_REPORT:-}" ]; then
     local context=
     if [ -z "${SELDON_TEST_GUARD:-}" ]; then context="SELDON_TEST_GUARD unset"
