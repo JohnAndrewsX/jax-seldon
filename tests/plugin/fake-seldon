@@ -46,6 +46,8 @@
 #                        `attention-all` (`[drift] attention = "all"`); else
 #                        a config crisis is `always-red-paths`, a pacman one
 #                        `always-red`, attention `other` (WP-122)
+#   FAKE_SELDON_APPLY_REFUSED  an event id `drift apply` refuses (its
+#                        evidence "no longer resolves") (WP-124b)
 #   FAKE_SELDON_RULES    the rules row `doctor --json` reports: current
 #                        (default) | outdated | damaged; $HOME/rules overrides
 #                        it, and `rules update` writes "current" there (WP-101);
@@ -91,6 +93,16 @@
 # reports one `rules` row and is logged to $HOME/doctor.log only (it runs in
 # its own process, beside the queue, so it is kept out of calls.log and
 # argv.log); `rules update --json` sets the rules current.
+#
+# `agent ask triage|drift <id>|case <id>` (WP-124b) launches nothing and
+# answers with the engine's JSON (or, with FAKE_SELDON_NO_DEFAULT_AGENT,
+# its refusal); `status` puts the fixture's proposals next to the state
+# index once (the files its `triage.path` names). `drift apply <id>
+# [--item <eventId>]` reads that proposal: an item no longer in the state
+# index's drift is skipped, a crisis (its flag or the index's) is skipped
+# unless named, the rest are done and leave the drift list; a run without
+# --item sets `applied` once. `drift discard <id>` moves the file aside and
+# drops `triage` from the state index.
 #
 # `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
@@ -500,6 +512,81 @@ agent_start() { # agent_start <id> — the engine's checks and answer, no launch
     argv: ["omarchy", "agent", "prompt", "{prompt}"], case: $id, cwd: $cwd, previousActiveCase: null}'
 }
 
+# `agent ask triage|drift <id>|case <id> --json` (WP-124b): the engine's
+# answer for the default launcher; nothing is launched.
+agent_ask() {
+  local what=$1 target=$2 open=null index
+  if [[ -n ${FAKE_SELDON_NO_DEFAULT_AGENT:-} ]]; then
+    user_error 'no default agent: Omarchy has none set, so `omarchy agent prompt` cannot start one; nothing was launched. Fix: `omarchy default agent <name>` (e.g. claude), or set `[agent] launcher` in ~/.config/seldon/config.toml'
+  fi
+  index=$(state_index)
+  if [[ $what == triage ]]; then
+    open=$(jq '.summary.openDrift' "$index")
+    target=""
+  fi
+  echo "$what ${target:-}" >>"$HOME/asked"
+  jq -cn --arg what "$what" --arg target "$target" --argjson open "$open" --arg home "$HOME" \
+    '{launched: true, ask: $what, target: (if $target == "" then null else $target end), open: $open,
+      launcher: "default", program: "omarchy", argv: ["omarchy", "agent", "prompt", "{prompt}"],
+      actor: "agent:default", cwd: ($home + "/Work"), guide: ($home + "/.claude/skills/seldon/" + $what + ".md")}'
+}
+
+proposal_file() { # proposal_file <id>
+  local index
+  index=$(state_index)
+  echo "${index%/*}/proposals/$1.json"
+}
+
+# `drift apply <id> [--item <eventId>] --json` (WP-124b).
+drift_apply() {
+  local id=$1 item=$2 file index now result
+  file=$(proposal_file "$id")
+  [[ -f $file ]] || user_error "no proposal $id"
+  index=$(state_index)
+  now=$(date --iso-8601=seconds)
+  result=$(jq -c --arg item "$item" --arg now "$now" --arg refused "${FAKE_SELDON_APPLY_REFUSED:-}" --slurpfile ix "$index" '
+    ($ix[0].drift // []) as $drift
+    | [ .items[] | select($item == "" or .eventId == $item) ] as $sel
+    | [ $sel[] | . as $it | ([$drift[] | select(.eventId == $it.eventId)] | first) as $d
+        | if $d == null then {eventId, state: "skipped", reason: ("no longer open drift: " + .eventId + " is already resolved")}
+          elif ((.crisis or ($d.crisis // false)) and $item == "") then
+            {eventId, state: "skipped", reason: "crisis: applied only one by one (`--item`), never with the rest"}
+          elif .eventId == $refused then {eventId, state: "refused", reason: "evidence journal `2026-10-01 14:40` no longer resolves (no journal entry at 2026-10-01 14:40)"}
+          else {eventId, state: "done", action, case: (.caseId // null), resolved: 1, events: [], warning: null} end ] as $out
+    | { proposal: .id,
+        applied: (if .applied != null then .applied elif $item == "" then $now else null end),
+        markedApplied: (.applied == null and $item == ""),
+        done: [ $out[] | select(.state == "done") | del(.state) ],
+        skipped: [ $out[] | select(.state == "skipped") | {eventId, reason} ],
+        refused: [ $out[] | select(.state == "refused") | {eventId, reason} ],
+        git: {committed: false, reason: "the logbook is not a git repository"} }' "$file")
+  # the index: done items leave the drift list; applied once
+  rewrite_index '
+    ($r.done | map(.eventId)) as $ids
+    | ([.drift[] | select(.eventId as $e | $ids | index($e)) | select(.crisis)] | length) as $crises
+    | .drift |= map(select(.eventId as $e | ($ids | index($e)) | not))
+    | .summary.openDrift -= ($ids | length) | .summary.crisis -= $crises
+    | .events |= map(if (.id as $e | $ids | index($e)) then .resolution = "linked" else . end)
+    | if .triage and .triage.applied == null and $r.markedApplied then .triage.applied = $r.applied else . end' \
+    --argjson r "$result"
+  if [[ $(jq -r '.markedApplied' <<<"$result") == true ]]; then
+    jq --arg at "$(jq -r '.applied' <<<"$result")" '.applied = $at' "$file" >"$file.tmp"
+    mv "$file.tmp" "$file"
+  fi
+  echo "$result"
+}
+
+# `drift discard <id> --json` (WP-124b): the file aside, `triage` gone.
+drift_discard() {
+  local id=$1 file applied
+  file=$(proposal_file "$id")
+  [[ -f $file ]] || user_error "no proposal $id"
+  applied=$(jq -c '.applied' "$file")
+  mv "$file" "$file.discarded"
+  rewrite_index 'del(.triage)'
+  echo "{\"discarded\":\"$id\",\"applied\":$applied}"
+}
+
 case "$cmd" in
   --version)
     echo '{"name":"seldon","version":"0.1.0-fake"}'
@@ -547,6 +634,13 @@ case "$cmd" in
     now=$(date --iso-8601=seconds)
     sed "s/\"generatedAt\": \"[^\"]*\"/\"generatedAt\": \"$now\"/" "$fixture" >"$dir/index.json.tmp"
     mv "$dir/index.json.tmp" "$dir/index.json"
+    # the fixture's proposal, next to the index, once (WP-124b)
+    tpath=$(jq -r '.triage.path // empty' "$fixture")
+    if [[ -n $tpath && ! -f $HOME/proposals-seeded && -f "${fixture%/*}/$tpath" ]]; then
+      mkdir -p "$dir/proposals"
+      cat "${fixture%/*}/$tpath" >"$dir/$tpath"
+      echo seeded >"$HOME/proposals-seeded"
+    fi
     echo '{"ok":true}'
     ;;
   log)
@@ -615,6 +709,8 @@ case "$cmd" in
     [[ $mode == uninit ]] && uninit
     case "${2:-}" in
       show) drift_show "${3:-}" ;;
+      apply) drift_apply "${3:-}" "${5:-}" ;;
+      discard) drift_discard "${3:-}" ;;
       link | explain | dismiss)
         if [[ -n ${FAKE_SELDON_LOCKED:-} ]]; then
           echo '{"error":{"code":4,"message":"the logbook is locked by another seldon (pid 4242)"}}'
@@ -642,6 +738,7 @@ case "$cmd" in
           agent_start "${3:-}"
         fi
         ;;
+      ask) agent_ask "${3:-}" "${4:-}" ;;
       *) user_error "unrecognized subcommand '${2:-}'" ;;
     esac
     ;;

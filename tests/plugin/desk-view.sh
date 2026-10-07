@@ -2099,6 +2099,101 @@ expect graph-many 6 .view.graph.cut 3
 clean_log graph-many
 
 # ---------------------------------------------------------------------------
+# Bulk triage and Ask agent (WP-124b; ADR-0034 §6, ADR-0036): the button
+# (only with open changes and an engine that can write), the proposal's row
+# and detail (the bar's line, every evidence text author first, a crisis
+# by its own button, the marks), Apply bound to the id the user saw, the
+# outcome per item (applied ≠ done; a second Apply skips), the refusal of
+# a launch, Ask agent on an event and a case, Discard. Exact argv each.
+PROPOSAL=01M3VZS4J0NDXZFC2F7RBBD3FJ MONITORS=01M3KVWFR06078ZQTPRZCFYHK0
+fx_work="$work/fx-triage"
+mkdir -p "$fx_work"
+tt="$tv.triage"
+ttd="$tt.detail"
+head='3 items proposed by agent:claude-code at 2026-10-01 17:02, 1 crisis held back — apply each below'
+mkdir -p "$work/home-triage"
+run triage "" 1920x1080 \
+  "summon:$cl;view;clickName:triageAsk;settle;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;click:Apply this crisis;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:Apply proposals;wait:sectionView.triage.detail.result=Applied 0 · skipped 3 · refused 0;view" \
+  HOME="$work/home-triage" FAKE_SELDON_FIXTURE="$sample"
+expect triage 2 "[$tt.button, $tt.row, $tt.shown] | map(tostring) | join(\",\")" "Agent sorts 6 open changes,Proposal · $head,false"
+expect triage 4 "[$tt.ask, $tt.askOk] | map(tostring) | join(\",\")" \
+  "Agent started to sort 6 open changes; its proposal shows here · launcher default (omarchy),true"
+expect triage 6 "[$tt.shown, $ttd.head, $ttd.state, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "true,$head,agent:claude-code · proposal, nothing written yet,Apply proposals (2)+Discard"
+expect triage 6 "[$ttd.crises[].id] | join(\",\")" "$UNIT"
+expect triage 6 "[$ttd.regular[].id] | join(\",\")" "$THEME,$MONITORS"
+expect triage 6 "$ttd.regular[0].evidence | join(\" | \")" \
+  'Plan of C-2026-005: by human · - [ ] `omarchy theme set tokyo-night` | Journal 2026-10-01 17:00: by human · Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox.'
+expect triage 6 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "false,false,false"
+shows triage 6 "$head"
+shows triage 6 'by human · - [ ] `omarchy theme set tokyo-night`'
+shows triage 6 "by system · config-change ~/.config/hypr/monitors.conf: sha256 40ab1178 → 6d81c412"
+shows triage 6 "Apply this crisis"
+shows triage 6 "CRISES — EACH ON ITS OWN"
+expect triage 8 "[$ttd.regular[].outcome] | join(\",\")" "done,done"
+expect triage 8 "$ttd.crises[0].outcome" "skipped: crisis: applied only one by one (\`--item\`), never with the rest"
+expect triage 10 "$ttd.crises[0].outcome" "done"
+expect triage 12 "[$ttd.result, $ttd.resultOk, ([$ttd.regular[].outcome] | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "Applied 0 · skipped 3 · refused 0,true,skipped: no longer open drift: $THEME is already resolved+skipped: no longer open drift: $MONITORS is already resolved"
+expect triage 13 "$ttd.state | startswith(\"Applied \")" true
+shows triage 13 "Skipped: no longer open drift: $THEME is already resolved"
+argv_check triage "$work/home-triage" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)" \
+  "$(q drift apply $PROPOSAL --json)" "$(q drift apply $PROPOSAL --item $UNIT --json)" "$(q drift apply $PROPOSAL --json)")"
+clean_log triage
+
+# The engine refuses the launch (no default agent) and one item (its
+# evidence is gone): both shown, in the urgent colour, nothing else run.
+mkdir -p "$work/home-triage-refused"
+run triage-refused "" 1920x1080 \
+  "summon:$cl;clickName:triageAsk;settle;view;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 1 · skipped 1 · refused 1;view" \
+  HOME="$work/home-triage-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_DEFAULT_AGENT=1 FAKE_SELDON_APPLY_REFUSED="$THEME"
+refusal='no default agent: Omarchy has none set, so `omarchy agent prompt` cannot start one; nothing was launched. Fix: `omarchy default agent <name>` (e.g. claude), or set `[agent] launcher` in ~/.config/seldon/config.toml'
+expect triage-refused 4 "[$tt.ask, $tt.askOk, $tt.button] | map(tostring) | join(\",\")" "$refusal,false,Agent sorts 6 open changes"
+shows triage-refused 4 "$refusal"
+expect triage-refused 9 "$ttd.regular[0].outcome" \
+  'refused: evidence journal `2026-10-01 14:40` no longer resolves (no journal entry at 2026-10-01 14:40)'
+shows triage-refused 9 'Refused: evidence journal `2026-10-01 14:40` no longer resolves (no journal entry at 2026-10-01 14:40)'
+argv_check triage-refused "$work/home-triage-refused" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)" "$(q drift apply $PROPOSAL --json)")"
+clean_log triage-refused "jax\\.seldon: seldon agent exit 1: no default agent"
+
+# Ask agent on an open change and on a case; then Discard: the row and the
+# detail go, the logbook is untouched (only the three calls).
+mkdir -p "$work/home-triage-ask"
+run triage-ask "" 1920x1080 \
+  "summon:$(sel $UNIT);click:Ask agent;settle;view;text:3;select:C-2026-004;click:Ask agent;settle;view;text:2;clickName:proposalRow;click:Discard;settle;wait:sectionView.triage.row=;view" \
+  HOME="$work/home-triage-ask" FAKE_SELDON_FIXTURE="$sample"
+expect triage-ask 4 "[$td.ask, ($td.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "Agent asked about $UNIT; it answers in its window · launcher default (omarchy),Ask agent+Link to case…+Explain…+Dismiss…"
+expect triage-ask 9 "[$tc.ask, ($tc.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "Agent asked about C-2026-004; it answers in its window · launcher default (omarchy),Hand to agent+To verification+Drop+Open in editor+Ask agent"
+expect triage-ask 15 "[$tt.row, $tt.shown, $tt.button] | map(tostring) | join(\",\")" ",false,Agent sorts 6 open changes"
+argv_check triage-ask "$work/home-triage-ask" "$(printf '%s\n' "$startup" "$(q agent ask drift $UNIT --json)" \
+  "$(q agent ask case C-2026-004 --json)" "$(q drift discard $PROPOSAL --json)")"
+clean_log triage-ask
+
+# Nothing open: no button (the proposal row stays while the index names one).
+jq '.summary.openDrift = 0 | .summary.crisis = 0 | .drift = []' "$sample" >"$fx_work/index.none.json"
+mkdir -p "$work/home-triage-none"
+run triage-none "" 1920x1080 "summon:$cl;view" HOME="$work/home-triage-none" FAKE_SELDON_FIXTURE="$fx_work/index.none.json"
+expect triage-none 2 "[$tt.button, ($tt.row != \"\")] | map(tostring) | join(\",\")" ",true"
+clean_log triage-none
+
+# Dev mode (read-only): no button, the detail shows, its actions are off;
+# evidence an agent wrote or nobody signed is marked, its text in full.
+mkdir -p "$fx_work/flag/proposals"
+cp "$sample" "$fx_work/flag/index.json"
+jq '.items[0].evidence[1].text = "by agent:codex · the theme switch was mine, a test of the new palette, part of the Zed setup in C-2026-004 and nothing else" |
+    .items[1].evidence[0].text = "by unknown · monitors.conf removed"' \
+  "$fx/proposals/$PROPOSAL.json" >"$fx_work/flag/proposals/$PROPOSAL.json"
+run triage-dev "$fx_work/flag/index.json" 1920x1080 "summon:$cl;clickName:proposalRow;view"
+expect triage-dev 3 "[$tt.button, $tt.shown, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+  ",true,Apply proposals (2) (off)+Discard (off)"
+expect triage-dev 3 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "true,true,false"
+shows triage-dev 3 "Read twice: some evidence is an agent's words or has no known author."
+shows triage-dev 3 "by agent:codex · the theme switch was mine, a test of the new palette, part of the Zed setup in C-2026-004 and nothing else"
+clean_log triage-dev
+
+# ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live
 # screenshots): Today at 100 % and 50 %, Settings, the Changelog, Work,
 # Decisions, System, Memory, the Prime Radiant at 100 % and 50 % (and a
