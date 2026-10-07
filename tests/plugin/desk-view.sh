@@ -1693,15 +1693,17 @@ clean_log decisions-live
 
 # 10c'. Accept (WP-135, ADR-0040), live: Accept on the proposed ADR-0004
 #      arms ("Confirm accept", the hint in the sticky bar) and runs nothing;
-#      another key disarms, and so does another selection; armed again, the
+#      another key disarms, and so does a click on another decision (no
+#      key); armed again, the
 #      second click runs `decide accept ADR-0004 --json` — once, and no
 #      `open` — and the decision arrives accepted with the index: no
-#      Accept, the engine's answer in the detail, nothing proposed. The
+#      Accept, the engine's answer in the detail (that decision's only),
+#      nothing proposed. The
 #      engine's refusal shows in place and the decision stays proposed; a
 #      held lock too.
 mkdir -p "$work/home-decisions-accept"
 run decisions-accept "" 1920x1080 \
-  "summon;text:4;click:Accept;text:z;click:Accept;key:Down;key:Up;click:Accept;click:Confirm accept;settle" \
+  "summon;text:4;click:Accept;text:z;click:Accept;click:Zed statt VS Code als Zweiteditor;key:Up;click:Accept;click:Confirm accept;settle;key:Down" \
   HOME="$work/home-decisions-accept" FAKE_SELDON_FIXTURE="$sample"
 ta="$tv.accept"
 expect decisions-accept 2 '[.view.sectionView.cursor, (.view.sectionView.actions | join(","))] | join("|")' "ADR-0004|Accept,Open in editor"
@@ -1725,6 +1727,7 @@ for text in "Accepted ADR-0004 · Ollama nur als User-Service mit Case" "ADR-000
   shows decisions-accept 10 "$text"
 done
 expect decisions-accept 10 '.view.lastError' ""
+expect decisions-accept 11 "[.view.sectionView.cursor, $ta.result] | join(\"|\")" "ADR-0003|"
 for i in 3 10; do expect decisions-accept $i '.overflow | join(" | ")' ""; done
 argv_check decisions-accept "$work/home-decisions-accept" "$(printf '%s\n' "$startup" "$(q decide accept ADR-0004 --json)")"
 clean_log decisions-accept
