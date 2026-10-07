@@ -283,3 +283,59 @@ Open for the orchestrator, from the packet: the review's question 1 (drop
 vs. rename a v1 user `risk`) — this round drops it, as the brief says;
 questions 2 (ADR §6 last sentence) and 4 (`check-rss`) unchanged; N6 is
 fixed here, not a WP of its own.
+
+## Round 3
+
+Fable stage 2: accept ADR-0035 after this round; code at 25e114b.
+
+- **State-file guard:** `sys::read_small_file` (`STATE_FILE_MAX` 4 MiB)
+  checks `symlink_metadata` before the open — only a regular file, no
+  link, FIFO, device or directory — and the size; the read itself stops
+  after `max + 1` bytes. `index::triage` reads every proposal through it
+  ("not read (…); the index skips it"), and `autocommit::attach` reads
+  `autocommit.json` through it. `attach` now returns a build warning for
+  an unreadable, oversized or non-regular record or one that is not a
+  record (another logbook's stays silent). All four call sites pass it
+  on: rebuild, `index`/`status` and `watch` into their warnings, the
+  session-stop hook on stderr.
+  Tests: `contract_v2::state_files_that_are_no_regular_small_files_are_
+  skipped`. As a proposal named `<ULID>.json` and as `autocommit.json` it
+  puts a FIFO (made by `mkfifo` from the test, no shell string), a symlink
+  to `/dev/zero` and a 5 MiB file. Each gets one warning, the build
+  finishes within the 20 s limit (`run_within` kills a hung run) with a
+  valid index, and the older valid proposal is still found. Also
+  `sys::tests::small_regular_files_only`.
+- **Control characters:** `autocommit::shown` maps every
+  `char::is_control` to a space before the redaction and the clip. Test:
+  `index::autocommit::tests::control_characters_are_spaces` with
+  `fatal: \x1b[31mred\x1b[0m\ttab \x07bell`.
+- **Wording:** all five edits:
+  - ADR-0035 §6: the last sentence replaced (optional fields and
+    proposal refinements within v2 until the tag, under the stated
+    conditions); the `crisis` sentence (the engine decides at apply
+    time); the 4 MiB regular-file rule.
+  - CONTRACT.md rule 9: the `crisis` sentence, the 4 MiB rule and the
+    optional-field rule.
+  - SPEC-ENGINE §2: the rule on the `autocommit.json` and `proposals/`
+    rows.
+  - VERSIONING.md: the downgrade paragraph names the `case-updated` and
+    `state-loss` lines and says not to delete them.
+  - ADR-0035 Consequences, first bullet: the exact 0.1.x behaviour.
+
+  The optional fields of the follow-up WP are not added here.
+- **Mutants:** all killed:
+  - R1, no type check: `state_files_…`.
+  - R2, no size check before the open: survived at first, because the
+    read cap gives the same result. It is killed now by the exact
+    message in `small_regular_files_only` (25e114b).
+  - R3, `attach` reads plainly: hangs on the FIFO, `state_files_…`
+    fails.
+  - R4, control characters kept: `control_characters_are_spaces`.
+- **Gate:** `flock /tmp/seldon-check.lock just check` at 25e114b (log
+  `wp120-round3-check-25e114b.log`): **exit 0**, `check: ok`.
+  - Rust 1990 passed, 0 failed, 10 ignored.
+  - `validate-fixtures: ok` (131 instances incl. 13 expected failures, 85
+    ledger events, 9 variants, 54 self-checks).
+  - `docs-check: ok`; `plugin-validate: ok`; `qmllint: ok` (49 files).
+  - Plugin tests: model 108, service-states 328, desk-view 373, bar-view
+    194, real-home-guard 11.
