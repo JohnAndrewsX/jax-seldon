@@ -163,3 +163,66 @@ commit.
 - The ledger detail carries the decision title through the ledger's
   redaction (as every detail); the frontmatter write changes two keys and
   is read back before the ledger is written.
+
+## Round 2
+
+Review 1 (stage 1): SEND BACK for B1, with the orchestrator's decisions on
+N1–N5. Commits cfc27b58 (engine), c9b77f2e (tests, docs). No merge of
+`next` (it moved only in `work/queued/`).
+
+- **B1 — the write order is tested.** `a_ledger_failure_accepts_nothing`
+  (as `tests/plan.rs` `a_ledger_failure_transitions_nothing`): an invalid
+  `[redaction] patterns` → exit 1, `tree()` unchanged including the
+  decision file, HEAD unchanged; a read-only `ledger/` with a new month →
+  exit 2, nothing written (skipped where permissions do not bind, as
+  root in CI); the decision stays proposed. The swap mutant (file before
+  ledger, M14) is killed.
+- **N1 — broken YAML.** `refuses_a_decision_that_is_not_proposed` adds a
+  frontmatter that does not read (`id: [ADR-0001`): exit 1 "invalid
+  frontmatter", nothing written. M15 (the load error as an engine error)
+  killed.
+- **N2 — documented.** SPEC-ENGINE §3 and ADR-0040 §1: the ledger first;
+  a ledger that cannot be written leaves the decision proposed; a file
+  write that fails after the ledger line leaves the `accepted:` note with
+  the decision still proposed, and a re-run adds a second note (the plan
+  step's pattern; the file stays the truth).
+- **N3 — an unreadable `SELDON_ACTOR` refuses.** New
+  `event::session_actor_for_user_act`: a `SELDON_ACTOR` that is set but
+  does not read (not UTF-8, not `human`/`agent:<name>`, `system`) is
+  exit 1 whatever `--actor` says, because the session may be an agent's.
+  Used by `decide accept` and by `triage.rs` `user_actor` (`drift
+  apply|discard`; it read the session with `if let Ok(Some(..))`). Tests:
+  three cases in `an_agent_never_accepts` (`--actor human` with
+  `agent:Not Valid`, with `system`; no `--actor` with `nobody`), two in
+  triage's `apply_and_discard_are_the_user_s_and_check_the_file`. M16,
+  M17 killed. SPEC-ENGINE §3 (both commands, §5's apply paragraph) and
+  ADR-0040 §4 say so.
+- **N4 — a new index disarms.** desk-view `decisions-accept-index`:
+  Accept armed, then a capture from the pill's right click (no key, no
+  click in the desk) makes the fake write an index with ADR-0005; Accept
+  is disarmed, the selection stays, only capture and status ran. P12
+  (no `onAllRowsChanged` disarm) killed.
+- **N5 — the fake refuses as the engine does.** `decisions-accept-refused`
+  uses the engine's own agent-session text; the fake's bad-id message is
+  clap's (`… is not a decision id (ADR-NNNN)`); its superseded and
+  unknown texts already were the engine's.
+- **N6 (not in the orchestrator's list) — not changed.** An inline
+  comment on the `status:` line is dropped by `Frontmatter::set`, the
+  shared lossless update every plan step uses too; a fix belongs there.
+
+Open for the orchestrator: the same lenient session read
+(`env_actor(parse_person).ok().flatten()` / `if let Ok(Some(..))`)
+remains in `plan.rs` (l.44 an imported case's start, l.474 `plan done`
+with `--actor human`), `drift.rs` l.491 (`link|explain|dismiss` with
+`--actor human`) and `import/task.rs` l.205 (`--include-done`). N3's
+helper fits each one; not changed here (outside this WP's scope).
+
+Verified: `cargo fmt`, clippy (default and `--features watch`) clean;
+`decide_accept` 6 passed, `triage` passes; engine mutants M1–M17 all
+killed; plugin mutants P1–P12 all killed (trimmed desk-view 85/85);
+`omarchy plugin validate plugin/` ok; docs-check ok.
+`flock /tmp/seldon-check.lock just check` on c9b77f2e: **exit 0**
+(`check: ok`; check-srcinfo ok, check-packaging ok, install.test 209,
+deploy-test-host 190, docs-check ok, qmllint ok 46 files, model.test.js
+145, real-home-guard 11, service-states 328, desk-view 1517, bar-view
+194). Only this handover changed after that commit.
