@@ -107,7 +107,7 @@ if [[ $cmd == doctor ]]; then
     damaged) row='{"name":"rules","status":"error","message":"damaged (the block has no end marker)","fix":"seldon rules update --replace (archives the file)"}' ;;
     *) row='{"name":"rules","status":"ok","message":"current (v3)"}' ;;
   esac
-  echo "{\"checks\":[{\"name\":\"engine\",\"status\":\"ok\",\"message\":\"seldon 0.1.0-fake\"},$row]}"
+  echo "{\"checks\":[{\"name\":\"engine\",\"status\":\"ok\",\"message\":\"seldon 99.0.0-fake\"},$row]}"
   [[ $rules == damaged ]] && exit 1
   exit 0
 fi
@@ -493,7 +493,9 @@ agent_start() { # agent_start <id> — the engine's checks and answer, no launch
 
 case "$cmd" in
   --version)
-    echo '{"name":"seldon","version":"0.1.0-fake"}'
+    # Above every engineMin: the harness tests plugin states; the version
+    # gate itself is model.test.js's (engineOutdatedBanner).
+    echo '{"name":"seldon","version":"99.0.0-fake"}'
     ;;
   capture)
     sleep 0.3

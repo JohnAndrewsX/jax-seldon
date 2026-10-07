@@ -105,7 +105,7 @@ expect ok .driftInBar crisis
 expect ok .tone urgent
 expect ok .tooltip "Seldon — 2 active cases, 2 crises, 4 changes without a case, last capture just now"
 expect ok .engine present
-expect ok .engineVersion 0.1.0-fake
+expect ok .engineVersion 99.0.0-fake
 expect ok .crisis "2 changes that can affect boot, login or the shell have no case"
 expect ok .snapper ""
 clean_log ok
