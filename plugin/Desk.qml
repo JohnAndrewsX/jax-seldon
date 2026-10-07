@@ -30,7 +30,7 @@ import "Model.js" as Model
 // `deskSidebar` is collapsed, list and detail stacked under 760 px.
 //
 // Keys (§2): 1–8 sections, `,` Settings, Alt+↑/↓ the previous / next of
-// the nine (wrapping), `/` the search, ↑/↓ j/k and Enter/Space to the
+// the nine (wrapping), `/` the search, ↑/↓ j/k, ←/→ and Enter/Space to the
 // section, Esc in this order: the section's own state (an inline form),
 // the search filter, the stacked detail, then close. Every other character
 // goes to the section first (Section.textKey); unused, `c` captures, `n`
@@ -47,7 +47,9 @@ import "Model.js" as Model
 // value and shows where to set it.
 //
 // IPC while loaded (`omarchy-shell shell call jax.seldon <method> <arg>`):
-// view "" (JSON, see view()), section <id>, select <id>.
+// view "" (JSON, see view(); `graph` the graph's layout and timing), section
+// <id>, select <id>, and for the Prime Radiant setPeriod <id> and hover
+// "<slot> <x>,<y>".
 Item {
   id: root
 
@@ -141,6 +143,12 @@ Item {
 
   function giveKeys() {
     Qt.callLater(function() { if (root.opened && !root.editing) keyCatcher.forceActiveFocus() })
+  }
+
+  // A section's field hands the keys back (Esc, Cancel, a sent form): the
+  // desk takes them from it, whatever has the focus now.
+  function takeKeys() {
+    if (root.opened) keyCatcher.forceActiveFocus()
   }
 
   // ---- Sections
@@ -284,6 +292,10 @@ Item {
       if (root.currentSection) root.currentSection.move(1)
       return true
     }
+    if (k === Qt.Key_Left || k === Qt.Key_Right) {
+      if (root.currentSection) root.currentSection.moveAcross(k === Qt.Key_Left ? -1 : 1)
+      return true
+    }
     if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space) {
       if (root.currentSection) root.currentSection.activate()
       return true
@@ -360,7 +372,34 @@ Item {
     return "written"
   }
 
+  // ---- The Prime Radiant's IPC (the 0.1 overlay's names, SPEC-PLUGIN §8)
+
+  // `setPeriod <id>`: shows section 7 with that period; returns the period
+  // now selected. An unknown id changes nothing — not the section either —
+  // and returns section 7's period ("" before its first visit).
+  function setPeriod(id) {
+    var value = String(id)
+    if (Model.isPeriod(value)) root.section("radiant")
+    var radiant = root.sectionItem("radiant") as Radiant
+    return radiant ? radiant.setPeriod(value) : ""
+  }
+
+  // `hover "<slot> <x>,<y>"` (fractions of the chart's plot) or "" (clear),
+  // while section 7 is shown: JSON { slot, hover } or { error }.
+  function hover(arg) {
+    var radiant = root.sectionItem("radiant") as Radiant
+    if (!radiant || !radiant.active) return JSON.stringify({ error: "the Prime Radiant is not shown" })
+    return radiant.hover(arg)
+  }
+
   // ---- Read-out
+
+  // The graph's layout and timing (section 8), also while another section
+  // is shown (it must not tick there); null before its first visit.
+  function graphView() {
+    var graph = root.sectionItem("graph") as Graph
+    return graph ? graph.graphView() : null
+  }
 
   // What the desk shows, as JSON, for the harness and the test host.
   function view(arg) {
@@ -402,7 +441,8 @@ Item {
       },
       arm: { armed: root.arm.armedId, hint: root.arm.hint },
       lastError: root.service ? root.service.lastError : "",
-      sectionView: s ? s.view() : null
+      sectionView: s ? s.view() : null,
+      graph: root.graphView()
     })
   }
 

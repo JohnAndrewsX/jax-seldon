@@ -1,5 +1,5 @@
 {
-  "contractVersion": 1,
+  "contractVersion": 2,
   "generatedAt": "2026-10-01T17:05:12+02:00",
   "engineVersion": "0.1.0",
   "logbook": {
@@ -8,7 +8,12 @@
     "machine": "workstation-7f3a",
     "git": {
       "head": "a1b2c3d",
-      "dirty": false
+      "dirty": false,
+      "autocommit": {
+        "ok": true,
+        "at": "2026-10-01T17:00:01+02:00",
+        "message": "seldon: note C-2026-004"
+      }
     }
   },
   "state": {
@@ -58,8 +63,8 @@
     "queuedCases": 3,
     "openDrift": 250,
     "crisis": 2,
-    "eventsToday": 30,
-    "events7d": 51
+    "eventsToday": 32,
+    "events7d": 53
   },
   "today": {
     "date": "2026-10-01",
@@ -276,7 +281,10 @@
       "kind": "case-started",
       "subject": "C-2026-008",
       "actor": "human",
-      "case": "C-2026-008"
+      "case": "C-2026-008",
+      "meta": {
+        "risk": "R2"
+      }
     },
     {
       "id": "01M3VC74ARPB23HG486VS0V52M",
@@ -286,7 +294,10 @@
       "subject": "C-2026-008",
       "detail": "Tailscale für Fernzugriff einrichten",
       "actor": "human",
-      "case": "C-2026-008"
+      "case": "C-2026-008",
+      "meta": {
+        "risk": "R2"
+      }
     },
     {
       "id": "01M3VB2V6G1EE4HHZ9SB8SRKMS",
@@ -296,7 +307,10 @@
       "subject": "C-2026-007",
       "detail": "Herdr-Orchestrator als Default-Agent registrieren",
       "actor": "human",
-      "case": "C-2026-007"
+      "case": "C-2026-007",
+      "meta": {
+        "risk": "R1"
+      }
     },
     {
       "id": "01M3V9XQPG3XSQHDE1KSNTZRQA",
@@ -393,7 +407,10 @@
       "kind": "case-started",
       "subject": "C-2026-004",
       "actor": "human",
-      "case": "C-2026-004"
+      "case": "C-2026-004",
+      "meta": {
+        "risk": "R2"
+      }
     },
     {
       "id": "01M3V5D0V0YT5KRGAHD1VQDF2Q",
@@ -496,7 +513,36 @@
       "kind": "case-started",
       "subject": "C-2026-003",
       "actor": "human",
-      "case": "C-2026-003"
+      "case": "C-2026-003",
+      "meta": {
+        "risk": "R3"
+      }
+    },
+    {
+      "id": "01M3V47SE0SG6CBVKB1NG4DEWJ",
+      "ts": "2026-10-01T09:00:40+02:00",
+      "source": "seldon",
+      "kind": "case-updated",
+      "subject": "C-2026-003",
+      "detail": "risk R2 → R3",
+      "actor": "human",
+      "case": "C-2026-003",
+      "meta": {
+        "risk": "R3"
+      }
+    },
+    {
+      "id": "01M3V3XDD0Q5Y4FVWJQ985QGR9",
+      "ts": "2026-10-01T08:55:00+02:00",
+      "source": "seldon",
+      "kind": "state-loss",
+      "subject": "state-reset",
+      "detail": "state directory missing, unreadable or bound to another logbook: new baseline for config (owned) at 2026-10-01T08:55:00+02:00, recorded 2026-10-01T08:55:00+02:00; changes made in between may not be recorded",
+      "actor": "system",
+      "meta": {
+        "files": "owned",
+        "sources": "config"
+      }
     },
     {
       "id": "01M3SXBRV0WPNQ721VWGG2WXZ1",
@@ -930,9 +976,12 @@
       "source": "manual",
       "kind": "note",
       "subject": "C-2026-002",
-      "detail": "Sieht gut aus, Skalierung 1.5 auf beiden. Morgen nach dem Neustart prüfen.",
+      "detail": "Sieht gut aus, Skalierung 1.5 auf beiden. Morgen nach dem Neustart prüfen. Notizen für morgen: erst kalt starten, dann beide Monitore einzeln aus- und wieder einstecken; prüfen, ob Hyprland die Reihenfolge DP-1 lin… (155 more characters in the ledger)",
       "actor": "human",
-      "case": "C-2026-002"
+      "case": "C-2026-002",
+      "meta": {
+        "truncated": true
+      }
     },
     {
       "id": "01M2ABVHD0SVBF5WCN07HWGE3Z",
@@ -1376,28 +1425,37 @@
       "title": "Ollama nur als User-Service mit Case",
       "status": "proposed",
       "date": "2026-10-01",
-      "path": "decisions/ADR-0004-ollama-user-service.md"
+      "path": "decisions/ADR-0004-ollama-user-service.md",
+      "cases": []
     },
     {
       "id": "ADR-0003",
       "title": "Zed statt VS Code als Zweiteditor",
       "status": "accepted",
       "date": "2026-10-01",
-      "path": "decisions/ADR-0003-zed.md"
+      "path": "decisions/ADR-0003-zed.md",
+      "cases": [
+        "C-2026-004",
+        "C-2026-005"
+      ]
     },
     {
       "id": "ADR-0002",
       "title": "Snapshots vor jedem Red-Zone-Eingriff",
       "status": "accepted",
       "date": "2026-09-02",
-      "path": "decisions/ADR-0002-snapshots.md"
+      "path": "decisions/ADR-0002-snapshots.md",
+      "cases": []
     },
     {
       "id": "ADR-0001",
       "title": "Logbuch-Sprache Deutsch, Struktur Englisch",
       "status": "accepted",
       "date": "2026-09-01",
-      "path": "decisions/ADR-0001-language.md"
+      "path": "decisions/ADR-0001-language.md",
+      "cases": [
+        "C-2026-001"
+      ]
     }
   ],
   "system": {
@@ -3028,7 +3086,7 @@
       },
       {
         "date": "2026-10-01",
-        "total": 30,
+        "total": 32,
         "bySource": {
           "agent": 6,
           "config": 2,
@@ -3036,7 +3094,7 @@
           "omarchy": 1,
           "pacman": 7,
           "plugins": 1,
-          "seldon": 6,
+          "seldon": 8,
           "snapper": 4,
           "theme": 1
         }
@@ -3210,5 +3268,16 @@
         "ref": "115"
       }
     ]
+  },
+  "triage": {
+    "id": "01M3VZS4J0NDXZFC2F7RBBD3FJ",
+    "at": "2026-10-01T17:02:00+02:00",
+    "actor": "agent:claude-code",
+    "counts": {
+      "items": 3,
+      "crises": 1
+    },
+    "path": "proposals/01M3VZS4J0NDXZFC2F7RBBD3FJ.json",
+    "applied": null
   }
 }

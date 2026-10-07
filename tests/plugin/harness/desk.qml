@@ -24,7 +24,7 @@ import qs.Ui
 // Then it runs HARNESS_STEPS and prints after each: Desk.view() (or
 // {"opened":false} while unloaded), the facade's calls, the writes, the
 // last call's result, every visible text and every text outside the
-// window or the desk.
+// window, the desk or the Prime Radiant slot it sits in.
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin copy (required)
 //   HARNESS_W/H         window size in logical pixels (default 1920 × 1080)
@@ -37,6 +37,11 @@ import qs.Ui
 //                       the bar, so nothing pushes an entry to the service
 //   HARNESS_STEPS       ";"-separated steps, each optionally "*N" repeated:
 //                       summon[:<json>]  `shell summon jax.seldon <json>`
+//                       fresh[:<json>]   drop the desk and summon a new one
+//                                        (the loader's path from closed);
+//                                        the report's `firstFrame` holds the
+//                                        Prime Radiant's counters sampled on
+//                                        its first swapped frame
 //                       hide             `shell hide jax.seldon`
 //                       toggle[:<json>]  `shell toggle jax.seldon <json>`
 //                       pill:<left|middle|right>  a click on the pill
@@ -66,6 +71,19 @@ import qs.Ui
 //                                        notch down)
 //                       pause:<ms>       wait that long, then report
 //                       hover:<text>     move the pointer onto that text
+//                       hoverItem:<slot>:<i>  move the pointer to item i of
+//                                        the Prime Radiant chart in that slot
+//                                        (chart.locate(i))
+//                       graphPlay        the graph's Play (Space)
+//                       graphCut:<day>   the graph's cut-off day (days
+//                                        since its first)
+//                       graphHover:<id>  move the pointer onto graph node id
+//                       graphDrag:<id|empty>:<dx>,<dy>  press on node id (or
+//                                        a point with no node: a pan), move
+//                                        by dx,dy in four steps, release;
+//                                        `call` holds { from, to }, the
+//                                        node's window point after
+//                       leave            move the pointer to the window corner
 //                       settle           wait (up to 15 s) until no engine
 //                                        call is queued or running
 //                       wait:<path>=<v>  wait (up to 15 s) until the view's
@@ -94,6 +112,11 @@ ShellRoot {
   property real dragX: 0
   property string waitFor: ""
   property double waitSince: 0
+  // fresh: the counters before the new desk exists and on its first frame.
+  property var firstFrame: null
+  property bool awaitFrame: false
+  property var beforeFresh: null
+  readonly property var slotIds: ["heatmap", "series", "driftBars", "riskDonut", "timeline", "plan"]
 
   readonly property var keys: ({
     Up: Qt.Key_Up, Down: Qt.Key_Down, Left: Qt.Key_Left, Right: Qt.Key_Right, Return: Qt.Key_Return,
@@ -202,29 +225,69 @@ ShellRoot {
     return out
   }
 
-  // Every visible text that reaches outside the window, or outside the
-  // desk card it sits in. An elided text counts by its box. Tolerance 1 px.
-  function overflow(item, box, out) {
+  // Every visible text that reaches outside the window, outside the desk
+  // card it sits in, or outside its Prime Radiant slot. An elided text
+  // counts by its box. Inside an item that clips (a list scrolled, a detail
+  // flicked, the Prime Radiant's grid scrolled), only the part inside the
+  // clip counts: rows scrolled out of a list are not on screen.
+  // Tolerance 1 px.
+  function overflow(item, box, out, clipBox, slot) {
     if (!item || item.visible === false) return out
-    if (String(item.objectName || "") === "desk") {
+    var name = String(item.objectName || "")
+    if (name === "desk" || name.indexOf("slot:") === 0) {
       var at = item.mapToItem(win.contentItem, 0, 0)
-      box = { name: "desk", x: at.x, y: at.y, w: item.width, h: item.height }
+      var r0 = { name: name, x: at.x, y: at.y, w: item.width, h: item.height }
+      if (name === "desk") box = r0
+      else slot = r0
+    }
+    if (item.clip === true) {
+      var c = item.mapToItem(win.contentItem, 0, 0)
+      clipBox = root.intersect(clipBox, { x: c.x, y: c.y, w: item.width, h: item.height })
     }
     if (root.isText(item)) {
       var p = item.mapToItem(win.contentItem, 0, 0)
       var w = item.elide !== Text.ElideNone ? item.width : Math.max(item.width, item.contentWidth)
       var h = Math.max(item.height, item.contentHeight)
+      var rect = root.intersect(clipBox, { x: p.x, y: p.y, w: w, h: h })
       var boxes = [{ name: "window", x: 0, y: 0, w: win.width, h: win.height }]
       if (box) boxes.push(box)
-      for (var b = 0; b < boxes.length; b++) {
+      if (slot) boxes.push(slot)
+      for (var b = 0; rect && b < boxes.length; b++) {
         var r = boxes[b]
-        if (p.x < r.x - 1 || p.y < r.y - 1 || p.x + w > r.x + r.w + 1 || p.y + h > r.y + r.h + 1)
+        if (rect.x < r.x - 1 || rect.y < r.y - 1 || rect.x + rect.w > r.x + r.w + 1 || rect.y + rect.h > r.y + r.h + 1)
           out.push(item.text + " @" + r.name)
       }
     }
     var kids = item.children
-    for (var i = 0; kids && i < kids.length; i++) overflow(kids[i], box, out)
+    for (var i = 0; kids && i < kids.length; i++) overflow(kids[i], box, out, clipBox, slot)
     return out
+  }
+
+  // The overlap of a clip and a box: b itself without a clip (undefined),
+  // null when the clip is empty (null) or they do not overlap.
+  function intersect(a, b) {
+    if (a === undefined) return b
+    if (a === null) return null
+    var x = Math.max(a.x, b.x)
+    var y = Math.max(a.y, b.y)
+    var w = Math.min(a.x + a.w, b.x + b.w) - x
+    var h = Math.min(a.y + a.h, b.y + b.h) - y
+    return w > 0 && h > 0 ? { x: x, y: y, w: w, h: h } : null
+  }
+
+  // The Prime Radiant section of the loaded desk, if it was made.
+  function radiant() {
+    return root.desk ? root.desk.sectionItem("radiant") : null
+  }
+
+  // The graph section (desk section 8), null before its first visit.
+  function graph() {
+    return root.desk ? root.desk.sectionItem("graph") : null
+  }
+
+  function chartFor(id) {
+    var r = root.radiant()
+    return r ? r.chartFor(id) : null
   }
 
   function find(item, test) {
@@ -263,9 +326,13 @@ ShellRoot {
   function report(tag) {
     console.log("HARNESS step " + String(tag).replace(/\s/g, "_") + " " + JSON.stringify({
       view: root.viewObject(), calls: fakeShell.calls, writes: fakeShell.writes, entry: root.entry,
-      call: root.lastCall, bare: root.bare, pill: root.widget ? JSON.parse(root.widget.pillReadout()) : null,
+      call: root.lastCall, bare: root.bare, firstFrame: root.firstFrame,
+      graphBuilds: root.service ? root.service.graphBuilds : null,
+      graphDirty: root.service ? root.service.graphDirty : null,
+      graphNodes: root.service && root.service.graph ? root.service.graph.nodes.length : null,
+      pill: root.widget ? JSON.parse(root.widget.pillReadout()) : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
-      texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [])
+      texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined)
     }))
   }
 
@@ -283,6 +350,53 @@ ShellRoot {
     var arg = colon === -1 ? "" : spec.slice(colon + 1)
     if (verb === "summon") {
       fakeShell.summon("jax.seldon", arg)
+    } else if (verb === "fresh") {
+      root.firstFrame = null
+      if (root.desk) fakeShell.hide("jax.seldon")
+      var started = Date.now()
+      root.beforeFresh = { service: root.service.aggregationCount() }
+      fakeShell.summon("jax.seldon", arg)
+      root.beforeFresh.createMs = Date.now() - started
+      root.awaitFrame = true
+    } else if (verb === "hoverItem") {
+      var hi = arg.split(":")
+      var chart = root.chartFor(hi[0])
+      var point = chart ? chart.locate(Number(hi[1])) : null
+      if (point) driver.mouseMove(chart.plot, point.x, point.y)
+      else console.log("HARNESS nothing to hover: " + arg)
+    } else if (verb === "graphPlay") {
+      var gp = root.graph()
+      if (gp) gp.play()
+      else console.log("HARNESS nothing to play")
+    } else if (verb === "graphCut") {
+      var gc = root.graph()
+      if (gc) gc.setCut(Number(arg))
+      else console.log("HARNESS nothing to cut")
+    } else if (verb === "graphHover") {
+      var gh = root.graph()
+      var hp = gh ? gh.nodePoint(arg) : null
+      if (hp) driver.mouseMove(win.contentItem, hp.x, hp.y)
+      else console.log("HARNESS nothing to hover: " + arg)
+    } else if (verb === "graphDrag") {
+      // The id may hold ":" (area:<name>, fold:…): the delta is after the last.
+      var gcut = arg.lastIndexOf(":")
+      var gparts = [arg.slice(0, gcut), arg.slice(gcut + 1)]
+      var gd = root.graph()
+      var from = !gd ? null : gparts[0] === "empty" ? gd.emptyPoint() : gd.nodePoint(gparts[0])
+      if (!from) {
+        console.log("HARNESS nothing to drag: " + gparts[0])
+        return
+      }
+      var delta = gparts[1].split(",").map(Number)
+      driver.mousePress(win.contentItem, from.x, from.y)
+      for (var gs = 1; gs <= 4; gs++)
+        driver.mouseMove(win.contentItem, from.x + delta[0] * gs / 4, from.y + delta[1] * gs / 4)
+      driver.mouseRelease(win.contentItem, from.x + delta[0], from.y + delta[1])
+      var to = gparts[0] === "empty" ? null : gd.nodePoint(gparts[0])
+      root.lastCall = JSON.stringify({ from: { x: Math.round(from.x), y: Math.round(from.y) },
+        to: to ? { x: Math.round(to.x), y: Math.round(to.y) } : null })
+    } else if (verb === "leave") {
+      driver.mouseMove(win.contentItem, 0, 0)
     } else if (verb === "hide") {
       fakeShell.hide("jax.seldon")
     } else if (verb === "toggle") {
@@ -409,6 +523,38 @@ ShellRoot {
       width: root.widget ? root.widget.implicitWidth : 0
       height: Style.bar.sizeHorizontal
       z: 10
+    }
+  }
+
+  // The first frames after a `fresh` open: what the Prime Radiant has
+  // aggregated and painted by then (-1: no such chart yet).
+  Connections {
+    target: win
+    function onFrameSwapped() {
+      if (!root.awaitFrame || !root.desk) return
+      var paints = root.slotIds.map(function(id) {
+        var c = root.chartFor(id)
+        return c ? c.paints : -1
+      })
+      var r = root.radiant()
+      var frame = root.firstFrame
+      if (frame === null) {
+        frame = {
+          serviceBefore: root.beforeFresh.service,
+          service: root.service.aggregationCount(),
+          section: r ? r.aggregationCount() : -1,
+          opened: root.desk.opened,
+          createMs: root.beforeFresh.createMs,
+          bare: root.bare,
+          paints: paints,
+          frames: 0,
+          paintedBy: 0
+        }
+      }
+      frame.frames++
+      if (paints.every(function(n) { return n >= 1 })) frame.paintedBy = frame.frames
+      root.awaitFrame = frame.paintedBy === 0 && frame.frames < 10
+      root.firstFrame = frame
     }
   }
 

@@ -1,0 +1,13 @@
+{
+  "id": "01M3V47SE0SG6CBVKB1NG4DEWJ",
+  "ts": "2026-10-01T09:00:40+02:00",
+  "source": "seldon",
+  "kind": "case-updated",
+  "subject": "C-2026-003",
+  "detail": "zone yellow → red",
+  "actor": "human",
+  "case": "C-2026-003",
+  "meta": {
+    "zone": "red"
+  }
+}

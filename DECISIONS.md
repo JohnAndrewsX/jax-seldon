@@ -36,6 +36,7 @@
 | ADR-0032 | The launch marker serves a session only while its case is open; existing installs' hooks go user-wide once | accepted |
 | ADR-0033 | A new logbook looks back 90 days and marks that history "before Seldon", without asking | accepted |
 | ADR-0034 | The plugin is a desk: one wide panel with sidebar, list and detail; Prime Radiant and the graph live inside | accepted |
+| ADR-0035 | Contract v2: the case's risk in the ledger (`case-updated`, `meta.risk`), the autocommit result, `meta.truncated`, the `state-loss` kind, `decisions[].cases`, the triage proposal | accepted |
 | ADR-0037 | ADR-0028 amended: toggles are routine both ways, `system-link` narrowed, the `authorized_keys` files default persistence paths | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

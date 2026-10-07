@@ -4,7 +4,8 @@ This page is for you if you kept a logbook with the omarchy-agent kit
 before Seldon: an Obsidian vault with `pipeline/`, `journal/` and
 `knowledge/`. Seldon can bring its cases, journal, knowledge and
 deviations into your Seldon logbook. If you never used the kit, skip
-this page.
+to the last section, [Task files](#task-files): it is for everyone who
+keeps tasks in Markdown files.
 
 ## What happens to your vault
 
@@ -124,6 +125,59 @@ same command (it is kept in `.seldon/imports/omarchy-agent.undo.json`).
 If that file was changed so that it names files outside the import's
 folders, or no commit, Seldon prints no command and points you to
 `git status` instead.
+
+## Task files
+
+You may keep tasks in Markdown files in your projects — a `TODO.md`
+with checkboxes, or a file that describes one job and that you handed to
+an agent. One command turns them into Seldon cases, so the work shows up
+on your desk and in the logbook:
+
+```sh
+seldon import task ~/projects/desk/TODO.md --dry-run
+seldon import task ~/projects/desk/TODO.md
+```
+
+The dry run lists what it would create and writes nothing. Without
+`--dry-run` the import applies at once and commits as
+`seldon: import task`.
+
+- Every open item (`- [ ] …`) becomes one **queued** case. Its title is
+  the item's first sentence (at most 72 characters); its *Intent* is the
+  item with the lines indented below it (nested items too) and the
+  heading it stands under.
+- Done items (`- [x] …`) are skipped. With `--include-done` they become
+  completed cases.
+- A file without any checkbox is one case: the title is its first `# `
+  heading, else the file name; the *Intent* is the rest of the file.
+- New cases are yellow, R1, priority normal. `--zone`, `--risk` and
+  `--area` set other values for all of them.
+- Each case gets the tag `imported` and a Log line `imported from
+  ~/projects/desk/TODO.md#12` (the file and the item's line).
+
+Your task file is only read: never changed, moved or run. Its text goes
+through the same redaction as a note, so a token in it does not reach
+the logbook — also one on a continued line.
+
+Imported cases stay queued. Each *Intent* starts with `Imported from
+<file> — read before you start this case.` Read it before you start the
+case: once you start a case, an agent may act on its *Intent* without
+asking, and the text came from a file, not from you. Until you start
+it, an agent treats that text like a web page it fetched. Seldon refuses
+an agent's start of an imported case: only you start it.
+
+Running the import again is safe. Seldon remembers each item in
+`.seldon/imports/tasks.json` and skips what it already imported (the
+report says `already-imported` and names the case). Ticking an item
+later does not import it again. If you reword an item, the import makes
+a new case, and its Log line names the earlier one (`changed since
+C-2026-004`).
+
+The import refuses (exit 1, nothing written): a file outside your home
+directory, a file inside the logbook, a folder (name the files in it),
+anything that is not a `.md` file, a file over 1 MiB or not in UTF-8,
+and more than 200 new cases at once. `--json` prints the report as
+`{mode, created, skipped, redactedLines, …}` for scripts and agents.
 
 ---
 

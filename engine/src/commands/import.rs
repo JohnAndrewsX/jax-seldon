@@ -1,5 +1,6 @@
 //! `seldon import omarchy-agent <vault> [--dry-run|--apply]` (SPEC-ENGINE
 //! §3, WP-043): the kit's vault into this logbook, dry run first.
+//! `seldon import task <FILE>…` (WP-102) lives in [`task`].
 //!
 //! Both modes build the same plan ([`crate::import::omarchy_agent`]) under
 //! the lock and write `outputs/IMPORT-omarchy-agent.md` (only on change).
@@ -40,6 +41,8 @@ use crate::model::{self, event::format_ts};
 use crate::redact::Redactor;
 use crate::sys;
 
+pub(crate) mod task;
+
 #[derive(Debug, Clone, Args)]
 pub struct ImportArgs {
     #[command(subcommand)]
@@ -50,6 +53,9 @@ pub struct ImportArgs {
 pub enum ImportSource {
     /// Import the omarchy-agent kit's Obsidian vault, which is only read (dry run unless --apply)
     OmarchyAgent(OmarchyAgentArgs),
+    /// Import your Markdown task files as cases: one queued case per open
+    /// `- [ ]` item (applies unless --dry-run; the files are only read)
+    Task(task::TaskArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -70,6 +76,7 @@ pub struct OmarchyAgentArgs {
 pub fn run(ctx: &Context, args: ImportArgs) -> Result<Output> {
     match args.source {
         ImportSource::OmarchyAgent(a) => omarchy_agent(ctx, a),
+        ImportSource::Task(a) => task::run(ctx, a),
     }
 }
 

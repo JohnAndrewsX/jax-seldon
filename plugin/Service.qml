@@ -108,6 +108,41 @@ Item {
   // computed when the index changes: the overlay is created anew on each
   // open and then only looks them up (WP-030, WP-031).
   readonly property var periods: Model.periodTable(index)
+  // The desk's sections Today, Changelog and Work (ADR-0034 §3, WP-122):
+  // their rows, built once when the index changes; the sections filter
+  // them by chip and search and look details up by id. Only while the
+  // index's contents mean something (indexShown), as the desk shows it.
+  readonly property var deskChangelog: Model.deskChangelog(root.indexShown ? root.index : null)
+  readonly property var deskToday: Model.deskToday(root.indexShown ? root.index : null, root.deskChangelog)
+  readonly property var deskWork: Model.deskWork(root.indexShown ? root.index : null)
+  // The graph (section 8, ADR-0034 §5, WP-125): nodes, edges, day index and
+  // folding (Model.graphBuild); the section only lays it out. Built when
+  // section 8 is shown and the index changed since the last build
+  // (`graphDirty`; graphRefresh, called by the section): the build takes
+  // about 5 ms of the shell thread on 500 events, which no capture should
+  // pay while the graph is not on screen. `graphBuilds` counts them.
+  property var graph: Model.graphEmpty()
+  property bool graphDirty: true
+  property int graphBuilds: 0
+  // The graph's layout (Model.graphState), kept here so a reopened desk
+  // shows the settled layout; written by components/graph/GraphCanvas.qml.
+  property var graphLayout: null
+  // Hide in the Changelog (WP-122): the attention items kept out of the
+  // open list for this shell session, by Model.hideKey; nothing written.
+  property var deskHidden: ({})
+  // The engine has `agent ask` (Ask agent in an event's or a case's bar):
+  // WP-124b sets this; no engine has it yet.
+  readonly property bool askAgentAvailable: false
+
+  // Build the graph if the index changed since the last build.
+  function graphRefresh() {
+    if (!root.graphDirty) return
+    root.graphDirty = false
+    root.graphBuilds++
+    root.graph = Model.graphBuild(root.indexShown ? root.index : null, Model.GRAPH_CAP)
+  }
+  onIndexChanged: root.graphDirty = true
+  onIndexShownChanged: root.graphDirty = true
 
   // How many aggregation passes this service's Model.js ran (periodTable and
   // its chart builders); the overlay reports it so the harness can show that
@@ -202,9 +237,13 @@ Item {
   readonly property var rulesNotice: Model.rulesNotice(root.rulesResult)
   property var driftResult: null
   property var decideResult: null
-  // The drift sheet's `seldon drift show` answer: { eventId, pending, ok,
-  // text, members } — a group's members beyond what index.events lists.
+  // The drift form's `seldon drift show` answer: { eventId, pending, ok,
+  // text, members, rule, cls } — a group's members beyond what index.events
+  // lists, and the item's rule (WP-122: the "why loud" callout).
   property var driftShown: null
+  // The rules `drift show` named: { <eventId>: { rule, cls } }, kept while
+  // the item is an open crisis (Model.keptDriftRules).
+  property var driftRules: ({})
 
   // Emitted after every engine call, for panels that wait on a result.
   signal finished(var args, int exitCode, string output)
@@ -233,6 +272,10 @@ Item {
   function ingest(text) {
     if (root.snapperHintIndex !== "" && text !== root.snapperHintIndex) root.snapperHintIndex = ""
     var result = Model.parseIndex(text)
+    // A rule holds while its item is still an open crisis; a rewritten
+    // index drops the others (resolved, or reclassified), which are asked
+    // again if they are selected as a crisis.
+    root.driftRules = Model.keptDriftRules(root.driftRules, result.ok ? result.index : null)
     if (root.engineNotInitialised && result.ok
         && Model.timeMs(result.index.generatedAt) > root.notInitialisedAtMs)
       root.engineNotInitialised = false
@@ -504,6 +547,12 @@ Item {
     } else if (args[0] === "drift" && args[1] === "show") {
       result.eventId = args[2]
       if (result.members === undefined) result.members = []
+      if (result.ok && result.rule) {
+        var rules = ({})
+        for (var k in root.driftRules) rules[k] = root.driftRules[k]
+        rules[args[2]] = { rule: result.rule, cls: result.cls }
+        root.driftRules = rules
+      }
       root.driftShown = result
     } else if (args[0] === "decide") {
       if (result.decisionId === undefined) result.decisionId = ""

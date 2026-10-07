@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 65ad985 -->
+<!-- source: en/10-troubleshooting.md @ 4e03e44 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -252,7 +252,8 @@ seit ihrem letzten Capture können im Ledger fehlen: `pacman` und
 `snapper` lesen ihre Quellen erneut und verpassen wenig, die anderen
 Collectors verpassen jede Änderung dazwischen.
 
-Das Capture hat eine Notiz mit dem Betreff `state-reset` ins Ledger
+Das Capture hat eine `state-loss`-Zeile mit dem Betreff `state-reset`
+(in 0.1.x eine Notiz) ins Ledger
 geschrieben, damit die Lücke sichtbar bleibt, und `seldon doctor` zeigt
 bis zum nächsten Capture eine `state`-Zeile mit `degraded`. Hat das
 Plugin dieses Capture gestartet, zeigt das Panel die Warnung als Hinweis

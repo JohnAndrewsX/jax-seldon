@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/proposal.schema.json",
+  "title": "Seldon triage proposal",
+  "description": "${XDG_STATE_HOME:-~/.local/state}/seldon/proposals/<id>.json: an agent's proposal for open drift items, stored by the engine (`seldon drift propose`), pointed to by index.triage, applied by `seldon drift apply` (ADR-0034 §6, ADR-0035 §6). Nothing in it is written to the logbook until it is applied. Every text is user content: shown escaped, never evaluated.",
+  "type": "object",
+  "required": ["id", "at", "actor", "logbook", "applied", "items"],
+  "additionalProperties": false,
+  "properties": {
+    "id":      { "$ref": "event.schema.json#/$defs/ulid", "description": "also the file's name: <id>.json" },
+    "at":      { "type": "string", "format": "date-time", "description": "when the engine stored it" },
+    "actor":   { "type": "string", "pattern": "^agent:[a-z0-9-]+$", "description": "the agent that proposed it" },
+    "logbook": { "type": "string", "minLength": 1, "description": "the logbook it was made for (canonical path); the index lists only this logbook's proposals" },
+    "applied": { "type": ["string", "null"], "format": "date-time", "description": "null until `seldon drift apply` applied it" },
+    "items": {
+      "type": "array", "maxItems": 200,
+      "items": {
+        "type": "object",
+        "required": ["eventId", "action", "crisis", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "eventId":  { "$ref": "event.schema.json#/$defs/ulid", "description": "the drift item's event id (a group's leader)" },
+          "action":   { "enum": ["link", "explain"] },
+          "caseId":   { "$ref": "event.schema.json#/$defs/caseId", "description": "link only: the case the change belongs to" },
+          "title":    { "type": "string", "minLength": 1, "maxLength": 256, "description": "explain only: the title of the completed case `drift explain` makes" },
+          "intent":   { "type": "string", "minLength": 1, "maxLength": 4096, "description": "explain only: why the change was made" },
+          "crisis":   { "type": "boolean", "description": "the item was a crisis when proposed (ADR-0028); `drift apply` applies it only when named by --item" },
+          "evidence": {
+            "type": "array", "minItems": 1, "maxItems": 10,
+            "items": {
+              "type": "object",
+              "required": ["kind", "ref"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["journal", "event", "snapshot", "case", "plan"] },
+                "ref":  { "type": "string", "minLength": 1, "maxLength": 64, "description": "journal: YYYY-MM-DD HH:MM; event: a ledger id; snapshot: its number; case and plan: a case id" },
+                "text": { "type": "string", "maxLength": 256, "description": "what the engine resolved the ref to (a journal line, an event's summary, a snapshot's description, a case title, a Plan line)" }
+              }
+            }
+          }
+        },
+        "allOf": [
+          { "if": { "properties": { "action": { "const": "link" } } },
+            "then": { "required": ["caseId"], "not": { "anyOf": [ { "required": ["title"] }, { "required": ["intent"] } ] } } },
+          { "if": { "properties": { "action": { "const": "explain" } } },
+            "then": { "required": ["title", "intent"], "not": { "required": ["caseId"] } } }
+        ]
+      }
+    }
+  }
+}

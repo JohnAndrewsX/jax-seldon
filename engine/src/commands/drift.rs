@@ -457,7 +457,8 @@ fn resolve(
             let created = Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
                 .detail(intent.clone())
                 .actor(actor)
-                .case(Some(id.clone()));
+                .case(Some(id.clone()))
+                .risk(file.case.risk);
             let completed = Event::new(ctx.now, Source::Seldon, Kind::CaseCompleted, &id)
                 .actor(actor)
                 .case(Some(id.clone()));

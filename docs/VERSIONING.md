@@ -49,7 +49,10 @@ following the translation policy in [docs/user/README.md](user/README.md).
 
 Downgrading the engine is not supported: the state files in
 `~/.local/state/seldon` may carry fields an older engine refuses; move
-`cursors.json` aside after a downgrade (doctor says so).
+`cursors.json` aside after a downgrade (doctor says so). A ledger written
+by 0.2.0 holds `case-updated` and `state-loss` lines a 0.1.x engine
+reports as invalid (doctor `ledger: degraded`); do not delete them — they
+are valid and are read again after the upgrade.
 
 ## `contractVersion`
 

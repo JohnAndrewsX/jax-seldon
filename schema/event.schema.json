@@ -15,8 +15,9 @@
                           "plugin-add", "plugin-remove", "plugin-enable", "plugin-disable", "plugin-update",
                           "theme-set", "config-change", "config-add", "config-remove",
                           "command", "note", "resolution", "correction",
-                          "case-created", "case-started", "case-verified", "case-completed", "case-dropped"] },
-    "subject": { "type": "string", "minLength": 1, "maxLength": 512, "description": "package name, path (~-relative), theme slug, plugin id, snapshot number, case id, program name (command), 'journal' (note without case), or the target's subject (resolution, correction)" },
+                          "case-created", "case-started", "case-verified", "case-completed", "case-dropped",
+                          "case-updated", "state-loss"] },
+    "subject": { "type": "string", "minLength": 1, "maxLength": 512, "description": "package name, path (~-relative), theme slug, plugin id, snapshot number, case id (case-*), program name (command), 'journal' (note without case), 'state-reset' (state-loss), or the target's subject (resolution, correction)" },
     "detail":  { "type": "string", "maxLength": 4096, "description": "human-readable, redacted (SPEC-ENGINE §7)" },
     "actor":   { "$ref": "#/$defs/actor" },
     "case":    { "$ref": "#/$defs/caseId" },
@@ -30,10 +31,12 @@
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean", "description": "plugin-add, plugin-enable, plugin-disable: whether the plugin is enabled after the change (ADR-0012 §15)" },
-        "txId":    { "type": "string", "minLength": 1, "description": "resolution only: the txId of the drift group this line was written for; every member's resolution line of one write carries it (ADR-0013 §4)" }
+        "txId":    { "type": "string", "minLength": 1, "description": "resolution only: the txId of the drift group this line was written for; every member's resolution line of one write carries it (ADR-0013 §4)" },
+        "risk":    { "enum": ["R0", "R1", "R2", "R3"], "description": "case-created, case-started, case-updated: the case's risk after the event (ADR-0035 §1); required on case-updated, absent on lines written before contract 2" },
+        "truncated": { "const": true, "description": "index only: a text of this event was clipped (ADR-0025, ADR-0035 §3); never in a ledger line" }
       },
       "additionalProperties": { "type": ["string", "number", "boolean", "null"] },
-      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre), enabled (plugin-add/-enable/-disable), txId (resolution of a drift group)"
+      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre), enabled (plugin-add/-enable/-disable), txId (resolution of a drift group), risk (case-created/-started/-updated), sources/files (state-loss), truncated (index only)"
     }
   },
   "allOf": [
@@ -46,7 +49,13 @@
     { "if": { "required": ["resolutionDetail"] },
       "then": { "required": ["resolution"], "properties": { "kind": { "not": { "const": "resolution" } } } } },
     { "if": { "properties": { "meta": { "required": ["txId"] } }, "required": ["meta"] },
-      "then": { "properties": { "kind": { "const": "resolution" } } } }
+      "then": { "properties": { "kind": { "const": "resolution" } } } },
+    { "if": { "properties": { "meta": { "required": ["risk"] } }, "required": ["meta"] },
+      "then": { "properties": { "kind": { "enum": ["case-created", "case-started", "case-updated"] } } } },
+    { "if": { "properties": { "kind": { "const": "case-updated" } }, "required": ["kind"] },
+      "then": { "required": ["meta", "case"], "properties": { "source": { "const": "seldon" }, "meta": { "required": ["risk"] } } } },
+    { "if": { "properties": { "kind": { "const": "state-loss" } }, "required": ["kind"] },
+      "then": { "properties": { "source": { "const": "seldon" }, "subject": { "const": "state-reset" } } } }
   ],
   "$defs": {
     "ulid":   { "type": "string", "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$", "description": "ULID (Crockford base32, 26 chars)" },

@@ -30,6 +30,30 @@ pub const TAG_CLOSED_BY_AGENT: &str = "closed-by-agent";
 /// The tag prefix of a case `plan reopen` made: `reopens:<ID>`.
 pub const TAG_REOPENS: &str = "reopens:";
 
+/// The tag of a case `seldon import task` made (WP-102).
+pub const TAG_IMPORTED: &str = "imported";
+
+/// An imported case is started by the user (WP-102 round 3, orchestrator
+/// decision; ADR-0027 §2(a)): its Intent is text from a file, which becomes
+/// an agent's authorisation only by the user's start. Refused when `actor`
+/// or the session (`$SELDON_ACTOR`) is an agent, whatever `--actor` says.
+pub(crate) fn refuse_agent_start_of_imported(file: &CaseFile, actor: &str) -> Result<()> {
+    if !file.case.tags.iter().any(|t| t == TAG_IMPORTED) {
+        return Ok(());
+    }
+    let session = env_actor(parse_person).ok().flatten();
+    let agent = Some(actor)
+        .filter(|a| is_agent(a))
+        .or(session.as_deref().filter(|s| is_agent(s)));
+    match agent {
+        Some(agent) => Err(Error::user(format!(
+            "{} is not started: an imported case is started by the user (ADR-0027 §2a); ask them to start it ({agent}'s session)",
+            file.case.id
+        ))),
+        None => Ok(()),
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct PlanArgs {
     #[command(subcommand)]
@@ -240,6 +264,7 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
             note: None,
             start: false,
             point: false,
+            done: None,
         },
     )?;
     let id = created.file.case.id.clone();
@@ -285,6 +310,10 @@ pub(crate) struct Spec {
     /// With `start`: the new case becomes `.seldon/active-case`, which the
     /// hooks attribute an agent's commands by.
     pub point: bool,
+    /// Created completed in one go (`import task --include-done`, WP-102):
+    /// `case-created` and `case-completed` in one ledger write, `done` the
+    /// completed Log line's text. Never with `start`.
+    pub done: Option<String>,
 }
 
 /// What [`create`] wrote: the case file, its ledger events (created, then
@@ -315,7 +344,9 @@ pub(crate) fn create(
     }
     let today = ctx.now.date_naive();
     let id = cases::next_id(logbook, ctx.now.year())?;
-    let status = if spec.start {
+    let status = if spec.done.is_some() {
+        CaseStatus::Completed
+    } else if spec.start {
         CaseStatus::Active
     } else {
         CaseStatus::Queued
@@ -329,8 +360,8 @@ pub(crate) fn create(
         priority: Some(spec.priority),
         area: spec.area.clone(),
         created: today,
-        started: spec.start.then_some(today),
-        closed: None,
+        started: (spec.start || spec.done.is_some()).then_some(today),
+        closed: spec.done.is_some().then_some(today),
         snapshot_before: None,
         agents: Vec::new(),
         events: Vec::new(),
@@ -361,6 +392,9 @@ pub(crate) fn create(
     if spec.start {
         file.log(&ctx.now, Transition::Start.log_word(), &spec.actor);
     }
+    if let Some(done) = &spec.done {
+        file.log(&ctx.now, done, &spec.actor);
+    }
     let text = crate::model::render_new(&file.case, &file.doc.body);
     if file.path.exists() {
         return Err(Error::user(format!(
@@ -374,11 +408,20 @@ pub(crate) fn create(
         Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
             .detail(spec.title.clone())
             .actor(&spec.actor)
-            .case(Some(id.clone())),
+            .case(Some(id.clone()))
+            .risk(spec.risk),
     ];
     if spec.start {
         events.push(
             Event::new(ctx.now, Source::Seldon, Kind::CaseStarted, &id)
+                .actor(&spec.actor)
+                .case(Some(id.clone()))
+                .risk(spec.risk),
+        );
+    }
+    if spec.done.is_some() {
+        events.push(
+            Event::new(ctx.now, Source::Seldon, Kind::CaseCompleted, &id)
                 .actor(&spec.actor)
                 .case(Some(id.clone())),
         );
@@ -449,6 +492,9 @@ fn step(
     let to = transition
         .target(from)
         .map_err(|e| Error::user(format!("{} {e}", args.id)))?;
+    if transition == Transition::Start {
+        refuse_agent_start_of_imported(&file, &actor)?;
+    }
 
     // an agent closes only with evidence (ADR-0027 §5); the resolved
     // actor counts, so `SELDON_ACTOR` cannot go around it
@@ -516,6 +562,10 @@ fn step(
     let mut event = Event::new(ctx.now, Source::Seldon, kind(transition), &args.id)
         .actor(&actor)
         .case(Some(args.id.clone()));
+    if transition == Transition::Start {
+        // ADR-0035 §1: the risk the case starts with
+        event = event.risk(file.case.risk);
+    }
     event.detail = reason.clone();
     let event = emit_one(&lock, &config, &logbook, event)?;
 
@@ -654,8 +704,8 @@ fn open_only(file: &CaseFile, what: &str) -> Result<()> {
 }
 
 /// `plan set`: zone, risk and area of an open case, in its frontmatter,
-/// with one Log line. No ledger event (no kind fits; a new one would be a
-/// contract change): the Log line and the commit are the record. A value
+/// with one Log line and one `case-updated` ledger line that carries the
+/// risk after the change (ADR-0035 §1; the harm guard reads it). A value
 /// equal to the current one is no change; with nothing changed nothing is
 /// written (exit 0).
 fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
@@ -702,6 +752,7 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
             json!({
                 "case": case_json(&logbook, &file),
                 "changed": changed,
+                "event": Value::Null,
                 "areaCreated": Value::Null,
                 "git": Value::Null,
             }),
@@ -710,10 +761,20 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
     file.add_agent(&actor);
     file.log(&ctx.now, &format!("set {}", words.join(", ")), &actor);
     file.prepare(&logbook, |_| {})?;
+    // a new area's README first (WP-120 round 2, N5): a failure there
+    // leaves the ledger and the case file as they were; an area left
+    // behind by a later failure is harmless (the next set finds it)
     let area_created = match &file.case.area {
         Some(a) if changed.iter().any(|c| c["key"] == "area") => cases::ensure_area(&logbook, a)?,
         _ => None,
     };
+    // then the ledger: if it cannot be written, the case file stays
+    let event = Event::new(ctx.now, Source::Seldon, Kind::CaseUpdated, &args.id)
+        .detail(words.join(", "))
+        .actor(&actor)
+        .case(Some(args.id.clone()))
+        .risk(file.case.risk);
+    let event = emit_one(&lock, &config, &logbook, event)?;
     file.save(&logbook)?;
     let commit = autocommit(
         ctx,
@@ -736,6 +797,7 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
         json!({
             "case": case_json(&logbook, &file),
             "changed": changed,
+            "event": event_json(&event),
             "areaCreated": area_created,
             "git": commit.json(),
             "warnings": warnings,
@@ -880,6 +942,7 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
             note: Some(format!("reopens {}", args.id)),
             start: true,
             point: holder.is_none(),
+            done: None,
         },
     )?;
     let id = created.file.case.id.clone();

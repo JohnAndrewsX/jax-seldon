@@ -4,9 +4,9 @@
 // Nothing here touches Qt, files or processes, so the same file runs under
 // node (tests/plugin/model.test.js). Service.qml owns all I/O; BarWidget.qml,
 // Desk.qml and components/ only render what these functions return,
-// including the rows of the Today, Changelog and System tabs.
+// including the rows of the desk's sections.
 
-var CONTRACT_VERSION = 1
+var CONTRACT_VERSION = 2
 
 // The version of the code that is running: always equal to `version` in
 // plugin/manifest.json, set by hand with it (docs/VERSIONING.md, tag flow;
@@ -1722,7 +1722,7 @@ function driftShowResult(exitCode, stdoutText, stderrText) {
     if (isObject(m) && typeof m.id === "string" && EVENT_ID.test(m.id))
       members.push({ id: m.id, kind: str(m.kind), subject: str(m.subject), detail: str(m.detail) })
   }
-  return { ok: true, text: "", members: members }
+  return { ok: true, text: "", members: members, rule: data ? str(data.rule) : "", cls: data ? str(data["class"]) : "" }
 }
 
 // The member lines the sheet shows: at most DRIFT_MEMBERS_SHOWN, then
@@ -1862,7 +1862,7 @@ function memoryRows(index) {
   var out = []
   for (var i = 0; i < lessons.length; i++) {
     if (!hasText(lessons[i])) continue
-    out.push({ section: "", kind: "lesson", title: lessons[i], meta: "", target: MEMORY_OPEN_TARGET })
+    out.push({ section: "", kind: "lesson", title: lessons[i], meta: "", path: "memory/lessons.md", updated: "", target: MEMORY_OPEN_TARGET })
   }
   if (out.length > 0) out[0].section = "LESSONS"
   var first = out.length
@@ -1872,7 +1872,8 @@ function memoryRows(index) {
     var meta = []
     if (hasText(t.path)) meta.push(t.path)
     if (hasText(t.updated)) meta.push("updated " + t.updated)
-    out.push({ section: "", kind: "topic", title: t.topic, meta: meta.join(" · "), target: MEMORY_OPEN_TARGET })
+    out.push({ section: "", kind: "topic", title: t.topic, meta: meta.join(" · "), path: hasText(t.path) ? t.path : "",
+      updated: hasText(t.updated) ? t.updated : "", target: MEMORY_OPEN_TARGET })
   }
   if (out.length > first) out[first].section = "TOPICS"
   return out
@@ -1884,6 +1885,148 @@ function memorySummary(rows) {
   var lessons = list.filter(function(r) { return r.kind === "lesson" }).length
   var topics = list.length - lessons
   return list.length === 0 ? "" : plural(lessons, "lesson", "lessons") + " · " + plural(topics, "topic", "topics")
+}
+
+// ---- Desk sections 4–6: Decisions, System, Memory (WP-123) -----------------
+
+// The sidebar search over a list (ADR-0034 §2, `/`): the rows whose
+// `fields` hold every word of `text`, case-insensitive; "" keeps all.
+function deskFilter(rows, text, fields) {
+  var list = Array.isArray(rows) ? rows : []
+  var words = String(text || "").toLowerCase().split(/\s+/).filter(function(w) { return w !== "" })
+  if (words.length === 0) return list
+  return list.filter(function(r) {
+    var hay = fields.map(function(f) { return str(r[f]) }).join(" ").toLowerCase()
+    return words.every(function(w) { return hay.indexOf(w) !== -1 })
+  })
+}
+
+// The cases a decision names (contract v2, `decisions[].cases`), each with
+// its title and status from the index's case lists: [{ id, title, status,
+// actionable }]. null when the index does not carry the field (contract 1):
+// the detail then hides the block. A case the index no longer lists (the
+// newest 50 completed, CONTRACT.md rule 4) keeps its id with an empty title.
+function decisionCases(index, decisionId) {
+  var list = index && Array.isArray(index.decisions) ? index.decisions : []
+  var d = null
+  for (var i = 0; i < list.length; i++) if (isObject(list[i]) && list[i].id === decisionId) d = list[i]
+  if (!d || !Array.isArray(d.cases)) return null
+  var known = {}
+  var groups = index && isObject(index.cases) ? index.cases : {}
+  for (var g = 0; g < CASE_STATUSES.length; g++) {
+    var cs = Array.isArray(groups[CASE_STATUSES[g]]) ? groups[CASE_STATUSES[g]] : []
+    for (var k = 0; k < cs.length; k++) if (isObject(cs[k]) && hasText(cs[k].id)) known[cs[k].id] = cs[k]
+  }
+  var out = []
+  for (var j = 0; j < d.cases.length; j++) {
+    var id = str(d.cases[j])
+    if (id === "") continue
+    var c = known[id] || {}
+    out.push({ id: id, title: str(c.title), status: str(c.status), actionable: CASE_ID.test(id) })
+  }
+  return out
+}
+
+// What a decision's detail shows besides its title (the index has no body:
+// the text is in the file). `actions` for the sticky bar: Accept while it
+// is proposed — the engine accepts nothing itself, the user sets the
+// status in the frontmatter, so Accept opens the file like Open in editor —
+// then Open in editor. Neither writes, so neither arms.
+function decisionDetail(row) {
+  if (!row) return null
+  var rows = []
+  if (row.status !== "") rows.push(["Status", row.status])
+  if (row.date !== "") rows.push(["Date", row.date])
+  if (row.path !== "") rows.push(["File", row.path])
+  var actions = []
+  if (row.status === "proposed") actions.push({ id: "accept", label: "Accept", primary: true, enabled: row.actionable })
+  actions.push({ id: "open", label: "Open in editor", primary: false, enabled: row.actionable })
+  return {
+    heading: [row.id, row.status, row.date].filter(function(p) { return p !== "" }).join(" · "),
+    rows: rows,
+    actions: actions,
+    note: row.status === "proposed"
+      ? "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture."
+      : row.status === "superseded" ? "Superseded by a later decision; kept for the record." : "",
+    lead: row.actionable ? "The text is in the file; Open in editor shows it." : "This id does not match ADR-NNNN; Seldon does not open it."
+  }
+}
+
+// System (ADR-0034 §2, section 5): five tiles, each with a big value, a
+// unit, a lead line and key/value rows, from Model.systemSections (every
+// field of index.system is optional). A tile without its data shows "—"
+// and says so. Collectors carries how Seldon sees the machine: each
+// collector, then machine, engine, index time and the logbook's areas.
+// `stripe` "attention" marks a tile with a failing collector.
+function systemTiles(index, nowMs) {
+  var sections = {}
+  var list = systemSections(index, nowMs)
+  for (var i = 0; i < list.length; i++) sections[list[i].title] = list[i].rows
+  var rowsOf = function(title) { return (sections[title] || []).map(function(p) { return [p.label, p.value] }) }
+  var sys = index && isObject(index.system) ? index.system : {}
+  var tiles = []
+
+  var om = isObject(sys.omarchy) ? sys.omarchy : {}
+  var omLead = []
+  if (hasText(om.theme)) omLead.push("theme " + om.theme)
+  if (hasText(om.lastUpdate)) omLead.push("updated " + relativeAge(timeMs(om.lastUpdate), nowMs))
+  tiles.push({ id: "omarchy", title: "Omarchy", big: hasText(om.version) ? om.version : "—", unit: "",
+    lead: omLead.join(" · "), rows: rowsOf("OMARCHY").concat(rowsOf("PLUGINS")) })
+
+  var pk = isObject(sys.packages) ? sys.packages : {}
+  var pkLead = []
+  if (isInt(pk.explicit)) pkLead.push(pk.explicit + " explicit")
+  if (isInt(pk.aur)) pkLead.push(pk.aur + " from the AUR")
+  tiles.push({ id: "packages", title: "Packages", big: isInt(pk.total) ? String(pk.total) : isInt(pk.explicit) ? String(pk.explicit) : "—",
+    unit: isInt(pk.total) ? "installed" : isInt(pk.explicit) ? "explicit" : "",
+    lead: pkLead.join(" · "), rows: rowsOf("PACKAGES").filter(function(r) { return r[0] !== "Deviations" }) })
+
+  var snapRows = rowsOf("SNAPSHOTS")
+  var newest = null
+  var snaps = Array.isArray(sys.snapshots) ? sys.snapshots : []
+  for (var s = 0; s < snaps.length; s++)
+    if (isObject(snaps[s]) && isInt(snaps[s].number) && (newest === null || snaps[s].number > newest)) newest = snaps[s].number
+  tiles.push({ id: "snapshots", title: "Snapshots", big: newest === null ? "—" : String(newest), unit: newest === null ? "" : "newest",
+    lead: snapRows.length > 0 ? plural(snapRows.length, "snapshot", "snapshots") + " in the index (the newest 10)" : "", rows: snapRows })
+
+  var dev = isInt(sys.deviations) ? sys.deviations : null
+  tiles.push({ id: "deviations", title: "Deviations", big: dev === null ? "—" : String(dev), unit: dev === null ? "" : dev === 1 ? "file" : "files",
+    lead: dev === null ? "" : "Config files that differ from Omarchy's defaults; the list is in STATUS.md", rows: [] })
+
+  var cs = collectors(index)
+  var enabled = 0
+  var ok = 0
+  for (var c = 0; c < cs.length; c++) {
+    if (!isObject(cs[c]) || cs[c].enabled === false) continue
+    enabled++
+    if (cs[c].ok !== false) ok++
+  }
+  var last = index && isObject(index.state) && hasText(index.state.lastCapture) ? timeMs(index.state.lastCapture) : NaN
+  var colLead = []
+  if (enabled > ok) colLead.push(plural(enabled - ok, "collector failing", "collectors failing"))
+  if (isFinite(last)) colLead.push("last capture " + relativeAge(last, nowMs))
+  var areaRows = rowsOf("AREAS").map(function(r) { return ["Area " + r[0], r[1] === "" ? "—" : r[1]] })
+  tiles.push({ id: "collectors", title: "Collectors", big: enabled === 0 ? "—" : ok + "/" + enabled, unit: enabled === 0 ? "" : "ok",
+    lead: colLead.join(" · "), rows: rowsOf("COLLECTORS").concat(rowsOf("SELDON"), areaRows),
+    stripe: enabled > ok ? "attention" : "" })
+
+  for (var t = 0; t < tiles.length; t++) {
+    if (tiles[t].stripe === undefined) tiles[t].stripe = ""
+    tiles[t].empty = tiles[t].big === "—"
+    if (tiles[t].empty && tiles[t].lead === "") tiles[t].lead = "Not in the index"
+    tiles[t].meta = (tiles[t].big + (tiles[t].unit !== "" ? " " + tiles[t].unit : ""))
+  }
+  return tiles
+}
+
+// What a memory row's detail shows: the kind as its heading, the file it
+// lives in and, for a topic, when it was updated.
+function memoryDetail(row) {
+  if (!row) return null
+  var rows = []
+  if (str(row.path) !== "") rows.push(["File", row.path])
+  if (str(row.updated) !== "") rows.push(["Updated", row.updated])
+  return { heading: row.kind === "lesson" ? "Lesson" : "Topic", rows: rows }
 }
 
 // ---- Prime Radiant (overlay) ------------------------------------------------
@@ -1926,24 +2069,11 @@ function periodById(id) {
   return periodById(PERIOD_DEFAULT)
 }
 
-// "1"–"4" → the period id, anything else → "".
-function periodForKey(text) {
-  var n = Number(text)
-  return String(text).length === 1 && n >= 1 && n <= PERIODS.length ? PERIODS[n - 1].id : ""
-}
-
 // The next period to the left (-1) or right (+1), wrapping like the tabs.
 function cyclePeriod(current, direction) {
   var i = PERIODS.indexOf(periodById(current))
   var n = PERIODS.length
   return PERIODS[((i + (direction < 0 ? -1 : 1)) % n + n) % n].id
-}
-
-// `summon jax.seldon '{"period":"30"}'` opens on that period; anything else
-// (no payload, broken JSON, an unknown id) opens on `fallback`.
-function overlayPayloadPeriod(payloadJson, fallback) {
-  var data = parseJson(payloadJson)
-  return data && isPeriod(data.period) ? data.period : fallback
 }
 
 // A real calendar date "YYYY-MM-DD" (no 2026-02-30).
@@ -2804,28 +2934,6 @@ function periodCaption(win) {
   return p.label + " · " + win.from + " – " + win.to
 }
 
-// The header's second line: machine · Omarchy version · generated time.
-function overlayMeta(index) {
-  if (!index) return ""
-  var parts = []
-  var logbook = isObject(index.logbook) ? index.logbook : {}
-  if (hasText(logbook.machine)) parts.push(logbook.machine)
-  var omarchy = isObject(index.system) && isObject(index.system.omarchy) ? index.system.omarchy : {}
-  if (hasText(omarchy.version)) parts.push("Omarchy " + omarchy.version)
-  if (dayOf(index.generatedAt) !== "") parts.push("generated " + dayOf(index.generatedAt) + " " + clockTime(index.generatedAt))
-  return parts.join(" · ")
-}
-
-// The overlay's banner: the service's banner, with only the fix that runs
-// no engine command (copying it); the overlay runs no engine command (WP-030).
-function overlayBanner(banner) {
-  if (!banner) return null
-  var out = {}
-  for (var k in banner) out[k] = banner[k]
-  out.actions = (banner.actions || []).filter(function(a) { return a.id === "copy" })
-  return out
-}
-
 // Slot geometry on a 12-column grid (SPEC-PLUGIN §6) inside `width` ×
 // `height`, `gap` between cells. The column count follows the width:
 //   wide   (≥ 3 slots of minWidth): Heatmap | Series DriftBars RiskDonut | Timeline | The Plan
@@ -3086,28 +3194,26 @@ function captureWarningNotice(warnings) {
 // ---- Desk (ADR-0034) ----------------------------------------------------------
 
 // The desk's nine targets in sidebar order: eight sections with their fixed
-// digit, then Settings on `,`. `wp` names the work package that fills a
-// section the shell (WP-121) only stubs; `solo` sections have no list column
-// (§2). `icon` is a 24-unit SVG path, drawn in the theme colour
+// digit, then Settings on `,`. `solo` sections have no list column (§2). `icon` is a 24-unit SVG path, drawn in the theme colour
 // (components/desk/NavIcon.qml), from the approved prototype.
 var DESK_SECTIONS = [
-  { id: "today", label: "Today", key: "1", wp: "WP-122", solo: false,
+  { id: "today", label: "Today", key: "1", solo: false,
     icon: "M4 5h16v15H4zM4 9h16M9 3v4M15 3v4" },
-  { id: "changelog", label: "Changelog", key: "2", wp: "WP-122", solo: false,
+  { id: "changelog", label: "Changelog", key: "2", solo: false,
     icon: "M5 6h14M5 12h14M5 18h9" },
-  { id: "work", label: "Work", key: "3", wp: "WP-122", solo: false,
+  { id: "work", label: "Work", key: "3", solo: false,
     icon: "M4 8h16v11H4zM9 8V5h6v3" },
-  { id: "decisions", label: "Decisions", key: "4", wp: "WP-123", solo: false,
+  { id: "decisions", label: "Decisions", key: "4", solo: false,
     icon: "M6 4h9l4 4v12H6zM14 4v5h5" },
-  { id: "system", label: "System", key: "5", wp: "WP-123", solo: false,
+  { id: "system", label: "System", key: "5", solo: false,
     icon: "M4 5h16v11H4zM8 20h8M12 16v4" },
-  { id: "memory", label: "Memory", key: "6", wp: "WP-123", solo: false,
+  { id: "memory", label: "Memory", key: "6", solo: false,
     icon: "M7 4h10a2 2 0 0 1 2 2v14l-7-4-7 4V6a2 2 0 0 1 2-2z" },
-  { id: "radiant", label: "Prime Radiant", key: "7", wp: "WP-123", solo: true,
+  { id: "radiant", label: "Prime Radiant", key: "7", solo: true,
     icon: "M12 2l2 7 7 3-7 3-2 7-2-7-7-3 7-3z" },
-  { id: "graph", label: "Graph", key: "8", wp: "WP-125", solo: true,
+  { id: "graph", label: "Graph", key: "8", solo: true,
     icon: "M4 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M16 7a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M10 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M7 8l4 7M17 9l-4 6M8 6h8" },
-  { id: "settings", label: "Settings", key: ",", wp: "", solo: false,
+  { id: "settings", label: "Settings", key: ",", solo: false,
     icon: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2" }
 ]
 var DESK_SECTION_DEFAULT = "today"
@@ -3311,3 +3417,1508 @@ function deskPresetLabel(pct) {
 
 // The old `jax.seldon.panel` tab names and their sections (the shim, §7).
 var PANEL_TABS = ["today", "changelog", "work", "decisions", "system", "memory"]
+
+// ---- Desk sections Today, Changelog, Work (WP-122; ADR-0034 §2, §3) ----------
+//
+// The service builds deskChangelog, deskToday and deskWork once per index
+// (ADR-0034 §3: no section aggregates on paint); the sections filter those
+// rows by chip and search text and look details up by id. No new engine
+// call: every action still goes through logArgs, openArgs, planArgs,
+// agentArgs, agentNewArgs and driftArgs.
+
+// The Changelog's chips (§2): an event's class, "open" = crisis + attention.
+var CHANGELOG_CHIPS = [
+  { id: "open", label: "open" },
+  { id: "crisis", label: "crisis" },
+  { id: "attention", label: "attention" },
+  { id: "routine", label: "routine" },
+  { id: "case", label: "in case" },
+  { id: "all", label: "all" }
+]
+var CHANGELOG_CHIP_DEFAULT = "open"
+var EVENT_CLASS_LABELS = { crisis: "crisis", attention: "attention", "case": "in case", routine: "routine" }
+
+function isChangelogChip(id) {
+  for (var i = 0; i < CHANGELOG_CHIPS.length; i++) if (CHANGELOG_CHIPS[i].id === id) return true
+  return false
+}
+
+// Keys `f` / `F`: the next or previous chip, wrapping.
+function cycleChip(current, direction) {
+  var n = CHANGELOG_CHIPS.length
+  var at = 0
+  for (var i = 0; i < n; i++) if (CHANGELOG_CHIPS[i].id === current) at = i
+  return CHANGELOG_CHIPS[(at + (direction < 0 ? n - 1 : 1)) % n].id
+}
+
+// A Changelog row's class: open drift by its item's `crisis` (a group's
+// open members too, ADR-0013), else "case" when it has one, else routine.
+function eventClass(row) {
+  if (row.drift) return row.crisis ? "crisis" : "attention"
+  return row.caseId !== "" ? "case" : "routine"
+}
+
+// The last segment of a path subject ("~/.config/hypr/bindings.conf" →
+// "bindings.conf"); other subjects as they are.
+function lastSegment(subject) {
+  var s = str(subject)
+  var parts = s.split("/").filter(function(p) { return p !== "" })
+  return parts.length > 0 ? parts[parts.length - 1] : s
+}
+
+// The age at a row's right: the time today, else "30 Sep 17:00" (the year
+// too when it is not the index's).
+function rowAge(day, time, today) {
+  if (day === "") return time
+  if (day === today) return time
+  var d = utcDate(day)
+  if (!d) return (day + " " + time).trim()
+  var label = d.getUTCDate() + " " + MONTHS[d.getUTCMonth()]
+  if (String(today || "").slice(0, 4) !== day.slice(0, 4)) label += " " + day.slice(0, 4)
+  return (label + " " + time).trim()
+}
+
+// The key Hide uses: a group hides as one, from its leader or a member.
+function hideKey(row) {
+  return row.groupLeader !== "" ? row.groupLeader : row.id
+}
+
+// Every index event as a desk row (changelogRows plus class, list title,
+// meta, age and the lowercased text the sidebar search matches), and a
+// lookup by id. Built once per index by the service.
+function deskChangelog(index) {
+  var base = changelogRows(index, "all")
+  var today = todayDate(index)
+  var rows = []
+  var byId = {}
+  for (var i = 0; i < base.length; i++) {
+    var r = base[i]
+    var row = {}
+    for (var k in r) row[k] = r[k]
+    row.cls = eventClass(r)
+    row.title = lastSegment(r.subject) + (r.badge !== "" ? " " + r.badge : "")
+    row.listMeta = [r.source, r.kind, r.caseId].filter(function(p) { return p !== "" }).join(" · ")
+    row.age = rowAge(r.day, r.time, today)
+    row.stripe = row.cls === "crisis" ? "crisis" : row.cls === "attention" ? "attention" : ""
+    row.hideKey = hideKey(r)
+    row.search = [r.subject, row.listMeta, r.detail, r.actor, r.resolution, r.resolutionDetail].join(" ").toLowerCase()
+    if (row.id !== "" && byId[row.id] === undefined) byId[row.id] = rows.length
+    rows.push(row)
+  }
+  return { rows: rows, byId: byId, today: today }
+}
+
+function changelogRow(prepared, id) {
+  if (!prepared || !prepared.byId) return null
+  var at = prepared.byId[String(id || "")]
+  return at === undefined ? null : prepared.rows[at]
+}
+
+// Hide (attention only, a session's quiet; never a crisis, ADR-0028 §3).
+function isHidden(row, hidden) {
+  return row.cls === "attention" && isObject(hidden) && hidden[row.hideKey] === true
+}
+
+// One count everywhere (the sidebar, the header, the quiet line): open
+// drift counts a group once. The drift chips (open, crisis, attention)
+// list and count changes — a pacman group as its leader ("mesa +2"; its
+// members are in the leader's detail); routine, in case and all list and
+// count ledger events, one row each, group members included.
+var DRIFT_CHIPS = ["open", "crisis", "attention"]
+
+function chipHas(chip, row, hidden) {
+  if (chip === "all") return true
+  if (DRIFT_CHIPS.indexOf(chip) !== -1 && row.groupLeader !== "") return false
+  if (chip === "open") return row.cls === "crisis" || (row.cls === "attention" && !isHidden(row, hidden))
+  if (chip === "attention") return row.cls === "attention" && !isHidden(row, hidden)
+  return row.cls === chip
+}
+
+// The rows of one chip, without the hidden ones, matching the sidebar
+// search (case-insensitive, anywhere in subject, meta, detail, actor,
+// resolution).
+function changelogView(prepared, chip, hidden, search) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var c = isChangelogChip(chip) ? chip : CHANGELOG_CHIP_DEFAULT
+  var q = String(search || "").trim().toLowerCase()
+  return rows.filter(function(r) {
+    return chipHas(c, r, hidden) && (q === "" || r.search.indexOf(q) !== -1)
+  })
+}
+
+// The chips with their counts (hidden rows left out of open and attention).
+function changelogChips(prepared, hidden) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  return CHANGELOG_CHIPS.map(function(c) {
+    var n = 0
+    for (var i = 0; i < rows.length; i++) if (chipHas(c.id, rows[i], hidden)) n++
+    return { id: c.id, label: c.label, count: n }
+  })
+}
+
+// How many changes Hide keeps out of the open list this session (a group
+// once).
+function hiddenCount(prepared, hidden) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var n = 0
+  for (var i = 0; i < rows.length; i++) if (rows[i].groupLeader === "" && isHidden(rows[i], hidden)) n++
+  return n
+}
+
+// Where an event's source reads from (the detail's "Source" row).
+var SOURCE_TEXTS = {
+  pacman: "/var/log/pacman.log",
+  snapper: "snapper, the root config",
+  omarchy: "omarchy version",
+  plugins: "omarchy plugin list",
+  theme: "Omarchy's current theme",
+  config: "the watched paths (hashes only)",
+  agent: "an agent's command log",
+  manual: "the journal",
+  seldon: "Seldon itself"
+}
+
+// The engine's rule for an open drift item, from `seldon drift show <id>
+// --json` (`rule`, `class`; engine/src/commands/drift.rs), which the
+// index does not carry. `rules`: Service.driftRules ({ <id>: { rule,
+// cls } }, the answers for this index); `shown`: Service.driftShown (the
+// call in flight). { state: "known", rule, cls }, or state "pending"
+// (asked, no answer yet) or "unknown" (not asked, or not answerable: dev
+// mode, no engine, a refusal).
+function driftRuleInfo(rules, shown, eventId) {
+  var known = isObject(rules) && isObject(rules[eventId]) ? rules[eventId] : null
+  if (known && str(known.rule) !== "") return { state: "known", rule: str(known.rule), cls: str(known.cls) }
+  if (isObject(shown) && shown.eventId === eventId && shown.pending) return { state: "pending", rule: "", cls: "" }
+  return { state: "unknown", rule: "", cls: "" }
+}
+
+// The rules to keep for a new index: those whose item it still lists as
+// an open crisis (by the item's event id, a group's leader). A copy; the
+// same object when nothing goes, so an unchanged index changes nothing.
+function keptDriftRules(rules, index) {
+  var r = isObject(rules) ? rules : {}
+  var keys = Object.keys(r)
+  if (keys.length === 0) return r
+  var crises = {}
+  var list = index && Array.isArray(index.drift) ? index.drift : []
+  for (var i = 0; i < list.length; i++)
+    if (isObject(list[i]) && list[i].crisis === true && typeof list[i].eventId === "string") crises[list[i].eventId] = true
+  var out = {}
+  var dropped = false
+  for (var k = 0; k < keys.length; k++) {
+    if (crises[keys[k]] === true) out[keys[k]] = r[keys[k]]
+    else dropped = true
+  }
+  return dropped ? out : r
+}
+
+// The crisis rules (engine/src/index/class.rs, SPEC-ENGINE §5): what each
+// says, naming the user's lists rather than what they are meant to hold.
+var CRISIS_RULE_TEXTS = {
+  "always-red": "A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml) was installed, removed or downgraded by name in this transaction.",
+  "always-red-paths": "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml).",
+  "attention-all": "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."
+}
+
+// Why a crisis is loud (§2's callout): the engine's rule when `drift
+// show` has answered (`info`, driftRuleInfo), else only what the index
+// proves — the class and the source, never a cause; then whether an open
+// case's plan names it (`proposedCase`, SPEC-ENGINE §5), which the Case
+// row says too. "" for anything that is not a crisis.
+function whyLoud(row, proposedCase, info) {
+  if (!row || row.cls !== "crisis") return ""
+  var i = isObject(info) ? info : { state: "unknown" }
+  var cause = i.state === "known"
+    ? (CRISIS_RULE_TEXTS[i.rule] !== undefined ? CRISIS_RULE_TEXTS[i.rule] : "The engine's rule: " + i.rule + ".")
+    : "The engine classed this " + row.source + " change as a crisis"
+      + (i.state === "pending" ? "; asking it for the rule." : "; `seldon drift show " + row.id + "` names the rule.")
+  var plan = proposedCase !== ""
+    ? proposedCase + " plans it (its plan names this change); nothing has linked it yet."
+    : "No open case plans it, and no case is linked."
+  return cause + " " + plan
+}
+
+// One event as the detail shows it (prototype `eventDetail`): heading
+// "source · kind", the full subject, the class, the callout, and the
+// key/value rows When · Who · What · Case · Rule · Source (· Zone ·
+// Resolved · Event). `info`: the engine's rule (driftRuleInfo). null when
+// the index has no such event.
+function eventDetail(index, prepared, id, info) {
+  var row = changelogRow(prepared, id)
+  if (!row) return null
+  var e = findEvent(index, row.id) || {}
+  var proposed = row.proposedCase
+  if (proposed === "" && row.groupLeader !== "") {
+    var leader = changelogRow(prepared, row.groupLeader)
+    if (leader) proposed = leader.proposedCase
+  }
+  var r = isObject(info) ? info : { state: "unknown" }
+  var ruleName = r.state === "known" ? "rule " + r.rule : r.state === "pending" ? "rule: asking the engine" : ""
+  var caseState = proposed !== "" ? "planned by " + proposed + ", not linked" : "no case"
+  var rule = row.cls === "crisis" ? ["crisis", ruleName, caseState].filter(function(p) { return p !== "" }).join(" · ")
+    : row.cls === "attention" ? "attention · " + caseState + "; quiet until you say something"
+    : row.cls === "case" ? "in case · recorded for " + row.caseId
+    : "routine · history, nothing to do"
+  if (row.txId !== "" || row.groupLeader !== "") rule += " · one pacman transaction (ADR-0013)"
+  // Contract 2 (ADR-0035 §3): a detail the index clipped says so; the
+  // ledger line has it in full.
+  var item = row.drift ? driftItemFor(index, row.id) : null
+  var lead = item && index && Array.isArray(index.drift)
+    ? index.drift.filter(function(d) { return isObject(d) && d.eventId === item.leaderId })[0] : null
+  var clipped = (isObject(e.meta) && e.meta.truncated === true) || (isObject(lead) && lead.truncated === true)
+  var kv = [
+    ["When", stamp(e.ts)],
+    ["Who", str(e.actor) !== "" ? str(e.actor) : "—"],
+    ["What", (row.detail !== "" ? row.detail : "—") + (clipped ? " (clipped in the index; the ledger has it in full)" : "")],
+    ["Case", row.caseId !== "" ? row.caseId : proposed !== "" ? "proposed: " + proposed : "—"],
+    ["Rule", rule],
+    ["Source", SOURCE_TEXTS[row.source] !== undefined ? SOURCE_TEXTS[row.source] : row.source]
+  ]
+  if (row.zone !== "") kv.push(["Zone", row.zone])
+  if (row.resolution !== "") kv.push(["Resolved", rowStatus(row)])
+  kv.push(["Event", row.id])
+  return {
+    id: row.id,
+    heading: row.source + " · " + row.kind,
+    title: row.subject,
+    cls: row.cls,
+    classLabel: EVENT_CLASS_LABELS[row.cls],
+    open: row.drift,
+    caseId: row.caseId,
+    proposedCase: proposed,
+    hideKey: row.hideKey,
+    whyLoud: whyLoud(row, proposed, r),
+    kv: kv
+  }
+}
+
+// The sticky bar of an event (§2): open drift → [Ask agent], Link to
+// case…, Explain…, Dismiss… (attention also Hide / Show); with a case →
+// Open case; routine → none. opts: { askAgent, hidden }. The first is
+// primary. Link names the proposed case when the engine has one.
+function eventActions(detail, opts) {
+  if (!detail) return []
+  var o = isObject(opts) ? opts : {}
+  var out = []
+  if (detail.open) {
+    if (o.askAgent === true) out.push({ id: "ask", label: "Ask agent" })
+    out.push({ id: "link", label: detail.proposedCase !== "" ? "Link to " + detail.proposedCase + "…" : "Link to case…" })
+    out.push({ id: "explain", label: "Explain…" })
+    out.push({ id: "dismiss", label: "Dismiss…" })
+    if (detail.cls === "attention") out.push({ id: "hide", label: o.hidden === true ? "Show" : "Hide" })
+  } else if (detail.caseId !== "") {
+    out.push({ id: "case", label: "Open case" })
+  }
+  for (var i = 0; i < out.length; i++) out[i].primary = i === 0
+  return out
+}
+
+// ---- Today
+
+// Today's list and overview (prototype `today`): the date and the day's
+// state, the tiles, NEEDS YOU (the crises, a group by its leader), the
+// journal of today and yesterday, the active cases as tiles, and the
+// overview's sentence.
+function deskToday(index, prepared) {
+  var v = todayView(index)
+  var summary = index && isObject(index.summary) ? index.summary : {}
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var needs = []
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    if (r.cls !== "crisis" || r.groupLeader !== "") continue
+    needs.push({ id: r.id, type: "crisis", title: r.title, meta: r.kind + " · " + (r.actor !== "" ? r.actor : r.source),
+      aside: r.age, stripe: "crisis", group: "needs" })
+  }
+  var cases = []
+  var active = index && isObject(index.cases) && Array.isArray(index.cases.active) ? index.cases.active : []
+  for (var k = 0; k < active.length; k++) {
+    if (!isObject(active[k])) continue
+    var c = workCase(active[k], "active", "active")
+    var steps = isObject(active[k].steps) ? active[k].steps : null
+    var total = steps ? count(steps.total) : 0
+    var done = steps ? Math.min(count(steps.done), total) : 0
+    cases.push({
+      id: c.id, risk: c.risk, title: c.title, progress: total > 0 ? done / total : 0,
+      text: (total > 0 ? done + "/" + total + " steps" : "no steps yet") + " · "
+        + (c.agents.length > 0 ? c.agents.map(actorLabel).join(", ") : "you")
+    })
+  }
+  var c0 = counts(index)
+  var crises = c0 ? c0.crisis : 0
+  return {
+    date: v.date,
+    title: v.title,
+    state: todayState(c0),
+    tiles: index ? [
+      { label: "events today", value: count(summary.eventsToday) },
+      { label: "7 days", value: count(summary.events7d) }
+    ] : [],
+    needs: needs,
+    entries: v.entries,
+    yesterday: v.yesterday,
+    cases: cases,
+    headline: !index ? "No index to show"
+      : crises > 0 ? "Seldon is recording. " + plural(crises, "change needs", "changes need") + " you."
+      : "Seldon is recording. Nothing needs you.",
+    lead: "Routine — updates, the theme, plugin switches — stays quiet in the Changelog. A crisis is a change without a case that can affect boot, login or the shell."
+  }
+}
+
+// Today's list rows: NEEDS YOU, then JOURNAL (today's entries or the
+// empty line, the yesterday row, yesterday's entries when open). `id`:
+// the event id for a crisis, "entry:N", "yesterday:N", "toggle", "empty".
+// With a sidebar search: the crises and entries (yesterday's too) whose
+// text or meta holds it, nothing else.
+function todayRows(today, yesterdayOpen, search) {
+  var t = isObject(today) ? today : { needs: [], entries: [], yesterday: [] }
+  var q = String(search || "").trim().toLowerCase()
+  if (q !== "") {
+    return todayRows(t, true, "").filter(function(r) {
+      return (r.type === "crisis" || r.type === "entry") && (r.title + " " + r.meta).toLowerCase().indexOf(q) !== -1
+    })
+  }
+  var out = t.needs.slice()
+  var i
+  for (i = 0; i < t.entries.length; i++)
+    out.push({ id: "entry:" + i, type: "entry", title: t.entries[i].text, meta: entryMeta(t.entries[i]), aside: "",
+      stripe: "", group: "journal" })
+  if (t.entries.length === 0)
+    out.push({ id: "empty", type: "empty", title: "Nothing in today's journal yet.", meta: "", aside: "", stripe: "", group: "journal" })
+  if (t.yesterday.length > 0) {
+    out.push({ id: "toggle", type: "toggle", title: (yesterdayOpen ? "▾ " : "▸ ") + "Yesterday · "
+      + plural(t.yesterday.length, "entry", "entries"), meta: "", aside: "", stripe: "", group: "journal" })
+    if (yesterdayOpen)
+      for (i = 0; i < t.yesterday.length; i++)
+        out.push({ id: "yesterday:" + i, type: "entry", title: t.yesterday[i].text, meta: entryMeta(t.yesterday[i]),
+          aside: "", stripe: "", group: "journal" })
+  }
+  return out
+}
+
+// ---- Work
+
+var WORK_GROUPS = [
+  { id: "active", label: "Active" },
+  { id: "verification", label: "Verification" },
+  { id: "queued", label: "Queued" },
+  { id: "completed", label: "Completed" }
+]
+
+// Every case as a desk row, by group (Active · Verification · Queued ·
+// Completed, the last completed and dropped, newest closed first as the
+// index lists them).
+function deskWork(index) {
+  var cases = index && isObject(index.cases) ? index.cases : {}
+  var rows = []
+  for (var g = 0; g < WORK_GROUPS.length; g++) {
+    var group = WORK_GROUPS[g].id
+    var list = Array.isArray(cases[group]) ? cases[group] : []
+    for (var i = 0; i < list.length; i++) {
+      if (!isObject(list[i])) continue
+      var c = workCase(list[i], group, group)
+      var steps = isObject(list[i].steps) ? list[i].steps : null
+      var total = steps ? count(steps.total) : 0
+      c.group = group
+      c.progress = total > 0 ? Math.min(count(steps.done), total) / total : 0
+      c.listMeta = [c.id, c.risk, c.area, c.status === "dropped" ? "dropped" : "",
+        c.closedByAgent ? "closed by agent" : "", c.reopens !== "" ? "reopens " + c.reopens : "",
+        c.proposed > 0 ? c.proposed + " proposed" : ""].filter(function(p) { return p !== "" }).join(" · ")
+      c.stripe = group === "active" ? "attention" : ""
+      c.search = [c.id, c.title, c.area, c.status, c.risk].join(" ").toLowerCase()
+      rows.push(c)
+    }
+  }
+  return { rows: rows }
+}
+
+// The rows the Work list shows: the By agent filter on Completed
+// (ADR-0027 §5), the sidebar search, and each group's header ("ACTIVE ·
+// 2", "COMPLETED · 1 / 2" while the filter hides some).
+function workView(prepared, filter, search) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var q = String(search || "").trim().toLowerCase()
+  var shown = []
+  var totals = {}
+  var counts0 = {}
+  for (var g = 0; g < WORK_GROUPS.length; g++) {
+    totals[WORK_GROUPS[g].id] = 0
+    counts0[WORK_GROUPS[g].id] = 0
+  }
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    totals[r.group]++
+    if (r.group === "completed" && filter === COMPLETED_FILTER_AGENT && !r.closedByAgent) continue
+    if (q !== "" && r.search.indexOf(q) === -1) continue
+    counts0[r.group]++
+    shown.push(r)
+  }
+  var labels = {}
+  for (var k = 0; k < WORK_GROUPS.length; k++) {
+    var id = WORK_GROUPS[k].id
+    labels[id] = WORK_GROUPS[k].label.toUpperCase() + " · " + counts0[id]
+      + (counts0[id] !== totals[id] ? " / " + totals[id] : "")
+  }
+  return { rows: shown, labels: labels, counts: counts0, totals: totals }
+}
+
+function findWorkRow(prepared, id) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  for (var i = 0; i < rows.length; i++) if (rows[i].id === id) return rows[i]
+  return null
+}
+
+// The case's sticky bar by status (§2): queued → Start · Drop; active →
+// Hand to agent · To verification · Drop; verification → Complete · Drop;
+// completed → Reopen; every case → Open in editor, last. `arm`: the first
+// press or click arms, the second runs (Arm.qml); `final`: Drop, whose
+// hint says so; Reopen runs at once (it creates a case and destroys
+// nothing, WP-101). The first is primary (drawn selected, the
+// prototype's); Enter takes the first that launches nothing (`enter`):
+// Enter never starts an agent (operator decision, WP-122 round 2), so on
+// an active case Enter twice is To verification, as in 0.1, and only `a`
+// or a click hands it to the agent.
+var CASE_DESK_ACTIONS = {
+  start: { id: "start", label: "Start", write: true, arm: true, key: "Enter" },
+  agent: { id: "agent", label: "Hand to agent", write: true, arm: true, key: "a", launches: true },
+  verify: { id: "verify", label: "To verification", write: true, arm: true, key: "" },
+  done: { id: "done", label: "Complete", write: true, arm: true, key: "Enter" },
+  drop: { id: "drop", label: "Drop", write: true, arm: true, key: "x", final: true },
+  reopen: { id: "reopen", label: "Reopen", write: true, arm: false, key: "r" },
+  open: { id: "open", label: "Open in editor", write: false, arm: false, key: "e" }
+}
+var CASE_DESK_BY_STATUS = {
+  queued: ["start", "drop", "open"],
+  active: ["agent", "verify", "drop", "open"],
+  verification: ["done", "drop", "open"],
+  completed: ["reopen", "open"],
+  dropped: ["open"]
+}
+
+function caseDeskActions(c) {
+  if (!c || !c.actionable || CASE_DESK_BY_STATUS[c.status] === undefined) return []
+  var ids = CASE_DESK_BY_STATUS[c.status]
+  var enter = ""
+  for (var k = 0; k < ids.length && enter === ""; k++) if (CASE_DESK_ACTIONS[ids[k]].launches !== true) enter = ids[k]
+  return ids.map(function(id, i) {
+    var a = CASE_DESK_ACTIONS[id]
+    var isEnter = id === enter && a.arm
+    return { id: a.id, label: a.label, write: a.write, arm: a.arm, final: a.final === true, primary: i === 0,
+      enter: id === enter, launches: a.launches === true,
+      key: isEnter ? (a.key !== "" && a.key !== "Enter" ? a.key + " or Enter" : "Enter") : a.key }
+  })
+}
+
+// The action Enter takes on a case: the first that launches nothing.
+function caseEnterAction(c) {
+  var list = caseDeskActions(c)
+  for (var i = 0; i < list.length; i++) if (list[i].enter) return list[i]
+  return null
+}
+
+function caseDeskAction(c, id) {
+  var list = caseDeskActions(c)
+  for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]
+  return null
+}
+
+// The sticky bar's hint while a case action is armed.
+function caseArmHint(action, caseId) {
+  if (!action) return ""
+  var again = action.key !== "" ? "Press " + action.key + " again or click Confirm" : "Click Confirm"
+  return action.label + " " + caseId + "? " + again + (action.final ? ". This is final." : ".")
+}
+
+// The plan verb or agent call an action id runs ("" for none).
+function caseActionVerb(id) {
+  return id === "start" || id === "verify" || id === "done" || id === "drop" || id === "reopen" ? id : ""
+}
+
+// One case as the detail shows it (prototype `work`), from the index only
+// (AGENTS.md §3): key/values, the plan's progress, the log (this case's
+// lifecycle events and notes in the index, newest first), the linked
+// changes (its `events` the index still lists, and how many it no longer
+// does). Intent and Result live in the case file, which the plugin never
+// reads. null when the index has no such case.
+function caseDetail(index, prepared, id) {
+  var wc = findWorkRow(prepared, id)
+  if (!wc) return null
+  var raw = null
+  var cases = index && isObject(index.cases) ? index.cases : {}
+  for (var g = 0; g < WORK_GROUPS.length && !raw; g++) {
+    var list = Array.isArray(cases[WORK_GROUPS[g].id]) ? cases[WORK_GROUPS[g].id] : []
+    for (var i = 0; i < list.length; i++) if (isObject(list[i]) && list[i].id === id) raw = list[i]
+  }
+  raw = raw || {}
+  var steps = isObject(raw.steps) ? raw.steps : null
+  var total = steps ? count(steps.total) : 0
+  var done = steps ? Math.min(count(steps.done), total) : 0
+  var snap = isInt(raw.snapshotBefore) ? "snapshot " + raw.snapshotBefore : "—"
+  var kv = [
+    ["Status", wc.status + (wc.closedByAgent ? " by agent" : "")],
+    ["Risk", wc.risk + (wc.risk === "R3" ? " · every step that can break boot needs your go" : "")],
+    ["Zone", wc.zone !== "" ? wc.zone : "—"],
+    ["Area", wc.area !== "" ? wc.area : "—"],
+    ["Priority", wc.priority !== "" ? wc.priority : "normal"],
+    ["Agent", wc.agents.length > 0 ? wc.agents.join(", ") : "—"],
+    ["Rollback", snap],
+    ["Dates", caseDates(wc) !== "" ? caseDates(wc) : "—"]
+  ]
+  if (wc.reopens !== "") kv.push(["Reopens", wc.reopens])
+  if (wc.proposed > 0) kv.push(["Proposed", plural(wc.proposed, "open change", "open changes") + " the engine thinks belong here"])
+  if (wc.path !== "") kv.push(["File", wc.path])
+  var all = events(index)
+  var log = []
+  var byId = {}
+  for (var k = 0; k < all.length; k++) {
+    var e = all[k]
+    if (!isObject(e)) continue
+    if (typeof e.id === "string") byId[e.id] = e
+    if (e.case !== id) continue
+    if (e.source !== "seldon" && e.kind !== "note" && e.kind !== "correction") continue
+    log.push([stamp(e.ts), [str(e.kind), str(e.actor),
+      isObject(e.meta) && RISKS.indexOf(e.meta.risk) !== -1 ? e.meta.risk : "",
+      e.kind === "note" || e.kind === "correction" ? str(e.detail) : ""]
+      .filter(function(p) { return p !== "" }).join(" · ")])
+  }
+  var ids = Array.isArray(raw.events) ? raw.events : []
+  var linked = []
+  var missing = 0
+  for (var m = ids.length - 1; m >= 0; m--) {
+    var le = byId[ids[m]]
+    if (!le) {
+      missing++
+      continue
+    }
+    linked.push([stamp(le.ts), str(le.source) + " " + str(le.kind) + " · " + str(le.subject)])
+  }
+  return {
+    id: wc.id,
+    title: wc.title,
+    status: wc.status,
+    heading: wc.id + " · " + wc.status + (wc.closedByAgent ? " by agent" : ""),
+    meta: [wc.id, wc.risk].filter(function(p) { return p !== "" }).join(" · "),
+    actionable: wc.actionable,
+    closedByAgent: wc.closedByAgent,
+    reopens: wc.reopens,
+    path: wc.path,
+    kv: kv,
+    plan: { done: done, total: total, progress: total > 0 ? done / total : 0,
+      text: total > 0 ? done + " of " + total + " steps done" : "No steps in the plan yet" },
+    log: log,
+    linked: linked,
+    linkedMore: missing > 0 ? "+" + plural(missing, "older change", "older changes") + " the index no longer lists" : "",
+    row: wc
+  }
+}
+
+// ---- The graph, desk section 8 (ADR-0034 §5, WP-125) -----------------------
+//
+// The machine's memory as a network, from the index alone. Nodes: the
+// logbook's areas, the cases of all four lists, the decisions, and the
+// events whose kind is a change (GRAPH_CHANGE_KINDS; not case lifecycle,
+// notes, corrections or resolutions). A change is a crisis when its event
+// id is in drift[] with crisis: true. Edges: event.case → case, case.area →
+// area, decision.cases → case (contract 2), and drift.proposedCase → case
+// dashed. Day index: event ts, case created, decision date; an area is as
+// old as the earliest node attached to it.
+//
+// The service builds the graph when the index changes (graphBuild); the
+// section keeps only the layout (graphState: typed arrays, positions kept by
+// id across index updates) and steps it on a Timer (graphStep, one force
+// iteration per tick, at most GRAPH_TICKS_MAX ticks after each wake). Beyond
+// GRAPH_CAP nodes, changes fold into cluster nodes ("+N"): those of one day
+// and source first, then of one day, one ISO week, one month, the biggest
+// groups first and only as many as the cap needs; areas, cases, decisions
+// and crises never fold.
+
+var GRAPH_CAP = 400
+// schema/index.schema.json: events maxItems, cases.completed maxItems.
+var GRAPH_EVENTS_MAX = 500
+var GRAPH_COMPLETED_MAX = 50
+var GRAPH_CHANGE_KINDS = ["install", "remove", "upgrade", "downgrade", "reinstall", "snapshot", "snapshot-delete",
+  "update", "theme-set", "config-change", "config-add", "config-remove", "command"]
+var GRAPH_KIND_LABELS = { area: "Area", case: "Case", decision: "Decision", change: "Change", crisis: "Crisis",
+  cluster: "Folded changes" }
+// The legend in drawing order (the cluster entry only when something folded).
+var GRAPH_LEGEND = [
+  { kind: "case", label: "Case" },
+  { kind: "area", label: "Area" },
+  { kind: "decision", label: "Decision" },
+  { kind: "change", label: "Change" },
+  { kind: "crisis", label: "Crisis" },
+  { kind: "cluster", label: "Folded" }
+]
+var GRAPH_FOLD_LEVELS = ["day-source", "day", "week", "month"]
+// Layout: at most this many ticks after a wake, alpha decaying from 1 to
+// GRAPH_ALPHA_MIN over them; a tick over the budget is counted.
+var GRAPH_TICKS_MAX = 200
+var GRAPH_ALPHA_MIN = 0.001
+var GRAPH_ALPHA_DECAY = 1 - Math.pow(GRAPH_ALPHA_MIN, 1 / GRAPH_TICKS_MAX)
+var GRAPH_TICK_BUDGET_MS = 8
+// Labels drawn at most per paint besides the focus and its neighbours.
+var GRAPH_LABELS_MAX = 40
+// … and while the layout moves (areas and crises only).
+var GRAPH_LABELS_MOVING = 16
+// Forces (the prototype's, scaled by alpha): repulsion CHARGE / distance,
+// a pull to the centre, springs of rest length LINK + both radii.
+var GRAPH_CHARGE = 150
+var GRAPH_GRAVITY = 0.02
+var GRAPH_SPRING = 0.1
+var GRAPH_LINK = 30
+var GRAPH_DAMPING = 0.6
+var GRAPH_MAX_SPEED = 12
+// Repulsion: exact pairs up to this many visible nodes, a quadtree above
+// (Barnes–Hut, opening angle θ = 0.9 as d3-force's default).
+var GRAPH_EXACT_MAX = 160
+var GRAPH_THETA2 = 0.81
+
+function graphIsChange(kind) {
+  return typeof kind === "string" && (GRAPH_CHANGE_KINDS.indexOf(kind) !== -1 || kind.indexOf("plugin-") === 0)
+}
+
+// The empty graph (no index, or nothing in it).
+function graphEmpty() {
+  return { nodes: [], edges: [], deg: [], first: 0, last: 0, span: 0, empty: true, still: false, foldLevel: "",
+    numbers: { nodes: 0, edges: 0, areas: 0, cases: 0, decisions: 0, changes: 0, crises: 0, clusters: 0, folded: 0,
+      events: 0, completed: 0 },
+    footer: "" }
+}
+
+// The last path segment of a subject ("~/.config/hypr/input.conf" →
+// "input.conf"), the whole subject when it has none.
+function graphShortLabel(subject) {
+  var s = str(subject)
+  var parts = s.split("/").filter(function(p) { return p !== "" })
+  return parts.length > 0 ? parts[parts.length - 1] : s
+}
+
+// The smallest radius a node of `kind` is drawn with, in screen pixels
+// (zoomed far out, the graph keeps its shapes).
+function graphMinRadius(kind) {
+  return kind === "area" ? 5 : kind === "case" || kind === "crisis" ? 4 : kind === "decision" ? 3.5 : kind === "cluster" ? 3 : 2
+}
+
+function graphRadius(kind, deg, members) {
+  if (kind === "area") return 9
+  if (kind === "case") return 7
+  if (kind === "decision" || kind === "crisis") return 6
+  if (kind === "cluster") return 4 + Math.min(6, Math.sqrt(members) * 1.2)
+  return 3.5 + Math.min(3, deg * 0.6)
+}
+
+// Which changes fold (graphBuild): `evs` is the list of change entries
+// ({ day, source, crisis }), `budget` how many nodes they may take. Returns
+// { level, groups: [[entry index…]…], count } — the groups that fold (two
+// or more entries each), at the finest level that brings the count within
+// the budget (the coarsest when none does), biggest first.
+function graphFold(evs, budget) {
+  if (evs.length <= budget) return { level: "", groups: [], count: evs.length }
+  var best = null
+  for (var l = 0; l < GRAPH_FOLD_LEVELS.length; l++) {
+    var level = GRAPH_FOLD_LEVELS[l]
+    var byKey = {}
+    var keys = []
+    for (var i = 0; i < evs.length; i++) {
+      var e = evs[i]
+      if (e.crisis) continue
+      var key = level === "day-source" ? e.day + "/" + e.source
+        : level === "day" ? String(e.day)
+        : level === "week" ? String(e.day - weekdayOfDay(e.day))
+        : dateOfDay(e.day).slice(0, 7)
+      if (!byKey[key]) {
+        byKey[key] = []
+        keys.push(key)
+      }
+      byKey[key].push(i)
+    }
+    var groups = keys.map(function(k) { return byKey[k] }).filter(function(g) { return g.length > 1 })
+    groups.sort(function(a, b) { return b.length - a.length || evs[a[0]].day - evs[b[0]].day })
+    var n = evs.length
+    var chosen = []
+    for (var g = 0; g < groups.length && n > budget; g++) {
+      chosen.push(groups[g])
+      n -= groups[g].length - 1
+    }
+    best = { level: level, groups: chosen, count: n }
+    if (n <= budget) return best
+  }
+  return best
+}
+
+// The graph of an index: { nodes, edges, deg, first, last, span, empty,
+// foldLevel, numbers, footer }. A node: { id, kind (area, case, decision,
+// change, crisis, cluster), label (drawn beside it), title, sub, day (days
+// since `first`), date, r (radius at zoom 1), caseId (the case "Open case"
+// goes to, "" none), done (a closed case), count and members (a cluster's
+// changes, newest first, at most 12; `more` the rest) }. An edge: { a, b,
+// dashed } (node indices). Nodes come in the order areas, cases,
+// decisions, changes by day; `cap` (GRAPH_CAP when missing) bounds them
+// unless the fixed nodes alone exceed it.
+function graphBuild(index, cap) {
+  if (!isObject(index)) return graphEmpty()
+  var limit = count(cap) || GRAPH_CAP
+  var today = dayNumber(todayDate(index))
+  var nodes = []
+  // Maps without a prototype: an id such as "constructor" or "__proto__"
+  // from a foreign index must not find an inherited member.
+  var byId = Object.create(null)
+  var abs = []
+  var links = []
+  function add(node, day) {
+    if (byId[node.id] !== undefined) return byId[node.id]
+    byId[node.id] = nodes.length
+    nodes.push(node)
+    abs.push(day)
+    return nodes.length - 1
+  }
+  function dayOr(text, fallback) {
+    var d = dayNumber(dayOf(text))
+    return isNaN(d) ? fallback : d
+  }
+
+  // Areas: the logbook's, then any a case names that the list lacks.
+  var sys = isObject(index.system) ? index.system : {}
+  var areas = Array.isArray(sys.areas) ? sys.areas : []
+  function addArea(name) {
+    return add({ id: "area:" + name, kind: "area", label: name, title: name, sub: "", caseId: "", done: false }, NaN)
+  }
+  for (var a = 0; a < areas.length; a++)
+    if (isObject(areas[a]) && typeof areas[a].name === "string" && AREA.test(areas[a].name)) addArea(areas[a].name)
+
+  // Cases, all four lists (a case listed twice counts once).
+  var groups = isObject(index.cases) ? index.cases : {}
+  var completed = 0
+  var caseList = []
+  ;["queued", "active", "verification", "completed"].forEach(function(group) {
+    var list = Array.isArray(groups[group]) ? groups[group] : []
+    if (group === "completed") completed = list.length
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i]
+      if (!isObject(c) || typeof c.id !== "string" || !CASE_ID.test(c.id) || byId[c.id] !== undefined) continue
+      var day = dayOr(c.created, dayOr(c.started, dayOr(c.closed, today)))
+      var status = str(c.status) || group
+      add({ id: c.id, kind: "case", label: c.id, title: c.id + " " + str(c.title),
+        sub: [status, RISKS.indexOf(c.risk) !== -1 ? c.risk : "", hasText(c.area) ? c.area : ""]
+          .filter(function(p) { return p !== "" }).join(" · "),
+        caseId: c.id, done: group === "completed" }, day)
+      caseList.push(c)
+    }
+  })
+  for (var ci = 0; ci < caseList.length; ci++) {
+    var area = caseList[ci].area
+    if (typeof area === "string" && AREA.test(area)) links.push([caseList[ci].id, addArea(area) >= 0 ? "area:" + area : "", false])
+  }
+
+  // Decisions and the cases they name.
+  var decisions = Array.isArray(index.decisions) ? index.decisions : []
+  for (var d = 0; d < decisions.length; d++) {
+    var dec = decisions[d]
+    if (!isObject(dec) || typeof dec.id !== "string" || !DECISION_ID.test(dec.id)) continue
+    add({ id: dec.id, kind: "decision", label: dec.id, title: dec.id + " " + str(dec.title), sub: str(dec.status),
+      caseId: "", done: false }, dayOr(dec.date, today))
+    var named = Array.isArray(dec.cases) ? dec.cases : []
+    for (var n = 0; n < named.length; n++) if (typeof named[n] === "string" && CASE_ID.test(named[n])) links.push([dec.id, named[n], false])
+  }
+  var fixed = nodes.length
+
+  // Changes: the index's events, then open drift items older than them.
+  var drift = Array.isArray(index.drift) ? index.drift : []
+  var crisisIds = Object.create(null)
+  var proposed = Object.create(null)
+  for (var k = 0; k < drift.length; k++) {
+    var item = drift[k]
+    if (!isObject(item) || typeof item.eventId !== "string") continue
+    if (item.crisis === true) crisisIds[item.eventId] = true
+    if (typeof item.proposedCase === "string" && CASE_ID.test(item.proposedCase)) proposed[item.eventId] = item.proposedCase
+  }
+  var events = Array.isArray(index.events) ? index.events : []
+  var evs = []
+  var seen = Object.create(null)
+  function addChange(e, id) {
+    if (!isObject(e) || !graphIsChange(e.kind) || seen[id]) return
+    var day = dayNumber(dayOf(e.ts))
+    if (isNaN(day)) return
+    seen[id] = true
+    evs.push({ id: id, day: day, ts: str(e.ts), source: str(e.source), kind: e.kind, subject: str(e.subject),
+      crisis: crisisIds[id] === true, case: typeof e.case === "string" && CASE_ID.test(e.case) ? e.case : "",
+      proposed: typeof proposed[id] === "string" ? proposed[id] : "" })
+  }
+  for (var ev = 0; ev < events.length; ev++) if (isObject(events[ev])) addChange(events[ev], str(events[ev].id))
+  for (var dr = 0; dr < drift.length; dr++) if (isObject(drift[dr])) addChange(drift[dr], str(drift[dr].eventId))
+  // Oldest first, so the replay and the start layout grow outwards.
+  evs.sort(function(x, y) { return x.day - y.day || (x.ts < y.ts ? -1 : x.ts > y.ts ? 1 : 0) })
+
+  var fold = graphFold(evs, Math.max(0, limit - fixed))
+  var clusterOf = Object.create(null)
+  for (var g = 0; g < fold.groups.length; g++) for (var m = 0; m < fold.groups[g].length; m++) clusterOf[fold.groups[g][m]] = g
+  var clusterNode = []
+  var folded = 0
+  for (var e2 = 0; e2 < evs.length; e2++) {
+    var c2 = evs[e2]
+    var target
+    var gi = clusterOf[e2]
+    if (gi === undefined) {
+      var kind = c2.crisis ? "crisis" : "change"
+      target = c2.id
+      add({ id: c2.id, kind: kind, label: graphShortLabel(c2.subject), title: c2.subject,
+        sub: c2.source + " · " + c2.kind, caseId: byId[c2.case] !== undefined ? c2.case : "", done: false }, c2.day)
+    } else {
+      var members = fold.groups[gi]
+      if (clusterNode[gi] === undefined) {
+        var first = evs[members[0]]
+        var key = fold.level === "day-source" ? dateOfDay(first.day) + " · " + first.source
+          : fold.level === "day" ? dateOfDay(first.day)
+          : fold.level === "week" ? "week of " + dateOfDay(first.day - weekdayOfDay(first.day))
+          : dateOfDay(first.day).slice(0, 7)
+        var texts = []
+        for (var mm = members.length - 1; mm >= 0 && texts.length < 12; mm--) {
+          var me = evs[members[mm]]
+          texts.push(me.kind + " " + me.subject)
+        }
+        clusterNode[gi] = "fold:" + fold.level + ":" + key
+        add({ id: clusterNode[gi], kind: "cluster", label: "+" + members.length,
+          title: plural(members.length, "change", "changes") + " · " + key, sub: "folded: the graph shows at most " + limit + " nodes",
+          caseId: "", done: false, count: members.length, members: texts, more: Math.max(0, members.length - texts.length) }, first.day)
+        folded += members.length
+      }
+      target = clusterNode[gi]
+    }
+    if (c2.case !== "") links.push([target, c2.case, false])
+    if (c2.proposed !== "" && c2.proposed !== c2.case) links.push([target, c2.proposed, true])
+  }
+
+  // Edges between nodes that exist, once each (a solid one wins).
+  var edges = []
+  var edgeAt = Object.create(null)
+  for (var l = 0; l < links.length; l++) {
+    var ia = byId[links[l][0]]
+    var ib = byId[links[l][1]]
+    if (ia === undefined || ib === undefined || ia === ib) continue
+    var ek = ia < ib ? ia + ":" + ib : ib + ":" + ia
+    if (edgeAt[ek] !== undefined) {
+      if (!links[l][2]) edges[edgeAt[ek]].dashed = false
+      continue
+    }
+    edgeAt[ek] = edges.length
+    edges.push({ a: ia, b: ib, dashed: links[l][2] })
+  }
+  var deg = nodes.map(function() { return 0 })
+  for (var de = 0; de < edges.length; de++) {
+    deg[edges[de].a]++
+    deg[edges[de].b]++
+  }
+
+  // Day index: the first day of anything dated; an area at its earliest
+  // neighbour, an area without one at the first day.
+  var lo = Infinity
+  var hi = -Infinity
+  for (var t = 0; t < abs.length; t++) if (!isNaN(abs[t])) {
+    lo = Math.min(lo, abs[t])
+    hi = Math.max(hi, abs[t])
+  }
+  if (lo === Infinity) lo = hi = isNaN(today) ? 0 : today
+  for (var ae = 0; ae < edges.length; ae++) {
+    var ed = edges[ae]
+    var pairs = [[ed.a, ed.b], [ed.b, ed.a]]
+    for (var p = 0; p < 2; p++) {
+      var x = pairs[p][0]
+      var y = pairs[p][1]
+      if (nodes[x].kind === "area" && !isNaN(abs[y]) && (isNaN(abs[x]) || abs[y] < abs[x])) abs[x] = abs[y]
+    }
+  }
+  var numbers = { nodes: nodes.length, edges: edges.length, areas: 0, cases: 0, decisions: 0, changes: 0, crises: 0,
+    clusters: fold.groups.length, folded: folded, events: events.length, completed: completed }
+  for (var q = 0; q < nodes.length; q++) {
+    var node = nodes[q]
+    var day0 = isNaN(abs[q]) ? lo : abs[q]
+    node.day = day0 - lo
+    node.date = dateOfDay(day0)
+    node.r = graphRadius(node.kind, deg[q], node.count || 0)
+    if (node.kind === "area") numbers.areas++
+    else if (node.kind === "case") numbers.cases++
+    else if (node.kind === "decision") numbers.decisions++
+    else if (node.kind === "crisis") numbers.crises++
+    else if (node.kind === "change") numbers.changes++
+  }
+  var footer = "Newest " + plural(events.length, "event", "events") + " · " + completed + " completed " +
+    (completed === 1 ? "case" : "cases") + " in the index"
+  if (events.length >= GRAPH_EVENTS_MAX || completed >= GRAPH_COMPLETED_MAX) footer += " · older ones are only in the logbook"
+  if (folded > 0) footer += " · " + plural(folded, "change", "changes") + " folded into " + fold.groups.length
+  // More nodes that never fold (areas, cases, decisions, crises) than the
+  // cap: the layout would not keep its budget, so the graph is a still
+  // picture in node order (ADR-0034 §5's static escalation; no tick).
+  var still = numbers.areas + numbers.cases + numbers.decisions + numbers.crises > limit
+  return { nodes: nodes, edges: edges, deg: deg, first: lo, last: hi, span: hi - lo, empty: nodes.length === 0,
+    still: still, foldLevel: fold.level, numbers: numbers, footer: footer }
+}
+
+// A stable pseudo-random number in [0, 1) from a text (FNV-1a), so the
+// start layout is the same on every build of the same index.
+function graphHash(text) {
+  var h = 2166136261
+  for (var i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0) / 4294967296
+}
+
+// An array of n zeros. Plain arrays, not typed ones: the shell's JS engine
+// (QV4) reads and writes them about 1.7 times faster (measured, WP-125).
+function graphFill(n) {
+  var a = new Array(n)
+  for (var i = 0; i < n; i++) a[i] = 0
+  return a
+}
+
+// Run the layout's functions a few times on a six-node graph, once per
+// Model.js instance: QV4 compiles a function only after a few calls, so
+// without this the first real ticks ran interpreted (the first tick of a
+// 400-node layout took 8 ms on the test host, the later ones half of it).
+var graphWarmed = false
+function graphWarm() {
+  if (graphWarmed) return
+  graphWarmed = true
+  var b = { nodes: [], edges: [{ a: 0, b: 1 }, { a: 1, b: 2 }], first: 0, span: 0 }
+  for (var i = 0; i < 6; i++) b.nodes.push({ id: "warm" + i, r: 4, day: 0 })
+  var s = graphState(b, null)
+  for (var k = 0; k < 4; k++) {
+    graphRepelExact(s, 1)
+    graphRepelTree(s, 1)
+    s.sleeping = false
+    graphStep(s, 1000)
+  }
+}
+
+// The layout state of a build: positions, velocities and radii in arrays, the edges as index pairs, the visible set (day ≤ cut), alpha and
+// the tick counters. Positions of nodes `prev` already had (same id) are
+// kept; a new node starts beside a placed neighbour, else on a sunflower
+// spiral by its order. `prev`'s cut is kept when it was not on its last
+// day (a replay in progress), else the new last day. `added` counts the
+// nodes `prev` did not have, `removed` those it had that are gone.
+function graphState(build, prev) {
+  graphWarm()
+  var n = build.nodes.length
+  var m = build.edges.length
+  var s = {
+    n: n, ids: build.nodes.map(function(node) { return node.id }), at: Object.create(null),
+    x: graphFill(n), y: graphFill(n), vx: graphFill(n), vy: graphFill(n), r: graphFill(n), day: graphFill(n),
+    vis: graphFill(n), visList: graphFill(n), visCount: 0,
+    ea: graphFill(m), eb: graphFill(m), adjStart: graphFill(n + 1), adj: graphFill(2 * m),
+    first: build.first, span: build.span, cut: build.span,
+    alpha: 1, ticks: 0, total: 0, sleeping: false, pinned: -1, px: 0, py: 0, lastMs: 0, maxMs: 0, over: 0,
+    added: 0, removed: 0, tree: null, still: build.still === true, treeSteps: 0, exactSteps: 0
+  }
+  for (var i = 0; i < n; i++) {
+    s.at[s.ids[i]] = i
+    s.r[i] = build.nodes[i].r
+    s.day[i] = build.nodes[i].day
+  }
+  for (var e = 0; e < m; e++) {
+    s.ea[e] = build.edges[e].a
+    s.eb[e] = build.edges[e].b
+    s.adjStart[s.ea[e] + 1]++
+    s.adjStart[s.eb[e] + 1]++
+  }
+  for (var k = 0; k < n; k++) s.adjStart[k + 1] += s.adjStart[k]
+  var fill = s.adjStart.slice(0, n)
+  for (var e2 = 0; e2 < m; e2++) {
+    s.adj[fill[s.ea[e2]]++] = s.eb[e2]
+    s.adj[fill[s.eb[e2]]++] = s.ea[e2]
+  }
+  var placed = graphFill(n)
+  var kept = 0
+  for (var p = 0; p < n; p++) {
+    var old = prev ? prev.at[s.ids[p]] : undefined
+    if (old !== undefined) {
+      s.x[p] = prev.x[old]
+      s.y[p] = prev.y[old]
+      placed[p] = 1
+      kept++
+    }
+  }
+  var spiral = 0
+  for (var q = 0; q < n; q++) {
+    if (placed[q]) continue
+    var h = graphHash(s.ids[q])
+    var near = -1
+    for (var a = s.adjStart[q]; a < s.adjStart[q + 1]; a++) if (placed[s.adj[a]]) {
+      near = s.adj[a]
+      break
+    }
+    if (near >= 0) {
+      var dist = s.r[near] + s.r[q] + GRAPH_LINK * (0.6 + 0.4 * h)
+      s.x[q] = s.x[near] + dist * Math.cos(h * 2 * Math.PI)
+      s.y[q] = s.y[near] + dist * Math.sin(h * 2 * Math.PI)
+    } else {
+      var rad = 24 * Math.sqrt(0.5 + spiral)
+      var ang = spiral * Math.PI * (3 - Math.sqrt(5))
+      s.x[q] = rad * Math.cos(ang)
+      s.y[q] = rad * Math.sin(ang)
+      spiral++
+    }
+    placed[q] = 1
+  }
+  if (prev) {
+    s.added = n - kept
+    s.removed = prev.n - kept
+    if (prev.cut < prev.span) s.cut = Math.max(0, Math.min(s.span, prev.first + prev.cut - s.first))
+    s.alpha = s.added + s.removed > 0 ? Math.max(prev.sleeping ? 0 : prev.alpha, 0.3) : prev.alpha
+    s.sleeping = s.added + s.removed === 0 && prev.sleeping
+    s.total = prev.total
+  }
+  if (s.still) {
+    s.alpha = 0
+    s.sleeping = true
+  }
+  graphSetCut(s, s.cut, false)
+  return s
+}
+
+// Show the nodes of day ≤ cut (days since the build's first day, clamped).
+// With `grow`, a node that becomes visible starts beside a visible
+// neighbour (the replay's growth). Returns how many became visible.
+function graphSetCut(s, cut, grow) {
+  var c = Math.max(0, Math.min(s.span, Math.round(Number(cut) || 0)))
+  s.cut = c
+  var shown = 0
+  var count = 0
+  for (var i = 0; i < s.n; i++) {
+    var v = s.day[i] <= c ? 1 : 0
+    if (v && !s.vis[i]) {
+      shown++
+      if (grow) {
+        for (var a = s.adjStart[i]; a < s.adjStart[i + 1]; a++) {
+          var j = s.adj[a]
+          if (!s.vis[j] || s.day[j] > c) continue
+          var h = graphHash(s.ids[i] + "#" + s.total)
+          s.x[i] = s.x[j] + (s.r[j] + s.r[i] + 4) * Math.cos(h * 2 * Math.PI)
+          s.y[i] = s.y[j] + (s.r[j] + s.r[i] + 4) * Math.sin(h * 2 * Math.PI)
+          s.vx[i] = 0
+          s.vy[i] = 0
+          break
+        }
+      }
+    }
+    s.vis[i] = v
+    if (v) s.visList[count++] = i
+  }
+  s.visCount = count
+  if (s.pinned >= 0 && !s.vis[s.pinned]) s.pinned = -1
+  return shown
+}
+
+// Wake the layout: alpha at least `alpha`, the tick count from zero; a
+// still picture (build.still) never wakes.
+function graphWake(s, alpha) {
+  if (s.still) return
+  s.alpha = Math.max(s.alpha, Math.min(1, Number(alpha) || 0.3))
+  s.ticks = 0
+  s.sleeping = s.visCount === 0
+}
+
+// Hold node i at (x, y) while it is dragged, there at once (-1: let go,
+// the node stays where it was put).
+function graphPin(s, i, x, y) {
+  s.pinned = i >= 0 && i < s.n && s.vis[i] ? i : -1
+  s.px = x
+  s.py = y
+  if (s.pinned < 0) return
+  s.x[i] = x
+  s.y[i] = y
+  s.vx[i] = 0
+  s.vy[i] = 0
+}
+
+// Repulsion between every pair of visible nodes, exactly (each pair once).
+function graphRepelExact(s, charge) {
+  var x = s.x
+  var y = s.y
+  var vx = s.vx
+  var vy = s.vy
+  var list = s.visList
+  var m = s.visCount
+  for (var p = 0; p < m; p++) {
+    var i = list[p]
+    var xi = x[i]
+    var yi = y[i]
+    var fx = 0
+    var fy = 0
+    for (var q = p + 1; q < m; q++) {
+      var j = list[q]
+      var dx = xi - x[j]
+      var dy = yi - y[j]
+      var d2 = dx * dx + dy * dy
+      if (d2 < 0.01) {
+        dx = ((i * 7 + j) % 5) - 2 || 1
+        dy = ((i + j * 3) % 5) - 2 || 1
+        d2 = dx * dx + dy * dy
+      }
+      var f = charge / d2
+      dx *= f
+      dy *= f
+      fx += dx
+      fy += dy
+      vx[j] -= dx
+      vy[j] -= dy
+    }
+    vx[i] += fx
+    vy[i] += fy
+  }
+}
+
+// Repulsion through a quadtree (Barnes–Hut): a far cell acts with its
+// whole mass from its centre when its size² < GRAPH_THETA2 × distance²;
+// near nodes act one by one. The tree lives in flat arrays on the state,
+// rebuilt on every call. About 4× fewer interactions than the exact pairs
+// at 400 nodes.
+function graphRepelTree(s, charge) {
+  var x = s.x
+  var y = s.y
+  var list = s.visList
+  var m = s.visCount
+  var t = s.tree
+  if (!t) t = s.tree = { count: 0, mass: [], cx: [], cy: [], x0: [], y0: [], size: [], open: [], body: [], child: [], stack: [] }
+  var x0 = Infinity
+  var y0 = Infinity
+  var x1 = -Infinity
+  var y1 = -Infinity
+  for (var p = 0; p < m; p++) {
+    var b = list[p]
+    if (x[b] < x0) x0 = x[b]
+    if (x[b] > x1) x1 = x[b]
+    if (y[b] < y0) y0 = y[b]
+    if (y[b] > y1) y1 = y[b]
+  }
+  t.count = 1
+  t.mass[0] = 0
+  t.body[0] = -1
+  t.x0[0] = x0 - 1
+  t.y0[0] = y0 - 1
+  t.size[0] = Math.max(x1 - x0, y1 - y0) + 2
+  t.child[0] = t.child[1] = t.child[2] = t.child[3] = -1
+  for (var q = 0; q < m; q++) graphTreeInsert(t, x, y, list[q])
+  for (var c = 0; c < t.count; c++) if (t.mass[c] > 1) {
+    t.cx[c] /= t.mass[c]
+    t.cy[c] /= t.mass[c]
+  }
+  // A cell opens while its size² / θ² is at least the distance².
+  var tOpen = t.open
+  for (var o = 0; o < t.count; o++) tOpen[o] = t.size[o] * t.size[o] / GRAPH_THETA2
+  for (var u = 0; u < m; u++) graphTreeForce(t, x, y, s.vx, s.vy, list[u], charge)
+}
+
+// The tree's push on body i, added to its velocity. A function of its own,
+// called once per body: QV4 compiles a function after a few calls, so the
+// first tick already runs this loop compiled (as one loop over all bodies
+// it ran interpreted on the first ticks: 8 ms against 2–3, test host).
+function graphTreeForce(t, x, y, vx, vy, i, charge) {
+  // Locals, not t.<name>[k]: a property lookup per read costs QV4 more
+  // than the arithmetic.
+  var tMass = t.mass
+  var tBody = t.body
+  var tCx = t.cx
+  var tCy = t.cy
+  var tChild = t.child
+  var tOpen = t.open
+  var stack = t.stack
+  var xi = x[i]
+  var yi = y[i]
+  var fx = 0
+  var fy = 0
+  var sp = 0
+  stack[sp++] = 0
+  while (sp > 0) {
+    var k = stack[--sp]
+    var body = tBody[k]
+    if (body === i) continue
+    var dx = xi - tCx[k]
+    var dy = yi - tCy[k]
+    var d2 = dx * dx + dy * dy
+    if (body < 0 && tOpen[k] >= d2) {
+      var ch = 4 * k
+      var c0 = tChild[ch]
+      var c1 = tChild[ch + 1]
+      var c2 = tChild[ch + 2]
+      var c3 = tChild[ch + 3]
+      if (c0 >= 0) stack[sp++] = c0
+      if (c1 >= 0) stack[sp++] = c1
+      if (c2 >= 0) stack[sp++] = c2
+      if (c3 >= 0) stack[sp++] = c3
+      continue
+    }
+    if (d2 < 0.01) {
+      dx = ((i * 7 + k) % 5) - 2 || 1
+      dy = ((i + k * 3) % 5) - 2 || 1
+      d2 = dx * dx + dy * dy
+    }
+    var f = charge * tMass[k] / d2
+    fx += dx * f
+    fy += dy * f
+  }
+  vx[i] += fx
+  vy[i] += fy
+}
+
+// Add body i to the quadtree `t` (cells in flat arrays; masses as sums of
+// positions until graphRepelTree divides them). Bodies closer than the
+// depth limit share a leaf: the second one moves half a unit, so the next
+// tick separates them.
+function graphTreeInsert(t, x, y, i) {
+  var mass = t.mass
+  var cx = t.cx
+  var cy = t.cy
+  var body = t.body
+  var child = t.child
+  var x0 = t.x0
+  var y0 = t.y0
+  var size = t.size
+  var k = 0
+  var depth = 0
+  var px = x[i]
+  var py = y[i]
+  for (;;) {
+    if (mass[k] === 0) {
+      mass[k] = 1
+      cx[k] = px
+      cy[k] = py
+      body[k] = i
+      return
+    }
+    var b = body[k]
+    if (b >= 0) {
+      if (depth >= 24) {
+        x[i] = px + 0.5
+        mass[k]++
+        cx[k] += px + 0.5
+        cy[k] += py
+        return
+      }
+      // Move the leaf's body one level down.
+      body[k] = -1
+      var hb = size[k] / 2
+      var qb = (x[b] >= x0[k] + hb ? 1 : 0) + (y[b] >= y0[k] + hb ? 2 : 0)
+      var cb = t.count++
+      child[4 * k + qb] = cb
+      mass[cb] = 1
+      cx[cb] = x[b]
+      cy[cb] = y[b]
+      body[cb] = b
+      x0[cb] = x0[k] + (qb & 1) * hb
+      y0[cb] = y0[k] + (qb >> 1) * hb
+      size[cb] = hb
+      child[4 * cb] = child[4 * cb + 1] = child[4 * cb + 2] = child[4 * cb + 3] = -1
+    }
+    mass[k]++
+    cx[k] += px
+    cy[k] += py
+    var half = size[k] / 2
+    var q = (px >= x0[k] + half ? 1 : 0) + (py >= y0[k] + half ? 2 : 0)
+    var next = child[4 * k + q]
+    if (next < 0) {
+      next = t.count++
+      child[4 * k + q] = next
+      mass[next] = 0
+      body[next] = -1
+      x0[next] = x0[k] + (q & 1) * half
+      y0[next] = y0[k] + (q >> 1) * half
+      size[next] = half
+      child[4 * next] = child[4 * next + 1] = child[4 * next + 2] = child[4 * next + 3] = -1
+    }
+    k = next
+    depth++
+  }
+}
+
+// One force iteration over the visible nodes: repulsion between every
+// pair (graphRepelExact up to GRAPH_EXACT_MAX nodes, graphRepelTree
+// above), a pull to the centre, springs along the edges, all scaled by
+// alpha; damping and a speed limit; the pinned node stays where it is held.
+// Then alpha decays; after GRAPH_TICKS_MAX ticks since the last wake, or
+// below GRAPH_ALPHA_MIN, the layout sleeps. Returns false when it already
+// slept. `budgetMs` (GRAPH_TICK_BUDGET_MS when missing): a tick that took
+// longer is counted in `over`; `lastMs` and `maxMs` keep the times.
+function graphStep(s, budgetMs) {
+  if (s.sleeping) return false
+  var started = Date.now()
+  var x = s.x
+  var y = s.y
+  var vx = s.vx
+  var vy = s.vy
+  var list = s.visList
+  var m = s.visCount
+  var a = s.alpha
+  // Which repulsion ran is counted (a test holds the tree to 400 nodes).
+  if (m <= GRAPH_EXACT_MAX) {
+    graphRepelExact(s, GRAPH_CHARGE * a)
+    s.exactSteps++
+  } else {
+    graphRepelTree(s, GRAPH_CHARGE * a)
+    s.treeSteps++
+  }
+  var gravity = GRAPH_GRAVITY * a
+  for (var p = 0; p < m; p++) {
+    var i = list[p]
+    vx[i] -= x[i] * gravity
+    vy[i] -= y[i] * gravity
+  }
+  var r = s.r
+  var vis = s.vis
+  var k = GRAPH_SPRING * a
+  for (var e = 0; e < s.ea.length; e++) {
+    var u = s.ea[e]
+    var w = s.eb[e]
+    if (!vis[u] || !vis[w]) continue
+    var ex = x[w] - x[u]
+    var ey = y[w] - y[u]
+    var d = Math.sqrt(ex * ex + ey * ey) || 0.01
+    var g = (d - GRAPH_LINK - r[u] - r[w]) * k / d
+    ex *= g
+    ey *= g
+    vx[u] += ex
+    vy[u] += ey
+    vx[w] -= ex
+    vy[w] -= ey
+  }
+  var limit = GRAPH_MAX_SPEED
+  for (var t = 0; t < m; t++) {
+    var n = list[t]
+    if (n === s.pinned) {
+      x[n] = s.px
+      y[n] = s.py
+      vx[n] = 0
+      vy[n] = 0
+      continue
+    }
+    var sx = vx[n] * GRAPH_DAMPING
+    var sy = vy[n] * GRAPH_DAMPING
+    var sp = sx * sx + sy * sy
+    if (sp > limit * limit) {
+      var c = limit / Math.sqrt(sp)
+      sx *= c
+      sy *= c
+    }
+    vx[n] = sx
+    vy[n] = sy
+    x[n] += sx
+    y[n] += sy
+  }
+  s.alpha = a * (1 - GRAPH_ALPHA_DECAY)
+  s.ticks++
+  s.total++
+  if (s.ticks >= GRAPH_TICKS_MAX || s.alpha < GRAPH_ALPHA_MIN || m === 0) s.sleeping = true
+  s.lastMs = Date.now() - started
+  s.maxMs = Math.max(s.maxMs, s.lastMs)
+  if (s.lastMs > (Number(budgetMs) > 0 ? Number(budgetMs) : GRAPH_TICK_BUDGET_MS)) s.over++
+  return true
+}
+
+// The visible node at world point (wx, wy): the nearest whose disc, grown
+// by `slack`, holds the point; -1 none.
+function graphPick(s, wx, wy, slack) {
+  var best = -1
+  var bestD = Infinity
+  var extra = Number(slack) || 0
+  for (var p = 0; p < s.visCount; p++) {
+    var i = s.visList[p]
+    var dx = s.x[i] - wx
+    var dy = s.y[i] - wy
+    var d2 = dx * dx + dy * dy
+    var rr = s.r[i] + extra
+    if (d2 <= rr * rr && d2 < bestD) {
+      bestD = d2
+      best = i
+    }
+  }
+  return best
+}
+
+// The neighbours of node i ({ <index>: true }), for the hover's highlight.
+function graphNeighbours(s, i) {
+  var out = {}
+  if (i < 0 || i >= s.n) return out
+  for (var a = s.adjStart[i]; a < s.adjStart[i + 1]; a++) out[s.adj[a]] = true
+  return out
+}
+
+// The hover card of node i: { id, kind, kindLabel, title, sub, line,
+// date, day, links, caseId, members, more }; null for no node.
+function graphInfo(build, i) {
+  if (!build || i < 0 || i >= build.nodes.length) return null
+  var node = build.nodes[i]
+  var links = build.deg[i]
+  var line = GRAPH_KIND_LABELS[node.kind] + " · since " + node.date + " · day " + node.day + " · " +
+    plural(links, "link", "links")
+  return { id: node.id, kind: node.kind, kindLabel: GRAPH_KIND_LABELS[node.kind], title: node.title, sub: node.sub,
+    line: line, date: node.date, day: node.day, links: links, caseId: node.caseId,
+    members: node.members || [], more: node.more || 0 }
+}
+
+// The box around the visible nodes (with their radii), null when none;
+// filled into `out` when given (the canvas reuses one per paint).
+function graphBounds(s, out) {
+  if (s.visCount === 0) return null
+  var b = out || {}
+  b.x0 = Infinity
+  b.y0 = Infinity
+  b.x1 = -Infinity
+  b.y1 = -Infinity
+  for (var p = 0; p < s.visCount; p++) {
+    var i = s.visList[p]
+    b.x0 = Math.min(b.x0, s.x[i] - s.r[i])
+    b.y0 = Math.min(b.y0, s.y[i] - s.r[i])
+    b.x1 = Math.max(b.x1, s.x[i] + s.r[i])
+    b.y1 = Math.max(b.y1, s.y[i] + s.r[i])
+  }
+  return b
+}
+
+// The view { x, y, k } that fits `bounds` into a w × h canvas with `pad`
+// on every side, zoom at most kMax (the view's origin is the canvas
+// centre: screen = world × k + (w / 2 + x, h / 2 + y)); into `out` when
+// given.
+function graphFit(bounds, w, h, pad, kMax, out) {
+  var v = out || {}
+  if (!bounds || w <= 0 || h <= 0) {
+    v.x = 0
+    v.y = 0
+    v.k = 1
+    return v
+  }
+  var bw = Math.max(1, bounds.x1 - bounds.x0)
+  var bh = Math.max(1, bounds.y1 - bounds.y0)
+  var k = Math.min(Math.max(1, w - 2 * pad) / bw, Math.max(1, h - 2 * pad) / bh, kMax || 2)
+  v.x = -(bounds.x0 + bounds.x1) / 2 * k
+  v.y = -(bounds.y0 + bounds.y1) / 2 * k
+  v.k = k
+  return v
+}
+
+// Add the shape of a node of `kind` at (x, y), radius r, to ctx's current
+// path (the canvas fills or strokes the batch): a disc for cases, changes,
+// clusters and areas (an area is filled light and ringed), a square for
+// decisions, the concave spindle of A12's crisis marker for crises.
+function graphShape(ctx, kind, x, y, r) {
+  if (kind === "decision") {
+    var h = r * 0.85
+    ctx.moveTo(x - h, y - h)
+    ctx.lineTo(x + h, y - h)
+    ctx.lineTo(x + h, y + h)
+    ctx.lineTo(x - h, y + h)
+    ctx.closePath()
+  } else if (kind === "crisis") {
+    var t = r * 1.35
+    var w = r * 0.75
+    var c = r * 0.12
+    ctx.moveTo(x, y - t)
+    ctx.quadraticCurveTo(x + c, y - c, x + w, y)
+    ctx.quadraticCurveTo(x + c, y + c, x, y + t)
+    ctx.quadraticCurveTo(x - c, y + c, x - w, y)
+    ctx.quadraticCurveTo(x - c, y - c, x, y - t)
+    ctx.closePath()
+  } else {
+    ctx.moveTo(x + r, y)
+    ctx.arc(x, y, r, 0, 2 * Math.PI, false)
+  }
+}
