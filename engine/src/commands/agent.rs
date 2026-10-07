@@ -34,6 +34,14 @@
 //! at once is reported with its message. On a failure the previous active
 //! case is restored.
 //!
+//! One agent per case (WP-156): `agent start <ID>` refuses (exit 1) while
+//! a session it launched on `<ID>` lives — a process carrying its marker,
+//! `SELDON_CASE=<ID>` with this logbook's `SELDON_LOGBOOK`
+//! ([`crate::sessions`]) — and names `seldon agent focus <ID>`, which
+//! brings that session's window to the front; `--again` starts another
+//! anyway. `seldon agent sessions` lists the live ones (the desk asks it to
+//! show *Focus* in place of *Hand to agent*).
+//!
 //! `seldon agent ask triage|drift <EVENT>|case <ID>` (WP-124, ADR-0036 §1)
 //! launches the same way with an [`ask_prompt`]: ids, the logbook path and
 //! the path of the skill guide the agent follows ([`installed_guide`]),
@@ -56,6 +64,7 @@ use crate::logbook::{Logbook, cases};
 use crate::model::event::ACTOR_HUMAN;
 use crate::model::{CaseStatus, Priority, Risk, Zone};
 use crate::redact::Redactor;
+use crate::sessions;
 use crate::sys::Run;
 
 /// The launcher element replaced by the prompt.
@@ -248,6 +257,19 @@ pub enum AgentCommand {
                             seldon agent ask drift 01M3VNJ9JGZ9169T01XCW16FT0\n  \
                             seldon agent ask case C-2026-004")]
     Ask(AskArgs),
+    /// Bring the window of the agent `agent start` launched on a case to the
+    /// front (Hyprland)
+    #[command(after_help = "Example:\n  seldon agent focus C-2026-004")]
+    Focus(FocusArgs),
+    /// List the agents `agent start` launched that still run, one per case
+    Sessions,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct FocusArgs {
+    /// The case
+    #[arg(value_name = "ID", value_parser = parse_case_id)]
+    pub id: String,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -313,6 +335,10 @@ pub struct StartArgs {
     #[arg(long, value_name = "NAME")]
     pub launcher: Option<String>,
 
+    /// Start another agent although one already works on the case
+    #[arg(long, conflicts_with = "new")]
+    pub again: bool,
+
     /// With --new: what the agent should do, as one argument after `--`
     #[arg(value_name = "INTENT", last = true, requires = "new")]
     pub intent: Option<String>,
@@ -330,19 +356,26 @@ pub fn run(ctx: &Context, args: AgentArgs) -> Result<Output> {
                 };
                 start(ctx, Target::New(new), a.launcher.as_deref())
             }
-            (false, Some(id), _) => start(ctx, Target::Case(id), a.launcher.as_deref()),
+            (false, Some(id), _) => start(
+                ctx,
+                Target::Case { id, again: a.again },
+                a.launcher.as_deref(),
+            ),
             // clap's requires/conflicts rule the other shapes out
             _ => Err(Error::user(
                 "give a case id, or --new -- \"<intent>\"".to_string(),
             )),
         },
         AgentCommand::Ask(a) => ask(ctx, a.what, a.launcher.as_deref()),
+        AgentCommand::Focus(a) => focus(ctx, &a.id),
+        AgentCommand::Sessions => list_sessions(ctx),
     }
 }
 
-/// What `agent start` works on: an active case, or a new one.
+/// What `agent start` works on: an active case (`again`: even while an
+/// agent works on it), or a new one.
 enum Target {
-    Case(String),
+    Case { id: String, again: bool },
     New(New),
 }
 
@@ -565,14 +598,14 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
     // the creator of a --new case: the caller (default human)
     let creator = match &target {
         Target::New(_) => Some(actor_or_env(None, parse_person, ACTOR_HUMAN)?),
-        Target::Case(_) => None,
+        Target::Case { .. } => None,
     };
     let (config, logbook) = ctx.open_logbook()?;
     // the launcher is checked before anything is written
     let launcher = Launcher::resolve(&config.agent, name)?;
     let actor = launcher.actor()?;
     let new = match target {
-        Target::Case(id) => {
+        Target::Case { id, again } => {
             let lock = ctx.lock()?;
             return launch_on(
                 ctx,
@@ -583,6 +616,7 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
                 &id,
                 lock,
                 None,
+                again,
             );
         }
         Target::New(new) => new,
@@ -634,12 +668,14 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
         &id,
         lock,
         Some((&created, commit)),
+        true,
     )
 }
 
 /// Launches `launcher` on case `id` under `lock`. `created`: the case
 /// `--new` made under the same lock hold (it stays active when the launch
-/// fails, and the error says how to retry).
+/// fails, and the error says how to retry). `again`: launch even while a
+/// session on `id` lives (`--again`, and `--new`, whose case is new).
 #[allow(clippy::too_many_arguments)]
 fn launch_on(
     ctx: &Context,
@@ -650,6 +686,7 @@ fn launch_on(
     id: &str,
     lock: crate::logbook::lock::Lock,
     created: Option<(&super::plan::Created, super::Commit)>,
+    again: bool,
 ) -> Result<Output> {
     let file = cases::find(logbook, id)?;
     match file.case.status {
@@ -667,6 +704,13 @@ fn launch_on(
                 "{id} has status {other}; an agent starts on an active case only"
             )));
         }
+    }
+    if !again && let Some(session) = sessions_of(logbook, Some(id)).into_iter().next() {
+        return Err(Error::user(format!(
+            "an agent is already working on {id} (pid {}); focus it with `seldon agent focus \
+             {id}`, or start another with `seldon agent start {id} --again`; nothing was launched",
+            session.pids[0]
+        )));
     }
 
     let cwd = match workdir {
@@ -733,6 +777,125 @@ fn launch_on(
         });
     }
     Ok(Output::ok(human, out))
+}
+
+/// A live session `agent start` launched: the case, its marked processes
+/// (oldest first) and the actor it was launched as.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Session {
+    pub case: String,
+    pub pids: Vec<u32>,
+    pub actor: Option<String>,
+}
+
+/// The live sessions on `logbook` (on case `only`, when given), by case id.
+/// A process counts when its environment holds `SELDON_LOGBOOK` = this
+/// logbook's root and a `SELDON_CASE` that is a case id ([`sessions`]).
+pub fn sessions_of(logbook: &Logbook, only: Option<&str>) -> Vec<Session> {
+    let proc = Path::new(sessions::PROC);
+    let root = logbook.root.as_os_str();
+    let found = match only {
+        Some(id) => sessions::marked(
+            proc,
+            &[(LOGBOOK_ENV, root), (CASE_ENV, std::ffi::OsStr::new(id))],
+            &[CASE_ENV, ACTOR_ENV],
+        ),
+        None => sessions::marked(proc, &[(LOGBOOK_ENV, root)], &[CASE_ENV, ACTOR_ENV]),
+    };
+    let mut out: Vec<Session> = Vec::new();
+    for m in found {
+        let Some(case) = m.values[0].clone().filter(|c| crate::model::is_case_id(c)) else {
+            continue;
+        };
+        match out.iter_mut().find(|s| s.case == case) {
+            Some(s) => s.pids.push(m.pid),
+            None => out.push(Session {
+                case,
+                pids: vec![m.pid],
+                actor: m.values[1].clone(),
+            }),
+        }
+    }
+    out.sort_by(|a, b| a.case.cmp(&b.case));
+    out
+}
+
+/// The class of every agent window `omarchy agent` opens.
+const AGENT_WINDOW_CLASS: &str = "org.omarchy.agent";
+
+/// `seldon agent focus <ID>`: the window of the session on `<ID>` to the
+/// front. Refused (exit 1) when none lives, Hyprland cannot be asked, or
+/// has no window of it.
+fn focus(ctx: &Context, id: &str) -> Result<Output> {
+    let (_, logbook) = ctx.open_logbook()?;
+    cases::find(&logbook, id)?;
+    let Some(session) = sessions_of(&logbook, Some(id)).into_iter().next() else {
+        return Err(Error::user(format!(
+            "no agent is working on {id}: none that `seldon agent start` launched still runs; \
+             start one with `seldon agent start {id}`"
+        )));
+    };
+    let pid = session.pids[0];
+    let proc = Path::new(sessions::PROC);
+    let windows = sessions::windows().map_err(|e| {
+        Error::user(format!(
+            "an agent is working on {id} (pid {pid}), but its window cannot be looked up: {e}"
+        ))
+    })?;
+    let window = sessions::window_of(proc, &windows, &session.pids, AGENT_WINDOW_CLASS)
+        .ok_or_else(|| {
+            Error::user(format!(
+                "an agent is working on {id} (pid {pid}), but Hyprland has no window of it"
+            ))
+        })?;
+    sessions::focus(&window.address).map_err(Error::user)?;
+    Ok(Output::ok(
+        format!(
+            "Focused the agent on {id} (window {}, workspace {})",
+            window.address, window.workspace.name
+        ),
+        json!({
+            "focused": true,
+            "case": id,
+            "pid": pid,
+            "pids": session.pids,
+            "actor": session.actor,
+            "address": window.address,
+            "workspace": window.workspace.name,
+        }),
+    ))
+}
+
+/// `seldon agent sessions`: read-only, no lock.
+fn list_sessions(ctx: &Context) -> Result<Output> {
+    let (_, logbook) = ctx.open_logbook()?;
+    let found = sessions_of(&logbook, None);
+    let human = if found.is_empty() {
+        "No agent that `seldon agent start` launched is running.".to_string()
+    } else {
+        found
+            .iter()
+            .map(|s| {
+                format!(
+                    "{} {} (pid {})",
+                    s.case,
+                    s.actor.as_deref().unwrap_or("agent"),
+                    s.pids[0]
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    Ok(Output::ok(
+        human,
+        json!({
+            "sessions": found.iter().map(|s| json!({
+                "case": s.case,
+                "pids": s.pids,
+                "actor": s.actor,
+            })).collect::<Vec<_>>(),
+        }),
+    ))
 }
 
 /// The launcher's prompt (ADR-0030 §3): the case id (checked by

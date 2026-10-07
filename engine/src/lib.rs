@@ -20,6 +20,7 @@ pub mod pkgcmd;
 pub mod rebuild;
 pub mod reconcile;
 pub mod redact;
+pub mod sessions;
 pub mod sys;
 
 /// Engine version: Cargo.toml's, plus `+<build>` when the build set
