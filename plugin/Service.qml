@@ -130,9 +130,22 @@ Item {
   // Hide in the Changelog (WP-122): the attention items kept out of the
   // open list for this shell session, by Model.hideKey; nothing written.
   property var deskHidden: ({})
-  // The engine has `agent ask` (Ask agent in an event's or a case's bar):
-  // WP-124b sets this; no engine has it yet.
-  readonly property bool askAgentAvailable: false
+  // Ask agent in an event's or a case's bar, and the Changelog's "Agent
+  // sorts N open changes" (WP-124b, ADR-0036): `agent ask` needs an engine
+  // that can run. Whether a default agent exists only the engine knows
+  // (the index does not say; the plugin reads nothing else): a refusal
+  // names the fix in the result line.
+  readonly property bool askAgentAvailable: root.canWrite
+  readonly property var triageButton: Model.triageButton(root.indexShown ? root.index : null, root.canWrite)
+  // The proposal index.triage names, next to the index (ADR-0035 §6): read
+  // as a file the index points to, checked (Model.parseProposal), shown as
+  // plain text. "" path: no proposal.
+  readonly property string proposalPath: Model.triagePath(root.indexPath, root.indexShown ? root.index : null)
+  property string proposalText: ""
+  readonly property var proposal: root.proposalPath === "" ? null
+    : Model.parseProposal(root.proposalText, root.index ? root.index.triage : null)
+  readonly property var triageView: Model.triageView(root.indexShown ? root.index : null, root.proposal,
+    root.deskChangelog, root.triageResult)
 
   // Build the graph if the index changed since the last build.
   function graphRefresh() {
@@ -141,7 +154,12 @@ Item {
     root.graphBuilds++
     root.graph = Model.graphBuild(root.indexShown ? root.index : null, Model.GRAPH_CAP)
   }
-  onIndexChanged: root.graphDirty = true
+  // A new index may name another proposal, or the same file rewritten
+  // (applied): read it again.
+  onIndexChanged: {
+    root.graphDirty = true
+    if (root.proposalPath !== "") proposalFile.reload()
+  }
   onIndexShownChanged: root.graphDirty = true
 
   // How many aggregation passes this service's Model.js ran (periodTable and
@@ -237,6 +255,11 @@ Item {
   readonly property var rulesNotice: Model.rulesNotice(root.rulesResult)
   property var driftResult: null
   property var decideResult: null
+  // `agent ask …` (WP-124b): { ok, pending, text, what, target }.
+  property var askResult: null
+  // `drift apply|discard …` of a proposal: { ok, pending, text, action,
+  // proposalId, eventId, gone, done, skipped, refused, markedApplied }.
+  property var triageResult: null
   // The drift form's `seldon drift show` answer: { eventId, pending, ok,
   // text, members, rule, cls } — a group's members beyond what index.events
   // lists, and the item's rule (WP-122: the "why loud" callout).
@@ -529,6 +552,58 @@ Item {
     return true
   }
 
+  // Ask agent (WP-124b, ADR-0036 §1): `seldon agent ask triage|drift
+  // <eventId>|case <caseId> --json`. The engine launches the agent and
+  // answers at once; one ask at a time.
+  function askAgent(what, id) {
+    var target = String(id || "")
+    if (root.askResult && root.askResult.pending) return root.refuseBusy("ask", what, what === "case" ? target : "",
+      what === "drift" ? target : "")
+    var built = Model.askArgs(what, target)
+    if (built.error) {
+      root.askResult = { ok: false, pending: false, text: built.error, what: what, target: target }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.askResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, what: what, target: target }
+      return false
+    }
+    root.askResult = { ok: true, pending: true, what: what, target: target,
+      text: what === "triage" ? "Starting an agent to sort the open changes…" : "Asking an agent about " + target + "…" }
+    return true
+  }
+
+  // Apply the proposal the user saw (`proposalId`, the detail's id): only
+  // while the index still names it, so a replaced proposal is never
+  // applied unseen. `eventId`: one crisis (`--item`), else the rest.
+  function applyProposal(proposalId, eventId) {
+    return root.triageCall("apply", proposalId, eventId || "")
+  }
+
+  // Discard the proposal the user saw.
+  function discardProposal(proposalId) {
+    return root.triageCall("discard", proposalId, "")
+  }
+
+  function triageCall(action, proposalId, eventId) {
+    var id = String(proposalId || "")
+    if (root.triageResult && root.triageResult.pending) return root.refuseBusy("triage", action, "", eventId)
+    var fail = function(text) {
+      root.triageResult = { ok: false, pending: false, text: text, action: action, proposalId: id, eventId: eventId,
+        gone: false, done: [], skipped: [], refused: [] }
+      return false
+    }
+    var current = root.index && root.index.triage && typeof root.index.triage.id === "string" ? root.index.triage.id : ""
+    if (current !== id) return fail("This proposal is not the current one any more; review what the Changelog shows now")
+    var built = action === "apply" ? Model.applyArgs(id, eventId) : Model.discardArgs(id)
+    if (built.error) return fail(built.error)
+    if (!root.canWrite || !root.run(built.args)) return fail(root.writeBlocker || root.lastError)
+    root.triageResult = { ok: true, pending: true, action: action, proposalId: id, eventId: eventId, gone: false,
+      done: [], skipped: [], refused: [],
+      text: action === "discard" ? "Discarding the proposal…" : eventId !== "" ? "Applying " + eventId + "…" : "Applying the proposal…" }
+    return true
+  }
+
   function setResult(args, result) {
     if (args[0] === "log") root.logResult = result
     else if (args[0] === "open") root.openResult = result
@@ -537,6 +612,19 @@ Item {
       result.action = args[1]
       if (result.caseId === undefined || result.caseId === "") result.caseId = args[1] === "new" ? "" : args[2]
       root.planResult = result
+    } else if (args[0] === "agent" && args[1] === "ask") {
+      result.what = args[2]
+      result.target = args.length > 4 ? args[3] : ""
+      root.askResult = result
+    } else if (args[0] === "drift" && (args[1] === "apply" || args[1] === "discard")) {
+      result.action = args[1]
+      result.proposalId = args[2]
+      result.eventId = args[3] === "--item" ? args[4] : ""
+      if (result.gone === undefined) result.gone = false
+      if (result.done === undefined) result.done = []
+      if (result.skipped === undefined) result.skipped = []
+      if (result.refused === undefined) result.refused = []
+      root.triageResult = result
     } else if (args[0] === "agent") {
       var isNew = args[2] === "--new"
       result.action = isNew ? "agent-new" : "agent"
@@ -606,7 +694,10 @@ Item {
       : args[0] === "open" ? Model.openResult(exitCode, out, err)
       : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
       : args[0] === "plan" ? Model.planResult(exitCode, out, err)
+      : args[0] === "agent" && args[1] === "ask" ? Model.askResult(exitCode, out, err)
       : args[0] === "agent" ? Model.agentResult(exitCode, out, err)
+      : args[0] === "drift" && args[1] === "apply" ? Model.applyResult(exitCode, out, err)
+      : args[0] === "drift" && args[1] === "discard" ? Model.discardResult(exitCode, out, err)
       : args[0] === "drift" && args[1] === "show" ? Model.driftShowResult(exitCode, out, err)
       : args[0] === "drift" ? Model.driftResult(args[1], exitCode, out, err)
       : args[0] === "decide" ? Model.decideResult(exitCode, out, err)
@@ -793,6 +884,11 @@ Item {
       driftResult: root.driftResult,
       driftShown: root.driftShown,
       decideResult: root.decideResult,
+      askResult: root.askResult,
+      triageResult: root.triageResult,
+      triageButton: root.triageButton,
+      proposalPath: root.proposalPath,
+      proposalRead: !!root.proposal,
       pill: Model.pillText(root.counts, root.driftInBar),
       driftInBar: root.driftInBar,
       deskWidth: root.deskWidth,
@@ -899,6 +995,17 @@ Item {
     onLoaded: root.ingest(indexFile.text())
     onLoadFailed: function(error) { root.ingestFailure(error) }
     onFileChanged: indexFile.reload()
+  }
+
+  // The proposal index.triage points to (WP-124b).
+  FileView {
+    id: proposalFile
+    path: root.proposalPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.proposalText = proposalFile.text()
+    onLoadFailed: root.proposalText = ""
+    onFileChanged: proposalFile.reload()
   }
 
   // A watch cannot sit on a file that does not exist yet; look again until
