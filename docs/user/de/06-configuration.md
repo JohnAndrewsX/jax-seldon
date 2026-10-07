@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 8809c5b -->
+<!-- source: en/06-configuration.md @ d79db7a -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -175,12 +175,14 @@ nimmt der Collector, wie sie sind: Die nächste Erfassung zeichnet für
 sie nichts als hinzugefügt auf und meldet `watch scope changed: 0 file(s)
 left it, N entered it`.
 
-`~/.ssh/authorized_keys` wird nur beobachtet, wenn du es ergänzt. Steht
-es in der Liste, ist eine Änderung daran ohne Case eine Krise (es steht
-in der Vorgabe von `alwaysRedPaths`); aufgezeichnet wird nur der Hash:
+`~/.ssh/authorized_keys` und `~/.ssh/authorized_keys2` (die beiden
+Dateien, die sshd standardmäßig liest) werden nur beobachtet, wenn du sie
+ergänzt; ergänze beide Zeilen. Stehen sie in der Liste, ist eine Änderung
+an einer davon ohne Case eine Krise (beide stehen in der Vorgabe von
+`alwaysRedPaths`); aufgezeichnet werden nur die Hashes:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.ssh/authorized_keys"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
 ```
 
 Immer ausgenommen:
@@ -201,8 +203,9 @@ Immer ausgenommen:
 - Binärdateien und Dateien über 1 MiB (als übersprungen gelistet, ohne
   Hash) — außer in den Persistenzpfaden, wo jede Datei gehasht wird: Ein
   Hook läuft, egal was er enthält. Eine Datei dort über 64 MiB wird aus
-  Größe, Zeit und Inode gehasht statt gelesen, und eine, die sich nicht
-  lesen lässt, behält ihren letzten Hash, bis sie es wieder tut;
+  Größe, Zeiten und Inode gehasht statt gelesen, und eine, die sich nicht
+  lesen lässt, behält ihren letzten Hash, bis sie es wieder tut. Jede
+  Datei im Toggle-Ordner wird genauso gehasht;
 - Dateien, deren Name ein Steuerzeichen enthält oder deren Pfad länger
   als 512 Zeichen ist: Die Erfassung zählt sie in einer Warnung;
 - alles in `[redaction] skipPaths`. Die Vorgabe enthält die Dateien, die
@@ -351,7 +354,7 @@ Shell brechen kann, ist eine Krise.
 | `routine` | alle Regeln | die Routine-Regeln, die gelten: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag` |
 | `routinePaths` | `~/.config/omarchy/shell.json`, `**/*.bak.*` | Konfigurationsdateien, deren Änderungen Routine sind |
 | `routinePackages` | `archlinux-keyring`, `omarchy-keyring` | Pakete, deren eigene Transaktionen Routine sind |
-| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys` | Persistenzpfade: eine Änderung dort ohne Case ist eine Krise (`authorized_keys` erst, wenn du es beobachtest) |
+| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` | Persistenzpfade: eine Änderung dort ohne Case ist eine Krise (die `authorized_keys`-Dateien erst, wenn du sie beobachtest) |
 
 Willst du mehr? Ein paar Beispiele:
 
