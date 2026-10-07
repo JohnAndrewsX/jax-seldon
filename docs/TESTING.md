@@ -31,7 +31,7 @@ runs `cargo bench --bench index` with `SELDON_BENCH_X150=1` (the index
 build ×10 and ×150 < 100 ms; `just bench` in CI asserts ×10 only and
 prints ×150), then the ignored tests of `tests/index.rs`,
 `tests/hooks.rs` and `tests/redaction.rs` one at a time: `status` at
-10 292 ledger lines, 304 cases and 365 journal files < 100 ms,
+10 540 ledger lines, 304 cases and 365 journal files < 100 ms,
 `hook claude-code` at 10 000 lines and at 950 lines (with the index
 rebuild) < 5 ms, for a call it does not record and a recorded one, with
 the temp dir on tmpfs, and the redaction of long lines (16 KB < 1 ms and
@@ -80,7 +80,8 @@ cargo test --manifest-path engine/Cargo.toml log::                # notes, journ
 | `engine/tests/idempotency.rs` | `state_reset::` (WP-081): a removed state directory after a capture with events writes one `seldon` note `state-reset` (sources, files, detail, the warning on stdout and in `--json`), the next capture writes nothing; the first capture of a logbook and collectors whose source has no event in the ledger write no note; an unreadable pacman cursor, a corrupt `manifest.json` and a corrupt `owned.json` (moved to `owned.json.bad`) each give one note; plugins and theme with unreadable cursors and events give one; review round: the first successful theme run after a degraded `init` and a hook-written `theme-set` gives none, nor does a collector disabled at the first capture and enabled later; cursors of another logbook give files `logbook`, the "nothing can be restored" warning and doctor fix; a corrupt `owned.json` waits for a run of the config collector (`--source pacman` leaves it). `collectors.rs`: the snapper info-file path flags a missing cursor. `hooks.rs`: `session_stop_prints_a_state_reset_on_stderr`. WP-083: before every capture of these scenarios, `doctor`'s "the next capture will record a state reset" row names exactly the sources of the note that capture writes, and no row before a capture that writes none (`predicted`); a state directory restored before the capture removes the row and records nothing; every collector's `cursor_reads` accepts its own saved cursor and rejects a stray value. WP-088: a collector degraded in the capture that records a reset (or the one that alone lost its state) is marked `pendingBaseline` (`cursors`), keeps it while degraded or not run, and its first successful run writes its own note and clears it; with the state bound to another logbook the mark is `logbook` and the later note says `logbook` with the "nothing can be restored" warning; a degraded collector without a cursor here or without events of its source is not marked; a `cursors.json` entry without the field reads unchanged, `cursors` and `logbook` round-trip. WP-091: a collector not run (`--source pacman`) in the capture after a removed state directory gets an entry with only the mark (no `lastRun`), its index row equals a row without an entry, it keeps the mark while not run and its first run writes its own note; a collector disabled while the state was another logbook's is marked `logbook` and its note after enabling says so; a collector not run without events of its source gets no entry, and one with an entry here (an unreadable cursor) keeps it unchanged; doctor shows a marked collector in its own row (`waiting`: the WP-091 wording for `cursors` and `logbook`, the `--source` fix), not in the "next capture" row, and both rows when a marked collector and an unreadable cursor meet (`doctor::tests` covers mixed reasons and the plural); `snapper_access::` (WP-091): a degraded first run writes no note, the read grant (info files appear) writes one `ok again` note with both messages, actor `system`, no case, no own change, no drift, its removal one `degraded` note, a repeat writes nothing; a list failure and recovery are recorded the same way, a capture without snapper compares nothing; no note after a lost state directory or for an entry with only the mark; the note's detail is redacted (`the_note_is_redacted_like_every_event`, WP-099). `messages::` (WP-105): snapper's stderr with a made-up token and a host the user's `[redaction] patterns` entry names is masked in `capture --json`, the `capture` text, `cursors.json`, `index.json` (`state.collectors`) and `STATUS.md`, the ledger's note is unchanged, and a second capture keeps all of them; a raw message as an older engine saved it in `cursors.json` is masked by `seldon index` before any capture and in the file by a capture that does not run snapper; the file a crash after the append leaves (WP-099 mark) holds the masked message (debug builds). Round 2: doctor's `collectors` row (a message an older engine saved), its `snapper` probe (also in `init`'s text and `--json`) and its `omarchy` probe show the masked text, as text and in `--json`; with a user pattern that matches across `›` the saved message is byte-identical over three captures and the index row stays the same; with an invalid pattern `seldon index` exits 0 and the index row, doctor's `collectors` row and its `snapper` probe show `MESSAGE_WITHHELD`, and so does the probe while `config.toml` does not parse (doctor exit 1). `crash::` (WP-099, `SELDON_TEST_CAPTURE_CRASH=before-append|after-append`, debug builds, exit 99): a crash after the append leaves the `state-reset` note (lost state directory) or the snapper note in the ledger and `cursors.json` as loaded with the note's time in `pendingNotes`; the next capture writes neither again, gives the reset warning and saves without `pendingNotes`; a later loss or the change back is recorded; a crash before the append leaves the note to the next capture; a source the crashed note did not name (`--source pacman`, then `--all`) gets a note of its own; a second crash keeps the first mark besides its own; a mark at 00:00:05 on 1 March local time (February in UTC) is found in the March file. WP-104: a source the crashed capture recorded first gets no reset note (P2), nor does a crashed first capture (P1), and a later genuine loss is recorded; the marked file holds `silentBaselines` (exact shape), also from a crash before the append and for a collector not run (a theme-hook event before the next capture is no loss); a mark under another logbook's path does not hide a loss here; a file without the field reads unchanged; doctor after a crashed reset gives the "will warn" row, not "will record", and both rows when the next capture records a source the crashed note did not name. Round 2: theme not run twice after a silent crash (a theme-hook event in between) gets no `pendingBaseline` and no waiting row; a completed save here drops another logbook's marks; after a crashed reset, a `--source` capture that does not run a collector the note names neither marks it waiting nor keeps a mark it had before the crash (entry dropped), so the next `--all` records no second reset; nor does a collector that degrades in the capture after a crashed reset (not marked waiting). The crash tests exist in debug test builds only (`#[cfg(debug_assertions)]`, like the crash point) |
 | `engine/tests/git.rs` | the autocommit (WP-061): with `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY` and `GIT_COMMON_DIR` of a second scratch repository set, `seldon log` commits into the logbook and the other repository's HEAD and index stay unchanged; `index` reads the logbook's HEAD under the same variables; an empty `.git` inside a parent repository → nothing committed anywhere, one warning ("not a usable repository"), the index shows no HEAD; a `.git` file whose `gitdir:` names the parent's git directory → nothing committed, one warning, doctor degraded; a linked work tree of the logbook's own repository (`git worktree add`) is committed to; a detached HEAD → no commit, nothing staged, one stderr line and `--json` `git.error`; a stale `.git/index.lock` → exit 0, one warning line, `git.error`, no stdout duplicate, and the next write after the lock is gone commits everything. git runs in the engine's process group (a wrapper in place of the `git` link records `/proc/$$/stat` and execs the host's git; snapper, recorded the same way, leads its own group). The unit test `logbook::git::tests::the_command_drops_every_repository_variable` pins the environment |
 | `engine/tests/watch.rs` | `seldon watch` (WP-034). Without the feature: exit 1, "built without the watch feature", JSON error. With `--features watch` (`just check-watch`): one rebuild at start (`trigger: "start"`; an edit made before the start is in it), then one change → exactly one rebuild after the 2 s quiet interval and nothing after it (the rebuild's own reads and its `index.json` write stay silent); a burst of 24 writes plus a new folder → one rebuild, and a later write in that folder is seen; generated `ledger/*.md`, `STATUS.md`, temp/backup files, `PROJECT.md`, reads of every watched file, and `seldon index`/`status` runs → none, while `.seldon/logbook.toml` counts; a held lock → no rebuild and still running, the rebuild within 2 s of the release; a folder renamed away and recreated → its watch moves to the new folder (a write in the old one is quiet, one in the new one counts); a new area (`areas/printer/README.md`) → one rebuild with the area in `system.areas`, and `areas/` renamed away and recreated is watched again (WP-075); SIGTERM and SIGINT → exit 0 with a final `stopped` line; not initialised → exit 3; `--interval 1` → exit 1; RSS on the ×10 fixture (below) |
-| `engine/tests/index.rs` | `seldon index` (WP-007) against `fixtures/index.sample.json` and the variants, the mutation self-checks of `scripts/validate-fixtures.py` in-process, atomic writes under a concurrent reader. The text clip of ADR-0025: `clip_keeps_short_texts_and_marks_long_ones` (WP-076: a text of at most 256 JSON bytes unchanged, a longer one cut on a character boundary to at most 256 bytes with `… (N more characters in the ledger)`, N exact) and `the_reference_derive_clips_texts_as_the_engine_does` (WP-077: long `detail`, `resolutionDetail` and `meta` texts in a copy of the fixture logbook, cut on multi-byte, JSON-escaped, white-space and U+001C..U+001F characters; `index.events` and `index.drift` of `seldon index` equal those of `validate-fixtures.py --derive`; skipped with a note without `python3`); `long_texts_keep_the_index_under_its_size_budget`, `a_long_command_line_is_whole_in_the_ledger_and_clipped_in_the_index` and `an_index_over_its_budget_warns` (WP-076) |
+| `engine/tests/index.rs` | `seldon index` (WP-007) against `fixtures/index.sample.json` and the variants, the mutation self-checks of `scripts/validate-fixtures.py` in-process, atomic writes under a concurrent reader. The text clip of ADR-0025: `clip_keeps_short_texts_and_marks_long_ones` (WP-076: a text of at most 256 JSON bytes unchanged, a longer one cut on a character boundary to at most 256 bytes with `… (N more characters in the ledger)`, N exact) and `the_reference_derive_clips_texts_as_the_engine_does` (WP-077: long `detail`, `resolutionDetail` and `meta` texts in a copy of the fixture logbook, cut on multi-byte, JSON-escaped, white-space and U+001C..U+001F characters; `index.events` and `index.drift` of `seldon index` equal those of `validate-fixtures.py --derive`; skipped with a note without `python3`); `long_texts_keep_the_index_under_its_size_budget`, `a_long_command_line_is_whole_in_the_ledger_and_clipped_in_the_index` and `an_index_over_its_budget_warns` (WP-076); contract 2 (WP-120): the golden run puts `fixtures/proposals/` into its state directory (`triage`), `meta.truncated`/drift `truncated` mark exactly the clipped texts (in the reference test), `a_ledger_truncated_mark_is_dropped` |
+| `engine/tests/contract_v2.rs` | contract 2 (ADR-0035, WP-120): `meta.risk` on every new `case-created`/`case-started` (plan new and start, `drift explain`'s completed case), `case-updated` from `plan set` (also for zone only), none on drop; `seldon event` refuses `case-updated`, `state-loss`, `--meta risk`, `--meta truncated`; `logbook.git.autocommit` after a commit, after a failed one (stale lock), unchanged after `--no-commit`, absent for another logbook's record and with `[git] autocommit = false`; `triage` picks the newest valid proposal of this logbook (an invalid one warned and skipped, another logbook's skipped silently, a name that is not its id warned), `applied`; `decisions[].cases` without repeats; `index` twice at one clock writes the same bytes with every v2 field. `planned_link.rs`: `the_ledger_record_wins_over_an_edited_log`, `an_old_case_falls_back_to_its_log`; `idempotency.rs`: `a_state_reset_note_from_before_contract_2_still_counts` |
 
 **Isolation.** The integration tests never see the real home, config,
 state or logbook (AGENTS.md §6). `engine/tests/common/mod.rs` gives each
@@ -457,9 +458,9 @@ decision id (not `ADR-4`, `adr-0004`, a padded id, a path or `memory`);
 `updated`), every part optional, all opening the fixed target `logbook`.
 For the desk's sections 4–6 (WP-123): `deskFilter` (every word, any
 field, case-insensitive); `decisionDetail` (Accept only while proposed,
-nothing enabled for a malformed id, the notes); `decisionCases` (null on
-contract 1, titles and status from the case lists, an unknown case by
-its id, non-text entries dropped); `systemTiles` (five tiles, big values
+nothing enabled for a malformed id, the notes); `decisionCases` (the
+sample's, null for an index without the field, titles and status from
+the case lists, an unknown case by its id, non-text entries dropped); `systemTiles` (five tiles, big values
 and leads on the sample, a failing collector's stripe, "—" and "Not in
 the index" for an empty or sparse `system`); `memoryDetail` (file and
 date). For the Prime Radiant (WP-030): the period ids and ←/→ wrapping;
@@ -505,7 +506,10 @@ to the running omarchy-shell and writes only to a temp dir.
 
 Scenarios: every status (fixture index, `PATH` without `seldon`,
 `index-variants/not-initialised.json`, a missing path, broken JSON,
-`SELDON_NOW` three hours after `generatedAt`, `invalid/index.contract-v2.json`),
+`SELDON_NOW` three hours after `generatedAt`, `invalid/index.contract-v3.json`
+and the sample as contract 1 — the banner names both versions and the side
+to update —, and the plugin of the `v0.1.3` tag (`git archive`; without the
+tag this plugin set back to contract 1) against the contract-2 sample, WP-120),
 a relative `SELDON_INDEX`, an index that appears after start, an atomic
 replace (temp file + rename), an engine installed while running ("Check
 again"), the live loop without the dev override (capture, then status
@@ -669,8 +673,16 @@ swapped frames and the frame by which every chart has painted),
 `chart.locate`) and `leave`; `HARNESS_NO_PILL` runs without the pill (the
 plugin not in the bar). The facade stand-in answers `false` when the
 entry would not change, as `shell.qml` does. After each it prints
-`Desk.view()`, the facade's calls and writes, every visible text and
+`Desk.view()` (with the current section's own `view()` as
+`sectionView`), the facade's calls and writes, every visible text and
 every text outside the window, the desk or its Prime Radiant slot.
+Inside an item that clips (a list, a scrolled detail, a scrolled chart
+grid) only the part of a text inside the clip counts: rows scrolled out
+of a list are not on screen. Live cases run Service.qml without
+`SELDON_INDEX` against the fake engine (`tests/plugin/fake-seldon`, in a
+temp `HOME`) and compare its `argv.log` argument by argument with the
+CONTRACT.md forms; the editor and terminal launchers are
+`fake-recorder`s (`HARNESS_RECORD`).
 
 Checks: the width at 50 / 67 / 75 / 100 % on 1366, 1920, 2560 and 3840 px
 windows (the ADR-0034 §1 clamp, centred within a pixel); the sidebar's
@@ -690,8 +702,36 @@ section remembered across a hide, `{"period":"30"}` on section 7); the
 stacked Esc order; and the notices under the header with their fixes
 (snapper, not initialised and the chip, the restart notice and its one
 launch, the rules update live with doctor beside the queue, capture
-warnings and `c`). The Prime Radiant (WP-123, the old `overlay-view.sh`
-scenarios): periods with ←/→, h/l and chip clicks, the "←/→ period"
+warnings and `c`). Sections 1–3 (WP-122; the 0.1 panel's scenarios for
+these tabs, one to one): Today on the sample (state, tiles, NEEDS YOU, the
+journal, yesterday in place, the overview and its case tiles, the sidebar
+search) and live (the journal field with `--help 2` as one argument, a
+blank note refused in the plugin, the case picker by keys, a refusal that
+keeps the text, Open in editor, New case → `agent start --new`); the
+Changelog on the sample (chips and counts, rows by class, the event
+detail and its bar, `f`/`F`, groups and members, Enter opens the form and
+Esc hides it, the shim's `filter` and `resolve`, Hide and Show, "+N
+more"), the quiet surfaces (a crisis in the yellow zone, attention alone),
+and live link / explain / dismiss, `--only` with a refusal in the plugin,
+an already resolved re-run, a lock refusal with per-event drafts, `drift
+show` from the leader and a member; Work on the sample (groups, the case
+detail, the bar by status, dev mode's refusal, By agent, a reopen) and
+live (the new-case sheet by keys, start → to verification → complete,
+each armed then run, Open in editor, the engine's refusal, `x x`, hand to
+agent and its refusal, a locked new case, Run and its refusal, Reopen and
+`r`); a section change gives the keys back from a field and keeps its
+draft; the Changelog's selection follows its event across an index update
+(the acceptance's cursor stability); Capture now over a lock retry; one
+count everywhere (chips = sidebar = header = the quiet line, a group once,
+after a Hide too); the "why loud" callout from the engine's rule (`drift
+show`, live; the fake names `always-red-paths` for config, `always-red` for
+pacman, `attention-all` with `FAKE_SELDON_ATTENTION_ALL`), a planned
+crisis, a group from a member; free text with surrounding blanks in every
+field (the argv keeps them); Open case for a case the index no longer
+lists; key/values at 50 %; the
+sticky bar (its scene position unchanged while the detail scrolls, in
+Work and the Changelog); the stacked layout.
+The Prime Radiant (WP-123, the old `overlay-view.sh` scenarios): periods with ←/→, h/l and chip clicks, the "←/→ period"
 hint, 90 d on every entry, `setPeriod` from another section and an
 unknown id that changes nothing, `hover` only while shown; entering
 from closed aggregates nothing on the first frame, has painted nothing
@@ -714,8 +754,9 @@ field optional and a failing collector, Memory, not initialised, the
 stacked layout and label fit at 1366 and 3840 px. Every case ends with a
 log free of warnings, `TypeError`s and binding loops. `DESK_SHOTS=<dir>`
 also renders the desk in Tokyo Night, Kanagawa and Catppuccin Latte
-(Today at 100 % and 50 %, Settings, Decisions, System, Memory, the Prime
-Radiant at 100 % and 50 % and with a hover, not initialised).
+(Today at 100 % and 50 %, Settings, the Changelog, Work, Decisions,
+System, Memory, the Prime Radiant at 100 % and 50 % and with a hover,
+not initialised).
 
 ### 3c. The pill (`BarWidget.qml`) in a private headless Quickshell
 
@@ -849,7 +890,7 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
      `generatedAt` (and `state.lastCapture`) to now first; for `indexStale`,
      to three hours ago; use `index-variants/not-initialised.json`,
      `index-variants/snapper-degraded.json` and
-     `invalid/index.contract-v2.json` as they are, and delete the file for
+     `invalid/index.contract-v3.json` as they are, and delete the file for
      `indexMissing`.
 4. Read the result:
    ```bash

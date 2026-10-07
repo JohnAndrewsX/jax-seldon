@@ -140,13 +140,45 @@ expect variant-stale .banner "Index is stale"
 expect variant-stale .pill "2 · 2"
 clean_log variant-stale
 
-# 7. Contract v2.
-run contract-mismatch 2500 PATH="$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v2.json"
+# 7. Contract mismatch (CONTRACT.md rule 3): an index of a newer contract
+# (update the plugin), one of an older (update the engine).
+run contract-mismatch 2500 PATH="$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v3.json"
 expect contract-mismatch .status contractMismatch
-expect contract-mismatch .indexContractVersion 2
+expect contract-mismatch .indexContractVersion 3
+expect contract-mismatch .pluginContractVersion 2
 expect contract-mismatch .banner "Index format mismatch"
+expect contract-mismatch .bannerDetail "The index uses contract v3, this plugin reads v2. Update the plugin."
 expect contract-mismatch .pill ""
 clean_log contract-mismatch
+jq '.contractVersion = 1' "$fx/index.sample.json" >"$work/index.contract-v1.json"
+run contract-older 2500 PATH="$fake_path" SELDON_INDEX="$work/index.contract-v1.json"
+expect contract-older .status contractMismatch
+expect contract-older .indexContractVersion 1
+expect contract-older .bannerDetail "The index uses contract v1, this plugin reads v2. Update the engine."
+clean_log contract-older
+
+# 7b. WP-120 (ADR-0035): a 0.1.x plugin against a contract-2 index shows the
+# mismatch banner with both numbers. The plugin of the v0.1.3 tag; without
+# the tag (a shallow clone) this plugin with its contract set back to 1.
+old_plugin="$work/plugin-0.1.x"
+mkdir -p "$old_plugin"
+if git -C "$root" rev-parse -q --verify "refs/tags/v0.1.3" >/dev/null; then
+  git -C "$root" archive v0.1.3 plugin | tar -x -C "$old_plugin" --strip-components=1
+  old_label="v0.1.3"
+else
+  cp -r "$plugin/." "$old_plugin/"
+  sed -i 's/^var CONTRACT_VERSION = 2$/var CONTRACT_VERSION = 1/' "$old_plugin/Model.js"
+  old_label="this plugin at contract 1 (no v0.1.3 tag here)"
+fi
+grep -q '^var CONTRACT_VERSION = 1$' "$old_plugin/Model.js" || { echo "service-states: $old_label does not read contract 1" >&2; exit 1; }
+echo "     0.1.x plugin: $old_label"
+run old-plugin 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" HARNESS_PLUGIN_DIR="$old_plugin"
+expect old-plugin .status contractMismatch
+expect old-plugin .indexContractVersion 2
+expect old-plugin .pluginContractVersion 1
+expect old-plugin .banner "Index format mismatch"
+expect old-plugin .bannerDetail "The index uses contract v2, this plugin reads v1. Update the plugin."
+expect old-plugin .pill ""
 
 # 8. A relative SELDON_INDEX resolves against the shell's working directory.
 (cd "$root" && run relative 2500 PATH="$fake_path" SELDON_INDEX="fixtures/index.sample.json")
@@ -250,7 +282,7 @@ run fix-engine 3000 PATH="$work/bin-tools:$base_path" SELDON_INDEX="$fx/index.sa
 install_engine="curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash"
 record_check fix-engine "$(printf '%s\n' wl-copy -- "$install_engine" -- \
   omarchy-launch-floating-terminal-with-presentation "$install_engine" --)"
-run fix-contract 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v2.json" \
+run fix-contract 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v3.json" \
   HARNESS_FIX=copy HARNESS_RECORD="$work/fix-contract.record"
 record_check fix-contract "$(printf '%s\n' wl-copy -- "omarchy plugin update jax.seldon" --)"
 run fix-init 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index-variants/not-initialised.json" \
@@ -918,9 +950,9 @@ fi
 
 # 35. The sheets (WP-068), in a headless window against the installed
 #     shell's Commons/ and Ui/ (copied, as desk-view.sh does) and the fake
-#     engine. A small harness written here drives NewCaseSheet, DriftSheet
-#     and components/desk/NewDecisionForm (the 0.1 NewDecisionSheet) through
-#     their own functions and prints each step.
+#     engine. A small harness written here drives NewCaseSheet, DriftForm
+#     and NewDecisionForm (components/desk/; the 0.1 NewDecisionSheet)
+#     through their own functions and prints each step.
 #       busy    a pending `plan start`, then Create in the new-case sheet; a
 #               pending `drift dismiss` on another event, then the drift
 #               sheet's action; a pending `decide` another panel sent, then
@@ -951,7 +983,7 @@ import QtQuick.Window
 import Quickshell
 
 // Sheet harness (tests/plugin/service-states.sh, scenario 35). Loads
-// Service.qml as the shell does, NewCaseSheet, DriftSheet and
+// Service.qml as the shell does, NewCaseSheet, DriftForm and
 // NewDecisionForm in an
 // offscreen window, then runs HARNESS_SHEETS ("busy" or "rearm") step by
 // step: each step waits until the service is idle (and, after an index
@@ -1101,8 +1133,8 @@ ShellRoot {
     }
     root.service = component.createObject(null)
     root.service.parsedChanged.connect(function() { root.reloads++ })
-    root.newCase = root.load("components/NewCaseSheet.qml", column, { service: root.service, width: 440 })
-    root.drift = root.load("components/DriftSheet.qml", column, { service: root.service, width: 440 })
+    root.newCase = root.load("components/desk/NewCaseSheet.qml", column, { service: root.service, width: 440 })
+    root.drift = root.load("components/desk/DriftForm.qml", column, { service: root.service, width: 440 })
     root.decision = root.load("components/desk/NewDecisionForm.qml", column, { service: root.service, width: 440 })
     if (root.drift) root.drift.indexData = Qt.binding(function() { return root.service.index })
   }

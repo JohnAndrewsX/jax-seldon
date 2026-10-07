@@ -7,7 +7,7 @@
   "required": ["contractVersion", "generatedAt", "engineVersion", "logbook", "state", "summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"],
   "additionalProperties": false,
   "properties": {
-    "contractVersion": { "const": 1 },
+    "contractVersion": { "const": 2 },
     "generatedAt":   { "type": "string", "format": "date-time" },
     "engineVersion": { "type": "string" },
     "logbook": {
@@ -15,7 +15,11 @@
       "properties": {
         "path": { "type": "string" }, "language": { "type": "string" },
         "machine": { "type": "string" },
-        "git": { "type": "object", "additionalProperties": false, "properties": { "head": { "type": "string" }, "dirty": { "type": "boolean" } } }
+        "git": { "type": "object", "additionalProperties": false, "properties": { "head": { "type": "string" }, "dirty": { "type": "boolean" },
+          "autocommit": { "type": "object", "required": ["ok", "at", "message"], "additionalProperties": false,
+            "description": "the last autocommit the engine attempted in this logbook (ADR-0035 §2); absent while git.autocommit is off or none was attempted",
+            "properties": { "ok": { "type": "boolean" }, "at": { "type": "string", "format": "date-time" },
+              "message": { "type": "string", "maxLength": 256, "description": "ok: the commit subject; not ok: the git error (one line, redacted); shown, never executed" } } } } }
       }
     },
     "state": {
@@ -57,8 +61,19 @@
         "verification": { "type": "array", "items": { "$ref": "case.schema.json" } },
         "completed": { "type": "array", "maxItems": 50, "items": { "$ref": "case.schema.json" }, "description": "completed and dropped cases, newest closed first" }
       } },
-    "decisions": { "type": "array", "items": { "type": "object", "required": ["id", "title", "status", "date"], "additionalProperties": false,
-      "properties": { "id": { "type": "string", "pattern": "^ADR-[0-9]{4}$" }, "title": { "type": "string" }, "status": { "enum": ["proposed", "accepted", "superseded"] }, "date": { "type": "string", "format": "date" }, "path": { "type": "string" } } } },
+    "decisions": { "type": "array", "items": { "type": "object", "required": ["id", "title", "status", "date", "cases"], "additionalProperties": false,
+      "properties": { "id": { "type": "string", "pattern": "^ADR-[0-9]{4}$" }, "title": { "type": "string" }, "status": { "enum": ["proposed", "accepted", "superseded"] }, "date": { "type": "string", "format": "date" }, "path": { "type": "string" },
+        "cases": { "type": "array", "items": { "$ref": "event.schema.json#/$defs/caseId" }, "description": "the frontmatter's cases, as written, without repeats; may name a case the index does not list (ADR-0035 §5)" } } } },
+    "triage": { "type": "object", "required": ["id", "at", "actor", "counts", "path", "applied"], "additionalProperties": false,
+      "description": "the newest triage proposal of this logbook (ADR-0034 §6, ADR-0035 §6); absent when there is none",
+      "properties": {
+        "id": { "$ref": "event.schema.json#/$defs/ulid" },
+        "at": { "type": "string", "format": "date-time" },
+        "actor": { "type": "string", "pattern": "^agent:[a-z0-9-]+$" },
+        "counts": { "type": "object", "required": ["items", "crises"], "additionalProperties": false,
+          "properties": { "items": { "type": "integer", "minimum": 0 }, "crises": { "type": "integer", "minimum": 0 } } },
+        "path": { "type": "string", "pattern": "^proposals/[0-7][0-9A-HJKMNP-TV-Z]{25}\\.json$", "description": "relative to the directory of index.json; the file is proposal.schema.json" },
+        "applied": { "type": ["string", "null"], "format": "date-time", "description": "null until `seldon drift apply` applied it" } } },
     "system": {
       "type": "object", "additionalProperties": false,
       "properties": {
@@ -100,7 +115,8 @@
         "crisis": { "type": "boolean", "description": "true iff the item fails the harm test of ADR-0028 (its class is crisis: a named transaction on an alwaysRed package, a write to a persistence path); under [drift] attention = \"all\" true iff zone is red" },
         "proposedCase": { "anyOf": [ { "$ref": "event.schema.json#/$defs/caseId" }, { "type": "null" } ] },
         "txId": { "type": "string", "minLength": 1, "description": "groups only: the shared pacman txId; expand the group from index.events by txId (ADR-0013 §2)" },
-        "members": { "type": "integer", "minimum": 2, "description": "groups only: number of open member events incl. the leader; omitted for single-event items" } },
+        "members": { "type": "integer", "minimum": 2, "description": "groups only: number of open member events incl. the leader; omitted for single-event items" },
+        "truncated": { "const": true, "description": "detail was clipped (ADR-0025, ADR-0035 §3); absent otherwise" } },
       "allOf": [
         { "if": { "required": ["members"] }, "then": { "required": ["txId"], "properties": { "source": { "const": "pacman" } } } },
         { "if": { "required": ["txId"] }, "then": { "required": ["members"] } }

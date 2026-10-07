@@ -1,7 +1,7 @@
 //! `cargo bench --bench index`: the index build (read the logbook, derive,
 //! write `index.json` atomically) must take < 100 ms (SPEC-ENGINE §6).
 //! Asserted on the fixture logbook scaled ×10 (WP-007; `just bench`, CI).
-//! ×150 (10 650 ledger lines, 1 200 cases: more cases than the 300 of the
+//! ×150 (12 750 ledger lines, 1 200 cases: more cases than the 300 of the
 //! budget) is always printed and asserted only with `SELDON_BENCH_X150=1`,
 //! which `just check-perf` sets (WP-076): on a busy host a run comes out at
 //! about twice its usual time. Median of 21 runs after a warm-up; a median

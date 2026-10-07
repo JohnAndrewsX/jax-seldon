@@ -5,7 +5,7 @@ title: "Zed statt VS Code als Zweiteditor"
 status: accepted
 date: 2026-10-01
 supersedes:
-cases: [C-2026-004]
+cases: [C-2026-004, C-2026-005]
 ---
 # ADR-0003 — Zed statt VS Code als Zweiteditor
 

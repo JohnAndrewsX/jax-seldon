@@ -42,6 +42,10 @@
 #   FAKE_SELDON_NO_DEFAULT_AGENT  if set, `agent start --new` answers as the
 #                        engine does without an Omarchy default agent (exit 1,
 #                        nothing created) (WP-101)
+#   FAKE_SELDON_ATTENTION_ALL  if set, `drift show` names a crisis's rule
+#                        `attention-all` (`[drift] attention = "all"`); else
+#                        a config crisis is `always-red-paths`, a pacman one
+#                        `always-red`, attention `other` (WP-122)
 #   FAKE_SELDON_RULES    the rules row `doctor --json` reports: current
 #                        (default) | outdated | damaged; $HOME/rules overrides
 #                        it, and `rules update` writes "current" there (WP-101);
@@ -372,20 +376,25 @@ drift_cmd() { # drift_cmd <link|explain|dismiss> <id> [<case>] [options] [-- <te
          + (if $case == "" then "" else ", " + $case end))}}' "$(state_index)"
 }
 
-drift_show() { # drift_show <id>: {event, open, item, txId, members}; members
+drift_show() { # drift_show <id>: {event, open, class, rule, item, txId, members}; members
   # the index no longer lists come from $HOME/extra-events.json (an array).
   local id=$1 index extra='[]'
   index=$(state_index)
   jq -e --arg id "$id" 'any(.events[]; .id == $id)' "$index" >/dev/null 2>&1 || user_error "unknown event $id"
   [[ -f $HOME/extra-events.json ]] && extra=$(<"$HOME/extra-events.json")
-  jq -c --arg id "$id" --argjson extra "$extra" "$DRIFT_DEFS"'
+  jq -c --arg id "$id" --argjson extra "$extra" --arg all "${FAKE_SELDON_ATTENTION_ALL:-}" "$DRIFT_DEFS"'
     .events += $extra | open_ids as $open | event($id) as $e
     | ([items[] | select(.eventId == $id or (.txId != null and .members != null and .txId == $e.txId))][0]) as $item
     | (if ($open | index($id)) == null then []
        elif $item != null and $item.members != null then
          [.events[] | select(.txId == $item.txId and .case == null and .resolution == null)] | sort_by(.ts, .id)
        else [$e] end) as $m
-    | {event: $e, open: ($m | length > 0), item: $item, txId: (if ($m | length) > 1 then $e.txId else null end), members: $m}' "$index"
+    | (if $item == null then null elif $item.crisis then "crisis" else "attention" end) as $class
+    | (if $item == null then null elif $all != "" and $item.crisis then "attention-all"
+       elif $item.crisis and $item.source == "config" then "always-red-paths"
+       elif $item.crisis and $item.source == "pacman" then "always-red" else "other" end) as $rule
+    | {event: $e, open: ($m | length > 0), class: $class, rule: $rule, item: $item,
+       txId: (if ($m | length) > 1 then $e.txId else null end), members: $m}' "$index"
 }
 
 decide() { # decide --no-edit [--json] -- <title>

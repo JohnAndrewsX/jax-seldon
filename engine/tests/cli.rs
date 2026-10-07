@@ -42,10 +42,10 @@ fn version_json() {
 }
 
 #[test]
-fn contract_version_prints_one() {
+fn contract_version_prints_two() {
     let out = seldon(&["contract-version"]);
     assert_eq!(out.status.code(), Some(0));
-    assert_eq!(stdout(&out), "1\n");
+    assert_eq!(stdout(&out), "2\n");
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn contract_version_json() {
     let out = seldon(&["contract-version", "--json"]);
     assert_eq!(out.status.code(), Some(0));
     let v: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
-    assert_eq!(v["contractVersion"], 1);
+    assert_eq!(v["contractVersion"], 2);
 }
 
 #[test]

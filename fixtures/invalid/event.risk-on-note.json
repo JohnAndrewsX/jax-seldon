@@ -1,0 +1,10 @@
+{
+  "id": "01M3VQN4807PWS1QE2RYRV2E4E",
+  "ts": "2026-10-01T14:40:00+02:00",
+  "source": "manual",
+  "kind": "note",
+  "subject": "journal",
+  "detail": "meta.risk belongs to case-created, case-started and case-updated only (ADR-0035 §1)",
+  "actor": "human",
+  "meta": { "risk": "R3" }
+}

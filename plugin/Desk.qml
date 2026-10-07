@@ -144,6 +144,12 @@ Item {
     Qt.callLater(function() { if (root.opened && !root.editing) keyCatcher.forceActiveFocus() })
   }
 
+  // A section's field hands the keys back (Esc, Cancel, a sent form): the
+  // desk takes them from it, whatever has the focus now.
+  function takeKeys() {
+    if (root.opened) keyCatcher.forceActiveFocus()
+  }
+
   // ---- Sections
 
   function componentFor(id) {

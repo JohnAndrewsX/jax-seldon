@@ -71,7 +71,7 @@ ReadingSection {
 
   function closeForm() {
     root.formOpen = false
-    if (root.desk) root.desk.giveKeys()
+    if (root.desk) root.desk.takeKeys()
   }
 
   function textKey(t) {

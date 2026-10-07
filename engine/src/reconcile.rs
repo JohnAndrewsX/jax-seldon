@@ -486,32 +486,57 @@ pub fn planned_detail(case: &str) -> String {
 
 /// What rule 9 needs of a case: its id, the text of its `## Plan` as it is
 /// now without HTML comments (a template placeholder is no plan), its
-/// risk over time ([`risk_timeline`]), and whether it is closed now
+/// risk over time ([`RiskRecord`]), and whether it is closed now
 /// (completed or dropped).
 #[derive(Debug, Clone)]
 pub struct PlanningCase {
     pub id: String,
     pub plan: String,
-    /// `(minute, risk)` from its own record, oldest first: the `created`
-    /// Log line, then each `set … risk A → B`; `None` when the Log has no
-    /// `created` line with a risk.
-    pub risks: Option<Vec<(NaiveDateTime, Risk)>>,
+    /// `None` when its record cannot tell (no record, or one that ends
+    /// elsewhere than the frontmatter's `risk`).
+    pub risks: Option<RiskRecord>,
     pub closed: bool,
 }
 
+/// A case's risk over time, oldest first, from the record that tells it
+/// (ADR-0035 §1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RiskRecord {
+    /// Its own ledger lines ([`ledger_risks`]), to the second: every case
+    /// an engine of contract 2 created.
+    Ledger(Vec<(DateTime<FixedOffset>, Risk)>),
+    /// Its Log ([`risk_timeline`]), to the minute in local time: a case
+    /// from before contract 2 (WP-115).
+    Log(Vec<(NaiveDateTime, Risk)>),
+}
+
+impl RiskRecord {
+    fn last(&self) -> Option<Risk> {
+        match self {
+            RiskRecord::Ledger(t) => t.last().map(|(_, r)| *r),
+            RiskRecord::Log(t) => t.last().map(|(_, r)| *r),
+        }
+    }
+}
+
 impl PlanningCase {
-    pub fn of(file: &CaseFile) -> Self {
+    /// The case of `file`; its risk record from `events` (the ledger)
+    /// when its `case-created` line carries `meta.risk`, else from its Log.
+    pub fn of(file: &CaseFile, events: &[Event]) -> Self {
         let body = &file.doc.body;
+        let record = match ledger_risks(events, &file.case.id) {
+            Some(t) => Some(RiskRecord::Ledger(t)),
+            None => risk_timeline(body).map(RiskRecord::Log),
+        };
         PlanningCase {
             id: file.case.id.clone(),
             plan: cases::section(body, "Plan")
                 .map(|r| cases::strip_comments(&body[r]))
                 .unwrap_or_default(),
-            // fail-safe (round 3): a Log whose last risk is not the
-            // frontmatter's was edited by hand or is incomplete; it tells
-            // nothing, so the guard counts the case as below R3
-            risks: risk_timeline(body)
-                .filter(|t| t.last().map(|(_, r)| *r) == Some(file.case.risk)),
+            // fail-safe (WP-115 round 3): a record whose last risk is not
+            // the frontmatter's was edited by hand or is incomplete; it
+            // tells nothing, so the guard counts the case as below R3
+            risks: record.filter(|r| r.last() == Some(file.case.risk)),
             closed: matches!(
                 file.case.status,
                 CaseStatus::Completed | CaseStatus::Dropped
@@ -519,24 +544,65 @@ impl PlanningCase {
         }
     }
 
-    /// The case's risk at the local time `at`, when its record tells it
-    /// (ADR-0029 §1(d), orchestrator decision round 2): the last change
-    /// before `at`'s minute; a change in that very minute makes it unknown
+    /// The case's risk at the instant `at` (`local`: its local time, which
+    /// the Log is written in), when its record tells it (ADR-0029 §1(d),
+    /// ADR-0035 §1): the last change before `at` — before its minute for
+    /// the Log; a change at that very second (minute) makes it unknown
     /// unless it leaves the risk as it was. `None`: cannot be told.
-    pub fn risk_at(&self, at: NaiveDateTime) -> Option<Risk> {
-        let minute = at.with_second(0)?.with_nanosecond(0)?;
-        let risks = self.risks.as_ref()?;
-        let before = risks
-            .iter()
-            .rev()
-            .find(|(m, _)| *m < minute)
-            .map(|(_, r)| *r);
-        let mut values = before
-            .into_iter()
-            .chain(risks.iter().filter(|(m, _)| *m == minute).map(|(_, r)| *r));
-        let first = values.next()?;
-        values.all(|r| r == first).then_some(first)
+    pub fn risk_at(
+        &self,
+        at: DateTime<FixedOffset>,
+        local: impl Fn(DateTime<FixedOffset>) -> NaiveDateTime,
+    ) -> Option<Risk> {
+        match self.risks.as_ref()? {
+            RiskRecord::Ledger(t) => told(t, at),
+            RiskRecord::Log(t) => {
+                let minute = local(at).with_second(0)?.with_nanosecond(0)?;
+                told(t, minute)
+            }
+        }
     }
+}
+
+/// The risk `risks` tell at `at`: the last value before it, and every
+/// value at it, if they agree.
+fn told<T: PartialOrd>(risks: &[(T, Risk)], at: T) -> Option<Risk> {
+    let before = risks.iter().rev().find(|(m, _)| *m < at).map(|(_, r)| *r);
+    let mut values = before
+        .into_iter()
+        .chain(risks.iter().filter(|(m, _)| *m == at).map(|(_, r)| *r));
+    let first = values.next()?;
+    values.all(|r| r == first).then_some(first)
+}
+
+/// Case `id`'s risk over time from its own ledger lines: the `meta.risk`
+/// of its `case-created`, `case-started` and `case-updated` lines, oldest
+/// first (ADR-0035 §1). `None` unless its `case-created` line carries one:
+/// a case from before contract 2 is told by its Log, never by a mix.
+pub fn ledger_risks(events: &[Event], id: &str) -> Option<Vec<(DateTime<FixedOffset>, Risk)>> {
+    let mut lines: Vec<&Event> = events
+        .iter()
+        .filter(|e| e.source == Source::Seldon && e.subject == id)
+        .filter(|e| {
+            matches!(
+                e.kind,
+                Kind::CaseCreated | Kind::CaseStarted | Kind::CaseUpdated
+            )
+        })
+        .collect();
+    if !lines
+        .iter()
+        .any(|e| e.kind == Kind::CaseCreated && e.meta.risk.is_some())
+    {
+        return None;
+    }
+    lines.sort_by_key(|e| (e.ts, e.id));
+    Some(
+        lines
+            .iter()
+            .filter_map(|e| Some((e.ts, e.meta.risk?)))
+            .collect(),
+    )
 }
 
 /// A case's risk over time from its Log (Log lines carry the writer's
@@ -800,7 +866,7 @@ pub fn planned_links(
             [c] => {
                 let package = rules.always_red.matches(&e.subject);
                 let crisis = classifier.group(&[e], e).class == Class::Crisis;
-                let risk = c.risk_at(local(e.ts));
+                let risk = c.risk_at(e.ts, &local);
                 if (package || crisis) && risk != Some(Risk::R3) {
                     let line = guard_advisory(c, risk, e, package);
                     out.cases.entry(c.id.clone()).or_default().log.push(line);
@@ -945,7 +1011,7 @@ pub fn link_planned(
             return (0, warnings);
         }
     };
-    let planning: Vec<PlanningCase> = files.iter().map(PlanningCase::of).collect();
+    let planning: Vec<PlanningCase> = files.iter().map(|f| PlanningCase::of(f, all)).collect();
     let links = planned_links(all, &planning, rules, now, |t| {
         t.with_timezone(&chrono::Local).naive_local()
     });
@@ -1210,7 +1276,7 @@ mod tests {
             PlanningCase {
                 id: id.into(),
                 plan: plan.into(),
-                risks: Some(vec![(at("09:00").naive_local(), risk)]),
+                risks: Some(RiskRecord::Log(vec![(at("09:00").naive_local(), risk)])),
                 closed: true,
             }
         }
@@ -1550,19 +1616,25 @@ mod tests {
         let c = PlanningCase {
             id: A.into(),
             plan: "linux-zen".into(),
-            risks,
+            risks: risks.map(RiskRecord::Log),
             closed: true,
         };
-        let sec = |hm: &str, s: u32| m(hm).with_second(s).unwrap();
-        assert_eq!(c.risk_at(sec("10:10", 0)), Some(Risk::R1));
+        let sec = |hm: &str, s: i64| at(hm) + Duration::seconds(s);
+        let risk_at =
+            |c: &PlanningCase, t| c.risk_at(t, |t: DateTime<FixedOffset>| t.naive_local());
+        assert_eq!(risk_at(&c, sec("10:10", 0)), Some(Risk::R1));
         assert_eq!(
-            c.risk_at(sec("10:20", 30)),
+            risk_at(&c, sec("10:20", 30)),
             None,
             "the minute of the change"
         );
-        assert_eq!(c.risk_at(sec("10:21", 0)), Some(Risk::R3));
-        assert_eq!(c.risk_at(sec("11:30", 0)), Some(Risk::R2));
-        assert_eq!(c.risk_at(sec("08:59", 0)), None, "before the case existed");
+        assert_eq!(risk_at(&c, sec("10:21", 0)), Some(Risk::R3));
+        assert_eq!(risk_at(&c, sec("11:30", 0)), Some(Risk::R2));
+        assert_eq!(
+            risk_at(&c, sec("08:59", 0)),
+            None,
+            "before the case existed"
+        );
 
         let ledger = |hm: &str| {
             [
@@ -1619,18 +1691,125 @@ mod tests {
         file.doc.body = body.to_string();
         file.case.risk = Risk::R3;
         assert_eq!(
-            PlanningCase::of(&file).risks,
+            PlanningCase::of(&file, &[]).risks,
             None,
             "frontmatter R3, Log R1"
         );
         file.case.risk = Risk::R1;
-        let c = PlanningCase::of(&file);
-        assert_eq!(
-            c.risks.as_deref().map(|r| r.len()),
-            Some(1),
+        let c = PlanningCase::of(&file, &[]);
+        assert!(
+            matches!(&c.risks, Some(RiskRecord::Log(t)) if t.len() == 1),
             "consistent: read"
         );
         assert_eq!(c.plan, "- linux-zen\n\n");
+    }
+
+    /// WP-120 round 2, B1: only the engine's own case lines tell the risk
+    /// — `source: seldon`, kind `case-created|started|updated`. A `meta.risk`
+    /// on a note (0.1.x `seldon event --meta risk=R3`), on a hand-written
+    /// line of another source, or on `case-verified` counts for nothing.
+    #[test]
+    fn only_the_engines_case_lines_tell_the_risk() {
+        use planned::*;
+        let id = "C-2026-001";
+        let mut created = step(1, "09:00", Kind::CaseCreated, id);
+        created.meta.risk = Some(Risk::R1);
+        let mut foreign = Vec::new();
+        for (n, source, kind) in [
+            (2, Source::Manual, Kind::Note),
+            (3, Source::Manual, Kind::CaseUpdated),
+            (4, Source::Agent, Kind::CaseCreated),
+            (5, Source::Seldon, Kind::CaseVerified),
+            (6, Source::Seldon, Kind::Note),
+        ] {
+            let mut e = Event::new(at("09:30"), source, kind, id).case(Some(id.into()));
+            e.id = Ulid::from_parts(n, 0);
+            e.meta.risk = Some(Risk::R3);
+            foreign.push(e);
+        }
+        let mut events = vec![created.clone()];
+        events.extend(foreign.iter().cloned());
+        assert_eq!(
+            ledger_risks(&events, id),
+            Some(vec![(at("09:00"), Risk::R1)])
+        );
+        // without the engine's creation line there is no ledger record at all
+        assert_eq!(ledger_risks(&foreign, id), None);
+    }
+
+    /// ADR-0035 §1: a case whose `case-created` line carries `meta.risk`
+    /// is told by its ledger lines, to the second, whatever its Log says;
+    /// one without is told by its Log (an old ledger), never by a mix.
+    #[test]
+    fn the_guard_reads_the_ledger_record_when_there_is_one() {
+        use planned::*;
+        let id = "C-2026-001";
+        let line = |n: u64, hm: &str, s: i64, kind: Kind, risk: Option<Risk>| {
+            let mut e = step(n, hm, kind, id);
+            e.ts += Duration::seconds(s);
+            e.meta.risk = risk;
+            e
+        };
+        // the Log says R3 from 09:00 on; the ledger says R1, R3 at 10:20:30
+        let body = "## Plan\n- linux-zen\n\n## Log\n\
+                    - 2026-10-06 09:00 · created (zone red, risk R3) · human\n\n## Result\n";
+        let mut file = case_file(&[]);
+        file.doc.body = body.to_string();
+        file.case.id = id.into();
+        file.case.risk = Risk::R3;
+        let events = [
+            line(1, "09:00", 0, Kind::CaseCreated, Some(Risk::R1)),
+            line(2, "09:30", 0, Kind::CaseStarted, Some(Risk::R1)),
+            line(3, "10:20", 30, Kind::CaseUpdated, Some(Risk::R3)),
+        ];
+        let c = PlanningCase::of(&file, &events);
+        assert!(matches!(&c.risks, Some(RiskRecord::Ledger(t)) if t.len() == 3));
+        let local = |t: DateTime<FixedOffset>| t.naive_local();
+        let t = |hm: &str, s: i64| at(hm) + Duration::seconds(s);
+        assert_eq!(
+            c.risk_at(t("10:00", 0), local),
+            Some(Risk::R1),
+            "not the Log's R3"
+        );
+        assert_eq!(
+            c.risk_at(t("10:20", 29), local),
+            Some(Risk::R1),
+            "the second before"
+        );
+        assert_eq!(c.risk_at(t("10:20", 30), local), None, "the same second");
+        assert_eq!(
+            c.risk_at(t("10:20", 31), local),
+            Some(Risk::R3),
+            "the same minute, later"
+        );
+        assert_eq!(
+            c.risk_at(t("08:59", 0), local),
+            None,
+            "before the case existed"
+        );
+        // the frontmatter edited by hand: the record tells nothing
+        file.case.risk = Risk::R2;
+        assert_eq!(PlanningCase::of(&file, &events).risks, None);
+        // an old ledger (no meta.risk on case-created) falls back to the
+        // Log, even when a later line carries one
+        file.case.risk = Risk::R3;
+        let old = [
+            line(1, "09:00", 0, Kind::CaseCreated, None),
+            line(3, "10:20", 30, Kind::CaseUpdated, Some(Risk::R3)),
+        ];
+        let c = PlanningCase::of(&file, &old);
+        assert!(matches!(&c.risks, Some(RiskRecord::Log(t)) if t.len() == 1));
+        assert_eq!(c.risk_at(t("10:00", 0), local), Some(Risk::R3));
+        // end to end: a linux-zen install between the record's R1 and R3
+        let c = PlanningCase::of(&file, &events);
+        let mut ledger = events.to_vec();
+        ledger.push(change(10, "10:00", "linux-zen"));
+        let l = links(&ledger, std::slice::from_ref(&c));
+        assert!(l.lines.is_empty());
+        assert!(l.cases[id].log[0].contains("C-2026-001 was R1 at the time"));
+        let mut ledger = events.to_vec();
+        ledger.push(change(11, "10:21", "linux-zen"));
+        assert_eq!(linked(&links(&ledger, &[c])), [(11, id.into())]);
     }
 
     /// Round 2, B2: a case with a window but no readable file might have
