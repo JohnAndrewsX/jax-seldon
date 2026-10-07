@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Files pacman left (WP-141).** A `.pacnew` (the package's new default
+  was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
+  that pacman reports in `/var/log/pacman.log` is now recorded: a pacman
+  `note` named after the file, its transaction in `meta.transaction`. It
+  is its own item, never part of its transaction's group: quiet
+  attention (rule `pacnew`), a crisis beside a boot, login or security
+  file — mkinitcpio, Limine, systemd, PAM (rule `pacnew-red`). Seldon
+  does not read `/etc`, so it cannot tell whether you merged it since.
 - **Code the collectors could not see (WP-113, ADR-0028 WP-E; hashes
   only, never content).** A third-party plugin edited in place is now one
   `plugin-update` (detail `files changed (sha256 … → …)`): the plugins
@@ -537,6 +545,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **The pacdiff hint (WP-141).** The Changelog's detail of a file pacman
+  left reads "Merge with pacdiff (from pacman-contrib) in a terminal." —
+  text only; the plugin runs nothing. A crisis of rule `pacnew-red` says
+  why it is loud.
 - The desk's "Why loud?" callout reads the rule from the index: selecting
   a crisis in the Changelog no longer runs `seldon drift show` (it still
   does against an engine whose index has no rule). Work's case detail

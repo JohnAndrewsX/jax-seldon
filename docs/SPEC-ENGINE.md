@@ -1195,6 +1195,28 @@ git itself is killed, with the same bounded pipe wait. Rules:
   full-upgrade path or by inheritance from an attributed explicit member of
   their own transaction. So an agent's `yay -S zed` never claims a human's
   later `-Syu` that happens to upgrade `zed`.
+  **Files pacman left (WP-141).** `[ALPM] warning: <file> installed as
+  <file>.pacnew` (the package's new default was not applied; the user's
+  file stays in use) and `[ALPM] warning: <file> saved as
+  <file>.pacsave` (removal) or `<file>.pacorig` (an untracked file moved
+  aside for the package's own) — only when the left path is the file plus
+  the suffix the verb leaves, and only under the `ALPM` tag — become one
+  event each: `source: pacman`, `kind: note`, `subject` the file pacman
+  left (`/etc/x.pacnew`), `detail` pacman's words without `warning: `
+  (`/etc/x installed as /etc/x.pacnew`), `meta.command` the transaction's
+  command line, `meta.transaction` its `txId`, no `explicit`, zone red
+  (ADR-0014). The transaction id is in `meta.transaction` and **not** in
+  `txId`, because `txId` is the drift group of the transaction's packages
+  (§5 rule 5, ADR-0013 §1, the index's "expand the group by txId"): a
+  merge still to do is no member of "I wanted that package", and a routine
+  `-Syu` must not become drift as a whole because it left one file. The
+  note takes `actor` and `case` from its transaction as every member does
+  (so an agent's case that left it has it linked); dedupe and the cursor
+  are the package lines' (`(ts, kind, subject, version)`, no version). A
+  warning outside any transaction (old logs) is a note without
+  `meta.transaction`. Seldon never reads `/etc` (AGENTS.md §6): the event
+  records that pacman left the file, never whether it is still there or
+  was merged since — no later event says so.
 - **snapper** — `snapper --jsonout list`. New snapshot numbers become
   `snapshot` events with description; a `pre`/`post` pair is linked via
   `meta.pairOf`. The cursor keeps each snapshot's number, type,
@@ -1569,7 +1591,18 @@ After every capture:
    routine `keyring`; removing one is attention `package`. A
    dependency follows the highest class of its transaction's explicit
    members (also when they are resolved); a transaction without a command
-   line is attention `other`. Omarchy `update`: routine `omarchy-update`
+   line is attention `other`. A file pacman left (pacman `note`, §4,
+   WP-141), whatever its transaction: never routine — the new default was
+   not applied or the user's file was moved aside, a state a rebuild would
+   reproduce wrongly and nothing but a merge changes (reason test) —
+   attention `pacnew`; **crisis** `pacnew-red` when the file (the subject
+   without `.pacnew`, `.pacsave`, `.pacorig`) is a boot, login or security
+   file — `/etc/mkinitcpio.conf`, `/etc/mkinitcpio.conf.d/`,
+   `/etc/mkinitcpio.d/`, `/etc/default/limine`, `/etc/limine*`,
+   `/boot/limine*`, `/etc/systemd/`, `/etc/pam.d/`, `/etc/security/`
+   (built in, not a `[drift]` key; a directory covers what lies below
+   it): an unmerged default there can stop the next boot or login (harm
+   test). A path under another root (`pacman -r /mnt`) is attention. Omarchy `update`: routine `omarchy-update`
    when both versions are package-shaped (`N…-N`) and a plain full
    upgrade moved `omarchy` or `omarchy-dev` (install or upgrade) to the
    new version at most 31 days before; else attention `omarchy-other`
@@ -1605,7 +1638,7 @@ After every capture:
    routine event an open case's Plan names (rule 3) is shown as
    attention with its `proposedCase`.
 5. **Grouping (ADR-0013).** Linkable `pacman` events that share a `txId`
-   form one item keyed by the leader's event id (lowest-id explicit
+   (packages only: a file pacman left has none, §4) form one item keyed by the leader's event id (lowest-id explicit
    member, else lowest-id member); the index row carries `txId` and
    `members`. The item's class is the highest class of its members, its
    rule the leader's (else the lowest id's with that class). Other
