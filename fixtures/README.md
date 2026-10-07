@@ -32,7 +32,7 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-13 (WP-115) | during C-2026-002's verification the human adds the plugin `io.github.example.display-profiles`, which its Plan names, from Omarchy's menu (`actor: system`, no hook saw it); Claude closes the case without a capture; the next capture links it to the case (SPEC-ENGINE §5 rule 9, ADR-0029) | `linked` by `system` (`planned by C-2026-002; active at the time`), the case's Log line `linked after the fact: …` |
 | 09-15 | `omarchy update` 4.0.5 → 4.0.6 without a case → two drift items → *explained* | snapshot by `omarchy update`, release marker |
 | 09-20/21 | theme `kanagawa` tried → *dismissed* | `dismissed` |
-| 09-24 | plugin update → *explained* | plugin-update |
+| 09-24 | plugin update (a pull of three commits) → *explained* | plugin-update with `meta.git` and `meta.commits` (WP-136) |
 | 09-26…30 | cases 003–006 created; snapshot 111; snapshots 108/109 deleted | snapshot-delete |
 | 09-25 | theme `catppuccin` tried and back to `kanagawa` | two **routine** theme switches (ADR-0028): history, no drift |
 | 09-27 | human downgrades `mesa`, `vulkan-radeon`, `lib32-mesa` from the cache (`pacman -U …`) | **one attention group** (`members: 3`, `txId`): a named downgrade |

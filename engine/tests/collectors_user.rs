@@ -9,6 +9,7 @@ mod common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 use std::sync::LazyLock;
 use std::time::SystemTime;
 
@@ -106,6 +107,26 @@ fn assert_matches_fixture(event: &Event, kind: &str, subject: &str, keys: &[&str
     let theirs = fixture_event(kind, subject);
     for key in keys {
         assert_eq!(ours[key], theirs[key], "{key} of {}", event.to_line());
+    }
+}
+
+/// `git args…` in `dir` with `home` as HOME and no system or global
+/// config; `None` when there is no git.
+fn git_in(home: &Path, dir: &Path, args: &[&str]) -> Option<Output> {
+    let out = Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+        .args(args)
+        .current_dir(dir)
+        .env("HOME", home)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .output();
+    match out {
+        Ok(out) => Some(out),
+        Err(_) => {
+            eprintln!("skipped: no git on this host");
+            None
+        }
     }
 }
 
@@ -355,12 +376,36 @@ mod plugins {
     fn enable_disable_remove_and_update() {
         let mut p = story();
         p.manifest("io.github.example.weather-plus", Some("1.2.0"));
+        // weather-plus is a clone (WP-136): the update names its commits
+        // as the fixture line does; without git the line has none
+        let home = p.b.dirs.home.clone();
+        let clone = p.plugins_dir.join("io.github.example.weather-plus");
+        let git = |args: &[&str]| {
+            let out = git_in(&home, &clone, args)?;
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            Some(())
+        };
+        let commit = |message: &str| {
+            std::fs::write(clone.join(message.replace(' ', "-")), message).unwrap();
+            git(&["add", "."])?;
+            git(&["commit", "-q", "-m", message])
+        };
+        let cloned = git(&["init", "-q"]).and_then(|()| commit("Release 1.2.0"));
         p.list_fixture("logs/plugin-list-after.json");
         p.run("2026-09-24T18:00:00+02:00");
 
         // weather-plus 1.2.0 → 1.3.0, omarchy.clock enabled, omarchy.agents
         // disabled, user.clock removed
         p.manifest("io.github.example.weather-plus", Some("1.3.0"));
+        if cloned.is_some() {
+            commit("Fix the unit toggle in the panel").unwrap();
+            commit("Add a wind gust row").unwrap();
+            commit("Release 1.3.0").unwrap();
+        }
         p.touch(
             "io.github.example.weather-plus",
             "2026-09-24T19:00:14+02:00",
@@ -395,13 +440,19 @@ mod plugins {
             ]
         );
         let update = &p.b.written[0];
+        let keys: &[&str] = if cloned.is_some() {
+            &[
+                "ts", "source", "kind", "subject", "detail", "actor", "zone", "meta",
+            ]
+        } else {
+            eprintln!("no git on this host: the update's detail and meta not compared");
+            &["ts", "source", "kind", "subject", "actor", "zone"]
+        };
         assert_matches_fixture(
             update,
             "plugin-update",
             "io.github.example.weather-plus",
-            &[
-                "ts", "source", "kind", "subject", "detail", "actor", "zone", "meta",
-            ],
+            keys,
         );
         // first-party versions come from the catalog's manifestPath, which
         // does not exist here: no version, but still the enabled state
@@ -692,7 +743,6 @@ mod plugins {
 /// (no system or global config). Skipped without `git`.
 mod plugin_commits {
     use super::*;
-    use std::process::{Command, Output};
 
     const WEATHER: &str = "io.github.example.weather-plus";
 
@@ -758,26 +808,6 @@ mod plugin_commits {
             let e = self.p.b.written.last().unwrap().clone();
             assert_eq!((e.kind, e.subject.as_str()), (Kind::PluginUpdate, WEATHER));
             e
-        }
-    }
-
-    /// `git args…` in `dir` with `home` as HOME and no system or global
-    /// config; `None` when there is no git.
-    fn git_in(home: &Path, dir: &Path, args: &[&str]) -> Option<Output> {
-        let out = Command::new("git")
-            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
-            .args(args)
-            .current_dir(dir)
-            .env("HOME", home)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .output();
-        match out {
-            Ok(out) => Some(out),
-            Err(_) => {
-                eprintln!("skipped: no git on this host");
-                None
-            }
         }
     }
 
