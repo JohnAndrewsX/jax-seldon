@@ -976,14 +976,29 @@ LOCAL_HOSTS = {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopb
 TERMINALS = {"foot", "footclient", "alacritty", "ghostty", "kitty", "xterm", "wezterm", "konsole", "gnome-terminal",
              "kgx", "st", "urxvt", "xfce4-terminal", "terminator", "tilix"}
 # git settings that make git run a program (`git -c`, `git clone -c`)
-GIT_EXEC_CONFIG = re.compile(r"(alias\..*|core\.(pager|editor|sshcommand|fsmonitor|hookspath|askpass|gitproxy)"
-                             r"|credential\..*|sequence\.editor|gpg\..*program|diff\..*|merge\..*|filter\..*"
-                             r"|pager\..*|protocol\..*|uploadpack\..*|receive\..*|ssh\..*|include.*)", re.I)
+# git settings whose value names a program (`git -c`, `git clone -c`); they pass
+# when the value is a harmless one (SAFE_PROGRAMS), except the always-unsafe ones
+GIT_PROGRAM_KEY = re.compile(r"(core\.(pager|editor|sshcommand|fsmonitor|hookspath|askpass|gitproxy)"
+                             r"|credential\..*|sequence\.editor|diff\.external|merge\.tool|uploadpack\..*hook"
+                             r"|pager\..*|gpg\..*program"
+                             r"|.*\.(cmd|command|driver|textconv|helper|program|clean|smudge|process))", re.I)
+GIT_ALWAYS_UNSAFE_KEY = re.compile(r"(alias\..*|include.*)", re.I)  # a shell alias, another config file
+GIT_PROTOCOL_KEY = re.compile(r"protocol\.(allow|ext\..*)", re.I)  # ext:: runs a program
 GIT_PROGRAM_VARS = {"GIT_PAGER", "PAGER", "GIT_EDITOR", "EDITOR", "VISUAL", "GIT_SEQUENCE_EDITOR",
                     "GIT_SSH_COMMAND", "GIT_SSH", "GIT_ASKPASS", "SSH_ASKPASS", "GIT_EXTERNAL_DIFF",
                     "GIT_PROXY_COMMAND", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR"}
 SAFE_PROGRAMS = {"", "cat", "less", "more", "true", "false", ":", "head", "tail", "/bin/true", "/usr/bin/true",
                  "/bin/cat", "/usr/bin/cat"}
+# An unknown program's arguments that start with one of these run as that
+# command (`strace -f sed -i … /etc/x`): checked like a wrapped command.
+SUFFIX_COMMANDS = {"rm", "rmdir", "unlink", "shred", "tee", "truncate", "touch", "mkdir", "setfacl", "chmod", "chown",
+                   "chgrp", "chattr", "cp", "mv", "ln", "install", "sed", "dd", "rsync", "scp", "patch", "tar",
+                   "unzip", "curl", "wget", "git", "find", "xargs", "env", "nohup", "timeout", "nice", "exec",
+                   "command", "flock", "ssh", "eval", "source", "."}
+TMUX_KEY_RE = re.compile(r"[CMS]-.+|BSpace|BTab|DC|End|Home|IC|NPage|PageDown|PgDn|PPage|PageUp|PgUp|Up|Down|Left"
+                         r"|Right|Escape|F\d{1,2}|KP.*|Any|Mouse.*|Wheel.*|Double.*|Triple.*")
+GIT_DIR_WRITERS = {"fetch", "gc", "config", "tag", "branch", "update-ref", "notes", "prune", "repack", "remote",
+                   "update-index", "init"}
 GIT_MUTATING = {"checkout", "switch", "restore", "reset", "clean", "stash", "pull", "merge", "rebase", "apply", "am",
                 "rm", "mv", "add", "commit", "cherry-pick", "revert", "worktree"}
 # Programs whose arguments are data (or checked elsewhere): the net below
@@ -999,7 +1014,8 @@ DATA_SINKS = {"echo", "printf", "grep", "egrep", "fgrep", "rg", "cat", "bat", "l
               "local", "readonly", "unset", "set", "read", "mapfile", "readarray", "cd", "pushd", "popd", "mkdir",
               "touch", "rm", "rmdir", "cp", "mv", "ln", "chmod", "chown", "notify-send", "wl-copy", "xdg-open",
               "tar", "bsdtar", "zip", "unzip", "gzip", "gunzip", "xz", "zstd", "bzip2", "curl", "wget", "rsync",
-              "scp", "patch", "pkill", "killall", "pidof", "truncate", "dd", "install", "shred", "unlink"}
+              "scp", "patch", "pkill", "killall", "pidof", "truncate", "dd", "install", "shred", "unlink",
+              "shellcheck", "shfmt"}
 
 SYSTEM_DIRS = [["etc"], ["usr"], ["boot"], ["var"]]
 PLUGIN_DIR = ["omarchy", "plugins", "jax.seldon"]
@@ -1613,7 +1629,19 @@ class Guard:
         if name == "xargs":
             i = first_operand(args, "adEILnPs", ("--arg-file", "--delimiter", "--max-args", "--max-procs",
                                                  "--max-chars", "--process-slot-var"))
-            return wrapped(args[i:] or ["echo"])
+            repl = None
+            for k in range(i):
+                a = plain(args[k])
+                if a.startswith("-I"):
+                    repl = a[2:] or (plain(args[k + 1]) if k + 1 < len(args) else "")
+                elif a.startswith("--replace"):
+                    repl = a.split("=", 1)[1] if "=" in a else "{}"
+                elif a.startswith("-i") and not a.startswith("--"):
+                    repl = a[2:] or "{}"
+            rest = args[i:] or ["echo"]
+            # the items read from stdin are unknown: in place of the replstr, else appended
+            rest = [a.replace(repl, UNK) for a in rest] if repl else rest + [UNK]
+            return wrapped(rest)
         if name == "watch":
             i = first_operand(args, "nq", ("--interval", "--equexit"))
             if any(plain(a) in ("-x", "--exec") for a in args[:i]):
@@ -1656,6 +1684,8 @@ class Guard:
             return None
         if name == "ssh":
             return self.w_ssh(args, scope, ctx, stdin, direct, node)
+        if name == "hash" and any(plain(a).startswith("-") and "p" in plain(a) for a in args):
+            raise Unsure("hash -p maps a command name to another program; the guard does not model it")
         if name in ("alias", "shopt"):
             if (name == "alias" and any("=" in a for a in args)) or \
                     (name == "shopt" and "expand_aliases" in [plain(a) for a in args] and "-u" not in args):
@@ -1688,19 +1718,25 @@ class Guard:
         if name in ("ln", "cp"):  # after the check: making the link is not a write through it
             self.record_links(name, args, scope, ctx)
         if name not in DATA_SINKS:
-            self.net(name, args)
+            self.net(name, args, scope, ctx, node)
         return None
 
-    def net(self, name, args):
-        """An unknown program whose arguments name a red-zone command may run
-        it (an exec wrapper the guard does not know): fail closed."""
-        for k, a in enumerate(args):
+    def net(self, name, args, scope, ctx, node):
+        """An unknown program may run its arguments (an exec wrapper the guard
+        does not know). Fail closed when they name a red-zone command, a shell
+        or an Omarchy script; check them as a command when they start with a
+        known file command or wrapper."""
+        for a in args:
             base = plain(a).rsplit("/", 1)[-1]
             red = base in PRIVILEGE or base in PACKAGE or base in SERVICE or base == "omarchy" or \
-                base.startswith(("omarchy-", "grub-"))
-            shell_c = base in SHELLS and k + 1 < len(args) and re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", plain(args[k + 1]))
-            if red or shell_c:
+                base.startswith(("omarchy-", "grub-")) or base in SHELLS
+            if red:
                 raise Unsure(f"{name} is not known to the guard and its arguments name {base}")
+            if self.is_omarchy_path(plain(a), scope, ctx):
+                raise Unsure(f"{name} is not known to the guard and its arguments name an Omarchy script ({a})")
+        for k, a in enumerate(args):
+            if plain(a).rsplit("/", 1)[-1] in SUFFIX_COMMANDS:
+                self.check_argv(args[k:], scope, ctx, None, False, node)
 
     def is_ssh_agent_eval(self, node):
         if node is None or len(node.words) != 2:
@@ -1806,27 +1842,75 @@ class Guard:
             if any(a == "--pre" or a.startswith("--pre=") for a in p):
                 raise Unsure("rg --pre runs a program")
             return False, None
+        if name in ("fd", "fdfind"):
+            for k, a in enumerate(p):
+                if a in ("-x", "--exec", "-X", "--exec-batch"):
+                    rest = args[k + 1:]
+                    if ";" in [plain(r) for r in rest]:
+                        rest = rest[:[plain(r) for r in rest].index(";")]
+                    holders = ("{}", "{/}", "{//}", "{.}", "{/.}")
+                    if any(h in plain(r) for r in rest for h in holders):
+                        rest = [r.replace("{//}", UNK).replace("{/.}", UNK).replace("{/}", UNK).replace("{.}", UNK)
+                                .replace("{}", UNK) for r in rest]
+                    else:
+                        rest = rest + [UNK]  # fd appends the path
+                    return True, wrapped(rest)
+            return False, None
+        if name == "rustup":
+            if p[:1] == ["run"]:
+                rest = args[1:]
+                j = first_operand(rest)
+                return True, wrapped(rest[j + 1:])  # rustup run [--install] <toolchain> <command>…
+            return False, None
+        if name == "man":
+            for k, a in enumerate(p):
+                val = None
+                if a == "-P" and k + 1 < len(p):
+                    val = p[k + 1]
+                elif a.startswith("-P") and len(a) > 2:
+                    val = a[2:]
+                elif a.startswith("--pager="):
+                    val = a.split("=", 1)[1]
+                elif a.startswith(("-H", "--html")):
+                    raise Unsure("man -H runs a browser")
+                if val is not None and val.strip() not in SAFE_PROGRAMS:
+                    raise Unsure(f"man -P runs {val!r} as its pager")
+            for var in ("MANPAGER", "PAGER", "BROWSER"):
+                if var in scope and any(v.strip() not in SAFE_PROGRAMS for v in self.lookup(var, scope, ctx)):
+                    raise Unsure(f"man with {var} set in the command runs that program")
+            return False, None
+        if name == "sort":
+            if any(a.startswith("--compress-program") for a in p):
+                raise Unsure("sort --compress-program runs a program")
+            return False, None
+        if name == "wget":
+            for k, a in enumerate(p):
+                if a.startswith("--use-askpass") or \
+                        (a in ("-e", "--execute") and k + 1 < len(p) and "askpass" in p[k + 1].lower()) or \
+                        (a.startswith(("--execute=", "-e")) and len(a) > 2 and "askpass" in a.lower()):
+                    raise Unsure("wget --use-askpass runs a program")
+            return False, None
         return False, None
 
     def w_hyprctl(self, args, scope, ctx, stdin, node):
         p = [plain(a) for a in args]
-        i = 0
+        i, batch = 0, False
         while i < len(p) and p[i].startswith("-"):
-            if p[i] in ("--batch",):
-                for piece in " ".join(p[i + 1:]).split(";"):
-                    words = piece.split()
-                    if words:
-                        self.w_hyprctl(words, scope, ctx, stdin, node)
-                return None
+            if p[i] == "--batch":
+                batch = True
+                i += 1
+                continue
             i += 2 if p[i] in ("-i", "--instance") else 1
-        rest = p[i:]
-        if rest[:1] == ["dispatch"] and len(rest) > 1 and rest[1].startswith("exec"):
-            text = " ".join(rest[2:])
-            text = re.sub(r"^\s*\[[^\]]*\]\s*", "", text)  # window rules: [float] cmd
-            if text.strip():
-                self.run_script(text, dict(scope), ctx.but(stdin=None), "hyprctl dispatch exec")
-        elif rest[:1] == ["keyword"] and len(rest) > 1 and ("exec" in rest[1] or rest[1].startswith("bind")):
-            raise Unsure("hyprctl keyword can make Hyprland run a command")
+        request = " ".join(p[i:])  # hyprctl joins its arguments into one request
+        for piece in (request.split(";") if batch else [request]):
+            words = piece.split()
+            if words[:1] == ["dispatch"] and len(words) > 1 and words[1].startswith("exec"):
+                text = piece.split(None, 2)[2] if len(words) > 2 else ""
+                text = re.sub(r"^\s*\[[^\]]*\]\s*", "", text)  # window rules: [float] cmd
+                if text.strip():
+                    self.run_script(text, dict(scope), ctx.but(stdin=None), "hyprctl dispatch exec")
+            elif words[:1] == ["keyword"] and len(words) > 1 and ("exec" in words[1] or words[1].startswith("bind")):
+                raise Unsure("hyprctl keyword can make Hyprland run a command")
         return None
 
     TMUX_CMD_OPTS = {"new-session": "cefFnstxy", "new": "cefFnstxy", "new-window": "ceFnt", "neww": "ceFnt",
@@ -1855,8 +1939,29 @@ class Guard:
                 continue
             verb, rest = c[0], c[1:]
             if verb in ("send-keys", "send"):
-                keys = rest[first_operand(rest, "cNt"):]
-                text = " ".join("\n" if k in ("Enter", "C-m", "C-j", "KPEnter") else k for k in keys)
+                j = first_operand(rest, "cNt")
+                flags = "".join(o[1:] for o in rest[:j] if o.startswith("-") and not o.startswith("--"))
+                if "H" in flags:
+                    raise Unsure("tmux send-keys -H sends hex keys the guard cannot read")
+                if "X" in flags:
+                    continue  # copy-mode commands, nothing is typed
+                typed = []  # tmux sends the keys one after another, without spaces
+                for k in rest[j:]:
+                    if "l" in flags:
+                        typed.append(k)
+                    elif k in ("Enter", "C-m", "C-j", "KPEnter"):
+                        typed.append("\n")
+                    elif k == "Space":
+                        typed.append(" ")
+                    elif k == "Tab":
+                        typed.append("\t")
+                    elif k in ("C-c", "C-u"):
+                        typed = []  # the line is dropped
+                    elif TMUX_KEY_RE.fullmatch(k):
+                        raise Unsure(f"tmux key {k} changes the typed line in a way the guard cannot follow")
+                    else:
+                        typed.append(k)
+                text = "".join(typed)
                 if text.strip():
                     self.run_script(text, dict(scope), ctx.but(stdin=None), "tmux send-keys")
             elif verb in self.TMUX_CMD_OPTS:
@@ -1903,13 +2008,18 @@ class Guard:
             raise Blocked(f"ssh option {key} runs a local command")
 
     def r_git(self, args, scope, ctx, node):
-        for k in scope:  # variables set in this command that name a program git runs
-            if k in GIT_PROGRAM_VARS or k.startswith("GIT_CONFIG"):
-                vals = self.lookup(k, scope, ctx)
-                if k.startswith("GIT_CONFIG") or any(v.strip() not in SAFE_PROGRAMS for v in vals):
-                    raise Unsure(f"git with {k} set in the command can run a program")
+        for k in scope:  # variables set in this command that name a program or config git reads
+            if k == "GIT_CONFIG_NOSYSTEM":
+                continue
+            if k in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG"):
+                if any(v != "/dev/null" for v in self.lookup(k, scope, ctx)):
+                    raise Unsure(f"git with {k} set in the command reads another config file")
+            elif k.startswith("GIT_CONFIG"):
+                raise Unsure(f"git with {k} set in the command can run a program")
+            elif k in GIT_PROGRAM_VARS and any(v.strip() not in SAFE_PROGRAMS for v in self.lookup(k, scope, ctx)):
+                raise Unsure(f"git with {k} set in the command can run a program")
         p = [plain(a) for a in args]
-        i, base, work_tree = 0, ".", None
+        i, base, work_tree, git_dir = 0, ".", None, None
         while i < len(p):
             a = p[i]
             if a == "-C" and i + 1 < len(p):
@@ -1928,7 +2038,13 @@ class Guard:
             elif a.startswith("--work-tree="):
                 work_tree = args[i].split("=", 1)[1]
                 i += 1
-            elif a in ("--git-dir", "--namespace", "--super-prefix") and i + 1 < len(p):
+            elif a == "--git-dir" and i + 1 < len(p):
+                git_dir = args[i + 1]
+                i += 2
+            elif a.startswith("--git-dir="):
+                git_dir = args[i].split("=", 1)[1]
+                i += 1
+            elif a in ("--namespace", "--super-prefix") and i + 1 < len(p):
                 i += 2
             elif a.startswith("-"):
                 i += 1
@@ -1947,7 +2063,14 @@ class Guard:
                 self.git_config(prest[k + 1])
             if a.startswith("--config=") and verb == "clone":
                 self.git_config(a.split("=", 1)[1])
-        wt = join_path(base, work_tree) if work_tree else base
+        # the work tree and the repository: options first, then GIT_WORK_TREE / GIT_DIR
+        wts = [join_path(base, work_tree)] if work_tree else \
+            [join_path(base, v) for v in self.lookup("GIT_WORK_TREE", scope, ctx) if not v.startswith(UNK)] or [base]
+        dirs = [join_path(base, git_dir)] if git_dir else \
+            [join_path(base, v) for v in self.lookup("GIT_DIR", scope, ctx) if not v.startswith(UNK)]
+        if verb in GIT_MUTATING or verb in GIT_DIR_WRITERS:
+            for d in dirs:
+                self.check_write(d.rstrip("/") + "/" + UNK, scope, ctx, False, node, False)
         if verb == "clone":
             ops, opts = operands(rest, "bocj", ("--branch", "--origin", "--upload-pack", "--reference",
                                                 "--reference-if-able", "--separate-git-dir", "--depth",
@@ -1961,20 +2084,26 @@ class Guard:
                 if o == "--separate-git-dir":
                     self.check_write(join_path(base, v), scope, ctx, False, node, False)
         elif verb == "init":
-            ops, _ = operands(rest, "b", ("--template", "--separate-git-dir", "--initial-branch",
-                                          "--object-format", "--ref-format"))
+            ops, opts = operands(rest, "b", ("--template", "--separate-git-dir", "--initial-branch",
+                                             "--object-format", "--ref-format"))
             self.check_write(join_path(base, ops[0]) if ops else base + "/" + UNK, scope, ctx, False, node, False)
+            for o, v in opts:
+                if o in ("--separate-git-dir",):
+                    self.check_write(join_path(base, v), scope, ctx, False, node, False)
         elif verb == "worktree" and prest[:1] == ["add"]:
             ops, _ = operands(rest[1:], "bB", ("--reason",))
             if ops:
                 self.check_write(join_path(base, ops[0]), scope, ctx, False, node, False)
         elif verb in GIT_MUTATING:
-            self.check_write(wt.rstrip("/") + "/" + UNK, scope, ctx, False, node, False)
+            for wt in wts:
+                self.check_write(wt.rstrip("/") + "/" + UNK, scope, ctx, False, node, False)
 
     @staticmethod
     def git_config(kv):
-        key = kv.split("=", 1)[0]
-        if GIT_EXEC_CONFIG.fullmatch(key):
+        key, _, val = kv.partition("=")
+        val = val.strip()
+        if GIT_ALWAYS_UNSAFE_KEY.fullmatch(key) or (GIT_PROTOCOL_KEY.fullmatch(key) and val != "never") or \
+                (GIT_PROGRAM_KEY.fullmatch(key) and val not in SAFE_PROGRAMS):
             raise Unsure(f"git -c {key} can make git run a program")
 
     # -- symlinks and hard links made in this command
@@ -2382,6 +2511,8 @@ class Guard:
             if a in ("-C", "--directory") and k + 1 < len(p):
                 dirs.append(args[k + 1])
             elif a.startswith("--directory="):
+                dirs.append(args[k].split("=", 1)[1])
+            elif a.startswith("--one-top-level="):
                 dirs.append(args[k].split("=", 1)[1])
             elif a in ("-f", "--file") and k + 1 < len(p):
                 files.append(args[k + 1])

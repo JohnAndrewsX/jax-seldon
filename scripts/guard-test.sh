@@ -543,6 +543,8 @@ check B "GIT_SSH_COMMAND='sudo ssh' git fetch"
 check B "EDITOR='sudo vi' git commit"
 check B 'foot -e rm -rf ~/.config/hypr'
 check B 'taskset -c 0 rm -rf ~/Seldon'
+check B 'foot -e "$CMD"'
+check B 'taskset -c 0 "$CMD"'
 check A 'hyprctl dispatch workspace 2'
 check A 'hyprctl clients -j'
 check A 'tmux ls'
@@ -570,5 +572,71 @@ check A 'loginctl list-sessions'
 check A 'loginctl show-session 2'
 check B 'loginctl terminate-session 2'
 check B 'loginctl kill-user tester'
+# WP-130 round 4 (stage-2 re-look), 1: the work tree and repository as variables
+check B 'GIT_WORK_TREE=$HOME/.config/hypr git checkout .'
+check B 'GIT_DIR=$HOME/.config/hypr/.git git checkout .'
+check B 'git --git-dir=$HOME/.config/hypr/.git fetch'
+check A 'GIT_DIR=/tmp/r/.git git status'
+# 2: exec wrappers among the data sinks
+check B 'fd . -x sudo ls'
+check B 'fd -X sudo ls'
+check B 'fd . -x {}'
+check B 'rustup run stable sudo ls'
+check B "man -P 'sudo ls' ls"
+check B 'sort --compress-program=sudo f'
+check B "wget --use-askpass='sudo ls' https://example.org/x"
+check A 'man sudo'
+check A 'fd pattern'
+check A 'fd -e rs -x wc -l'
+check A 'rustup run stable cargo build'
+check A 'man -P cat ls'
+check A 'sort -u f'
+# 3: hash -p maps a name like an alias
+check B 'hash -p /usr/bin/sudo ls; ls'
+check A 'hash -r'
+# 4: hyprctl joins its arguments; tmux sends keys one after another
+check B "hyprctl dispatch 'exec sudo ls'"
+check B "hyprctl 'dispatch exec sudo ls'"
+check B 'tmux send-keys -t x omarchy Space update Enter'
+check B 'tmux send-keys -t x sud o Space ls Enter'
+check B 'tmux send-keys -H 73 75 Enter'
+check B 'tmux send-keys -t x Up Enter'
+check A 'tmux send-keys -t x C-c'
+check A "tmux send-keys -t x 'cargo test' Enter"
+# 5: xargs: the replstr or the appended stdin items are unknown
+check B 'echo sudo | xargs -I{} {} ls'
+check B "echo 'sudo ls' | xargs -I{} sh -c {}"
+check B 'echo sudo | xargs env'
+check A 'ls | xargs -I{} echo {}'
+check A 'git ls-files | xargs wc -l'
+# 6: minor write paths
+check B 'tar -xzf a.tgz --one-top-level=$HOME/.config'
+check B 'git init --separate-git-dir=$HOME/.config/x /tmp/y'
+# false positives of the re-look: harmless git -c and GIT_CONFIG_* forms
+check A 'git -c core.pager=cat log -1'
+check A 'git -c core.editor=true rebase --continue'
+check A 'git -c diff.noprefix=true diff'
+check A 'git -c diff.colorMoved=zebra diff'
+check A 'git -c merge.conflictstyle=diff3 merge x'
+check A 'git -c protocol.file.allow=always clone /tmp/a /tmp/b'
+check A 'git -c receive.denyCurrentBranch=updateInstead push /tmp/x HEAD'
+check A 'GIT_CONFIG_GLOBAL=/dev/null git status'
+check A 'GIT_CONFIG_NOSYSTEM=1 git status'
+check B "GIT_CONFIG_PARAMETERS=\"'core.pager'='sudo less'\" git log"
+check B 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.pager GIT_CONFIG_VALUE_0=sudo git log'
+check B 'GIT_CONFIG_GLOBAL=/tmp/evil.cfg git log'
+check B 'git -c diff.x.textconv=sudo diff'
+check B 'git -c protocol.ext.allow=always fetch'
+check B 'git -c filter.x.smudge=sudo checkout .'
+# the net, widened: shells and Omarchy scripts among an unknown program's
+# arguments, and arguments that start with a known file command
+check B 'strace -f sed -i s/a/b/ /etc/x'
+check B 'myrunner bash /usr/share/omarchy/install.sh'
+check B 'myrunner bash script.sh'
+check B 'myrunner /usr/share/omarchy/install.sh'
+check B 'myrunner rm -rf ~/.config/hypr'
+check A 'strace -f ls'
+check A 'myrunner build'
+check A 'shellcheck -s bash scripts/guard.sh'
 echo "rows: $rows"
 exit $fail
