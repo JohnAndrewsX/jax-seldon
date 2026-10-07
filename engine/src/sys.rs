@@ -638,10 +638,11 @@ mod tests {
         let file = dir.join("a.json");
         std::fs::write(&file, "{}").unwrap();
         assert_eq!(read_small_file(&file, 2), Ok(Some("{}".to_string())));
-        assert!(
-            read_small_file(&file, 1)
-                .unwrap_err()
-                .contains("more than 1")
+        // the size is checked before the file is opened (the read's own cap
+        // would say "more than 1 bytes")
+        assert_eq!(
+            read_small_file(&file, 1),
+            Err("2 bytes, more than 1".to_string())
         );
         let link = dir.join("b.json");
         std::os::unix::fs::symlink(&file, &link).unwrap();
