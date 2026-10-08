@@ -1038,6 +1038,35 @@ fn invisible_characters_never_reach_an_imported_case() {
 }
 
 #[test]
+fn a_secret_split_by_an_invisible_character_never_reaches_an_imported_case() {
+    // WP-159: the three examples of WP-102b review 1, N5, split by a
+    // variation selector, a filler and a supplementary variation selector
+    let (env, root) = setup();
+    task_file(
+        &env,
+        "TODO.md",
+        "- [ ] Rotate to\u{FE0F}ken=hunter2abc now\n  Authorization: Bearer\u{3164} tokABC123secret\n  push ghp_0123\u{E0100}456789abcdefghijABCDEFGHIJ012345 x\n",
+    );
+    let report = ok(&import(&env, NOW, &["~/TODO.md"]));
+    assert_eq!(report["droppedCharacters"], 3);
+    let id = ids(&report)[0].clone();
+    let text = case_text(&root, "queued", &id);
+    assert!(
+        text.contains("Rotate token=‹redacted› now\nAuthorization: ‹redacted›\npush ‹redacted› x"),
+        "{text}"
+    );
+    let shown = ok(&env.at(LATER, &["plan", "show", &id, "--json"]));
+    let all = format!(
+        "{text}{report}{shown}{}",
+        read(&root.join("ledger/2026-10.jsonl"))
+    );
+    for secret in ["hunter2", "tokABC123", "456789abc"] {
+        assert!(!all.contains(secret), "{secret}");
+    }
+    assert!(!all.contains(['\u{FE0F}', '\u{3164}', '\u{E0100}']));
+}
+
+#[test]
 fn plan_show_marks_hidden_characters_redacts_and_cuts_at_a_character() {
     let (env, root) = setup();
     // a hand-made case keeps what its file holds: `plan show` marks each

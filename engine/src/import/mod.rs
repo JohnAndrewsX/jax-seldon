@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 
 use regex::Regex;
 
-use crate::redact::Redactor;
+use crate::redact::{Redactor, is_invisible};
 
 /// `outputs/IMPORT-<source>.md`, relative to the logbook root.
 pub fn report_path(source: &str) -> String {
@@ -32,43 +32,17 @@ pub fn marker_path(source: &str) -> String {
     format!(".seldon/imports/{source}.json")
 }
 
-/// A character a path may not hold: a control character, one that turns
-/// the direction of the text around it, an invisible format character
-/// (zero-width space, joiners, word joiner, BOM, …), or a line or paragraph
-/// separator (U+2028, U+2029, which Qt draws as a line break): a path is
-/// shown in the Log, the report and the desk (WP-102, ADR-0038 §3; the
-/// separators WP-102b round 2). The plugin's `BAD_PATH_CHARS` is the same
+/// A character a path may not hold: a control character, an invisible one
+/// ([`is_invisible`]: one that turns the direction of the text around it,
+/// a zero-width space, joiner, BOM, filler or variation selector, …), or a
+/// line or paragraph separator (U+2028, U+2029, which Qt draws as a line
+/// break): a path is shown in the Log, the report and the desk (WP-102,
+/// ADR-0038 §3; the separators WP-102b round 2; the fillers and variation
+/// selectors WP-159). The plugin's `BAD_PATH_CHARS` is the same
 /// set; `fixtures/bad-path-chars.txt` holds it, and both sides are tested
 /// against it.
 pub fn bad_path_char(c: char) -> bool {
-    c.is_control() || is_direction_or_format(c) || matches!(c, '\u{2028}' | '\u{2029}')
-}
-
-/// A character that turns the direction of the text around it (U+061C,
-/// U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible format
-/// character (U+00AD, U+0600–U+0605, U+180E, U+200B–U+200D, U+2060–U+2064,
-/// U+206A–U+206F, U+FEFF, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3, U+1D173–U+1D17A,
-/// the tags U+E0000–U+E007F). The index drops them
-/// from the texts it shows (ADR-0038 §2): a reordered or split line can
-/// mislead, and one inside a token would hide it from its redaction rule
-/// (WP-140 added U+00AD and the rest beyond the WP-127 set).
-pub fn is_direction_or_format(c: char) -> bool {
-    matches!(
-        c,
-        '\u{00AD}'
-            | '\u{0600}'..='\u{0605}'
-            | '\u{061C}'
-            | '\u{180E}'
-            | '\u{200B}'..='\u{200F}'
-            | '\u{202A}'..='\u{202E}'
-            | '\u{2060}'..='\u{2064}'
-            | '\u{2066}'..='\u{206F}'
-            | '\u{FEFF}'
-            | '\u{FFF9}'..='\u{FFFB}'
-            | '\u{1BCA0}'..='\u{1BCA3}'
-            | '\u{1D173}'..='\u{1D17A}'
-            | '\u{E0000}'..='\u{E007F}'
-    )
+    c.is_control() || is_invisible(c) || matches!(c, '\u{2028}' | '\u{2029}')
 }
 
 /// The most bytes (UTF-8) of a case's `source`, so also the most
@@ -513,10 +487,11 @@ mod tests {
 
     use super::*;
 
-    /// WP-140: every code point of the set, at both ends of each range,
-    /// is a direction or format character; its neighbours are not.
+    /// WP-140, WP-159: every code point of the set, at both ends of each
+    /// range, is invisible and refused in a path; its neighbours are not
+    /// invisible.
     #[test]
-    fn the_direction_and_format_set_holds_each_code_point() {
+    fn the_invisible_set_holds_each_code_point() {
         for c in [
             '\u{00AD}',
             '\u{0600}',
@@ -557,8 +532,27 @@ mod tests {
             '\u{E0001}',
             '\u{E0020}',
             '\u{E007F}',
+            // WP-159: fillers and variation selectors
+            '\u{034F}',
+            '\u{115F}',
+            '\u{1160}',
+            '\u{17B4}',
+            '\u{17B5}',
+            '\u{180B}',
+            '\u{180C}',
+            '\u{180D}',
+            '\u{180F}',
+            '\u{2065}',
+            '\u{3164}',
+            '\u{FE00}',
+            '\u{FE07}',
+            '\u{FE0F}',
+            '\u{FFA0}',
+            '\u{E0100}',
+            '\u{E0150}',
+            '\u{E01EF}',
         ] {
-            assert!(is_direction_or_format(c), "U+{:04X}", c as u32);
+            assert!(is_invisible(c), "U+{:04X}", c as u32);
             assert!(bad_path_char(c), "U+{:04X}", c as u32);
         }
         for c in [
@@ -572,12 +566,25 @@ mod tests {
             '\u{00AE}',
             '\u{061B}',
             '\u{061D}',
-            '\u{180D}',
-            '\u{180F}',
+            '\u{180A}',
+            '\u{1810}',
             '\u{200A}',
             '\u{2010}',
-            '\u{2065}',
             '\u{2070}',
+            '\u{034E}',
+            '\u{0350}',
+            '\u{115E}',
+            '\u{1161}',
+            '\u{17B3}',
+            '\u{17B6}',
+            '\u{3163}',
+            '\u{3165}',
+            '\u{FDFF}',
+            '\u{FE10}',
+            '\u{FF9F}',
+            '\u{FFA1}',
+            '\u{E00FF}',
+            '\u{E01F0}',
             '\u{FEFE}',
             '\u{FFF8}',
             '\u{FFFC}',
@@ -587,7 +594,7 @@ mod tests {
             'a',
             '-',
         ] {
-            assert!(!is_direction_or_format(c), "U+{:04X}", c as u32);
+            assert!(!is_invisible(c), "U+{:04X}", c as u32);
         }
     }
 

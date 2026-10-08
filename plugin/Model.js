@@ -1641,11 +1641,11 @@ function agentNewArgs(intent) {
 
 var IMPORT_PATH_MAX = 4096
 // The engine's `bad_path_char`, one set (WP-102b round 2): control
-// characters, direction and format characters (the engine's
-// `is_direction_or_format`, WP-140's set with the tags) and the line and
-// paragraph separators. Both sides are tested against
+// characters, invisible characters (the engine's `redact::is_invisible`:
+// WP-140's set with the tags, WP-159's fillers and variation selectors)
+// and the line and paragraph separators. Both sides are tested against
 // fixtures/bad-path-chars.txt.
-var BAD_PATH_CHARS = /[\u0000-\u001f\u007f-\u009f\u00ad\u0600-\u0605\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e007f}]/u
+var BAD_PATH_CHARS = /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff9-\ufffb\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u
 
 // "" when `path` may go to the engine, else why not (plain text).
 function importPathError(path) {

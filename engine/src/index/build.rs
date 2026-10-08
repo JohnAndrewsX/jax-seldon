@@ -14,10 +14,10 @@ use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
 use crate::config::{AttentionMode, DriftConfig};
-use crate::import::{is_case_source, is_direction_or_format};
+use crate::import::is_case_source;
 use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, TRUNCATED, format_ts};
 use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
-use crate::redact::Redactor;
+use crate::redact::{Redactor, is_invisible, without_invisible};
 
 /// Most events the index lists (CONTRACT.md rule 4).
 pub const MAX_EVENTS: usize = 500;
@@ -745,9 +745,9 @@ fn cap_drift(drift: Vec<DriftItem>) -> Vec<DriftItem> {
 }
 
 /// A case's or decision's text as the index carries it (ADR-0038 §2):
-/// control characters other than line breaks and tabs as spaces, direction
-/// and format characters dropped (so a zero-width space cannot split a
-/// secret from its rule either), then redacted, then [`clip_with`] the
+/// control characters other than line breaks and tabs as spaces, invisible
+/// characters dropped ([`without_invisible`]: a reordered line can mislead,
+/// and the redaction reads the text without them anyway), then redacted, then [`clip_with`] the
 /// file marker: redaction first, so a cut never leaves a secret's prefix.
 /// `None` without a redactor (withheld) or without text.
 pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
@@ -757,12 +757,11 @@ pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
 }
 
 /// [`shown_text`] without the clip: control characters other than line
-/// breaks and tabs as spaces, direction and format characters dropped,
-/// then redacted.
+/// breaks and tabs as spaces, invisible characters dropped, then
+/// redacted.
 pub fn plain_text(redactor: &Redactor, text: &str) -> String {
-    let plain: String = text
+    let plain: String = without_invisible(text)
         .chars()
-        .filter(|c| !is_direction_or_format(*c))
         .map(|c| {
             if c.is_control() && c != '\n' && c != '\t' {
                 ' '
@@ -775,14 +774,15 @@ pub fn plain_text(redactor: &Redactor, text: &str) -> String {
 }
 
 /// [`plain_text`] for a text a person reviews before an agent may act on
-/// it (`plan show --json` `intent`, WP-102b round 2): every direction or
-/// format character is not dropped but shown as `‹U+XXXX›`, so nothing is
+/// it (`plan show --json` `intent`, WP-102b round 2): every invisible
+/// character ([`is_invisible`], WP-159: a variation selector too, which can
+/// carry hidden bytes) is not dropped but shown as `‹U+XXXX›`, so nothing is
 /// hidden from the review; the count of them comes back too.
 pub fn marked_text(redactor: &Redactor, text: &str) -> (String, usize) {
     let mut hidden = 0;
     let mut marked = String::with_capacity(text.len());
     for c in text.chars() {
-        if is_direction_or_format(c) {
+        if is_invisible(c) {
             hidden += 1;
             marked.push_str(&format!("‹U+{:04X}›", c as u32));
         } else if c.is_control() && c != '\n' && c != '\t' {

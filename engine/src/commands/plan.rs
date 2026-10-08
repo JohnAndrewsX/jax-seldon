@@ -1019,8 +1019,8 @@ const CLOSING_TAIL_MAX: usize = 100;
 /// <title>: <line>`, `line` the first line of the case's *Result* (`plan
 /// done`) or the reason (`plan drop`), left out when there is none, a
 /// list marker before it dropped. The text after the dash is one line
-/// (direction and invisible format characters dropped, so none splits a
-/// token; control characters and line or paragraph separators become
+/// (invisible characters dropped, `redact::without_invisible`, so none
+/// splits a token; control characters and line or paragraph separators become
 /// spaces), redacted and then clipped: the patterns see the whole text,
 /// so a cut cannot hide a secret from them.
 fn closing_summary(
@@ -1043,9 +1043,8 @@ fn closing_summary(
         Some(l) => format!("{}: {l}", title.trim()),
         None => title.trim().to_string(),
     };
-    let tail: String = tail
+    let tail: String = crate::redact::without_invisible(&tail)
         .chars()
-        .filter(|c| !crate::import::is_direction_or_format(*c))
         .map(|c| {
             if c.is_control() || super::is_line_breaking(c) {
                 ' '
@@ -1139,7 +1138,7 @@ fn show(ctx: &Context, id: &str) -> Result<Output> {
 
 /// `plan show --json` `intent` (WP-102b): the whole *Intent* section as
 /// display text (`index::build::marked_text`: control characters as
-/// spaces, every direction or format character marked `‹U+XXXX›` and
+/// spaces, every invisible character marked `‹U+XXXX›` and
 /// counted in `hidden`, redacted), at most [`SHOW_INTENT_MAX`] bytes cut at
 /// a character, with its line count before the cut. `null` while the
 /// config's redaction patterns do not compile (withheld, as the index

@@ -355,6 +355,55 @@ mod log {
         assert!(line.contains("‹redacted›"));
     }
 
+    /// WP-159: a secret split by an invisible character (WP-102b review
+    /// 1, N5) is masked in the ledger and the journal, the split character
+    /// with it; a note without a secret keeps its invisible characters,
+    /// and so do the words away from a masked one.
+    #[test]
+    fn a_secret_split_by_an_invisible_character_is_masked() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let notes = [
+            ("a to\u{FE0F}ken=hunter2abc b", "a token=‹redacted› b"),
+            (
+                "Authorization: Bearer\u{3164} tokABC123secret",
+                "Authorization: ‹redacted›",
+            ),
+            (
+                "x ghp_0123\u{E0100}456789abcdefghijABCDEFGHIJ012345 y",
+                "x ‹redacted› y",
+            ),
+            ("a to\u{200B}ken=hunter2abd b", "a token=‹redacted› b"),
+            (
+                "क्\u{200D}ष to\u{034F}ken=hunter2xyz 👍\u{FE0F}",
+                "क्\u{200D}ष token=‹redacted› 👍\u{FE0F}",
+            ),
+            (
+                "क्\u{200D}ष 👍\u{FE0F}\u{E0100}",
+                "क्\u{200D}ष 👍\u{FE0F}\u{E0100}",
+            ),
+        ];
+        for (note, _) in notes {
+            let out = env.at(T0, &["log", "--", note]);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        }
+        let events = ledger(&root);
+        let details: Vec<&str> = events
+            .iter()
+            .map(|e| e["detail"].as_str().unwrap())
+            .collect();
+        let wants: Vec<&str> = notes.iter().map(|(_, want)| *want).collect();
+        assert_eq!(details, wants);
+        let day = read(&root.join("journal/2026/2026-10-01.md"));
+        for want in wants {
+            assert!(day.contains(&format!("\n{want}\n")), "{want:?} in {day}");
+        }
+        let line = read(&root.join("ledger/2026-10.jsonl"));
+        for secret in ["hunter2", "tokABC123", "456789abc"] {
+            assert!(!line.contains(secret) && !day.contains(secret), "{secret}");
+        }
+    }
+
     #[test]
     fn the_real_clock_writes_whole_seconds() {
         let env = Env::new(Snapper::Missing);

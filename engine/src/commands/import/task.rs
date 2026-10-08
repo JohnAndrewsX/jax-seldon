@@ -33,7 +33,7 @@ use crate::commands::plan::{SHOW_INTENT_MAX, Spec, case_json, create};
 use crate::commands::{Commit, Context, Output, autocommit};
 use crate::error::{Error, Result};
 use crate::import::task::{Tasks, parse};
-use crate::import::{Scrubber, bad_path_char, case_source, is_direction_or_format, marker_path};
+use crate::import::{Scrubber, bad_path_char, case_source, marker_path};
 use crate::logbook::Logbook;
 use crate::logbook::cases;
 use crate::model::event::ACTOR_HUMAN;
@@ -164,7 +164,7 @@ struct Source {
     stem: String,
     /// Lines the redaction changed.
     redacted: usize,
-    /// Direction and format characters dropped (WP-102b round 2, B2).
+    /// Invisible characters dropped (WP-102b round 2, B2; the set WP-159).
     dropped: usize,
 }
 
@@ -597,15 +597,12 @@ fn read_source(
     // a CRLF file already imported is not imported again; the line count
     // does not change
     let text = text.replace("\r\n", "\n");
-    // direction and format characters out (WP-102b round 2, B2): an
+    // invisible characters out (WP-102b round 2, B2; the set WP-159): an
     // invisible instruction would reach the case, its title and an agent
-    // while the desk's review drops it; out before the redaction, so a
-    // zero-width space cannot split a secret from its rule here either
+    // while the desk's review drops it (the redaction reads the text
+    // without them in any case)
     let before = text.chars().count();
-    let text: String = text
-        .chars()
-        .filter(|c| !is_direction_or_format(*c))
-        .collect();
+    let text = crate::redact::without_invisible(&text).into_owned();
     let dropped = before - text.chars().count();
     // the scrubber redacts the whole text, as a note's, keeping its line
     // breaks (WP-140), then rewrites home paths line by line
