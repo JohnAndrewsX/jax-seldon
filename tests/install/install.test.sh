@@ -251,7 +251,7 @@ home="$work/home"
 mkdir -p "$home"
 # run <path-mode: jq|nojq> <api json> args... → $out, $rc; $GH picks the
 # gh stub (ok, noauth, fail, partial, old, none); a non-empty $GH_HOST_ENV
-# is passed on as GH_HOST
+# is passed on as GH_HOST; a non-empty $RUN_HOME replaces $home
 GH=ok
 GH_HOST_ENV=""
 run_with() {
@@ -260,7 +260,7 @@ run_with() {
   if [[ $mode == nojq ]]; then path="$work/nojq"; else path="$work/host"; fi
   path="$work/trap:$work/gh-$GH:$work/shells:$path"
   rc=0
-  out=$(env -i HOME="$home" PATH="$path" LANG=C.UTF-8 \
+  out=$(env -i HOME="${RUN_HOME:-$home}" PATH="$path" LANG=C.UTF-8 \
     SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
     SELDON_INSTALL_API_URL="file://$work/releases/$api" \
     SELDON_INSTALL_SHARE="$share" ${GH_HOST_ENV:+"GH_HOST=$GH_HOST_ENV"} \
@@ -289,7 +289,24 @@ check "latest: says it checked the attestation" \
 check "latest: gh got the repo, the release workflow and the tag's ref" grep -qE \
   "^gh attestation verify /.*/seldon-9\.9\.9-$target\.tar\.gz --hostname github\.com --repo JohnAndrewsX/jax-seldon --signer-workflow JohnAndrewsX/jax-seldon/\.github/workflows/release\.yml --source-ref refs/tags/v9\.9\.9 --deny-self-hosted-runners$" \
   "$work/gh.log"
-check "latest: next step seldon init" has "seldon init"
+# CI runs as root: then main()'s root warning (stderr) comes first, and
+# the announce follows it; for a normal user the announce is line one
+announce=$(grep -v '^install.sh: running as root: ' <<<"$out" | head -n 2)
+check "latest: says first what it installs, where and how it checks" test "$announce" = \
+  "Installing the Seldon engine into $p/bin as your user, no password;
+the download is checked against the release checksums before anything is written."
+if [[ $(id -u) -ne 0 ]]; then
+  check "latest: as a normal user the announce is the first line" \
+    test "$(head -n 1 <<<"$out")" = "Installing the Seldon engine into $p/bin as your user, no password;"
+fi
+check "latest: next steps on a fresh home: init and the plugin" has "
+Next steps:
+  seldon init        create your logbook
+  omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable
+                     the bar pill, panel and Prime Radiant
+"
+check "latest: update and remove after a blank line, last" test "$(tail -n 2 <<<"$out")" = "
+Update: run install.sh again. Remove: install.sh --uninstall --prefix $p"
 check "latest: PATH note" has "is not on your PATH"
 check "latest: no unit without --unit" test ! -e "$home/.config/systemd/user/seldon-watch.service"
 check "latest: manifest" test -f "$p/share/jax-seldon/install-manifest"
@@ -613,6 +630,94 @@ check "truncated script: does nothing" test ! -e "$work/p9"
 # shellcheck disable=SC2016 # $1 is bash -c's argument
 check "three-step: install.sh verifies against SHA256SUMS" \
   bash -c 'cd "$1" && sha256sum -c --ignore-missing --quiet SHA256SUMS' _ "$work/releases/download/v9.9.9"
+
+# ---- 8b. next steps from what is there (WP-118) -------------------------------
+# Each case in a home of its own; the default prefix shows as ~/.local/bin.
+plugin_line="omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable"
+next_home() { # name [config] [plugin] → $RUN_HOME prepared
+  RUN_HOME="$work/homes/$1"
+  mkdir -p "$RUN_HOME"
+  if one_of config "${@:2}"; then
+    mkdir -p "$RUN_HOME/.config/seldon"
+    echo 'logbook = "~/Seldon"' >"$RUN_HOME/.config/seldon/config.toml"
+  fi
+  if one_of plugin "${@:2}"; then
+    mkdir -p "$RUN_HOME/.config/omarchy/plugins/jax.seldon"
+  fi
+}
+# one_of <needle> items... → true when the needle is one of the items
+one_of() { local n=$1 i; shift; for i in "$@"; do [[ $i == "$n" ]] && return 0; done; return 1; }
+
+next_home fresh
+run
+check "fresh home: exit 0" test "$rc" -eq 0
+check "fresh home: announce names ~/.local/bin" \
+  has "Installing the Seldon engine into ~/.local/bin as your user, no password;"
+check "fresh home: seldon init" has "  seldon init        create your logbook"$'\n'
+check "fresh home: the plugin line" has "  $plugin_line"
+
+next_home update config
+run
+check "with a config: exit 0" test "$rc" -eq 0
+# shellcheck disable=SC2016 # $1 is bash -c's argument
+check "with a config: no seldon init" bash -c '[[ $1 != *"seldon init"* ]]' _ "$out"
+check "with a config: says the logbook is set up" has "Your logbook is already set up.
+Next steps:
+  $plugin_line
+"
+
+next_home panel plugin
+run
+check "with the plugin: exit 0" test "$rc" -eq 0
+# shellcheck disable=SC2016 # $1 is bash -c's argument
+check "with the plugin: no plugin line" bash -c '[[ $1 != *"plugin add"* ]]' _ "$out"
+check "with the plugin: init, or Create in the panel" has "
+Next steps:
+  seldon init        create your logbook (or press Create in the Seldon panel)
+
+Update: run install.sh again."
+
+next_home both config plugin
+run
+check "with both: exit 0" test "$rc" -eq 0
+check "with both: nothing else to do" has "
+Your logbook is already set up; nothing else to do.
+
+Update: run install.sh again."
+# shellcheck disable=SC2016 # $1 is bash -c's argument
+check "with both: no next steps" bash -c '[[ $1 != *"Next steps"* ]]' _ "$out"
+check "with both: config and plugin folder untouched" test \
+  "$(cat "$RUN_HOME/.config/seldon/config.toml")" = 'logbook = "~/Seldon"'
+
+# XDG_CONFIG_HOME, as the engine reads it: the config there counts
+RUN_HOME="$work/homes/xdg"
+mkdir -p "$RUN_HOME/xdg/seldon" "$RUN_HOME/.config/omarchy/plugins/jax.seldon"
+touch "$RUN_HOME/xdg/seldon/config.toml"
+rc=0
+out=$(env -i HOME="$RUN_HOME" XDG_CONFIG_HOME="$RUN_HOME/xdg" PATH="$work/trap:$work/gh-ok:$work/shells:$work/host" \
+  SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
+  SELDON_INSTALL_API_URL="file://$work/releases/latest.json" \
+  SELDON_INSTALL_SHARE="$share" bash "$script" 2>&1) || rc=$?
+check "XDG_CONFIG_HOME config: nothing else to do" has "Your logbook is already set up; nothing else to do."
+# a relative XDG_CONFIG_HOME is ignored, as by the engine: ~/.config counts,
+# and a config under the relative path in the working directory does not
+next_home relxdg config plugin
+mkdir -p "$RUN_HOME/cwd/rel" "$RUN_HOME/cwd2/rel/seldon"
+touch "$RUN_HOME/cwd2/rel/seldon/config.toml"
+rc=0
+out=$(cd "$RUN_HOME/cwd" && env -i HOME="$RUN_HOME" XDG_CONFIG_HOME=rel PATH="$work/trap:$work/gh-ok:$work/shells:$work/host" \
+  SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
+  SELDON_INSTALL_API_URL="file://$work/releases/latest.json" \
+  SELDON_INSTALL_SHARE="$share" bash "$script" 2>&1) || rc=$?
+check "relative XDG_CONFIG_HOME: ~/.config counts" has "Your logbook is already set up; nothing else to do."
+rm "$RUN_HOME/.config/seldon/config.toml"
+rc=0
+out=$(cd "$RUN_HOME/cwd2" && env -i HOME="$RUN_HOME" XDG_CONFIG_HOME=rel PATH="$work/trap:$work/gh-ok:$work/shells:$work/host" \
+  SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
+  SELDON_INSTALL_API_URL="file://$work/releases/latest.json" \
+  SELDON_INSTALL_SHARE="$share" bash "$script" 2>&1) || rc=$?
+check "relative XDG_CONFIG_HOME: a config under it does not count" has "  seldon init        create your logbook"
+RUN_HOME=""
 
 # ---- 9. uninstall ------------------------------------------------------------
 mkdir -p "$home/.config/systemd/user/default.target.wants"

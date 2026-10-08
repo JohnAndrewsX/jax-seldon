@@ -1,6 +1,6 @@
 # Konzepte
 
-<!-- source: en/02-concepts.md @ 1bae1cd -->
+<!-- source: en/02-concepts.md @ d79db7a -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
 Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory. Lies sie
@@ -223,8 +223,11 @@ neue Datei in einem Persistenzpfad ist eine Krise, egal wer sie
 geschrieben hat: Units in `~/.config/systemd/user`, Omarchys Hooks in
 `~/.config/omarchy/hooks`, `~/.config/autostart`,
 `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
-`~/.bash_profile`. Diese Dateien laufen bei der Anmeldung oder bei
-Ereignissen, ohne deine gewöhnliche Konfiguration zu sein.
+`~/.bash_profile` und die `authorized_keys`-Dateien, sobald du sie beobachtest.
+Diese Dateien laufen bei der Anmeldung oder bei Ereignissen, ohne deine
+gewöhnliche Konfiguration zu sein. Ein Drittanbieter-Plugin, das an Ort
+und Stelle geändert wird, zählt als Plugin-Update: gelistet, nie in der
+Leiste gezählt.
 
 ## Baseline
 

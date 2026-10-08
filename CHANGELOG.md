@@ -25,6 +25,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **More secrets are redacted (WP-140).** A PEM private key
+  (`-----BEGIN … PRIVATE KEY-----`, OpenSSH, RSA, EC, encrypted, PGP) is
+  masked whole between its BEGIN and END lines, also when a clip cut one
+  of them off; a header value in quotes (`Authorization: "Bearer …"`,
+  `"Authorization": "…"`, `x-api-key: '…'`) and a JSON `"x-api-key"` are
+  masked, also HTTPie's and xh's `Authorization:'Bearer …'`; nmcli's
+  secrets (`password X`, `wifi-sec.psk X`,
+  `802-1x.password X`, `vpn.secrets X`, …) are masked and the rest of
+  the line stays. The hooks record a line that gives a secret as a plain
+  argument or pipes it in (`htpasswd -b`, `echo u:pw | chpasswd`,
+  `usermod -p`/`--password`, `smbpasswd -s`, `passwd` fed from the line,
+  `cryptsetup` with a key piped in or written on the same line, `openssl
+  passwd`, `wpa_passphrase`) as `<program> ‹redacted›`. More invisible characters are
+  dropped from the index texts and commit subjects, so none hides a token
+  from its rule (soft hyphen, U+0600–U+0605, U+061C, U+180E,
+  U+2061–U+2064, U+206A–U+206F, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
+  U+1D173–U+1D17A, tags), and the hooks drop them from a command line
+  before reading it. A second redaction no longer
+  merges markers a user pattern left beside a built-in one, and the vault
+  import masks a secret that spans lines. An empty header value
+  (`Authorization:` at the line end) is no longer masked: there is
+  nothing in it.
+- The agent hooks record every command an agent runs with `sudo`,
+  `doas`, `pkexec` or `run0`, also a program Seldon does not know: an
+  agent's `pkexec lpadmin …` printer setup is now one red `agent/command`
+  event with `meta.wrapper: pkexec` and `asked to run: <the redacted
+  line>` as its text, on the active case or without one. A command
+  another hook class records (`pkexec pacman -S x`) is recorded once, as
+  before; probes (`sudo -l`, `sudo -n true`, `pkexec --version`, `command
+  -v sudo`) record nothing; a wrapper of `sh -c '…'` holds for the
+  commands inside; a line that pipes a password into `sudo -S` is
+  recorded as `<program> ‹redacted›`. These records are events, not
+  drift; the change they make is drift through its own collector
+  (ADR-0039; WP-129).
+- **Code the collectors could not see (WP-113, ADR-0028 WP-E; hashes
+  only, never content).** A third-party plugin edited in place is now one
+  `plugin-update` (detail `files changed (sha256 … → …)`): the plugins
+  collector hashes each listed third-party plugin's folder under
+  `~/.config/omarchy/plugins/` as one whole and skips reading an
+  unchanged one. Omarchy's toggle folder
+  `~/.local/state/omarchy/toggles` joins the default `watchPaths` (a list
+  that is still 0.1.4's default gains it at the next capture); turning a
+  switch of Omarchy's *Toggle* menu or a Hyprland flag on or off is
+  routine (new rule `toggle-flag`, ADR-0037), anything else there is
+  quiet attention; every file there is hashed. `~/.ssh/authorized_keys`
+  and `~/.ssh/authorized_keys2` join the default `alwaysRedPaths`: add
+  both to `watchPaths` and a change to either without a case is a
+  crisis. Under the persistence paths the config collector now
+  hashes every file — a hook with a NUL byte after its first line or
+  over 1 MiB used to be skipped — and follows a linked hook folder (each
+  folder once, at most 4096 entries below links; a link with more is a
+  crisis of its own; links into the logbook or Seldon's folders are not
+  followed); a file over 64 MiB is hashed from its size, modification and
+  change time and inode,
+  and an unreadable one keeps its last hash. A plugin tree counts an
+  unreadable file by its size, time and mode and holds at most 10 000
+  entries. The first capture after the upgrade records nothing for files
+  that were skipped before.
+- A full upgrade with a yay or paru option that takes a value
+  (`--answerdiff None`, `--mflags …`, `--editor …`) no longer counts the
+  value as a package: it is routine like any plain full upgrade
+  (WP-113).
+- **Bulk triage and Ask agent (ADR-0036).** `seldon agent ask triage`
+  starts your agent to sort the open changes; `agent ask drift <EVENT>`
+  and `agent ask case <ID>` ask it about one change or one case. The
+  prompt names only ids, the logbook and the skill's guide, never
+  logbook text, and hands the agent no case to work. The agent stores a
+  proposal with `seldon drift propose` (JSON on stdin): every item needs
+  evidence the engine looks up itself (a journal entry, an event, a
+  snapshot, a case, a case's Plan line), or the proposal is refused.
+  `seldon drift apply <PROPOSAL>` applies it as you, checking every item
+  again, with `proposed by agent:<name> — <evidence>` in the ledger; a
+  crisis only one by one with `--item`; a second run changes nothing.
+  `seldon drift discard` throws a proposal away. The skill gains
+  `triage.md` (WP-124).
+
 - `seldon import task <FILE>…` turns your own Markdown task files into
   cases: one queued case per open `- [ ]` item (title from its first
   sentence, Intent from the item, its indented lines and its heading),
@@ -33,11 +109,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   like a note; a second run creates nothing, a reworded item makes a new
   case that names the earlier one; `--include-done`, `--dry-run`,
   `--zone`, `--risk`, `--area`. Files outside your home or inside the
-  logbook are refused (WP-102).
+  logbook are refused (WP-102). Each imported case records its task as
+  `source: "~/…/file.md#line"` in its frontmatter, which the index
+  carries for the desk (WP-127).
+- The index carries what the desk's details show, all optional within
+  contract 2 (ADR-0038): each open change's `rule` (what `seldon drift
+  show` reports), the first paragraph of a case's Intent and Result and
+  of a decision's Decision (redacted on every build, clipped at 256
+  bytes with "… (N more characters in the file)"), and an imported
+  case's `source` (WP-127).
+
 - The harm guard of the planned-and-active link (ADR-0029) reads a
   case's risk from its ledger lines, to the second, for every case this
   engine creates; an edited Log no longer changes the answer. Cases from
   before keep the Log as their record (WP-120).
+- Redaction reads Windows line ends: a secret on a line continued with
+  `\` and a CRLF line end (`mysql -u root \` then `-p secret`,
+  `curl -u \` then the credentials, a quoted value over two lines) is
+  masked as with LF, in notes, cases, hooks and imports. A CRLF note
+  keeps its line ends; the task import reads CRLF as LF first, as
+  before (WP-128).
+
+### Plugin
+
+- **Agent sorts N open changes.** The Changelog's head asks your
+  agent to sort the open changes; its proposal shows as a row and a
+  detail: every item with the change, the link or explanation, and every
+  piece of evidence with who wrote it first; evidence by an agent or of
+  unknown authorship is marked. *Apply proposals* applies it as you in
+  one click, crises never with the rest: each has its own button. The
+  result says what was done, skipped or refused; a second Apply changes
+  nothing. *Discard* throws a proposal away. *Ask agent* on an open
+  change and on a case asks your agent about it (WP-124).
+
+- The desk's "Why loud?" callout reads the rule from the index: selecting
+  a crisis in the Changelog no longer runs `seldon drift show` (it still
+  does against an engine whose index has no rule). Work's case detail
+  shows the first paragraph of Intent and Result and where an imported
+  case came from; the Decisions detail shows the first paragraph of the
+  decision. *Open in editor* stays for the rest (WP-127).
+
+## [0.1.4] - 2026-10-07
+
+**Highlights.** Seldon stays quiet: routine changes (theme, plugin
+toggles, Omarchy's updates, a plain full upgrade) are history, not drift,
+and the bar only counts what can break boot, login or the shell
+(ADR-0028). One click and one sentence start an agent on a case; the
+agent snapshots, verifies and closes it itself, and a change you make
+yourself during the case is linked to it (ADR-0027, ADR-0029). The agent
+starts like Omarchy's own agent, from `~/Work`, with Seldon's rules in a
+skill every Omarchy agent reads (ADR-0030, WP-094); privileged steps
+follow Omarchy's wording and ask for as few passwords as the route allows
+(ADR-0031). Every terminal the panel opens says what it does and what
+happened. More secrets are redacted, and collector messages too.
+
+**Update engine and plugin together.** Plugin 0.1.4 needs engine 0.1.4
+(`engineMin`); with an older engine the panel shows its "Engine outdated"
+banner with the one-click update.
+
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
+and the package does not exist yet. Update the plugin first:
+`omarchy plugin update jax.seldon` (Omarchy shows the changes and asks
+`Update jax.seldon?`; answer yes), then `omarchy-restart-shell`.
+
+### Engine
 
 - `seldon agent start` launches the agent with `SELDON_ACTOR=agent:`
   and the launcher's name, and `SELDON_ATTENDED=1` (ADR-0027). `plan`,
@@ -478,6 +613,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   collector is not: `seldon doctor` shows it), `--no-capture` skips it,
   and the panel's *Done* takes a moment longer (WP-115).
 
+- **Setup texts (WP-118).** `seldon init` ends with six aligned rows
+  (Logbook, Config, Recording, Agents, History, Snapshots), then "Next
+  steps:" only when something is left to do, else "Seldon is recording.
+  Nothing else to do."; the optional snapshot grant comes last with what
+  it grants. No machine id, file count, hook counts or ADR numbers, and
+  no `seldon doctor` on a clean run; `--json` keeps every key and adds
+  `optionalSteps`. In the wizard the backfill note no longer promises a
+  red pill (most older changes are routine history, ADR-0028); the theme
+  hook question is short ("Record theme switches instantly?"), with its
+  explanation on the lines above; every question and list item fits a
+  70-column terminal, so none is drawn twice; the git question reads
+  "Keep the logbook in git, with a first commit?"; the Omarchy-Agent kit
+  is offered only when its directory exists, as "Omarchy-Agent kit
+  (private template)"; the agent items read "Claude Code hooks
+  (user-wide)" and "Seldon agent skill (into existing skill folders)".
+
 ### Plugin
 
 - **Quiet surfaces (ADR-0028).** The bar's second number now counts
@@ -525,6 +676,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *Restart shell*, which runs `omarchy-restart-shell` (no arguments).
   Plugins up to 0.1.3 do not show it; the update guide and both READMEs
   say to restart the shell after every plugin update (WP-090).
+- **Setup texts (WP-117).** Every terminal the panel opens now says what
+  it is about to do, shows the command, runs it and says what changed,
+  like Omarchy's own scripts. *Grant* (the snapshot read grant) says
+  that it grants read access to `/.snapshots` only and asks for your
+  password once; afterwards it records the snapshots, and the banner
+  disappears without *Check again* ("Snapshots are now recorded. The
+  panel updates by itself." or "Nothing changed. Snapshots stay off;
+  Seldon works without them."). A result line never claims more than
+  happened; Ctrl+C says "Cancelled" and closes the window. *Copy* still
+  copies the plain command.
+  Banners say one sentence each; the buttons are *Install*, *Create*,
+  *Grant* and *Update*; the setup banners read "Install the engine",
+  "Create your logbook" and "Read snapshots (optional)", the engine one
+  in the accent colour unless an engine that was there is gone. Today
+  says "1 event today".
 
 ### Packaging and docs
 
@@ -555,6 +721,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host; `--dry-run` shows the plan, `--release vX.Y.Z` brings the host
   back to a release. Productive machines keep running releases only
   (WP-098).
+- **install.sh says what it does (WP-118).** It starts with two lines:
+  where it installs the engine, as your user, without a password, and
+  that the download is checked first. Its next steps follow what is
+  there: no `seldon init` when Seldon's `config.toml` exists, no plugin
+  line when the plugin is installed, and "Your logbook is already set
+  up; nothing else to do." when nothing is left. The user guides follow:
+  the wizard's questions and result in Getting started (which now
+  suggests a backfill of about three months with the baseline), the
+  panel's new banner titles and buttons in Troubleshooting, and in
+  Update and uninstall what Omarchy's plugin update shows and the way
+  out for a plugin 0.1.0 panel.
 
 ## [0.1.3] - 2026-10-05
 
@@ -1143,7 +1320,8 @@ plugin `jax.seldon` (published from `plugin/` as `jax-seldon-plugin`).
 - Specs (engine, plugin, logbook, contract), 22 ADRs, plugin README with
   security section, keybinding docs, preview image.
 
-[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.4
 [0.1.3]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.3
 [0.1.2]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.2
 [0.1.1]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.1

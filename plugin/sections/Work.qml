@@ -21,10 +21,11 @@ import "../Model.js" as Model
 // The detail: the selected case with its sticky bar by status
 // (Model.caseDeskActions: Start / Hand to agent / To verification /
 // Complete / Drop / Reopen / Open in editor; id · risk at the right), then
-// what the index carries (Model.caseDetail): key/values, the plan's
-// progress, the log, the linked changes; Intent and Result are in the case
-// file, which *Open in editor* shows (the plugin never reads Markdown,
-// AGENTS.md §3).
+// what the index carries (Model.caseDetail): key/values (an imported
+// case's source among them), the first paragraph of Intent and Result as
+// plain text (ADR-0038), the plan's progress, the log, the linked changes;
+// the rest is in the case file, which *Open in editor* shows (the plugin
+// never reads Markdown, AGENTS.md §3).
 //
 // Writing actions arm on the first press or click and run on the second
 // (the desk's Arm.qml; the bar reads "Confirm …" and shows the hint);
@@ -89,6 +90,7 @@ Section {
   // once, Reopen too; the other writing actions arm, then run.
   function press(actionId) {
     var c = root.current
+    if (actionId === "ask") return !!c && !!root.service && root.service.askAgent("case", c.id)
     var action = Model.caseDeskAction(c, actionId)
     if (!action) return false
     if (!action.write) {
@@ -197,7 +199,7 @@ Section {
   // The bar: the status actions, "Confirm …" on the armed one.
   function barActions() {
     if (root.sheetOpen) return []
-    return root.caseActions.map(function(a) {
+    var out = root.caseActions.map(function(a) {
       return {
         id: a.id,
         label: root.armed === a.id ? "Confirm " + a.label.toLowerCase() : a.label,
@@ -205,7 +207,18 @@ Section {
         enabled: a.write ? root.canWrite && !root.pending : true
       }
     })
+    // Ask agent (WP-124b, ADR-0036 §1): about this case, any status; the
+    // agent gets no case to work (`agent ask case <id> --json`).
+    if (root.current && root.service && root.service.askAgentAvailable)
+      out.push({ id: "ask", label: "Ask agent", primary: false,
+        enabled: !(root.service.askResult && root.service.askResult.pending) })
+    return out
   }
+
+  // The last ask about this case, or null.
+  readonly property var askResult: root.service && root.current && root.service.askResult
+    && root.service.askResult.what === "case" && root.service.askResult.target === root.current.id
+    ? root.service.askResult : null
 
   function view() {
     return {
@@ -228,13 +241,17 @@ Section {
         status: root.detailData.status,
         heading: root.detailData.heading,
         actions: detail.actions.map(function(a) { return a.label }),
+        ask: root.askResult ? root.askResult.text : "",
+        askOk: root.askResult ? root.askResult.ok : true,
         armed: root.armed,
         hint: detail.hint,
         kv: root.detailData.kv.map(function(r) { return r[0] + ": " + r[1] }),
         plan: root.detailData.plan.text,
         log: root.detailData.log.length,
         linked: root.detailData.linked.length,
-        linkedMore: root.detailData.linkedMore
+        linkedMore: root.detailData.linkedMore,
+        intent: root.detailData.intent,
+        result: root.detailData.result
       } : null,
       sheet: {
         open: root.sheetOpen,
@@ -488,6 +505,19 @@ Section {
           font.bold: true
         }
 
+        // The last Ask agent about this case: the engine's answer or refusal.
+        Text {
+          objectName: "caseAskResult"
+          width: parent.width
+          visible: !!root.askResult
+          textFormat: Text.PlainText
+          text: root.askResult ? root.askResult.text : ""
+          color: root.askResult && !root.askResult.ok ? Color.urgent : root.dim
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
         // An agent closed it (ADR-0027 §5); a reopen names its case.
         Text {
           width: parent.width
@@ -508,6 +538,40 @@ Section {
         width: parent.width
         rows: root.detailData ? root.detailData.kv : []
         foreground: root.foreground
+      }
+
+      // The first paragraph of Intent and Result (ADR-0038 §2), plain
+      // text; each hidden when the index has none.
+      Repeater {
+        model: root.detailData ? [["INTENT", root.detailData.intent], ["RESULT", root.detailData.result]]
+          .filter(function(p) { return p[1] !== "" }) : []
+
+        Column {
+          id: block
+          required property var modelData
+          width: parent.width
+          spacing: Style.spacing.sm
+
+          Text {
+            textFormat: Text.PlainText
+            text: block.modelData[0]
+            color: Color.muted
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            font.letterSpacing: Style.space(1)
+            font.bold: true
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: block.modelData[1]
+            color: root.foreground
+            wrapMode: Text.Wrap
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+          }
+        }
       }
 
       Column {
@@ -534,7 +598,10 @@ Section {
         Text {
           width: parent.width
           textFormat: Text.PlainText
-          text: root.detailData ? root.detailData.plan.text + ". The steps, the Intent and the Result are in the case file." : ""
+          text: !root.detailData ? ""
+            : root.detailData.plan.text + (root.detailData.intent !== "" || root.detailData.result !== ""
+              ? ". The steps and the full Intent and Result are in the case file."
+              : ". The steps, the Intent and the Result are in the case file.")
           color: root.dim
           wrapMode: Text.Wrap
           font.family: Style.font.family

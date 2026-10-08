@@ -47,8 +47,9 @@ import "Model.js" as Model
 // value and shows where to set it.
 //
 // IPC while loaded (`omarchy-shell shell call jax.seldon <method> <arg>`):
-// view "" (JSON, see view()), section <id>, select <id>, and for the Prime
-// Radiant setPeriod <id> and hover "<slot> <x>,<y>".
+// view "" (JSON, see view(); `graph` the graph's layout and timing), section
+// <id>, select <id>, and for the Prime Radiant setPeriod <id> and hover
+// "<slot> <x>,<y>".
 Item {
   id: root
 
@@ -393,6 +394,13 @@ Item {
 
   // ---- Read-out
 
+  // The graph's layout and timing (section 8), also while another section
+  // is shown (it must not tick there); null before its first visit.
+  function graphView() {
+    var graph = root.sectionItem("graph") as Graph
+    return graph ? graph.graphView() : null
+  }
+
   // What the desk shows, as JSON, for the harness and the test host.
   function view(arg) {
     var s = root.currentSection
@@ -417,6 +425,13 @@ Item {
       kpis: Model.deskKpis(root.indexData).map(function(k) { return k.id + " " + k.value }),
       counts: Model.deskCounts(root.indexData),
       notices: notices.items.map(function(n) { return n.banner.title }),
+      // the snapper notice's hover text: the engine's message and what the
+      // grant gives (WP-117)
+      snapperTip: {
+        text: notices.snapperBanner.visible ? notices.snapperBanner.tooltipText : "",
+        shown: notices.snapperBanner.tooltipShown,
+        fits: notices.snapperBanner.tooltipFits
+      },
       noticesFolded: root.noticesFolded,
       chip: header.chipText,
       chipShown: header.chipShown,
@@ -433,7 +448,8 @@ Item {
       },
       arm: { armed: root.arm.armedId, hint: root.arm.hint },
       lastError: root.service ? root.service.lastError : "",
-      sectionView: s ? s.view() : null
+      sectionView: s ? s.view() : null,
+      graph: root.graphView()
     })
   }
 

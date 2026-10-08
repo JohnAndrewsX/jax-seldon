@@ -35,12 +35,16 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
    by clipping long texts (ADR-0025): in `events` and `drift`, a `detail`,
    `resolutionDetail` or `meta` string longer than 256 bytes of JSON is cut
    and ends in `… (N more characters in the ledger)`; the ledger keeps the
-   full text. Cases, decisions and memory topics are not cut; an index of
+   full text. Cases, decisions and memory topics are not cut, except a
+   case's `intent` and `result` and a decision's `lead` (below); an index of
    1 000 000 bytes or more makes the engine warn and name the largest
    section. Since contract 2 the cut is marked beside the text (ADR-0035
    §3): an event with a clipped text has `meta.truncated: true`, a drift
    item with a clipped `detail` has `truncated: true`; the suffix stays
-   for humans. `truncated` is index-only, never in a ledger line.
+   for humans. `truncated` is index-only, never in a ledger line. The
+   first paragraphs a case's `intent` and `result` and a decision's
+   `lead` carry (rule 9, ADR-0038) are clipped the same way, with `…
+   (N more characters in the file)` and no flag.
 6. Every field the plugin displays verbatim is user content; the plugin
    escapes it and never evaluates it.
 7. Fixtures: `fixtures/index.sample.json` is the canonical example. CI
@@ -55,6 +59,9 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
      The panel marks the case and filters the Completed column by it.
    - `reopens:<caseId>` — `seldon plan reopen <caseId>` made this case.
    - `imported` — `seldon import task` made this case (WP-102).
+   - `proposed-by:agent:<name>` — `seldon drift apply` made this completed
+     case from that agent's proposed explanation (ADR-0036 §3): the words
+     are the agent's, though the user applied them.
    A user's own tag with one of these values means the same to the plugin.
 9. Contract 2 (ADR-0035). The index adds, all written by the engine:
    - kinds `case-updated` (`seldon plan set`: zone, risk or area changed;
@@ -93,6 +100,32 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
      required added, nothing removed or changed in meaning; fixtures,
      the reference derive and both sides in one PR, and this rule
      extended with the field.
+   - Optional, ADR-0038 (WP-127); an index of an earlier contract-2
+     build lacks them and is valid:
+     - `drift[].rule`: the ADR-0028 §2 rule that classified the item,
+       the `rule` of `seldon drift show` (`attention-all` under `[drift]
+       attention = "all"`); a lowercase slug of at most 64 characters, an
+       open set. The plugin reads it and runs `drift show` only without
+       it;
+     - `cases[].intent`, `cases[].result`: the first paragraph of the
+       case's *Intent* (an imported case's after its `Imported from …`
+       line) and *Result*; `decisions[].lead`: of the decision's
+       *Decision*. User content (rule 6): control characters other than
+       line breaks and tabs as spaces, direction and format characters
+       dropped (the set of SPEC-ENGINE §6, ADR-0038 as amended by
+       WP-140: also U+00AD, U+0600–U+0605, U+061C, U+180E,
+       U+2061–U+2064, U+206A–U+206F, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
+       U+1D173–U+1D17A and the tags U+E0000–U+E007F),
+       then redacted by the logbook's redaction on every build,
+       then clipped as rule 5 says; absent without text, all withheld
+       while `[redaction] patterns` do not compile;
+     - `cases[].source`: an imported case's task, `~/…/file.md#line` (or
+       `~/…/file.md` for a file imported whole), from the frontmatter key
+       `source` that `seldon import task` writes; redacted, no control,
+       bidi or format characters, at most 512 bytes (a value out of
+       that shape is left out with a build warning). Display only: never
+       an argument of any command. The import's marker stays the only
+       idempotency key.
 
 ## Changing the contract
 
@@ -117,6 +150,10 @@ seldon drift link <eventId> <caseId> [--only] --json
 seldon drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <slug>] --json -- <text>
 seldon drift dismiss <eventId> [--only] --json -- <reason>   # same rule as explain: text after `--`
 seldon drift show <eventId> --json          # full member list of a group (ADR-0013)
+seldon agent ask triage --json                  # WP-124, ADR-0036: launches the default agent to sort the open changes; ids only in its prompt
+seldon agent ask drift|case <id> --json          # Ask agent on an event (open drift only) or a case detail
+seldon drift apply <proposalId> [--item <eventId>]… --json   # applies index.triage's proposal as the user; a crisis only by --item
+seldon drift discard <proposalId> --json         # removes the proposal file; the logbook is untouched
 seldon decide --no-edit --json -- <title>        # then `open <newId> --editor --json` from the result
 seldon rebuild --json
 seldon update-impact --json
@@ -124,5 +161,6 @@ seldon doctor --only rules --json               # WP-101: read-only, on panel op
 seldon rules update --json                      # WP-101: the rules banner's one click; rewrites only the engine's block
 ```
 
-IDs are validated by regex in QML before being passed. Free text is passed
+The plugin never runs `seldon drift propose` (the agent's command; ADR-0036
+§2). IDs are validated by regex in QML before being passed. Free text is passed
 as a single argv element, never interpolated into a shell string.

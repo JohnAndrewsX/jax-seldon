@@ -39,13 +39,13 @@ button that fixes it.
 
 | Banner | Cause | Fix |
 |---|---|---|
-| Seldon engine not installed | the plugin cannot run `seldon` | *Install in terminal* runs the GitHub installer in a terminal you see; or install it yourself ([Getting started](01-getting-started.md#step-1-install-the-engine)), then *Check again* |
-| Logbook not initialised | there is no logbook yet | *Run in terminal* runs `seldon init` |
+| Install the engine (a setup step); Seldon engine missing, in red, when the engine was there before | the plugin cannot run `seldon` | *Install* opens a terminal that says what it does and runs the GitHub installer; or install it yourself ([Getting started](01-getting-started.md#step-1-install-the-engine)); then *Check again* |
+| Create your logbook | there is no logbook yet | *Create* opens a terminal that runs `seldon init`; the panel updates by itself when the logbook is there |
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` is missing or broken | *Build index* runs `seldon status` |
 | Index is stale | the index is more than two hours old | *Capture now* |
-| Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`, then `omarchy-restart-shell`. Engine: *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
-| Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest) | *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
-| Snapshots not readable | snapper refuses your user and `/.snapshots` is not readable | *Run in terminal* runs the one-time read grant; you type your password there |
+| Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`, then `omarchy-restart-shell`. Engine: *Update* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
+| Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest) | *Update* runs the installer again in a terminal (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
+| Read snapshots (optional) | snapper refuses your user and `/.snapshots` is not readable | *Grant* opens a terminal that says what the grant allows, runs the one-time read grant (you type your password there) and records the snapshots; the banner then goes by itself. Seldon works without snapshots |
 | Restart the shell to finish the update | the plugin was updated, but the shell still runs the code it loaded before (it loads new plugin code only when it restarts) | *Restart shell* runs `omarchy-restart-shell`; the bar and panels come back within seconds. See [Update the plugin](11-update-and-uninstall.md#update-the-plugin) |
 | Capture warned | a capture the plugin ran finished with a warning, such as [a state reset](#a-state-reset-was-recorded); the notice shows the first line of each warning, the pointer over it shows all of it | no button: do what the warning says. The notice goes away after the next capture without warnings |
 

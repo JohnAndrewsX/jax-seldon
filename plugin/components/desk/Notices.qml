@@ -33,6 +33,7 @@ Column {
     return all.filter(function(n) { return !!n.banner })
   }
   readonly property var statusBanner: statusItem
+  readonly property var snapperBanner: snapperItem
   readonly property var captureBanner: captureItem
 
   function fix(id, actionId) {
@@ -66,6 +67,7 @@ Column {
   }
 
   Banner {
+    id: snapperItem
     width: root.width - root.leftPadding - root.rightPadding
     banner: root.service ? root.service.snapperBanner : null
     foreground: root.foreground

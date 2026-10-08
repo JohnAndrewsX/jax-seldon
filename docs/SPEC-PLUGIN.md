@@ -56,11 +56,11 @@ plugin/
 │   │                   JournalField, NewCaseSheet, NewDecisionForm
 │   ├── overlay/        the Prime Radiant's charts (§6): Heatmap, Series, DriftBars,
 │   │                   RiskDonut, Timeline, ThePlan, OverlaySlot, ChartCanvas
+│   ├── graph/          GraphCanvas: the graph's canvas, layout ticks, pointer, card (§5.4)
 │   └── Banner.qml  MaskIcon.qml (the 0.1 tab components are ported and deleted:
 │                       WP-122 Today, Changelog, Work; WP-123 Decisions, System, Memory)
 ├── sections/           Today, Changelog, Work, Decisions, System, Memory, Radiant, Graph,
-│                       Settings; ReadingSection (the frame of Decisions, System, Memory);
-│                       SectionStub for the sections not built yet
+│                       Settings; ReadingSection (the frame of Decisions, System, Memory)
 ├── README.md  LICENSE  SECURITY.md  preview.png  assets/
 └── fixtures -> ../fixtures (NOT a symlink in the plugin folder; copied in CI for dev builds)
 ```
@@ -83,12 +83,13 @@ plugin/
   banner's fix is the constant GitHub one-liner `curl -fsSL
   https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`
   (run only on the user's click, in the floating terminal; the script
-  checks the engine against `SHA256SUMS`), and its text says "AUR
-  package: coming soon; until then install from GitHub". Both are
+  checks the engine against `SHA256SUMS`), and its text says what the
+  button does: download from the Seldon release on GitHub into
+  `~/.local/bin`, checked, as the user, no password (WP-117). Both are
   constants in `Model.js`, `INSTALL_ENGINE_COMMAND` and
   `ENGINE_MISSING_DETAIL`; they flip back to `omarchy pkg aur add
   jax-seldon` and an AUR text together when the package is live
-  (WP-044).
+  (WP-044), with the texts of `INSTALL_ENGINE_SCRIPT` (§5).
 - Exposes `function run(args)` for other files; **only fixed argument
   arrays**, never strings assembled from index content except as single
   arguments (case ids, event ids validated by regex before use).
@@ -295,8 +296,8 @@ icons only; the search is then reached by widening it).
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
-| `←`/`→` | the current section's (the Prime Radiant's periods) |
-| other letters | the current section's (`i`, `e`, `a`, `r`, `f`/`F`, `x`, `d` as ADR-0034 §2 lists them; sections 1–3 and 4–6 in §5.4; `h`/`l` the Prime Radiant's periods, §6) |
+| `←`/`→` | the current section's (the Prime Radiant's periods, the graph's day) |
+| other letters | the current section's (`i`, `e`, `a`, `r`, `f`/`F`, `x`, `d` as ADR-0034 §2 lists them; sections 1–3 and 4–6 in §5.4; `h`/`l` the Prime Radiant's periods, §6; the graph's `p`, `0`, `-`, `=`, §5.4) |
 
 Every character goes to the current section first (`Section.textKey`);
 the desk takes `c`, `n`, `+` only when the section did not. A focused
@@ -331,8 +332,8 @@ up (ADR-0034 §3); lists are `ListView`s.
 | 8 | Graph | WP-125 (ADR-0034 §5) |
 | `,` | Settings | WP-121 (§5.5) |
 
-Until a section is built it is a stub (`SectionStub.qml`): its title and
-"Coming in WP-12x." in the list and the detail.
+Every section is built (the stubs of WP-121, `SectionStub.qml`, went
+with WP-125).
 
 In every section the **selection is the cursor**: ↑/↓ (`k`/`j`) move it
 and the detail follows; it is an id, so it stays on its item when a new
@@ -372,8 +373,16 @@ resolved here, it leaves NEEDS YOU and stays shown with the engine's answer.
 
 #### Changelog (2)
 
-The list: the slot of "Agent sorts N open changes" (`triageSlot`, empty
-until WP-124b), the chips **open · crisis · attention · routine · in
+The list: the triage slot (`triageSlot`, WP-124b; ADR-0034 §6,
+ADR-0036) — **Agent sorts N open changes** (N = the open changes, a group
+once) while something is open and the engine can write
+(`Service.triageButton`; whether a default agent exists only the engine
+knows, so a refusal names the fix under the button): `agent ask triage
+--json`, "Starting an agent…" with a spinner while it runs, then the
+engine's answer or refusal; and, while the index names a proposal
+(`index.triage`), its row "Proposal · N items proposed by <actor> at <at>,
+C crises held back — apply each below", which shows the proposal in the
+detail (below). Then the chips **open · crisis · attention · routine · in
 case · all** with their counts (`f` / `F` the next / previous; default
 open). A row's class: open drift with `crisis` → crisis; other open drift,
 group members included → attention; else with a case → in case; else
@@ -399,9 +408,58 @@ it was. The shim's `filter <source>` and a payload `filter` that is a
 source name show "all" with the source in the sidebar search; a chip id
 selects that chip.
 
+The proposal (`TriageDetail.qml`, WP-124b): the file `index.triage.path`
+names, next to `index.json` (CONTRACT.md rule 1; exactly
+`proposals/<id>.json`, `Model.triagePath`), read by a FileView and checked
+against `proposal.schema.json` (`Model.parseProposal`: only its
+properties, `logbook` present, `at` and `applied` date-times, the length
+limits, a link without title or intent and an explanation without a case,
+at most 4 MiB of text; a file off in any part is not shown: "could not be
+read as the engine writes it"). **Bound to the proposal the user opened**
+(round 2): its row (or *Review the new proposal*) stores that id
+(`Changelog.seenProposalId`), and Apply and Discard name it. When the
+index names another proposal by then, the bar says "Replaced by a newer
+proposal by <actor> at <at> — review it", offers *Review the new
+proposal* and has Apply and Discard off, the items are not shown, and the
+service refuses the old id even when asked directly
+(`Model.triageSeen`, `Service.triageCall`); a proposal that is gone
+("Proposal <id> is not there any more …") keeps the last answer about it
+shown. Only the answer about the opened id is shown. The sticky bar:
+*Apply proposals (N)* (N the items Apply takes that are still open; one
+click, `drift apply <id> --json`; enabled also with nothing open, so a
+second run says what it skipped) and *Discard* (it removes the agent's
+unapplied work, so it arms: "Confirm discard", hint "Discard proposal
+<id>? Click Confirm discard. The logbook does not change.", then `drift
+discard <id> --json`); **under its buttons, as the bar's hint, the line
+"N items proposed by <actor> at <at>, C crises held back — apply each
+below"** (plain text, wraps). Below the bar: the state ("<actor> ·
+proposal, nothing written yet", or "Applied <at>. That marks the run, not
+every item: what is still open shows below."), the last run's answer
+("Applied N · skipped S · refused R"; a gone proposal: "… The proposal is
+gone; the list shows what is open now" — refresh, never retry), the line
+"Apply re-reads the file and every reference. If the file was changed
+since you opened it, what Apply writes can differ from what is shown
+here."; then **CRISES — EACH ON ITS OWN**: every
+item that is a crisis by the file's flag or the index's class, with
+*Apply this crisis* (`drift apply <id> --item <eventId> --json`, one per
+run); then **WHAT APPLY TAKES**. The items are built only while the pane
+is shown, by an asynchronous Loader (a 200 × 10 proposal: the click
+returns at once, the list builds in slices). Each item: the change's
+subject (from `index.events`), "Link to C-…" or "Explain: <title>" with
+the intent, the outcome of the last run (Done, Skipped: <reason>,
+Refused: <reason>, the engine's words) or "No longer open: nothing to
+apply.", and every evidence ref — its kind and ref, then the engine's text
+with "by <authors> ·" first (every author, ADR-0036 §2), wrapped (also
+inside a long path), never clipped; an item with evidence that names an
+agent or `unknown` among its authors (a Plan "worked by agent:…" too) is
+marked "Read twice: some evidence names an agent or an unknown author."
+and that text drawn in the accent colour. Every text is plain text
+(CONTRACT.md rule 6; `model.test.js` checks every `Text` of the file).
+
 The detail (`EventDetail.qml`; prototype `eventDetail`): the sticky bar
-(`Model.eventActions`) — open drift: *Ask agent* first once the engine has
-`agent ask` (WP-124b; `Service.askAgentAvailable`, false until then),
+(`Model.eventActions`) — open drift: *Ask agent* first while the engine can
+write (WP-124b; `agent ask drift <id> --json`, one click; the engine's
+answer or refusal under the title),
 *Link to case…* (*Link to C-… …* when the engine proposes one), *Explain…*,
 *Dismiss…*, and for attention *Hide* / *Show*; an event with a case: *Open
 case* (Work with the case selected; for a case the index no longer lists
@@ -409,24 +467,29 @@ case* (Work with the case selected; for a case the index no longer lists
 editor*, whose engine answer replaces the line: only the engine can tell
 whether the file is still there); routine: none; the class at the right.
 Then "source · kind", the full subject, its class, for a crisis the **Why
-loud?** callout from the engine's rule: the index has none, so the detail
-asks `seldon drift show <id> --json` (in CONTRACT.md's table, read-only;
-for a group its leader) once for a selected crisis and keeps the answer
-while the item stays a crisis (`Service.driftRules`). `always-red` → "A
+loud?** callout from the engine's rule: the drift item's `rule` (for a
+group its leader's; ADR-0038 §1), so a click starts no process; an index
+without it (an earlier contract-2 engine) makes the detail ask `seldon
+drift show <id> --json` (in CONTRACT.md's table, read-only; for a group
+its leader) once for a selected crisis and keep the answer while the item
+stays a crisis (`Service.driftRules`). `always-red` → "A
 package on your crisis list ([drift] alwaysRed in
 ~/.config/seldon/config.toml) was installed, removed or downgraded by name
 in this transaction."; `always-red-paths` → "The path matches your crisis
 list ([drift] alwaysRedPaths …)."; `attention-all` → "[drift] attention =
 "all" is set: every change without a case is open drift, and a crisis is
 a change in the red zone."; another rule is named as it is. Until the
-answer (and in dev mode, without an engine) it says only what the index
-proves: "The engine classed this <source> change as a crisis" and how to
+answer (and in dev mode, without an engine, when the index has no rule)
+it says only what the index proves: "The engine classed this <source> change as a crisis" and how to
 ask for the rule. Then, from `proposedCase`, "C-… plans it (its plan names
 this change); nothing has linked it yet." or "No open case plans it, and no
 case is linked." — the Case row ("proposed: C-…") and the Rule row
 ("crisis · rule … · planned by C-…, not linked" or "· no case") say the
-same. The key/values When · Who · What · Case · Rule · Source · Zone ·
-Resolved · Event (values wrap at word boundaries; a longer token breaks
+same. The key/values When · Who · What (· Commits) · Case · Rule · Source · Zone ·
+Resolved · Event (Commits, WP-136: a plugin update's `meta.commits` as
+plain text, one subject per line, keyed "Rolled back" when `meta.git` is
+`rollback`; absent when the event has no such string;
+values wrap at word boundaries; a longer token breaks
 anywhere; a detail the index clipped — the event's `meta.truncated` or the
 drift item's `truncated`, contract 2 — reads "(clipped in the index; the
 ledger has it in full)"), a
@@ -470,7 +533,10 @@ The detail: the sticky bar by status (`Model.caseDeskActions`) — queued:
 *Start*, *Drop*; active: *Hand to agent* (`agent start <id> --json`), *To
 verification*, *Drop*; verification: *Complete*, *Drop*; completed:
 *Reopen* (`plan reopen <id> --json`); every case *Open in editor* (`e`,
-`open <id> --editor --json`), last; id · risk at the right. Every writing
+`open <id> --editor --json`), then *Ask agent* while the engine can write
+(WP-124b; `agent ask case <id> --json`, one click, any status; the agent
+gets no case to work; the answer or refusal under the title); id · risk at
+the right. Every writing
 action but Reopen arms on the first press or click and runs on the second
 (`Arm.qml`; the button reads "Confirm …", the bar's hint names the key:
 "Hand to agent C-2026-003? Press a again or click Confirm.", "To
@@ -490,8 +556,12 @@ index carries (`Model.caseDetail`; the plugin never reads the case file,
 AGENTS.md §3): the title, "completed by agent" / "reopens C-…", the
 key/values Status · Risk (R3: "every step that can break boot needs your
 go") · Zone · Area · Priority · Agent · Rollback (the snapshot) · Dates ·
-Reopens · Proposed · File, PLAN (the steps' progress; "The steps, the
-Intent and the Result are in the case file." with *Open in editor*), LOG
+Reopens · Proposed · File · Imported from (an imported case's `source`,
+text only, ADR-0038 §3), INTENT and RESULT (the index's `intent` and
+`result`, the sections' first paragraphs, plain text; each hidden without
+it), PLAN (the steps' progress; "The steps, the Intent and the Result are
+in the case file.", or "The steps and the full Intent and Result are in
+the case file." when either text is shown, with *Open in editor*), LOG
 (this case's lifecycle events and notes in the index, newest first, with
 the risk a `case-created`/`case-started`/`case-updated` line carries,
 contract 2) and
@@ -525,6 +595,9 @@ and no action runs.
   accent stripe); above them the count ("4 decisions · 1 proposed") and
   *New decision*. The detail: "ADR-NNNN · status · date", the title (a
   superseded one struck through), for a proposed one what Accept means,
+  the first paragraph of its *Decision* as plain text (`decisions[].lead`,
+  ADR-0038; hidden without it, and the closing line then reads "The text
+  is in the file; …" instead of "The whole text is in the file; …"),
   Status / Date / File, and a CASES · N block from `decisions[].cases`
   (contract 2, ADR-0034 §5) with each case's title and status from the
   case lists (a case the index no longer lists by its id; a click goes to
@@ -565,6 +638,112 @@ and no action runs.
   logbook folder (`seldon open logbook --editor --json`) until the engine
   gains a memory target; `e` the same; nothing from the index reaches the
   argument list.
+
+**Graph (8; WP-125, ADR-0034 §5).** Solo. The machine's memory as a
+network, from the index alone; `sections/Graph.qml` with
+`components/graph/GraphCanvas.qml`.
+
+- **Data.** `Service.graph` = `Model.graphBuild(index, GRAPH_CAP)`
+  (empty while the index means nothing in the status), built only for a
+  shown section 8: an index change marks it dirty (`graphDirty`), and the
+  section calls `graphRefresh()` when it is shown and when the graph gets
+  dirty while it is shown (`graphBuilds` counts the builds). A build
+  costs about 5 ms of QV4 on 500 events, which no capture pays while the
+  graph is not on screen. Ids are looked up in maps without a prototype,
+  and a case reference (`event.case`, `drift.proposedCase`,
+  `decisions[].cases`) must match `CASE_ID` before it links: a foreign
+  index's `constructor` or `ADR-0003` as a case links nothing. Nodes: the logbook's areas (`system.areas`, and any area a case
+  names that the list lacks), the cases of all four lists, the decisions,
+  and the events whose kind is a change (`Model.GRAPH_CHANGE_KINDS` and
+  `plugin-*`; not case lifecycle, notes, corrections, resolutions, state
+  loss): the index's events, then open drift items it no longer lists
+  among them. A change is a crisis when its id is in `drift[]` with
+  `crisis: true`. Edges, once each (a solid one wins over a dashed one):
+  `event.case` → case, `case.area` → area, `decisions[].cases` → case
+  (contract 2; an index without the field has none), `drift.proposedCase`
+  → case dashed. Day index: an event's date (`ts`), a case's `created`
+  (else `started`, `closed`, today), a decision's `date` (else today); an
+  area takes its earliest neighbour's day, one without a neighbour the
+  first day; days count from the earliest. **Cap 400** (`GRAPH_CAP`):
+  beyond it changes fold into cluster nodes ("+N") — by day and source,
+  else by day, ISO week, month: the finest level that fits, the biggest
+  groups first and only as many as the cap needs. Areas, cases, decisions
+  and crises never fold. A cluster carries its members' links; its card
+  lists up to 12 of its changes, newest first. **More fixed nodes than
+  the cap** (areas, cases, decisions and crises together over 400):
+  `build.still` — a still picture in node order (the start layout: a
+  node beside a placed neighbour, else on the spiral), no force step and
+  no tick ever (ADR-0034 §5's static escalation), the caption says "A
+  still picture: N areas, cases, decisions and crises are more than the
+  400 nodes the layout moves"; hover, drag (the node moves at once),
+  pan, zoom and the replay's cut still work.
+- **Layout.** `Model.graphState(build, prev)` (plain arrays: QV4 reads
+  them faster than typed ones; positions kept by id across index
+  updates; a new node starts beside a placed neighbour, else on a
+  sunflower spiral; deterministic) and `Model.graphStep(state,
+  budgetMs)`: one force iteration — repulsion (each pair exactly up to
+  160 visible nodes, a Barnes–Hut quadtree with θ 0.9 above), a pull to
+  the centre, springs along the edges, all scaled by alpha, which decays
+  from 1 to 0.001 over 200 ticks; then the layout sleeps (the state
+  counts which repulsion ran, `exactSteps` and `treeSteps`: the tests
+  hold 400 nodes to the tree). `graphWarm`
+  runs the functions on a six-node graph once, so the first real tick
+  is not interpreted. The service keeps the layout (`graphLayout`): a
+  reopened desk shows it settled, without a tick.
+- **The shell thread** (ADR-0034 §5's budget). A Timer of 34 ms (≤ 30
+  Hz) steps the layout only while section 8 is shown in the open desk
+  and the layout is awake. A tick is one `graphStep` plus the drawing
+  calls of its paint: `tickMs` = `stepMs` + `drawMs`, at most 8 ms;
+  every tick is timed (`tickMsMax`, `ticksOver`, the first five slow ones
+  in `slowTicks`). The Canvas rasterises on its own thread
+  (`Canvas.Threaded`; `paintMs` until the picture is there), one path per
+  node (one path with 400 antialiased discs took 20 ms to fill, 400
+  paths 2 ms), and a paint allocates nothing on the JS heap but the
+  focus's neighbour set. Dragging a node and the replay wake the layout
+  (alpha at least 0.3, the tick count from zero). ADR-0034 §5's "drag,
+  pan, zoom, hover and replay wake it" is read as: pan, zoom and hover
+  repaint (the layout stays asleep) — they move no node, so a tick would
+  change nothing. TESTING.md has the measurements.
+- **Screen.** Row 1: "Graph", the caption, *Play growth* (*Pause* while
+  playing), the date slider (the cut-off day: nodes of later days are
+  hidden and take no part in the layout) and "YYYY-MM-DD · N nodes [of
+  M]". Row 2: the legend — Case (accent disc; closed cases at 50 %), Area
+  (a foreground ring), Decision (a square, foreground at 72 %), Change (a
+  dot, foreground at 42 %, larger with more links), Crisis (the urgent
+  spindle), Folded (a ringed dot, only when something folded) — and the
+  keys while there is room. Then the canvas, and the footer: "Newest N
+  events · M completed cases in the index", with " · older ones are only
+  in the logbook" once the index is at its limits (500 events, 50
+  completed cases), and " · K changes folded into G". Until the view is
+  panned or zoomed (or a node dragged) it fits the visible nodes; `0` or
+  a fit returns to that. A node keeps a few pixels on screen however far
+  out the zoom is. Labels: areas and crises always; cases, decisions and
+  folded groups from zoom 0.5 once the layout rests; at most 40, by that
+  priority; a change only with the focus. A label that would leave the
+  canvas at the right goes to the left of its node; labels stay inside
+  it vertically.
+- **Pointer and card.** Hover lights a node and its links (the rest at
+  25 %) and shows its card at the top right: the title, "Kind · since
+  YYYY-MM-DD · day N · M links", status · risk · area (a case) or source
+  · kind (a change), a folded group's changes, and *Open case* for a case
+  or a change linked to one (Work with the case selected). The card stays
+  on the last hovered node while the pointer travels to it; a click on
+  the background or Esc lets it go; a click on a node keeps it, as
+  `select <id>` does. Dragging a node holds it at the pointer and the
+  rest follows; dragging the background pans; the wheel zooms at the
+  pointer (0.15–4).
+- **Replay.** *Play growth*, Space, Enter or `p` play from the first day
+  (or on from the cut when it is before the last day) in about 50 steps
+  120 ms apart; a node that appears starts beside a visible neighbour;
+  again pauses. `←`/`→` move the cut one day, the slider sets it. The
+  slider's knob does not animate while playing (a running QML animation
+  throttles the shell thread to the display's frames). `-` and `=` zoom
+  out and in. Esc: pause, then let a kept card go, then the desk's order.
+- Without an index: "No index to show"; with nothing to draw: "Nothing to
+  draw yet: no areas, cases, decisions or changes in the index". The
+  plugin reads only the index (§3, AGENTS.md §3); a `seldon graph --json`
+  export over the whole logbook is deferred (ADR-0034 §5), so the footer
+  says what the index holds.
 
 ### 5.5 Settings
 
@@ -615,31 +794,34 @@ what their update did, the capture warnings. Each is `Banner.qml` on the
 service's object; a fix goes to `Service.fix(action, banner)`. Their
 texts and fixes:
 
-Banner states (under the header): engine missing → "Install the engine:"
-the GitHub one-liner while the AUR package does not exist (§3,
-ADR-0024), afterwards `omarchy pkg aur add jax-seldon` (ADR-0016;
-`omarchy pkg add` reaches the official repositories only), with *Install in
-terminal*, *Copy* and *Check again*; contract
+Banner states (under the header), each detail one sentence (WP-117):
+engine missing → the GitHub one-liner while the AUR package does not
+exist (§3, ADR-0024), afterwards `omarchy pkg aur add jax-seldon`
+(ADR-0016; `omarchy pkg add` reaches the official repositories only),
+with *Install*, *Copy* and *Check again*; without an index it is the
+first setup step, "Install the engine" in the accent tone, with an index
+(the engine was there and is gone) "Seldon engine missing" in the urgent
+tone; contract
 mismatch → `omarchy plugin update jax.seldon` when the plugin is older
 than the index, the GitHub installer one-liner when the engine is older (until the
-AUR package is live, ADR-0024); engine older than the manifest's
+AUR package is live, ADR-0024), with *Update* and *Copy*; engine older than the manifest's
 `engineMin` (§3; in place of every status banner but engine missing and
-contract mismatch) → "Engine too old", "Update the engine to at least
-X", the same installer one-liner with *Update in terminal*, *Copy* and
+contract mismatch) → "Engine too old", "This plugin needs engine X or
+newer and seldon reports Y.", the same installer one-liner with *Update*, *Copy* and
 *Check again* (WP-068); snapshots
-not readable (ADR-0026) → the one-line read grant
-`sudo setfacl -m u:$USER:rx /.snapshots` with *Run in terminal*, *Copy*
-and *Check again*; the detail is the engine's message, then on its own
-line what the fix grants (read access to the snapshot directory listing
-and the snapshot info files, no snapshot creation, change or deletion)
-(WP-054, issue #2); *Check again*
+not readable (ADR-0026) → "Read snapshots (optional)", "A one-time read
+grant on /.snapshots; it asks for your password once, and Seldon works
+without it.", the one-line read grant
+`sudo setfacl -m u:$USER:rx /.snapshots` with *Grant*, *Copy*
+and *Check again*; the engine's message and, on its own line, what the
+grant gives (read access to the snapshot directory listing and the
+snapshot info files, no snapshot creation, change or deletion) are the
+banner's hover text; *Check again*
 runs a capture, the same call as *Capture now* (`capture --all --json
 --quiet`, then `status --json`), because only a capture rewrites the
-collector state this banner reads (reloading the index would not); after
-*Run in terminal* the banner shows "When the command has finished, press
-Check again" under its buttons until the index next changes; not
-initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
-*Check again*; index stale →
+collector state this banner reads (reloading the index would not; WP-054);
+not initialised → "Create your logbook", `seldon init`, with *Create*,
+*Copy* and *Check again*; index stale →
 *Capture now*; outdated agent rules (WP-101, ADR-0027 migration) → "The
 logbook's agent rules are outdated (v1)" from the `rules` row of `seldon
 doctor --only rules --json`, which the service runs when the desk opens (and when the
@@ -658,6 +840,41 @@ crisis strip ("N changes that can affect boot, login or the shell have no
 case", ADR-0028 §4b) has no successor in the desk: the header's crises
 figure (urgent while `summary.crisis` > 0) and Today's "Needs you"
 (WP-122) carry it.
+
+Terminal scripts (WP-117). *Copy* puts the banner's plain command on the
+clipboard; *Install*, *Create*, *Grant* and *Update* open Omarchy's
+presentation terminal (`omarchy-launch-floating-terminal-with-presentation`:
+logo, the script, "Done!", the theme's gum colours) with the banner's
+script, one of five constants in `Model.js` (`INSTALL_ENGINE_SCRIPT`,
+`UPDATE_ENGINE_SCRIPT`, `UPDATE_PLUGIN_SCRIPT`, `INIT_SCRIPT`,
+`SNAPPER_FIX_SCRIPT`); the service launches nothing else
+(`Model.terminalArgv`). Each follows Omarchy's own scripts: a bold `gum
+style` line "Seldon: <what>", one paragraph (why; whether it asks for a
+password), the command indented as *Copy* copies it, the command run in
+`(set -o pipefail; …)`, then one line of what changed, green (palette 2)
+on success, red (palette 1) on failure. A result line never claims more
+than happened: after a failed install or engine update it says "The
+install (update) did not finish. Run it again; your logbook is
+untouched." (install.sh can stop after it replaced the binary). The
+script then ends with status 0, so the wrapper's "Done!" follows. Ctrl+C
+(or TERM) is trapped: the script skips a command that has not started,
+prints a "Cancelled. …" line (palette 3) and ends with 130, Omarchy's
+"cancelled" status, on which the wrapper prints no "Done!" and the window
+closes, as with Omarchy's own scripts. After a successful snapshot grant
+the script runs `seldon capture` (once more if the lock is held), which
+rewrites the index, so the banner goes without a click; only when a
+capture succeeded does it say "Snapshots are now recorded. The panel
+updates by itself.", else "Read access granted. Seldon records snapshots
+at its next capture." After an engine update it runs `seldon status`, so
+the new engine rewrites the index. `seldon init` writes the index itself.
+After an install or update the engine is probed only on *Check again*,
+and the result line says so. The scripts are built once from string
+literals: nothing from the index, the logbook or the environment is in
+them (AGENTS.md §8); `$USER` stays literal in the shown command and is
+expanded only where it runs, there as `${USER:?}` in the grant, which
+stops before `sudo` when USER is empty (a grant `u::rx` would change the
+owner bits). ADR-0026 holds: the engine never runs the grant, the user's
+click runs it in the user's terminal.
 
 Header mark (WP-051): the A5 lockup — the mark, then "SELDON" in the heading
 font (`Style.font.heading`, bold), baseline-aligned. Metrics from
@@ -678,7 +895,7 @@ tone — engine missing → `engine-missing`, not initialised →
 `logbook-not-initialised`, index missing (or unreadable) →
 `index-missing`, index stale → `index-stale`; the contract mismatch and
 the snapper banner have none. The Today tab shows the day's state left of
-the date and the counts (events today, in 7 days, active, queued, and
+the date and the counts (events today — "1 event today" — in 7 days, active, queued, and
 "without a case", the attention count `openDrift − crisis`, the number the
 tooltip and the Changelog line show), `Style.space(48)`: crisis (urgent) when any
 crisis, else case active (accent) when active cases, else all clear
@@ -872,7 +1089,11 @@ All charts are drawn with `Canvas` or `Shape` from arrays prepared by
 ## 7. Theming
 
 Every colour from `Style` / the bar's palette; charts use `accent`,
-`foreground` at opacities, `Color.urgent` for crises and R3. Font from the bar. Test with
+`foreground` at opacities, `Color.urgent` for crises and R3. The graph
+(§5.4) has no token for the prototype's area and decision colours: an
+area is a foreground ring, a decision a foreground square, a change a
+foreground dot (shape and opacity tell them apart, as the Timeline's A12
+markers do); a case is accent, a crisis urgent. Font from the bar. Test with
 at least three Omarchy themes incl. a light one.
 
 ## 8. Keybinding and IPC
@@ -912,7 +1133,18 @@ loaded. Routes the plugin honours:
   7 shown, `view`'s `sectionView` holds period, window, caption, grid mode
   and area, `scrolls`, the aggregation passes (`service`, `section`) and
   the six slots (counts, window geometry, chart summary, numbers, empty,
-  hover, paints, paintMs, plot size). WP-125 adds the graph's read-outs.
+  hover, paints, paintMs, plot size). Once section 8 has been visited,
+`view`'s `graph` holds the graph's read-out — also while another
+section is shown, so a check can see that nothing ticks there (null
+before): nodes, edges, folded, clusters, numbers, visible, cut, span,
+date, ticks (all), run (since the last wake), alpha, sleeping, timer,
+stepMs, drawMs, paintMs, tickMs, tickMsMax, tickSamples, slowTicks,
+ticksOver, flipped (labels the last paint drew left of their node), over
+(steps over the budget), stepMsMax, paints, wakes,
+playing, replay (the visible count after each step of the last replay),
+hovered, pinned, cardNode, card, view `{ x, y, k, fit }`. `select <id>`
+with section 8 shown keeps that node's card ("not found" for an unknown
+id).
 - The shim: `IpcHandler` target **`jax.seldon.panel`**, owned by the bar
   widget, kept for one minor release (removed in 0.3.0, announced in the
   CHANGELOG; ADR-0034 §7). It forwards through the plugin's facade:
@@ -970,8 +1202,9 @@ No network. No bundled binaries, units or installers. Reads one JSON file,
 and its own images under `plugin/assets/` (SVG and PNG artwork, no
 scripts; WP-051).
 Runs the `seldon` engine with fixed arguments (the forms in CONTRACT.md).
-Besides the engine it starts only `wl-copy` and Omarchy's floating-terminal
-launcher, each with one constant command, only on a banner click, and
+Besides the engine it starts only `wl-copy` with one constant command and
+Omarchy's floating-terminal launcher with one constant script (§5), only
+on a banner click, and
 `omarchy-restart-shell` without arguments on the restart notice's click
 (WP-090). Never a
 shell string built from logbook content. Writes no file itself; the one

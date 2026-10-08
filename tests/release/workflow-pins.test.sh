@@ -228,7 +228,7 @@ expect_problem "no cargo audit step" "does not run cargo audit" \
 expect_problem "cargo audit without the ignore list" "does not run cargo audit" \
   's/ "\$\{args\[@\]\}"$//'
 expect_problem "cargo-audit not installed" "does not install cargo-audit" \
-  's/ cargo-audit$//'
+  's/ cargo-audit( |$)/\1/'
 expect_problem "cargo audit after just check" "before just check" \
   's/^(      - name: cargo audit)$/      - name: early\n        run: just check\n\n\1/'
 expect_problem "release job without build" "does not need build" \

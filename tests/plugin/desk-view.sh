@@ -8,8 +8,10 @@
 # one write per release, the notices under the header (today's banners
 # with their fixes), and the sections built so far: Decisions, System,
 # Memory and the Prime Radiant (WP-123; its charts' first-frame and paint
-# counters, hover read-outs and grid at every desk width). The old panel's and overlay's scenarios and where each
-# went are listed in tests/plugin/COVERAGE.md.
+# counters, hover read-outs and grid at every desk width), the graph
+# (WP-125; its layout ticks and their time, replay, hover, drag). The old
+# panel's and overlay's scenarios and where each went are listed in
+# tests/plugin/COVERAGE.md.
 #
 # Like the old panel and overlay harnesses, it builds a temp config root with
 # copies of the installed shell's Commons/ and Ui/, so `import qs.*`
@@ -21,7 +23,7 @@
 #
 # DESK_SHOTS=<dir> also renders the desk in three themes at 100 % and 50 %
 # into <dir> (offscreen renders, not live screenshots).
-# Needs quickshell, jq and the installed shell (host check; docs/TESTING.md).
+# Needs quickshell, jq, node and the installed shell (host check; docs/TESTING.md).
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -32,6 +34,7 @@ shell_dir="$omarchy/shell"
 qs_bin=$(command -v quickshell || command -v qs || true)
 [[ -n $qs_bin ]] || { echo "desk-view: quickshell not found" >&2; exit 1; }
 command -v jq >/dev/null || { echo "desk-view: jq not found" >&2; exit 1; }
+command -v node >/dev/null || { echo "desk-view: node not found" >&2; exit 1; }
 [[ -d $shell_dir/Commons && -d $shell_dir/Ui ]] || { echo "desk-view: shell not found at $shell_dir" >&2; exit 1; }
 timeout_bin=$(command -v timeout) || { echo "desk-view: timeout not found" >&2; exit 1; }
 
@@ -419,34 +422,59 @@ clean_log stacked
 # ---------------------------------------------------------------------------
 # 7. The notices under the header (today's banners, with their fixes) and
 #    the header's chip.
-# 7a. Snapper not readable (ADR-0026, WP-054): the notice with Run in
-#     terminal and Check again; after the click, the hint under the buttons.
-#     On a narrow desk the chip's title does not fit beside the KPI strip:
-#     it says "1 notice".
-run snapper "$fx/index-variants/snapper-degraded.json" 1920x1080 "summon;click:Run in terminal;resize:1000x900" \
+# 7a. Snapper not readable (ADR-0026, WP-054): the notice with Grant, Copy
+#     and Check again (WP-117): one sentence, the plain command; the
+#     engine's message and what the grant gives on hover. Grant opens the
+#     terminal script and adds no hint. On a narrow desk the chip's title
+#     does not fit beside the KPI strip: it says "1 notice".
+run snapper "$fx/index-variants/snapper-degraded.json" 1920x1080 \
+  "summon;click:Grant;hover:Read snapshots (optional);wait:snapperTip.shown=true;view;resize:1000x900" \
   HARNESS_RECORD="$work/snapper.record"
-expect snapper 1 '.view.notices | join(",")' "Snapshots not readable"
-expect snapper 1 .view.chip "Snapshots not readable"
+expect snapper 1 '.view.notices | join(",")' "Read snapshots (optional)"
+expect snapper 1 .view.chip "Read snapshots (optional)"
 shows snapper 1 'sudo setfacl -m u:$USER:rx /.snapshots'
+shows snapper 1 "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it."
+shows snapper 1 "Grant"
+shows snapper 1 "Copy"
 shows snapper 1 "Check again"
-expect snapper 1 '[.texts[] | select(. == "When the command has finished, press Check again")] | length' 0
-shows snapper 2 "When the command has finished, press Check again"
-expect snapper 1 .view.chipShown "▾ Snapshots not readable"
-expect snapper 3 .view.chipShown "▾ 1 notice"
-expect snapper 3 '.overflow | join(" | ")' ""
+expect snapper 1 '[.texts[] | select(. == "Run in terminal")] | length' 0
+expect snapper 1 '[.texts[] | select(contains("snapshot directory listing"))] | length' 0
+expect snapper 2 '[.texts[] | select(startswith("When the command has finished"))] | length' 0
+snapper_grants="The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
+snapper_message=$(jq -r '.state.collectors[] | select(.name == "snapper") | .message' "$fx/index-variants/snapper-degraded.json")
+expect snapper 1 .view.snapperTip.shown false
+expect snapper 5 .view.snapperTip.text "$snapper_message"$'\n'"$snapper_grants"
+expect snapper 5 .view.snapperTip.shown true
+expect snapper 5 .view.snapperTip.fits true
+# the launcher's argv is the grant script, verbatim (model.test.js pins its text)
+script=$(node -e '
+  const fs = require("fs"), vm = require("vm"), M = {}
+  vm.createContext(M)
+  vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), M)
+  process.stdout.write(M.SNAPPER_FIX_SCRIPT)' "$root/plugin/Model.js")
+deadline=$((SECONDS + 15))
+until [[ -s $work/snapper.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
+check "snapper: Grant opened the terminal with the grant script" \
+  "$(cat "$work/snapper.record" 2>/dev/null || true)" \
+  "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$script" --)"
+expect snapper 1 .view.chipShown "▾ Read snapshots (optional)"
+expect snapper 6 .view.chipShown "▾ 1 notice"
+expect snapper 6 '.overflow | join(" | ")' ""
 clean_log snapper
 
 # 7b. Not initialised: the status notice with its pictogram's fix, no KPI
 #     figures, no counts; the chip folds and unfolds the notices.
 run uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon;clickName:deskChip;clickName:deskChip"
 expect uninit 1 .view.status notInitialised
-expect uninit 1 '.view.notices | join(",")' "Logbook not initialised"
+expect uninit 1 '.view.notices | join(",")' "Create your logbook"
 expect uninit 1 '.view.kpis | length' 0
 expect uninit 1 '[.view.counts[] | .text] | join("")' ""
-shows uninit 1 "Create your logbook once with seldon init."
+shows uninit 1 "Sets up your logbook and starts recording; the terminal asks a few questions, no password."
+shows uninit 1 "seldon init"
+shows uninit 1 "Create"
 expect uninit 2 .view.noticesFolded true
-expect uninit 2 '[.texts[] | select(. == "Create your logbook once with seldon init.")] | length' 0
-shows uninit 2 "▸ Logbook not initialised"
+expect uninit 2 '[.texts[] | select(. == "Sets up your logbook and starts recording; the terminal asks a few questions, no password.")] | length' 0
+shows uninit 2 "▸ Create your logbook"
 expect uninit 3 .view.noticesFolded false
 clean_log uninit
 
@@ -461,7 +489,7 @@ expect restart-same 1 .view.chip ""
 clean_log restart-same
 run restart-updated "$fx/index-variants/not-initialised.json" 1920x1080 "summon;click:Restart shell;click:Restart shell" \
   HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")" HARNESS_RECORD="$work/restart-updated.record"
-expect restart-updated 1 '.view.notices | join(",")' "Restart the shell to finish the update,Logbook not initialised"
+expect restart-updated 1 '.view.notices | join(",")' "Restart the shell to finish the update,Create your logbook"
 expect restart-updated 1 .view.chip "Restart the shell to finish the update +1"
 shows restart-updated 1 "Seldon 99.0.0 is installed, but the shell still runs $(jq -r .version <<<"$manifest"). The shell loads new plugin code only when it restarts."
 deadline=$((SECONDS + 15))
@@ -569,7 +597,8 @@ done
 expect today 2 "[$tv.selected, $tv.shown, $tv.detail.cls] | join(\",\")" "$UNIT,event,crisis"
 expect today 2 "$tv.detail.actions | join(\",\")" "Link to case…,Explain…,Dismiss…"
 shows today 2 "Why loud?"
-shows today 2 "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
+# the rule is the index's (ADR-0038 §1): known in dev mode too, no engine call
+shows today 2 "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
 shows today 2 "~/.config/systemd/user/ollama.service"
 expect today 3 "$tv.selected" "$HOOK_EVENT"
 expect today 4 "[$tv.cursor, $tv.selected, $tv.shown] | map(tostring) | join(\",\")" "6,toggle,overview"
@@ -581,6 +610,14 @@ expect today 7 "[.view.section, .view.selected] | join(\",\")" "work,C-2026-004"
 for i in 1 2 5 7; do expect today $i '.overflow | join(" | ")' ""; done
 clean_log today
 
+# 8a'. One event today: the tile's singular (WP-117, panel 4b).
+jq '.summary.eventsToday = 1' "$sample" >"$work/one-event.json"
+run one-event "$work/one-event.json" 1920x1080 "summon"
+expect one-event 1 "$tv.tiles | join(\",\")" "event today 1,7 days 53"
+shows one-event 1 "event today"
+expect one-event 1 '[.texts[] | select(. == "events today")] | length' 0
+clean_log one-event
+
 # A crisis resolved from Today stays shown with the engine's answer after
 # it leaves NEEDS YOU (live).
 mkdir -p "$work/home-today-resolve"
@@ -589,7 +626,7 @@ run today-resolve "" 1920x1080 "summon;key:Down;key:Return;type:hook test;key:Re
 expect today-resolve 3 "[$tv.detail.form.shown, $tv.detail.form.action, .view.keys] | map(tostring) | join(\",\")" "true,explain,false"
 expect today-resolve 8 "[$tv.selected, $tv.shown, ($tv.needs | join(\"+\")), $tv.headline] | join(\",\")" "$UNIT,event,$HOOK_EVENT,Seldon is recording. 1 change needs you."
 expect today-resolve 8 "[$tv.detail.form.result, ($tv.detail.actions | join(\"+\")), .view.keys] | map(tostring) | join(\",\")" "Explained 1 event · created C-2026-009,Open case,true"
-argv_check today-resolve "$work/home-today-resolve" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift explain $UNIT --json -- "hook test")")"
+argv_check today-resolve "$work/home-today-resolve" "$(printf '%s\n' "$startup" "$(q drift explain $UNIT --json -- "hook test")")"
 clean_log today-resolve
 
 # The sidebar search filters Today's crises and entries (yesterday's too).
@@ -671,7 +708,7 @@ clean_log today-new
 run changelog "$sample" 1920x1080 \
   "summon:$cl;text:f;text:F;text:F;select:$MESA;key:Return;key:Escape;shim:filter:pacman;key:Escape;shim:resolve:$LIB32;key:Return;key:Escape;shim:resolve:crisis;select:$THEME;click:Hide;text:f;click:Show"
 expect changelog 1 "[.view.section, $tv.chip] | join(\",\")" "changelog,open"
-expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 30,case 37,all 75"
+expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 31,case 37,all 76"
 expect changelog 1 "[$tv.rows, $tv.cursor] | map(tostring) | join(\",\")" "6,0"
 # One count everywhere (B2): the open chip = the sidebar's Changelog count,
 # crisis = the header's crises, attention = the header's attention = the
@@ -682,7 +719,7 @@ expect changelog 1 "$tv.selected" "$THEME"
 expect changelog 1 "$tv.stripes | join(\",\")" \
   "tokyo-night attention,~/.config/systemd/user/ollama.service crisis,ollama attention,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh crisis,~/.config/hypr/monitors.conf attention,mesa attention"
 expect changelog 1 "$tv.badges | join(\",\")" "mesa +2"
-expect changelog 1 "[$tv.attention, $tv.attentionDim, $tv.triageSlot] | map(tostring) | join(\",\")" "4 changes without a case,true,false"
+expect changelog 1 "[$tv.attention, $tv.attentionDim, $tv.triageSlot] | map(tostring) | join(\",\")" "4 changes without a case,true,true"
 expect changelog 1 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Hide"
 expect changelog 1 "[$td.heading, $td.cls, $td.whyLoud] | join(\",\")" "theme · theme-set,attention,"
 expect changelog 1 "$td.kv | join(\" | \")" \
@@ -695,7 +732,7 @@ for text in "6 changes · newest first" "4 changes without a case" "proposed for
 done
 expect changelog 2 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "crisis,2,$UNIT"
 expect changelog 3 "$tv.chip" open
-expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,75"
+expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,76"
 expect changelog 5 "[.call, $tv.selected, $tf.subject, $tf.badge] | join(\",\")" "ok,$MESA,mesa,+2"
 expect changelog 5 "$tf.members | join(\" | \")" \
   "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
@@ -706,12 +743,12 @@ shows changelog 6 "Only mesa"
 shows changelog 6 "EXPLAIN"
 expect changelog 7 "[$tf.shown, $tf.editing, .view.keys, .view.opened] | map(tostring) | join(\",\")" "false,false,true,true"
 expect changelog 8 "[.call, $tv.chip, .view.search.text, $tv.rows] | map(tostring) | join(\",\")" "ok,all,pacman,16"
-expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",75,true"
+expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",76,true"
 expect changelog 10 "[$tv.selected, $tf.eventId, $tf.subject] | join(\",\")" "$LIB32,$LIB32,mesa"
 shows changelog 11 "Only lib32-mesa"
 expect changelog 13 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "crisis,2"
 expect changelog 14 "[.call, $tv.chip, $tv.selected] | join(\",\")" "ok,all,$THEME"
-expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,75"
+expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,76"
 expect changelog 15 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Show"
 shows changelog 15 "attention · hidden this session"
 expect changelog 16 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "open,5,$UNIT"
@@ -752,7 +789,7 @@ expect quiet-crisis 2 "[$tv.attention, $tv.attentionDim] | map(tostring) | join(
 expect quiet-crisis 2 "$tv.stripes | join(\",\")" \
   "tokyo-night attention,$HOOK crisis,ollama attention,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh attention,~/.config/hypr/monitors.conf attention,mesa attention"
 expect quiet-crisis 3 "[$td.cls, $tf.crisis, $tf.zone, $tf.explainZone] | map(tostring) | join(\",\")" "crisis,true,yellow,yellow"
-expect quiet-crisis 3 "$td.whyLoud" "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
+expect quiet-crisis 3 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
 expect quiet-crisis 3 "$td.actions | join(\",\")" "Link to case…,Explain…,Dismiss…"
 expect quiet-crisis 4 "[$td.cls, $tf.crisis, $tf.zone, $td.whyLoud] | map(tostring) | join(\",\")" "attention,false,red,"
 expect quiet-crisis 4 '[.texts[] | select(. == "Why loud?")] | length' 0
@@ -811,7 +848,7 @@ expect drift-live 29 "[($tv.badges | length), ($td.actions | length), .pill.text
 expect drift-live 30 "$tv.groups | join(\",\")" "active 2,verification 1,queued 3,completed 3"
 expect drift-live 30 "$tv.ids | index(\"C-2026-009\") >= 6" true
 argv_check drift-live "$work/home-drift" "$(printf '%s\n' "$startup" \
-  "$(q drift link $THEME C-2026-005 --json)" "$(q drift show $UNIT --json)" \
+  "$(q drift link $THEME C-2026-005 --json)" \
   "$(q drift explain $UNIT --risk R2 --area dev-env --json -- " --help ")" \
   "$(q drift dismiss $MESA --json -- "routine update  ")")"
 clean_log drift-live
@@ -895,7 +932,8 @@ expect work 1 "$tc.kv | join(\" | \")" \
 expect work 1 "[$tc.plan, $tc.log, $tc.linked, $tc.hint] | map(tostring) | join(\",\")" "4 of 5 steps done,3,5,Dev mode is read-only"
 for text in "ACTIVE · 2" "VERIFICATION · 1" "QUEUED · 3" "COMPLETED · 2" "2 / 3 active" "C-2026-005 · R1 · themes · 1 proposed" \
   "4/5" "Run" "New case" "By agent" "Dev mode is read-only" "PLAN" "LOG" "LINKED CHANGES · 5" "C-2026-003 · R3" \
-  "4 of 5 steps done. The steps, the Intent and the Result are in the case file." "case-started · human · R3" "case-updated · human · R3" \
+  "4 of 5 steps done. The steps and the full Intent and Result are in the case file." "case-started · human · R3" "case-updated · human · R3" \
+  "INTENT" "Omarchy 4.0.7 einspielen, ohne die eigenen Hyprland-Bindings zu verlieren." \
   "Omarchy auf 4.0.7 aktualisieren" "Hand to agent" "To verification"; do
   shows work 1 "$text"
 done
@@ -945,10 +983,10 @@ expect work-live 22 "[$tc.armed, $tc.hint] | join(\",\")" "start,Start C-2026-00
 shows work-live 22 "Confirm start"
 expect work-live 25 "[$tv.result, $tv.selected, ($tv.groups | join(\"+\")), $tv.wip] | join(\",\")" "C-2026-005: queued → active,C-2026-005,active 3+verification 1+queued 3+completed 2,3 / 3 active"
 shows work-live 25 "3 / 3 active · at the limit"
-expect work-live 25 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor"
-expect work-live 26 "[$tc.armed, ($tc.actions | join(\"+\"))] | join(\",\")" "verify,Hand to agent+Confirm to verification+Drop+Open in editor"
+expect work-live 25 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor,Ask agent"
+expect work-live 26 "[$tc.armed, ($tc.actions | join(\"+\"))] | join(\",\")" "verify,Hand to agent+Confirm to verification+Drop+Open in editor+Ask agent"
 expect work-live 29 "$tv.result" "C-2026-005: active → verification"
-expect work-live 33 "[$tv.result, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md,Reopen+Open in editor"
+expect work-live 33 "[$tv.result, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md,Reopen+Open in editor+Ask agent"
 expect work-live 33 "$tv.groups | join(\",\")" "active 2,verification 1,queued 3,completed 3"
 expect work-live 37 "$tc.armed" done
 expect work-live 38 "$tc.armed" ""
@@ -958,7 +996,7 @@ expect work-live 41 "[$tv.result, $tv.resultOk, $tv.selected, .view.lastError] |
 shows work-live 41 "$refusal"
 expect work-live 43 "[$tc.armed, $tc.hint] | join(\",\")" "drop,Drop C-2026-004? Press x again or click Confirm. This is final."
 shows work-live 43 "Confirm drop"
-expect work-live 46 "[$tv.result, $tv.wip, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-004: active → dropped,1 / 3 active,Open in editor"
+expect work-live 46 "[$tv.result, $tv.wip, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-004: active → dropped,1 / 3 active,Open in editor+Ask agent"
 expect work-live 46 "$tv.groups | join(\",\")" "active 1,verification 1,queued 3,completed 4"
 argv_check work-live "$work/home-work" "$(printf '%s\n' "$startup" \
   "$(q plan new --zone red --risk R2 --area dev-env --priority high --json -- " --help")" \
@@ -1055,7 +1093,7 @@ expect tab-focus 14 "$tv.cursor" 1
 expect tab-focus 16 "[.view.section, $tv.sheet.open, $tv.sheet.title, $tv.result] | map(tostring) | join(\",\")" "work,true,xyz,"
 expect tab-focus 18 "$tv.journal.editing" true
 expect tab-focus 21 "[.view.section, .view.keys, .view.editing] | map(tostring) | join(\",\")" "work,true,false"
-argv_check tab-focus "$work/home-tab-focus" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)")"
+argv_check tab-focus "$work/home-tab-focus" "$startup"
 clean_log tab-focus
 
 jq '.events = [
@@ -1066,11 +1104,11 @@ jq '.events = [
   ] + .events' "$sample" >"$work/after-two.json"
 mkdir -p "$work/home-cursor-follow"
 run cursor-follow "" 1920x1080 \
-  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=77;key:Return;key:Escape;text:F' \
+  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=78;key:Return;key:Escape;text:F' \
   HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
 expect cursor-follow 1 "[$tv.chip, $tv.cursor] | map(tostring) | join(\",\")" "all,0"
 expect cursor-follow 2 "[$tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "4,$THEME"
-expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "77,6,$THEME"
+expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "78,6,$THEME"
 expect cursor-follow 5 "[$tv.detail.form.shown, $tv.detail.form.eventId] | map(tostring) | join(\",\")" "true,$THEME"
 expect cursor-follow 7 "[$tv.chip, $tv.cursor, $tv.selected != \"$THEME\"] | map(tostring) | join(\",\")" "case,0,true"
 clean_log cursor-follow
@@ -1144,7 +1182,8 @@ clean_log sections-uninit
 #     lists; key/values wrap at word boundaries at 50 %.
 expected_warnings="$expected_warnings|jax\\.seldon: seldon open exit 1: unknown case C-2026-001\$"
 
-# B1: the callout from the engine's rule (`drift show`), live.
+# B1: the callout from the engine's rule, live: the index's own (ADR-0038
+# §1), so no click starts a process.
 mkdir -p "$work/home-why"
 run why-loud "" 1920x1080 \
   "summon:$(sel $UNIT);wait:sectionView.detail.rule=known always-red-paths;select:$HOOK_EVENT;wait:sectionView.detail.rule=known always-red-paths;text:1;key:Down" \
@@ -1154,8 +1193,23 @@ expect why-loud 2 "[$td.kv[] | select(startswith(\"Case\") or startswith(\"Rule\
 shows why-loud 2 "Why loud?"
 expect why-loud 4 "[$td.id, $td.rule] | join(\",\")" "$HOOK_EVENT,known always-red-paths"
 expect why-loud 6 "[$tv.shown, $tv.detail.rule] | join(\",\")" "event,known always-red-paths"
-argv_check why-loud "$work/home-why" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift show $HOOK_EVENT --json)")"
+argv_check why-loud "$work/home-why" "$startup"
 clean_log why-loud
+
+# … an index without `rule` (an earlier contract-2 engine): `drift show`
+# names it, once per selected crisis — the fallback, unchanged.
+jq 'del(.drift[].rule)' "$sample" >"$work/no-rule.json"
+mkdir -p "$work/home-why-bare"
+run why-loud-bare "" 1920x1080 \
+  "summon:$(sel $UNIT);wait:sectionView.detail.rule=known always-red-paths;select:$HOOK_EVENT;wait:sectionView.detail.rule=known always-red-paths;text:1;key:Down" \
+  HOME="$work/home-why-bare" FAKE_SELDON_FIXTURE="$work/no-rule.json"
+expect why-loud-bare 2 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
+expect why-loud-bare 4 "[$td.id, $td.rule] | join(\",\")" "$HOOK_EVENT,known always-red-paths"
+argv_check why-loud-bare "$work/home-why-bare" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift show $HOOK_EVENT --json)")"
+clean_log why-loud-bare
+run why-loud-bare-dev "$work/no-rule.json" 1920x1080 "summon:$(sel $UNIT)"
+expect why-loud-bare-dev 1 "$td.whyLoud" "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
+clean_log why-loud-bare-dev
 
 # … when an open case's plan names the crisis: the callout, the Case and
 # the Rule rows say the same.
@@ -1165,18 +1219,19 @@ run why-loud-planned "" 1920x1080 "summon:$(sel $UNIT);wait:sectionView.detail.r
   HOME="$work/home-why-planned" FAKE_SELDON_FIXTURE="$work/planned-crisis.json"
 expect why-loud-planned 2 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). C-2026-003 plans it (its plan names this change); nothing has linked it yet."
 expect why-loud-planned 2 "[$td.kv[] | select(startswith(\"Case\") or startswith(\"Rule\"))] | join(\" | \")" "Case: proposed: C-2026-003 | Rule: crisis · rule always-red-paths · planned by C-2026-003, not linked"
-expect why-loud-planned 2 "$td.actions[0]" "Link to C-2026-003…"
+expect why-loud-planned 2 "$td.actions[0:2] | join(\"+\")" "Ask agent+Link to C-2026-003…"
 clean_log why-loud-planned
 
-# … under `[drift] attention = "all"`: a crisis is a red-zone change.
+# … under `[drift] attention = "all"`: a crisis is a red-zone change (the
+# fallback's answer).
 mkdir -p "$work/home-why-all"
 run why-loud-all "" 1920x1080 "summon:$(sel $UNIT);wait:sectionView.detail.rule=known attention-all" \
-  HOME="$work/home-why-all" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_ATTENTION_ALL=1
+  HOME="$work/home-why-all" FAKE_SELDON_FIXTURE="$work/no-rule.json" FAKE_SELDON_ATTENTION_ALL=1
 expect why-loud-all 2 "$td.whyLoud" "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone. No open case plans it, and no case is linked."
 clean_log why-loud-all
 
 # … a pacman group in crisis, from a member: the leader's rule.
-jq --arg m "$MESA" '.summary.crisis = 3 | .drift |= map(if .eventId == $m then .crisis = true else . end)' "$sample" >"$work/group-crisis.json"
+jq --arg m "$MESA" '.summary.crisis = 3 | .drift |= map(if .eventId == $m then .crisis = true else . end)' "$work/no-rule.json" >"$work/group-crisis.json"
 mkdir -p "$work/home-why-group"
 run why-loud-group "" 1920x1080 "summon:$(sel $LIB32);wait:sectionView.detail.rule=known always-red" \
   HOME="$work/home-why-group" FAKE_SELDON_FIXTURE="$work/group-crisis.json"
@@ -1224,6 +1279,36 @@ expect kv-wrap 2 '.overflow | join(" | ")' ""
 expect kv-wrap 2 "[.texts[] | select(startswith(\"R3 · every step\"))] | length" 1
 clean_log kv-wrap
 
+# ADR-0038: the details show what the index carries — an imported case's
+# intent (after its provenance line) and source, a completed case's
+# result, a decision's lead, each as plain text with Open in editor kept;
+# an index without the four fields renders as before.
+run details "$sample" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};call:select:C-2026-001;text:4;call:select:ADR-0003"
+expect details 1 "[$tc.id, $tc.intent, $tc.result] | join(\"|\")" \
+  "C-2026-007|Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben.|"
+expect details 1 "[$tc.kv[] | select(startswith(\"Imported from\"))] | join(\",\")" "Imported from: ~/Notizen/aufgaben.md#4"
+for text in "INTENT" "Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben." \
+  "~/Notizen/aufgaben.md#4" "Open in editor"; do
+  shows details 1 "$text"
+done
+expect details 1 '[.texts[] | select(. == "RESULT")] | length' 0
+expect details 2 "[$tc.id, $tc.result] | join(\"|\")" "C-2026-001|Logbuch läuft, Baseline erfasst, \`seldon doctor\` ohne Befund."
+shows details 2 "RESULT"
+expect details 4 "[.view.selected, $tv.text] | join(\"|\")" "ADR-0003|Zed wird Zweiteditor, Neovim bleibt Standard."
+shows details 4 "Zed wird Zweiteditor, Neovim bleibt Standard."
+for i in 1 2 4; do expect details $i '.overflow | join(" | ")' ""; done
+clean_log details
+jq 'del(.drift[].rule) | .cases[][] |= del(.intent, .result, .source) | .decisions[] |= del(.lead)' "$sample" >"$work/bare.json"
+run details-bare "$work/bare.json" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};text:4;call:select:ADR-0003"
+expect details-bare 1 "[$tc.id, $tc.intent, $tc.result, ([$tc.kv[] | select(startswith(\"Imported from\"))] | length)] | map(tostring) | join(\"|\")" "C-2026-007|||0"
+shows details-bare 1 "0 of 5 steps done. The steps, the Intent and the Result are in the case file."
+expect details-bare 1 '[.texts[] | select(. == "INTENT" or . == "RESULT")] | length' 0
+expect details-bare 3 "[.view.selected, $tv.text] | join(\"|\")" "ADR-0003|"
+shows details-bare 3 "The text is in the file; Open in editor shows it."
+clean_log details-bare
+
 # ---------------------------------------------------------------------------
 # 9. The Prime Radiant, section 7 (ADR-0034 §4, SPEC-PLUGIN §6; WP-123): the
 #    0.1 overlay's scenarios (overlay-view.sh, COVERAGE.md) on the desk.
@@ -1265,9 +1350,9 @@ rpaints() {
 
 plan_s="2 active cases · 6 of 9 steps done"
 risk_s="8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time"
-drift_s="12 opened · 7 resolved in 5 weeks · peak 2026-W40"
-s30="70 events on 14 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
-s90="75 events on 15 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+drift_s="13 opened · 8 resolved in 5 weeks · peak 2026-W40"
+s30="71 events on 15 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+s90="76 events on 16 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
 s365=${s90/of 90 days/of 365 days}
 sall=${s90/of 90 days/of 366 days}
 radiant='{"section":"radiant"}'
@@ -1288,7 +1373,7 @@ expect radiant-ipc 1 '.view.sectionView.window.from + " " + .view.sectionView.wi
 expect radiant-ipc 1 .view.sectionView.caption "90 d · 2026-07-04 – 2026-10-01"
 for text in "Prime Radiant" "90 d · 2026-07-04 – 2026-10-01" "30 d" "90 d" "365 d" "All" \
   Heatmap Series DriftBars RiskDonut Timeline "The Plan" releases snapshots cases crises \
-  "75 events on 15 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
+  "76 events on 16 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
   "C-2026-003 · R3" "Omarchy auf 4.0.7 aktualisieren" "4/5 steps · agent: claude-code" "2/4 steps · agent: claude-code"; do
   shows radiant-ipc 1 "$text"
 done
@@ -1478,7 +1563,7 @@ clean_log radiant-reflow
 # 9f. A logbook that is not initialised (overlay scenario 7): the desk's
 #     notice (7b); every chart in its empty state, nothing painted, no hover.
 run radiant-uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon:$radiant;call:hover:heatmap 0.5,0.5;call:hover:timeline 0.5,0.5"
-expect radiant-uninit 1 '.view.notices | join(",")' "Logbook not initialised"
+expect radiant-uninit 1 '.view.notices | join(",")' "Create your logbook"
 rfits radiant-uninit 1
 rcounts radiant-uninit 1 90 "0,0,0,0,0,0"
 expect radiant-uninit 1 '[.view.sectionView.slots[] | .chart.empty] | all' true
@@ -1534,7 +1619,8 @@ for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur a
   "2026-10-01" "Logbuch-Sprache Deutsch, Struktur Englisch" "ADR-0001 · accepted" "2026-09-01" \
   "ADR-0004 · PROPOSED · 2026-10-01" "Accept" "Open in editor" "decisions/ADR-0004-ollama-user-service.md" \
   "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture." \
-  "The text is in the file; Open in editor shows it."; do
+  "Lokale Modelle nur über einen Case; ollama läuft, wenn überhaupt, als User-Service ohne Autostart." \
+  "The whole text is in the file; Open in editor shows it."; do
   shows decisions 2 "$text"
 done
 shows decisions 2 "CASES · 0"
@@ -1796,10 +1882,426 @@ for W in 1366 3840; do
 done
 
 # ---------------------------------------------------------------------------
+# 11. The graph, section 8 (ADR-0034 §5, SPEC-PLUGIN §5.4; WP-125): the
+#     machine's memory as a network from the index alone, laid out by
+#     Model.graphStep on a Timer. On the sample: it settles and sleeps
+#     within the budget (each reported tickMs ≤ 8, step plus drawing calls
+#     on the shell thread; graph_tick_ok below), nothing ticks while another
+#     section is shown or the desk is closed, a reopened desk keeps the
+#     settled layout, the service builds the graph only for a shown section
+#     8 and again only after the index changed; the
+#     replay adds nodes monotonically; hover, the card and Open case; drag
+#     wakes the layout, pan and zoom only repaint; `select` keeps a card.
+#     A busy index (tests/plugin/graph-index.js, 400 nodes after folding)
+#     draws within the budget too, but on a shared build host its ticks
+#     are reported, not gated one by one (see 11f). No index, an empty
+#     index; a narrow desk (labels flip at the edge); a still picture above
+#     400 fixed nodes.
+# graph_tick_ok <case> <step>: the tick the view reports is within the
+# budget (tickMs ≤ 8: Model.graphStep plus the drawing calls, both on the
+# shell thread), and so are all ticks so far but at most two of them. The
+# dev host builds other work packages at the same time: a compile that
+# takes the core preempts a tick now and then (seen: 9–25 ms on the
+# 67-node sample, whose ticks take 1–3 ms, in bursts under a load of 7).
+# So a case that misses runs once more (graph_run keeps its arguments)
+# and must pass then; a slower graph misses twice. slowTicks names the
+# ticks in the log either way.
+declare -A graph_args=() graph_retried=()
+graph_run() {
+  graph_args[$1]=$(printf '%q ' "$@")
+  run "$@"
+}
+# graph_time_ok <case> <jq condition> <step>… — a timing gate: the
+# condition (true/false) holds at each step. If it misses at one, the case
+# runs once more (graph_run kept its arguments) and must hold then.
+graph_time_ok() {
+  local name=$1 cond=$2 i miss=""
+  shift 2
+  for i in "$@"; do
+    [[ $(sed -n "${i}p" "$work/$name.steps" | jq -r "$cond" 2>/dev/null) == true ]] || miss="$miss #$i"
+  done
+  if [[ -n $miss && -n ${graph_args[$name]:-} && -z ${graph_retried[$name]:-} ]]; then
+    graph_retried[$name]=1
+    echo "     $name:$miss over the time budget, runs once more (a loaded host?)"
+    eval "run ${graph_args[$name]}"
+  fi
+  for i in "$@"; do expect "$name" "$i" "$cond" true; done
+}
+# graph_time_min <case> <path> <max> <step>… — a timing gate on the fastest
+# of several reports of the same work (a still picture's paints): load
+# makes some of them slower, never the fastest one faster than the work.
+# Once more on a miss, as graph_time_ok.
+graph_time_min() {
+  local name=$1 path=$2 max=$3 lines
+  shift 3
+  lines=$(printf '%sp;' "$@")
+  min_of() { sed -n "$lines" "$work/$name.steps" | jq -s "[.[] | $path] | min"; }
+  if ! jq -en "$(min_of) <= $max" >/dev/null && [[ -n ${graph_args[$name]:-} && -z ${graph_retried[$name]:-} ]]; then
+    graph_retried[$name]=1
+    echo "     $name: the fastest $path $(min_of) over $max, runs once more (a loaded host?)"
+    eval "run ${graph_args[$name]}"
+  fi
+  check "$name: the fastest $path of steps $* ≤ $max ($(min_of))" "$(jq -n "$(min_of) <= $max")" true
+}
+graph_tick_ok() {
+  local slow
+  slow=$(sed -n "${2}p" "$work/$1.steps" | jq -c '.view.graph.slowTicks // []')
+  [[ $slow == "[]" ]] || echo "     $1 #$2: ticks over the budget: $slow"
+  graph_time_ok "$1" '.view.graph.tickMs <= 8 and .view.graph.ticksOver <= 2' "$2"
+  slow=$(sed -n "${2}p" "$work/$1.steps" | jq -c '.view.graph.slowTicks // []')
+  [[ -z ${graph_retried[$1]:-} || $slow == "[]" ]] || echo "     $1 #$2 (again): ticks over the budget: $slow"
+}
+
+# 11a. Settle and sleep: 200 ticks at most, then the Timer stops; no tick
+#      and no paint after that; the legend, the date, the footer.
+graph_run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:300;pause:1000"
+expect graph-settle 2 .view.section graph
+expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "68,26,68,0"
+expect graph-settle 2 '[.view.graph.sleeping, .view.graph.timer] | map(tostring) | join(",")' "false,true"
+expect graph-settle 3 '[.view.graph.sleeping, .view.graph.timer, .view.graph.ticks, .view.graph.run] | map(tostring) | join(",")' "true,false,200,200"
+expect graph-settle 3 '.view.graph.tickSamples > 150' true
+graph_tick_ok graph-settle 3
+expect graph-settle 5 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
+# (the last tick's paint may still be pending at step 3: compare 4 and 5)
+check "graph-settle: no paint while asleep" "$(sed -n 5p "$work/graph-settle.steps" | jq .view.graph.paints)" "$(sed -n 4p "$work/graph-settle.steps" | jq .view.graph.paints)"
+for t in "Graph" "Play growth" "2026-10-01 · 68 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
+  "Newest 76 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
+  shows graph-settle 3 "$t"
+done
+expect graph-settle 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis"
+expect graph-settle 3 '.overflow | join(" | ")' ""
+clean_log graph-settle
+
+# 11b. Nothing while hidden: another section stops the Timer at once (the
+#      tick count stands still), coming back resumes to sleep; a closed and
+#      reopened desk (the loader makes a new one) shows the settled layout
+#      from the service without a tick.
+graph_run graph-hidden "$sample" 1920x1080 "summon;text:8;pause:300;text:1;pause:1500;text:8;wait:graph.sleeping=true;hide;summon;pause:800"
+# The service builds the graph only for a shown section 8.
+expect graph-hidden 1 '[.graphBuilds, .graphNodes, .view.graph] | map(tostring) | join(",")' "0,0,null"
+expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,68"
+t4=$(sed -n 4p "$work/graph-hidden.steps" | jq .view.graph.ticks)
+expect graph-hidden 3 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "graph,true"
+expect graph-hidden 4 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "today,false"
+expect graph-hidden 5 .view.graph.ticks "$t4"
+check "graph-hidden: ticks before the switch" "$( ((t4 > 0 && t4 < 200)) && echo yes)" yes
+expect graph-hidden 7 '[.view.graph.sleeping, .view.graph.ticks] | map(tostring) | join(",")' "true,200"
+graph_tick_ok graph-hidden 7
+expect graph-hidden 8 .view.opened false
+expect graph-hidden 8 .view.graph null
+for i in 9 10; do
+  expect graph-hidden $i '[.view.section, .view.graph.sleeping, .view.graph.timer, .view.graph.ticks] | map(tostring) | join(",")' "graph,true,false,200"
+done
+expect graph-hidden 10 '.view.graph.paints <= 2' true
+clean_log graph-hidden
+
+# 11b'. The build waits for the section (live, the fake engine rewrites
+#      the index on each capture): two captures while the Prime Radiant is
+#      shown leave the graph dirty and unbuilt; showing section 8 builds
+#      once, and the same nodes keep their settled layout (no tick).
+run graph-dirty "" 1920x1080 "summon;settle;text:8;wait:graph.sleeping=true;text:7;text:c;settle;pause:500;text:c;settle;pause:500;text:8;pause:300" \
+  HOME="$work/home-graph-dirty" FAKE_SELDON_FIXTURE="$sample"
+expect graph-dirty 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "0,0"
+expect graph-dirty 4 '[.graphBuilds, .graphDirty, .view.graph.sleeping, .view.graph.ticks] | map(tostring) | join(",")' "1,false,true,200"
+expect graph-dirty 11 '[.view.section, .graphBuilds, .graphDirty] | map(tostring) | join(",")' "radiant,1,true"
+expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,68"
+expect graph-dirty 12 '[.view.graph.sleeping, .view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "true,200,false"
+clean_log graph-dirty
+
+# 11c. Replay: Play from day 0 to the last day adds nodes monotonically and
+#      ends with all of them; the slider's day (graphCut) and ←/→; Space.
+graph_run graph-replay "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphPlay;wait:graph.playing=false;graphCut:0;key:Right;key:Space;pause:300;key:Escape;wait:graph.sleeping=true"
+expect graph-replay 4 '[.view.graph.playing, .view.graph.cut] | map(tostring) | join(",")' "true,0"
+expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 68)' true
+expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,68"
+expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 68"
+expect graph-replay 7 '[.view.graph.cut, .view.graph.sleeping] | map(tostring) | join(",")' "1,false"
+expect graph-replay 8 .view.graph.playing true
+expect graph-replay 9 '.view.graph.cut > 1' true
+expect graph-replay 10 '[.view.graph.playing, .view.opened] | map(tostring) | join(",")' "false,true"
+expect graph-replay 11 .view.graph.sleeping true
+graph_tick_ok graph-replay 11
+clean_log graph-replay
+
+# 11d. Hover: the pointer on a case lights it and shows its card; the card
+#      stays while the pointer travels to Open case, which shows the case
+#      in Work. `select` keeps a card (IPC); Esc lets it go; unknown ids.
+run graph-hover "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphHover:C-2026-003;leave;click:Open case;text:8;select:ADR-0003;select:C-2026-999;key:Escape;key:Escape"
+expect graph-hover 4 '[.view.graph.hovered, .view.graph.card.title, .view.graph.card.caseId] | join(",")' "C-2026-003,C-2026-003 Omarchy auf 4.0.7 aktualisieren,C-2026-003"
+expect graph-hover 4 '.view.graph.card.line | test("^Case · since 2026-09-26 · day 25 · [0-9]+ links$")' true
+shows graph-hover 4 "Open case"
+shows graph-hover 4 "active · R3 · shell"
+expect graph-hover 4 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
+expect graph-hover 5 '[.view.graph.hovered, .view.graph.cardNode] | join(",")' ",C-2026-003"
+expect graph-hover 6 '[.view.section, .view.selected] | join(",")' "work,C-2026-003"
+expect graph-hover 8 '[.call, .view.selected, .view.graph.pinned, .view.graph.card.title] | join(",")' "ok,ADR-0003,ADR-0003,ADR-0003 Zed statt VS Code als Zweiteditor"
+expect graph-hover 8 '[.texts[] | select(. == "Open case")] | length' 0
+expect graph-hover 9 '[.call, .view.graph.pinned] | join(",")' "not found,ADR-0003"
+expect graph-hover 10 '[.view.opened, .view.graph.pinned, .view.graph.card] | map(tostring) | join(",")' "true,,null"
+expect graph-hover 11 .view.opened false
+clean_log graph-hover
+
+# 11e. Drag a node: it follows the pointer, the layout wakes (and sleeps
+#      again), the view stops fitting; a drag beside the nodes pans, the
+#      wheel zooms, neither ticks; 0 fits again.
+graph_run graph-drag "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphDrag:C-2026-004:160,90;wait:graph.sleeping=true;graphDrag:empty:-100,40;wheel:graphCanvas:120;text:0"
+expect graph-drag 4 '(.call | fromjson | (.to.x - .from.x - 160 | fabs) <= 8 and (.to.y - .from.y - 90 | fabs) <= 8)' true
+expect graph-drag 4 '[.view.graph.sleeping, .view.graph.wakes > 0, .view.graph.view.fit] | map(tostring) | join(",")' "false,true,false"
+expect graph-drag 5 '[.view.graph.sleeping, .view.graph.run <= 200] | map(tostring) | join(",")' "true,true"
+graph_tick_ok graph-drag 5
+t5=$(sed -n 5p "$work/graph-drag.steps" | jq .view.graph.ticks)
+v5=$(sed -n 5p "$work/graph-drag.steps" | jq -c '[.view.graph.view.x, .view.graph.view.y]')
+expect graph-drag 6 '[.view.graph.ticks, .view.graph.sleeping] | map(tostring) | join(",")' "$t5,true"
+expect graph-drag 6 "[.view.graph.view.x, .view.graph.view.y] == ($v5 | .[0] -= 100 | .[1] += 40)" true
+expect graph-drag 7 '[.view.graph.ticks, .view.graph.view.k > 0] | map(tostring) | join(",")' "$t5,true"
+k6=$(sed -n 6p "$work/graph-drag.steps" | jq .view.graph.view.k)
+expect graph-drag 7 "(.view.graph.view.k / $k6 * 100 | round)" 115
+expect graph-drag 8 .view.graph.view.fit true
+clean_log graph-drag
+
+# 11f. A busy index: 500 events, 50 completed cases, 66 cases, 20
+#      decisions → 400 nodes, 295 changes folded into 99 groups; the legend
+#      gains "Folded"; a folded group's card lists its changes. Its ticks
+#      run Barnes–Hut at 400 nodes (about 2–4 ms of step in QV4 on the dev
+#      host); a build host shared with compiles preempts single ticks, so
+#      the gate here is "at most 5 of 200 ticks over 8 ms" (once more on a
+#      miss, as graph_tick_ok) — the strict
+#      every-tick gate is the sample (11a) and the test host's measurement.
+node "$root/tests/plugin/graph-index.js" >"$work/graph-big.json"
+cluster=$(node -e '
+  const fs = require("fs"), vm = require("vm"), M = {}; vm.createContext(M)
+  vm.runInContext(fs.readFileSync(process.argv[1] + "/plugin/Model.js", "utf8"), M)
+  const b = M.graphBuild(M.parseIndex(fs.readFileSync(process.argv[2], "utf8")).index, 400)
+  process.stdout.write(b.nodes.filter((n) => n.kind === "cluster").sort((x, y) => y.count - x.count)[0].id)' "$root" "$work/graph-big.json")
+graph_run graph-big "$work/graph-big.json" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphHover:$cluster"
+expect graph-big 3 '[.view.graph.nodes, .view.graph.folded, .view.graph.clusters, .view.graph.ticks] | map(tostring) | join(",")' "400,295,99,200"
+graph_time_ok graph-big '.view.graph.ticksOver <= 5' 3
+expect graph-big 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis,Folded"
+shows graph-big 3 "Newest 500 events · 50 completed cases in the index · older ones are only in the logbook · 295 changes folded into 99"
+expect graph-big 4 '[.view.graph.card.members > 0, (.view.graph.card.title | test("^[0-9]+ changes · 20[0-9-]+ · [a-z]+$"))] | map(tostring) | join(",")' "true,true"
+expect graph-big 4 '.view.graph.card.line | startswith("Folded changes · since ")' true
+expect graph-big 4 '.overflow | join(" | ")' ""
+echo "     graph-big: tickMsMax $(sed -n 3p "$work/graph-big.steps" | jq -c '[.view.graph.tickMsMax, .view.graph.stepMsMax, .view.graph.ticksOver, .view.graph.slowTicks]')"
+clean_log graph-big
+
+# 11g. No index (not initialised) and an index with nothing to draw.
+run graph-uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon;text:8"
+expect graph-uninit 2 '[.view.graph.nodes, .view.graph.timer, .view.sectionView.empty] | map(tostring) | join(",")' "0,false,No index to show"
+clean_log graph-uninit
+jq '.events = [] | .drift = [] | .decisions = [] | .system.areas = [] | .cases = {queued: [], active: [], verification: [], completed: []}' "$sample" >"$work/graph-nothing.json"
+run graph-nothing "$work/graph-nothing.json" 1920x1080 "summon;text:8;pause:500"
+expect graph-nothing 3 '[.view.graph.nodes, .view.graph.ticks, .view.sectionView.empty] | map(tostring) | join(",")' "0,0,Nothing to draw yet: no areas, cases, decisions or changes in the index"
+clean_log graph-nothing
+
+# 11h. Narrow desks: 50 % on 1366 (the 960 px floor) and the stacked
+#      window; nothing leaves its box, the desk or the window.
+graph_run graph-narrow "$sample" 1366x900 "summon;width:50;text:8;wait:graph.sleeping=true;resize:700x900;pause:300"
+expect graph-narrow 4 '.overflow | join(" | ")' ""
+expect graph-narrow 6 '.overflow | join(" | ")' ""
+graph_tick_ok graph-narrow 4
+clean_log graph-narrow
+# A label at the right edge goes to the left of its node, not past the
+# canvas. The settled layout of the sample decides which node lies there
+# (before WP-113's fixture event the backup-dotfiles.sh crisis did at
+# 50 %), so the case drags a case node past the right edge itself.
+graph_run graph-flip "$sample" 1366x900 "summon;width:50;text:8;wait:graph.sleeping=true;graphDrag:C-2026-004:600,0;wait:graph.sleeping=true"
+expect graph-flip 4 '.view.graph.flipped' 0
+expect graph-flip 6 '.view.graph.flipped >= 1' true
+expect graph-flip 6 '.overflow | join(" | ")' ""
+clean_log graph-flip
+
+# 11i. More fixed nodes than the cap (2000 more areas: 2022 nodes): a still
+#      picture in node order — no tick, ever (no Timer; a cut and a drag do
+#      not wake it), the caption says why; hover and drag still work (the
+#      dragged node moves at once), drawing stays in the budget.
+jq '.system.areas += [range(2000) | {name: ("area-" + tostring), hasAgentsMd: false, cases: 0}]' "$sample" >"$work/graph-many.json"
+graph_run graph-many "$work/graph-many.json" 1920x1080 "summon;text:8;pause:1500;graphHover:area:area-5;graphDrag:area:area-7:80,40;graphCut:3;pause:500"
+expect graph-many 3 '[.view.sectionView.still, .view.graph.nodes, .view.graph.ticks, .view.graph.timer, .view.graph.sleeping] | map(tostring) | join(",")' "true,2022,0,false,true"
+expect graph-many 3 .view.sectionView.caption "A still picture: 2020 areas, cases, decisions and crises are more than the 400 nodes the layout moves"
+expect graph-many 4 .view.graph.hovered area:area-5
+expect graph-many 5 '(.call | fromjson | (.to.x - .from.x - 80 | fabs) <= 2 and (.to.y - .from.y - 40 | fabs) <= 2)' true
+# Strict: never a tick, never the Timer. Timing (drawing the 2022 nodes):
+# the fastest of the three paints ≤ 8 ms, once more on a miss — gate-125
+# missed "every paint ≤ 8" on a host loaded by other checks; the picture
+# is the same in each, so the fastest is its cost (about 4 ms idle).
+for i in 5 6 7; do
+  expect graph-many $i '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "0,false"
+done
+graph_time_min graph-many .view.graph.drawMs 8 5 6 7
+expect graph-many 6 .view.graph.cut 3
+clean_log graph-many
+
+# ---------------------------------------------------------------------------
+# Bulk triage and Ask agent (WP-124b; ADR-0034 §6, ADR-0036): the button
+# (only with open changes and an engine that can write), the proposal's row
+# and detail (the bar's line, every evidence text author first, a crisis
+# by its own button, the marks), Apply bound to the id the user saw, the
+# outcome per item (applied ≠ done; a second Apply skips), the refusal of
+# a launch, Ask agent on an event and a case, Discard. Exact argv each.
+PROPOSAL=01M3VZS4J0NDXZFC2F7RBBD3FJ MONITORS=01M3KVWFR06078ZQTPRZCFYHK0
+fx_work="$work/fx-triage"
+mkdir -p "$fx_work"
+tt="$tv.triage"
+ttd="$tt.detail"
+head='3 items proposed by agent:claude-code at 2026-10-01 17:02, 1 crisis held back — apply each below'
+mkdir -p "$work/home-triage"
+run triage "" 1920x1080 \
+  "summon:$cl;view;clickName:triageAsk;settle;hover:6 changes · newest first;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;click:Apply this crisis;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:Apply proposals;wait:sectionView.triage.detail.result=Applied 0 · skipped 3 · refused 0;view" \
+  HOME="$work/home-triage" FAKE_SELDON_FIXTURE="$sample"
+expect triage 2 "[$tt.button, $tt.row, $tt.shown] | map(tostring) | join(\",\")" "Agent sorts 6 open changes,Proposal · $head,false"
+expect triage 4 "[$tt.ask, $tt.askOk] | map(tostring) | join(\",\")" \
+  "Agent started to sort 6 open changes; its proposal shows here · launcher default (omarchy),true"
+expect triage 7 "[$tt.shown, $ttd.head, $ttd.state, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "true,$head,agent:claude-code · proposal, nothing written yet,Apply proposals (2)+Discard"
+expect triage 7 "[$ttd.crises[].id] | join(\",\")" "$UNIT"
+expect triage 7 "[$ttd.regular[].id] | join(\",\")" "$THEME,$MONITORS"
+expect triage 7 "$ttd.regular[0].evidence | join(\" | \")" \
+  'Plan of C-2026-005: by human · - [ ] `omarchy theme set tokyo-night` | Journal 2026-10-01 17:00: by human · Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox.'
+expect triage 7 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "false,false,false"
+shows triage 7 "$head"
+expect triage 7 "$ttd.hint" "$head"
+expect triage 7 '.overflow | join(" | ")' ""
+shows triage 7 'by human · - [ ] `omarchy theme set tokyo-night`'
+shows triage 7 "by system · config-change ~/.config/hypr/monitors.conf: sha256 40ab1178 → 6d81c412"
+shows triage 7 "Apply this crisis"
+shows triage 7 "CRISES — EACH ON ITS OWN"
+expect triage 9 "[$ttd.regular[].outcome] | join(\",\")" "done,done"
+expect triage 9 "$ttd.crises[0].outcome" "skipped: crisis: applied only one by one (\`--item\`), never with the rest"
+expect triage 11 "$ttd.crises[0].outcome" "done"
+expect triage 13 "[$ttd.result, $ttd.resultOk, ([$ttd.regular[].outcome] | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "Applied 0 · skipped 3 · refused 0,true,skipped: no longer open drift: $THEME is already resolved+skipped: no longer open drift: $MONITORS is already resolved"
+expect triage 14 "$ttd.state | startswith(\"Applied \")" true
+shows triage 14 "Skipped: no longer open drift: $THEME is already resolved"
+argv_check triage "$work/home-triage" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)" \
+  "$(q drift apply $PROPOSAL --json)" "$(q drift apply $PROPOSAL --item $UNIT --json)" "$(q drift apply $PROPOSAL --json)")"
+clean_log triage
+
+# (The hover moves the pointer off the button: the harness clicks without
+# moving it, so the button's tooltip would open and take the next click.)
+
+# The engine refuses the launch (no default agent) and one item (its
+# evidence is gone): both shown, in the urgent colour, nothing else run.
+mkdir -p "$work/home-triage-refused"
+run triage-refused "" 1920x1080 \
+  "summon:$cl;clickName:triageAsk;settle;view;hover:6 changes · newest first;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 1 · skipped 1 · refused 1;view" \
+  HOME="$work/home-triage-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_DEFAULT_AGENT=1 FAKE_SELDON_APPLY_REFUSED="$THEME"
+refusal='no default agent: Omarchy has none set, so `omarchy agent prompt` cannot start one; nothing was launched. Fix: `omarchy default agent <name>` (e.g. claude), or set `[agent] launcher` in ~/.config/seldon/config.toml'
+expect triage-refused 4 "[$tt.ask, $tt.askOk, $tt.button] | map(tostring) | join(\",\")" "$refusal,false,Agent sorts 6 open changes"
+shows triage-refused 4 "$refusal"
+expect triage-refused 10 "$ttd.regular[0].outcome" \
+  'refused: evidence journal `2026-10-01 14:40` no longer resolves (no journal entry at 2026-10-01 14:40)'
+shows triage-refused 10 'Refused: evidence journal `2026-10-01 14:40` no longer resolves (no journal entry at 2026-10-01 14:40)'
+argv_check triage-refused "$work/home-triage-refused" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)" "$(q drift apply $PROPOSAL --json)")"
+clean_log triage-refused "jax\\.seldon: seldon agent exit 1: no default agent"
+
+# Ask agent on an open change and on a case; then Discard: the row and the
+# detail go, the logbook is untouched (only the three calls).
+mkdir -p "$work/home-triage-ask"
+run triage-ask "" 1920x1080 \
+  "summon:$(sel $UNIT);click:Ask agent;settle;view;text:3;select:C-2026-004;click:Ask agent;settle;view;text:2;clickName:proposalRow;click:Discard;click:Confirm discard;settle;wait:sectionView.triage.row=;view" \
+  HOME="$work/home-triage-ask" FAKE_SELDON_FIXTURE="$sample"
+expect triage-ask 4 "[$td.ask, ($td.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "Agent asked about $UNIT; it answers in its window · launcher default (omarchy),Ask agent+Link to case…+Explain…+Dismiss…"
+expect triage-ask 9 "[$tc.ask, ($tc.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "Agent asked about C-2026-004; it answers in its window · launcher default (omarchy),Hand to agent+To verification+Drop+Open in editor+Ask agent"
+expect triage-ask 12 "[($ttd.actions | join(\"+\")), $ttd.hint] | join(\",\")" \
+  "Apply proposals (2)+Confirm discard,Discard proposal $PROPOSAL? Click Confirm discard. The logbook does not change."
+expect triage-ask 16 "[$tt.row, $tt.shown, $tt.button, $ttd.seen, $ttd.result] | map(tostring) | join(\",\")" \
+  ",true,Agent sorts 6 open changes,gone,Proposal discarded; nothing in the logbook changed"
+shows triage-ask 16 "Proposal $PROPOSAL is not there any more: applied and replaced, or discarded."
+argv_check triage-ask "$work/home-triage-ask" "$(printf '%s\n' "$startup" "$(q agent ask drift $UNIT --json)" \
+  "$(q agent ask case C-2026-004 --json)" "$(q drift discard $PROPOSAL --json)")"
+clean_log triage-ask
+
+# Nothing open: no button (the proposal row stays while the index names one).
+jq '.summary.openDrift = 0 | .summary.crisis = 0 | .drift = []' "$sample" >"$fx_work/index.none.json"
+mkdir -p "$work/home-triage-none"
+run triage-none "" 1920x1080 "summon:$cl;view" HOME="$work/home-triage-none" FAKE_SELDON_FIXTURE="$fx_work/index.none.json"
+expect triage-none 2 "[$tt.button, ($tt.row != \"\")] | map(tostring) | join(\",\")" ",true"
+clean_log triage-none
+
+# Dev mode (read-only): no button, the detail shows, its actions are off;
+# evidence an agent wrote or nobody signed is marked, its text in full.
+mkdir -p "$fx_work/flag/proposals"
+cp "$sample" "$fx_work/flag/index.json"
+jq '.items[0].evidence[1].text = "by agent:codex · the theme switch was mine, a test of the new palette, part of the Zed setup in C-2026-004 and nothing else" |
+    .items[1].evidence[0].text = "by unknown · monitors.conf removed"' \
+  "$fx/proposals/$PROPOSAL.json" >"$fx_work/flag/proposals/$PROPOSAL.json"
+run triage-dev "$fx_work/flag/index.json" 1920x1080 "summon:$cl;clickName:proposalRow;view"
+expect triage-dev 3 "[$tt.button, $tt.shown, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+  ",true,Apply proposals (2) (off)+Discard (off)"
+expect triage-dev 3 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "true,true,false"
+shows triage-dev 3 "Read twice: some evidence names an agent or an unknown author."
+shows triage-dev 3 "by agent:codex · the theme switch was mine, a test of the new palette, part of the Zed setup in C-2026-004 and nothing else"
+clean_log triage-dev
+
+# B1 (WP-124b round 2): the proposal the user opened is the one Apply
+# names. A capture brings a newer proposal (agent:codex) while the detail
+# shows the first: the pane says so, Apply, the crises and Discard are off,
+# and the service refuses the first id when asked directly; only Review
+# opens the new one. Nothing reaches the engine.
+SWAP=01M3W10000000000000000000S
+mkdir -p "$fx_work/swap/proposals"
+jq --arg id "$SWAP" '.triage.id = $id | .triage.path = "proposals/\($id).json" | .triage.actor = "agent:codex"
+    | .triage.at = "2026-10-01T17:30:00+02:00"' "$sample" >"$fx_work/swap/index.json"
+jq --arg id "$SWAP" '.id = $id | .actor = "agent:codex" | .at = "2026-10-01T17:30:00+02:00"' \
+  "$fx/proposals/$PROPOSAL.json" >"$fx_work/swap/proposals/$SWAP.json"
+mkdir -p "$work/home-triage-swap"
+run triage-swap "" 1920x1080 \
+  "summon:$cl;clickName:proposalRow;view;text:c;wait:sectionView.triage.detail.seen=replaced;click:Apply proposals;click:Discard;service:applyProposal:$PROPOSAL;click:Review the new proposal;view" \
+  HOME="$work/home-triage-swap" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$fx_work/swap/index.json"
+expect triage-swap 3 "[$ttd.id, $ttd.seen] | join(\",\")" "$PROPOSAL,current"
+replaced='Replaced by a newer proposal by agent:codex at 2026-10-01 17:30 — review it'
+expect triage-swap 5 "[$ttd.id, $ttd.seen, $ttd.hint, ($ttd.actions | join(\"+\")), ($ttd.regular | length)] | map(tostring) | join(\",\")" \
+  "$PROPOSAL,replaced,$replaced,Review the new proposal+Apply proposals (off)+Discard (off),0"
+shows triage-swap 5 "$replaced"
+expect triage-swap 8 "[.call, $ttd.result, $ttd.resultOk] | map(tostring) | join(\",\")" \
+  "false,This proposal is not the current one any more; review what the Changelog shows now,false"
+expect triage-swap 10 "[$ttd.id, $ttd.seen, ($ttd.actions | join(\"+\")), $ttd.result] | map(tostring) | join(\",\")" \
+  "$SWAP,current,Apply proposals (2)+Discard,"
+expect triage-swap 10 "$ttd.hint" "3 items proposed by agent:codex at 2026-10-01 17:30, 1 crisis held back — apply each below"
+argv_check triage-swap "$work/home-triage-swap" "$(printf '%s\n' "$startup" "$(q capture --all --json --quiet)" "$(q status --json)")"
+clean_log triage-swap
+
+# R2, R3: a proposal of 200 items × 10 refs of 256 characters (dev mode,
+# read-only). The items are built only when the detail shows; the desk
+# opens and the detail opens in time; a 256-character text wraps on a
+# 960 px desk and the stacked 700 px one with nothing outside its box.
+mkdir -p "$fx_work/big/proposals"
+cp "$sample" "$fx_work/big/index.json"
+long="by human · $(printf 'ollama.service/%.0s' $(seq 1 20))"
+long=${long:0:256}
+node -e '
+  const [id, text] = process.argv.slice(1)
+  const ev = Array.from({ length: 10 }, (_, j) => ({ kind: "journal", ref: "2026-10-01 14:" + String(10 + j), text }))
+  const ids = Array.from({ length: 200 }, (_, i) => "01M3W2" + String(i).padStart(20, "0"))
+  const items = ids.map((e, i) => i === 0
+    ? { eventId: "01M3VNJ9JGZ9169T01XCW16FT0", action: "explain", title: "t", intent: "i", crisis: true, evidence: ev }
+    : { eventId: e, action: "link", caseId: "C-2026-004", crisis: false, evidence: ev })
+  console.log(JSON.stringify({ id, at: "2026-10-01T17:02:00+02:00", actor: "agent:claude-code", logbook: "/home/user/Seldon",
+    applied: null, items }))' "$PROPOSAL" "$long" >"$fx_work/big/proposals/$PROPOSAL.json"
+check "triage-big: the text is 256 characters" "${#long}" 256
+run triage-big "$fx_work/big/index.json" 1920x1080 \
+  "fresh:$cl;view;timedClickName:proposalRow;wait:sectionView.triage.detail.built=true;resize:960x900;pause:300;resize:700x900;pause:300;resize:1920x1080;select:$THEME;view"
+expect triage-big 2 "[$ttd.built, $tt.shown, (.firstFrame.createMs < 1500)] | map(tostring) | join(\",\")" "false,false,true"
+# the click returns before the items are built (incubated in slices)
+expect triage-big 3 "(.call | tonumber) < 200" true
+expect triage-big 4 "[$ttd.built, ($ttd.regular | length), ($ttd.crises | length)] | map(tostring) | join(\",\")" \
+  "true,199,1"
+expect triage-big 4 "$ttd.regular[0].evidence[0]" "Journal 2026-10-01 14:10: $long"
+for i in 4 6 8; do expect triage-big $i '.overflow | join(" | ")' ""; done
+# an event selected: the proposal's items are dropped again
+expect triage-big 11 "[$tt.shown, $ttd.built] | map(tostring) | join(\",\")" "false,false"
+clean_log triage-big
+echo "     triage-big: desk created in $(sed -n 2p "$work/triage-big.steps" | jq -r '.firstFrame.createMs') ms," \
+  "the click took $(sed -n 3p "$work/triage-big.steps" | jq -r '.call') ms"
+
+# ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live
 # screenshots): Today at 100 % and 50 %, Settings, the Changelog, Work,
 # Decisions, System, Memory, the Prime Radiant at 100 % and 50 % (and a
-# hover), and a not-initialised logbook with its notice.
+# hover), the graph (settled, a hover, 50 %, the replay at day 12), and a
+# not-initialised logbook with its notice.
 if [[ -n ${DESK_SHOTS:-} ]]; then
   mkdir -p "$DESK_SHOTS"
   for theme in tokyo-night kanagawa catppuccin-latte; do
@@ -1816,6 +2318,11 @@ if [[ -n ${DESK_SHOTS:-} ]]; then
       HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
     rfits "shot-sections-$theme" 15
     clean_log "shot-sections-$theme"
+    run "shot-graph-$theme" "$sample" 1920x1080 \
+      "summon;text:8;wait:graph.sleeping=true;shot:desk-$theme-graph;graphHover:C-2026-004;shot:desk-$theme-graph-hover;leave;width:50;pause:400;shot:desk-$theme-graph-50;width:100;graphCut:12;wait:graph.sleeping=true;shot:desk-$theme-graph-replay" \
+      HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
+    expect "shot-graph-$theme" 5 .view.graph.hovered C-2026-004
+    clean_log "shot-graph-$theme"
     run "shot-uninit-$theme" "$fx/index-variants/not-initialised.json" 1920x1080 "summon;shot:desk-$theme-uninit" \
       HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
     clean_log "shot-uninit-$theme"

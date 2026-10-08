@@ -131,6 +131,13 @@ pub fn write_atomic_mode(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result
     write_atomic_with(path, bytes, Some(mode), true)
 }
 
+/// [`write_atomic_mode`] that never follows a symbolic link at `path`: the
+/// rename replaces the link itself (state files others can write next to,
+/// such as `proposals/<id>.json`; WP-124).
+pub fn write_atomic_replace(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> {
+    write_atomic_at(path.to_path_buf(), bytes, Some(mode), true)
+}
+
 /// [`write_atomic`] without the syncs, for files the engine rebuilds from
 /// the ledger and the logbook (`index.json`, `STATUS.md`, the ledger
 /// views, `outputs/REBUILD.md`): after a crash the next build writes them
@@ -147,6 +154,15 @@ fn write_atomic_with(
 ) -> anyhow::Result<()> {
     let target =
         resolve_links(path).with_context(|| format!("cannot resolve {}", path.display()))?;
+    write_atomic_at(target, bytes, mode, sync)
+}
+
+fn write_atomic_at(
+    target: PathBuf,
+    bytes: &[u8],
+    mode: Option<u32>,
+    sync: bool,
+) -> anyhow::Result<()> {
     let dir = target
         .parent()
         .with_context(|| format!("{} has no parent directory", target.display()))?;
@@ -258,7 +274,7 @@ const ETXTBSY: i32 = 26;
 /// Runs `program args…` with stdin closed and a timeout, capturing output,
 /// in its own process group ([`run_command`]).
 pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) -> Run {
-    run_with(command(program, args, cwd), timeout, Group::Own)
+    run_with(command(program, args, cwd), timeout, Group::Own, usize::MAX).0
 }
 
 /// [`run`] in the engine's own process group, for `git`: git and what it
@@ -272,7 +288,13 @@ pub fn run_in_engine_group(
     cwd: Option<&Path>,
     timeout: Duration,
 ) -> Run {
-    run_with(command(program, args, cwd), timeout, Group::Engine)
+    run_with(
+        command(program, args, cwd),
+        timeout,
+        Group::Engine,
+        usize::MAX,
+    )
+    .0
 }
 
 /// Omarchy's install root when `OMARCHY_PATH` is unset or empty: the
@@ -345,7 +367,17 @@ const DRAIN_GRACE: Duration = Duration::from_millis(200);
 /// its output pipes: at the deadline the whole group is killed, also when
 /// the program has exited and something it started still holds a pipe.
 pub fn run_command(cmd: Command, timeout: Duration) -> Run {
-    run_with(cmd, timeout, Group::Own)
+    run_with(cmd, timeout, Group::Own, usize::MAX).0
+}
+
+/// [`run_command`] that keeps at most `cap` bytes of each output pipe and
+/// reads and drops the rest, so a program that floods its output (git on
+/// a hostile repository) costs time up to the deadline, never memory.
+/// The flag says whether stdout was cut; a caller that parses stdout
+/// should not trust a cut one. Other callers keep the whole output (a
+/// package list may be large).
+pub fn run_command_capped(cmd: Command, timeout: Duration, cap: usize) -> (Run, bool) {
+    run_with(cmd, timeout, Group::Own, cap)
 }
 
 /// [`run_command`] in the engine's own process group, for a `git` command
@@ -353,10 +385,12 @@ pub fn run_command(cmd: Command, timeout: Duration) -> Run {
 /// what it runs (hooks, a signing prompt) may use the terminal, as with
 /// [`run_in_engine_group`]. At the deadline only the program is killed.
 pub fn run_command_in_engine_group(cmd: Command, timeout: Duration) -> Run {
-    run_with(cmd, timeout, Group::Engine)
+    run_with(cmd, timeout, Group::Engine, usize::MAX).0
 }
 
-fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
+/// Runs `cmd`, keeping at most `cap` bytes of each pipe; the flag: stdout
+/// was cut.
+fn run_with(mut cmd: Command, timeout: Duration, group: Group, cap: usize) -> (Run, bool) {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -377,11 +411,11 @@ fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
     }
     let mut child = match spawned {
         Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Run::NotFound,
-        Err(e) => return Run::Failed(e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Run::NotFound, false),
+        Err(e) => return (Run::Failed(e.to_string()), false),
     };
-    let mut out = Drain::start(child.stdout.take().map(|p| Box::new(p) as _));
-    let mut err = Drain::start(child.stderr.take().map(|p| Box::new(p) as _));
+    let mut out = Drain::start(child.stdout.take().map(|p| Box::new(p) as _), cap);
+    let mut err = Drain::start(child.stderr.take().map(|p| Box::new(p) as _), cap);
     let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
@@ -389,12 +423,12 @@ fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
             Ok(None) if Instant::now() >= deadline => {
                 stop(&mut child, group);
                 let _ = child.wait();
-                return Run::TimedOut;
+                return (Run::TimedOut, false);
             }
             Ok(None) => thread::sleep(Duration::from_millis(10)),
             Err(e) => {
                 stop(&mut child, group);
-                return Run::Failed(e.to_string());
+                return (Run::Failed(e.to_string()), false);
             }
         }
     };
@@ -403,33 +437,59 @@ fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
         stop(&mut child, group);
         let grace = Instant::now() + DRAIN_GRACE;
         if !(out.wait_until(grace) && err.wait_until(grace)) {
-            return Run::TimedOut;
+            return (Run::TimedOut, false);
         }
     }
-    Run::Exited {
+    let cut = out.cut;
+    let run = Run::Exited {
         code: status.code(),
         stdout: out.text(),
         stderr: err.text(),
-    }
+    };
+    (run, cut)
 }
 
-/// One output pipe read to its end by a thread.
+/// One output pipe read to its end by a thread, keeping at most `cap`
+/// bytes (the rest is read and dropped, so the writer never blocks).
 struct Drain {
-    rx: Receiver<Vec<u8>>,
+    rx: Receiver<(Vec<u8>, bool)>,
     bytes: Option<Vec<u8>>,
+    /// More than `cap` bytes came.
+    cut: bool,
 }
 
 impl Drain {
-    fn start(pipe: Option<Box<dyn Read + Send>>) -> Drain {
+    fn start(pipe: Option<Box<dyn Read + Send>>, cap: usize) -> Drain {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut buf = Vec::new();
+            let mut cut = false;
             if let Some(mut p) = pipe {
-                let _ = p.read_to_end(&mut buf);
+                if cap == usize::MAX {
+                    let _ = p.read_to_end(&mut buf);
+                } else {
+                    let mut chunk = [0u8; 8192];
+                    loop {
+                        match p.read(&mut chunk) {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                let keep = n.min(cap - buf.len());
+                                buf.extend_from_slice(&chunk[..keep]);
+                                cut |= keep < n;
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                            Err(_) => break,
+                        }
+                    }
+                }
             }
-            let _ = tx.send(buf);
+            let _ = tx.send((buf, cut));
         });
-        Drain { rx, bytes: None }
+        Drain {
+            rx,
+            bytes: None,
+            cut: false,
+        }
     }
 
     /// Whether the pipe reached its end by `deadline`. A thread still
@@ -437,7 +497,10 @@ impl Drain {
     fn wait_until(&mut self, deadline: Instant) -> bool {
         if self.bytes.is_none() {
             let left = deadline.saturating_duration_since(Instant::now());
-            self.bytes = self.rx.recv_timeout(left).ok();
+            if let Ok((bytes, cut)) = self.rx.recv_timeout(left) {
+                self.bytes = Some(bytes);
+                self.cut = cut;
+            }
         }
         self.bytes.is_some()
     }
@@ -534,37 +597,93 @@ pub fn slugify(s: &str) -> String {
 }
 
 /// SHA-256 (FIPS 180-4) of `bytes`. Implemented here because no hashing
-/// crate is on the allowed list (AGENTS.md §7); the config collector hashes
-/// files of at most 1 MB, so a plain one-shot implementation is enough. The
-/// whole blocks are hashed in place; only the last one or two, with the
-/// padding, are copied.
+/// crate is on the allowed list (AGENTS.md §7). The whole blocks are
+/// hashed in place; only the last one or two, with the padding, are
+/// copied. [`Sha256`] hashes a stream (a file of any size, WP-113).
 pub fn sha256(bytes: &[u8]) -> [u8; 32] {
-    let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    let (blocks, rest) = bytes.as_chunks::<64>();
-    for block in blocks {
-        sha256_block(&mut h, block);
+    let mut s = Sha256::new();
+    s.update(bytes);
+    s.finish()
+}
+
+/// SHA-256 over bytes that arrive in pieces: [`Sha256::update`] as often
+/// as needed, then [`Sha256::finish`].
+#[derive(Debug, Clone)]
+pub struct Sha256 {
+    h: [u32; 8],
+    /// A block begun by an earlier update.
+    buf: [u8; 64],
+    buffered: usize,
+    len: u64,
+}
+
+impl Default for Sha256 {
+    fn default() -> Self {
+        Sha256::new()
     }
-    // the rest + 0x80 + zero padding + 64-bit big-endian bit length: one
-    // block, or two when the rest leaves less than 9 bytes
-    let mut tail = [0u8; 128];
-    tail[..rest.len()].copy_from_slice(rest);
-    tail[rest.len()] = 0x80;
-    let end = if rest.len() < 56 { 64 } else { 128 };
-    tail[end - 8..end].copy_from_slice(&((bytes.len() as u64).wrapping_mul(8)).to_be_bytes());
-    let (blocks, _) = tail[..end].as_chunks::<64>();
-    for block in blocks {
-        sha256_block(&mut h, block);
+}
+
+impl Sha256 {
+    pub fn new() -> Self {
+        Sha256 {
+            h: [
+                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+                0x5be0cd19,
+            ],
+            buf: [0; 64],
+            buffered: 0,
+            len: 0,
+        }
     }
 
-    let mut out = [0u8; 32];
-    let (chunks, _) = out.as_chunks_mut::<4>();
-    for (chunk, word) in chunks.iter_mut().zip(h) {
-        *chunk = word.to_be_bytes();
+    pub fn update(&mut self, mut bytes: &[u8]) {
+        self.len = self.len.wrapping_add(bytes.len() as u64);
+        if self.buffered > 0 {
+            let take = (64 - self.buffered).min(bytes.len());
+            self.buf[self.buffered..self.buffered + take].copy_from_slice(&bytes[..take]);
+            self.buffered += take;
+            bytes = &bytes[take..];
+            if self.buffered < 64 {
+                return;
+            }
+            let block = self.buf;
+            sha256_block(&mut self.h, &block);
+            self.buffered = 0;
+        }
+        let (blocks, rest) = bytes.as_chunks::<64>();
+        for block in blocks {
+            sha256_block(&mut self.h, block);
+        }
+        self.buf[..rest.len()].copy_from_slice(rest);
+        self.buffered = rest.len();
     }
-    out
+
+    pub fn finish(mut self) -> [u8; 32] {
+        // the rest + 0x80 + zero padding + 64-bit big-endian bit length: one
+        // block, or two when the rest leaves less than 9 bytes
+        let rest = self.buffered;
+        let mut tail = [0u8; 128];
+        tail[..rest].copy_from_slice(&self.buf[..rest]);
+        tail[rest] = 0x80;
+        let end = if rest < 56 { 64 } else { 128 };
+        tail[end - 8..end].copy_from_slice(&self.len.wrapping_mul(8).to_be_bytes());
+        let (blocks, _) = tail[..end].as_chunks::<64>();
+        for block in blocks {
+            sha256_block(&mut self.h, block);
+        }
+
+        let mut out = [0u8; 32];
+        let (chunks, _) = out.as_chunks_mut::<4>();
+        for (chunk, word) in chunks.iter_mut().zip(self.h) {
+            *chunk = word.to_be_bytes();
+        }
+        out
+    }
+
+    /// [`Sha256::finish`] as 64 lowercase hex digits.
+    pub fn finish_hex(self) -> String {
+        hex(&self.finish())
+    }
 }
 
 /// One SHA-256 compression step: `h` after the 64-byte `block`.
@@ -622,7 +741,11 @@ fn sha256_block(h: &mut [u32; 8], block: &[u8; 64]) {
 
 /// [`sha256`] as 64 lowercase hex digits.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    sha256(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    hex(&sha256(bytes))
+}
+
+fn hex(digest: &[u8; 32]) -> String {
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]
@@ -657,6 +780,41 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_capped_run_keeps_the_head_of_a_flood_and_reads_the_rest() {
+        let cap = 64 * 1024;
+        let flood = |script: &str| {
+            let mut cmd = Command::new("sh");
+            cmd.args(["-c", script]);
+            run_command_capped(cmd, Duration::from_secs(10), cap)
+        };
+        // 16 MiB to stderr, 1 MiB to stdout: the writer is never blocked,
+        // the run ends, each pipe keeps its first `cap` bytes
+        let (r, cut) =
+            flood("head -c 16777216 /dev/zero >&2; head -c 1048576 /dev/zero; echo done >&2");
+        let Run::Exited {
+            code: Some(0),
+            stdout,
+            stderr,
+        } = r
+        else {
+            panic!("{r:?}");
+        };
+        assert!(cut);
+        assert_eq!((stdout.len(), stderr.len()), (cap, cap));
+        // a small output is whole and not cut
+        let (r, cut) = flood("echo out; echo err >&2");
+        assert!(!cut);
+        assert_eq!(
+            r,
+            Run::Exited {
+                code: Some(0),
+                stdout: "out\n".into(),
+                stderr: "err\n".into()
+            }
+        );
+    }
 
     #[test]
     fn run_captures_and_reports() {
@@ -768,5 +926,23 @@ mod tests {
             sha256_hex(&[0u8; 64]),
             "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b"
         );
+    }
+
+    /// WP-113: the stream gives the one-shot digest wherever the pieces
+    /// are cut (inside a block, at its edge, empty pieces).
+    #[test]
+    fn sha256_stream_equals_one_shot() {
+        let bytes: Vec<u8> = (0..1000u32).map(|i| (i * 7 % 256) as u8).collect();
+        for cut in [0, 1, 55, 63, 64, 65, 127, 128, 500, 999, 1000] {
+            for step in [1, 3, 64, 100, 1000] {
+                let mut s = Sha256::new();
+                s.update(&bytes[..cut]);
+                s.update(&[]);
+                for piece in bytes[cut..].chunks(step) {
+                    s.update(piece);
+                }
+                assert_eq!(s.finish_hex(), sha256_hex(&bytes), "cut {cut}, step {step}");
+            }
+        }
     }
 }

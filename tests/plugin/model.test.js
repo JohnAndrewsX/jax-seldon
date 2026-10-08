@@ -192,38 +192,209 @@ test("relativeAge", () => {
   assert.strictEqual(M.relativeAge(NaN, 0), "unknown")
 })
 
+// Which script goes with which command; UPDATE_ENGINE_COMMAND is the
+// install line while the AUR package does not exist, so the update banners
+// are checked by name below.
+const TERMINAL_SCRIPT_OF = {}
+TERMINAL_SCRIPT_OF[M.INIT_COMMAND] = M.INIT_SCRIPT
+TERMINAL_SCRIPT_OF[M.SNAPPER_FIX_COMMAND] = M.SNAPPER_FIX_SCRIPT
+TERMINAL_SCRIPT_OF[M.UPDATE_PLUGIN_COMMAND] = M.UPDATE_PLUGIN_SCRIPT
+TERMINAL_SCRIPT_OF[M.INSTALL_ENGINE_COMMAND] = M.INSTALL_ENGINE_SCRIPT
+
 test("bannerFor: one banner per non-ok status, each with a fix", () => {
   assert.strictEqual(M.bannerFor("ok", {}), null)
   const constants = ["", M.INSTALL_ENGINE_COMMAND, M.INIT_COMMAND, M.UPDATE_ENGINE_COMMAND, M.UPDATE_PLUGIN_COMMAND]
   for (const s of M.STATUSES.filter((x) => x !== "ok")) {
-    const b = M.bannerFor(s, { indexContractVersion: 2, generatedAt: "2026-10-01T17:05:12+02:00", nowMs: gen + 3 * H })
+    const b = M.bannerFor(s, { indexContractVersion: 3, generatedAt: "2026-10-01T17:05:12+02:00", nowMs: gen + 3 * H })
     assert.ok(b, s)
     assert.strictEqual(b.status, s)
     assert.ok(b.actions.length >= 1, s + " has a fix")
     assert.ok(constants.indexOf(b.command) !== -1, s + " command is a constant")
     for (const a of b.actions) assert.ok(["copy", "terminal", "recheck", "build", "capture"].indexOf(a.id) !== -1, a.id)
     if (b.actions.some((a) => a.id === "copy" || a.id === "terminal")) assert.notStrictEqual(b.command, "", s)
+    // The terminal runs the script that goes with the shown command (WP-117).
+    if (b.actions.some((a) => a.id === "terminal")) {
+      assert.ok(M.isTerminalScript(b.script), s + " script is a terminal script")
+      assert.strictEqual(b.script, TERMINAL_SCRIPT_OF[b.command], s + " script matches its command")
+    } else {
+      assert.ok(!b.script, s + " has no script")
+    }
   }
 })
 
-test("bannerFor engineMissing: the GitHub one-liner while the AUR package does not exist (ADR-0024)", () => {
+test("bannerFor engineMissing: a setup step without an index, urgent when the engine is gone (WP-117)", () => {
   const b = M.bannerFor("engineMissing", {})
   assert.strictEqual(b.command, M.INSTALL_ENGINE_COMMAND)
   assert.strictEqual(M.INSTALL_ENGINE_COMMAND,
     "curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash")
+  assert.strictEqual(b.script, M.INSTALL_ENGINE_SCRIPT)
+  assert.strictEqual(b.tone, "accent")
+  assert.strictEqual(b.title, "Install the engine")
   assert.strictEqual(b.detail, M.ENGINE_MISSING_DETAIL)
-  assert.ok(b.detail.indexOf("AUR package: coming soon") !== -1)
-  assert.ok(b.detail.indexOf("SHA256SUMS") !== -1)
+  assert.strictEqual(M.ENGINE_MISSING_DETAIL,
+    "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it; runs as your user, no password.")
+  same(b.actions, [{ id: "terminal", label: "Install" }, { id: "copy", label: "Copy" }, { id: "recheck", label: "Check again" }])
+  assert.strictEqual(M.bannerFor("engineMissing", { indexExists: false }).tone, "accent")
+  // only `true` counts
+  assert.strictEqual(M.bannerFor("engineMissing", { indexExists: "yes" }).tone, "accent")
+  const gone = M.bannerFor("engineMissing", { indexExists: true })
+  assert.strictEqual(gone.tone, "urgent")
+  assert.strictEqual(gone.title, "Seldon engine missing")
+  assert.strictEqual(gone.detail, b.detail)
+  same(gone.actions, b.actions)
+  assert.strictEqual(gone.script, b.script)
+})
+
+test("bannerFor notInitialised: Create runs seldon init in the terminal (WP-117)", () => {
+  const b = M.bannerFor("notInitialised", { indexExists: true })
+  assert.strictEqual(b.tone, "accent")
+  assert.strictEqual(b.title, "Create your logbook")
+  assert.strictEqual(b.detail, "Sets up your logbook and starts recording; the terminal asks a few questions, no password.")
+  assert.strictEqual(b.command, "seldon init")
+  assert.strictEqual(b.script, M.INIT_SCRIPT)
+  same(b.actions, [{ id: "terminal", label: "Create" }, { id: "copy", label: "Copy" }, { id: "recheck", label: "Check again" }])
 })
 
 test("bannerFor contractMismatch names the side to update", () => {
-  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 3 }).command, M.UPDATE_PLUGIN_COMMAND)
-  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 1 }).command, M.UPDATE_ENGINE_COMMAND)
+  const plugin = M.bannerFor("contractMismatch", { indexContractVersion: 3 })
+  const engine = M.bannerFor("contractMismatch", { indexContractVersion: 1 })
   assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 0 }).command, M.UPDATE_ENGINE_COMMAND)
-  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 3 }).detail,
-    "The index uses contract v3, this plugin reads v2. Update the plugin.")
-  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 1 }).detail,
-    "The index uses contract v1, this plugin reads v2. Update the engine.")
+  assert.strictEqual(plugin.command, M.UPDATE_PLUGIN_COMMAND)
+  assert.strictEqual(plugin.script, M.UPDATE_PLUGIN_SCRIPT)
+  assert.strictEqual(engine.command, M.UPDATE_ENGINE_COMMAND)
+  assert.strictEqual(engine.script, M.UPDATE_ENGINE_SCRIPT)
+  assert.strictEqual(plugin.detail, "The index uses contract v3 and this plugin reads v2: update the plugin.")
+  assert.strictEqual(engine.detail, "The index uses contract v1 and this plugin reads v2: update the engine.")
+  same(plugin.actions, [{ id: "terminal", label: "Update" }, { id: "copy", label: "Copy" }])
+})
+
+// The terminal scripts (WP-117), verbatim: what the user reads in the
+// floating terminal and what bash runs. A text change here is a review
+// item (AGENTS.md §8).
+const SCRIPTS = {
+  INSTALL_ENGINE_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: install the engine'; " +
+    "gum style --width 72 'Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.'; " +
+    "gum style --padding '1 0 1 2' 'curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then gum style --padding '1 0 0 0' --foreground 2 'The engine is installed. In the Seldon panel, press Check again.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The install did not finish. Run it again; your logbook is untouched.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'The install did not finish. Run it again; your logbook is untouched.'; " +
+    "trap - INT TERM; fi",
+  UPDATE_ENGINE_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: update the engine'; " +
+    "gum style --width 72 'Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.'; " +
+    "gum style --padding '1 0 1 2' 'curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then seldon status >/dev/null 2>&1 || true; " +
+    "gum style --padding '1 0 0 0' --foreground 2 'The engine is updated. In the Seldon panel, press Check again.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The update did not finish. Run it again; your logbook is untouched.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'The update did not finish. Run it again; your logbook is untouched.'; " +
+    "trap - INT TERM; fi",
+  UPDATE_PLUGIN_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: update the plugin'; " +
+    "gum style --width 72 'Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.'; " +
+    "gum style --padding '1 0 1 2' 'omarchy plugin update jax.seldon'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; omarchy plugin update jax.seldon); then gum style --padding '1 0 0 0' --foreground 2 'If the plugin was updated, the Seldon panel offers Restart shell to load it.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The plugin update did not finish.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The plugin stays at its version.'; " +
+    "trap - INT TERM; fi",
+  INIT_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: create your logbook'; " +
+    "gum style --width 72 'Sets up the logbook folder and starts recording. Asks a few questions; Enter takes the suggested answer. No password.'; " +
+    "gum style --padding '1 0 1 2' 'seldon init'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Create in the panel to start again.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Create in the panel to try again.'; " +
+    "trap - INT TERM; fi",
+  SNAPPER_FIX_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: let your user read the snapshot list'; " +
+    "gum style --width 72 'Grants read access to /.snapshots: the listing and the snapshot info files, nothing else. No snapshot is created, changed or deleted. Asks for your password once.'; " +
+    "gum style --padding '1 0 1 2' 'sudo setfacl -m u:$USER:rx /.snapshots'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; sudo setfacl -m u:${USER:?}:rx /.snapshots); then if seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }; then gum style --padding '1 0 0 0' --foreground 2 'Snapshots are now recorded. The panel updates by itself.'; " +
+    "else gum style --padding '1 0 0 0' --foreground 2 'Read access granted. Seldon records snapshots at its next capture.'; fi; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Nothing changed.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. Snapshots stay off; Seldon works without them.'; " +
+    "trap - INT TERM; fi"
+}
+
+test("terminal scripts: verbatim, fixed, each shows and runs its command (WP-117, AGENTS.md §8)", () => {
+  for (const name of Object.keys(SCRIPTS)) assert.strictEqual(M[name], SCRIPTS[name], name)
+  same(M.TERMINAL_SCRIPTS, Object.keys(SCRIPTS).map((n) => SCRIPTS[n]))
+  const commandOf = {
+    INSTALL_ENGINE_SCRIPT: M.INSTALL_ENGINE_COMMAND, UPDATE_ENGINE_SCRIPT: M.UPDATE_ENGINE_COMMAND,
+    UPDATE_PLUGIN_SCRIPT: M.UPDATE_PLUGIN_COMMAND, INIT_SCRIPT: M.INIT_COMMAND, SNAPPER_FIX_SCRIPT: M.SNAPPER_FIX_COMMAND
+  }
+  // The grant's run line stops on an empty USER instead of granting
+  // `u::rx` (round 2, N5); the shown command is the one Copy copies.
+  const runOf = { SNAPPER_FIX_SCRIPT: "sudo setfacl -m u:${USER:?}:rx /.snapshots" }
+  assert.strictEqual(runOf.SNAPPER_FIX_SCRIPT.replace("${USER:?}", "$USER"), M.SNAPPER_FIX_COMMAND)
+  for (const name of Object.keys(commandOf)) {
+    const script = M[name]
+    const command = commandOf[name]
+    const run = runOf[name] || command
+    // shown, single-quoted, as Copy puts it on the clipboard; then run,
+    // unless ^C came first
+    assert.ok(script.indexOf("gum style --padding '1 0 1 2' '" + command + "'; ") !== -1, name + " shows " + command)
+    assert.ok(script.indexOf("if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; " + run + "); then ") !== -1, name + " runs " + run)
+    assert.strictEqual(script.split(run).length - 1, run === command ? 2 : 1, name + ": the run line once, shown once")
+    // ^C and TERM are noted, never fatal, and reset before the end
+    assert.strictEqual(script.indexOf("seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; gum style --bold 'Seldon: "), 0, name)
+    // green, red, and the cancelled line (palette 3) ending in 130, the
+    // wrapper's "cancelled": no Done, the window closes
+    assert.ok(script.indexOf("--foreground 2 '") !== -1 && script.indexOf("--foreground 1 '") !== -1, name)
+    assert.ok(/--foreground 3 'Cancelled\. [^']*'; trap - INT TERM; \(exit 130\); else /.test(script), name)
+    assert.ok(/'; trap - INT TERM; fi$/.test(script), name)
+    assert.ok(M.isTerminalScript(script), name)
+  }
+  // no result line claims that nothing changed after install.sh may have
+  // replaced the binary (round 2, N4)
+  for (const name of ["INSTALL_ENGINE_SCRIPT", "UPDATE_ENGINE_SCRIPT"])
+    assert.strictEqual(M[name].indexOf("Nothing changed"), -1, name)
+  // the grant says "recorded" only after a capture that succeeded (N3)
+  assert.ok(M.SNAPPER_FIX_SCRIPT.indexOf("then if seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }; " +
+    "then gum style --padding '1 0 0 0' --foreground 2 'Snapshots are now recorded.") !== -1)
+  assert.strictEqual(M.SNAPPER_FIX_SCRIPT.indexOf("|| true"), -1)
+  // the commands contain no quote that could end the shown text early
+  for (const c of Object.values(commandOf)) assert.strictEqual(c.indexOf("'"), -1, c)
+  assert.strictEqual(M.isTerminalScript(M.SNAPPER_FIX_COMMAND), false)
+  assert.strictEqual(M.isTerminalScript(M.SNAPPER_FIX_SCRIPT + " "), false)
+  assert.strictEqual(M.isTerminalScript(""), false)
+  assert.strictEqual(M.isTerminalScript(undefined), false)
+  assert.strictEqual(M.isTerminalScript([M.INIT_SCRIPT]), false)
+  // terminalArgv decides what Service.fix launches (round 2, N1): the
+  // launcher with a known script, nothing for a forged banner.
+  const launcher = "omarchy-launch-floating-terminal-with-presentation"
+  for (const script of M.TERMINAL_SCRIPTS) same(M.terminalArgv({ script: script }), [launcher, script])
+  same(M.terminalArgv(M.bannerFor("notInitialised", {})), [launcher, M.INIT_SCRIPT])
+  for (const forged of [{ script: "id" }, { script: M.INIT_COMMAND, command: M.INIT_COMMAND }, { script: M.INIT_SCRIPT + "; id" },
+    { script: "" }, { script: [M.INIT_SCRIPT] }, { command: M.INIT_COMMAND }, {}, null, undefined, M.INIT_SCRIPT,
+    M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00+02:00", nowMs: 0 })])
+    assert.strictEqual(M.terminalArgv(forged), null, JSON.stringify(forged))
+  assert.strictEqual(M.shellQuoted("it's"), "'it'\\''s'")
+})
+
+test("terminal scripts: nothing from the index reaches them (AGENTS.md §8)", () => {
+  const evil = "'; rm -rf ~; echo '$(reboot)`id`"
+  const x = JSON.parse(fs.readFileSync(path.join(root, "fixtures/index-variants/snapper-degraded.json"), "utf8"))
+  x.state.collectors.forEach((c) => { if (c.name === "snapper") c.message = evil })
+  x.generatedAt = evil
+  const banners = [
+    M.snapperBanner(x), M.bannerFor("engineMissing", { indexExists: true, generatedAt: evil }),
+    M.bannerFor("notInitialised", { generatedAt: evil }),
+    M.bannerFor("contractMismatch", { indexContractVersion: evil }), M.bannerFor("contractMismatch", { indexContractVersion: 2 }),
+    M.engineOutdatedBanner("ok", "0.0.1-" + evil, "9.0.0")
+  ]
+  for (const b of banners) {
+    assert.ok(b && M.isTerminalScript(b.script), b && b.title)
+    assert.strictEqual(b.script.indexOf("rm -rf"), -1, b.title)
+    assert.strictEqual(b.command.indexOf("rm -rf"), -1, b.title)
+  }
+  // the engine's message is the hover text, as plain text, never the script
+  assert.ok(banners[0].full.indexOf(evil) === 0)
+})
+
+test("terminal scripts: bash parses each one", () => {
+  const { execFileSync } = require("child_process")
+  for (const script of M.TERMINAL_SCRIPTS) execFileSync("bash", ["-n", "-c", script])
 })
 
 test("bannerFor indexStale shows the age", () => {
@@ -334,47 +505,48 @@ test("snapperBanner: only for an enabled snapper collector that fails (ADR-0026)
   assert.strictEqual(M.snapperBanner(sampleIndex), null)
   assert.strictEqual(M.snapperBanner(null), null)
   const b = M.snapperBanner(degraded)
-  assert.strictEqual(b.title, "Snapshots not readable")
+  assert.strictEqual(b.title, "Read snapshots (optional)")
+  assert.strictEqual(b.tone, "accent")
   assert.strictEqual(b.command, M.SNAPPER_FIX_COMMAND)
   assert.strictEqual(b.command, "sudo setfacl -m u:$USER:rx /.snapshots")
+  assert.strictEqual(b.script, M.SNAPPER_FIX_SCRIPT)
+  // one sentence; the engine's message, then what the fix grants, on hover (WP-117)
+  assert.strictEqual(b.detail, "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it.")
   const message = degraded.state.collectors.find((c) => c.name === "snapper").message
-  // the engine's message, then what the fix grants
-  assert.strictEqual(b.detail, message + "\n" + M.SNAPPER_FIX_GRANTS)
+  assert.strictEqual(b.full, message + "\n" + M.SNAPPER_FIX_GRANTS)
   assert.strictEqual(M.SNAPPER_FIX_GRANTS, "The command below grants your user read access to the snapshot directory " +
     "listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: " +
     "no snapshot creation, change or deletion.")
   same(b.actions.map((a) => a.id), ["terminal", "copy", "capture"])
-  assert.strictEqual(b.hint, "")
+  assert.strictEqual(b.hint, undefined)
   const off = JSON.parse(JSON.stringify(degraded))
   off.state.collectors.forEach((c) => { if (c.name === "snapper") c.enabled = false })
   assert.strictEqual(M.snapperBanner(off), null)
   const bare = JSON.parse(JSON.stringify(degraded))
   bare.state.collectors.forEach((c) => { delete c.message })
-  assert.strictEqual(M.snapperBanner(bare).detail,
+  assert.strictEqual(M.snapperBanner(bare).full,
     "The snapper collector has no permission to list snapshots.\n" + M.SNAPPER_FIX_GRANTS)
 })
 
-test("snapperBanner: Check again is a capture, the hint follows Run in terminal (WP-054, #2)", () => {
+test("snapperBanner: Grant runs the script, Check again is a capture, no hint (WP-054, WP-117)", () => {
   const b = M.snapperBanner(degraded)
-  same(b.actions.map((a) => a.label), ["Run in terminal", "Copy", "Check again"])
+  same(b.actions.map((a) => a.label), ["Grant", "Copy", "Check again"])
   // The same action id as the stale banner's Capture now: Service.fix
   // dispatches both to captureNow(), not to the index-only recheck.
   const capture = M.bannerFor("indexStale", { generatedAt: sampleIndex.generatedAt, nowMs: Date.now() }).actions[0]
   same(capture, { id: "capture", label: "Capture now" })
   assert.strictEqual(b.actions[2].id, capture.id)
   assert.ok(b.actions.every((a) => a.id !== "recheck"))
-  assert.strictEqual(M.SNAPPER_HINT, "When the command has finished, press Check again")
-  assert.strictEqual(M.snapperBanner(degraded, true).hint, M.SNAPPER_HINT)
-  assert.strictEqual(M.snapperBanner(degraded, false).hint, "")
-  assert.strictEqual(M.snapperBanner(degraded, "yes").hint, "")
-  same(M.snapperBanner(degraded, true).actions, b.actions)
-  assert.strictEqual(M.snapperBanner(sampleIndex, true), null)
-  assert.strictEqual(M.snapperBanner(null, true), null)
+  // The script captures after the grant, so the banner goes by itself:
+  // no "press Check again" hint (WP-117 removed SNAPPER_HINT).
+  assert.strictEqual(M.SNAPPER_HINT, undefined)
+  assert.strictEqual(b.hint, undefined)
+  assert.ok(M.SNAPPER_FIX_SCRIPT.indexOf("then if seldon capture ") !== -1)
 })
 
-test("changelogRows: 75 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
+test("changelogRows: 76 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
-  assert.strictEqual(rows.length, 75)
+  assert.strictEqual(rows.length, 76)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
@@ -382,7 +554,7 @@ test("changelogRows: 75 events newest first, one +2 group (3 members), folded re
   assert.strictEqual(badged[0].subject, "mesa")
   assert.strictEqual(badged[0].txId, "tx-20260927T123000")
   same(rows.filter((r) => r.groupLeader !== "").map((r) => r.subject).sort(), ["lib32-mesa", "vulkan-radeon"])
-  assert.strictEqual(rows.filter((r) => r.resolutionDetail !== "").length, 8)
+  assert.strictEqual(rows.filter((r) => r.resolutionDetail !== "").length, 9)
   assert.strictEqual(rows.filter((r) => r.snapshot).length, 8)
   assert.strictEqual(rows.filter((r) => r.drift).length, 8)
   same(rows.filter((r) => r.crisis).map((r) => r.kind), ["config-add", "config-add"])
@@ -391,6 +563,11 @@ test("changelogRows: 75 events newest first, one +2 group (3 members), folded re
   assert.strictEqual(M.rowStatus(theme), "No case · proposed for C-2026-005")
   const tyme = rows.find((r) => r.subject === "io.github.example.tyme" && r.kind === "plugin-add")
   assert.strictEqual(M.rowStatus(tyme), "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar.")
+  // WP-113: an in-place edit of a third-party plugin, explained: a quiet row
+  const edited = rows.find((r) => r.kind === "plugin-update" && r.detail.startsWith("files changed"))
+  assert.strictEqual(edited.subject, "io.github.example.weather-plus")
+  assert.strictEqual(M.rowStatus(edited), "explained: Vorhersage-Panel selbst angepasst (größere Schrift).")
+  assert.strictEqual(edited.tone, "muted")
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "tailscale")), "linked to C-2026-008")
   // ADR-0029 rule 9: the engine's link reads like any other
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "io.github.example.display-profiles")),
@@ -449,7 +626,7 @@ test("changelogRows: 75 events newest first, one +2 group (3 members), folded re
 
 test("changelogRows: the source filter narrows the list", () => {
   const counts = M.sourceCounts(sampleIndex)
-  assert.strictEqual(counts.all, 75)
+  assert.strictEqual(counts.all, 76)
   let total = 0
   for (const s of M.SOURCES) {
     const rows = M.changelogRows(sampleIndex, s)
@@ -457,10 +634,10 @@ test("changelogRows: the source filter narrows the list", () => {
     assert.ok(rows.every((r) => r.source === s), s)
     total += rows.length
   }
-  assert.strictEqual(total, 75)
+  assert.strictEqual(total, 76)
   assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 15)
   assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 10)
-  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 75)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 76)
   same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
   assert.strictEqual(M.cycleFilter("all", 1), "pacman")
   assert.strictEqual(M.cycleFilter("seldon", 1), "all")
@@ -500,6 +677,12 @@ test("todayView: today's and yesterday's journal and the summary counts", () => 
   // "without a case" is the attention count: 6 open drift − 2 crises
   same(t.stats.map((s) => s.label), ["events today", "in 7 days", "active", "queued", "without a case"])
   same(t.stats.map((s) => s.value), [32, 53, 2, 3, 4])
+  // "1 event today", not "1 events today" (WP-117)
+  for (const [n, label] of [[0, "events today"], [1, "event today"], [2, "events today"]]) {
+    const one = JSON.parse(sample)
+    one.summary.eventsToday = n
+    same(M.todayView(one).stats[0], { label: label, value: n })
+  }
   const over = JSON.parse(sample)
   over.summary.crisis = 9
   assert.strictEqual(M.todayView(over).stats[4].value, 0, "never negative")
@@ -1225,10 +1408,10 @@ test("periodTable: the sample's counts per period", () => {
   assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
-  same(s30.map((s) => s.detail), ["70 events", "Explicit 324 → 327", "12 opened · 7 resolved",
+  same(s30.map((s) => s.detail), ["71 events", "Explicit 324 → 327", "13 opened · 8 resolved",
     "R0 1 · R1 3 · R2 3 · R3 1 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
-  assert.strictEqual(table.periods["90"].slots[0].detail, "75 events")
+  assert.strictEqual(table.periods["90"].slots[0].detail, "76 events")
   same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 3, R3: 1 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
@@ -1374,8 +1557,8 @@ test("heatmapChart: weeks × weekdays, steps, months, hover text, layout and hit
   const table = M.periodTable(ok.index)
   const h30 = table.periods["30"].charts.heatmap
   assert.strictEqual(h30.empty, false)
-  same(h30.numbers, { days: 30, events: 70, activeDays: 14, max: 32, busiest: "2026-10-01" })
-  assert.strictEqual(h30.summary, "70 events on 14 of 30 days · busiest 2026-10-01 (32)")
+  same(h30.numbers, { days: 30, events: 71, activeDays: 15, max: 32, busiest: "2026-10-01" })
+  assert.strictEqual(h30.summary, "71 events on 15 of 30 days · busiest 2026-10-01 (32)")
   // 2026-09-02 is a Wednesday: the first column starts at row 2.
   same([h30.offset, h30.weeks, h30.cells.length], [2, 5, 30])
   same([h30.cells[0].date, h30.cells[0].col, h30.cells[0].row], ["2026-09-02", 0, 2])
@@ -1428,8 +1611,8 @@ test("seriesChart: step lines per lane, padded flat lanes, the sample at a day",
 test("driftChart: weeks with gaps filled, peak, hover text", () => {
   const d = M.periodTable(ok.index).periods["90"].charts.driftBars
   // ADR-0028 §5: routine rows open nothing, their old resolutions count nothing
-  same(d.numbers, { weeks: 5, opened: 12, resolved: 7, max: 6, peak: "2026-W40" })
-  assert.strictEqual(d.summary, "12 opened · 7 resolved in 5 weeks · peak 2026-W40")
+  same(d.numbers, { weeks: 5, opened: 13, resolved: 8, max: 6, peak: "2026-W40" })
+  assert.strictEqual(d.summary, "13 opened · 8 resolved in 5 weeks · peak 2026-W40")
   assert.strictEqual(M.driftWeekText(d.weeks[4]), "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2")
   const gaps = M.driftChart([{ week: "2026-W40", opened: 1, resolved: 0 }, { week: "2026-W37", opened: 0, resolved: 2 }])
   same(gaps.weeks.map((w) => w.week + ":" + w.opened + "/" + w.resolved), ["2026-W37:0/2", "2026-W38:0/0", "2026-W39:0/0", "2026-W40:1/0"])
@@ -1627,9 +1810,9 @@ test("engineMin (WP-068): a version below the manifest's engineMin gets the upda
   assert.strictEqual(b.title, "Engine too old")
   assert.strictEqual(b.tone, "urgent")
   assert.strictEqual(b.command, M.UPDATE_ENGINE_COMMAND)
-  assert.ok(b.detail.indexOf("Update the engine to at least 0.2.0") !== -1, b.detail)
-  assert.ok(b.detail.indexOf("0.1.9") !== -1, b.detail)
-  same(b.actions.map((a) => a.id), ["terminal", "copy", "recheck"])
+  assert.strictEqual(b.detail, "This plugin needs engine 0.2.0 or newer and seldon reports 0.1.9.")
+  assert.strictEqual(b.script, M.UPDATE_ENGINE_SCRIPT)
+  same(b.actions, [{ id: "terminal", label: "Update" }, { id: "copy", label: "Copy" }, { id: "recheck", label: "Check again" }])
   assert.strictEqual(M.engineOutdatedBanner("ok", "0.2.0", "0.2.0"), null)
   assert.strictEqual(M.engineOutdatedBanner("ok", "0.2.1", "0.2.0"), null)
   assert.strictEqual(M.engineOutdatedBanner("ok", "1.0.0", "0.2.0"), null)
@@ -1708,7 +1891,7 @@ test("plugin/README.md States lists every banner with its fixes (WP-078)", () =>
   const table = readme.slice(readme.indexOf("### States"), readme.indexOf("\n## ", readme.indexOf("### States")))
   const rows = table.split("\n").filter((l) => l.startsWith("| ") && !l.startsWith("| State "))
   const banners = [
-    M.bannerFor("engineMissing"), M.bannerFor("notInitialised"),
+    M.bannerFor("engineMissing"), M.bannerFor("engineMissing", { indexExists: true }), M.bannerFor("notInitialised"),
     M.bannerFor("indexMissing", { parseError: "empty" }), M.bannerFor("indexMissing", { parseError: "bad json" }),
     M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00+02:00", nowMs: Date.parse("2026-10-01T14:00:00+02:00") }),
     M.bannerFor("contractMismatch", { indexContractVersion: 2 }), M.bannerFor("contractMismatch", { indexContractVersion: 0 }),
@@ -2020,10 +2203,10 @@ test("deskWidthPreview and preset labels", () => {
 test("deskChangelog: every event once, by class, with title, meta, age and stripe", () => {
   const idx = M.parseIndex(sample).index
   const p = M.deskChangelog(idx)
-  assert.strictEqual(p.rows.length, 75)
+  assert.strictEqual(p.rows.length, 76)
   const byCls = {}
   for (const r of p.rows) byCls[r.cls] = (byCls[r.cls] || 0) + 1
-  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 37", "crisis 2", "routine 30"])
+  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 37", "crisis 2", "routine 31"])
   const unit = M.changelogRow(p, UNIT)
   same([unit.title, unit.listMeta, unit.age, unit.stripe, unit.cls], ["ollama.service", "config · config-add", "14:03", "crisis", "crisis"])
   const mesa = M.changelogRow(p, MESA)
@@ -2044,12 +2227,12 @@ test("rowAge: the time today, else day and month (the year when it differs)", ()
 test("changelogView and changelogChips: chips, search, Hide (attention only), a group once", () => {
   const p = M.deskChangelog(M.parseIndex(sample).index)
   same(M.changelogChips(p, {}).map(c => c.id + " " + c.count),
-    ["open 6", "crisis 2", "attention 4", "routine 30", "case 37", "all 75"])
+    ["open 6", "crisis 2", "attention 4", "routine 31", "case 37", "all 76"])
   // the drift chips list a group as its leader; "all" lists every event
   same(M.changelogView(p, "open", {}, "").map(r => r.title).slice(-1), ["mesa +2"])
   assert.strictEqual(M.changelogView(p, "open", {}, "").length, 6)
   assert.strictEqual(M.changelogView(p, "bogus", {}, "").length, 6)
-  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 75)
+  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 76)
   assert.ok(M.changelogView(p, "all", {}, "").some(r => r.id === LIB32))
   // the search matches subject, meta, detail and actor, case-insensitive
   same(M.changelogView(p, "open", {}, "OLLAMA").map(r => r.title), ["ollama.service", "ollama"])
@@ -2058,7 +2241,7 @@ test("changelogView and changelogChips: chips, search, Hide (attention only), a 
   const hidden = { [MESA]: true, [UNIT]: true }
   assert.strictEqual(M.changelogView(p, "open", hidden, "").length, 5)
   assert.strictEqual(M.changelogView(p, "crisis", hidden, "").length, 2)
-  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 75)
+  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 76)
   assert.strictEqual(M.hiddenCount(p, hidden), 1)
   same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
 })
@@ -2139,6 +2322,26 @@ test("eventDetail: heading, class, the key/values; why loud from the engine's ru
   const cut = JSON.parse(sample)
   cut.drift.find(d => d.eventId === UNIT).truncated = true
   assert.ok(M.eventDetail(cut, M.deskChangelog(cut), UNIT).kv[2][1].endsWith("(clipped in the index; the ledger has it in full)"))
+})
+
+test("eventDetail: a plugin update names its commits as plain text after What (WP-136)", () => {
+  const WEATHER_UPDATE = "01M3A5RK9GGCM0KRRCQ47NGCN0"
+  const idx = M.parseIndex(sample).index
+  const d = M.eventDetail(idx, M.deskChangelog(idx), WEATHER_UPDATE)
+  same(d.kv.map(r => r[0]).slice(0, 4), ["When", "Who", "What", "Commits"])
+  same(d.kv[2][1], "1.2.0 → 1.3.0, pulled 3 commits: Release 1.3.0 …")
+  same(d.kv[3][1], "Release 1.3.0\nAdd a wind gust row\nFix the unit toggle in the panel")
+  const variant = edit => {
+    const v = JSON.parse(sample)
+    edit(v.events.find(e => e.id === WEATHER_UPDATE).meta)
+    return M.eventDetail(v, M.deskChangelog(v), WEATHER_UPDATE).kv.map(r => r[0])
+  }
+  same(variant(m => { m.git = "rollback" })[3], "Rolled back")
+  // no list, or one that is not text: no row
+  assert.ok(!variant(m => { delete m.commits }).includes("Commits"))
+  assert.ok(!variant(m => { m.commits = 3 }).includes("Commits"))
+  // an event of another kind is unchanged
+  assert.ok(!M.eventDetail(idx, M.deskChangelog(idx), THEME).kv.some(r => r[0] === "Commits"))
 })
 
 test("driftRuleInfo and driftShowResult: the rule from `drift show`", () => {
@@ -2265,6 +2468,688 @@ test("free text goes exactly as typed, surrounding blanks included (N3)", () => 
     assert.ok(M.planArgs("new", { title: blank }).error)
     assert.ok(M.driftArgs("dismiss", { eventId: UNIT, text: blank }).error)
   }
+})
+
+// ADR-0038: what the desk's details show — the index's own rule, a case's
+// intent, result and source, a decision's lead; each optional.
+const bare = (() => {
+  const x = JSON.parse(sample)
+  for (const d of x.drift) delete d.rule
+  for (const g of Object.keys(x.cases)) for (const c of x.cases[g]) { delete c.intent; delete c.result; delete c.source }
+  for (const d of x.decisions) delete d.lead
+  return x
+})()
+
+test("driftRuleInfo: the index's rule first, no engine call; drift show only without it (ADR-0038 §1)", () => {
+  const idx = M.parseIndex(sample).index
+  same(M.driftRuleInfo(null, null, UNIT, idx), { state: "known", rule: "always-red-paths", cls: "crisis" })
+  same(M.driftRuleInfo(null, null, MESA, idx), { state: "known", rule: "package", cls: "attention" })
+  // the index wins over an answer of drift show for the same item
+  same(M.driftRuleInfo({ [UNIT]: { rule: "other", cls: "crisis" } }, null, UNIT, idx).rule, "always-red-paths")
+  // without the field: the drift show path, unchanged
+  same(M.driftRuleInfo(null, null, UNIT, bare), { state: "unknown", rule: "", cls: "" })
+  same(M.driftRuleInfo(null, { eventId: UNIT, pending: true }, UNIT, bare).state, "pending")
+  same(M.driftRuleInfo({ [UNIT]: { rule: "always-red-paths", cls: "crisis" } }, null, UNIT, bare).rule, "always-red-paths")
+  same(M.driftRuleInfo(null, null, UNIT, undefined).state, "unknown")
+  // a rule out of the schema's shape is no rule
+  for (const bad of ["", "Always-Red", "a b", "x".repeat(65), 7, null]) {
+    const x = JSON.parse(sample)
+    x.drift.find(d => d.eventId === UNIT).rule = bad
+    same(M.driftRuleInfo(null, null, UNIT, x).state, "unknown")
+  }
+  // the callout from the index's rule
+  const d = M.eventDetail(idx, M.deskChangelog(idx), UNIT, M.driftRuleInfo(null, null, UNIT, idx))
+  assert.ok(d.whyLoud.startsWith("The path matches your crisis list"), d.whyLoud)
+})
+
+test("caseDetail: intent, result and an imported case's source when the index has them (ADR-0038)", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskWork(idx)
+  const c7 = M.caseDetail(idx, p, "C-2026-007")
+  assert.ok(c7.intent.startsWith("Herdr-Orchestrator als Default-Agent registrieren — "), c7.intent)
+  same(c7.result, "")
+  same(c7.kv.filter(r => r[0] === "Imported from"), [["Imported from", "~/Notizen/aufgaben.md#4"]])
+  const c1 = M.caseDetail(idx, p, "C-2026-001")
+  same(c1.result, "Logbuch läuft, Baseline erfasst, `seldon doctor` ohne Befund.")
+  same(c1.kv.filter(r => r[0] === "Imported from"), [])
+  // an index without the fields: nothing shown, nothing broken
+  const b = M.caseDetail(bare, M.deskWork(bare), "C-2026-007")
+  same([b.intent, b.result, b.kv.some(r => r[0] === "Imported from")], ["", "", false])
+  // a non-string is no text
+  const odd = JSON.parse(sample)
+  Object.assign(odd.cases.queued.find(c => c.id === "C-2026-007"), { intent: 7, result: ["x"], source: {} })
+  const o = M.caseDetail(odd, M.deskWork(odd), "C-2026-007")
+  same([o.intent, o.result, o.kv.some(r => r[0] === "Imported from")], ["", "", false])
+})
+
+test("decisionDetail: the lead as text when the index has it (ADR-0038 §2)", () => {
+  const rows = M.decisionRows(sampleIndex)
+  const d3 = M.decisionDetail(rows.find(r => r.id === "ADR-0003"))
+  same(d3.text, "Zed wird Zweiteditor, Neovim bleibt Standard.")
+  same(d3.lead, "The whole text is in the file; Open in editor shows it.")
+  const b = M.decisionDetail(M.decisionRows(bare).find(r => r.id === "ADR-0003"))
+  same([b.text, b.lead], ["", "The text is in the file; Open in editor shows it."])
+})
+
+// ---- The graph (WP-125, ADR-0034 §5) --------------------------------------
+
+const graphSample = M.parseIndex(sample).index
+const { bigIndex } = require("./graph-index.js")
+const graphBig = M.parseIndex(JSON.stringify(bigIndex())).index
+const nodeOf = (b, id) => b.nodes.find((n) => n.id === id)
+const edgeIds = (b) => b.edges.map((e) => b.nodes[e.a].id + (e.dashed ? " ~ " : " - ") + b.nodes[e.b].id)
+
+test("graphBuild: nodes from the index, changes only, crises from drift", () => {
+  const b = M.graphBuild(graphSample, 400)
+  same(b.numbers, { nodes: 68, edges: 26, areas: 6, cases: 8, decisions: 4, changes: 48, crises: 2, clusters: 0,
+    folded: 0, events: 76, completed: 2 })
+  // order: areas, cases, decisions, changes by day
+  const kinds = b.nodes.map((n) => (n.kind === "crisis" ? "change" : n.kind))
+  same([...new Set(kinds)], ["area", "case", "decision", "change"])
+  // no case lifecycle, notes, corrections, state loss
+  const changeIds = new Set(b.nodes.filter((n) => n.kind === "change" || n.kind === "crisis").map((n) => n.id))
+  for (const e of graphSample.events) assert.strictEqual(changeIds.has(e.id), M.graphIsChange(e.kind), e.kind)
+  for (const k of ["case-created", "note", "correction", "state-loss", "resolution"]) assert.ok(!M.graphIsChange(k), k)
+  for (const k of ["install", "plugin-disable", "theme-set", "config-remove", "command", "snapshot-delete"]) assert.ok(M.graphIsChange(k), k)
+  // crisis = event id in drift with crisis: true
+  const crises = b.nodes.filter((n) => n.kind === "crisis").map((n) => n.id).sort()
+  same(crises, graphSample.drift.filter((d) => d.crisis).map((d) => d.eventId).sort())
+  // every case of the four lists
+  same(b.nodes.filter((n) => n.kind === "case").map((n) => n.id).sort(),
+    ["C-2026-001", "C-2026-002", "C-2026-003", "C-2026-004", "C-2026-005", "C-2026-006", "C-2026-007", "C-2026-008"])
+  assert.strictEqual(nodeOf(b, "C-2026-001").done, true)
+  assert.strictEqual(nodeOf(b, "C-2026-003").sub, "active · R3 · shell")
+  assert.strictEqual(nodeOf(b, "C-2026-003").caseId, "C-2026-003")
+  assert.strictEqual(b.footer, "Newest 76 events · 2 completed cases in the index")
+})
+
+test("graphBuild: edges event→case, case→area, decision→case, proposedCase dashed", () => {
+  const b = M.graphBuild(graphSample, 400)
+  const edges = edgeIds(b)
+  assert.ok(edges.includes("C-2026-003 - area:shell"))
+  assert.ok(edges.includes("ADR-0003 - C-2026-004") && edges.includes("ADR-0003 - C-2026-005"))
+  assert.ok(edges.includes("ADR-0001 - C-2026-001"))
+  // event.case → case, solid; the change node names its case
+  const linked = graphSample.events.filter((e) => e.case === "C-2026-003" && M.graphIsChange(e.kind))
+  assert.ok(linked.length > 0)
+  for (const e of linked) {
+    assert.ok(edges.includes(e.id + " - C-2026-003"), e.id)
+    assert.strictEqual(nodeOf(b, e.id).caseId, "C-2026-003")
+  }
+  // drift.proposedCase → case, dashed
+  const proposed = graphSample.drift.filter((d) => d.proposedCase)
+  for (const d of proposed) assert.ok(edges.includes(d.eventId + " ~ " + d.proposedCase), d.eventId)
+  assert.strictEqual(b.edges.filter((e) => e.dashed).length, proposed.length)
+  // degrees follow the edges
+  assert.strictEqual(b.deg.reduce((x, y) => x + y, 0), 2 * b.edges.length)
+  // contract 1 (no decisions[].cases): no decision edges, nothing else lost
+  const v1idx = JSON.parse(JSON.stringify(graphSample))
+  for (const d of v1idx.decisions) delete d.cases
+  assert.strictEqual(M.graphBuild(v1idx, 400).edges.length, b.edges.length - 3)
+})
+
+test("graphBuild: day index (event ts, case created, decision date, area = earliest neighbour)", () => {
+  const b = M.graphBuild(graphSample, 400)
+  assert.strictEqual(M.dateOfDay(b.first), "2026-09-01")
+  assert.strictEqual(b.span, 30)
+  assert.strictEqual(nodeOf(b, "C-2026-003").date, "2026-09-26")
+  assert.strictEqual(nodeOf(b, "C-2026-003").day, 25)
+  assert.strictEqual(nodeOf(b, "ADR-0002").date, "2026-09-02")
+  const e = graphSample.events.find((x) => x.kind === "install")
+  assert.strictEqual(nodeOf(b, e.id).date, e.ts.slice(0, 10))
+  // areas: themes ← C-2026-005 (09-29), dev-env ← C-2026-001 (09-01), plugins has no neighbour → first day
+  assert.strictEqual(nodeOf(b, "area:themes").date, "2026-09-29")
+  assert.strictEqual(nodeOf(b, "area:dev-env").day, 0)
+  assert.strictEqual(nodeOf(b, "area:plugins").day, 0)
+  // an area only a case names still gets its node
+  const extra = JSON.parse(JSON.stringify(graphSample))
+  extra.cases.queued[0].area = "audio"
+  assert.strictEqual(nodeOf(M.graphBuild(extra, 400), "area:audio").date, extra.cases.queued[0].created)
+  // a drift item older than the index's events is still a node
+  const old = JSON.parse(JSON.stringify(graphSample))
+  old.events = old.events.filter((x) => x.id !== old.drift[1].eventId)
+  assert.strictEqual(nodeOf(M.graphBuild(old, 400), old.drift[1].eventId).kind, "crisis")
+})
+
+test("graphBuild: nothing to draw without an index", () => {
+  for (const idx of [null, undefined, "x", {}]) {
+    const b = M.graphBuild(idx, 400)
+    assert.strictEqual(b.empty, true)
+    assert.strictEqual(b.nodes.length, 0)
+  }
+  assert.strictEqual(M.graphBuild(graphSample).nodes.length, 68)
+})
+
+test("graphBuild: beyond the cap, changes fold by day and source; areas, cases, decisions, crises never", () => {
+  const b = M.graphBuild(graphBig, 400)
+  assert.strictEqual(b.nodes.length, 400)
+  assert.strictEqual(b.foldLevel, "day-source")
+  assert.strictEqual(b.numbers.areas, 10)
+  assert.strictEqual(b.numbers.cases, graphBig.cases.queued.length + graphBig.cases.active.length +
+    graphBig.cases.verification.length + graphBig.cases.completed.length)
+  assert.strictEqual(b.numbers.decisions, graphBig.decisions.length)
+  assert.strictEqual(b.numbers.crises, 2)
+  // every change is a node or in exactly one cluster
+  assert.strictEqual(b.numbers.changes + b.numbers.crises + b.numbers.folded, 500)
+  const clusters = b.nodes.filter((n) => n.kind === "cluster")
+  assert.strictEqual(clusters.length, b.numbers.clusters)
+  for (const c of clusters) {
+    assert.strictEqual(c.label, "+" + c.count)
+    assert.ok(c.count >= 2 && c.members.length <= 12 && c.members.length + c.more === c.count, c.id)
+    assert.match(c.title, /^\d+ changes · \d{4}-\d{2}-\d{2} · [a-z]+$/)
+  }
+  assert.strictEqual(b.numbers.folded, clusters.reduce((n, c) => n + c.count, 0))
+  // the biggest groups fold first: no unfolded day/source group is bigger than a folded one
+  const crisisIds = new Set(graphBig.drift.filter((d) => d.crisis).map((d) => d.eventId))
+  const sizes = {}
+  for (const e of graphBig.events) if (M.graphIsChange(e.kind) && !crisisIds.has(e.id)) {
+    const key = e.ts.slice(0, 10) + " · " + e.source
+    sizes[key] = (sizes[key] || 0) + 1
+  }
+  const foldedKeys = new Set(clusters.map((c) => c.title.replace(/^\d+ changes · /, "")))
+  const smallestFolded = Math.min(...clusters.map((c) => c.count))
+  for (const key of Object.keys(sizes)) if (!foldedKeys.has(key)) assert.ok(sizes[key] <= smallestFolded, key)
+  assert.match(b.footer, / · older ones are only in the logbook · 295 changes folded into 99$/)
+  // a cluster carries its members' case links
+  const linkedCluster = b.edges.find((e) => b.nodes[e.a].kind === "cluster" || b.nodes[e.b].kind === "cluster")
+  assert.ok(linkedCluster)
+  // a tighter cap folds coarser
+  const tight = M.graphBuild(graphBig, 150)
+  assert.ok(tight.nodes.length <= 150 && tight.nodes.length > 120, String(tight.nodes.length))
+  assert.ok(["day", "week", "month"].includes(tight.foldLevel), tight.foldLevel)
+  // fixed nodes alone over the cap: everything foldable folds, nothing else goes
+  const tiny = M.graphBuild(graphBig, 10)
+  assert.strictEqual(tiny.foldLevel, "month")
+  assert.strictEqual(tiny.numbers.cases, b.numbers.cases)
+})
+
+test("graphFold: finest level that fits, biggest groups first, crises stay", () => {
+  const evs = [
+    { day: 10, source: "pacman", crisis: false }, { day: 10, source: "pacman", crisis: false },
+    { day: 10, source: "pacman", crisis: false }, { day: 10, source: "config", crisis: false },
+    { day: 11, source: "pacman", crisis: false }, { day: 11, source: "pacman", crisis: false },
+    { day: 12, source: "pacman", crisis: true }, { day: 12, source: "pacman", crisis: true }
+  ]
+  same(M.graphFold(evs, 8), { level: "", groups: [], count: 8 })
+  same(M.graphFold(evs, 6), { level: "day-source", groups: [[0, 1, 2]], count: 6 })
+  same(M.graphFold(evs, 5), { level: "day-source", groups: [[0, 1, 2], [4, 5]], count: 5 })
+  // day level: the config change joins day 10
+  same(M.graphFold(evs, 4), { level: "day", groups: [[0, 1, 2, 3], [4, 5]], count: 4 })
+  // the two crises never fold, so 3 is the floor (week of day 10 and 11 = one group)
+  const r = M.graphFold(evs, 1)
+  assert.strictEqual(r.count, 3)
+})
+
+test("graphState: start layout deterministic, positions kept by id, cut kept mid-replay", () => {
+  const b = M.graphBuild(graphSample, 400)
+  const s1 = M.graphState(b, null)
+  const s2 = M.graphState(b, null)
+  same(Array.from(s1.x), Array.from(s2.x))
+  assert.strictEqual(s1.visCount, 68)
+  assert.strictEqual(s1.cut, b.span)
+  assert.strictEqual(s1.alpha, 1)
+  for (let i = 0; i < 30; i++) M.graphStep(s1, 8)
+  // the same build again: positions and sleep kept, nothing added
+  const s3 = M.graphState(b, s1)
+  same([s3.added, s3.removed], [0, 0])
+  same(Array.from(s3.x), Array.from(s1.x))
+  assert.strictEqual(s3.alpha, s1.alpha)
+  // one more change: kept positions, the new node beside its case, a reheat
+  const grown = JSON.parse(JSON.stringify(graphSample))
+  grown.events.unshift({ id: "01M3ZZZZZZZZZZZZZZZZZZZZZZ", ts: "2026-10-01T18:00:00+02:00", source: "pacman",
+    kind: "install", subject: "htop", actor: "human", case: "C-2026-003" })
+  const b2 = M.graphBuild(grown, 400)
+  const s4 = M.graphState(b2, s1)
+  same([s4.added, s4.removed], [1, 0])
+  const i = s4.at["C-2026-003"]
+  assert.strictEqual(s4.x[i], s1.x[s1.at["C-2026-003"]])
+  const n = s4.at["01M3ZZZZZZZZZZZZZZZZZZZZZZ"]
+  assert.ok(Math.hypot(s4.x[n] - s4.x[i], s4.y[n] - s4.y[i]) < 80)
+  assert.ok(s4.alpha >= 0.3 && !s4.sleeping)
+  // a replay in progress keeps its day
+  M.graphSetCut(s1, 10, false)
+  assert.strictEqual(M.graphState(b2, s1).cut, 10)
+})
+
+test("graphSetCut: visible = day ≤ cut, monotonic over the days, growth beside a neighbour", () => {
+  const b = M.graphBuild(graphSample, 400)
+  const s = M.graphState(b, null)
+  let last = -1
+  for (let day = 0; day <= b.span; day++) {
+    M.graphSetCut(s, day, true)
+    assert.strictEqual(s.visCount, b.nodes.filter((n) => n.day <= day).length, "day " + day)
+    assert.ok(s.visCount >= last)
+    last = s.visCount
+  }
+  assert.strictEqual(last, b.nodes.length)
+  // clamped
+  M.graphSetCut(s, 999, false)
+  assert.strictEqual(s.cut, b.span)
+  M.graphSetCut(s, -5, false)
+  assert.strictEqual(s.cut, 0)
+  // a node that appears starts next to a visible neighbour
+  M.graphSetCut(s, 24, false)
+  const c = s.at["C-2026-003"] // day 25, area shell visible from day 25 too; its events later
+  M.graphSetCut(s, 25, true)
+  const shell = s.at["area:shell"]
+  assert.ok(s.vis[c] && s.vis[shell])
+  // the pinned node is let go when it disappears
+  M.graphPin(s, c, 0, 0)
+  M.graphSetCut(s, 0, false)
+  assert.strictEqual(s.pinned, -1)
+})
+
+test("graphStep: alpha decays, sleeps after 200 ticks, wakes, holds the pinned node", () => {
+  const b = M.graphBuild(graphSample, 400)
+  const s = M.graphState(b, null)
+  // Bounded: a layout that never sleeps fails here instead of hanging.
+  let ticks = 0
+  while (ticks < M.GRAPH_TICKS_MAX + 50 && M.graphStep(s, 8)) ticks++
+  assert.strictEqual(ticks, M.GRAPH_TICKS_MAX)
+  assert.ok(s.sleeping && s.alpha <= M.GRAPH_ALPHA_MIN * 1.0001, String(s.alpha))
+  assert.strictEqual(M.graphStep(s, 8), false)
+  // settled: nothing overlaps
+  for (let p = 0; p < s.n; p++) for (let q = p + 1; q < s.n; q++)
+    assert.ok(Math.hypot(s.x[p] - s.x[q], s.y[p] - s.y[q]) > 2, s.ids[p] + " / " + s.ids[q])
+  // linked nodes end nearer than the average pair
+  const linkLen = b.edges.map((e) => Math.hypot(s.x[e.a] - s.x[e.b], s.y[e.a] - s.y[e.b]))
+  const mean = linkLen.reduce((x, y) => x + y, 0) / linkLen.length
+  assert.ok(mean < 120, String(mean))
+  // a drag wakes it and holds the node where the pointer is
+  const i = s.at["C-2026-004"]
+  M.graphPin(s, i, 500, -300)
+  M.graphWake(s, 0.3)
+  assert.ok(!s.sleeping && s.ticks === 0 && s.alpha >= 0.3)
+  for (let t = 0; t < 20; t++) M.graphStep(s, 8)
+  same([s.x[i], s.y[i]], [500, -300])
+  // its neighbours follow
+  const nb = Object.keys(M.graphNeighbours(s, i)).map(Number)
+  assert.ok(nb.length > 0)
+  assert.ok(nb.some((j) => s.x[j] > 100), "a neighbour moved towards the drag")
+  M.graphPin(s, -1, 0, 0)
+  assert.strictEqual(s.pinned, -1)
+  // the budget counter
+  assert.strictEqual(s.over, 0)
+  const slow = M.graphState(b, null)
+  M.graphStep(slow, -1)
+  assert.ok(slow.lastMs >= 0 && slow.maxMs >= slow.lastMs)
+})
+
+test("graphStep: exact pairs up to 160 visible nodes, the quadtree above", () => {
+  const small = M.graphState(M.graphBuild(graphSample, 400), null)
+  M.graphStep(small, 1000)
+  same([small.exactSteps, small.treeSteps], [1, 0])
+  const big = M.graphState(M.graphBuild(graphBig, 400), null)
+  for (let t = 0; t < 3; t++) M.graphStep(big, 1000)
+  same([big.visCount, big.exactSteps, big.treeSteps], [400, 0, 3])
+  // the replay's early days are small again: exact
+  M.graphSetCut(big, 0, false)
+  M.graphWake(big, 0.5)
+  M.graphStep(big, 1000)
+  assert.ok(big.visCount <= M.GRAPH_EXACT_MAX && big.exactSteps === 1, String(big.visCount))
+})
+
+test("graphBuild: case references that are prototype keys link nothing and throw nothing", () => {
+  const odd = JSON.parse(JSON.stringify(graphSample))
+  const keys = ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]
+  odd.events.filter((e) => M.graphIsChange(e.kind)).slice(0, keys.length).forEach((e, i) => { e.case = keys[i] })
+  odd.drift.forEach((d, i) => { d.proposedCase = keys[i % keys.length] })
+  odd.decisions.forEach((d, i) => { d.cases = [keys[i % keys.length], "C-2026-001"] })
+  odd.cases.queued[0].area = "constructor"
+  const b = M.graphBuild(odd, 400)
+  assert.strictEqual(b.empty, false)
+  for (const e of b.edges) assert.ok(b.nodes[e.a] && b.nodes[e.b])
+  assert.ok(b.nodes.every((n) => typeof n.caseId === "string" && (n.caseId === "" || /^C-[0-9]{4}-[0-9]{3,}$/.test(n.caseId))))
+  // the area named "constructor" is a real area of its case
+  assert.ok(edgeIds(b).includes(odd.cases.queued[0].id + " - area:constructor"))
+  // a case reference that names another node (a decision, an area) links
+  // nothing and offers no "Open case"
+  const other = JSON.parse(JSON.stringify(graphSample))
+  const changes = other.events.filter((e) => M.graphIsChange(e.kind))
+  changes[0].case = "ADR-0003"
+  changes[1].case = "area:themes"
+  other.drift[0].proposedCase = "ADR-0004"
+  other.decisions[0].cases = ["area:shell"]
+  const bo = M.graphBuild(other, 400)
+  const kinds = (e) => [bo.nodes[e.a].kind, bo.nodes[e.b].kind].sort().join("-")
+  assert.ok(!bo.edges.some((e) => ["change-decision", "area-change", "crisis-decision", "area-decision"].includes(kinds(e))),
+    bo.edges.map(kinds).join(" "))
+  for (const id of [changes[0].id, changes[1].id]) assert.strictEqual(nodeOf(bo, id).caseId, "")
+  // an event id that is a prototype key is a node like any other
+  const odd2 = JSON.parse(JSON.stringify(graphSample))
+  odd2.events.find((e) => M.graphIsChange(e.kind)).id = "__proto__"
+  const b2 = M.graphBuild(odd2, 400)
+  assert.strictEqual(b2.nodes.filter((n) => n.id === "__proto__").length, 1)
+  const s = M.graphState(b2, null)
+  assert.strictEqual(s.at["constructor"], undefined)
+  assert.strictEqual(typeof s.at["__proto__"], "number")
+})
+
+test("graphBuild: more fixed nodes than the cap → a still picture that never ticks", () => {
+  const many = JSON.parse(JSON.stringify(graphSample))
+  for (let i = 0; i < 2000; i++) many.system.areas.push({ name: "area-" + i, hasAgentsMd: false, cases: 0 })
+  const b = M.graphBuild(many, 400)
+  assert.strictEqual(b.still, true)
+  assert.strictEqual(b.numbers.areas, 2006)
+  // every change folds as far as it goes (month level), crises stay
+  assert.strictEqual(b.foldLevel, "month")
+  assert.strictEqual(b.numbers.crises, 2)
+  const s = M.graphState(b, null)
+  assert.ok(s.still && s.sleeping && s.alpha === 0)
+  assert.strictEqual(M.graphStep(s, 8), false)
+  M.graphWake(s, 1)
+  assert.strictEqual(s.sleeping, true)
+  M.graphSetCut(s, 3, true)
+  M.graphWake(s, 0.5)
+  assert.strictEqual(M.graphStep(s, 8), false)
+  // a drag still moves the node itself, at once
+  const i = s.visList[0]
+  M.graphPin(s, i, 77, -5)
+  same([s.x[i], s.y[i]], [77, -5])
+  // nothing overlaps on the spiral
+  let close = 0
+  for (let p = 0; p < 300; p++) for (let q = p + 1; q < 300; q++) if (Math.hypot(s.x[p] - s.x[q], s.y[p] - s.y[q]) < 4) close++
+  assert.strictEqual(close, 0)
+  // the cap holds again: live
+  assert.strictEqual(M.graphBuild(graphSample, 400).still, false)
+  assert.strictEqual(M.graphBuild(graphBig, 400).still, false)
+})
+
+test("graphRepelTree approximates the exact repulsion (Barnes–Hut, θ 0.9)", () => {
+  const b = M.graphBuild(graphBig, 400)
+  const s = M.graphState(b, null)
+  for (let t = 0; t < 60; t++) M.graphStep(s, 1000)
+  const zero = () => { for (let i = 0; i < s.n; i++) s.vx[i] = s.vy[i] = 0 }
+  zero()
+  M.graphRepelExact(s, 150)
+  const exact = Array.from(s.vx).map((v, i) => [v, s.vy[i]])
+  zero()
+  M.graphRepelTree(s, 150)
+  let err = 0
+  let norm = 0
+  for (let i = 0; i < s.n; i++) {
+    err += Math.hypot(s.vx[i] - exact[i][0], s.vy[i] - exact[i][1])
+    norm += Math.hypot(exact[i][0], exact[i][1])
+  }
+  assert.ok(err / norm < 0.05, "relative error " + (err / norm).toFixed(3))
+  // above GRAPH_EXACT_MAX visible nodes the step uses the tree
+  assert.ok(s.tree && s.tree.count > s.visCount)
+})
+
+test("graphPick, graphNeighbours, graphInfo", () => {
+  const b = M.graphBuild(graphSample, 400)
+  const s = M.graphState(b, null)
+  const i = s.at["C-2026-003"]
+  assert.strictEqual(M.graphPick(s, s.x[i] + 3, s.y[i] - 3, 0), i)
+  assert.strictEqual(M.graphPick(s, s.x[i] + 20, s.y[i], 0) === i, false)
+  assert.strictEqual(M.graphPick(s, s.x[i] + 9, s.y[i], 4), i)
+  M.graphSetCut(s, 0, false)
+  assert.strictEqual(M.graphPick(s, s.x[i], s.y[i], 0), -1)
+  const info = M.graphInfo(b, i)
+  assert.strictEqual(info.line, "Case · since 2026-09-26 · day 25 · " + b.deg[i] + " links")
+  assert.strictEqual(info.title, "C-2026-003 Omarchy auf 4.0.7 aktualisieren")
+  assert.strictEqual(info.caseId, "C-2026-003")
+  const crisis = b.nodes.findIndex((n) => n.kind === "crisis")
+  assert.match(M.graphInfo(b, crisis).line, /^Crisis · since \d{4}-\d{2}-\d{2} · day \d+ · \d+ links?$/)
+  assert.strictEqual(M.graphInfo(b, -1), null)
+  assert.strictEqual(M.graphInfo(null, 0), null)
+  same(Object.keys(M.graphNeighbours(s, s.at["ADR-0003"])).map((k) => s.ids[k]).sort(), ["C-2026-004", "C-2026-005"])
+  const big = M.graphBuild(graphBig, 400)
+  const ci = big.nodes.findIndex((n) => n.kind === "cluster")
+  const cinfo = M.graphInfo(big, ci)
+  assert.strictEqual(cinfo.kindLabel, "Folded changes")
+  assert.ok(cinfo.members.length > 0)
+})
+
+test("graphBounds, graphFit", () => {
+  const s = M.graphState(M.graphBuild(graphSample, 400), null)
+  const bounds = M.graphBounds(s)
+  assert.ok(bounds.x1 > bounds.x0 && bounds.y1 > bounds.y0)
+  const fit = M.graphFit({ x0: -100, y0: -50, x1: 100, y1: 50 }, 440, 240, 20, 5)
+  same(fit, { x: -0, y: -0, k: 2 })
+  same(M.graphFit({ x0: 0, y0: 0, x1: 10, y1: 10 }, 400, 400, 0, 2.5), { x: -12.5, y: -12.5, k: 2.5 })
+  same(M.graphFit(null, 100, 100, 0, 2), { x: 0, y: 0, k: 1 })
+  M.graphSetCut(s, 0, false)
+  M.graphSetCut(s, -1, false)
+  const none = M.graphState(M.graphBuild(null, 400), null)
+  assert.strictEqual(M.graphBounds(none), null)
+})
+
+test("graphShape: disc, square, spindle; legend kinds", () => {
+  const calls = []
+  const ctx = new Proxy({}, { get: (_, name) => (...args) => calls.push(name + ":" + args.length) })
+  for (const kind of ["case", "area", "change", "cluster", "decision", "crisis"]) {
+    calls.length = 0
+    M.graphShape(ctx, kind, 10, 10, 5)
+    const want = kind === "decision" ? ["moveTo:2", "lineTo:2", "lineTo:2", "lineTo:2", "closePath:0"]
+      : kind === "crisis" ? ["moveTo:2", "quadraticCurveTo:4", "quadraticCurveTo:4", "quadraticCurveTo:4", "quadraticCurveTo:4", "closePath:0"]
+      : ["moveTo:2", "arc:6"]
+    same(calls, want)
+  }
+  same(M.GRAPH_LEGEND.map((e) => e.kind), ["case", "area", "decision", "change", "crisis", "cluster"])
+  assert.ok(M.graphMinRadius("area") > M.graphMinRadius("change"))
+})
+
+// ---- Triage (WP-124b, ADR-0036)
+
+const proposalFile = fs.readFileSync(path.join(root, "fixtures/proposals/01M3VZS4J0NDXZFC2F7RBBD3FJ.json"), "utf8")
+const PID = "01M3VZS4J0NDXZFC2F7RBBD3FJ"
+
+test("triage argv: ids only, one --item, never propose (ADR-0036)", () => {
+  const good = [
+    ["agent", "ask", "triage", "--json"],
+    ["agent", "ask", "drift", UNIT, "--json"],
+    ["agent", "ask", "case", "C-2026-004", "--json"],
+    ["drift", "apply", PID, "--json"],
+    ["drift", "apply", PID, "--item", UNIT, "--json"],
+    ["drift", "discard", PID, "--json"],
+  ]
+  for (const a of good) assert.strictEqual(M.validateArgs(a), "", JSON.stringify(a))
+  const bad = [
+    ["agent", "ask", "triage"],
+    ["agent", "ask", "triage", "--json", "--", "sort them"],
+    ["agent", "ask", "drift", "C-2026-004", "--json"],
+    ["agent", "ask", "case", UNIT, "--json"],
+    ["agent", "ask", "everything", "--json"],
+    ["agent", "ask", "drift", UNIT, "--launcher", "x", "--json"],
+    ["drift", "propose", "--json"],
+    ["drift", "propose", "--file", "/tmp/x", "--json"],
+    ["drift", "apply", PID],
+    ["drift", "apply", "../x", "--json"],
+    ["drift", "apply", PID, "--item", UNIT, "--item", THEME, "--json"],
+    ["drift", "apply", PID, "--item", "C-2026-004", "--json"],
+    ["drift", "apply", PID, "--actor", "human", "--json"],
+    ["drift", "discard", PID, "--item", UNIT, "--json"],
+  ]
+  for (const a of bad) assert.notStrictEqual(M.validateArgs(a), "", JSON.stringify(a))
+  same(M.askArgs("triage").args, ["agent", "ask", "triage", "--json"])
+  same(M.askArgs("drift", UNIT).args, ["agent", "ask", "drift", UNIT, "--json"])
+  same(M.askArgs("case", "C-2026-004").args, ["agent", "ask", "case", "C-2026-004", "--json"])
+  assert.ok(M.askArgs("drift", "x; rm -rf ~").error)
+  same(M.applyArgs(PID).args, ["drift", "apply", PID, "--json"])
+  same(M.applyArgs(PID, UNIT).args, ["drift", "apply", PID, "--item", UNIT, "--json"])
+  assert.ok(M.applyArgs("x").error && M.applyArgs(PID, "x").error && M.discardArgs("").error)
+  for (const built of [M.askArgs("triage"), M.applyArgs(PID, UNIT), M.discardArgs(PID)])
+    assert.strictEqual(M.validateArgs(built.args), "")
+})
+
+test("triage button: open changes and an engine that can write", () => {
+  const ix = M.parseIndex(sample).index
+  same(M.triageButton(ix, true), { visible: true, count: 6, text: "Agent sorts 6 open changes" })
+  assert.strictEqual(M.triageButton(ix, false).visible, false)
+  const none = JSON.parse(sample)
+  none.summary.openDrift = 0
+  none.summary.crisis = 0
+  assert.strictEqual(M.triageButton(none, true).visible, false)
+  assert.strictEqual(M.triageButton(null, true).visible, false)
+})
+
+test("triagePath: next to the index, only proposals/<id>.json", () => {
+  const ix = M.parseIndex(sample).index
+  assert.strictEqual(M.triagePath("/home/u/.local/state/seldon/index.json", ix),
+    "/home/u/.local/state/seldon/proposals/" + PID + ".json")
+  for (const p of ["../proposals/" + PID + ".json", "/etc/passwd", "proposals/" + PID + ".json/..",
+      "proposals/01M3VZS4J0NDXZFC2F7RBBD3FK.json", "proposals/x.json"]) {
+    const t = Object.assign({}, ix.triage, { path: p })
+    assert.strictEqual(M.triagePath("/s/index.json", Object.assign({}, ix, { triage: t })), "", p)
+  }
+  assert.strictEqual(M.triagePath("/s/index.json", Object.assign({}, ix, { triage: undefined })), "")
+})
+
+test("parseProposal: the file the index names, checked like its schema", () => {
+  const ix = M.parseIndex(sample).index
+  const p = M.parseProposal(proposalFile, ix.triage)
+  assert.strictEqual(p.id, PID)
+  assert.strictEqual(p.items.length, 3)
+  assert.strictEqual(p.items[0].evidence[0].text.indexOf("by human · "), 0)
+  const bad = (change) => {
+    const d = JSON.parse(proposalFile)
+    change(d)
+    return M.parseProposal(JSON.stringify(d), ix.triage)
+  }
+  assert.strictEqual(bad((d) => { d.id = "01M3VZS4J0NDXZFC2F7RBBD3FK" }), null)
+  assert.strictEqual(bad((d) => { d.actor = "human" }), null)
+  assert.strictEqual(bad((d) => { d.items[0].eventId = "x" }), null)
+  assert.strictEqual(bad((d) => { d.items[0].caseId = "../x" }), null)
+  assert.strictEqual(bad((d) => { d.items[1].intent = "" }), null)
+  assert.strictEqual(bad((d) => { d.items[0].crisis = "no" }), null)
+  assert.strictEqual(bad((d) => { d.items[0].evidence = [] }), null)
+  assert.strictEqual(bad((d) => { d.items[0].evidence[0].kind = "diary" }), null)
+  assert.strictEqual(M.parseProposal("not json", ix.triage), null)
+  assert.strictEqual(M.parseProposal(proposalFile, null), null)
+})
+
+test("triageView: the bar's line, authors first, flags, crises apart, applied ≠ done", () => {
+  const ix = M.parseIndex(sample).index
+  const prepared = M.deskChangelog(ix)
+  const v = M.triageView(ix, M.parseProposal(proposalFile, ix.triage), prepared, null)
+  assert.strictEqual(v.head, "3 items proposed by agent:claude-code at 2026-10-01 17:02, 1 crisis held back — apply each below")
+  assert.strictEqual(v.state, "agent:claude-code · proposal, nothing written yet")
+  same(v.regular.map((i) => i.eventId), [THEME, "01M3KVWFR06078ZQTPRZCFYHK0"])
+  same(v.crises.map((i) => i.eventId), [UNIT])
+  assert.strictEqual(v.applyCount, 2)
+  const theme = v.regular[0]
+  assert.strictEqual(theme.subject, "tokyo-night")
+  assert.strictEqual(theme.actionText, "Link to C-2026-005")
+  same(theme.evidence.map((e) => e.label), ["Plan of C-2026-005", "Journal 2026-10-01 17:00"])
+  same(theme.evidence.map((e) => e.author), ["human", "human"])
+  assert.strictEqual(theme.flagged, false)
+  assert.strictEqual(v.regular[1].evidence[0].author, "system")
+  assert.strictEqual(v.crises[0].actionText, "Explain: Ollama-User-Service von Codex")
+  // an agent's or an unknown author's evidence is marked
+  for (const t of ["by agent:codex · x", "by unknown · x", "by human (worked by agent:claude-code) · x", "no author"])
+    assert.strictEqual(M.evidenceFlagged(M.evidenceAuthor(t)), true, t)
+  assert.strictEqual(M.evidenceFlagged(M.evidenceAuthor("by human · x")), false)
+  // the engine's crisis counts too, whatever the file says
+  const p = M.parseProposal(proposalFile, ix.triage)
+  p.items[2].crisis = false
+  same(M.triageView(ix, p, prepared, null).crises.map((i) => i.eventId), [UNIT])
+  // applied marks the run, not the items
+  const applied = Object.assign({}, ix, { triage: Object.assign({}, ix.triage, { applied: "2026-10-01T17:10:00+02:00" }) })
+  const a = M.triageView(applied, M.parseProposal(proposalFile, applied.triage), prepared, {
+    proposalId: PID, done: [{ eventId: THEME }], skipped: [{ eventId: UNIT, reason: "crisis: …" }], refused: []
+  })
+  assert.strictEqual(a.state, "Applied 2026-10-01 17:10. That marks the run, not every item: what is still open shows below.")
+  same(a.regular[0].outcome, { state: "done", reason: "" })
+  same(a.crises[0].outcome, { state: "skipped", reason: "crisis: …" })
+  assert.strictEqual(a.regular[1].outcome, null)
+  // an unreadable file: the line, no items
+  const u = M.triageView(ix, null, prepared, null)
+  assert.strictEqual(u.readable, false)
+  assert.strictEqual(u.items.length, 0)
+  assert.strictEqual(M.triageView(Object.assign({}, ix, { triage: undefined }), null, prepared, null), null)
+})
+
+test("triage results: ask, apply (done/skipped/refused, gone), discard", () => {
+  const ask = M.askResult(0, JSON.stringify({ launched: true, ask: "triage", target: null, open: 6, launcher: "default", program: "omarchy" }), "")
+  assert.strictEqual(ask.text, "Agent started to sort 6 open changes; its proposal shows here · launcher default (omarchy)")
+  assert.strictEqual(M.askResult(0, JSON.stringify({ ask: "case", target: "C-2026-004", launcher: "claude" }), "").text,
+    "Agent asked about C-2026-004; it answers in its window · launcher claude")
+  const refusal = M.askResult(1, JSON.stringify({ error: { code: 1, message: "no default agent: …" } }), "")
+  same([refusal.ok, refusal.text], [false, "no default agent: …"])
+  const r = M.applyResult(0, JSON.stringify({ proposal: PID, applied: "x", markedApplied: true,
+    done: [{ eventId: THEME }], skipped: [{ eventId: UNIT, reason: "crisis" }], refused: [] }), "")
+  same([r.ok, r.text, r.markedApplied, r.gone], [true, "Applied 1 · skipped 1 · refused 0", true, false])
+  const gone = M.applyResult(1, JSON.stringify({ error: { code: 1, message: "no proposal " + PID } }), "")
+  same([gone.ok, gone.gone], [false, true])
+  assert.strictEqual(M.applyResult(1, JSON.stringify({ error: { code: 1, message: "--item names 2 crises" } }), "").gone, false)
+  same([M.discardResult(0, "{}", "").ok, M.discardResult(1, JSON.stringify({ error: { message: "no proposal x" } }), "").gone], [true, true])
+})
+
+test("parseProposal follows proposal.schema.json (WP-124b round 2, R1)", () => {
+  const ix = M.parseIndex(sample).index
+  const bad = (change) => {
+    const d = JSON.parse(proposalFile)
+    change(d)
+    return M.parseProposal(JSON.stringify(d), ix.triage)
+  }
+  for (const [why, change] of [
+    ["unknown top key", (d) => { d.note = "x" }],
+    ["unknown item key", (d) => { d.items[0].note = "x" }],
+    ["unknown evidence key", (d) => { d.items[0].evidence[0].by = "human" }],
+    ["no logbook", (d) => { delete d.logbook }],
+    ["empty logbook", (d) => { d.logbook = "" }],
+    ["at not a date-time", (d) => { d.at = "yesterday" }],
+    ["applied not a date-time", (d) => { d.applied = "soon" }],
+    ["applied missing", (d) => { delete d.applied }],
+    ["title too long", (d) => { d.items[1].title = "x".repeat(257) }],
+    ["intent too long", (d) => { d.items[1].intent = "x".repeat(4097) }],
+    ["text too long", (d) => { d.items[0].evidence[0].text = "x".repeat(257) }],
+    ["ref too long", (d) => { d.items[0].evidence[0].ref = "x".repeat(65) }],
+    ["link with a title", (d) => { d.items[0].title = "t" }],
+    ["link with an intent", (d) => { d.items[0].intent = "i" }],
+    ["explain with a case", (d) => { d.items[1].caseId = "C-2026-005" }],
+    ["too many refs", (d) => { d.items[0].evidence = Array(11).fill(d.items[0].evidence[0]) }],
+    ["too many items", (d) => { d.items = Array(201).fill(d.items[0]) }],
+  ]) assert.strictEqual(bad(change), null, why)
+  assert.ok(bad((d) => { d.applied = "2026-10-01T17:10:00+02:00" }))
+  assert.ok(bad((d) => { d.items[0].evidence[0].text = "x".repeat(256) }))
+  // lengths count code points, as the engine and JSON Schema do: one astral
+  // character (two UTF-16 units) in a 256-character text still parses
+  const astral = "by human · " + "\u{1F600}" + "x".repeat(256 - 12)
+  assert.strictEqual(Array.from(astral).length, 256)
+  assert.strictEqual(astral.length, 257)
+  assert.ok(bad((d) => { d.items[0].evidence[0].text = astral }), "256 code points with one emoji")
+  assert.strictEqual(bad((d) => { d.items[0].evidence[0].text = astral + "x" }), null, "257 code points")
+  // larger than the engine reads: not even parsed
+  assert.strictEqual(M.parseProposal(proposalFile + " ".repeat(4 * 1024 * 1024), ix.triage), null)
+})
+
+test("triageSeen: the proposal the user opened against the index's (B1)", () => {
+  const ix = M.parseIndex(sample).index
+  same(M.triageSeen(ix, ""), { state: "none", text: "" })
+  same(M.triageSeen(ix, PID), { state: "current", text: "" })
+  const newer = Object.assign({}, ix, { triage: Object.assign({}, ix.triage,
+    { id: "01M3W1000000000000000000AA", actor: "agent:codex", at: "2026-10-01T17:30:00+02:00" }) })
+  same(M.triageSeen(newer, PID), { state: "replaced",
+    text: "Replaced by a newer proposal by agent:codex at 2026-10-01 17:30 — review it" })
+  same(M.triageSeen(Object.assign({}, ix, { triage: undefined }), PID), { state: "gone",
+    text: "Proposal " + PID + " is not there any more: applied and replaced, or discarded." })
+})
+
+test("evidence authors: anchored, every author, refused outcomes", () => {
+  assert.strictEqual(M.evidenceAuthor("by human · x"), "human")
+  assert.strictEqual(M.evidenceAuthor("by human, agent:codex · x"), "human, agent:codex")
+  assert.strictEqual(M.evidenceAuthor("the note says by agent:codex · x"), "")
+  assert.strictEqual(M.evidenceAuthor(" by human · x"), "")
+  for (const a of ["human, agent:codex", "agent:codex, human", "human, unknown", "unknown",
+      "human (worked by agent:claude-code)", ""])
+    assert.strictEqual(M.evidenceFlagged(a), true, a)
+  for (const a of ["human", "system", "human, system", "unknownish"]) assert.strictEqual(M.evidenceFlagged(a), false, a)
+  const r = { done: [{ eventId: "A" }], skipped: [{ eventId: "B", reason: "s" }], refused: [{ eventId: "C", reason: "r" }] }
+  same(M.itemOutcome(r, "C"), { state: "refused", reason: "r" })
+  same(M.itemOutcome(r, "B"), { state: "skipped", reason: "s" })
+  assert.strictEqual(M.itemOutcome(r, "D"), null)
+})
+
+test("TriageDetail shows logbook and agent text as plain text, never clipped (R3)", () => {
+  const qml = fs.readFileSync(path.join(root, "plugin/components/desk/TriageDetail.qml"), "utf8")
+  assert.ok(!/StyledText|RichText|MarkdownText|AutoText/.test(qml), "only Text.PlainText")
+  assert.ok(!/\belide\s*:/.test(qml), "no elide anywhere: evidence is never clipped")
+  // every Text block (the Line component included) states PlainText
+  const blocks = qml.split(/\n\s*(?:component \w+: )?Text \{/).slice(1)
+  assert.ok(blocks.length >= 2, String(blocks.length))
+  for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

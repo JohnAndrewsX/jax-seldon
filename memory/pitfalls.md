@@ -2222,3 +2222,39 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **`cargo test` stops at the first failing test binary.** Use
   `--no-fail-fast` to see every broken file after a wording change such
   as a rules version bump.
+
+## 2026-10-07 · WP-130 (Engine)
+
+- **The guard parses the command since WP-130.** The red-zone guard
+  bullets in earlier sections describe the old substring (grep) guard:
+  words in quotes, heredoc bodies, `grep` patterns, `jq` filters and
+  commit messages are data now. What it still blocks without a red-zone
+  action is fail-closed: a computed command name (`$CMD …`; assign it in
+  the same command, `B=…; $B`), a shell reading commands from a pipe
+  (`… | bash`; use a heredoc or `bash -c`), `env -S`, an unterminated
+  quote or heredoc. The message says "fail closed" and why.
+- **A prefix assignment does not move `~`.** `HOME=/tmp/h mkdir
+  ~/.config/x` expands `~` before the assignment applies, so it writes
+  the real `~/.config` and the guard blocks it. Use `export HOME=…;` (or
+  `HOME=$(mktemp -d) && …`) first.
+- **A worktree's hook runs that worktree's guard** (`$CLAUDE_PROJECT_DIR`).
+  Editing `scripts/guard.py` changes the guard of your own session at
+  once; a broken guard blocks every Bash call (fail closed). Fix it with
+  the Edit tool, which the hook does not check.
+- **The guard bounds its own work (WP-130 round 2).** A hook that runs
+  past its 5 s timeout does not block, so the guard fails closed first:
+  hook input over 256 KB, more than 256 variables in one command, more
+  than 3 s of checking. Write big files with the Write/Edit tools, not a
+  giant heredoc. `GUARD_HOSTS_FILE` only counts with `SELDON_TEST_GUARD`
+  set (the test table).
+- **The guard follows the shell further (WP-130 round 3).** A changed
+  IFS, an alias, `git -c core.pager=…`, `tar -I`, `rg --pre`, `gdb -ex`,
+  `bwrap` and `parallel` fail closed; an unknown program whose arguments
+  name `sudo`/`pacman`/`systemctl`/`omarchy` fails closed too (`man`,
+  `which`, `stat`, `cargo test pacman` pass). Omarchy's own scripts never
+  run (`bash -n` on them passes). `GIT_PAGER=cat`/`GIT_EDITOR=true` pass.
+- **Round 4 of the guard (WP-130).** `git -c core.pager=cat` and
+  `GIT_CONFIG_GLOBAL=/dev/null` pass; `GIT_DIR`/`GIT_WORK_TREE` count as
+  the repository and work tree. An unknown program with a shell name or
+  an Omarchy script among its arguments fails closed; `shellcheck -s bash`
+  passes (data sink). `tmux send-keys` keys are joined without spaces.

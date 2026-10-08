@@ -76,13 +76,12 @@ fn case(env: &Env, lb: &Path, id: &str) -> Value {
     run(env, lb, &["plan", "show", id], 0)["case"].clone()
 }
 
-/// A list item without the fields the command adds to the index's
-/// (`class`, `rule`).
+/// A list item without the field the command adds to the index's
+/// (`class`; `rule` is the index's own since ADR-0038 §1).
 fn as_index_item(item: &Value) -> Value {
     let mut item = item.clone();
     let map = item.as_object_mut().unwrap();
     map.remove("class");
-    map.remove("rule");
     item
 }
 

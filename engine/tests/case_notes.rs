@@ -274,6 +274,26 @@ mod snapshot_before {
         assert_eq!(b.case("C-2026-001")["snapshotBefore"], Value::Null);
     }
 
+    /// A privileged snapper command that creates nothing is recorded as
+    /// such (ADR-0039, subject `snapper`, `meta.wrapper`) and owns no
+    /// snapshot.
+    #[test]
+    fn a_privileged_snapper_command_is_no_snapshot_command() {
+        let b = Bench::new();
+        b.hook("sudo snapper -c root delete 7", "2026-10-01T10:29:50+02:00");
+        let commands: Vec<Value> = common::ledger(&b.logbook)
+            .into_iter()
+            .filter(|e| e["kind"] == "command")
+            .collect();
+        assert_eq!(commands.len(), 1, "{commands:?}");
+        assert_eq!(commands[0]["subject"], "snapper");
+        assert_eq!(commands[0]["meta"]["wrapper"], "sudo");
+        assert_eq!(commands[0]["case"], "C-2026-001");
+        b.snapshot(42, "2026-10-01 08:30:00", "single", "x");
+        b.capture("2026-10-01T10:40:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-001")["snapshotBefore"], Value::Null);
+    }
+
     /// The ledger read for two snapshots spans both windows; a command in
     /// it belongs to the snapshot whose window holds it, here none.
     #[test]
