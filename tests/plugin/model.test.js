@@ -2434,6 +2434,8 @@ test("transactionDetail: a downgrade group, a cut index, a clipped command (WP-1
   const fp = M.deskChangelog(full)
   same(M.eventDetail(full, fp, last.id).transaction.partial, true)
   same(M.eventDetail(full, fp, MESA).transaction.partial, false)
+  // under the cap the oldest event's transaction is whole (btop is the sample's oldest)
+  same([idx.events[idx.events.length - 1].id, M.eventDetail(idx, p, BTOP).transaction.partial], [BTOP, false])
   // a command the index clipped says so
   const clip = JSON.parse(sample)
   clip.events.filter(e => e.txId === "tx-20260927T123000").forEach(e => { e.meta.truncated = true })
