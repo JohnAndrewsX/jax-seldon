@@ -854,7 +854,7 @@ mod doctor {
             c["message"]
                 .as_str()
                 .unwrap()
-                .starts_with("db.lck from this boot"),
+                .starts_with("db.lck from this boot: taken as a running pacman"),
             "{c}"
         );
         assert!(c.get("fix").is_none(), "{c}");

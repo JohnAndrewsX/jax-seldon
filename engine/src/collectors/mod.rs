@@ -182,7 +182,9 @@ pub fn find(name: &str) -> Option<&'static (dyn Collector + Sync)> {
 /// acceptance runs in docs/TESTING.md). Read once per process.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sources {
-    /// `SELDON_PACMAN_LOG`, default `/var/log/pacman.log`.
+    /// `SELDON_PACMAN_LOG`, default `/var/log/pacman.log`. Under
+    /// `SELDON_TEST_GUARD` without the variable it is `<guard>/pacman.log`
+    /// (WP-160 round 2), so a guarded run never reads the host's log.
     pub pacman_log: PathBuf,
     /// `SELDON_PACMAN_DB_LOCK`, default `/var/lib/pacman/db.lck`: present
     /// while pacman runs (ADR-0013 §5), or left by one that died before
@@ -246,7 +248,12 @@ impl Sources {
         let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
         let d = Sources::default();
         Sources {
-            pacman_log: var("SELDON_PACMAN_LOG").map_or(d.pacman_log, PathBuf::from),
+            pacman_log: var("SELDON_PACMAN_LOG")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("pacman.log"))
+                })
+                .unwrap_or(d.pacman_log),
             pacman_db_lock: var("SELDON_PACMAN_DB_LOCK")
                 .map(PathBuf::from)
                 .or_else(|| {

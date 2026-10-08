@@ -1338,18 +1338,35 @@ git itself is killed, with the same bounded pipe wait. Rules:
   whose mtime lies before the current boot (the `btime` line of
   `/proc/stat`, `SELDON_PROC_STAT`; under `SELDON_TEST_GUARD` without it
   `<guard>/proc-stat`) was left by a pacman that was killed or lost its
-  power, and pacman is gone: it counts as absent, so the open
-  transaction is emitted `unfinished` and the cursor moves past it. A
-  lock from this boot, or one whose age cannot be told (no `/proc/stat`,
-  no `btime`, no mtime), counts as held (the rule before WP-160). The
-  lock is looked at (its metadata), never opened, touched or removed
-  (AGENTS.md §6); `doctor`'s `pacman` row names a stale one and how to
-  remove it (§3). `btime` follows the wall clock: a pacman started before
-  the clock was set forward (an RTC far behind, then time sync) has a
-  lock older than the boot and its transaction is emitted `unfinished`
-  while it runs (rare; the status is final, ADR-0043).
-  `SELDON_PACMAN_DB_LOCK` names the lock; under `SELDON_TEST_GUARD`
-  without it `<guard>/db.lck`. **Status** (ADR-0043): a
+  power, and pacman is gone. The open transaction is then emitted
+  `unfinished` and the cursor moves past it, when its last line libalpm
+  wrote (`[ALPM]`, `[ALPM-SCRIPTLET]`, matched by the line table or not)
+  is older than the boot too; a later one means pacman wrote since, and
+  the transaction is held back as under a held lock (round 2). pacman's
+  own `[PACMAN] Running` line does not count: pacman logs it before it
+  takes the lock, so a retry after the boot that failed on the lock
+  logs one; with no open transaction, such a line from this boot is read
+  again next time like one under a held lock, an older one is passed.
+  `pacman.log`'s mtime is not used for the same reason. A lock from this
+  boot, or one whose age cannot be told (no `/proc/stat`, no `btime`, no
+  mtime), counts as held (the rule before WP-160); a symbolic link at the
+  lock path is a lock (pacman's own create fails on it), its own mtime
+  counts. The lock is looked at (its metadata), never opened, touched or
+  removed (AGENTS.md §6); `doctor`'s `pacman` row names a stale one and
+  how to remove it (§3). `btime` follows the wall clock. A forward clock
+  jump after pacman took the lock (an RTC far behind, then time sync)
+  makes the lock and the lines pacman wrote before the jump older than
+  the boot. Once pacman writes a line after the jump the transaction is
+  held back and recorded whole. Until then, a capture emits it
+  `unfinished` while pacman still runs, and the cursor moves past it:
+  the lines pacman writes after that, up to `transaction completed`,
+  arrive as package lines outside any transaction, with no `txId`, no
+  `meta.command`, no status and no group (rare: pacman running before
+  time sync, a capture between the jump and its next line; the status is
+  final, ADR-0043). `SELDON_PACMAN_DB_LOCK` names the lock and
+  `SELDON_PACMAN_LOG` the log; under `SELDON_TEST_GUARD` without them
+  `<guard>/db.lck` and `<guard>/pacman.log`, so a guarded run reads none
+  of the host's. **Status** (ADR-0043): a
   transaction that ends with `transaction failed` or `transaction
   interrupted` writes that word as `meta.txStatus` on each of its package
   events; one closed by the next `transaction started`, or still open at

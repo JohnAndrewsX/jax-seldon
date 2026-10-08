@@ -92,7 +92,7 @@ Append-only. One bullet per finding, newest section last.
   failed write never moves a cursor. A collector without a cursor takes a
   baseline at `Ctx::baseline`: the logbook's `created`, or `--since`.
 - **Host paths and programs are in `collectors::Sources`.** They are read once
-  from `SELDON_PACMAN_LOG`, `SELDON_PACMAN_DB_LOCK`, `SELDON_PROC_STAT`, `SELDON_SNAPPER`,
+  from `SELDON_PACMAN_LOG`, `SELDON_PACMAN_DB_LOCK`, `SELDON_SNAPPER`,
   `SELDON_OMARCHY_VERSION` and `SELDON_PACMAN`. Tests and acceptance runs
   point them at fixtures.
 - **Time zones are injected.** Naive local times (snapper `date`, old log
@@ -648,3 +648,19 @@ Append-only. One bullet per finding, newest section last.
   `std::str::from_utf8` (const since 1.87) in a `match`; an `assert!` in
   the const fn turns a bad value into a compile error (E0080). `VERSION`
   in lib.rs (WP-098).
+
+## 2026-10-09 · WP-160 (stale pacman lock)
+
+- **`Sources` has `SELDON_PROC_STAT`** (default `/proc/stat`, its `btime`
+  line is the boot time) besides the variables of the WP-003 note. Under
+  `SELDON_TEST_GUARD` without their variables, `proc_stat`,
+  `pacman_db_lock` and `pacman_log` default into the guard directory
+  (`proc-stat`, `db.lck`, `pacman.log`), so a guarded run reads none of
+  the host's.
+- **Setting a file's mtime needs no crate:** `File::set_modified`
+  (std, stable since 1.75) on a file opened for writing; the tests use it
+  to make a lock older or newer than a fake boot. It follows a symbolic
+  link, so a link's own mtime cannot be set this way.
+- **A temp dir in a unit test is removed by a drop guard**, not by a
+  last line: an assertion that fails unwinds past the last line and
+  leaves the folder behind (two were left by the WP-160 mutant runs).

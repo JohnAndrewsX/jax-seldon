@@ -1609,7 +1609,7 @@ fn check_pacman(config: &Config) -> Check {
         LockState::Held { boot: Some(_) } => Check::new(
             "pacman",
             Status::Ok,
-            "db.lck from this boot: pacman is running; its transaction is recorded when it ends",
+            "db.lck from this boot: taken as a running pacman; its transaction is recorded when it ends",
         ),
         LockState::Held { boot: None } => Check::new(
             "pacman",
@@ -1626,7 +1626,7 @@ fn check_pacman(config: &Config) -> Check {
                 "pacman",
                 Status::Degraded,
                 format!(
-                    "stale {} from {}, before this boot ({}): a pacman was killed or lost its power. pacman refuses to run until the lock is gone; Seldon records the transaction it left open as unfinished",
+                    "stale {} from {}, before this boot ({}): a pacman was killed or lost its power. pacman refuses to run until the lock is gone; Seldon records a transaction it left open as unfinished",
                     lock.display(),
                     at(modified),
                     at(boot),
