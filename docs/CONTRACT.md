@@ -134,6 +134,16 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
      transaction completed and on lines written before, so absent means
      "completed or not known". The index drops it anywhere else and reads
      another word as none.
+   - Optional, ADR-0045 (WP-139): `system.recentConfig` `{scannedAt,
+     files: [{path, mtime}]}`: files under `~/.config` modified in the 7
+     days before the last capture's scan, outside `watchPaths` and
+     `skipPaths`, newest first, at most 80; `path` starts with
+     `~/.config/`, at most 512 characters, never masked (a path the
+     redaction would change is left out). Paths and times only, never
+     content; informational, never in the ledger. User content (rule 6):
+     shown as plain text and passed only as the one argument after `--`
+     of `seldon config watch --json`. Absent before the first scan and
+     while `[redaction] patterns` do not compile.
 
 ## Changing the contract
 
@@ -172,6 +182,7 @@ seldon rebuild --json
 seldon update-impact --json
 seldon doctor --only rules --json               # WP-101: read-only, on panel open (own process, not the queue); runs no probe
 seldon rules update --json                      # WP-101: the rules banner's one click; rewrites only the engine's block
+seldon config watch --json -- <path>           # WP-139, ADR-0045: Watch on a row of system.recentConfig; the path one argument after `--`; only config.toml's watchPaths changes
 ```
 
 The plugin never runs `seldon drift propose` (the agent's command; ADR-0036

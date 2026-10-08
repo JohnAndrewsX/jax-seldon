@@ -25,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Recently edited, not watched (WP-139, ADR-0045).** Each capture that
+  runs the config collector also looks at `~/.config` for files modified
+  in the last 7 days outside your watch paths — a terminal's config,
+  `git/config`, `starship.toml` — and keeps the newest 80 as paths and
+  times (never their content, never a ledger line) in
+  `~/.local/state/seldon/recent-config.json`. The index lists them as
+  `system.recentConfig` (optional within contract 2). Left out: your
+  `skipPaths`, browser and Electron profiles, caches, state, logs, locks,
+  databases, images, editor temp files, Seldon's own and Omarchy's plugin
+  folders, and any path the redaction would change. New:
+  `seldon config watch <path>` adds a path to `watchPaths`, changing only
+  that list in `config.toml`; the next capture takes the file in as it
+  is. The scan costs about 2 ms per capture.
 - **Files pacman left (WP-141).** A `.pacnew` (the package's new default
   was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
   that pacman reports in `/var/log/pacman.log` is now recorded: a pacman
@@ -199,6 +212,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **Recently edited (WP-139).** System has a sixth tile: the files under
+  `~/.config` edited in the last 7 days that Seldon does not watch, each
+  with its age, "not watched" and *Watch*, which adds it to `watchPaths`
+  (`seldon config watch`); the row goes at once.
 - **The pacdiff hint (WP-141).** The Changelog's detail of a file pacman
   left reads "Merge with pacdiff (from pacman-contrib) in a terminal." —
   text only; the plugin runs nothing. A crisis of rule `pacnew-red` says
