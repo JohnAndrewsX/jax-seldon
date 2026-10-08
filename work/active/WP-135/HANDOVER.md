@@ -259,3 +259,37 @@ Verified: fmt and clippy clean; `decide_accept` 6, `triage` 26,
 qmllint ok 46 files, model.test.js 145, real-home-guard 11,
 service-states 328, desk-view 1517, bar-view 194). Only this handover
 changed after that commit.
+
+## Merge of next
+
+ADR-0040 accepted by the operator 2026-10-08 (E18): status line and
+DECISIONS.md row in 040ce77d. `next` (35b1b3de: WP-143, WP-154, WP-102a,
+WP-124, WP-140 and others) merged in 04088da1. Conflicts, both sides kept:
+
+- `DECISIONS.md`: ADR-0039 (next) and ADR-0040 in number order.
+- `CHANGELOG.md`: next's Engine entries (WP-154, WP-140, WP-129, WP-113)
+  after this WP's `decide accept` entry; next moved WP-127's plugin entry
+  into its own Plugin list, and *Accept accepts* now stands beside it
+  there.
+- `plugin/Service.qml`: next's `askResult`, `triageResult` and snapshot
+  keys, plus `acceptResult`.
+- `docs/user/de/02-concepts.md`: both bodies merged on their own; the
+  source line now names the merge (92d13cde), where the English page has
+  both changes.
+
+`triage.rs` (N3's `session_actor_for_user_act`) and the harness files
+merged without conflict.
+
+Verified: `flock /tmp/seldon-check.lock just check` on 92d13cde with
+`XDG_RUNTIME_DIR` a private `mkdir -m 700` directory and `JUST_TEMPDIR`
+in the scratch directory: **exit 0** (`check: ok`; install.test 229,
+deploy-test-host 190, docs-check ok, qmllint ok 47 files, model.test.js
+160, real-home-guard 11, service-states 342, desk-view 1595, bar-view
+194). The runtime directory was removed afterwards. Only this handover
+changed after that commit.
+
+Note: the harness runs of rounds 1 and 2 (a full desk-view and
+service-states run, the trimmed desk-view runs of the plugin mutants)
+ran with the session's `XDG_RUNTIME_DIR`, before the orchestrator's
+rule; their instance folders may be under the real runtime directory.
+Nothing there was touched.
