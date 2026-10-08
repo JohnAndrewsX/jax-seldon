@@ -1,9 +1,6 @@
 # ADR-0041 — One agent per case: a session is a window; `agent focus`, `agent sessions`, `--again`, and `open --editor` focuses its window
 
-**Status:** proposed (WP-156, after the operator's live use on 2026-10-07,
-case C-2026-005: three agents and three editors on one case, all behind
-the desk; the orchestrator's round-2 decision of the same day: "a session
-is a window, not a process")
+**Status:** accepted 2026-10-08 (operator, E19; the operator also agreed to the /proc environ read as worded)
 **Date:** 2026-10-07
 
 > Adds rows to CONTRACT.md's "Commands the plugin may run" (`agent focus

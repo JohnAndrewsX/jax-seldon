@@ -40,6 +40,6 @@
 | ADR-0036 | Agent prompts carry identifiers, never logbook text; proposals are evidence or nothing (`agent ask`, `drift propose|apply|discard`) | accepted |
 | ADR-0037 | ADR-0028 amended: toggles are routine both ways, `system-link` narrowed, the `authorized_keys` files default persistence paths | accepted |
 | ADR-0038 | The index carries what the desk's details show: `drift[].rule`, `cases[].intent`/`result`/`source`, `decisions[].lead` (optional, contract 2) | accepted |
-| ADR-0041 | One agent per case: a session is a window; `agent focus`, `agent sessions`, `--again`, `open --editor` focuses its window | proposed |
+| ADR-0041 | One agent per case: a session is a window; `agent focus`, `agent sessions`, `--again`, `open --editor` focuses its window | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
