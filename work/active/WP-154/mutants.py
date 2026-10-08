@@ -39,7 +39,7 @@ MUTANTS = [
                                          'git::status_is_empty(crate::sys::run_command_in_engine_group({ let mut c = std::process::Command::new("git"); c.args(["status", "--porcelain"]).current_dir(root); c }, timeout, crate::sys::OUTPUT_MAX))')], INDEX),
     ("R2 old git not retried", [("    if option && refuses_no_lazy_fetch(&answer) {", "    if false && refuses_no_lazy_fetch(&answer) {")], GIT),
     ("R2 refusal not remembered", [("        NO_LAZY_FETCH_REFUSED.store(true, Ordering::Relaxed);\n", "")], GIT),
-    ("R2 any 129 is the refusal", [("if stderr.contains(NO_LAZY_FETCH))", "if !stderr.is_empty())")], GIT),
+    ("R2 any 129 is the refusal", [("if stderr.lines().any(|l| l.trim_end().ends_with(NO_LAZY_FETCH)))", "if !stderr.is_empty())")], GIT),
     ("R2 any exit code is the refusal", [("Run::Exited { code: Some(129), stderr, .. }", "Run::Exited { stderr, .. }")], GIT),
     # rule 3: byte for byte as git reads it
     ("R3 packed-refs by lines", [("let mut lines = text.strip_suffix('\\n')?.split('\\n').peekable();",
@@ -56,12 +56,24 @@ MUTANTS = [
     ("R3 .lock component", [("                && !part.ends_with(\".lock\")\n", "")], PLUGINS),
     ("R3 final dot", [("        && !name.ends_with('.')\n", "")], PLUGINS),
     ("R3 config limit", [("const GIT_CONFIG_MAX: u64 = 1024 * 1024;", "const GIT_CONFIG_MAX: u64 = 2 * 1024 * 1024;")], PLUGINS),
-    ("R3 gitdir: trimmed", [('root.join(git_path(text.strip_prefix("gitdir: ")?))',
+    ("R3 gitdir: trimmed", [('root.join(git_path(text.strip_prefix("gitdir: ")?)?)',
                              'root.join(text.trim().strip_prefix("gitdir:")?.trim())')], INDEX),
-    ("R3 git paths trimmed", [("    Path::new(text.trim_end_matches(['\\n', '\\r']))", "    Path::new(text.trim())")], INDEX),
+    ("R3 git paths trimmed", [("    let path = text.trim_end_matches(['\\n', '\\r']);", "    let path = text.trim();")], INDEX),
     ("R3 unreadable commondir ignored", [("        Err(_) => return None,\n    };", "        Err(_) => gitdir.clone(),\n    };")], INDEX),
     ("R3 worktree back link trimmed", [(".is_ok_and(|back| absolute(Path::new(back.trim_end_matches(['\\n', '\\r']))) == dot_git)",
                                         ".is_ok_and(|back| absolute(Path::new(back.trim())) == dot_git)")], GIT),
+    # round 2: the stage-1 reviewer's mutants A, C, D, E, and N1/N2
+    ("R4-A is_clean_path with transport", [('    status_is_empty(query_here(root, &["status", "--porcelain", "--", path]))',
+                                           '    status_is_empty(run(Some(root), &["status", "--porcelain", "--", path]))')], GIT),
+    ("R4-C sys::run uncapped", [("    run_with(command(program, args, cwd), timeout, Group::Own, cap)\n",
+                                 "    let _ = cap;\n    run_with(command(program, args, cwd), timeout, Group::Own, usize::MAX)\n")], SYS),
+    ("R4-D check_toplevel with transport", [('    let out = match query_here(\n        root,\n        &["rev-parse", "--show-toplevel", "--absolute-git-dir"],',
+                                            '    let out = match run(\n        Some(root),\n        &["rev-parse", "--show-toplevel", "--absolute-git-dir"],')], GIT),
+    ("R4-E check_head with transport", [('pub fn check_head(root: &Path) -> Result<(), String> {\n    match query_here(root, &["rev-parse", "--verify", "-q", "HEAD"]) {',
+                                        'pub fn check_head(root: &Path) -> Result<(), String> {\n    match run(Some(root), &["rev-parse", "--verify", "-q", "HEAD"]) {')], GIT),
+    ("R4-N1 any line naming the option", [("if stderr.lines().any(|l| l.trim_end().ends_with(NO_LAZY_FETCH)))",
+                                          "if stderr.contains(NO_LAZY_FETCH))")], GIT),
+    ("R4-N2 an empty git path followed", [("    (!path.is_empty()).then(|| Path::new(path))", "    Some(Path::new(path))")], INDEX),
 ]
 env = dict(os.environ, CARGO_TARGET_DIR=TARGET)
 results = []
