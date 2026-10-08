@@ -350,3 +350,144 @@ merge commit 5ddf80b.
   Log: `engine/target/check-wp102-merge1.log` (dev host, not committed).
 
 102b is not started; it waits for WP-127 (`cases[].source`).
+
+## 102b
+
+**Merge:** `git fetch`, then a merge of the local `next` (aaf7a0a: main,
+WP-124, WP-127, WP-136, WP-140) as its own commit, 7ce404d. Local `next`
+was ahead of `origin/next` (8671446); the brief said `git merge next`, so
+I aborted a started merge of `origin/next` and merged the local one. There
+were no conflicts. Nothing I had built was disturbed, which I checked:
+WP-127 already writes the frontmatter `source` from `import task`, and
+WP-140 changed `redact.rs` beside `redact_keeping_lines`.
+
+### What was built
+
+The desk import follows the WP's 0.2.0 form and the "For 102b" rules of
+round 3.
+
+- **One engine addition: `plan show <id> --json` gives `intent: {text,
+  lines, truncated}`.** The desk must show the *whole* Intent, but the
+  index carries only its first paragraph (clipped to 256 bytes), and the
+  plugin never reads Markdown. So:
+  - the engine extracts the section and cleans it as the index cleans text
+    (`index::build::plain_text`: control characters as spaces, direction and
+    format characters dropped, redacted), without the clip;
+  - the text is capped at 64 KiB, cut at a character boundary;
+  - the line count is taken before the cut;
+  - `intent` is `null` while the redaction patterns do not compile.
+
+  Test `plan_show_gives_the_whole_intent_for_the_desk` (also: a long file
+  gives `truncated`). Documented in SPEC-ENGINE §3 and in CONTRACT.md's
+  argv list.
+- **Import tasks…** is a button in the Work list head, beside *By agent*
+  and *New case*. It opens `components/desk/ImportForm.qml` in the detail:
+  - an explanation line, the path field and an optional area;
+  - **Dry run** (Enter in a field) sends `seldon import task --json
+    --dry-run [--area <a>] -- <path>` and shows the list: title, status ·
+    source · changed since; the skips with their reason in words; and
+    "Would create N cases · M tasks skipped";
+  - **Import N cases** is enabled only for the path and area that the
+    shown dry run was for. One click sends the same command without
+    `--dry-run`;
+  - the engine's refusal shows in the form. Esc closes the form and keeps
+    the fields;
+  - after an import the form closes and empties, the first new case is
+    selected, and the list's result line says "Imported N cases: …".
+
+  `Model.importPathError` refuses, before any call: an empty path, a
+  control, bidi or format character, a relative path, a path over 4096
+  characters, and anything that is not `.md`. `validateArgs` accepts
+  exactly `import task --json [--dry-run] [--area <slug>] -- <path>` (with
+  the path check) and `plan show <id> --json`. The path is always one
+  argument after `--`; a path that looks like shell text stays one
+  argument (unit test).
+- **Imported cases:**
+  - The list meta reads "id · imported · risk · …".
+  - The detail asks `plan show` (read-only), again on every new index,
+    and shows **IMPORTED TASK · N lines**. Under it is the accent line
+    "From <source>. Read the whole Intent before you start the case: once
+    started, an agent acts on it without asking. Only you start it." Then
+    the engine's text in a bordered box, `Text.PlainText`,
+    `Style.font.family` (Omarchy's monospace alias), `WrapAnywhere`, never
+    Markdown. Its first line is the provenance line. A note follows when
+    the text is truncated.
+  - The key/values show "Imported from: <source>" (WP-127).
+  - While the Intent is loading, withheld or unavailable (dev mode), the
+    block says so and the index's first paragraph stays.
+- **Start of an imported case:**
+  - It never fires from the list or a key: such a case has **no Enter
+    action**. Without this, Enter would have fallen to *Drop*; I found
+    that and closed it.
+  - The bar's Start is enabled only while `Model.intentReviewed` is true
+    (this case's finished, successful `plan show`).
+  - It arms by click only: "Start C-…? Click Confirm."
+  - Until then the hint reads "Start waits until the whole Intent below is
+    shown; only you start an imported case".
+  - `press()` refuses as well, as a second guard.
+- **Service:** `importTasks(path, area, dryRun)` (one at a time, through
+  the queue) and `showCase(id, again)`. The new state is in `importResult`
+  and `caseShown`; both are in the IPC `status` (without the Intent text).
+- **Rules followed:** Style tokens only, `Text.PlainText` everywhere (a
+  unit test reads both QML files), fixed argv, everything through the
+  async queue, `qmllint` and `omarchy plugin validate` before each plugin
+  commit, and no absolute home path.
+
+### Tests
+
+- **Model** (`model.test.js`, +7 tests, 165 pass): `importPathError`,
+  `importArgs`, `validateArgs` (5 accepted and 13 refused forms),
+  `importResult`, `caseShowArgs`/`caseShowResult`, the imported case's
+  actions (no Enter, no key, Start armed by click), `intentReviewed`, and
+  plain text only.
+- **Harness** (`desk-view.sh` against `fake-seldon`, which now speaks
+  `import task` and `plan show`):
+  - **import-live:** the form; the dry run's list; one click imports; the
+    selected case shows its whole Intent (5 lines, the provenance line, the
+    source); no first-paragraph INTENT beside it; Enter twice does nothing;
+    Start is armed by click and runs; a second dry run is all "already
+    imported". The argv has the path as one argument after `--`, and
+    `plan show` only for the imported case and before its Start (the
+    number of `plan show` calls depends on index timing, so that part is
+    checked separately).
+  - **import-refused:** the form's own path check; the engine's refusal in
+    the form; the fields kept after Esc; a withheld Intent leaves Start off;
+    two clicks on the disabled Start run nothing.
+  - **import-dev:** the index's first paragraph; "needs the engine"; no
+    Start; the form stays shut; nothing overflows at 50 %.
+- **Plugin mutants** (`work/active/WP-102/plugin-mutants.py` against the
+  trimmed harness from `mk-desk-import.py`): four of five are killed —
+  `intentReviewed` always true, the bar enabling Start without the review,
+  Enter falling to Drop, and `validateArgs` skipping the path check.
+  **"press() ignores the review" survives**: no path reaches `press("start")`
+  except the disabled bar button (checked: two clicks do nothing) and
+  Enter (which has no action), so that guard is defence in depth only.
+- **Engine:** `import_task` now has 23 tests.
+
+### Not done here / for the orchestrator
+
+- **The live check on the test host** with a ten-item file that holds one
+  `## Result` line and one CRLF secret is not run yet. It needs the
+  installed build on the test host (packaging), after merge. The engine
+  side of it is covered by the tests (escaping, CRLF, redaction); the desk
+  side by the harness.
+- **The desk has no key for Import tasks…**, so `docs/KEYBINDINGS.md` is
+  unchanged.
+- **`plan show` runs through the one engine queue**, as `drift show`
+  does. On a busy queue the review waits its turn, and Start stays off
+  until then.
+
+### Check (102b)
+
+`flock /tmp/seldon-check.lock just check` on 42ace2d (the last code and
+docs commit; this handover adds only this file): **exit 0, `check: ok`**.
+It covers:
+- fmt, clippy `-D warnings`, and all engine tests (default and `watch`);
+- packaging, install, deploy and schema-validate;
+- docs-check (467 links, 14 translated pages, 53 commands);
+- `omarchy plugin validate` and qmllint (48 files);
+- the plugin tests: model.test.js 165, service-states 342/0, desk-view
+  1609/0, bar-view 194/0.
+
+The branch diff since the merge holds no private path. Log:
+`engine/target/check-wp102b-r1.log` (dev host, not committed).
