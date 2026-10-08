@@ -2245,7 +2245,7 @@ expect system 10 .view.sectionView.watchResult ""
 for i in 2 3 4 5 6 9; do expect system $i '.overflow | join(" | ")' ""; done
 clean_log system
 
-# 10e'. Watch, live (WP-139, ADR-0045): each click runs `config watch --json
+# 10e'. Watch, live (WP-139, ADR-0046): each click runs `config watch --json
 #       -- <path>` with the row's path as one argument; the row goes with the
 #       index the engine rebuilds and the answer shows above the list. A held
 #       lock is the engine's message in place, no retry, no lastError.

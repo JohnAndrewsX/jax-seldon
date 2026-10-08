@@ -123,7 +123,7 @@ fn write_proposals(env: &Env, logbook: &Path) {
 }
 
 /// `fixtures/state/recent-config.json` in the state directory (the
-/// sample's `system.recentConfig`, ADR-0045).
+/// sample's `system.recentConfig`, ADR-0046).
 fn write_recent_config(env: &Env) {
     let state = env.home.join(".local/state/seldon");
     std::fs::create_dir_all(&state).unwrap();

@@ -1,4 +1,4 @@
-//! `seldon config watch <PATH>` (SPEC-ENGINE §3, ADR-0045, WP-139): adds
+//! `seldon config watch <PATH>` (SPEC-ENGINE §3, ADR-0046, WP-139): adds
 //! one path to `config.toml watchPaths`, the desk's *Watch* click on a
 //! recently edited file. Only the `watchPaths` array changes (the minimal
 //! edit of WP-109, [`crate::config::with_added_watch_paths`]); every other

@@ -202,7 +202,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
                 })
                 .collect(),
         ),
-        // the state file's, set by `derive_at` (ADR-0045)
+        // the state file's, set by `derive_at` (ADR-0046)
         recent_config: None,
     };
 

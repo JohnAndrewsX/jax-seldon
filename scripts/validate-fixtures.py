@@ -50,7 +50,7 @@ EVENT, CASE, INDEX = ID + "event.schema.json", ID + "case.schema.json", ID + "in
 PROPOSAL = ID + "proposal.schema.json"
 # ADR-0035 §6: the triage proposals the sample's `triage` points at (the engine's state dir)
 PROPOSALS = os.path.join(FIX, "proposals")
-# ADR-0045: the last scan of recently edited files under ~/.config (the engine's state dir)
+# ADR-0046: the last scan of recently edited files under ~/.config (the engine's state dir)
 RECENT_CONFIG = os.path.join(FIX, "state", "recent-config.json")
 # engine: config::DEFAULT_WATCH_PATHS, DEFAULT_SKIP_PATHS (the golden test runs without a config)
 WATCH_PATHS = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc",
@@ -1624,7 +1624,7 @@ def derive_triage(logbook_path, problems):
 
 def derive_recent_config(generated_at, problems):
     """engine: collectors::recent::shown — `system.recentConfig` from the saved scan
-    (fixtures/state/, the engine's state dir) at `generated_at` (ADR-0045): the files modified in
+    (fixtures/state/, the engine's state dir) at `generated_at` (ADR-0046): the files modified in
     the 7 days before it, under no watch path, matching no skipPath (a folder's name too), at most
     80, in the file's order (newest first). The sample's scan lists one file under a watch path
     (watched since the scan) and one older than 7 days; both drop out. None without the file."""
@@ -2380,7 +2380,7 @@ def main():
             ok += 1
 
     # 2. the sample index derives from the sample logbook (and `system.recentConfig` from the
-    # saved scan, ADR-0045)
+    # saved scan, ADR-0046)
     want = as_sample(derived)
     for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
         problems += [f"index.sample.json /{k}{d}" for d in diff(sample.get(k), want[k])]

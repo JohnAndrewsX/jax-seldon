@@ -1,4 +1,4 @@
-//! Recently edited under `~/.config`, outside the watch paths (ADR-0045,
+//! Recently edited under `~/.config`, outside the watch paths (ADR-0046,
 //! WP-139): the scan a capture runs, `system.recentConfig` in the index,
 //! and `seldon config watch`, the desk's *Watch* click. Everything lives in
 //! a temp home; nothing reads or writes the real `~/.config` (AGENTS.md §6).

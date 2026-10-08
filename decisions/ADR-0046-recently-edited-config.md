@@ -1,4 +1,4 @@
-# ADR-0045 — The index lists recently edited files under ~/.config outside the watch paths; one click watches one
+# ADR-0046 — The index lists recently edited files under ~/.config outside the watch paths; one click watches one
 
 **Status:** proposed (WP-139)
 **Date:** 2026-10-08

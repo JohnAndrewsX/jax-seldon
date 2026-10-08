@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
-- **Recently edited, not watched (WP-139, ADR-0045).** Each capture that
+- **Recently edited, not watched (WP-139, ADR-0046).** Each capture that
   runs the config collector also looks at `~/.config` for files modified
   in the last 7 days outside your watch paths — a terminal's config,
   `git/config`, `starship.toml` — and keeps the newest 80 as paths and

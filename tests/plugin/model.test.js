@@ -1362,7 +1362,7 @@ test("systemTiles: six tiles, big values, every field optional", () => {
   same(M.systemTiles(null, now).map((x) => x.meta), ["—", "—", "—", "—", "—", "—"])
 })
 
-test("systemTiles: Recently edited (WP-139, ADR-0045)", () => {
+test("systemTiles: Recently edited (WP-139, ADR-0046)", () => {
   const now = Date.parse("2026-10-01T17:05:12+02:00")
   const r = M.systemTiles(sampleIndex, now)[5]
   assert.strictEqual(r.title, "Recently edited")

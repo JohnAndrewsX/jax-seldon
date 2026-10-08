@@ -375,7 +375,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         }
         Err(e) => eprintln!("seldon: warning: planned changes not linked: {e}"),
     }
-    // ADR-0045: recently edited under ~/.config, outside the watch paths;
+    // ADR-0046: recently edited under ~/.config, outside the watch paths;
     // with the config collector only, never an event
     if reports.iter().any(|r| r.name == "config" && r.ran) {
         let excluded = [

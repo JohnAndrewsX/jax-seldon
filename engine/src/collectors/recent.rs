@@ -1,5 +1,5 @@
 //! Recently edited files under `~/.config` outside the watch paths
-//! (SPEC-ENGINE §4, ADR-0045, WP-139). No collector: it writes no event.
+//! (SPEC-ENGINE §4, ADR-0046, WP-139). No collector: it writes no event.
 //!
 //! The config collector hashes what `watchPaths` names, exactly but
 //! narrowly. Edits elsewhere under `~/.config` (a terminal's config,

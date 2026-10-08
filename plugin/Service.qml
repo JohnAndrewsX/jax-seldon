@@ -698,7 +698,7 @@ Item {
     return true
   }
 
-  // System › Recently edited, *Watch* (WP-139, ADR-0045): `seldon config
+  // System › Recently edited, *Watch* (WP-139, ADR-0046): `seldon config
   // watch --json -- <path>`, the path one argument after `--`, checked as
   // the engine lists them. One at a time; the row goes with the index the
   // engine rebuilds.

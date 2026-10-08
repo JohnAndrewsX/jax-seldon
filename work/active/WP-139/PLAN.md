@@ -6,7 +6,7 @@ tagged), CONTRACT.md rule 9, ADR-0038 (the last such amendment).
 
 ## Steps
 
-1. **ADR-0045 (proposed), an ADR-0038 amendment:** one optional index
+1. **ADR-0046 (proposed), an ADR-0038 amendment:** one optional index
    field, `system.recentConfig = {scannedAt, files: [{path, mtime}]}`,
    and the fixed-argv command `seldon config watch --json -- <path>`.
    `contractVersion` stays 2. ADR-0028 is unchanged: a newly watched

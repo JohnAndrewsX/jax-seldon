@@ -772,7 +772,7 @@ and no action runs.
   index's list, at most 10), Deviations (the count; the list is in
   STATUS.md), Collectors ("ok/enabled"; each collector, then machine,
   engine, index time and the logbook's areas), Recently edited (WP-139,
-  ADR-0045: the count of `system.recentConfig.files`; Scanned). Every
+  ADR-0046: the count of `system.recentConfig.files`; Scanned). Every
   field of `index.system` is optional: a tile without its data shows "—"
   and "Not in the index"; a failing collector stripes the Collectors tile
   and its lead says so. The detail: the big value and unit, the lead, the

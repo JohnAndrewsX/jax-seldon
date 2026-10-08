@@ -12,7 +12,7 @@
 //! 2 MiB image each. Everything lives in a temp dir; nothing
 //! reads the real home (AGENTS.md §6).
 //!
-//! The scan of recently edited files under `~/.config` (ADR-0045, WP-139)
+//! The scan of recently edited files under `~/.config` (ADR-0046, WP-139)
 //! is the capture-cost delta of that WP: the same home plus 40 programs'
 //! config folders, a browser profile, an Electron app and a cache, every
 //! file modified within the last 7 days (the list's worst case).

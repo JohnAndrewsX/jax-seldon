@@ -312,12 +312,12 @@ pub struct System {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub areas: Option<Vec<AreaRow>>,
     /// Recently edited files under `~/.config` outside the watch paths
-    /// (ADR-0045).
+    /// (ADR-0046).
     #[serde(rename = "recentConfig", skip_serializing_if = "Option::is_none")]
     pub recent_config: Option<RecentConfig>,
 }
 
-/// `system.recentConfig` (ADR-0045): the last scan's time and its files,
+/// `system.recentConfig` (ADR-0046): the last scan's time and its files,
 /// newest first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

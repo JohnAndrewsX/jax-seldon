@@ -15,7 +15,7 @@ import "../Model.js" as Model
 // from. The sticky bar: *Open in editor* opens the logbook's STATUS.md
 // (`seldon open status --editor --json`), the full report.
 //
-// The sixth tile, Recently edited (WP-139, ADR-0045): files under
+// The sixth tile, Recently edited (WP-139, ADR-0046): files under
 // ~/.config modified in the last 7 days outside the watched paths
 // (index.system.recentConfig, paths and times only). Its detail lists them,
 // each with its age, "not watched" and *Watch*, which runs `seldon config

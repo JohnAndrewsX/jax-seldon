@@ -741,7 +741,7 @@ function validateArgs(args) {
     return !withText && n === 3 && a[1] === "--only" && a[2] === "rules" && json
       ? "" : "doctor must be: doctor --only rules --json"
   case "config":
-    // WP-139, ADR-0045: Watch on a row of index.system.recentConfig
+    // WP-139, ADR-0046: Watch on a row of index.system.recentConfig
     return withText && n === 2 && a[1] === "watch" && json && watchPathError(free[0]) === ""
       ? "" : "config must be: config watch --json -- <path under ~/.config/>"
   case "rules":
@@ -2183,7 +2183,7 @@ function acceptArmHint(decisionId) {
   return "Accept " + decisionId + "? Click Confirm: it becomes accepted with today's date."
 }
 
-// ---- System: recently edited, not watched (WP-139, ADR-0045) ---------------
+// ---- System: recently edited, not watched (WP-139, ADR-0046) ---------------
 
 var RECENT_ROOT = "~/.config/"
 var RECENT_PATH_MAX = 512
@@ -2406,7 +2406,7 @@ function systemTiles(index, nowMs) {
     lead: colLead.join(" · "), rows: rowsOf("COLLECTORS").concat(rowsOf("SELDON"), areaRows),
     stripe: enabled > ok ? "attention" : "" })
 
-  // WP-139, ADR-0045: edits the config collector does not see
+  // WP-139, ADR-0046: edits the config collector does not see
   var files = recentFiles(index, nowMs)
   var rc = files === null ? null : sys.recentConfig
   var scanned = rc !== null ? timeMs(rc.scannedAt) : NaN
