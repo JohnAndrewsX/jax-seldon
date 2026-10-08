@@ -75,7 +75,10 @@ Touched outside WP scope: none | list
 
 - **G1 Assign:** deps completed, role available, WP has acceptance tests.
 - **G2 Accept:** tests pass on the orchestrator's machine, Reviewer approves,
-  no files touched outside scope, STATUS updated.
+  no files touched outside scope, STATUS updated. The gate's check and the
+  main check after a merge run `SELDON_FULL_CHECK=1 just check`, so the
+  Quickshell harnesses run whatever changed (docs/TESTING.md, "The
+  session's runtime dir").
 - **G3 Phase exit:** the phase's exit criterion in PLAN.md is demonstrated
   to the operator (screenshot or terminal transcript in `work/completed/`).
 
