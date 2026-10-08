@@ -25,7 +25,7 @@ def plain(a, b, count=1):
 
 MUTANTS = [
     # the text, as `import task` treats a task file
-    ("text: format characters kept", INBOX, plain(".filter(|c| !is_direction_or_format(*c))", ".filter(|_| true)")),
+    ("text: format characters kept", INBOX, plain('let (text, text_dropped) = drop_format(&raw.replace("\\r\\n", "\\n"));', 'let (text, text_dropped) = (raw.replace("\\r\\n", "\\n"), 0);')),
     ("text: format characters not counted", INBOX, plain("text.chars().count() - kept.chars().count()", "0")),
     ("text: CRLF kept", INBOX, plain('raw.replace("\\r\\n", "\\n")', "raw.clone()")),
     ("text: not scrubbed", INBOX, plain('trim_blank_lines(&scrubber.text("text", &text))', "trim_blank_lines(&text)")),
@@ -36,7 +36,7 @@ MUTANTS = [
     ("text: stdin not UTF-8 accepted", INBOX, plain('return String::from_utf8(bytes).map_err(|_| Error::user("the text on stdin is not UTF-8"));', "return Ok(String::from_utf8_lossy(&bytes).into_owned());")),
     ("text: a file read through its link", INBOX, plain("match sys::read_small_file(file, MAX_TEXT_BYTES) {", "match std::fs::read_to_string(file).map(Some).map_err(|e| e.to_string()) {")),
     # the title
-    ("title: format characters kept", INBOX, plain("let (title, title_dropped) = drop_format(&args.title);", "let (title, title_dropped) = (args.title.clone(), 0);")),
+    ("title: format characters kept", INBOX, plain("let (title, format_dropped) = drop_format(&args.title);", "let (title, format_dropped) = (args.title.clone(), 0);")),
     ("title: several lines", INBOX, plain('let title = one_line("the title", &title)?;', 'let title = super::required_text("the title", &title)?;')),
     ("title: not scrubbed", INBOX, plain('let title = scrubber.text("title", &title);', "let title = title.clone();")),
     ("title: no length limit", INBOX, plain("if title.chars().count() > MAX_TITLE_CHARS {", "if false {")),
@@ -65,6 +65,17 @@ MUTANTS = [
     ("record: the user's edits committed too", INBOX, plain('autocommit_paths(ctx, &config, &logbook, &[&path], "inbox add")', 'super::autocommit(ctx, &config, &logbook, "inbox add")')),
     ("record: no index rebuild", INBOX, plain("        crate::index::rebuild_if_initialised(ctx);\n", "")),
     ("record: no lock", INBOX, plain("    let lock = ctx.lock()?;\n", "    let lock = ();\n")),
+    # round 2
+    ("r2: a linked inbox written through", INBOX, plain("    checked_inbox(ctx, &logbook)?;\n", "")),
+    ("r2: a link counts as the inbox", INBOX, plain("        Ok(m) if m.file_type().is_dir() => Ok(()),", "        Ok(m) if m.file_type().is_dir() || m.file_type().is_symlink() => Ok(()),")),
+    ("r2: the filed scan reads through links", INBOX, plain("let text = sys::read_small_file(&path, 2 * MAX_TEXT_BYTES).ok()??;", "let text = std::fs::read_to_string(&path).ok()?;")),
+    ("r2: title controls kept", INBOX, plain("let (title, controls_dropped) = drop_chars(&title, char::is_control);", "let (title, controls_dropped) = (title.clone(), 0);")),
+    ("r2: title controls not counted", INBOX, plain("let title_dropped = format_dropped + controls_dropped;", "let title_dropped = format_dropped + controls_dropped * 0;")),
+    ("r2: the title's drops not counted", INBOX, plain('"droppedCharacters": title_dropped + text_dropped,', '"droppedCharacters": text_dropped,')),
+    ("r2: a title of controls is filed", INBOX, plain('    let title = super::required_text("the title", &title)?;\n', "")),
+    ("r2: a proc view filed", INBOX, plain("&& std::fs::symlink_metadata(file).is_ok_and(|m| m.len() == 0) =>", "&& false =>")),
+    ("r2: an empty file is a view", INBOX, plain("if !text.is_empty() && std::fs::symlink_metadata", "if true && std::fs::symlink_metadata")),
+    ("r2: a terminal is read", INBOX, plain("        if stdin.is_terminal() {", "        if false && stdin.is_terminal() {")),
 ]
 
 check = "--check" in sys.argv

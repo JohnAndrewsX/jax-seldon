@@ -538,15 +538,20 @@ seldon inbox add --title T --file FILE|- [--tag T]… [--actor A] [--json]
                                                # the engine stays the only writer. `--file -` reads stdin (a terminal
                                                # is refused, exit 1), else a regular file (no symbolic link, FIFO,
                                                # device or directory; checked before it is opened; any path, never
-                                               # recorded) of at most 1 MiB; UTF-8 either way (exit 1 otherwise). The
+                                               # recorded) of at most 1 MiB; UTF-8 either way (exit 1 otherwise). A file
+                                               # the kernel sizes 0 that holds data (a /proc or /sys view such as
+                                               # `/proc/self/environ`) is refused, exit 1 (round 2). The
                                                # text as `import task` treats a task file: CRLF as LF, direction and
                                                # format characters (`import::is_direction_or_format`) dropped and
                                                # counted, then the import's scrubber: the whole text through §7 with
                                                # the config's patterns keeping its lines (`redact_keeping_lines`, so a
                                                # PEM key's line breaks follow its marker), then `/home/<user>` → `~`;
                                                # leading and trailing blank lines dropped; blank after that → exit 1.
-                                               # Title: format characters dropped, one line (`one_line`), scrubbed the
-                                               # same way, at most 120 characters (exit 1). Tags: `log`'s `--tag`,
+                                               # Title: format characters dropped, one line (`one_line`), then every
+                                               # control character (C0, DEL, C1) dropped too, so no ESC reaches the
+                                               # human line (round 2), scrubbed the same way, at most 120 characters
+                                               # (exit 1); both drops counted. The text keeps its C0/C1 characters
+                                               # (WP-159's shared helper takes them). Tags: `log`'s `--tag`,
                                                # redacted. Actor: --actor, else $SELDON_ACTOR, else human. The file
                                                # `inbox/<YYYY-MM-DD>-<slug>.md` (local date, `cases::slug` of the
                                                # title, `note` without letters), frontmatter `type: inbox`, `created`,
@@ -557,7 +562,9 @@ seldon inbox add --title T --file FILE|- [--tag T]… [--actor A] [--json]
                                                # its path named; actor, tags and date do not count. Otherwise the file
                                                # is created exclusively (O_EXCL: never overwritten, a link there never
                                                # followed), a taken name gets `-2` … `-99` (then exit 1); `inbox/` is
-                                               # created when missing. One autocommit of the new file alone (`git
+                                               # created when missing; an `inbox` that is a symbolic link or no directory
+                                               # is refused, exit 1, nothing written (round 2, as `triage::checked_dir`).
+                                               # One autocommit of the new file alone (`git
                                                # commit -- <path>`, the user's other changes stay out), `seldon: inbox
                                                # add`, and an index rebuild; none when already filed. No ledger
                                                # event (a `crash` kind is E28 step 2, with an ADR). --json → {filed,
