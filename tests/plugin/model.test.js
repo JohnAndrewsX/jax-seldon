@@ -2474,6 +2474,17 @@ test("transactions keyed by Object.prototype names keep the desk whole (WP-137 r
   assert.doesNotThrow(() => { p = M.deskChangelog(v) })
   same(p.rows.length, v.events.length)
   same(pac.map(e => M.changelogRow(p, e.id).alert), PROTO.map(() => "interrupted"))
+  // no row turns into drift or a group member by a prototype name
+  const base = M.deskChangelog(JSON.parse(sample))
+  same(pac.map(e => [M.changelogRow(p, e.id).drift, M.changelogRow(p, e.id).groupLeader]),
+    pac.map(e => [M.changelogRow(base, e.id).drift, M.changelogRow(base, e.id).groupLeader]))
+  // a caseless, unresolved line in a transaction named like a prototype member
+  const loose = JSON.parse(JSON.stringify(v))
+  const free = loose.events.find(e => e.id === pac[1].id)
+  delete free.case; delete free.resolution; delete free.resolutionDetail
+  free.txId = "toString"
+  const lp = M.deskChangelog(loose)
+  same([M.changelogRow(lp, free.id).drift, M.changelogRow(lp, free.id).groupLeader], [false, ""])
   const today = M.deskToday(v, p)
   assert.ok(Array.isArray(today.needs), "Today keeps its rows")
   for (const e of pac) {
