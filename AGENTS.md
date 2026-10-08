@@ -97,7 +97,13 @@ dev agents in parallel on independent WPs.
   `/etc/pacman.d/*.conf`, and (metadata only, operator
   decision 2026-10-08, E27) the systemd journal: the user's own
   systemd-coredump entries (`COREDUMP_*` fields, never the core itself)
-  and boot errors and failed units as summaries.
+  and boot errors and failed units as summaries, and (hashes only,
+  operator decision 2026-10-08, S8) the boot configuration:
+  `/etc/mkinitcpio.conf`, `/etc/mkinitcpio.conf.d/*`, `/etc/mkinitcpio.d/*`,
+  `/etc/default/limine`, `/etc/limine-entry-tool.conf`,
+  `/etc/limine-entry-tool.d/*` and `/boot/limine*.conf`, and (names only,
+  S9) the `IgnorePkg` and `IgnoreGroup` values of `/etc/pacman.conf` and
+  its includes.
 - **Test harnesses never write into the user's live session:** every
   process a test starts gets its own `HOME` and its own private
   `XDG_RUNTIME_DIR` (0700, removed afterwards), never the real
