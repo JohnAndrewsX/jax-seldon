@@ -197,3 +197,8 @@ by `/etc/limine*`, no code change), the systemd drop-ins as
   the story, offsets 6245 / 13475, one more graph node and edge).
   Docs, DECISIONS (0039, 0040, 0042, 0043, 0044) and CHANGELOG keep both
   sides; the schema names both `transaction` and `txStatus`.
+- Check: `flock /tmp/seldon-check.lock just check` on the merge head
+  `74ffc73`, clean tree, private `XDG_RUNTIME_DIR` (mode 700, removed
+  after) and `JUST_TEMPDIR` in the scratch dir: **check: ok**, exit 0
+  (log `check-wp141-r9.log`). Runs r1–r6 (2026-10-07/08) used the session
+  default runtime dir.
