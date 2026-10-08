@@ -172,6 +172,10 @@ Also added:
 - **Gate:** `flock /tmp/seldon-check.lock just check` on 3f471813 (dev
   host; Omarchy installed, so the host steps ran): `check: ok`, exit 0 (log `check-wp154-1.log`, outside
   the repository). It waited on the lock behind two other agents' checks.
+  desk-view: 1556 passed, 0 failed; the log has no ENOSPC and no "No
+  space left" line (0 matches). `/run/user/1000` was at 100 % after this
+  run (orchestrator note); nothing there was touched, and the check was
+  not run again.
 - **Perf** (bench profile, before the merge, which touches no engine
   code). Every budget holds:
   - `status` at the stated scale: 51.1 ms (budget 100);
