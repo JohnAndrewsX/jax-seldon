@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **`seldon preview` (WP-138, ADR-0045).** Before you set up Seldon:
+  what your machine remembers of the last 7 days on its own — pacman's
+  transactions and the files edited under `~/.config`, by modification
+  time only (no content; caches, browser profiles, databases, logs and
+  your `skipPaths` left out). Read-only: it needs no logbook and writes
+  nothing. `--days` 1–7, `--json` for the desk.
 - **Files pacman left (WP-141).** A `.pacnew` (the package's new default
   was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
   that pacman reports in `/var/log/pacman.log` is now recorded: a pacman
@@ -199,6 +205,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **Before init, a preview without memory (WP-138).** Until the logbook
+  exists, Today lists the last 7 days' pacman transactions and the files
+  edited under `~/.config` — "This is without memory: no who, no why,
+  gone when the logs rotate. Set up Seldon?" — and **Set up Seldon**
+  opens the setup in a terminal.
 - **The pacdiff hint (WP-141).** The Changelog's detail of a file pacman
   left reads "Merge with pacdiff (from pacman-contrib) in a terminal." —
   text only; the plugin runs nothing. A crisis of rule `pacnew-red` says

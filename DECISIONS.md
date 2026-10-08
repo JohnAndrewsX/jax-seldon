@@ -46,5 +46,6 @@
 | ADR-0042 | ADR-0028 amended: a file pacman left is attention, a crisis beside the boot and login files (mkinitcpio, Limine, PAM) | accepted |
 | ADR-0043 | A pacman transaction that did not complete says so: `meta.txStatus` `failed`/`interrupted`/`unfinished` (optional, contract 2) | accepted |
 | ADR-0044 | The desk reads a case's whole Intent (`plan show --json` `intent {text, lines, truncated, hidden}`) and imports task files (`import task`): two plugin-command rows; an imported Intent fits the desk, nothing invisible reaches it | accepted |
+| ADR-0045 | Before the logbook exists, the desk shows what the machine remembers on its own: `seldon preview --json` (pacman transactions, files edited under `~/.config`, 7 days, read-only), one plugin-command row and `preview.schema.json` | proposed |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
