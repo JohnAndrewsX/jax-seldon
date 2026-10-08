@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 4479e33 -->
+<!-- source: en/04-working-with-agents.md @ 4d58d386 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -630,7 +630,7 @@ aus dem Absturz ein Case wird. Omarchys Benachrichtigung und sein Skill
 bleiben, wie sie sind. Der Agent legt den Bericht über die Engine ab:
 
 ```sh
-seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file -
+seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file report.md
 ```
 
 Die Engine schwärzt den Bericht wie eine Notiz (Tokens, Schlüssel,

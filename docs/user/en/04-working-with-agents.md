@@ -576,7 +576,7 @@ Omarchy's notification and its skill stay as they are. The agent files the
 report through the engine:
 
 ```sh
-seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file -
+seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file report.md
 ```
 
 The engine redacts the report like a note (tokens, keys, passwords; home
