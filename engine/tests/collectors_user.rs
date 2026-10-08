@@ -17,7 +17,7 @@ use chrono::{DateTime, FixedOffset};
 use serde_json::{Value, json};
 
 use common::TempDir;
-use seldon::collectors::config::{ConfigFiles, MAX_FILE_SIZE, Manifest};
+use seldon::collectors::config::{ConfigFiles, MAX_FILE_SIZE, Manifest, boot_roots};
 use seldon::collectors::plugins::Plugins;
 use seldon::collectors::theme::Theme;
 use seldon::collectors::{Ctx, Outcome, Sources, Tz};
@@ -2083,6 +2083,70 @@ mod config {
         // once caught up, the old generation is dropped
         c.run("2026-10-01T10:30:00+02:00");
         assert_eq!(c.manifest().previous, None);
+    }
+
+    /// WP-164 round 2 (N1): a boot drop-in nobody can read is hashed by
+    /// its metadata. When the ledger write of its `config-add` fails, the
+    /// next capture reuses the stored hash (the file's stats are as the
+    /// manifest has them) and reports the addition again — still with
+    /// `meta.hashBasis = "stat"`.
+    #[test]
+    fn a_failed_write_keeps_the_stat_basis_of_a_boot_file() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        if std::fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0) {
+            eprintln!("skipped: root reads every file");
+            return;
+        }
+        let mut c = ConfigBench::new("config-boot-retry");
+        let etc = c.b.sources.etc_dir.clone();
+        // older than the stat cache's racy window, then unreadable
+        let unreadable = |path: &Path, text: &str| {
+            write(path, text);
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(SystemTime::now() - std::time::Duration::from_secs(3600))
+                .unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        };
+        unreadable(&etc.join("mkinitcpio.conf"), "HOOKS=(base)\n");
+        let mut roots: Vec<PathBuf> =
+            c.b.config
+                .watch_paths
+                .iter()
+                .filter_map(|p| c.b.dirs.expand_config(p))
+                .collect();
+        roots.extend(boot_roots(&etc));
+        let manifest = Manifest::file(&c.b.dirs);
+        let collector = || {
+            let (roots, manifest) = (roots.clone(), manifest.clone());
+            move |ctx: &Ctx, cursor: Option<&Value>| {
+                ConfigFiles.collect_from(ctx, cursor, &roots, &[], &manifest)
+            }
+        };
+        c.b.run("config", "2026-10-01T10:00:00+02:00", collector());
+
+        let drop_in = etc.join("mkinitcpio.conf.d/99-key.conf");
+        unreadable(&drop_in, "FILES+=(/etc/key)\n");
+        let subject = drop_in.display().to_string();
+        let basis = |e: &Event| e.meta.extra.get("hashBasis").cloned();
+        // the ledger write "fails": events dropped, cursor not saved
+        let lost =
+            c.b.collect("config", "2026-10-01T10:10:00+02:00", collector());
+        assert_eq!(lost.events.len(), 1, "{:?}", lost.events);
+        assert_eq!(lost.events[0].subject, subject);
+        assert_eq!(basis(&lost.events[0]), Some(json!("stat")));
+        // the stored stats match: the retry reuses the stored hash
+        assert!(c.manifest().stats.contains_key(&subject));
+
+        let retry = c.b.run("config", "2026-10-01T10:20:00+02:00", collector());
+        assert_eq!(retry.events.len(), 1, "{:?}", retry.events);
+        assert_eq!(retry.events[0].kind, Kind::ConfigAdd);
+        assert_eq!(retry.events[0].meta.hash_to, lost.events[0].meta.hash_to);
+        assert_eq!(basis(&retry.events[0]), Some(json!("stat")));
+        let quiet = c.b.run("config", "2026-10-01T10:30:00+02:00", collector());
+        assert!(quiet.events.is_empty(), "{:?}", quiet.events);
     }
 
     #[test]
