@@ -324,6 +324,8 @@ printf '%s\nexit 0\n\n\n' "$head_line" >"$log"
 reset_remote
 deploy --dry-run "$log"
 check "trailing blank lines after exit 0 are fine" test "$rc" = 0
+printf '%s\nplugin-test: Quickshell harnesses skipped (nothing changed)\ncheck: ok\nexit 0\n' "$head_line" >"$log"
+refused "a log that skipped the Quickshell harnesses" "skipped the Quickshell harnesses" "$log"
 printf '%s\r\ncheck: ok\r\nexit 0\r\n' "$head_line" >"$log"
 refused "a log with Windows line endings" "has Windows line endings (CRLF)" "$log"
 # which tree the log checked: `head <full sha>` on the first line (S3)

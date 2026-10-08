@@ -31,7 +31,12 @@ command -v python3 >/dev/null || { echo "bar-view: python3 not found" >&2; exit 
 timeout_bin=$(command -v timeout) || { echo "bar-view: timeout not found" >&2; exit 1; }
 
 work=${BAR_WORK:-$(mktemp -d)}
-trap '[[ -n ${BAR_WORK:-} ]] || rm -rf "$work"' EXIT
+# Quickshell's runtime dir (its by-id/<id> logs, the IPC socket): private,
+# never the session's, and short, since a unix socket path has at most 107
+# bytes and $work follows TMPDIR (WP-161).
+rt=$(mktemp -d /tmp/seldon-rt.XXXXXX)
+chmod 700 "$rt"
+trap '[[ -n ${BAR_WORK:-} ]] || rm -rf "$work"; rm -rf "$rt"' EXIT
 source "$root/tests/plugin/real-home-guard.sh"
 
 config="$work/config"
@@ -96,7 +101,7 @@ run() {
   printf '[font]\nbase-size = %s\n' "$base" >"$home/.config/omarchy/shell.toml"
   cp "$omarchy/themes/$theme/colors.toml" "$home/.local/state/omarchy/current/theme/colors.toml"
   env -i HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
-    PATH="$work/bin" QT_QPA_PLATFORM=offscreen XDG_RUNTIME_DIR="$work" \
+    PATH="$work/bin" QT_QPA_PLATFORM=offscreen XDG_RUNTIME_DIR="$rt" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_SHOT="$work/$name.png" SELDON_INDEX="$index" "$@" \
     "$timeout_bin" 60 "$qs_bin" -p "$config/shell.qml" >"$work/$name.log" 2>&1 || true
   sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "HARNESS bar " | sed 's/.*HARNESS bar //' >"$work/$name.json" || true
@@ -232,10 +237,11 @@ clean_log uninit
 # registers it (no "another handler is registered" warning), an IPC `open`
 # reaches that widget (it forwards to the desk, the shim of ADR-0034 §7),
 # and once its monitor is gone the other widget
-# takes the target over. The IPC socket needs a short runtime dir (a unix
-# socket path has at most 107 bytes; a long TMPDIR fails "Failed to start
-# IPC server").
-ipc_rt=$(mktemp -d /tmp/seldon-ipc.XXXXXX)
+# takes the target over. Each IPC case gets a fresh runtime dir under the
+# short $rt (a unix socket path has at most 107 bytes; a long TMPDIR fails
+# "Failed to start IPC server").
+ipc_rt="$rt/ipc"
+mkdir -m 700 "$ipc_rt"
 ln -s "$qs_bin" "$work/bin/quickshell"
 run ipc tokyo-night 12 "$fx/index.sample.json" HARNESS_IPC="$config/shell.qml" XDG_RUNTIME_DIR="$ipc_rt"
 rm -rf "$ipc_rt"
@@ -260,7 +266,8 @@ clean_log ipc
 # reaches it; a live reconfiguration that draws the placeholder and hides
 # the other moves the target with one handler at a time; when the owner
 # goes, the hidden one is the only instance left and takes it.
-ipc_rt=$(mktemp -d /tmp/seldon-ipc.XXXXXX)
+ipc_rt="$rt/ipc-placeholder"
+mkdir -m 700 "$ipc_rt"
 run ipc-placeholder tokyo-night 12 "$fx/index.sample.json" HARNESS_IPC="$config/shell.qml" HARNESS_IPC_PLACEHOLDER=1 \
   XDG_RUNTIME_DIR="$ipc_rt"
 rm -rf "$ipc_rt"

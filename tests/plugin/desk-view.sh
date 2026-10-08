@@ -39,7 +39,12 @@ command -v node >/dev/null || { echo "desk-view: node not found" >&2; exit 1; }
 timeout_bin=$(command -v timeout) || { echo "desk-view: timeout not found" >&2; exit 1; }
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# Quickshell's runtime dir (its by-id/<id> logs, the IPC socket): private,
+# never the session's, and short, since a unix socket path has at most 107
+# bytes and $work follows TMPDIR (WP-161).
+rt=$(mktemp -d /tmp/seldon-rt.XXXXXX)
+chmod 700 "$rt"
+trap 'rm -rf "$work" "$rt"' EXIT
 source "$root/tests/plugin/real-home-guard.sh"
 
 config="$work/config"
@@ -82,7 +87,7 @@ run() {
   mkdir -p "$home"
   env -i HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
     PATH="$work/bin" QT_QPA_PLATFORM=offscreen \
-    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$work}" \
+    XDG_RUNTIME_DIR="$rt" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_STEPS="$steps" HARNESS_W="${size%x*}" HARNESS_H="${size#*x}" \
     SELDON_INDEX="$index" "$@" \
     "$timeout_bin" 90 "$qs_bin" -p "$config/shell.qml" >"$work/$name.log" 2>&1 || true
