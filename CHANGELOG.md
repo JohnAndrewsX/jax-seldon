@@ -52,6 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lost), each of its package events records `meta.txStatus`; the month's
   ledger view adds `· transaction interrupted`. Lines written before keep
   none. `seldon event --meta txStatus=…` is refused.
+- **A lock left by a dead pacman no longer hides its transaction
+  (WP-160).** After a power loss or a killed pacman,
+  `/var/lib/pacman/db.lck` stays. A lock older than the current boot is
+  now known as stale: the transaction it left open is recorded at once,
+  marked `unfinished`, instead of waiting until you delete the lock.
+  `seldon doctor` has a `pacman` row that names a stale lock and how to
+  remove it. Seldon only looks at the lock, never removes it.
 - **`seldon decide accept ADR-NNNN` (ADR-0040).** Accepts a proposed
   decision: `status: accepted` and today's date in its frontmatter, a
   `seldon` note in the ledger, `DECISIONS.md`, the commit and the index.
