@@ -82,6 +82,7 @@ use crate::attribution::{self, Stamps};
 use crate::collectors::config::OwnWrites;
 use crate::collectors::{
     self, CollectorState, Ctx, Cursors, Lost, PendingBaseline, REGISTRY, STATE_RESET, Sources, Tz,
+    recent,
 };
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -373,6 +374,18 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
             }
         }
         Err(e) => eprintln!("seldon: warning: planned changes not linked: {e}"),
+    }
+    // ADR-0045: recently edited under ~/.config, outside the watch paths;
+    // with the config collector only, never an event
+    if reports.iter().any(|r| r.name == "config" && r.ran) {
+        let excluded = [
+            collectors::plugins::Plugins::dir(&sources, &ctx.dirs.home),
+            ctx.config_file.clone(),
+        ];
+        let scan = recent::scan(&ctx.dirs, &config, ledger.redactor(), &excluded, now);
+        if let Err(e) = recent::Saved::of(&scan, now).save(&ctx.dirs) {
+            warnings.push(format!("the recently edited files were not saved: {e:#}"));
+        }
     }
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);

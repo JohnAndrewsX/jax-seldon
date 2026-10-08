@@ -11,6 +11,11 @@
 //! `authorized_keys`; and 8 third-party plugins of 41 files plus one
 //! 2 MiB image each. Everything lives in a temp dir; nothing
 //! reads the real home (AGENTS.md §6).
+//!
+//! The scan of recently edited files under `~/.config` (ADR-0045, WP-139)
+//! is the capture-cost delta of that WP: the same home plus 40 programs'
+//! config folders, a browser profile, an Electron app and a cache, every
+//! file modified within the last 7 days (the list's worst case).
 
 mod common;
 
@@ -23,6 +28,7 @@ use serde_json::{Value, json};
 use common::TempDir;
 use seldon::collectors::config::ConfigFiles;
 use seldon::collectors::plugins::Plugins;
+use seldon::collectors::recent;
 use seldon::collectors::{Ctx, Outcome, Sources, Tz};
 use seldon::config::{Config, Dirs};
 use seldon::ledger::Ledger;
@@ -298,4 +304,69 @@ fn capture_cost_of_the_watched_files_and_plugin_trees() {
         let out = home.plugins(Some(&cold));
         assert!(out.ok && out.events.is_empty(), "{:?}", out.message);
     });
+}
+
+#[test]
+#[ignore = "release timing: `just check-perf`"]
+fn capture_cost_of_the_recent_config_scan() {
+    common::assert_optimised();
+    let home = Home::new();
+    let h = |rel: &str| home.dirs.home.join(rel);
+    for a in 0..40 {
+        for i in 0..8 {
+            write(
+                &h(&format!(".config/app{a}/conf{i}.toml")),
+                text(2000 + a * 8 + i, 512),
+            );
+        }
+    }
+    // entered only to its first level: the profile marks and the cache
+    write(&h(".config/chromium/Local State"), text(1, 64));
+    write(&h(".config/Code/Cookies"), binary(2, 64));
+    for i in 0..1500 {
+        write(
+            &h(&format!(".config/chromium/Default/f{}/x{i}", i % 30)),
+            text(i, 64),
+        );
+        write(
+            &h(&format!(".config/Code/User/f{}/y{i}", i % 30)),
+            text(i, 64),
+        );
+        write(&h(&format!(".config/app0/Cache/z{i}")), text(i, 64));
+    }
+    let recent = std::time::SystemTime::now() - Duration::from_secs(3600);
+    set_mtimes(&h(".config"), recent);
+    let now = DateTime::parse_from_rfc3339(&chrono::Local::now().to_rfc3339()).unwrap();
+    let redactor = Redactor::builtin();
+    let excluded = [home.plugins_dir.clone()];
+    let scan = recent::scan(&home.dirs, &home.config, &redactor, &excluded, now);
+    assert_eq!(scan.files.len(), recent::MAX_FILES);
+    assert!(!scan.cut);
+    eprintln!("recent-config scan: {} entries read", scan.entries);
+    common::assert_within_budget(
+        "recent-config scan and save (the capture-cost delta)",
+        Duration::from_millis(10),
+        RUNS,
+        || {
+            let scan = recent::scan(&home.dirs, &home.config, &redactor, &excluded, now);
+            recent::Saved::of(&scan, now).save(&home.dirs).unwrap();
+        },
+    );
+    // what every index build adds: the saved 80 filtered once more
+    common::assert_within_budget(
+        "recent-config in the index build (80 files)",
+        Duration::from_millis(2),
+        RUNS,
+        || {
+            let mut warnings = Vec::new();
+            let shown = recent::shown(
+                &home.dirs,
+                &home.config,
+                Some(&redactor),
+                now,
+                &mut warnings,
+            );
+            assert_eq!(shown.unwrap().files.len(), recent::MAX_FILES);
+        },
+    );
 }

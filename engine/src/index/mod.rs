@@ -63,6 +63,13 @@ pub fn derive_at(
     };
     let mut built = build::build(loaded, &input);
     built.index.triage = triage::read(dirs, &logbook.root, &mut built.warnings);
+    built.index.system.recent_config = crate::collectors::recent::shown(
+        dirs,
+        config,
+        input.redactor.as_ref(),
+        now,
+        &mut built.warnings,
+    );
     Ok(built)
 }
 

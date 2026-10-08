@@ -122,6 +122,18 @@ fn write_proposals(env: &Env, logbook: &Path) {
     }
 }
 
+/// `fixtures/state/recent-config.json` in the state directory (the
+/// sample's `system.recentConfig`, ADR-0045).
+fn write_recent_config(env: &Env) {
+    let state = env.home.join(".local/state/seldon");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::copy(
+        repo("fixtures/state/recent-config.json"),
+        state.join("recent-config.json"),
+    )
+    .unwrap();
+}
+
 /// A copy of the fixture logbook in `env` (changed by `prepare`), indexed
 /// at the sample's time.
 fn golden_run(
@@ -134,6 +146,7 @@ fn golden_run(
     prepare(&lb);
     write_cursors(env, &lb, degraded);
     write_proposals(env, &lb);
+    write_recent_config(env);
     let out = env.at(
         GENERATED_AT,
         &[
