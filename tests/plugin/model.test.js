@@ -2386,17 +2386,38 @@ test("transactionDetail: an interrupted transaction in the row and the detail (W
   const t = d.transaction
   same([t.status, t.title, t.list], ["interrupted", "Transaction interrupted", true])
   assert.ok(t.text.startsWith("pacman was interrupted and stopped after the packages below"))
-  // round 2, B1: the facts, then the safe step before a reboot; never
+  // rounds 2 and 3: the facts, then the safe step before a reboot; never
   // "run the update again, then reboot" (a rerun skips the hooks of
-  // packages already upgraded)
-  const steps = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; "
-    + "if it updated omarchy-settings, Hyprland's auto-reload may stay paused until those steps run. "
-    + "Before you reboot, reinstall the packages listed here (`pacman -S` with their names) or ask your agent in a case; "
-    + "a plain rerun does not run those steps for packages already upgraded."
-  assert.ok(t.text.endsWith(steps), t.text)
+  // packages already upgraded). The step names only ↑ and ↻ (a reinstall
+  // repairs those); − stays removed, ↓ goes to the agent.
+  const tail = "Before you reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with their names): "
+    + "that runs those steps for them; a plain rerun does not. "
+    + "A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
+  const didNot = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; "
+    + "if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session. "
+  const mayNot = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; "
+    + "if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session. "
+  assert.ok(t.text.endsWith(mayNot + tail), t.text)
+  assert.ok(M.TX_STATUS_TEXTS.failed.endsWith(didNot + tail))
+  assert.ok(M.TX_STATUS_TEXTS.unfinished.endsWith(didNot + tail))
+  // interrupted is not proven to skip every hook: its head differs
+  assert.ok(!M.TX_STATUS_TEXTS.interrupted.includes("did not run"))
   for (const s of M.TX_STATUSES) {
-    assert.ok(M.TX_STATUS_TEXTS[s].endsWith(steps), s)
-    assert.ok(!/reboot after|finishes it/.test(M.TX_STATUS_TEXTS[s]), s)
+    const x = M.TX_STATUS_TEXTS[s]
+    assert.ok(x.endsWith(tail), s)
+    assert.ok(!/reboot after|finishes it|packages listed here/.test(x), s)
+    // the reinstall names ↑ and ↻ only, never − or ↓
+    assert.ok(/reinstall the packages marked ↑ or ↻ below/.test(x), s)
+    assert.ok(!/reinstall[^.;]*[−↓]/.test(x), s)
+  }
+  // a mixed transaction (− + ↑ ↑) and the ↓ group carry the same text, and
+  // their glyphs are the ones the text names
+  for (const [id, glyphs] of [[PIPEWIRE, ["−", "+", "↑", "↑"]], [MESA, ["↓", "↓", "↓"]]]) {
+    const v = JSON.parse(sample)
+    const tx = v.events.find(e => e.id === id).txId
+    v.events.filter(e => e.txId === tx).forEach(e => { e.meta = Object.assign({}, e.meta, { txStatus: "failed" }) })
+    const vt = M.eventDetail(v, M.deskChangelog(v), id).transaction
+    same([vt.packages.map(x => x.glyph), vt.text.endsWith(didNot + tail)], [glyphs, true])
   }
   // N5: a failed install is a failed transaction too
   assert.ok(M.TX_STATUS_TEXTS.failed.includes("could not be installed, upgraded or removed"))

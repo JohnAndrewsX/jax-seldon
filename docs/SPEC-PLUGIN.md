@@ -501,15 +501,20 @@ pacman event whose transaction did not complete (`meta.txStatus`,
 ADR-0043) an urgent callout above the key/values — *Transaction failed*,
 *Transaction interrupted* or *Transaction did not finish*, with what
 that means (the packages listed may be all it changed; a failed one could
-not be installed, upgraded or removed), then one shared text: "pacman's
-after-update steps (boot image, boot menu, Omarchy's resume hooks) did
-not run for this transaction; if it updated omarchy-settings, Hyprland's
-auto-reload may stay paused until those steps run. Before you reboot,
-reinstall the packages listed here (`pacman -S` with their names) or ask
-your agent in a case; a plain rerun does not run those steps for packages
-already upgraded." (alpm-hooks(5): post-transaction hooks run only after
-a completed transaction and only for its targets; WP-137 round 2.) Text
-only: the plugin runs nothing — whatever the event's class; then, below the key/values, "N packages: … in this
+not be installed, upgraded or removed), then the steps — for `failed`
+and `unfinished` "pacman's after-update steps (boot image, boot menu,
+Omarchy's resume hooks) did not run for this transaction; if
+omarchy-settings was in it, Hyprland's auto-reload may stay paused for
+this session.", for `interrupted` the same with "may not have run for
+every package of this transaction" — and one shared tail: "Before you
+reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with
+their names): that runs those steps for them; a plain rerun does not. A
+package marked − stays removed; for one marked ↓, or when unsure, ask
+your agent in a case." (alpm-hooks(5) CAVEATS: post-transaction hooks do
+not run after a failed transaction or a killed pacman, and run only for
+a transaction's targets; for `interrupted` not verified against
+libalpm's source; WP-137 rounds 2 and 3.) Text only: the plugin runs
+nothing — whatever the event's class; then, below the key/values, "N packages: … in this
 transaction" and every package of the transaction the index lists, the
 unusual first (↓ downgraded, − removed, + installed, ↑ upgraded, ↻
 reinstalled; by name within a kind), "name  old → new" or "name

@@ -5421,13 +5421,14 @@ function graphShape(ctx, kind, x, y, r) {
 // content, shown as plain text (CONTRACT.md rule 6).
 
 var TX_STATUSES = ["failed", "interrupted", "unfinished"]
-// The detail's callout: its title and what the status means. pacman runs
-// its post-transaction hooks only after `transaction completed`
-// (alpm-hooks(5): they "will not run if the transaction fails to complete
-// for any reason"), and only for that transaction's targets: a later run
-// that no longer includes a package already changed never runs them for
-// it. Hence the safe step before a reboot (WP-137 round 2, B1). Text
-// only: the plugin runs nothing (AGENTS.md §8).
+// The detail's callout: its title and what the status means. pacman's
+// post-transaction hooks do not run after `failed` or a killed pacman
+// (alpm-hooks(5) CAVEATS); for `interrupted` not verified against
+// libalpm's source, hence "may not have run". They run only for that
+// transaction's targets: a later run that no longer includes a package
+// already changed never runs them for it. Hence the safe step before a
+// reboot, which names only what a reinstall can repair: ↑ and ↻ (WP-137
+// rounds 2 and 3). Text only: the plugin runs nothing (AGENTS.md §8).
 var TX_STATUS_TITLES = {
   failed: "Transaction failed",
   interrupted: "Transaction interrupted",
@@ -5436,11 +5437,13 @@ var TX_STATUS_TITLES = {
 // Omarchy's 10-omarchy-hyprland-reload-pause hook pauses the auto-reload
 // before an omarchy-settings update; its 90-…-resume twin is a
 // post-transaction hook.
-var TX_STEPS_TEXT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; if it updated omarchy-settings, Hyprland's auto-reload may stay paused until those steps run. Before you reboot, reinstall the packages listed here (`pacman -S` with their names) or ask your agent in a case; a plain rerun does not run those steps for packages already upgraded."
+var TX_STEPS_DID_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_STEPS_MAY_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_SAFE_STEP = "Before you reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with their names): that runs those steps for them; a plain rerun does not. A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
 var TX_STATUS_TEXTS = {
-  failed: "pacman reported this transaction as failed: a package could not be installed, upgraded or removed, and pacman's output in the terminal named the error. The packages below may be all it changed. " + TX_STEPS_TEXT,
-  interrupted: "pacman was interrupted and stopped after the packages below; the ones it had not reached are unchanged. " + TX_STEPS_TEXT,
-  unfinished: "pacman never logged the end of this transaction: it was killed, or the machine went down while it ran. The packages below may be all it changed, the last one possibly half written. " + TX_STEPS_TEXT
+  failed: "pacman reported this transaction as failed: a package could not be installed, upgraded or removed, and pacman's output in the terminal named the error. The packages below may be all it changed. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP,
+  interrupted: "pacman was interrupted and stopped after the packages below; the ones it had not reached are unchanged. " + TX_STEPS_MAY_NOT + " " + TX_SAFE_STEP,
+  unfinished: "pacman never logged the end of this transaction: it was killed, or the machine went down while it ran. The packages below may be all it changed, the last one possibly half written. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP
 }
 // ↑ upgraded, ↓ downgraded, + installed, − removed, ↻ reinstalled; the
 // list shows the unusual changes first.

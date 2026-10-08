@@ -41,7 +41,7 @@ not complete**:
 | Value | When |
 |---|---|
 | `failed` | pacman logged `transaction failed` |
-| `interrupted` | pacman logged `transaction interrupted` |
+| `interrupted` | pacman logged `transaction interrupted` (Ctrl-C, or the terminal closed: pacman finishes the current package) |
 | `unfinished` | no end line: the next `transaction started` came first, or the log ends and pacman's `db.lck` is absent (pacman is gone) |
 
 - **Absent** when the transaction completed, and on every line written
@@ -64,6 +64,8 @@ not complete**:
   the only writer.
 - The status is written once, when the transaction is emitted; dedupe and
   idempotency are unchanged (`(ts, kind, subject, version)`).
+- The status is final: a later end line, a rotation or a removed lock
+  never revises it.
 
 ### 2. What it does not change
 
@@ -100,6 +102,8 @@ invalid lines (`event.tx-status-without-tx`,
   contract-2 mismatch banner, unchanged.
 - An old transaction keeps no status after an upgrade of the engine; a
   new logbook's backfill (ADR-0033) reads the log afresh and writes it.
+- After a crash `db.lck` usually stays; the transaction is held back and
+  marked only once the lock is gone (WP-160).
 - SPEC-ENGINE §4 (the collector), CONTRACT.md rule 9, SPEC-PLUGIN (the
   Changelog detail), the fixture README.
 
