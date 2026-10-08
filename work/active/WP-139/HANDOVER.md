@@ -150,3 +150,51 @@ Plan: `PLAN.md`. Not pushed (the orchestrator pushes).
   whether 20 000 needs a visible note.
 - The ignore list adds editor temp files, `.pid` and `.kdbx` beyond the
   WP's list (noise and a key store); named in ADR-0046 and SPEC-ENGINE §4.
+
+## Round 2a (stage-1 review `WP-139-review-1.md`, brief part A)
+
+- **B1:** a name that is not UTF-8 is left out in the walk (a folder so
+  named is not entered) and by `shown_path` (`to_str()` first); unit test
+  with two Latin-1 names and a Latin-1 folder. `config watch` refuses a
+  path that does not exist (ADR-0046 §1 and §3, SPEC-ENGINE §3, CLI
+  reference en/de).
+- **B2:** `recent-config.json` is read by `sys::read_small_file(path,
+  STATE_FILE_MAX)`; FIFO and `/dev/zero`-link tests (build warning, no
+  field); the sentence is in SPEC-ENGINE §2's row.
+- **B3 part 1:** optional `system.recentConfig.partial: true` (schema
+  `const: true`, only written when true) from the entry budget, the new
+  deadline or folders left below the depth; the state file's `cut` became
+  `partial`. Variant `fixtures/index-variants/recent-partial.json`
+  (overlay, engine golden test `recent_partial_equals_the_variant`); the
+  desk reads "The scan stopped early; the list may be incomplete." for an
+  empty partial list and appends it to a non-empty one's lead.
+- **N1:** deadline 500 ms (`recent::DEADLINE`); 20 000-entry bench
+  `capture_cost_of_the_recent_config_scan_at_its_entry_budget`: **118 ms**
+  median on the dev host (load 0.5), budget deadline + 100 ms; the
+  reviewer's ~400 ms on a loaded host is quoted in ADR-0046 Consequences
+  and SPEC-ENGINE §4.
+- **N2:** `config watch` checks path shape, home and existence, then
+  takes the lock and loads the config under it (own files, skipPaths,
+  covered).
+- **N3:** the Watch answer shows whenever the Recently edited tile is
+  current; harness `system-watch-last` (last row watched: answer and
+  "Nothing … was edited" both shown).
+- **N4:** the logbook is excluded from the walk (test with a logbook under
+  `~/.config`).
+- **N5:** `just check-rss`: `rss_stays_under_11_mb_on_the_x10_fixture …
+  ok`.
+
+Verified: `just check` (SELDON_FULL_CHECK=1, private runtime dir,
+`/run/user/1000` 2 %) **green** — cargo 2456 passed, 0 failed; desk-view
+1817/0 (new: `system-watch-last`, `system-partial`); service-states 344/0;
+model.test.js 187. Hand mutants: **69 of 69 killed** (11 new for round 2;
+two survivors on the first pass — the walk's own UTF-8 skip and `partial`
+into the state file — got assertions). Three old patterns were adapted to
+the changed code.
+
+Not in part A: the `check-perf` precondition (10 788 vs 11 656 ledger
+lines) is unchanged and not this WP's; part B (one walker in WP-138's
+`config_scan.rs`, breadth-first or fair budget, file links, union ignore
+list with `node_modules`, `Limits.exclude`, root `~/.config`) waits for
+WP-138 on `next`. AGENTS.md §6 needs the operator's line for the
+`~/.config` metadata walk (review §3, open question 4).
