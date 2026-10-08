@@ -76,4 +76,4 @@ ADR-0042).
 
 ## Decisions (left open by the WP)
 
-Filled in while building; final list in HANDOVER.md.
+The final list, with reasons, is in [HANDOVER.md](HANDOVER.md) "Decisions".
