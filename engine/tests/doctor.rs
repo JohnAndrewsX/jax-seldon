@@ -1703,22 +1703,34 @@ fn doctor_reports_leftover_workpiece_folders() {
         let f = std::fs::File::create(dir.join("sub/file")).unwrap();
         f.set_len(bytes).unwrap();
     };
-    folder("C-2026-002", 1024);
+    // 10 MiB exactly is not over 10 MiB
+    folder("C-2026-002", 10 << 20);
     folder("notes", 20 << 20);
     folder("C-2026-01x", 20 << 20);
+    // a case file that does not parse still owns its folder
+    std::fs::write(work.join("queued/C-2026-050-broken.md"), "no frontmatter\n").unwrap();
+    folder("C-2026-050", 5);
     assert_eq!(
         row()["message"],
-        "1 workpiece folder(s), none orphaned or oversized"
+        "2 workpiece folder(s), none orphaned or oversized"
     );
     // the oldest by id, not by name
     folder("C-2026-1000", 10);
     folder("C-2026-999-old", 5);
+    // a symbolic link inside a folder is not followed
+    std::os::unix::fs::symlink(work.join("notes"), work.join("C-2026-1000/dir")).unwrap();
+    std::os::unix::fs::symlink(work.join("notes/sub/file"), work.join("C-2026-1000/file")).unwrap();
     assert_eq!(
         row()["message"],
-        "2 of 3 workpiece folder(s) left behind: 2 orphaned (no case), 0 oversized (a closed \
+        "2 of 4 workpiece folder(s) left behind: 2 orphaned (no case), 0 oversized (a closed \
          case, over 10.0 MiB), 15 B in all; the oldest: work/C-2026-999-old/"
     );
+    // a closed case's folder is measured until it passes 10 MiB: at least
     folder("C-2026-001-big", 11 << 20);
+    std::fs::File::create(work.join("C-2026-001-big/top"))
+        .unwrap()
+        .set_len(11 << 20)
+        .unwrap();
     folder("C-2026-003-open", 20 << 20);
     std::os::unix::fs::symlink(work.join("notes"), work.join("C-2024-001")).unwrap();
     let r = row();
@@ -1726,14 +1738,21 @@ fn doctor_reports_leftover_workpiece_folders() {
     assert!(r.get("fix").is_none(), "{r}");
     assert_eq!(
         r["message"],
-        "3 of 5 workpiece folder(s) left behind: 2 orphaned (no case), 1 oversized (a closed \
-         case, over 10.0 MiB), 11.0 MiB in all; the oldest: work/C-2026-001-big/"
+        "3 of 6 workpiece folder(s) left behind: 2 orphaned (no case), 1 oversized (a closed \
+         case, over 10.0 MiB), ≥ 11.0 MiB in all; the oldest: work/C-2026-001-big/"
     );
     // a name is shown without its control characters
     folder("C-2025-001-\u{1b}[2J", 5);
     assert_eq!(
         row()["message"],
-        "4 of 6 workpiece folder(s) left behind: 3 orphaned (no case), 1 oversized (a closed \
-         case, over 10.0 MiB), 11.0 MiB in all; the oldest: work/C-2025-001-?[2J/"
+        "4 of 7 workpiece folder(s) left behind: 3 orphaned (no case), 1 oversized (a closed \
+         case, over 10.0 MiB), ≥ 11.0 MiB in all; the oldest: work/C-2025-001-?[2J/"
+    );
+    // nor its direction, format or line-breaking characters
+    folder("C-2024-900-a\u{202E}b\u{2028}c\u{200B}d", 5);
+    assert_eq!(
+        row()["message"],
+        "5 of 8 workpiece folder(s) left behind: 4 orphaned (no case), 1 oversized (a closed \
+         case, over 10.0 MiB), ≥ 11.0 MiB in all; the oldest: work/C-2024-900-a?b?c?d/"
     );
 }

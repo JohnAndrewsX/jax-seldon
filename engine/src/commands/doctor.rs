@@ -649,27 +649,68 @@ fn workpiece_id(name: &str) -> Option<&str> {
     .then_some(id)
 }
 
-/// The bytes of the regular files under `dir`; symbolic links are not
-/// followed, unreadable folders count as empty.
-fn folder_size(dir: &Path) -> u64 {
-    let mut total = 0;
+/// The most directory entries one workpiece folder's walk reads; a
+/// larger folder is reported as "at least" what was read (WP-143 round 2).
+const WALK_MAX: usize = 100_000;
+
+/// The size of a folder as doctor measured it: the bytes of the regular
+/// files read, and whether that is all of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Size {
+    bytes: u64,
+    exact: bool,
+}
+
+/// The bytes of the regular files under `dir`, read-only and bounded:
+/// symbolic links are not followed, nothing on another filesystem than
+/// `dir` is entered or counted, unreadable folders count as empty. The
+/// walk stops after `max_entries` entries, and once the sum passes
+/// `stop_above`; either way the size is not exact when entries were left.
+fn folder_size(dir: &Path, stop_above: Option<u64>, max_entries: usize) -> Size {
+    use std::os::unix::fs::MetadataExt as _;
+    let Ok(root) = std::fs::symlink_metadata(dir) else {
+        return Size {
+            bytes: 0,
+            exact: true,
+        };
+    };
+    let mut bytes = 0;
+    let mut seen = 0;
     let mut stack = vec![dir.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        for entry in entries.flatten() {
+        let mut entries = entries.flatten().peekable();
+        while let Some(entry) = entries.next() {
+            seen += 1;
+            if seen > max_entries {
+                return Size {
+                    bytes,
+                    exact: false,
+                };
+            }
+            // DirEntry::metadata does not follow a symbolic link
             let Ok(meta) = entry.metadata() else {
                 continue;
             };
+            if meta.dev() != root.dev() {
+                continue;
+            }
             if meta.is_dir() {
                 stack.push(entry.path());
             } else if meta.is_file() {
-                total += meta.len();
+                bytes += meta.len();
+            }
+            if stop_above.is_some_and(|limit| bytes > limit) {
+                return Size {
+                    bytes,
+                    exact: entries.peek().is_none() && stack.is_empty(),
+                };
             }
         }
     }
-    total
+    Size { bytes, exact: true }
 }
 
 /// `bytes` for people: B, KiB, MiB or GiB.
@@ -721,7 +762,7 @@ fn check_workpieces(logbook: &Logbook) -> Check {
                 .map(String::from)
         })
         .collect();
-    let (mut orphaned, mut oversized, mut bytes) = (0, 0, 0);
+    let (mut orphaned, mut oversized, mut bytes, mut exact) = (0, 0, 0, true);
     // (year, number) of a case id: the oldest is the smallest
     let key = |id: &str| -> (u32, u64) {
         let (year, num) = id[2..].split_once('-').unwrap_or_default();
@@ -732,29 +773,38 @@ fn check_workpieces(logbook: &Logbook) -> Check {
         let id = workpiece_id(name).unwrap_or_default();
         let left = if !named.iter().any(|n| n == id) {
             orphaned += 1;
-            Some(folder_size(path))
+            Some(folder_size(path, None, WALK_MAX))
         } else {
             let closed = files.iter().any(|f| {
                 f.case.id == id
                     && matches!(f.case.status, CaseStatus::Completed | CaseStatus::Dropped)
             });
-            // an open case's folder is not measured
+            // an open case's folder is not measured, a closed case's only
+            // until it passes the threshold
             closed
-                .then(|| folder_size(path))
-                .filter(|size| *size > WORKPIECE_LARGE)
+                .then(|| folder_size(path, Some(WORKPIECE_LARGE), WALK_MAX))
+                .filter(|size| size.bytes > WORKPIECE_LARGE)
                 .inspect(|_| oversized += 1)
         };
         if let Some(size) = left {
-            bytes += size;
+            bytes += size.bytes;
+            exact &= size.exact;
             if oldest.is_none_or(|(o, k)| (k, o) > (key(id), name.as_str())) {
                 oldest = Some((name, key(id)));
             }
         }
     }
-    // a folder name is the user's: no control character reaches the terminal
+    // a folder name is the user's: no control, direction, invisible
+    // format or line-breaking character reaches the terminal
     let shown = |name: &str| -> String {
         name.chars()
-            .map(|c| if c.is_control() { '?' } else { c })
+            .map(|c| {
+                if crate::import::bad_path_char(c) || super::is_line_breaking(c) {
+                    '?'
+                } else {
+                    c
+                }
+            })
             .collect()
     };
     let Some((oldest, _)) = oldest.map(|(name, k)| (shown(name), k)) else {
@@ -772,10 +822,11 @@ fn check_workpieces(logbook: &Logbook) -> Check {
         Status::Ok,
         format!(
             "{} of {} workpiece folder(s) left behind: {orphaned} orphaned (no case), {oversized} \
-             oversized (a closed case, over {}), {} in all; the oldest: work/{oldest}/",
+             oversized (a closed case, over {}), {}{} in all; the oldest: work/{oldest}/",
             orphaned + oversized,
             folders.len(),
             human_bytes(WORKPIECE_LARGE),
+            if exact { "" } else { "≥ " },
             human_bytes(bytes)
         ),
     )
@@ -1721,6 +1772,39 @@ fn describe(run: &Run) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-143 round 2 (N3): the walk is bounded — by an entry cap and by
+    /// a size it only has to pass — and says when it stopped early; it
+    /// never follows a symbolic link.
+    #[test]
+    fn a_workpiece_walk_is_bounded() {
+        let tmp = std::env::temp_dir().join(format!("seldon-wp143-walk-{}", std::process::id()));
+        let dir = tmp.join("w");
+        std::fs::create_dir_all(dir.join("a/b")).unwrap();
+        for (name, len) in [("one", 10), ("a/two", 20), ("a/b/three", 30)] {
+            std::fs::File::create(dir.join(name))
+                .unwrap()
+                .set_len(len)
+                .unwrap();
+        }
+        std::fs::File::create(tmp.join("outside"))
+            .unwrap()
+            .set_len(1000)
+            .unwrap();
+        std::os::unix::fs::symlink(tmp.join("outside"), dir.join("a/link")).unwrap();
+        std::os::unix::fs::symlink(&tmp, dir.join("a/b/up")).unwrap();
+        let exact = |bytes| Size { bytes, exact: true };
+        assert_eq!(folder_size(&dir, None, 100), exact(60));
+        assert_eq!(folder_size(&dir, Some(60), 100), exact(60));
+        assert_eq!(folder_size(&dir, Some(1000), 100), exact(60));
+        // 7 entries: one, a, a/two, a/link, a/b, a/b/three, a/b/up
+        assert_eq!(folder_size(&dir, None, 7), exact(60));
+        assert!(!folder_size(&dir, None, 6).exact);
+        let early = folder_size(&dir, Some(5), 100);
+        assert!(!early.exact && early.bytes > 5, "{early:?}");
+        assert_eq!(folder_size(&tmp.join("gone"), None, 100), exact(0));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
 
     /// WP-143: a workpiece folder's name is a case id, alone or followed
     /// by `-…`.
