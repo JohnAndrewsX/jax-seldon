@@ -282,6 +282,66 @@ fn a_broken_case_file_is_skipped_with_a_warning() {
     assert_eq!(index(&env)["cases"]["queued"], json!([]));
 }
 
+/// WP-154 rule 3: the fast rebuild reads a `.git` file and `commondir`
+/// byte for byte as git does: `gitdir: ` exactly, only CRs and LFs
+/// dropped at the end; anything git calls "invalid gitfile format" or
+/// "not a git repository" (git 2.55 on each case) has no HEAD here.
+#[test]
+fn the_fast_rebuild_reads_git_files_as_git_does() {
+    let tmp = common::TempDir::new("git-files");
+    let repo = tmp.path().join("repo/.git");
+    let common_dir = tmp.path().join("common");
+    let work = tmp.path().join("work");
+    let a = "a".repeat(40);
+    let b = "b".repeat(40);
+    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::write(repo.join("HEAD"), format!("{a}\n")).unwrap();
+    std::fs::create_dir_all(common_dir.join("refs/heads")).unwrap();
+    std::fs::write(common_dir.join("refs/heads/main"), format!("{b}\n")).unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    let head = || seldon::index::git_head_fast(&work).and_then(|g| g.head);
+    let abs = repo.display().to_string();
+    for (text, read) in [
+        (format!("gitdir: {abs}\n"), true),
+        (format!("gitdir: {abs}"), true),
+        (format!("gitdir: {abs}\r\n"), true),
+        ("gitdir: ../repo/.git\n".to_string(), true),
+        (format!("gitdir:{abs}\n"), false), // invalid gitfile format
+        (format!("\u{FEFF}gitdir: {abs}\n"), false), // invalid gitfile format
+        (format!("GITDIR: {abs}\n"), false), // invalid gitfile format
+        (format!(" gitdir: {abs}\n"), false),
+        (format!("gitdir:  {abs}\n"), false), // not a git repository
+        (format!("gitdir: {abs} \n"), false), // not a git repository
+        (format!("gitdir: {abs}\t\n"), false),
+    ] {
+        std::fs::write(work.join(".git"), &text).unwrap();
+        let want = read.then(|| a[..7].to_string());
+        assert_eq!(head(), want, "{text:?}");
+    }
+    // commondir: relative to the git directory, CRs and LFs dropped
+    std::fs::write(work.join(".git"), format!("gitdir: {abs}\n")).unwrap();
+    std::fs::write(repo.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    for (text, read) in [
+        ("../../common\n", true),
+        ("../../common\r\n", true),
+        ("../../common", true),
+        (" ../../common\n", false),
+        ("../../common \n", false),
+        ("\u{FEFF}../../common\n", false),
+    ] {
+        std::fs::write(repo.join("commondir"), text).unwrap();
+        let want = read.then(|| b[..7].to_string());
+        assert_eq!(head(), want, "commondir {text:?}");
+    }
+    // a commondir that cannot be read: git stops, no HEAD here either,
+    // not even the git directory's own ref
+    std::fs::create_dir_all(repo.join("refs/heads")).unwrap();
+    std::fs::write(repo.join("refs/heads/main"), format!("{a}\n")).unwrap();
+    std::fs::remove_file(repo.join("commondir")).unwrap();
+    std::fs::create_dir(repo.join("commondir")).unwrap();
+    assert_eq!(head(), None, "commondir is a directory");
+}
+
 #[test]
 fn the_fast_rebuild_reads_head_without_git() {
     let env = Env::new(Snapper::Missing);

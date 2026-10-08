@@ -607,4 +607,44 @@ mod tests {
             Err("git status failed: fatal: unable to read tree".to_string())
         );
     }
+
+    /// WP-154 rule 3: the back link of a linked work tree
+    /// (`<repo>/worktrees/<name>/gitdir`) byte for byte. git drops only
+    /// the CRs and LFs at its end (2.55: a byte order mark or a space
+    /// makes the work tree "prunable"); so does the check.
+    #[test]
+    fn a_linked_work_tree_is_recognised_byte_for_byte() {
+        let tmp = std::env::temp_dir().join(format!("seldon-linked-{}", std::process::id()));
+        let registered = tmp.join("repo/.git/worktrees/wt");
+        let work = tmp.join("wt");
+        std::fs::create_dir_all(&registered).unwrap();
+        std::fs::create_dir_all(&work).unwrap();
+        let dot_git = work.join(".git");
+        std::fs::write(&dot_git, format!("gitdir: {}\n", registered.display())).unwrap();
+        let own = absolute(&dot_git);
+        let path = own.display().to_string();
+        for (text, linked) in [
+            (format!("{path}\n"), true),
+            (format!("{path}\r\n"), true),
+            (path.clone(), true),
+            (format!("{path}\n\n"), true),
+            (format!("\u{FEFF}{path}\n"), false),
+            (format!("{path} \n"), false),
+            (format!(" {path}\n"), false),
+            (format!("{path}x\n"), false),
+        ] {
+            std::fs::write(registered.join("gitdir"), &text).unwrap();
+            assert_eq!(
+                is_linked_work_tree_of(&absolute(&registered), &own),
+                linked,
+                "{text:?}"
+            );
+        }
+        // only a git directory registered under `worktrees/`
+        let other = tmp.join("repo/.git/elsewhere/wt");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("gitdir"), format!("{path}\n")).unwrap();
+        assert!(!is_linked_work_tree_of(&absolute(&other), &own));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
 }
