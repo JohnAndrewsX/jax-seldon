@@ -2,16 +2,25 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Ui
 import "../components/desk"
 import "../Model.js" as Model
 
 // Section 5, System (ADR-0034 §2, WP-123; the 0.1 System tab). The list:
-// five tiles — Omarchy, Packages, Snapshots, Deviations, Collectors — each
-// with its big value (Model.systemTiles; every field of index.system is
+// six tiles — Omarchy, Packages, Snapshots, Deviations, Collectors,
+// Recently edited — each with its big value (Model.systemTiles; every
+// field of index.system is
 // optional, a tile without its data shows "—"). The detail: the big value
 // and its unit, the lead line, the key/value rows and where they come
 // from. The sticky bar: *Open in editor* opens the logbook's STATUS.md
 // (`seldon open status --editor --json`), the full report.
+//
+// The sixth tile, Recently edited (WP-139, ADR-0045): files under
+// ~/.config modified in the last 7 days outside the watched paths
+// (index.system.recentConfig, paths and times only). Its detail lists them,
+// each with its age, "not watched" and *Watch*, which runs `seldon config
+// watch --json -- <path>` (Service.watchPath): the path joins watchPaths
+// and the row goes with the index the engine rebuilds.
 //
 // Keys: ↑/↓ j/k move, Enter shows the detail (stacked layout), `e` opens
 // STATUS.md.
@@ -19,6 +28,15 @@ ReadingSection {
   id: root
 
   readonly property var openResult: root.service ? root.service.openResult : null
+  readonly property var watchResult: root.service ? root.service.watchResult : null
+  readonly property bool canWrite: !!root.service && root.service.canWrite
+  readonly property bool watching: !!root.watchResult && root.watchResult.pending
+  readonly property var files: root.current ? root.current.files : []
+
+  function watch(path) {
+    if (!root.service || !root.canWrite || root.watching) return false
+    return root.service.watchPath(path)
+  }
 
   allRows: root.index ? Model.systemTiles(root.index, root.service ? root.service.nowMs : Date.now()) : []
   searchFields: ["title", "meta", "lead"]
@@ -46,6 +64,8 @@ ReadingSection {
     v.big = root.current ? root.current.big : ""
     v.detailRows = root.current ? root.current.rows.map(function(r) { return r[0] }) : []
     v.openResult = root.openResult ? root.openResult.text : ""
+    v.files = root.files.map(function(f) { return f.path + " " + f.age })
+    v.watchResult = root.watchResult ? root.watchResult.text : ""
     return v
   }
 
@@ -111,10 +131,83 @@ ReadingSection {
       rows: root.current ? root.current.rows : []
     }
 
+    // Recently edited: the engine's answer to the last Watch, then the files
+    Text {
+      width: parent.width
+      visible: text !== ""
+      textFormat: Text.PlainText
+      text: root.files.length > 0 && root.watchResult ? root.watchResult.text : ""
+      color: root.watchResult && !root.watchResult.ok ? Color.urgent : Color.muted
+      wrapMode: Text.WrapAnywhere
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    Column {
+      width: parent.width
+      visible: root.files.length > 0
+      spacing: Style.spacing.md
+
+      Repeater {
+        model: root.files
+
+        Item {
+          id: fileRow
+          required property var modelData
+          width: parent ? parent.width : 0
+          height: Math.max(fileText.implicitHeight, watchButton.implicitHeight)
+
+          Column {
+            id: fileText
+            anchors.left: parent.left
+            anchors.right: watchButton.left
+            anchors.rightMargin: Style.spacing.md
+            anchors.verticalCenter: parent.verticalCenter
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: fileRow.modelData.path
+              color: Color.popups.text
+              elide: Text.ElideMiddle
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: (fileRow.modelData.age !== "" ? fileRow.modelData.age + " · " : "") + "not watched"
+              color: Color.muted
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+          }
+
+          Button {
+            id: watchButton
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Watch"
+            tooltipText: root.canWrite ? "Add to watchPaths: the next capture records its changes"
+              : (root.service ? root.service.writeBlocker : "")
+            enabled: root.canWrite && !root.watching
+            bordered: true
+            foreground: Color.popups.text
+            fontFamily: Style.font.family
+            fontSize: Style.font.caption
+            onClicked: root.watch(fileRow.modelData.path)
+          }
+        }
+      }
+    }
+
     Text {
       width: parent.width
       textFormat: Text.PlainText
-      text: "From the dossier; rebuilt on every capture."
+      text: root.current && root.current.id === "recent"
+        ? "From the last capture's scan of ~/.config: paths and times only, never content. Seldon keeps no record of these edits until a path is watched."
+        : "From the dossier; rebuilt on every capture."
       color: Color.muted
       wrapMode: Text.Wrap
       font.family: Style.font.family

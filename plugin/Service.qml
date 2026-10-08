@@ -271,6 +271,8 @@ Item {
   property var driftResult: null
   property var decideResult: null
   property var acceptResult: null
+  // WP-139: the engine's answer to Watch on a recently edited file
+  property var watchResult: null
   // `agent ask …` (WP-124b): { ok, pending, text, what, target }.
   property var askResult: null
   // `drift apply|discard …` of a proposal: { ok, pending, text, action,
@@ -696,6 +698,26 @@ Item {
     return true
   }
 
+  // System › Recently edited, *Watch* (WP-139, ADR-0045): `seldon config
+  // watch --json -- <path>`, the path one argument after `--`, checked as
+  // the engine lists them. One at a time; the row goes with the index the
+  // engine rebuilds.
+  function watchPath(path) {
+    var p = String(path || "")
+    if (root.watchResult && root.watchResult.pending) return root.refuseBusy("watch", "watch", "", "")
+    var built = Model.watchArgs(p)
+    if (built.error) {
+      root.watchResult = { ok: false, pending: false, text: built.error, path: p, added: false }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.watchResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, path: p, added: false }
+      return false
+    }
+    root.watchResult = { ok: true, pending: true, text: "Watching " + p + "…", path: p, added: false }
+    return true
+  }
+
   // `seldon drift show <id> --json`: the full member list of a group whose
   // members index.events no longer lists all of (ADR-0013 §2). Read-only.
   function driftShow(eventId) {
@@ -813,6 +835,10 @@ Item {
       result.action = args[1] === "focus" ? "focus" : isNew ? "agent-new" : "agent"
       if (result.caseId === undefined || result.caseId === "") result.caseId = isNew ? "" : args[2]
       root.planResult = result
+    } else if (args[0] === "config") {
+      // the path asked for, also when the engine refused it
+      result.path = args[args.length - 1]
+      root.watchResult = result
     } else if (args[0] === "rules") {
       root.rulesResult = result
     } else if (args[0] === "drift" && args[1] === "show") {
@@ -893,6 +919,7 @@ Item {
       : args[0] === "decide" && args[1] === "accept" ? Model.acceptResult(exitCode, out, err)
       : args[0] === "decide" ? Model.decideResult(exitCode, out, err)
       : args[0] === "rules" ? Model.rulesUpdateResult(exitCode, out, err)
+      : args[0] === "config" ? Model.watchResult(exitCode, out, err)
       : null
     if (result) {
       result.pending = false
@@ -909,9 +936,9 @@ Item {
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
     } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "agent" && args[0] !== "drift" && args[0] !== "decide"
-        && args[0] !== "rules" && args[0] !== "import") {
+        && args[0] !== "rules" && args[0] !== "import" && args[0] !== "config") {
       // QuickEntry, the Work tab (case actions, Start agent), the drift sheet
-      // and the new-decision sheet and Accept show their own errors in place.
+      // and the new-decision sheet, Accept and Watch show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch
@@ -1087,6 +1114,7 @@ Item {
       driftShown: root.driftShown,
       decideResult: root.decideResult,
       acceptResult: root.acceptResult,
+      watchResult: root.watchResult,
       askResult: root.askResult,
       triageResult: root.triageResult,
       importResult: root.importResult,

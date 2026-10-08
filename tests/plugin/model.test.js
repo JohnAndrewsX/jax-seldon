@@ -1327,14 +1327,14 @@ test("decisionCases: the v2 field, titles from the case lists", () => {
   assert.strictEqual(M.decisionCases(null, "ADR-0004"), null)
 })
 
-test("systemTiles: five tiles, big values, every field optional", () => {
+test("systemTiles: six tiles, big values, every field optional", () => {
   const now = Date.parse("2026-10-01T17:05:12+02:00")
   const t = M.systemTiles(sampleIndex, now)
-  same(t.map((x) => x.id), ["omarchy", "packages", "snapshots", "deviations", "collectors"])
-  same(t.map((x) => x.meta), ["4.0.7-1", "2009 installed", "115 newest", "5 files", "6/6 ok"])
+  same(t.map((x) => x.id), ["omarchy", "packages", "snapshots", "deviations", "collectors", "recent"])
+  same(t.map((x) => x.meta), ["4.0.7-1", "2009 installed", "115 newest", "5 files", "6/6 ok", "4 files"])
   same(t.map((x) => x.lead), ["theme tokyo-night · updated 7 h ago", "327 explicit · 41 from the AUR",
     "6 snapshots in the index (the newest 10)", "Config files that differ from Omarchy's defaults; the list is in STATUS.md",
-    "last capture just now"])
+    "last capture just now", "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed"])
   same(t[0].rows, [["Version", "4.0.7-1"], ["Theme", "tokyo-night"], ["Last update", "2026-10-01 09:21 · 7 h ago"],
     ["Plugins", "33 of 40 enabled"]])
   same(t[1].rows, [["Explicit", "327"], ["Installed", "2009"], ["AUR", "41"]])
@@ -1352,12 +1352,71 @@ test("systemTiles: five tiles, big values, every field optional", () => {
   bare.system = {}
   delete bare.state.collectors
   const b = M.systemTiles(bare, now)
-  same(b.map((x) => x.meta), ["—", "—", "—", "—", "—"])
-  same(b.map((x) => x.lead), ["Not in the index", "Not in the index", "Not in the index", "Not in the index", "last capture just now"])
+  same(b.map((x) => x.meta), ["—", "—", "—", "—", "—", "—"])
+  same(b.map((x) => x.lead), ["Not in the index", "Not in the index", "Not in the index", "Not in the index", "last capture just now",
+    "Not in the index"])
+  same(b[5].files, [])
   same(b[4].rows, [["Machine", "workstation-7f3a"], ["Engine", "0.1.0"], ["Index written", "2026-10-01 17:05"]])
   bare.system = { packages: { explicit: 3 }, deviations: 1 }
   same(M.systemTiles(bare, now).map((x) => x.meta).slice(1, 4), ["3 explicit", "—", "1 file"])
-  same(M.systemTiles(null, now).map((x) => x.meta), ["—", "—", "—", "—", "—"])
+  same(M.systemTiles(null, now).map((x) => x.meta), ["—", "—", "—", "—", "—", "—"])
+})
+
+test("systemTiles: Recently edited (WP-139, ADR-0045)", () => {
+  const now = Date.parse("2026-10-01T17:05:12+02:00")
+  const r = M.systemTiles(sampleIndex, now)[5]
+  assert.strictEqual(r.title, "Recently edited")
+  same(r.rows, [["Scanned", "just now"]])
+  same(r.files.map((f) => f.path), ["~/.config/zed/settings.json", "~/.config/git/config", "~/.config/starship.toml",
+    "~/.config/alacritty/alacritty.toml"])
+  same(r.files.map((f) => f.age), ["6 h ago", "19 h ago", "2 days ago", "3 days ago"])
+  assert.strictEqual(r.files[0].mtime, "2026-10-01T10:38:50+02:00")
+  // one file; none; a row the engine would never write is left out
+  const one = JSON.parse(sample)
+  one.system.recentConfig.files = one.system.recentConfig.files.slice(0, 1)
+    .concat([{ path: "~/.ssh/id_ed25519", mtime: "2026-10-01T10:00:00+02:00" }, { path: 7 }, null])
+  assert.strictEqual(M.systemTiles(one, now)[5].meta, "1 file")
+  one.system.recentConfig.files = []
+  const none = M.systemTiles(one, now)[5]
+  assert.strictEqual(none.meta, "0 files")
+  assert.strictEqual(none.lead, "Nothing under ~/.config was edited outside the watched paths in the last 7 days")
+  assert.strictEqual(none.empty, false)
+  // an index without the field (an earlier contract-2 build): no list
+  delete one.system.recentConfig
+  same(M.recentFiles(one, now), null)
+  same(M.recentFiles(null, now), null)
+  assert.strictEqual(M.systemTiles(one, now)[5].meta, "—")
+})
+
+test("watchArgs, watchPathError, validateArgs: config watch (WP-139)", () => {
+  same(M.watchArgs("~/.config/git/config").args, ["config", "watch", "--json", "--", "~/.config/git/config"])
+  assert.strictEqual(M.validateArgs(M.watchArgs("~/.config/a b/c (1).conf").args), "")
+  for (const bad of ["", "~/.config/", "~/.ssh/config", "/etc/pacman.conf", "~/.config/../.ssh/x", "~/.config/./x",
+    "~/.config/a/..", "~/.config//x", "~/.config/a\u0007b", "~/.config/a\u202eb", "~/.config/a\u200bb",
+    "~/.config/" + "x".repeat(503), null, 7]) {
+    assert.notStrictEqual(M.watchPathError(bad), "", JSON.stringify(bad))
+    assert.ok(M.watchArgs(bad).error, JSON.stringify(bad))
+  }
+  assert.strictEqual(M.watchPathError("~/.config/" + "x".repeat(502)), "")
+  assert.strictEqual(M.watchPathError("~/.config/..x/.y"), "")
+  for (const args of [["config", "watch", "--", "~/.config/x"], ["config", "watch", "--json"],
+    ["config", "watch", "--json", "--", "~/.ssh/x"], ["config", "add", "--json", "--", "~/.config/x"],
+    ["config", "watch", "--json", "--", "~/.config/x", "y"]]) {
+    assert.notStrictEqual(M.validateArgs(args), "", JSON.stringify(args))
+  }
+})
+
+test("watchResult: added, already, refused", () => {
+  const added = M.watchResult(0, JSON.stringify({ added: true, path: "~/.config/git/config", coveredBy: null,
+    config: "~/.config/seldon/config.toml" }), "")
+  same(added, { ok: true, text: "Watching ~/.config/git/config from the next capture on; it is taken as it is, without an event",
+    path: "~/.config/git/config", added: true })
+  const already = M.watchResult(0, JSON.stringify({ added: false, path: "~/.config/hypr/x.lua", coveredBy: "~/.config/hypr" }), "")
+  assert.strictEqual(already.text, "~/.config/hypr/x.lua is watched already (~/.config/hypr)")
+  const self = M.watchResult(0, JSON.stringify({ added: false, path: "~/.config/a", coveredBy: "~/.config/a" }), "")
+  assert.strictEqual(self.text, "~/.config/a is watched already")
+  const refused = M.watchResult(1, JSON.stringify({ error: { code: 1, message: "config watch: no" } }), "")
+  same(refused, { ok: false, text: "config watch: no", path: "", added: false })
 })
 
 // ---- Prime Radiant (WP-030) --------------------------------------------------

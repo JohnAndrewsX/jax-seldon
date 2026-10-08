@@ -17,8 +17,8 @@
 #                        once `capture` has run twice (the user's
 #                        "Capture now" after the start-up capture)
 #   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
-#   FAKE_SELDON_LOCKED   if set, every `plan`, resolving `drift`, `decide` and
-#                        `agent` call exits 4 (lock held)
+#   FAKE_SELDON_LOCKED   if set, every `plan`, resolving `drift`, `decide`,
+#                        `agent` and `config` call exits 4 (lock held)
 #   FAKE_SELDON_CAPTURE_LOCKED  N: the first N `capture` calls exit 4 (lock
 #                        held, the engine's JSON error), counted in
 #                        $HOME/locked-captures (WP-068)
@@ -102,6 +102,12 @@
 # text (exit 1, nothing changed). `open
 # ADR-NNNN` opens the path the state index lists for it; `open logbook` the
 # logbook folder.
+#
+# `config watch --json -- <path>` (WP-139) drops the path from the state
+# index's `system.recentConfig` (the engine rebuilds the index) and answers
+# `added`; a path the list does not hold is "watched already", one outside
+# ~/.config refused with the engine's message; FAKE_SELDON_LOCKED makes it
+# exit 4.
 #
 # `agent start <id>` (WP-022) checks the case like the engine (status from
 # the state index or $HOME/cases: active only, queued gets the `seldon plan
@@ -509,6 +515,21 @@ decide_accept() { # decide accept <ADR-NNNN> --json
       event: (if $already then null else {source: "seldon", kind: "note", subject: $id, actor: "human"} end),
       git: (if $already then {committed: false, reason: "nothing changed"} else {committed: true, message: ($id + " accepted")} end),
       warnings: []}' "$index"
+}
+
+config_watch() { # config watch --json -- <path>
+  local path="" index listed
+  while (($# > 0)) && [[ $1 != -- ]]; do shift; done
+  path=${2:-}
+  [[ $path == "~/"* ]] || user_error "config watch: \`$path\` is not below your home directory; Seldon watches only files there"
+  index=$(state_index)
+  listed=$(jq -r --arg p "$path" '[.system.recentConfig.files[]? | select(.path == $p)] | length' "$index")
+  if [[ $listed == 0 ]]; then
+    jq -nc --arg p "$path" '{added: false, path: $p, coveredBy: $p, config: "~/.config/seldon/config.toml"}'
+    return
+  fi
+  rewrite_index '.system.recentConfig.files |= map(select(.path != $p))' --arg p "$path"
+  jq -nc --arg p "$path" '{added: true, path: $p, coveredBy: null, config: "~/.config/seldon/config.toml"}'
 }
 
 # A new case in the state index, in column $2 (queued | active), with the
@@ -919,6 +940,16 @@ case "$cmd" in
     else
       decide "$@"
     fi
+    ;;
+  config)
+    sleep 0.2
+    if [[ -n ${FAKE_SELDON_LOCKED:-} ]]; then
+      echo '{"error":{"code":4,"message":"the logbook is locked by another seldon (pid 4242)"}}'
+      exit 4
+    fi
+    [[ ${2:-} == watch ]] || user_error "unrecognized subcommand '${2:-}'"
+    shift 2
+    config_watch "$@"
     ;;
   drift)
     sleep 0.2

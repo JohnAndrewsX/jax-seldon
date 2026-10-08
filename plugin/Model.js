@@ -740,6 +740,10 @@ function validateArgs(args) {
     // WP-101: read-only, the rules row only (Service.checkRules); no probe
     return !withText && n === 3 && a[1] === "--only" && a[2] === "rules" && json
       ? "" : "doctor must be: doctor --only rules --json"
+  case "config":
+    // WP-139, ADR-0045: Watch on a row of index.system.recentConfig
+    return withText && n === 2 && a[1] === "watch" && json && watchPathError(free[0]) === ""
+      ? "" : "config must be: config watch --json -- <path under ~/.config/>"
   case "rules":
     return !withText && n === 2 && a[1] === "update" && json ? "" : "rules must be: rules update --json"
   case "decide":
@@ -2179,6 +2183,60 @@ function acceptArmHint(decisionId) {
   return "Accept " + decisionId + "? Click Confirm: it becomes accepted with today's date."
 }
 
+// ---- System: recently edited, not watched (WP-139, ADR-0045) ---------------
+
+var RECENT_ROOT = "~/.config/"
+var RECENT_PATH_MAX = 512
+
+// "" when `path` may go to `seldon config watch`, else why not: a path the
+// engine listed — under ~/.config/, at most 512 characters, no control,
+// direction or invisible character, no `.` or `..` folder.
+function watchPathError(path) {
+  var p = typeof path === "string" ? path : ""
+  if (p.indexOf(RECENT_ROOT) !== 0 || p.length === RECENT_ROOT.length) return "Not a file under ~/.config/"
+  if (BAD_PATH_CHARS.test(p)) return "The path holds a control, text-direction or invisible character"
+  if (Array.from(p).length > RECENT_PATH_MAX) return "The path is too long"
+  if (/\/\.\.?(\/|$)/.test(p.slice(1)) || /\/\//.test(p)) return "The path holds a . or .. folder"
+  return ""
+}
+
+// `seldon config watch --json -- <path>`: { args } or { error }.
+function watchArgs(path) {
+  var why = watchPathError(path)
+  if (why !== "") return { error: why }
+  return { args: ["config", "watch", "--json", "--", path] }
+}
+
+// `seldon config watch --json` → {added, path, coveredBy, config}. Returns
+// { ok, text, path, added }.
+function watchResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), path: "", added: false }
+  var data = parseJson(stdoutText)
+  var path = data && typeof data.path === "string" ? data.path : ""
+  var added = !!data && data.added === true
+  var by = data && typeof data.coveredBy === "string" ? data.coveredBy : ""
+  var text = added ? "Watching " + path + " from the next capture on; it is taken as it is, without an event"
+    : path + " is watched already" + (by !== "" && by !== path ? " (" + by + ")" : "")
+  return { ok: true, text: text, path: path, added: added }
+}
+
+// index.system.recentConfig as rows { path, mtime, age }, newest first as
+// the engine wrote them; a row whose path could not be watched is left out
+// (the engine never writes one). null without the field.
+function recentFiles(index, nowMs) {
+  var sys = index && isObject(index.system) ? index.system : {}
+  var rc = isObject(sys.recentConfig) ? sys.recentConfig : null
+  if (rc === null || !Array.isArray(rc.files)) return null
+  var rows = []
+  for (var i = 0; i < rc.files.length; i++) {
+    var f = rc.files[i]
+    if (!isObject(f) || watchPathError(f.path) !== "") continue
+    var t = timeMs(f.mtime)
+    rows.push({ path: f.path, mtime: hasText(f.mtime) ? f.mtime : "", age: isFinite(t) ? relativeAge(t, nowMs) : "" })
+  }
+  return rows
+}
+
 // ---- Memory (WP-023) --------------------------------------------------------
 
 // What the Memory tab opens. The engine's `seldon open` has no memory target
@@ -2348,8 +2406,21 @@ function systemTiles(index, nowMs) {
     lead: colLead.join(" · "), rows: rowsOf("COLLECTORS").concat(rowsOf("SELDON"), areaRows),
     stripe: enabled > ok ? "attention" : "" })
 
+  // WP-139, ADR-0045: edits the config collector does not see
+  var files = recentFiles(index, nowMs)
+  var rc = files === null ? null : sys.recentConfig
+  var scanned = rc !== null ? timeMs(rc.scannedAt) : NaN
+  tiles.push({ id: "recent", title: "Recently edited", big: files === null ? "—" : String(files.length),
+    unit: files === null ? "" : files.length === 1 ? "file" : "files",
+    lead: files === null ? ""
+      : files.length === 0 ? "Nothing under ~/.config was edited outside the watched paths in the last 7 days"
+      : "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed",
+    rows: isFinite(scanned) ? [["Scanned", relativeAge(scanned, nowMs)]] : [],
+    files: files === null ? [] : files })
+
   for (var t = 0; t < tiles.length; t++) {
     if (tiles[t].stripe === undefined) tiles[t].stripe = ""
+    if (tiles[t].files === undefined) tiles[t].files = []
     tiles[t].empty = tiles[t].big === "—"
     if (tiles[t].empty && tiles[t].lead === "") tiles[t].lead = "Not in the index"
     tiles[t].meta = (tiles[t].big + (tiles[t].unit !== "" ? " " + tiles[t].unit : ""))
