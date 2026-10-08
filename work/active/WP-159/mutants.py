@@ -74,7 +74,7 @@ MUTANTS = [
     ("map: not handed back", REDACT, plain("            *origin = map;\n", ""), CORE),
     ("map: not carried through the rules", REDACT, plain("out = rule.replace_with(&out, keep_lines, origin.as_deref_mut());", "out = rule.replace_with(&out, keep_lines, None);"), CORE),
     # 5. putting the runs back
-    ("restore: every run back, at a match's edge too", REDACT, plain("        if next == Some(from)\n", "        if next.is_some() || from != NO_ORIGIN\n"), CORE),
+    ("restore: every run back, at a match's edge too", REDACT, plain("        if next == Some(from)\n", "        if from != NO_ORIGIN\n"), CORE),
     ("restore: no run back inside the text", REDACT, plain("        if next == Some(from)\n", "        if next == Some(from) && false\n"), CORE),
     ("restore: the start counts as a replacement", REDACT, plain("    let mut next = Some(0);\n", "    let mut next = None;\n"), CORE),
     ("restore: no run back at the end", REDACT, plain("    if next == Some(visible)\n", "    if next == Some(visible) && false\n"), CORE),
