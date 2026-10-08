@@ -242,3 +242,69 @@ on import included (over-masks rather than leaks; SPEC §7).
   survivors (`passwd -s`, `passwd --stdin`) were killed after the unit
   rows above (b0c20275): **65/65 killed**.
 - `git diff 3b5592ab..HEAD`: no added home path, user or host name.
+
+## Round 3
+
+Brief: the orchestrator's round 3 from the Fable stage 2 (everything held
+but one input; two items).
+
+### Merge of next
+
+`next` had moved to d30aca6d (the merge of main: 0.1.4, WP-117/118/130;
+work files WP-132..134 and WP-157, the redaction follow-ups of this
+stage 2). Merged as 7df3d8e7 without a conflict; docs-check ok.
+
+### Done
+
+1. **HTTPie's and xh's quoted headers.** `redact::header` has a third
+   alternative, `({name}:)` + `HEADER_GLUED` (the brief's pattern): a
+   quote right after the colon of a bare name opens a value when no white
+   space follows it; the text glued after its closing quote goes with it,
+   as for `HEADER_QUOTED`. `KEEP_EITHER` keeps group 1, 2 or 3. Rows:
+   `http POST … Authorization:'Bearer tokABC123' a=1`, `https …
+   Authorization:"Bearer tokDEF456" -v`, `xh GET … X-Api-Key:'keyABC123xyz'
+   Accept:json` masked; `curl -H 'Authorization:' -H 'X: y' …`, `grep -i
+   'authorization:' f 'x'` and `grep -i "x-api-key:" f "y"` unchanged
+   (`CLEAR`). Bench: a 128 KB line of glued header values, 5.29 ms
+   (budget 20 ms); the quoted-header rows below. SPEC §7: the header
+   sentence and the "Not masked" clause (now only a quote followed by
+   white space, `Authorization:' Bearer x'`).
+2. **Format characters on a hook command line.** `hook::bash_records`
+   drops `import::is_direction_or_format` characters from the line before
+   `parse_shell` and the record (the subject, `meta.command` and `detail`
+   come from that line). Test
+   `privileged::format_characters_hide_no_secret_on_a_command_line`:
+   `tok<U+200B>en=hunter2abc` → `token=‹redacted›`; `'Autho<U+200B>rization:
+   <U+00AD>Bearer …'` → `'Authorization: ‹redacted›'`; U+2060 inside a URL
+   dropped; none of the three in the ledger; a `seldon log` note keeps its
+   U+200D. SPEC §7 has one sentence on where the set is dropped (a hook's
+   command line, the index texts and `source`, plugin commit subjects) and
+   where it stays (notes, case and decision files, the journal, an event's
+   other texts), with what that means.
+
+A first draft of the test used `Authorization:' Bearer …'` as its second
+line; that is the documented "not masked" form (a quote followed by white
+space closes a shell word), so the line was changed to the quoted-word
+form an agent writes.
+
+### How it was verified
+
+- **`flock /tmp/seldon-check.lock just check` on a129df40: exit 0**
+  (`check: ok`; log `engine/target/check-wp140-r3.log`): 90 test
+  binaries, 2290 passed, 0 failed.
+- **`flock /tmp/seldon-check.lock just check-perf` on a129df40: exit 0**
+  (log `engine/target/perf-wp140-r3.log`), every budget on the first
+  attempt. Quoted headers 64 KB 0.49 ms (2 ms); glued header values
+  128 KB 5.29 ms, quoted header values 3.04 ms, private keys 2.80 ms,
+  nmcli secrets 4.74 ms (20 ms); two option kinds 10.1 ms (20 ms),
+  password and token 4.89 ms (10 ms). Hook, 10 000 lines: 0.78 / 1.61 /
+  3.03 / 2.63 ms; 900 lines: 0.80 / 3.06 / 4.49 / 4.30 ms (5 ms);
+  unrelated session 0.73–0.91 ms (1 ms). Index ×10 5.5 ms, ×150
+  64.9 ms; status 48.5 ms.
+- **Mutants:** 68 (round 3 adds: the glued alternative dropped, a glued
+  value that may start with white space, the hook keeping format
+  characters; the two N4 tail mutants now target `HEADER_QUOTED`, as the
+  tail stands in both constants). Run from a copy with its own target
+  `engine/target/mutants-wp140`: **68/68 killed** (log
+  `engine/target/mutants-wp140-r3.log`).
+- This round's own diff: no added home path, user or host name.
