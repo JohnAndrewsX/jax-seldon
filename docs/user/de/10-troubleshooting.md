@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 47ad5b3 -->
+<!-- source: en/10-troubleshooting.md @ 391f7a7 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -12,7 +12,7 @@ der Engine und die häufigsten Probleme.
 seldon doctor
 ```
 
-Es prüft elf Dinge und nennt für jedes, das nicht `ok` ist, eine
+Es prüft zwölf Dinge und nennt für jedes, das nicht `ok` ist, eine
 Abhilfe. Es liest nur: Es ändert keine Datei, nimmt keine Sperre und
 führt nichts mit `sudo` aus.
 
@@ -24,6 +24,7 @@ führt nichts mit `sudo` aus.
 | `cases` | jede Case-ID hat eine Datei | `error`: ein Case existiert zweimal (eine veraltete Kopie); behalte die Datei im Ordner ihres Status |
 | `ledger` | jede Zeile in `ledger/*.jsonl` ist ein Ereignis | `degraded`: Zeilen, die keine Ereignisse sind (ein abgerissener Schreibvorgang, eine Handänderung), werden übersprungen; die Zeile nennt Monat, Anzahl und Zeilen |
 | `fences` | die generierten Teile von `STATUS.md` und `DECISIONS.md` haben ihre Markerzeilen | `degraded`: eine Markerzeile fehlt, also lässt `seldon status` die Datei in Ruhe; oder ein End-Marker schließt keinen Abschnitt. `error`: die Datei ist nicht lesbar |
+| `workpieces` | immer ok, nur zur Information: wie viele `work/<case-id>/`-Ordner keinem Case gehören (verwaist) oder von einem abgeschlossenen Case mit über 10 MiB übrig sind (übergroß), ihre Größe, der älteste | (nie; verschieb oder lösch so einen Ordner selbst, wenn du ihn nicht mehr brauchst — git behält seine Geschichte) |
 | `collectors` | der letzte Capture jedes eingeschalteten Collectors ist gelungen | `degraded`: die Zeile nennt jeden fehlgeschlagenen Collector mit Meldung und Abhilfe |
 | `state` | `cursors.json`, `manifest.json` und `owned.json` in `~/.local/state/seldon` sind lesbar | `error`: die Datei ist beschädigt oder nicht lesbar; die Zeile sagt, was das kaputt macht; die Abhilfe verschiebt eine beschädigte Datei oder macht eine unlesbare lesbar. `degraded`: das nächste Capture wird einen Zustands-Reset festhalten, siehe [doctor sagt, das nächste Capture hält einen Zustands-Reset fest](#doctor-sagt-das-nächste-capture-hält-einen-zustands-reset-fest); oder das letzte Capture hat einen festgehalten, siehe [Ein Zustands-Reset wurde festgehalten](#ein-zustands-reset-wurde-festgehalten); oder ein Collector wartet seit einem Zustands-Reset auf seine Baseline (degraded oder nicht gelaufen): `seldon capture --source <name>` ausführen, sobald er laufen kann |
 | `omarchy` | `omarchy-version` hat geantwortet | der Omarchy-Collector kann die Version nicht lesen |

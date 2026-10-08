@@ -431,8 +431,10 @@ Its error output goes to `~/.local/state/seldon/agent-launch.log`.
 ## Git
 
 With `autocommit = true` every command that writes commits the logbook
-with a message such as `seldon: C-2026-004 active`. The commit takes the
-whole folder, so edits you made in your editor since the last command go
+with a message such as `seldon: C-2026-004 active`. Closing a case names
+it: `seldon: C-2026-004 completed — Install Zed: SUPER+E opens Zed`, the
+title and the first line of its *Result* (for a drop, the reason). The
+commit takes the whole folder, so edits you made in your editor since the last command go
 along with it. The history is your backup and your undo.
 
 With `false`, or with `--no-commit` on one command, the engine writes the
