@@ -491,3 +491,141 @@ It covers:
 
 The branch diff since the merge holds no private path. Log:
 `engine/target/check-wp102b-r1.log` (dev host, not committed).
+
+## Round 2 (102b)
+
+Brief: `WP-102b-round-2-brief.md`; packet `WP-102b-review-1.md` (SEND BACK
+on 0c8e2e98: B1, B2, B3, N1–N4).
+
+**Merge:** `git merge next` (e6dc86f) as its own commit, 5f68c69. Two
+files auto-merged (`docs/TESTING.md`, `tests/plugin/desk-view.sh`), with no
+conflicts.
+
+### Fixed
+
+- **B1, Start for a truncated Intent. Both halves done.**
+  - `import task` skips a task whose Intent, as it would be written
+    (provenance line plus escaped text), is over 64 KiB. Reason `too-long`.
+    Test `a_task_longer_than_the_desk_shows_is_skipped` uses the reviewer's
+    file: 2400 lines, then the `curl … | sh` line.
+  - `Model.intentReviewed` also needs `truncated` false. `Model.reviewHint`
+    says "…: read the whole Intent in the editor; start this case from the
+    terminal." The box adds "The first 64 KiB are shown; …".
+- **B2, invisible characters. Both halves done.**
+  - `import task` drops `is_direction_or_format` characters (WP-140's set,
+    tags included) from the text before redacting, so they also leave the
+    title. `--json` gains `droppedCharacters`.
+  - Test `invisible_characters_never_reach_an_imported_case`: 21 tag
+    characters, U+202E and U+200B are all dropped (23 in total). The case
+    file, the title, human `plan show` and JSON `plan show` hold none.
+  - `plan show` `intent` now marks each such character as `‹U+XXXX›`
+    (`index::build::marked_text`) and counts them in `hidden`. Test: a
+    hand-made case with the 21 tags gives `hidden: 21` and the markers.
+  - The desk keeps Start off while `hidden > 0` and says "N hidden
+    characters are marked …".
+  - Because the characters are dropped **before** redaction, a zero-width
+    space can no longer split a secret from its rule *for `import task`*.
+    This is a side effect of the order; N5 itself (engine-wide, `seldon
+    log`) is not touched.
+- **B3:** `decisions/ADR-0044-plan-show-import-task-rows.md`, **proposed**
+  (accepting it is the operator's decision), with a `DECISIONS.md` row. It
+  covers:
+  - the two CONTRACT.md rows (both now name ADR-0044);
+  - the `intent {text, lines, truncated, hidden}` shape, the 64 KiB cap at
+    a character boundary, and `null` when the patterns fail;
+  - B1 and B2;
+  - N6 as open (`--intent-sha`);
+  - the reference to ADR-0040.
+- **N1, every survivor now has a killing test:**
+  - E1 (not redacted): a hand-written token in a hand-made case's Intent.
+  - E3 (character boundary): `x`×65 535 then `é`, so the text ends exactly
+    at 65 535 bytes.
+  - E4 (patterns fail): `patterns = ["("]` gives `intent: null`.
+  - P2 (no re-ask): `import-reask`, where a capture's new index triggers a
+    second `plan show`.
+  - P4 (area ignored): `import-area`, where a new area turns Import off and
+    the import carries `--area dev`.
+  - P5 (stays reviewed while re-asking): `import-reask` step 5, which needs
+    pending, Start off and the same text.
+  - "press() ignores the review": a new harness verb
+    `trigger:<objectName>:<id>` emits the detail's `actionTriggered`
+    directly, behind a disabled bar. In `import-refused` two stray
+    triggers run nothing (argv compared).
+- **N2:**
+  - `Service.showCase(id, true)` keeps the last text on screen while it
+    asks again, marked pending, so Start is off.
+  - An answer with the same text leaves the box's string as it was. An
+    equal `text` does not re-lay out, so the scroll position holds.
+  - `import-reask` checks that the text at the pending step is identical.
+  - I did not shrink the cap or switch to a ListView. A 64 KiB layout now
+    happens once per change of text, not once per index.
+- **N3, one set:**
+  - `fixtures/bad-path-chars.txt` holds the code-point ranges: control
+    characters, WP-140's direction and format set, and U+2028/U+2029.
+  - The engine's `bad_path_char` gained U+2028/U+2029, and
+    `import::tests::bad_path_char_is_the_shared_list` checks every code
+    point against the file.
+  - The plugin's `BAD_PATH_CHARS` (now a `u` regex) is checked the same way
+    in model.test.js.
+  - A folder `x<U+2028>…` is now refused on both sides.
+- **N4:** `just check-rss` and `just check-perf` were run under the flock:
+  - check-rss: `rss_stays_under_11_mb_on_the_x10_fixture` ok.
+  - check-perf: index build ×10 median 5.5 ms, ×150 median 69.4 ms
+    (budget 100 ms); `status` at 10 000 lines median 51 ms (budget
+    100 ms); hooks 0.7–3.2 ms (budget 5 ms / 1 ms); every redaction case
+    within budget.
+  - Logs: `engine/target/{rss,perf}-wp102b-r2.log`.
+- **N5:** untouched, as briefed (apart from the side effect noted under
+  B2).
+
+### Also
+
+- **WP-140 made the import Scrubber redact the whole text itself.** My
+  outer whole-text pass in `read_source` was therefore a duplicate; I
+  removed it, and the Scrubber does the work. Its mutant, "whole-text
+  redaction off", now aims at `import::Scrubber::text` and is killed.
+- **"CRLF normalisation off" now survives as an equivalent mutant.** Since
+  WP-128 the rules read `\r\n`, and the parser strips `\r` at line ends, so
+  dropping the `\r\n` → `\n` step changes no output. I kept the step
+  (round 3 asked for it) and did not count this survivor as a gap.
+- **Engine mutants** (`work/active/WP-102/mutants.py`; a fifth tuple
+  element picks the cargo test target; own target dir): **33, of which 32
+  are killed and 1 is the equivalent CRLF mutant.** The new ones are E1,
+  E3, E4, "keeps invisible", "drops instead of marking", "too-long off"
+  and "separators allowed", plus the corrected stale patterns.
+- **Plugin mutants** (`plugin-mutants.py` with the trimmed harness from
+  `mk-desk-import.py`): **12 of 12 killed**, including the earlier
+  survivor `press()`. The new ones are P2, P4, P5, "re-ask clears the
+  text", B1 and B2 in `intentReviewed`, and "separators allowed".
+- **Environment:** `/run/user/1000` is full (as the brief says), and
+  `just` itself could not write its shebang scripts there. I deleted
+  nothing there. Instead I ran every `just` and harness command with
+  `XDG_RUNTIME_DIR=/tmp/wp102-xdg`, a short private directory of my own
+  (mode 700). A path on the disk was too long for quickshell's IPC socket.
+  The run leaves quickshell instance folders in that directory, which is
+  the operator's or orchestrator's to remove by its path; I did not
+  delete it.
+
+### Check (102b round 2)
+
+`flock /tmp/seldon-check.lock just check` (with
+`XDG_RUNTIME_DIR=/tmp/wp102-xdg`, see Environment) on 4217b61 (the last
+code commit; this handover adds only this file): **exit 0, `check: ok`**.
+- The engine: fmt, clippy, and all engine tests (default and `watch`;
+  `import_task` has 26).
+- packaging, install and deploy.
+- validate-fixtures: 133 instances.
+- docs-check: 467 links.
+- `omarchy plugin validate` and qmllint (48 files).
+- The plugin: model.test.js 167, service-states 342/0, desk-view 1630/0
+  and bar-view 194/0.
+
+**No ENOSPC failures:** the private runtime directory avoided them.
+
+An earlier run (log `check-wp102b-r2.log`) failed in schema-validate,
+because every JSON fixture needs a schema mapping. Moving the
+character list to `fixtures/bad-path-chars.txt` fixed it.
+
+**The branch diff since the merge holds no private path.** Logs:
+`engine/target/check-wp102b-r2b.log`,
+`engine/target/{rss,perf}-wp102b-r2.log` (dev host, not committed).
