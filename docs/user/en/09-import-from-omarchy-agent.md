@@ -142,6 +142,13 @@ The dry run lists what it would create and writes nothing. Without
 `--dry-run` the import applies at once and commits as
 `seldon: import task`.
 
+In the desk, **Import tasks…** in the Work list does the same: type the
+path (and, if you like, an area), look at the dry run's list, then click
+**Import N cases**. Imported cases show "imported" in the list. Their
+detail shows the whole Intent as plain text, with the file it came from
+and its number of lines; **Start** becomes clickable only once that text
+is shown, and Enter never starts an imported case.
+
 - Every open item (`- [ ] …`) becomes one **queued** case. Its title is
   the item's first sentence (at most 72 characters); its *Intent* is the
   item with the lines indented below it (nested items too) and the
