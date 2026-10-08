@@ -489,7 +489,8 @@ item and only while it is loaded. Routes the plugin must honour:
   drawn (WP-078). When an instance comes, goes, or is drawn or hidden,
   every instance looks again, the owner first, so the next one takes the
   target over with one handler at a time (WP-067); IPC calls act on that
-  instance's panel.
+  instance's panel. The hand-over is deferred (Qt.callLater); nothing is
+  enabled during teardown (WP-162).
 - Service: `IpcHandler` target **`jax.seldon.service`** (`status`,
   `refresh`, `capture`) — read-only state and the two actions any local
   process could trigger anyway; it is how the test host reads plugin state

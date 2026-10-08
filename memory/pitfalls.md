@@ -2274,13 +2274,15 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   automatic "N" in batch mode. The guard blocks `gdb -ex` (fail closed),
   so an agent asks the operator to run it. `p *this` in the IpcHandler
   frame names the target.
-- **Never change an IpcHandler's `enabled` from `Component.onDestruction`.**
+- **Never *enable* an IpcHandler from `Component.onDestruction` (letting go
+  is safe).**
   During a shell exit the generation's IPC registry is already gone; a
   handler that was not registered looks it up again and Quickshell 0.3.1
   crashes. A registered one only lets go through its own cached registry
   pointer (`ipchandler.cpp` 304–334; in the harness runs it logged no
   "Deregistered", the pointer was already null) and did not crash. Hand
-  over later, through a sibling's method with `Qt.callLater`.
+  over later, through every sibling's method with `Qt.callLater` (one
+  sibling alone may die in the same turn and drop it).
 - **The headless harness does not reach that SIGSEGV.** The sibling's
   handler there does turn `enabled` on during the teardown, but nothing is
   registered and nothing logged (seemingly the dying generation is no

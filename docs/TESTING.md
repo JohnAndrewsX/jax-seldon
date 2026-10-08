@@ -956,7 +956,11 @@ its sibling from `Component.onDestruction`; the sibling's IpcHandler then
 registered with the dying engine generation and Quickshell 0.3.1
 crashed. Cases: two drawn widgets and a centre placeholder next to a
 drawn one, each with the owner created first and last (Qt tears the
-newest down first; the shell's order is the owner first). Checks: no
+newest down first; the shell's order is the owner first), and `three`
+(round 2): the owner, a hidden placeholder and a survivor, where the
+owner and the placeholder go at run time in one turn, both still listed,
+and the survivor must own the target and answer IPC `open` before the
+kill. Checks: no
 widget becomes the owner after "Exiting due to IPC request" (the harness
 logs every ownership change), the kill and the shell's exit status are
 0, no crash report under the scratch HOME's `.cache/quickshell/crashes`,
