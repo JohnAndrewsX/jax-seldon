@@ -193,3 +193,27 @@ was merged.
   view, the terminal check off), run from a `git archive` copy of
   315bf38c with its own target: **44/45 killed**, every round-2 mutant
   among them; the survivor is round 1's equivalent `CRLF kept`.
+
+## Round 3a
+
+Brief: Fable stage 2, SEND BACK (small). Done on f53cf048:
+
+- **Finding 2 — the text's controls.** In `add()`, after the CRLF step
+  and the format characters, every control character but tab and newline
+  is dropped (`is_text_control`: `c.is_control() && c != '\n' && c !=
+  '\t'`, as `hook` and `plan` do) and counted in `droppedCharacters`.
+  So `to\x08ken=hunter2abc` is masked, an ESC colour sequence loses its
+  ESC. Test `the_text_s_controls_are_dropped_but_tab_and_newline`. The
+  claims that WP-159 takes C0/C1 are gone from the comment, SPEC §3 and
+  this handover (marked *Corrected in round 3*).
+- **Finding 3 — /proc only.** Message, comment, SPEC §3 and this handover
+  say "a /proc view"; sysfs attributes report size 4096 and are not
+  caught. A guard against a mistake, not an adversary.
+- **Finding 5 (optional) taken:** the skill adds "nor a backtrace with
+  variable values (`bt`, not `bt full`)".
+- Verified: `--test inbox` 14/0, `--test skills` 27/0, fmt and clippy
+  `-D warnings` clean; three round-3 mutants (controls kept, not counted,
+  a tab dropped) killed from a `git archive` copy, `CRLF kept` still
+  equivalent (a lone `\r` is a dropped control now too). The full check
+  runs in round 3b, after WP-159 lands in `next` and `drop_format`
+  switches to `redact::without_invisible` (finding 1).
