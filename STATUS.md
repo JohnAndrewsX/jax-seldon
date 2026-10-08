@@ -627,6 +627,12 @@ submission). (see `work/queued/`)
   → WP-102b. E23 the logbook's git config stays trusted like `~/.gitconfig`
   (only plugin clones are third-party). E24 the runtime dir was cleared by
   the reboot; the harness fix is WP-161.
+- E30 printers: WP-131 (printer configuration hashes) is parked. cupsd
+  rewrites `printers.conf` and every PPD on each print job, and the user
+  cannot read them, so a stat hash would report every printed page. The
+  AGENTS.md §6 permission for the CUPS files is withdrawn. WP-129 (the hook
+  records an agent's privileged commands) stays; it is verified live on the
+  next real `pkexec`/`sudo` an agent runs. No printer test (T3).
 
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
