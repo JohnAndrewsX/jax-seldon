@@ -600,6 +600,25 @@ submission). (see `work/queued/`)
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
 
+## Decided 2026-10-08 (operator, all as recommended)
+- Incidents 2026-10-08: the plugin view harnesses wrote into the real
+  `/run/user/1000` until it was full and Hyprland died (SIGBUS); the
+  plugin's bar widget crashes the shell on every IPC restart with two
+  widgets (since 0.1.3).
+- E25 harnesses use their own runtime dir, first on main and next → WP-161.
+- E26 the IPC restart crash is a 0.1.4 release blocker → WP-162; v0.1.4 is
+  tagged only after it is merged and verified live with two monitors.
+- E27 AGENTS.md §6: the journal may be read for metadata only (own
+  coredump entries, boot errors, failed units).
+- E28 crash reports: step 1 in 0.2.x (an engine command files an agent's
+  analysis into the logbook; the skill says when), steps 2–3 (coredump
+  collector, `crash` event kind, desk list, report drafts) for 0.3 with an
+  ADR.
+- E29 less test load: the view harnesses run only when plugin, test,
+  schema or fixture files changed (gates run everything); check the
+  runtime dir before long runs.
+- No online artifacts any more; reports are local files.
+
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
 - E16 ADR-0039 accepted (the hook records an agent's privileged commands;
