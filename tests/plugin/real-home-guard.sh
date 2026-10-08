@@ -21,6 +21,15 @@
 # never the logbook itself. Anything else (a test leak writing an index for
 # another logbook, a new file, a config change) still fails; the message
 # says which path changed, not who changed it.
+#
+# It also guards the session's runtime dir (WP-161): every Quickshell a
+# harness starts must get a private XDG_RUNTIME_DIR, since Quickshell leaves
+# a quickshell/by-id/<id> dir behind for every instance and a full
+# /run/user/<uid> takes the desktop down. The entries of quickshell/by-id
+# in /run/user/<uid>, and in the inherited XDG_RUNTIME_DIR when that is
+# another dir, are listed before the run; a new one fails the run (a shell
+# restart during the run, or another test run on an old harness, also
+# shows up here).
 
 real_home=$HOME
 # Only Seldon's own dirs: files a fake engine of an older harness version
@@ -65,6 +74,26 @@ real_config_sum() {
   return 0
 }
 
+# The runtime dirs whose quickshell/by-id is watched; a test of this guard
+# sets real_runtime_session to a scratch dir before sourcing it.
+real_runtime_dirs=("${real_runtime_session:-/run/user/$UID}") # live runtime dir: read only, watched for leaks
+if [[ -n ${XDG_RUNTIME_DIR:-} && $XDG_RUNTIME_DIR != "${real_runtime_dirs[0]}" ]]; then # live runtime dir: read only, watched for leaks
+  real_runtime_dirs+=("$XDG_RUNTIME_DIR") # live runtime dir: read only, watched for leaks
+fi
+
+# The entry names under <runtime dir>/quickshell/by-id, sorted; nothing
+# when it does not exist.
+real_runtime_entries() {
+  [[ -d $1/quickshell/by-id ]] || return 0
+  find "$1/quickshell/by-id" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | LC_ALL=C sort
+}
+
+declare -gA real_runtime_before=()
+for real_dir in "${real_runtime_dirs[@]}"; do
+  real_runtime_before[$real_dir]=$(real_runtime_entries "$real_dir")
+done
+unset real_dir
+
 real_before=$(real_fingerprint)
 real_before_config_sum=$(real_config_sum)
 real_before_logbook=$(real_config_logbook)
@@ -95,8 +124,35 @@ real_engine_change() {
     || { echo "index.json names another machine"; return; }
 }
 
-# real_home_check <script name> — one pass/fail line, counted in $pass/$fail.
+# real_runtime_check <script name> — one pass/fail line per watched runtime
+# dir, counted in $pass/$fail.
+real_runtime_check() {
+  local dir before after new count_before count_after
+  for dir in "${real_runtime_dirs[@]}"; do
+    before=${real_runtime_before[$dir]}
+    after=$(real_runtime_entries "$dir")
+    count_before=$(grep -c . <<<"$before" || true)
+    count_after=$(grep -c . <<<"$after" || true)
+    new=$(LC_ALL=C comm -13 <(echo "$before") <(echo "$after") | grep . || true)
+    if [[ -z $new ]]; then
+      pass=$((pass + 1))
+      echo "ok   $1: no new entry in $dir/quickshell/by-id ($count_before before, $count_after after)"
+    else
+      fail=$((fail + 1))
+      echo "FAIL $1: new entries in $dir/quickshell/by-id ($count_before before, $count_after after): a Quickshell ran in this runtime dir:"
+      sed 's/^/     /' <<<"$new"
+    fi
+  done
+}
+
+# real_home_check <script name> — one pass/fail line for the real home,
+# then real_runtime_check; counted in $pass/$fail.
 real_home_check() {
+  real_home_files_check "$1"
+  real_runtime_check "$1"
+}
+
+real_home_files_check() {
   local after why
   after=$(real_fingerprint)
   if [[ $after == "$real_before" ]]; then
