@@ -249,10 +249,10 @@ auf; eine spätere Änderung ist eine Konfigurationsänderung wie jede
 andere. Ein Pfad, der schon beobachtet wird, ändert nichts (Exit 0).
 Abgewiesen, mit Exit 1 und ohne Schreiben: ein Pfad außerhalb deines
 Home-Verzeichnisses, einer in oder um Seldons eigene Dateien (das
-Logbuch, `~/.local/state/seldon`, `~/.config/seldon`), einer unter
-`[redaction] skipPaths` und eine `config.toml`, deren Liste sich nicht
-erweitern lässt, ohne die Datei neu zu schreiben (die Meldung nennt die
-Zeile, die du von Hand ergänzt).
+Logbuch, `~/.local/state/seldon`, `~/.config/seldon`), einer, den es
+nicht gibt, einer unter `[redaction] skipPaths` und eine `config.toml`,
+deren Liste sich nicht erweitern lässt, ohne die Datei neu zu schreiben
+(die Meldung nennt die Zeile, die du von Hand ergänzt).
 
 <!-- help: seldon config watch -->
 ```text

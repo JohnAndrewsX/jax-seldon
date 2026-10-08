@@ -27,7 +27,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/autocommit.json` | `{logbook, ok, at, message}`: the last autocommit the engine attempted (a commit or a git failure; a skip is no attempt), written by every writing command after its autocommit, bound to the canonical logbook path; `index.logbook.git.autocommit` (§6, ADR-0035 §2). Best effort: a record that cannot be written leaves the previous one. Read only when it is a regular file (no symbolic link, FIFO or device; checked before it is opened) of at most 4 MiB; anything else, an unreadable file or one that is not a record leaves the field out with a build warning (WP-120 round 3) |
 | `~/.local/state/seldon/proposals/<id>.json` | triage proposals (`schema/proposal.schema.json`, ADR-0034 §6, ADR-0035 §6, ADR-0036), written by `drift propose` (mode 0600, checked against the schema first; it removes this logbook's earlier proposal, so there is at most one per logbook), marked by `drift apply` and removed by `drift discard` (WP-124); the index points at the newest of this logbook (`index.triage`, §6). Read only when it is a regular file of at most 4 MiB (no symbolic link, FIFO or device; checked before it is opened); anything else is skipped with a build warning, and `drift apply|discard` refuse it. Nothing in a proposal is in the logbook until it is applied |
-| `~/.local/state/seldon/recent-config.json` | `{scannedAt, files: [{path, mtime}], cut?}`: the last scan of recently edited files under `~/.config` outside the watch paths (§4, ADR-0046, WP-139), written by `capture` when the config collector runs; paths and times only, never content; read by every index build for `system.recentConfig` (§6) |
+| `~/.local/state/seldon/recent-config.json` | `{scannedAt, files: [{path, mtime}], partial?}`: the last scan of recently edited files under `~/.config` outside the watch paths (§4, ADR-0046, WP-139), written by `capture` when the config collector runs; paths and times only, never content; read by every index build for `system.recentConfig` (§6). Read only when it is a regular file (no symbolic link, FIFO or device) of at most 4 MiB, else a build warning and no field (WP-139 round 2) |
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
 
@@ -650,9 +650,10 @@ seldon config watch <PATH> [--json]           # ADR-0046, WP-139: appends PATH (
                                                # every other byte stays, the result must read back as the
                                                # same file with exactly that path added (an empty array
                                                # takes it after its `[`); no `config.toml`: the defaults
-                                               # plus PATH. Under the state lock (exit 4 while held). Exit
-                                               # 1, nothing written: not below the home directory or the
-                                               # home directory itself, holding or lying in Seldon's own
+                                               # plus PATH. Under the state lock (exit 4 while held; the
+                                               # config is read under it). Exit 1, nothing written: not
+                                               # below the home directory or the home directory itself,
+                                               # not existing, holding or lying in Seldon's own
                                                # files (the logbook, the state directory, the config
                                                # directory, the config file), under a skipPath (a name
                                                # pattern matches a folder's name too), a control or format
@@ -1784,7 +1785,8 @@ seconds, never after the capture, newest first. Left out: everything
 under a watch path; everything matching `[redaction] skipPaths` (a
 skipped folder is not entered; a name pattern matches a folder's name
 too); Omarchy's plugin folder (as the plugins collector finds it),
-`~/.config/seldon`, the config directory and the config file; the
+`~/.config/seldon`, the config directory, the config file and the
+logbook; the
 ignore list — the folders `.git`, any whose name holds `cache` (any
 case), `state`, `log`, `logs`, `history`, `databases`, `IndexedDB`,
 `leveldb`, `Local Storage`, `Session Storage`, `blob_storage`, and every
@@ -1798,16 +1800,20 @@ the endings `.log`, `.lock`, `.lck`, `.pid`, `.db`, `.db-journal`,
 `.gif`, `.webp`, `.bmp`, `.ico`, `.svg`, `.avif`, `.tif`, `.tiff`,
 `.heic`, `.jxl`, `.xpm`, `.swp`, `.swo`, `.swx`, `.tmp`, `~` (all
 case-insensitive); anything that is no regular file (a directory link is
-never followed; a link to a file counts by its target's time); a
-`~`-path with a control, direction or format character, longer than 512
-characters, or one the logbook's redaction would change (never shown
-masked). Bounded: at most 20 000 directory entries read (a walk that
-reaches it stops, `cut: true` in the file) and 12 levels below
-`~/.config`. The result goes to `recent-config.json` (§2), atomically; a
-failed write is a capture warning. The capture's ledger, cursors and
-JSON are unchanged. Cost (bench profile, `capture_cost.rs`, 2026-10-08,
-dev host): 2.3 ms per capture on a synthetic lived-in `~/.config` (370
-entries read; 80 files listed), 0.5 ms per index build (§6).
+never followed; a link to a file counts by its target's time); a name
+that is not UTF-8, and a `~`-path with a control, direction or format
+character, longer than 512 characters, or one the logbook's redaction
+would change (never shown masked). Bounded: at most 20 000 directory
+entries read and 500 ms of wall time (a walk that reaches either stops)
+and 12 levels below `~/.config` (deeper folders are not read); any of the
+three marks the result `partial: true`. The result goes to
+`recent-config.json` (§2), atomically; a failed write is a capture
+warning. The capture's ledger, cursors and JSON are unchanged. Cost
+(bench profile, `capture_cost.rs`, 2026-10-08, dev host): 2.3 ms per
+capture on a synthetic lived-in `~/.config` (370 entries read; 80 files
+listed), 0.5 ms per index build (§6); at the entry budget (20 000 recent
+files in one folder) 120 ms at rest, about 400 ms measured on a loaded
+host (load ≈ 3.9, WP-139 review), capped by the deadline.
 
 All events get `actor: system` unless the collector can prove otherwise.
 Proof is an agent hook `command` event that (a) named the subject
@@ -2327,8 +2333,8 @@ control, bidi or format character; otherwise it is left out with a build
 warning naming the case, which still loads.
 
 `system.recentConfig` (ADR-0046, optional within contract 2) is
-`{scannedAt, files: [{path, mtime}]}` from `recent-config.json` (§2,
-§4), the files dropped that by the build's time lie under a watch path
+`{scannedAt, files: [{path, mtime}], partial?}` from `recent-config.json`
+(§2, §4; `partial: true` only when the scan was), the files dropped that by the build's time lie under a watch path
 or a skipPath (the current config), are older than 7 days, or are no
 longer a path the scan would keep (§4: the redaction, control and format
 characters, 512 characters), at most 80, in the file's order. No file,

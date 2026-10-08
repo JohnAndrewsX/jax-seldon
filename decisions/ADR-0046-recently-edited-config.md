@@ -42,29 +42,38 @@ before the scan:
   folder that holds `Cookies` or `Local State` (a browser or Electron
   profile: nothing in it is listed); state, history, log, lock, pid,
   database, key-store and image files and editor temp files by name;
-  `shell.json`; Omarchy's plugin folder; Seldon's own config folder (the
-  click below edits it).
-- **Bounded**: at most 20 000 directory entries read and 12 levels
-  below `~/.config`; directory links are never followed, a link to a file
-  counts by its target's time. A walk that reaches the entry budget stops
-  and marks the state file (`cut`).
-- **Never masked**: a `~`-path with a control, direction or format
-  character (the set of `import::is_direction_or_format`), longer than 512
-  characters, or one the logbook's redaction would change is left out.
-  The list's only action needs the real path; a masked one would watch
-  nothing.
+  `shell.json`; Omarchy's plugin folder; Seldon's own config folder and
+  config file (the click below edits it) and the logbook.
+- **Bounded**: at most 20 000 directory entries read, 12 levels below
+  `~/.config` and 500 ms of wall time; directory links are never
+  followed, a link to a file counts by its target's time. A walk that
+  reaches the entry budget or the deadline stops, one that leaves folders
+  below the depth unread goes no deeper; either way the result is marked
+  `partial` (§2).
+- **Never masked**: a name that is not UTF-8 (shown, it would become
+  U+FFFD: two real files would merge into one path that does not exist),
+  and a `~`-path with a control, direction or format character (the set
+  of `import::is_direction_or_format`), longer than 512 characters, or
+  one the logbook's redaction would change is left out. The list's only
+  action needs the real path; a masked one would watch nothing, so the
+  click (§3) also refuses a path that does not exist.
 - **No ledger line**, ever. The scan is not a collector: no cursor, no
   event, no drift.
 
 The result is engine state, `$XDG_STATE_HOME/seldon/recent-config.json`
-(`{scannedAt, files: [{path, mtime}], cut?}`), written atomically; a
-failure to write it is a capture warning. The walk is a public function
+(`{scannedAt, files: [{path, mtime}], partial?}`), written atomically; a
+failure to write it is a capture warning. It is read only when it is a
+regular file of at most 4 MiB (no link, FIFO or device), as
+`autocommit.json` and the proposals are (WP-120 round 3). The walk is a public function
 of the engine, so `seldon preview` (WP-138) reuses it.
 
 ### 2. The index field
 
-`system.recentConfig` (optional) = `{scannedAt, files: [{path, mtime}]}`,
-newest first, at most 80; `path` starts with `~/.config/`, at most 512
+`system.recentConfig` (optional) = `{scannedAt, files: [{path, mtime}],
+partial?}`, newest first, at most 80; `partial: true` (present only then)
+when the scan stopped early or left folders unread, so the desk says
+"The scan stopped early; the list may be incomplete." and never "nothing
+was edited" for a list that proves nothing; `path` starts with `~/.config/`, at most 512
 characters; `mtime` and `scannedAt` RFC 3339. Every index build reads the
 state file and drops again what is by now under a watch path, under a
 skipPath, changed by the redaction, or older than 7 days at the build's
@@ -84,8 +93,9 @@ it appends the path, written `~/…`, to `config.toml watchPaths` by the
 minimal edit of WP-109 (`with_added_watch_paths`: every other byte of the
 file stays, the result must read back as the same file with exactly that
 path added; an empty array now takes it too). Under the state lock (exit
-4 while a capture holds it). Refused, exit 1, nothing written: a path
-not below the home directory (or the home directory itself), one that
+4 while a capture holds it; the config is read under the lock).
+Refused, exit 1, nothing written: a path not below the home directory
+(or the home directory itself), one that does not exist, one that
 holds or lies in Seldon's own files (the logbook, the state directory,
 Seldon's config), one under a skipPath, one with a control or format
 character or over 512 characters, and a file the minimal edit cannot
@@ -113,7 +123,11 @@ section without the tile.
   scan and the state file add about 2.3 ms to a capture on a synthetic
   lived-in `~/.config` (370 entries read: 40 programs' folders, a browser
   profile, an Electron app and a cache entered only to their first
-  level); the index build adds about 0.5 ms for 80 files.
+  level); the index build adds about 0.5 ms for 80 files. **At the entry
+  budget** (20 000 recent files in one program's folder) a capture pays
+  about 120 ms on the dev host at rest and about 400 ms on a loaded host
+  (the stage-1 review, load ≈ 3.9, a different tree); the 500 ms deadline
+  caps it, and the list is then `partial`.
 - **Size:** at most 80 × (512 + 25 + keys) bytes, about 46 KB at the
   worst, usually under 8 KB.
 - **Privacy:** paths and times of files the user can read, in the user's

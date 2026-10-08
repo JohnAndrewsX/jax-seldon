@@ -37,7 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folders, and any path the redaction would change. New:
   `seldon config watch <path>` adds a path to `watchPaths`, changing only
   that list in `config.toml`; the next capture takes the file in as it
-  is. The scan costs about 2 ms per capture.
+  is. The scan costs about 2 ms per capture; it stops at 20 000 entries
+  or 500 ms and then marks the list `partial` (the desk: "The scan
+  stopped early; the list may be incomplete.").
 - **Files pacman left (WP-141).** A `.pacnew` (the package's new default
   was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
   that pacman reports in `/var/log/pacman.log` is now recorded: a pacman

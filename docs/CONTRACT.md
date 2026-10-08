@@ -135,9 +135,11 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
      "completed or not known". The index drops it anywhere else and reads
      another word as none.
    - Optional, ADR-0046 (WP-139): `system.recentConfig` `{scannedAt,
-     files: [{path, mtime}]}`: files under `~/.config` modified in the 7
-     days before the last capture's scan, outside `watchPaths` and
-     `skipPaths`, newest first, at most 80; `path` starts with
+     files: [{path, mtime}], partial?}`: files under `~/.config` modified
+     in the 7 days before the last capture's scan, outside `watchPaths`
+     and `skipPaths`, newest first, at most 80; `partial: true` (only
+     then present) when the scan stopped early, so the list may be
+     incomplete; `path` starts with
      `~/.config/`, at most 512 characters, never masked (a path the
      redaction would change is left out). Paths and times only, never
      content; informational, never in the ledger. User content (rule 6):

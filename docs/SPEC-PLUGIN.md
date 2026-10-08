@@ -789,11 +789,15 @@ and no action runs.
   §3 otherwise; disabled while nothing can write). The engine's answer
   ("Watching <path> from the next capture on; it is taken as it is,
   without an event", "<path> is watched already" or its refusal, a held
-  lock included: no retry) shows above the list; the row goes with the
-  index the engine rebuilds. Its footer: "From the last capture's scan of
+  lock included: no retry) shows above the list while the tile is
+  current, also after the last row went; the row goes with the index the
+  engine rebuilds. Its footer: "From the last capture's scan of
   ~/.config: paths and times only, never content. Seldon keeps no record
   of these edits until a path is watched." With no file in 7 days the
-  lead says so; an index without the field shows "—".
+  lead says so — unless the scan stopped early (`partial`, ADR-0046 §2):
+  then it reads "The scan stopped early; the list may be incomplete.",
+  which a non-empty list's lead also ends with. An index without the
+  field shows "—".
 - **Memory (6).** Rows from `Model.memoryRows`: the `## ` headings of
   memory/lessons.md, then the memory topics with path and `updated`
   (`summary` "3 lessons · 2 topics" above them). The detail: "Lesson" or
