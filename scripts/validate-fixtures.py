@@ -1653,7 +1653,10 @@ def derive_recent_config(generated_at, problems):
     times = [instant(f["mtime"]) for f in saved["files"]]
     if times != sorted(times, reverse=True):
         problems.append(f"{rel(RECENT_CONFIG)}: files are not newest first")
-    return {"scannedAt": saved["scannedAt"], "files": files[:RECENT_MAX]}
+    out = {"scannedAt": saved["scannedAt"], "files": files[:RECENT_MAX]}
+    if saved.get("partial") is True:
+        out["partial"] = True
+    return out
 
 
 def check_proposals(sample):
@@ -1764,6 +1767,13 @@ VARIANTS = {
         {"op": "test", "path": "/state/collectors/3/name", "value": "plugins"},
         {"op": "replace", "path": "/state/collectors/3/ok", "value": False},
         {"op": "add", "path": "/state/collectors/3/message", "value": "omarchy plugin list --json: timed out"},
+    ],
+    # ADR-0046 §2: the scan of ~/.config stopped early (entry budget, deadline or depth) and found no
+    # recent file before it did: the desk says the list may be incomplete, not "nothing edited".
+    "recent-partial": [
+        {"op": "test", "path": "/system/recentConfig/scannedAt", "value": "2026-10-01T17:05:00+02:00"},
+        {"op": "replace", "path": "/system/recentConfig/files", "value": []},
+        {"op": "add", "path": "/system/recentConfig/partial", "value": True},
     ],
     # Omarchy run from a git checkout of $OMARCHY_PATH: the dossier carries its HEAD (short hash).
     "omarchy-git-checkout": [

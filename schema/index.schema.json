@@ -85,10 +85,11 @@
         "plugins": { "type": "object", "additionalProperties": false, "properties": { "enabled": { "type": "integer" }, "installed": { "type": "integer" } } },
         "areas": { "type": "array", "items": { "type": "object", "required": ["name"], "additionalProperties": false, "properties": { "name": { "type": "string" }, "hasAgentsMd": { "type": "boolean" }, "cases": { "type": "integer" } } } },
         "recentConfig": { "type": "object", "required": ["scannedAt", "files"], "additionalProperties": false,
-          "description": "optional (ADR-0046): files under ~/.config modified in the 7 days before the last capture's scan, outside watchPaths and skipPaths, newest first; paths and times only, never content; absent before the first scan or with an invalid [redaction] patterns entry",
+          "description": "optional (ADR-0046): files under ~/.config modified in the 7 days before the last capture's scan, outside watchPaths and skipPaths, newest first; paths and times only, never content; absent before the first scan or with an invalid [redaction] patterns entry; `partial` marks an incomplete list",
           "properties": {
             "scannedAt": { "type": "string", "format": "date-time" },
-            "files": { "type": "array", "maxItems": 80, "items": { "type": "object", "required": ["path", "mtime"], "additionalProperties": false, "properties": { "path": { "type": "string", "pattern": "^~/\\.config/", "maxLength": 512, "description": "user content (CONTRACT.md rule 6); passed only as the one argument after -- of `seldon config watch --json`" }, "mtime": { "type": "string", "format": "date-time" } } } } } }
+            "files": { "type": "array", "maxItems": 80, "items": { "type": "object", "required": ["path", "mtime"], "additionalProperties": false, "properties": { "path": { "type": "string", "pattern": "^~/\\.config/", "maxLength": 512, "description": "user content (CONTRACT.md rule 6); passed only as the one argument after -- of `seldon config watch --json`" }, "mtime": { "type": "string", "format": "date-time" } } } },
+            "partial": { "const": true, "description": "present only when the scan stopped early (entry budget, deadline) or left folders below its depth unread: the list may be incomplete" } } }
       }
     },
     "memory": { "type": "object", "additionalProperties": false, "properties": {

@@ -249,6 +249,38 @@ fn snapper_degraded_equals_the_variant() {
     );
 }
 
+/// ADR-0046 §2: a scan that stopped early and found nothing recent before
+/// it did; the index marks the list `partial`.
+#[test]
+fn recent_partial_equals_the_variant() {
+    let env = Env::new(Snapper::Missing);
+    let (lb, _, _) = golden_run(&env, None, |_| {});
+    let state = env.home.join(".local/state/seldon/recent-config.json");
+    std::fs::write(
+        &state,
+        json!({"scannedAt": "2026-10-01T17:05:00+02:00", "files": [], "partial": true}).to_string(),
+    )
+    .unwrap();
+    let out = env.at(
+        GENERATED_AT,
+        &[
+            "--logbook",
+            lb.to_str().unwrap(),
+            "index",
+            "--check",
+            "--json",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let index = json_file(&env.home.join(".local/state/seldon/index.json"));
+    common::assert_valid_index(&index);
+    assert_same(
+        json_file(&repo("fixtures/index-variants/recent-partial.json")),
+        index,
+        "recent-partial",
+    );
+}
+
 #[test]
 fn plugins_degraded_equals_the_variant() {
     // the plugins collector's own message for a timed-out shell IPC call

@@ -324,6 +324,10 @@ pub struct System {
 pub struct RecentConfig {
     pub scanned_at: String,
     pub files: Vec<RecentFile>,
+    /// The scan stopped early or left deep folders out: the list may be
+    /// incomplete (ADR-0046 §2). Written only when true.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
 }
 
 /// One recently edited file: its `~`-path and modification time.
