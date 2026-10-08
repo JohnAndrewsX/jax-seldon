@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/preview.schema.json",
+  "title": "Seldon preview",
+  "description": "The output of `seldon preview --json` (WP-138, ADR-0045): before the logbook exists, the last days' pacman transactions and the files edited under ~/.config, read from the machine without memory (no who, no why). Read-only; the plugin runs the command with a fixed argv while the logbook is not initialised and shows this. Every name and path is user content: shown escaped, never evaluated, never an argument of a command.",
+  "type": "object",
+  "required": ["contractVersion", "generatedAt", "since", "days", "pacman", "files", "truncated", "elapsedMs"],
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": { "const": 2 },
+    "generatedAt": { "type": "string", "format": "date-time", "description": "when the engine ran" },
+    "since":       { "type": "string", "format": "date-time", "description": "the window's start: generatedAt minus days" },
+    "days":        { "type": "integer", "minimum": 1, "maximum": 7 },
+    "pacman": {
+      "type": "object",
+      "required": ["ok", "partial", "transactions"],
+      "additionalProperties": false,
+      "properties": {
+        "ok":      { "type": "boolean", "description": "false: pacman.log could not be read; message says why, transactions is empty" },
+        "message": { "type": "string", "maxLength": 1024 },
+        "partial": { "type": "boolean", "description": "the log's last 64 MiB did not reach back to the window's start" },
+        "transactions": {
+          "type": "array", "maxItems": 200,
+          "description": "newest first; only package lines inside the window",
+          "items": {
+            "type": "object",
+            "required": ["at", "count", "kinds", "packages"],
+            "additionalProperties": false,
+            "properties": {
+              "at":      { "type": "string", "format": "date-time", "description": "when it began (its Running line, else transaction started), or its first line inside the window" },
+              "command": { "type": "string", "maxLength": 256, "description": "pacman's Running line, redacted, one line; absent without one or while config.toml cannot be used" },
+              "status":  { "enum": ["failed", "interrupted", "unfinished"], "description": "absent when it completed (ADR-0043)" },
+              "count":   { "type": "integer", "minimum": 1, "description": "its package lines inside the window, also those not listed" },
+              "kinds":   { "type": "array", "minItems": 1, "maxItems": 5,
+                           "items": { "enum": ["install", "remove", "upgrade", "downgrade", "reinstall"] },
+                           "description": "the kinds of all its package lines inside the window, each once, in log order" },
+              "packages": {
+                "type": "array", "minItems": 1, "maxItems": 10,
+                "items": {
+                  "type": "object",
+                  "required": ["kind", "name"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind":    { "enum": ["install", "remove", "upgrade", "downgrade", "reinstall"] },
+                    "name":    { "type": "string", "minLength": 1, "maxLength": 512 },
+                    "version": { "type": "string", "minLength": 1, "maxLength": 256, "description": "install, remove, reinstall" },
+                    "from":    { "type": "string", "minLength": 1, "maxLength": 256, "description": "upgrade, downgrade" },
+                    "to":      { "type": "string", "minLength": 1, "maxLength": 256, "description": "upgrade, downgrade" }
+                  },
+                  "oneOf": [
+                    { "required": ["version"], "not": { "anyOf": [{ "required": ["from"] }, { "required": ["to"] }] },
+                      "properties": { "kind": { "enum": ["install", "remove", "reinstall"] } } },
+                    { "required": ["from", "to"], "not": { "required": ["version"] },
+                      "properties": { "kind": { "enum": ["upgrade", "downgrade"] } } }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "required": ["ok", "partial", "root", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "ok":      { "type": "boolean", "description": "false: withheld (config.toml or its [redaction] patterns cannot be used); message says so, items is empty" },
+        "message": { "type": "string", "maxLength": 1024 },
+        "partial": { "type": "boolean", "description": "the walk stopped early (time or entry budget, depth): files it did not reach are missing" },
+        "root":    { "type": "string", "minLength": 1, "maxLength": 1024, "description": "the folder walked, ~/.config or $XDG_CONFIG_HOME, as ~/… when under the home" },
+        "items": {
+          "type": "array", "maxItems": 80,
+          "description": "newest first; never a file under a [redaction] skipPaths pattern, never content",
+          "items": {
+            "type": "object",
+            "required": ["path", "modified"],
+            "additionalProperties": false,
+            "properties": {
+              "path":     { "type": "string", "minLength": 1, "maxLength": 4096, "description": "~/…, redacted, control and bidi characters as U+FFFD" },
+              "modified": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "truncated": { "type": "boolean", "description": "a bound cut rows: more than 200 rows (transactions plus files), more than 80 files, or more than 10 packages in a transaction" },
+    "elapsedMs": { "type": "integer", "minimum": 0 }
+  }
+}

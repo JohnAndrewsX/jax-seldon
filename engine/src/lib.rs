@@ -8,6 +8,7 @@ pub mod case_notes;
 pub mod collectors;
 pub mod commands;
 pub mod config;
+pub mod config_scan;
 pub mod dossier;
 pub mod error;
 pub mod frontmatter;

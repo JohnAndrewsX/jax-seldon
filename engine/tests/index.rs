@@ -331,6 +331,18 @@ fn the_engine_checker_agrees_with_jsonschema() {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let schema = format!("{}.schema.json", name.split('.').next().unwrap());
         let x = json_file(&path);
+        // `seldon preview`'s output (ADR-0045) is no file the engine
+        // checks: jsonschema alone (engine/tests/preview.rs)
+        if schema == "preview.schema.json" {
+            let text = std::fs::read_to_string(repo("schema/preview.schema.json")).unwrap();
+            let compiled = jsonschema::options()
+                .should_validate_formats(true)
+                .build(&serde_json::from_str(&text).unwrap())
+                .unwrap();
+            assert!(!compiled.is_valid(&x), "{name} must fail jsonschema");
+            n += 1;
+            continue;
+        }
         assert!(
             !v.validate(&x, &schema).is_empty(),
             "{name} must fail the engine checker"
