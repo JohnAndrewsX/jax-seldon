@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# The mutants' sed scripts spell shell expansions literally.
+# shellcheck disable=SC2016
 # Static guard (WP-161): no test or script reaches the session's runtime dir
 # by accident. On 2026-10-08 the plugin harnesses passed
 # XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$work}" to their Quickshells; in a
