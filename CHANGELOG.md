@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.4] - 2026-10-07
+## [0.1.4] - 2026-10-08
 
 **Highlights.** Seldon stays quiet: routine changes (theme, plugin
 toggles, Omarchy's updates, a plain full upgrade) are history, not drift,
