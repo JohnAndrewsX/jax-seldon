@@ -500,9 +500,16 @@ ledger has it in full)"), **the transaction** (WP-137): for a
 pacman event whose transaction did not complete (`meta.txStatus`,
 ADR-0043) an urgent callout above the key/values — *Transaction failed*,
 *Transaction interrupted* or *Transaction did not finish*, with what
-that means (the packages listed may be all it changed; pacman runs its
-post-transaction hooks only after a completed transaction) — whatever
-the event's class; then, below the key/values, "N packages: … in this
+that means (the packages listed may be all it changed; a failed one could
+not be installed, upgraded or removed), then one shared text: "pacman's
+after-update steps (boot image, boot menu, Omarchy's resume hooks) did
+not run for this transaction; if it updated omarchy-settings, Hyprland's
+auto-reload may stay paused until those steps run. Before you reboot,
+reinstall the packages listed here (`pacman -S` with their names) or ask
+your agent in a case; a plain rerun does not run those steps for packages
+already upgraded." (alpm-hooks(5): post-transaction hooks run only after
+a completed transaction and only for its targets; WP-137 round 2.) Text
+only: the plugin runs nothing — whatever the event's class; then, below the key/values, "N packages: … in this
 transaction" and every package of the transaction the index lists, the
 unusual first (↓ downgraded, − removed, + installed, ↑ upgraded, ↻
 reinstalled; by name within a kind), "name  old → new" or "name

@@ -110,7 +110,11 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
             let old = rotated(path);
             if std::fs::metadata(&old).is_ok_and(|m| m.ino() == c.inode) {
                 let bytes = read_from(&old, c.offset)?;
-                // the old file is closed for good: emit what it has
+                // the old file is closed for good: emit what it has. A
+                // transaction still open there is `unfinished` (ADR-0043):
+                // holding it back would lose it, since the cursor moves to
+                // the new file; a pacman still running at the rotation
+                // writes its end into the old file, which is not read again
                 txs.extend(parse(&bytes, c.offset, false, ctx.tz).txs);
             }
             0

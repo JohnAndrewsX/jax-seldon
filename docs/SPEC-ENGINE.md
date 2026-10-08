@@ -1218,7 +1218,12 @@ git itself is killed, with the same bounded pipe wait. Rules:
   the end of the log while `db.lck` is absent, writes `unfinished`; a
   completed one writes none, nor does a package line outside any
   transaction. Lines written before ADR-0043 have none (append-only); the
-  index keeps the key only on pacman events with a `txId`. `meta.command` is parsed as argv,
+  index keeps the key only on pacman events with a `txId`. A transaction
+  still open at the end of the rotated `<log>.1` is emitted as
+  `unfinished` even while pacman runs: the cursor moves on to the new
+  file, so holding it back would lose it, and a pacman that keeps writing
+  to the old file through its open handle ends it there, unread (rare:
+  Arch does not rotate pacman.log by default). `meta.command` is parsed as argv,
   never matched as a substring; the parser (`command_intent`,
   `parse_command`, `is_plain_full_upgrade`) is shared with the hook (§8)
   and the drift routine rule (§5): the intent of a hook `command` event is

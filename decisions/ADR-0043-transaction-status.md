@@ -49,7 +49,10 @@ not complete**:
   rebuild` does not re-read the log). Absent therefore means "completed,
   or not known": the plugin never claims *completed*.
 - A transaction pacman **still runs** (`db.lck` present) is held back as
-  before (ADR-0013 §5) and gets no status until it ends.
+  before (ADR-0013 §5) and gets no status until it ends. Exception: one
+  still open at the end of a rotated `<log>.1` is emitted `unfinished`,
+  since the cursor moves to the new file and would never read it again
+  (WP-137 round 2; rare, Arch does not rotate pacman.log by default).
 - A package line outside any transaction (logs before pacman logged
   transactions) has no `txId` and no status.
 - Only on events with `source: pacman` **and** a `txId`. The engine
