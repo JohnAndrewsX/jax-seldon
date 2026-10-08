@@ -411,3 +411,81 @@ fn a_large_log_and_a_full_config_stay_in_budget() {
     );
     assert!(wall.as_secs() < 5, "{wall:?}");
 }
+
+/// WP-138 round 2 (N2): pacman's grammar takes any `\S+`, so a log can
+/// hold names and versions with control and bidi characters, and longer
+/// than the schema allows. The output stays one line per value, within
+/// the schema, in JSON and on the terminal.
+#[test]
+fn a_hostile_log_still_gives_schema_valid_one_line_output() {
+    let env = Env::new(Snapper::Missing);
+    let at = "[2026-10-07T10:00:00+0200]";
+    let long_name = "n".repeat(600);
+    let long_from = "1".repeat(300);
+    let long_version = "v".repeat(300);
+    let log = format!(
+        "{at} [ALPM] transaction started\n\
+         {at} [ALPM] installed ev\u{202E}il\u{1b}[31m (1.0\u{1b}]8;;x-1)\n\
+         {at} [ALPM] upgraded {long_name} ({long_from} -> 2.0\u{2066}-1)\n\
+         {at} [ALPM] installed long-version ({long_version})\n\
+         {at} [ALPM] transaction completed\n\
+         {at} [ALPM] transaction started\n\
+         {at} [ALPM] installed only\u{1b}[2Jone (1-1)\n\
+         {at} [ALPM] transaction completed\n"
+    );
+    let log_path = env.tmp.path().join("pacman.log");
+    std::fs::write(&log_path, log).unwrap();
+    let out = preview_in(&env, &log_path, &["--json"]);
+    let v = json(&out); // validated against preview.schema.json
+    let text = String::from_utf8(out.stdout.clone()).unwrap();
+    for bad in ['\u{1b}', '\u{202E}', '\u{2066}'] {
+        assert!(!text.contains(bad), "{bad:?} in {text}");
+    }
+    let txs = v["pacman"]["transactions"].as_array().unwrap();
+    let packages = txs[1]["packages"].as_array().unwrap();
+    assert_eq!(packages[0]["name"], "ev\u{FFFD}il\u{FFFD}[31m");
+    assert_eq!(packages[1]["name"].as_str().unwrap().chars().count(), 512);
+    assert_eq!(packages[1]["from"].as_str().unwrap().chars().count(), 256);
+    assert_eq!(packages[1]["to"], "2.0\u{FFFD}-1");
+    assert_eq!(
+        packages[2]["version"].as_str().unwrap().chars().count(),
+        256
+    );
+    // the terminal gets no escape either (a one-package transaction prints its name)
+    let human = preview_in(&env, &log_path, &[]);
+    let text = String::from_utf8(human.stdout).unwrap();
+    assert!(text.contains("installed only\u{FFFD}[2Jone"), "{text}");
+    for bad in ['\u{1b}', '\u{202E}', '\u{2066}'] {
+        assert!(!text.contains(bad), "{bad:?} in {text}");
+    }
+}
+
+/// WP-138 round 2 (N1, N3): a log whose last 8 MiB are all inside the
+/// window is read only that far and says so (`pacman.partial`), and the
+/// `~/.config` walk, which runs first with its own budget, still lists
+/// its files however long the pacman read takes.
+#[test]
+fn a_log_denser_than_the_tail_says_partial_and_keeps_the_files() {
+    let env = Env::new(Snapper::Missing);
+    fixture_home(&env);
+    let mut log = String::with_capacity(9 << 20);
+    let mut i = 0;
+    while log.len() < 9 << 20 {
+        let at = format!("[2026-10-0{}T12:00:00+0200]", 2 + i % 6);
+        log.push_str(&format!(
+            "{at} [ALPM] transaction started\n{at} [ALPM] upgraded package-{i} (1.0-1 -> 1.0-2)\n{at} [ALPM] transaction completed\n"
+        ));
+        i += 1;
+    }
+    let log_path = env.tmp.path().join("pacman.log");
+    std::fs::write(&log_path, log).unwrap();
+    let v = json(&preview_in(&env, &log_path, &["--json"]));
+    assert_eq!(v["pacman"]["partial"], true);
+    assert_eq!(v["pacman"]["ok"], true);
+    assert_eq!(v["files"]["items"].as_array().unwrap().len(), 4);
+    assert_eq!(v["files"]["partial"], false);
+    assert_eq!(v["truncated"], true);
+    // the fixture's log reaches back past the window: not partial
+    let v = json(&preview_in(&env, &preview_log(), &["--json"]));
+    assert_eq!(v["pacman"]["partial"], false);
+}

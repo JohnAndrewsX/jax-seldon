@@ -663,7 +663,7 @@ seldon preview [--days N] [--json]
 # nothing written (no state directory, no config); exit 0 for a finished
 # preview, 1 for --days outside 1–7 (default 7). pacman: the package lines of
 # the window from the tail of pacman.log (SELDON_PACMAN_LOG; slices from the
-# end, 256 KiB × 4ⁿ, until one starts before the window, at most 64 MiB, else
+# end, 256 KiB × 4ⁿ, until one starts before the window, at most 8 MiB, else
 # `partial`), parsed by the collector's grammar, grouped by transaction,
 # newest first; `at` its Running line (else `transaction started`), or its
 # first line in the window; `command` redacted, one line, ≤ 256 characters;
@@ -675,7 +675,11 @@ seldon preview [--days N] [--json]
 # databases (sqlite, *.db, LevelDB, IndexedDB, Local/Session Storage,
 # dconf), images, locks, pid and swap files, `*~`, `*.bak.*`, `.git`,
 # omarchy/plugins, omarchy/shell.json and every [redaction] skipPaths match;
-# the walk stops 0.4 s after the start or after 200 000 entries (`partial`).
+# the walk runs first and stops 0.25 s after it started or after 200 000
+# entries (`partial`); names, versions and the command line through the
+# same one-line rule, clipped to 512/256/256 characters. Together under 0.5 s
+# on the dev host's release build (worst case measured 0.30 s: a 100 MiB log
+# dense to its end, 50 000 files).
 # Paths `~/…`, redacted, control and bidi characters as U+FFFD. Bounds: 200
 # rows (files first, the newest 80; transactions fill the rest), 10
 # packages listed per transaction (`count` all, `kinds` all), `truncated`

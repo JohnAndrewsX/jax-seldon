@@ -9,7 +9,8 @@
 > fields to the v2 schemas, not commands or new schema files. ADR-0044
 > set the precedent that a new command row is a contract change recorded
 > by an ADR. The index does not change: `contractVersion` stays 2 and
-> no index fixture changes. Operator decision 2026-10-07 (WP-138, after
+> no index fixture changes (§7 says why AGENTS.md §3's bump rule does
+> not apply). Operator decision 2026-10-07 (WP-138, after
 > the comparison with the Omarchy plugin "What changed": the idea is
 > taken, not its code).
 
@@ -32,7 +33,7 @@ preview, and without a logbook.
 1. **`seldon preview [--days N] [--json]`** (SPEC-ENGINE §3): read-only,
    no logbook needed (one that exists is not read), no lock, nothing
    written — no logbook, no state directory, no config. It reads
-   `pacman.log` (from its end, at most 64 MiB), the modification times
+   `pacman.log` (from its end, at most 8 MiB), the modification times
    of the files under `$XDG_CONFIG_HOME` (default `~/.config`), and
    `config.toml` when present: its `[redaction] skipPaths` and
    `patterns`. A config that cannot be read, or whose patterns do not
@@ -40,17 +41,29 @@ preview, and without a logbook.
    command lines.
 2. **Bounds:** `--days` 1–7 (default 7); at most 200 rows, one per
    transaction and one per file; at most 80 files (the newest); at most
-   10 packages listed per transaction, `count` holds all; the walk of
-   `~/.config` stops 0.4 s after the command started (the whole preview
-   stays under 0.5 s) and after 200 000 directory entries, then says
-   `files.partial`. `truncated` says a bound cut rows.
+   10 packages listed per transaction, `count` holds all. Time: the walk
+   of `~/.config` runs first and stops 0.25 s after it started (or after
+   200 000 directory entries), then says `files.partial`; then at most
+   the last 8 MiB of `pacman.log` are parsed (21 ms per MiB on the dev
+   host's release build, so at most about 0.17 s), a log whose last 8 MiB
+   are all inside the window says `pacman.partial`. Together the preview
+   takes under 0.5 s on the dev host's release build with a warm cache:
+   the worst case measured, a 100 MiB log dense to its end and 50 000
+   files under `~/.config`, took 0.26–0.30 s (WP-138 round 2). A slower
+   machine or a cold cache can take longer for the pacman part; the walk
+   keeps its own 0.25 s. `truncated` says a bound cut rows.
 3. **What the walk ignores:** symbolic links (never followed), caches,
    browser and Electron profiles (any folder holding `Cookies` or `Local
    State`), state, logs, locks, databases (SQLite, `*.db`, LevelDB,
    IndexedDB, Local and Session Storage, dconf), images, `.git`, Omarchy's
    plugin folder and `omarchy/shell.json`, editor swap files, `*~` and
    `*.bak.*`, and every `[redaction] skipPaths` match. Paths only (`~/…`,
-   redacted, control and bidi characters as U+FFFD), never content.
+   redacted, control and bidi characters as U+FFFD), never content. The
+   pacman side holds the same rule: package names, versions and the
+   command line are one line each (control and bidi characters as
+   U+FFFD) and clipped to the schema's bounds (512, 256, 256 characters);
+   pacman's grammar takes any non-blank word, so the log alone does not
+   guarantee it.
 4. **The output** is `schema/preview.schema.json` (closed objects):
    `{contractVersion: 2, generatedAt, since, days, pacman: {ok, message?,
    partial, transactions: [{at, command?, status?, count, kinds,
@@ -71,6 +84,25 @@ preview, and without a logbook.
    the logs rotate. Set up Seldon?" with **Set up Seldon**, the
    notInitialised notice's own terminal fix. WP-119's setup card takes
    the slot over.
+
+7. **No `contractVersion` bump.** AGENTS.md §3 says a change to a
+   schema needs an ADR, a `contractVersion` bump, fixtures and both
+   sides, "no exceptions". The bump does not apply here, and this ADR is
+   the record of why: `contractVersion` versions `index.json`, the one
+   file both sides exchange without asking; the bump exists so that a
+   plugin and an engine of different contracts notice the mismatch on
+   that file (CONTRACT.md rule 3). `preview.schema.json` is a new,
+   separate schema for the stdout of one command, and nothing in the
+   index or in an existing schema changes. No mismatch can go unnoticed:
+   a plugin older than this ADR never runs `seldon preview` (its
+   `validateArgs` refuses the argv); a plugin with it, meeting a 0.1.x
+   engine, gets clap's usage error (exit 1, JSON `error.message`), which
+   the card shows while **Set up Seldon** still works; the output itself
+   carries `contractVersion: 2`, and `Model.previewResult` refuses any
+   other. The rest of §3's rule holds: this ADR, the fixtures
+   (`preview.sample.json`, four invalid ones) and both sides land in one
+   PR. A later change to `preview.schema.json` that a released plugin
+   would misread needs a bump like any other.
 
 ## Consequences
 

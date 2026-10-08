@@ -18,7 +18,7 @@
       "properties": {
         "ok":      { "type": "boolean", "description": "false: pacman.log could not be read; message says why, transactions is empty" },
         "message": { "type": "string", "maxLength": 1024 },
-        "partial": { "type": "boolean", "description": "the log's last 64 MiB did not reach back to the window's start" },
+        "partial": { "type": "boolean", "description": "the log's last 8 MiB did not reach back to the window's start" },
         "transactions": {
           "type": "array", "maxItems": 200,
           "description": "newest first; only package lines inside the window",
@@ -42,7 +42,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "kind":    { "enum": ["install", "remove", "upgrade", "downgrade", "reinstall"] },
-                    "name":    { "type": "string", "minLength": 1, "maxLength": 512 },
+                    "name":    { "type": "string", "minLength": 1, "maxLength": 512, "description": "one line (control and bidi characters as U+FFFD), clipped with … at 512" },
                     "version": { "type": "string", "minLength": 1, "maxLength": 256, "description": "install, remove, reinstall" },
                     "from":    { "type": "string", "minLength": 1, "maxLength": 256, "description": "upgrade, downgrade" },
                     "to":      { "type": "string", "minLength": 1, "maxLength": 256, "description": "upgrade, downgrade" }

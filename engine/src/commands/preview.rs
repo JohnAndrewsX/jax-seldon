@@ -12,9 +12,12 @@
 //! Bounded (WP-138): at most 7 days; at most [`MAX_ROWS`] rows, one per
 //! transaction and one per file, the files at most [`MAX_FILES`] of them;
 //! at most [`MAX_PACKAGES`] packages listed per transaction (`count` holds
-//! all); the `~/.config` walk stops at [`SCAN_BUDGET`] after the start
-//! and the pacman log is read from its end, at most [`TAIL_MAX`] bytes.
-//! The JSON is `schema/preview.schema.json`.
+//! all). Time (WP-138 round 2): the `~/.config` walk runs first and stops
+//! [`SCAN_BUDGET`] after it started; then the pacman log is read from its
+//! end, at most [`TAIL_MAX`] bytes, which the dev host's release build
+//! parses in about 0.17 s when every line is inside the window. Together
+//! under 0.5 s. Every name and version is one line ([`shown`]) and clipped
+//! to the schema's bounds. The JSON is `schema/preview.schema.json`.
 
 use std::fmt::Write as _;
 use std::fs::File;
@@ -44,18 +47,26 @@ pub const MAX_ROWS: usize = 200;
 pub const MAX_FILES: usize = 80;
 /// Packages listed per transaction at most.
 pub const MAX_PACKAGES: usize = 10;
-/// The `~/.config` walk stops this long after the command started, so the
-/// whole preview stays under half a second (WP-138).
-pub const SCAN_BUDGET: Duration = Duration::from_millis(400);
+/// The `~/.config` walk stops this long after it started; with the pacman
+/// read bounded by [`TAIL_MAX`] the whole preview stays under half a
+/// second (WP-138).
+pub const SCAN_BUDGET: Duration = Duration::from_millis(250);
 /// Directory entries the walk reads at most.
 pub const SCAN_ENTRIES: usize = 200_000;
-/// The most of `pacman.log` read, from its end.
-pub const TAIL_MAX: u64 = 64 << 20;
+/// The most of `pacman.log` parsed, from its end: about 0.17 s on the dev
+/// host's release build when every line is inside the window (21 ms per
+/// MiB measured, WP-138 round 2). Seven days of a real log take a small
+/// part of it.
+pub const TAIL_MAX: u64 = 8 << 20;
 /// The first slice of `pacman.log` read from its end; each next one is
 /// four times larger, up to [`TAIL_MAX`].
 const TAIL_FIRST: u64 = 256 << 10;
 /// Longest command line shown (characters).
 const COMMAND_MAX: usize = 256;
+/// Longest package name shown (characters; the schema's bound).
+const NAME_MAX: usize = 512;
+/// Longest version shown (characters; the schema's bound).
+const VERSION_MAX: usize = 256;
 
 #[derive(Debug, Clone, Args)]
 #[command(after_help = "Examples:
@@ -79,12 +90,14 @@ pub fn run(ctx: &Context, args: PreviewArgs) -> Result<Output> {
     };
     let redactor = config.as_ref().and_then(|c| Redactor::for_config(c).ok());
 
-    let sources = Sources::from_env();
-    let pacman = read_pacman(&sources, since, redactor.as_ref());
+    // the walk first, with its own budget: a slow pacman read cannot use
+    // up its time (WP-138 round 2)
     let files = match (&config, &redactor) {
-        (Some(config), Some(redactor)) => scan_files(ctx, config, redactor, since, started),
+        (Some(config), Some(redactor)) => scan_files(ctx, config, redactor, since),
         _ => Section::failed(WITHHELD),
     };
+    let sources = Sources::from_env();
+    let pacman = read_pacman(&sources, since, redactor.as_ref());
 
     // files first (at most MAX_FILES), transactions fill the rest
     let (mut txs, mut truncated) = (pacman.items, pacman.cut || files.cut);
@@ -270,13 +283,19 @@ fn transaction(
         .iter()
         .take(MAX_PACKAGES)
         .map(|l| {
-            let mut p = json!({ "kind": l.kind.as_str(), "name": l.name });
+            // pacman's grammar takes any `\S+`: one line, within the
+            // schema's bounds (WP-138 round 2)
+            let version = |v: &str| super::event::clip(&shown(v), VERSION_MAX);
+            let mut p = json!({
+                "kind": l.kind.as_str(),
+                "name": super::event::clip(&shown(&l.name), NAME_MAX),
+            });
             match &l.from {
                 Some(from) => {
-                    p["from"] = json!(from);
-                    p["to"] = json!(l.to);
+                    p["from"] = json!(version(from));
+                    p["to"] = json!(version(&l.to));
                 }
-                None => p["version"] = json!(l.to),
+                None => p["version"] = json!(version(&l.to)),
             }
             p
         })
@@ -326,13 +345,12 @@ fn scan_files(
     config: &Config,
     redactor: &Redactor,
     since: DateTime<FixedOffset>,
-    started: Instant,
 ) -> Section {
     let skip = SkipPaths::new(&ctx.dirs.home, &config.redaction.skip_paths);
     let limits = Limits {
         since: SystemTime::from(since),
         max_files: MAX_FILES,
-        deadline: Some(started + SCAN_BUDGET),
+        deadline: Some(Instant::now() + SCAN_BUDGET),
         max_entries: SCAN_ENTRIES,
     };
     let scan = config_scan::scan(&ctx.dirs.xdg_config_home, &skip, &limits);

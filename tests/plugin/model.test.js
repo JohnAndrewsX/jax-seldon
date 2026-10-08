@@ -3763,6 +3763,13 @@ test("WP-138: previewResult refuses what it cannot read and applies the bounds a
   same(o.transactions, [{ at: tx.at, count: 1, kinds: ["install"], packages: [{ kind: "install", name: "ok" }],
     command: "", status: "" }])
   same(o.files, [{ path: "~/.config/b", modified: tx.at }])
+  // a name is at most 512 characters (the schema's bound): 512 is kept, 513 dropped
+  const names = JSON.parse(previewSample)
+  names.pacman.transactions = [
+    { at: tx.at, count: 2, kinds: ["install"], packages: [{ kind: "install", name: "a".repeat(512) },
+      { kind: "install", name: "b".repeat(513) }] }
+  ]
+  same(M.previewResult(0, JSON.stringify(names), "").transactions[0].packages.map(p => p.name.length), [512])
   // notes: a source that was not read, a walk that stopped early
   const notes = JSON.parse(previewSample)
   notes.pacman = { ok: false, message: "cannot read /var/log/pacman.log", partial: false, transactions: [tx] }
