@@ -107,7 +107,7 @@ fn lists_the_six_fixture_items() {
             v["crisis"].clone(),
             v["routine"].clone()
         ),
-        (json!(6), json!(2), json!(6))
+        (json!(6), json!(2), json!(8))
     );
     let class = |i: usize| (items[i]["class"].clone(), items[i]["rule"].clone());
     assert_eq!(
@@ -151,9 +151,11 @@ fn lists_the_six_fixture_items() {
         ("io.github.example.weather-plus", "plugin-toggle"),
         ("kanagawa", "theme"),
         ("catppuccin", "theme"),
+        ("gtk4", "sysupgrade"),
+        ("pulseaudio", "sysupgrade"),
     ];
     assert_eq!(routine, want.map(|(s, r)| (s.to_string(), r.to_string())));
-    assert_eq!(all["drift"].as_array().unwrap().len(), 12);
+    assert_eq!(all["drift"].as_array().unwrap().len(), 14);
 
     // human output: one line per item, then the totals
     let out = env.at(GENERATED_AT, &["--logbook", lb.to_str().unwrap(), "drift"]);
@@ -175,7 +177,7 @@ fn lists_the_six_fixture_items() {
         "{text}"
     );
     assert!(
-        text.ends_with("6 open drift item(s), 2 crisis; 6 routine (history, not drift)\n"),
+        text.ends_with("6 open drift item(s), 2 crisis; 8 routine (history, not drift)\n"),
         "{text}"
     );
     assert!(
@@ -560,7 +562,7 @@ fn routine_events_link_but_never_explain_or_dismiss() {
     // open drift is untouched; the group is linked, no longer linkable
     let v = drift(&env, &lb);
     assert_eq!(v["openDrift"], 6);
-    assert_eq!(v["routine"], 5);
+    assert_eq!(v["routine"], 7);
     let again = run(&env, &lb, &["drift", "link", FIREFOX, "C-2026-004"], 0);
     assert_eq!(again["resolved"], 0);
     assert_eq!(again["already"]["case"], "C-2026-004");

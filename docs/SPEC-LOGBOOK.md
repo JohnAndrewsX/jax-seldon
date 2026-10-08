@@ -293,6 +293,10 @@ directory is a `state-loss` line; older lines stay as they were written.
 - 14:30 snapper · snapshot 113 "pre: ollama"
 ```
 
+A pacman line of a transaction that did not complete (`meta.txStatus`,
+ADR-0043) adds `· transaction interrupted` (or `failed`, `unfinished`)
+after its version.
+
 Wikilinks `[[C-2026-004]]` are used for cases so Obsidian's graph works.
 
 ## 6. Obsidian

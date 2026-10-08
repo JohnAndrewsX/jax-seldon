@@ -33,10 +33,11 @@
         "enabled": { "type": "boolean", "description": "plugin-add, plugin-enable, plugin-disable: whether the plugin is enabled after the change (ADR-0012 §15)" },
         "txId":    { "type": "string", "minLength": 1, "description": "resolution only: the txId of the drift group this line was written for; every member's resolution line of one write carries it (ADR-0013 §4)" },
         "risk":    { "enum": ["R0", "R1", "R2", "R3"], "description": "case-created, case-started, case-updated: the case's risk after the event (ADR-0035 §1); required on case-updated, absent on lines written before contract 2" },
-        "truncated": { "const": true, "description": "index only: a text of this event was clipped (ADR-0025, ADR-0035 §3); never in a ledger line" }
+        "truncated": { "const": true, "description": "index only: a text of this event was clipped (ADR-0025, ADR-0035 §3); never in a ledger line" },
+        "txStatus": { "enum": ["failed", "interrupted", "unfinished"], "description": "pacman, on every package line of a transaction that did not complete (ADR-0043): pacman logged `transaction failed` or `transaction interrupted`, or no end line (unfinished); absent when it completed and on lines written before ADR-0043" }
       },
       "additionalProperties": { "type": ["string", "number", "boolean", "null"] },
-      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre), enabled (plugin-add/-enable/-disable), txId (resolution of a drift group), risk (case-created/-started/-updated), sources/files (state-loss), truncated (index only)"
+      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre), enabled (plugin-add/-enable/-disable), txId (resolution of a drift group), risk (case-created/-started/-updated), sources/files (state-loss), txStatus (pacman: a transaction that did not complete), truncated (index only)"
     }
   },
   "allOf": [
@@ -52,6 +53,8 @@
       "then": { "properties": { "kind": { "const": "resolution" } } } },
     { "if": { "properties": { "meta": { "required": ["risk"] } }, "required": ["meta"] },
       "then": { "properties": { "kind": { "enum": ["case-created", "case-started", "case-updated"] } } } },
+    { "if": { "properties": { "meta": { "required": ["txStatus"] } }, "required": ["meta"] },
+      "then": { "required": ["txId"], "properties": { "source": { "const": "pacman" } } } },
     { "if": { "properties": { "kind": { "const": "case-updated" } }, "required": ["kind"] },
       "then": { "required": ["meta", "case"], "properties": { "source": { "const": "seldon" }, "meta": { "required": ["risk"] } } } },
     { "if": { "properties": { "kind": { "const": "state-loss" } }, "required": ["kind"] },

@@ -802,7 +802,14 @@ keeps the text, Open in editor, New case → `agent start --new`); the
 Changelog on the sample (chips and counts, rows by class, the event
 detail and its bar, `f`/`F`, groups and members, Enter opens the form and
 Esc hides it, the shim's `filter` and `resolve`, Hide and Show, "+N
-more"), the quiet surfaces (a crisis in the yellow zone, attention alone),
+more"), a pacman transaction's packages (WP-137, `transactions`: the
+09-19 interrupted `-Syu` marked in its rows and in the detail's callout,
+the 09-18 mixed `-Syu` listing − + ↑ ↑ with old → new and its command,
+the 09-27 downgrade group whose form lines give way to the list, a single
+package without a list, no overflow at 100 % and 50 %; with `DESK_SHOTS`
+`shot-tx-*` in the three themes; `model.test.js` adds failed and
+unfinished, a word the contract does not know, a cut index, a clipped
+command and the WP-141 hook on a synthetic note), the quiet surfaces (a crisis in the yellow zone, attention alone),
 and live link / explain / dismiss, `--only` with a refusal in the plugin,
 an already resolved re-run, a lock refusal with per-event drafts, `drift
 show` from the leader and a member; bulk triage live (WP-124b: the

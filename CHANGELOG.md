@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **A pacman transaction that did not complete says so (WP-137,
+  ADR-0043).** When pacman logs `transaction failed` or `transaction
+  interrupted`, or a transaction has no end line (pacman killed, power
+  lost), each of its package events records `meta.txStatus`; the month's
+  ledger view adds `· transaction interrupted`. Lines written before keep
+  none. `seldon event --meta txStatus=…` is refused.
 - **Rules for every git call (WP-154).** Every program the engine runs
   keeps at most a cap of its output, named at each call (1 MiB for git
   and short answers; a 100 MB flood of stderr from git costs 1 MiB), and
@@ -164,6 +170,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bounded.
 
 ### Plugin
+
+- **A transaction's packages in the Changelog (WP-137).** Selecting a
+  pacman change shows every package of its transaction — ↑ upgraded,
+  ↓ downgraded, + installed, − removed, ↻ reinstalled, old → new — and
+  the command that started it. A transaction that failed, was
+  interrupted or never finished is marked in the urgent colour in its
+  rows and explained in the detail.
 
 - **Agent sorts N open changes.** The Changelog's head asks your
   agent to sort the open changes; its proposal shows as a row and a

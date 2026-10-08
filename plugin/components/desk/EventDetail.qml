@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import qs.Commons
 import qs.Ui
@@ -8,6 +10,10 @@ import "../../Model.js" as Model
 // its class, the "why loud" callout for a crisis, the key/values (when,
 // who, what, case, rule, source, zone, resolution, event id) and the
 // DriftForm, which lists a group's members and resolves open drift inline.
+// A pacman event (WP-137) adds its command and transaction to the
+// key/values, an urgent callout when the transaction did not complete
+// (ADR-0043), and the transaction's packages: ↑ upgraded, ↓ downgraded,
+// + installed, − removed, ↻ reinstalled, old → new.
 //
 // Bar (Model.eventActions): open drift → [Ask agent, WP-124b], Link to
 // case…, Explain…, Dismiss… (attention also Hide / Show); an event with a
@@ -42,6 +48,8 @@ DetailPane {
   property bool caseEditorAsked: false
   readonly property var detail: Model.eventDetail(root.indexData, root.prepared, root.eventId, root.ruleInfo)
   readonly property bool hidden: !!root.detail && !!root.service && root.service.deskHidden[root.detail.hideKey] === true
+  // The event's pacman transaction (Model.transactionDetail), or null.
+  readonly property var transaction: root.detail ? root.detail.transaction : null
   readonly property alias form: form
   readonly property bool editing: form.editing
   readonly property color foregroundColor: Color.popups.text
@@ -122,6 +130,17 @@ DetailPane {
       askOk: root.askResult ? root.askResult.ok : true,
       hidden: root.hidden,
       caseMissing: missingLine.visible ? missingText.text : "",
+      transaction: root.transaction ? {
+        status: root.transaction.status,
+        statusShown: txCallout.visible,
+        title: txCallout.visible ? txTitle.text : "",
+        summary: transactionList.visible ? txSummary.text : "",
+        lines: transactionList.visible ? root.transaction.packages.map(Model.txPackageLine) : [],
+        selected: root.transaction.packages.filter(function(p) { return p.selected }).map(function(p) { return p.name }),
+        files: txFiles.visible ? txFiles.text : "",
+        partial: txPartial.visible ? txPartial.text : "",
+        shown: transactionList.visible
+      } : null,
       bar: { y: Math.round(root.actionBar.mapToItem(root, 0, 0).y), sceneY: Math.round(root.actionBar.mapToItem(null, 0, 0).y),
         h: Math.round(root.actionBar.height), visible: root.actionBar.visible },
       scroll: { y: Math.round(root.flickable.contentY), h: Math.round(root.flickable.contentHeight), view: Math.round(root.flickable.height) },
@@ -147,6 +166,7 @@ DetailPane {
         already: !!form.result && form.result.already === true,
         resolution: form.resolution,
         members: form.memberLines,
+        membersShown: form.memberLines.length > 0 && !form.membersShownAbove,
         subject: form.shown ? form.shown.subject : "",
         badge: form.shown ? form.shown.badge : "",
         crisis: !!form.shown && form.shown.crisis
@@ -265,6 +285,50 @@ DetailPane {
       }
     }
 
+    // WP-137 (ADR-0043): the event's pacman transaction did not complete.
+    // Urgent whatever the event's class: half-applied packages and hooks
+    // that did not run matter before the next reboot.
+    BorderSurface {
+      id: txCallout
+      objectName: "transactionStatus"
+      width: parent.width
+      visible: !!root.transaction && root.transaction.status !== ""
+      implicitHeight: txCalloutColumn.implicitHeight + Style.spacing.lg * 2
+      radius: Style.cornerRadius
+      color: Style.normalFill
+      borderSpec: Border.flat(Color.urgent, Math.max(1, Style.space(1)))
+
+      Column {
+        id: txCalloutColumn
+        x: Style.spacing.xl
+        y: Style.spacing.lg
+        width: txCallout.width - Style.spacing.xl * 2
+        spacing: Style.spacing.xs
+
+        Text {
+          id: txTitle
+          width: parent.width
+          textFormat: Text.PlainText
+          text: root.transaction ? root.transaction.title : ""
+          color: Color.urgent
+          wrapMode: Text.Wrap
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          font.bold: true
+        }
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: root.transaction ? root.transaction.text : ""
+          color: root.foregroundColor
+          wrapMode: Text.Wrap
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+    }
+
     // Open case for a case the index no longer lists: say so; the case
     // file may still be there, which only the engine can tell (the plugin
     // reads only the index), so Open in editor asks it and shows its answer.
@@ -317,9 +381,103 @@ DetailPane {
       fontFamily: root.fontFamily
     }
 
+    // The transaction's packages (WP-137), the unusual changes first; the
+    // selected event's line in bold. Names and versions are pacman's,
+    // plain text, wrapped anywhere (a long version is one token).
+    Column {
+      id: transactionList
+      objectName: "transactionList"
+      width: parent.width
+      visible: !!root.transaction && root.transaction.list
+      spacing: Style.spacing.xs
+
+      Text {
+        id: txSummary
+        width: parent.width
+        textFormat: Text.PlainText
+        text: root.transaction ? root.transaction.summary + " in this transaction" : ""
+        color: Color.muted
+        wrapMode: Text.Wrap
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        font.bold: true
+      }
+
+      Repeater {
+        model: root.transaction ? root.transaction.packages : []
+
+        Item {
+          id: txLine
+
+          required property var modelData
+
+          width: transactionList.width
+          implicitHeight: Math.max(txGlyph.implicitHeight, txText.implicitHeight)
+
+          Text {
+            id: txGlyph
+            width: Style.space(20)
+            textFormat: Text.PlainText
+            text: txLine.modelData.glyph
+            color: root.foregroundColor
+            horizontalAlignment: Text.AlignHCenter
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            font.bold: true
+          }
+
+          Text {
+            id: txText
+            x: txGlyph.width + Style.spacing.md
+            width: parent.width - x
+            textFormat: Text.PlainText
+            text: txLine.modelData.name + (txLine.modelData.versions !== "" ? "  " + txLine.modelData.versions : "")
+            color: root.foregroundColor
+            wrapMode: Text.WrapAnywhere
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            font.bold: txLine.modelData.selected
+          }
+        }
+      }
+
+      // WP-141: the files pacman left in this transaction are their own
+      // rows (kind note); counted here, never listed as packages.
+      Text {
+        id: txFiles
+        width: parent.width
+        visible: !!root.transaction && root.transaction.files > 0
+        textFormat: Text.PlainText
+        text: root.transaction ? "pacman left " + Model.plural(root.transaction.files, "file", "files")
+          + " beside these packages; each has its own row." : ""
+        color: Color.muted
+        wrapMode: Text.Wrap
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      // CONTRACT.md rule 4: the index may have cut the transaction's
+      // oldest lines; the ledger has them.
+      Text {
+        id: txPartial
+        width: parent.width
+        visible: !!root.transaction && root.transaction.partial
+        textFormat: Text.PlainText
+        text: "The index lists the newest " + Model.INDEX_EVENTS_MAX
+          + " events; older lines of this transaction are in the ledger."
+        color: Color.muted
+        wrapMode: Text.Wrap
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+    }
+
     DriftForm {
       id: form
       width: parent.width
+      // the list above holds every member of the open group already
+      membersShownAbove: !!root.transaction && transactionList.visible && !root.transaction.partial
+        && !!form.shown && form.shown.grouped && root.transaction.packages.length === form.shown.members
       service: root.service
       indexData: root.indexData
       foreground: root.foregroundColor

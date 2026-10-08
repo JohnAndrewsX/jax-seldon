@@ -173,6 +173,20 @@ fn event_refuses_the_v2_kinds_and_keys() {
         ],
     );
     assert!(m.contains("index-only"), "{m}");
+    // ADR-0043: the pacman collector's key
+    let m = refused(
+        &env,
+        &[
+            "event",
+            "manual",
+            "note",
+            "--subject",
+            "x",
+            "--meta",
+            "txStatus=interrupted",
+        ],
+    );
+    assert!(m.contains("--meta txStatus"), "{m}");
 }
 
 /// ADR-0035 §2: the last autocommit attempt, ok or failed, is in
@@ -425,6 +439,57 @@ fn a_contract_1_ledger_with_a_user_risk_still_indexes() {
         .cloned()
         .unwrap_or_else(|| panic!("no ledger row: {doctor}"));
     assert_eq!(row["status"], json!("ok"), "{row}");
+}
+
+/// ADR-0043: `meta.txStatus` reaches the index on a pacman event with a
+/// `txId`; a hand-edited one on a note, on a pacman line outside a
+/// transaction, or with another word is dropped, and the index stays
+/// valid.
+#[test]
+fn a_tx_status_is_kept_only_on_a_transaction_line() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let mut lines = String::new();
+    for (n, source, kind, subject, tx, status) in [
+        (1, "pacman", "upgrade", "gtk4", true, "interrupted"),
+        (2, "pacman", "upgrade", "libadwaita", true, "banana"),
+        (3, "pacman", "install", "btop", false, "failed"),
+        (4, "manual", "note", "journal", false, "unfinished"),
+    ] {
+        let mut e = json!({
+            "id": format!("01K6Y00000000000000000000{n}"),
+            "ts": format!("2026-10-06T09:0{n}:00+02:00"),
+            "source": source, "kind": kind, "subject": subject,
+            "detail": format!("tx line {n}"), "actor": "human",
+            "meta": { "txStatus": status },
+        });
+        if tx {
+            e["txId"] = json!("tx-20261006T090100");
+        }
+        lines.push_str(&format!("{e}\n"));
+    }
+    let month = root.join("ledger/2026-10.jsonl");
+    let mut text = std::fs::read_to_string(&month).unwrap_or_default();
+    text.push_str(&lines);
+    std::fs::write(&month, text).unwrap();
+
+    let ix = ok(&env, T0, &["index", "--check"]);
+    assert_eq!(ix["valid"], json!(true), "{ix}");
+    let v = index(&env);
+    common::assert_valid_index(&v);
+    let status = |n: usize| {
+        let e = v["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["detail"] == format!("tx line {n}"))
+            .unwrap_or_else(|| panic!("tx line {n}: {v}"));
+        e["meta"]["txStatus"].clone()
+    };
+    assert_eq!(status(1), json!("interrupted"));
+    for n in 2..=4 {
+        assert_eq!(status(n), Value::Null, "tx line {n}");
+    }
 }
 
 /// WP-120 round 2, B2 and N6: a failed autocommit whose git error carries

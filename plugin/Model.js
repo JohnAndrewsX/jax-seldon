@@ -1030,8 +1030,10 @@ function events(index) {
 // (ADR-0013; ADR-0015 §2: `members` present) also under its txId, so the
 // group's other members find it.
 function driftLookup(index) {
-  var byId = {}
-  var byTx = {}
+  // keyed by index text (an id, a txId a hand edit may make `constructor`):
+  // no prototype (WP-137 round 2, B2)
+  var byId = Object.create(null)
+  var byTx = Object.create(null)
   var list = index && Array.isArray(index.drift) ? index.drift : []
   for (var i = 0; i < list.length; i++) {
     var d = list[i]
@@ -1094,7 +1096,12 @@ function changelogRows(index, filter) {
       badge: grouped && leader.members > 1 ? "+" + (leader.members - 1) : "",
       txId: grouped ? str(leader.txId) : "",
       groupLeader: group ? str(group.eventId) : "",
-      groupSubject: group ? str(group.subject) : ""
+      groupSubject: group ? str(group.subject) : "",
+      // WP-137, ADR-0043: the pacman transaction the event belongs to (a
+      // file pacman left names it in meta.transaction, WP-141) and how it
+      // ended when it did not complete
+      tx: eventTx(e),
+      txStatus: txStatusOf(e)
     })
   }
   return rows
@@ -3648,7 +3655,7 @@ function deskChangelog(index) {
   var base = changelogRows(index, "all")
   var today = todayDate(index)
   var rows = []
-  var byId = {}
+  var byId = Object.create(null)
   for (var i = 0; i < base.length; i++) {
     var r = base[i]
     var row = {}
@@ -3659,11 +3666,14 @@ function deskChangelog(index) {
     row.age = rowAge(r.day, r.time, today)
     row.stripe = row.cls === "crisis" ? "crisis" : row.cls === "attention" ? "attention" : ""
     row.hideKey = hideKey(r)
-    row.search = [r.subject, row.listMeta, r.detail, r.actor, r.resolution, r.resolutionDetail].join(" ").toLowerCase()
+    // WP-137: the row says in the urgent style that its transaction did
+    // not complete (ListRow `alert`)
+    row.alert = r.txStatus
+    row.search = [r.subject, row.listMeta, r.detail, r.actor, r.resolution, r.resolutionDetail, r.txStatus].join(" ").toLowerCase()
     if (row.id !== "" && byId[row.id] === undefined) byId[row.id] = rows.length
     rows.push(row)
   }
-  return { rows: rows, byId: byId, today: today }
+  return { rows: rows, byId: byId, today: today, tx: transactionIndex(index) }
 }
 
 function changelogRow(prepared, id) {
@@ -3849,6 +3859,10 @@ function eventDetail(index, prepared, id, info) {
   // pull | rollback | reset), plain text after What
   var commits = isObject(e.meta) ? str(e.meta.commits) : ""
   if (commits !== "") kv.splice(3, 0, [e.meta.git === "rollback" ? "Rolled back" : "Commits", commits])
+  // WP-137: a pacman transaction's command and what it did, after What
+  var tx = transactionDetail(index, prepared, row.id)
+  var txRows = transactionRows(tx)
+  for (var t = 0; t < txRows.length; t++) kv.splice(3 + t, 0, txRows[t])
   if (row.zone !== "") kv.push(["Zone", row.zone])
   if (row.resolution !== "") kv.push(["Resolved", rowStatus(row)])
   kv.push(["Event", row.id])
@@ -3863,7 +3877,8 @@ function eventDetail(index, prepared, id, info) {
     proposedCase: proposed,
     hideKey: row.hideKey,
     whyLoud: whyLoud(row, proposed, r),
-    kv: kv
+    kv: kv,
+    transaction: tx
   }
 }
 
@@ -4191,7 +4206,7 @@ function deskToday(index, prepared) {
     var r = rows[i]
     if (r.cls !== "crisis" || r.groupLeader !== "") continue
     needs.push({ id: r.id, type: "crisis", title: r.title, meta: r.kind + " · " + (r.actor !== "" ? r.actor : r.source),
-      aside: r.age, stripe: "crisis", group: "needs" })
+      aside: r.age, stripe: "crisis", group: "needs", alert: r.alert })
   }
   var cases = []
   var active = index && isObject(index.cases) && Array.isArray(index.cases.active) ? index.cases.active : []
@@ -5391,3 +5406,175 @@ function graphShape(ctx, kind, x, y, r) {
     ctx.arc(x, y, r, 0, 2 * Math.PI, false)
   }
 }
+
+// ---- A pacman transaction in the event detail (WP-137; ADR-0043) ------------
+//
+// Every package event of a transaction carries its `txId`, its versions
+// (meta.from/meta.to, meta.version) and the command (meta.command);
+// `meta.txStatus` says how a transaction that did not complete ended
+// (ADR-0043: failed | interrupted | unfinished; absent when it completed
+// and on lines written before, so "absent" never reads as "completed").
+// The desk indexes the transactions once per index (`deskChangelog().tx`)
+// and the detail looks them up by the selected event. A file pacman left
+// (WP-141: a pacman note naming its transaction in meta.transaction) is
+// counted beside the packages, never listed as one. Every text is user
+// content, shown as plain text (CONTRACT.md rule 6).
+
+var TX_STATUSES = ["failed", "interrupted", "unfinished"]
+// The detail's callout: its title and what the status means. pacman's
+// post-transaction hooks do not run after `failed` or a killed pacman
+// (alpm-hooks(5) CAVEATS); for `interrupted` not verified against
+// libalpm's source, hence "may not have run". They run only for that
+// transaction's targets: a later run that no longer includes a package
+// already changed never runs them for it. Hence the safe step before a
+// reboot, which names only what a reinstall can repair: ↑ and ↻ (WP-137
+// rounds 2 and 3). Text only: the plugin runs nothing (AGENTS.md §8).
+var TX_STATUS_TITLES = {
+  failed: "Transaction failed",
+  interrupted: "Transaction interrupted",
+  unfinished: "Transaction did not finish"
+}
+// Omarchy's 10-omarchy-hyprland-reload-pause hook pauses the auto-reload
+// before an omarchy-settings update; its 90-…-resume twin is a
+// post-transaction hook.
+var TX_STEPS_DID_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_STEPS_MAY_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_SAFE_STEP = "Before you reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with their names): that runs those steps for them; a plain rerun does not. A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
+var TX_STATUS_TEXTS = {
+  failed: "pacman reported this transaction as failed: a package could not be installed, upgraded or removed, and pacman's output in the terminal named the error. The packages below may be all it changed. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP,
+  interrupted: "pacman was interrupted and stopped after the packages below; the ones it had not reached are unchanged. " + TX_STEPS_MAY_NOT + " " + TX_SAFE_STEP,
+  unfinished: "pacman never logged the end of this transaction: it was killed, or the machine went down while it ran. The packages below may be all it changed, the last one possibly half written. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP
+}
+// ↑ upgraded, ↓ downgraded, + installed, − removed, ↻ reinstalled; the
+// list shows the unusual changes first.
+var TX_KINDS = ["downgrade", "remove", "install", "upgrade", "reinstall"]
+var TX_GLYPHS = { upgrade: "↑", downgrade: "↓", install: "+", remove: "−", reinstall: "↻" }
+var TX_VERBS = { upgrade: "upgraded", downgrade: "downgraded", install: "installed", remove: "removed", reinstall: "reinstalled" }
+// CONTRACT.md rule 4: the index lists the newest 500 events.
+var INDEX_EVENTS_MAX = 500
+
+// The transaction an event belongs to: a pacman package event's own
+// `txId`, a file pacman left by its meta.transaction (WP-141), else "".
+function eventTx(e) {
+  if (!isObject(e) || e.source !== "pacman") return ""
+  if (TX_VERBS[e.kind] !== undefined) return str(e.txId)
+  if (e.kind === "note" && isObject(e.meta)) return str(e.meta.transaction)
+  return ""
+}
+
+// How the event's transaction ended when it did not complete (ADR-0043),
+// "" otherwise: only one of the three words, only on a pacman package
+// event with a `txId`.
+function txStatusOf(e) {
+  if (!isObject(e) || e.source !== "pacman" || TX_VERBS[e.kind] === undefined || str(e.txId) === "") return ""
+  var s = isObject(e.meta) ? e.meta.txStatus : undefined
+  return TX_STATUSES.indexOf(s) !== -1 ? s : ""
+}
+
+// The transactions of an index: { <txId>: { packages: [event], files: n,
+// status, oldest } }, built once per index. `oldest`: the index's oldest
+// event is one of its packages, so the cap may have cut it.
+function transactionIndex(index) {
+  var all = events(index)
+  // keyed by txId or meta.transaction, text a hand-edited ledger line may
+  // make `constructor` or `__proto__`: no prototype (WP-137 round 2, B2)
+  var out = Object.create(null)
+  var at = function(id) {
+    if (out[id] === undefined) out[id] = { packages: [], files: 0, status: "", oldest: false }
+    return out[id]
+  }
+  for (var i = 0; i < all.length; i++) {
+    var e = all[i]
+    var id = eventTx(e)
+    if (id === "") continue
+    var t = at(id)
+    if (e.kind === "note") {
+      t.files++
+      continue
+    }
+    t.packages.push(e)
+    if (t.status === "") t.status = txStatusOf(e)
+    if (i === all.length - 1 && all.length >= INDEX_EVENTS_MAX) t.oldest = true
+  }
+  return out
+}
+
+// "old → new" for an upgrade or downgrade, the version otherwise; the
+// detail when meta lacks them.
+function txVersions(e) {
+  var m = isObject(e.meta) ? e.meta : {}
+  if (typeof m.from === "string" && typeof m.to === "string") return m.from + " → " + m.to
+  if (typeof m.version === "string") return m.version
+  return str(e.detail)
+}
+
+// "4 packages: 1 removed, 1 installed, 2 upgraded".
+function txSummary(packages) {
+  var n = Object.create(null)
+  for (var i = 0; i < packages.length; i++) n[packages[i].kind] = (n[packages[i].kind] || 0) + 1
+  var parts = []
+  for (var k = 0; k < TX_KINDS.length; k++)
+    if (n[TX_KINDS[k]]) parts.push(n[TX_KINDS[k]] + " " + TX_VERBS[TX_KINDS[k]])
+  return plural(packages.length, "package", "packages") + (parts.length > 0 ? ": " + parts.join(", ") : "")
+}
+
+// The selected event's transaction as the detail shows it, or null when
+// the event belongs to none: { status, title, text, command, clipped,
+// summary, packages: [{ id, glyph, verb, name, versions, selected }],
+// files, partial, list } — `list`: the package list is worth showing (two
+// or more packages, a status, or files left; one completed package says
+// no more than the detail's own rows).
+function transactionDetail(index, prepared, id) {
+  var row = changelogRow(prepared, id)
+  if (!row || row.tx === "") return null
+  var all = prepared && isObject(prepared.tx) ? prepared.tx : transactionIndex(index)
+  var t = all[row.tx] || { packages: [], files: 0, status: "", oldest: false }
+  var sorted = t.packages.slice().sort(function(a, b) {
+    var k = TX_KINDS.indexOf(a.kind) - TX_KINDS.indexOf(b.kind)
+    return k !== 0 ? k : str(a.subject) < str(b.subject) ? -1 : str(a.subject) > str(b.subject) ? 1 : 0
+  })
+  var packages = sorted.map(function(e) {
+    return { id: str(e.id), glyph: TX_GLYPHS[e.kind], verb: TX_VERBS[e.kind], name: str(e.subject),
+      versions: txVersions(e), selected: e.id === row.id }
+  })
+  // the command as the selected event logged it, else as any package did
+  var self = findEvent(index, row.id)
+  var withCommand = [self].concat(t.packages).filter(function(e) {
+    return isObject(e) && isObject(e.meta) && typeof e.meta.command === "string" && e.meta.command !== ""
+  })[0]
+  var status = t.status
+  return {
+    status: status,
+    title: status !== "" ? TX_STATUS_TITLES[status] : "",
+    text: status !== "" ? TX_STATUS_TEXTS[status] : "",
+    command: withCommand ? withCommand.meta.command : "",
+    clipped: !!withCommand && withCommand.meta.truncated === true,
+    summary: txSummary(t.packages),
+    packages: packages,
+    files: t.files,
+    partial: t.oldest,
+    list: packages.length > 1 || status !== "" || t.files > 0
+  }
+}
+
+// The detail's key/value rows for a transaction (after What): Command,
+// then Transaction ("4 packages · interrupted · left 1 file"). A file
+// pacman left whose transaction the index no longer lists says so.
+function transactionRows(tx) {
+  if (!tx) return []
+  var out = []
+  if (tx.command !== "") out.push(["Command", tx.command + (tx.clipped ? " (clipped in the index; the ledger has it in full)" : "")])
+  var parts = [tx.packages.length > 0 ? tx.summary
+    : "not in the index any more (it keeps the newest " + INDEX_EVENTS_MAX + " events)"]
+  if (tx.status !== "") parts.push(tx.status)
+  if (tx.files > 0) parts.push("left " + plural(tx.files, "file", "files"))
+  out.push(["Transaction", parts.join(" · ")])
+  return out
+}
+
+// One package line of the list (also the harness's text): "↑ pipewire
+// 1:1.4.7-1 → 1:1.4.8-1".
+function txPackageLine(p) {
+  return p.glyph + " " + p.name + (p.versions !== "" ? "  " + p.versions : "")
+}
+

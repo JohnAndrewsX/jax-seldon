@@ -380,6 +380,11 @@ fn parse_meta(pairs: &[String]) -> Result<Meta> {
                     "--meta risk is only written on case lines (`seldon plan`)",
                 ));
             }
+            "txStatus" => {
+                return Err(Error::user(
+                    "--meta txStatus is written by the pacman collector only",
+                ));
+            }
             crate::model::event::TRUNCATED => {
                 return Err(Error::user(
                     "--meta truncated is index-only; the ledger keeps every text whole",
@@ -440,6 +445,7 @@ mod tests {
             "pairOf=x",
             "risk=R1",
             "truncated=true",
+            "txStatus=interrupted",
             "=1",
             "a b=1",
         ] {

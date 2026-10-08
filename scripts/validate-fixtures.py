@@ -952,6 +952,14 @@ def case_source(fm, problems, where):
     return None
 
 
+TX_STATUSES = ("failed", "interrupted", "unfinished")
+
+
+def tx_status_line(e):
+    """A line whose meta.txStatus counts (ADR-0043): pacman, inside a transaction."""
+    return e.get("source") == "pacman" and isinstance(e.get("txId"), str)
+
+
 def clipped(e):
     """An event as `index.events` lists it: every free text clipped (ADR-0025), and
     `meta.truncated: true` when one was (ADR-0035 §3; index-only, a ledger line's is dropped)."""
@@ -963,6 +971,10 @@ def clipped(e):
         # `seldon event --meta risk=…` write any value on any kind (the engine reads it leniently)
         if not (risk_line(e) and e["meta"].get("risk") in RISKS):
             e["meta"].pop("risk", None)
+        # ADR-0043: meta.txStatus only on a pacman transaction's lines and only one of the three
+        # words (the engine reads it leniently, a hand edit never makes the index invalid)
+        if not (tx_status_line(e) and e["meta"].get("txStatus") in TX_STATUSES):
+            e["meta"].pop("txStatus", None)
         if not e["meta"]:
             del e["meta"]
     for k in ("detail", "resolutionDetail"):
@@ -1018,6 +1030,7 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
         by_id[e["id"]] = e
     seen = set()
     resolutions = {}
+    tx_statuses = {}
     for where, e in ledger:
         if "resolution" in e and e["kind"] != "resolution":
             problems.append(f"{where}: 'resolution' field on a {e['kind']} event (ledger lines carry it only on kind resolution)")
@@ -1025,6 +1038,12 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
             problems.append(f"{where}: 'resolutionDetail' is index-only (ADR-0012 §11)")
         if "truncated" in e.get("meta", {}):
             problems.append(f"{where}: 'meta.truncated' is index-only (ADR-0035 §3)")
+        # ADR-0043: a transaction ends once, so its lines agree on how
+        if tx_status_line(e):
+            status = e.get("meta", {}).get("txStatus")
+            first = tx_statuses.setdefault(e["txId"], status)
+            if first != status:
+                problems.append(f"{where}: meta.txStatus {status!r} differs from {first!r} of its transaction {e['txId']}")
         if "refersTo" in e:
             if e["refersTo"] not in seen:
                 problems.append(f"{where}: refersTo {e['refersTo']} is not an earlier ledger event")
@@ -1702,9 +1721,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/70/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/70/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/70/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/76/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/76/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/76/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".
@@ -2016,6 +2035,26 @@ def self_checks(today):
     problems += check_case_logs(ledger, old_cases, None)
     if problems or old["cases"] != base["cases"] or old["drift"] != base["drift"]:
         out.append(f"self-check 'a ledger without meta.risk derives the same (ADR-0035)': {problems[:3]}")
+
+    # ADR-0043: a txStatus off a pacman transaction line or with another word is dropped from
+    # the index; the interrupted transaction keeps its own; a transaction whose lines disagree
+    # is caught
+    def stray_tx_status(ledger):
+        for _, e in ledger:
+            if e["subject"] == "libadwaita":
+                e["meta"]["txStatus"] = "banana"
+            if e["kind"] == "note" and e["source"] == "manual":
+                e.setdefault("meta", {})["txStatus"] = "failed"
+
+    problems = []
+    stray, _, _ = derive(LOGBOOK, today, problems, mutate=stray_tx_status)
+    kept = {e["subject"]: e.get("meta", {}).get("txStatus") for e in stray["events"]
+            if e["subject"] in ("gtk4", "libadwaita")}
+    notes = [e for e in stray["events"] if e["kind"] == "note" and "txStatus" in e.get("meta", {})]
+    if kept != {"gtk4": "interrupted", "libadwaita": None} or notes:
+        out.append(f"self-check 'txStatus only on a transaction line (ADR-0043)': {kept} {len(notes)}")
+    if not any("differs from 'interrupted'" in p for p in problems):
+        out.append(f"self-check 'a transaction's lines agree on txStatus (ADR-0043)': {problems[:3]}")
 
     # ADR-0029 rule 9: the sample's engine link must be missed without its line, and must be
     # extra when C-2026-002's Plan no longer names the package, or when a second case planned it

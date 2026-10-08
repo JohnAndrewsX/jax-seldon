@@ -126,6 +126,14 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
        that shape is left out with a build warning). Display only: never
        an argument of any command. The import's marker stays the only
        idempotency key.
+   - Optional, ADR-0043 (WP-137): `meta.txStatus` on every
+     package event of a pacman transaction that did not complete —
+     `failed` or `interrupted` (pacman logged that end), `unfinished`
+     (no end line: the next transaction started, or the log ended with
+     pacman gone). Only on `source: pacman` with a `txId`; absent when the
+     transaction completed and on lines written before, so absent means
+     "completed or not known". The index drops it anywhere else and reads
+     another word as none.
 
 ## Changing the contract
 

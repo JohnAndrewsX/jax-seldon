@@ -466,7 +466,8 @@ pub fn clip_with<'a>(text: &'a str, place: &str) -> Cow<'a, str> {
 /// An event as `index.events` lists it: every free text [`clip`]ped, and
 /// `meta.truncated: true` when one was (ADR-0035 §3; index-only, so one
 /// a hand-edited ledger line carries is dropped); `meta.risk` only on the
-/// engine's case lines (ADR-0035 §1).
+/// engine's case lines (ADR-0035 §1); `meta.txStatus` only on pacman
+/// events with a `txId` (ADR-0043).
 fn clipped(f: &IndexEvent) -> IndexEvent {
     let mut f = f.clone();
     let mut cut = false;
@@ -476,9 +477,15 @@ fn clipped(f: &IndexEvent) -> IndexEvent {
         f.event.kind,
         Kind::CaseCreated | Kind::CaseStarted | Kind::CaseUpdated
     ) && f.event.source == Source::Seldon;
+    // ADR-0043: `meta.txStatus` belongs to the pacman collector's package
+    // lines; one a hand edit put anywhere else is dropped
+    let tx_line = f.event.source == Source::Pacman && f.event.tx_id.is_some();
     let meta = &mut f.event.meta;
     if !risked {
         meta.risk = None;
+    }
+    if !tx_line {
+        meta.tx_status = None;
     }
     meta.extra.remove(TRUNCATED);
     let texts = [
