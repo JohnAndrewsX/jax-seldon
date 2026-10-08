@@ -92,9 +92,8 @@ Everything else is Markdown for people and agents: the *Intent*, *Plan*,
    two of its lines:
    - `Persists:` how long the change holds: `survives reboot and update`,
      `reboot only` (an update overwrites it) or `lost at reboot`.
-   - `Stop if:` what makes you stop, e.g. `the transaction also upgrades
-     linux`. When it holds, stop: say so in the *Log* and to the user, and
-     go on only after the user's go.
+   - `Stop if:` what makes you stop, e.g. `the binding is taken by
+     another app`. When it holds, stop and ask (next section).
 3. Before the first privileged step print one preview line, in the
    terminal and in the case's *Log*, and go on without waiting:
    `About to: install X (+deps a, b); snapshot first; rollback: pacman -Rns X`.
@@ -105,8 +104,8 @@ Everything else is Markdown for people and agents: the *Intent*, *Plan*,
 
 ## When to ask first
 
-Ask in the terminal before the step, and wait for the answer, only when
-the step is:
+Ask in the terminal before the step, and wait for the answer, only in
+these four cases:
 
 - **outside the Intent**: another package or area, a change the user did
   not ask for. Dependencies the named software documents are inside.
@@ -117,10 +116,12 @@ the step is:
   others depend on, overwriting a config that no snapshot and no git
   holds.
 - **R3**: it can break boot, login or the shell (next section).
+- **your own *Stop if***: the condition you wrote in the *Plan* holds.
+  Say so in the *Log* too.
 
 Everything else: do it, and say in the *Log* what you did.
 
-## R3: the one stop
+## R3: always the user's go
 
 R3 subjects: kernels, the boot loader, the initramfs, `systemd`, `glibc`,
 `pam`, `sddm`, `uwsm`, `hyprland`, `quickshell`, `omarchy` itself, `/etc`

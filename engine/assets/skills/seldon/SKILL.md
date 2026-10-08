@@ -118,8 +118,8 @@ your session.
 
 ## When to Ask First
 
-Ask in the terminal before the step, and wait for the answer, only when the
-step is:
+Ask in the terminal before the step, and wait for the answer, only in these
+four cases:
 
 - **outside the Intent**: another package or area, a change the user did not
   ask for. Dependencies the named software documents are inside.
@@ -134,6 +134,8 @@ step is:
   depend on, overwriting a config that no snapshot and no git holds.
 - **R3**: it can break boot, login or the shell ([`update.md`](update.md)).
   One explicit go per such step.
+- **your own *Stop if***: the condition you wrote in the *Plan* holds. Say
+  so in the *Log* too.
 
 In an unattended session there is nothing to ask: change nothing.
 

@@ -63,10 +63,9 @@ seldon plan set <ID> --zone <zone> --risk <risk> --actor agent:<name>
   Before the first change fill two of its lines:
   - `Persists:` how long the change holds: `survives reboot and update`,
     `reboot only` (an update overwrites it) or `lost at reboot`.
-  - `Stop if:` what makes you stop, e.g. `the transaction also upgrades
-    linux`, `the binding is taken by another app`. When it holds, stop:
-    say so in the *Log* and to the user, and go on only after the user's
-    go.
+  - `Stop if:` what makes you stop, e.g. `the binding is taken by another
+    app`. When it holds, stop: say so in the *Log* and ask the user, and go
+    on only after the user's go (`SKILL.md`, *When to Ask First*).
 - *Log*: dated lines as you go, append only. The preview line before the
   first privileged step goes here and to the terminal. Name the install
   route you took.
