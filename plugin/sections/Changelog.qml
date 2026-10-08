@@ -173,6 +173,7 @@ Section {
       first: root.rows.slice(0, 12).map(function(r) { return r.title }),
       stripes: root.rows.filter(function(r) { return r.stripe !== "" }).map(function(r) { return r.subject + " " + r.stripe }),
       badges: root.rows.filter(function(r) { return r.badge !== "" }).map(function(r) { return r.subject + " " + r.badge }),
+      alerts: root.rows.filter(function(r) { return r.alert !== "" }).map(function(r) { return r.subject + " " + r.alert }),
       resolved: root.rows.filter(function(r) { return r.resolution !== "" }).map(function(r) { return r.subject + ": " + Model.rowStatus(r) }),
       attention: root.attentionText,
       attentionDim: String(attentionLine.color) === String(root.dim),
@@ -470,6 +471,7 @@ Section {
       meta: modelData.listMeta
       aside: modelData.age
       stripe: modelData.stripe
+      alert: modelData.alert
       selected: modelData.id === root.selectedId
       cursor: false
       onClicked: {

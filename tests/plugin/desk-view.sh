@@ -641,7 +641,7 @@ jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00
   "$sample" >"$work/after.json"
 mkdir -p "$work/home-today-live"
 run today-live "" 1920x1080 \
-  "summon;text:n;type:  --help 2 ;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;text:2;text:e;text:c;wait:sectionView.chips.5=all 76;settle" \
+  "summon;text:n;type:  --help 2 ;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;text:2;text:e;text:c;wait:sectionView.chips.5=all 82;settle" \
   HOME="$work/home-today-live" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
   FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/today-live.record"
 tj="$tv.journal"
@@ -663,7 +663,7 @@ expect today-live 18 "[$tj.editing, .view.keys, .view.opened] | map(tostring) | 
 expect today-live 20 .view.section changelog
 expect today-live 22 "$tv.capturing" true
 shows today-live 22 "Capturing"
-expect today-live 23 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 31,case 37,all 76"
+expect today-live 23 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 37,case 37,all 82"
 expect today-live 24 "$tv.captureResult" "1 new event"
 shows today-live 24 "Last capture: 1 new event"
 argv_check today-live "$work/home-today-live" "$(printf '%s\n' "$startup" \
@@ -708,7 +708,7 @@ clean_log today-new
 run changelog "$sample" 1920x1080 \
   "summon:$cl;text:f;text:F;text:F;select:$MESA;key:Return;key:Escape;shim:filter:pacman;key:Escape;shim:resolve:$LIB32;key:Return;key:Escape;shim:resolve:crisis;select:$THEME;click:Hide;text:f;click:Show"
 expect changelog 1 "[.view.section, $tv.chip] | join(\",\")" "changelog,open"
-expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 31,case 37,all 76"
+expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 37,case 37,all 82"
 expect changelog 1 "[$tv.rows, $tv.cursor] | map(tostring) | join(\",\")" "6,0"
 # One count everywhere (B2): the open chip = the sidebar's Changelog count,
 # crisis = the header's crises, attention = the header's attention = the
@@ -732,23 +732,25 @@ for text in "6 changes · newest first" "4 changes without a case" "proposed for
 done
 expect changelog 2 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "crisis,2,$UNIT"
 expect changelog 3 "$tv.chip" open
-expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,76"
+expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,82"
 expect changelog 5 "[.call, $tv.selected, $tf.subject, $tf.badge] | join(\",\")" "ok,$MESA,mesa,+2"
 expect changelog 5 "$tf.members | join(\" | \")" \
   "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
-shows changelog 5 "3 packages in one transaction:"
+# WP-137: the transaction above lists every open member, so the form's lines hide
+expect changelog 5 "[$tf.membersShown, $td.transaction.shown] | map(tostring) | join(\",\")" "false,true"
+shows changelog 5 "3 packages: 3 downgraded in this transaction"
 expect changelog 6 "[$tf.shown, $tf.editing, $tf.action, .view.keys] | map(tostring) | join(\",\")" "true,true,explain,false"
 shows changelog 6 "All 3"
 shows changelog 6 "Only mesa"
 shows changelog 6 "EXPLAIN"
 expect changelog 7 "[$tf.shown, $tf.editing, .view.keys, .view.opened] | map(tostring) | join(\",\")" "false,false,true,true"
-expect changelog 8 "[.call, $tv.chip, .view.search.text, $tv.rows] | map(tostring) | join(\",\")" "ok,all,pacman,16"
-expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",76,true"
+expect changelog 8 "[.call, $tv.chip, .view.search.text, $tv.rows] | map(tostring) | join(\",\")" "ok,all,pacman,22"
+expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",82,true"
 expect changelog 10 "[$tv.selected, $tf.eventId, $tf.subject] | join(\",\")" "$LIB32,$LIB32,mesa"
 shows changelog 11 "Only lib32-mesa"
 expect changelog 13 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "crisis,2"
 expect changelog 14 "[.call, $tv.chip, $tv.selected] | join(\",\")" "ok,all,$THEME"
-expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,76"
+expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,82"
 expect changelog 15 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Show"
 shows changelog 15 "attention · hidden this session"
 expect changelog 16 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "open,5,$UNIT"
@@ -758,6 +760,43 @@ expect changelog 16 "[$tv.hidden, ($tv.chips[0:3] | join(\"+\")), .view.counts.c
 expect changelog 17 "[$tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "0,6"
 for i in 1 5 6 10 16; do expect changelog $i '.overflow | join(" | ")' ""; done
 clean_log changelog
+
+# 8b'. A pacman transaction's packages (WP-137, ADR-0043) on the sample: the
+#      09-19 -Syu interrupted after two upgrades is marked in the urgent
+#      style in its rows and in the detail (callout); the 09-18 mixed -Syu
+#      lists − + ↑ ↑ with old → new and its command; the 09-27 downgrade
+#      group lists ↓ ×3 and its form's member lines give way to the list;
+#      the btop install (one package) has the rows and no list; nothing
+#      overflows at 100 % and 50 %.
+PIPEWIRE=01M2TRP54G6K1N4WZF19XZFHZW GTK4=01M2W5S4XG9MX3PXAMR7WEEBVZ BTOP=01M1MB2M1GWZYF485HTGVZ1KS3
+run transactions "$sample" 1920x1080 \
+  "summon:{\"section\":\"changelog\",\"filter\":\"all\"};select:$GTK4;select:$PIPEWIRE;select:$MESA;select:$BTOP;select:$GTK4;width:50;view"
+txv="$td.transaction"
+expect transactions 1 "$tv.alerts | join(\",\")" "libadwaita interrupted,gtk4 interrupted"
+shows transactions 2 "interrupted"
+expect transactions 2 "[$txv.status, $txv.statusShown, $txv.title, $txv.summary] | map(tostring) | join(\",\")" \
+  "interrupted,true,Transaction interrupted,2 packages: 2 upgraded in this transaction"
+expect transactions 2 "$txv.lines | join(\" | \")" "↑ gtk4  1:4.18.6-1 → 1:4.18.7-1 | ↑ libadwaita  1:1.7.6-1 → 1:1.7.7-1"
+expect transactions 2 "$txv.selected | join(\",\")" "gtk4"
+expect transactions 2 "[$td.cls, ($td.kv | map(select(startswith(\"Command\") or startswith(\"Transaction\"))) | join(\" | \"))] | join(\",\")" \
+  "routine,Command: pacman -Syu | Transaction: 2 packages: 2 upgraded · interrupted"
+for text in "Transaction interrupted" "gtk4  1:4.18.6-1 → 1:4.18.7-1" "↑" "pacman -Syu"; do shows transactions 2 "$text"; done
+expect transactions 3 "[$txv.status, $txv.statusShown, $txv.summary] | map(tostring) | join(\",\")" \
+  ",false,4 packages: 1 removed, 1 installed, 2 upgraded in this transaction"
+expect transactions 3 "$txv.lines | join(\" | \")" \
+  "− pulseaudio  17.0-3 | + pipewire-pulse  1:1.4.8-1 | ↑ pipewire  1:1.4.7-1 → 1:1.4.8-1 | ↑ wireplumber  0.5.10-1 → 0.5.11-1"
+expect transactions 3 "$txv.selected | join(\",\")" "pipewire"
+for text in "−" "+" "pulseaudio  17.0-3" "pipewire-pulse  1:1.4.8-1"; do shows transactions 3 "$text"; done
+expect transactions 3 '[.texts[] | select(. == "Transaction interrupted")] | length' 0
+expect transactions 4 "$txv.lines | join(\" | \")" \
+  "↓ lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | ↓ mesa  1:26.2.0-2 → 1:26.1.0-1 | ↓ vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
+expect transactions 4 "[$tf.membersShown, $txv.statusShown] | map(tostring) | join(\",\")" "false,false"
+expect transactions 4 '[.texts[] | select(. == "3 packages in one transaction:")] | length' 0
+expect transactions 5 "[$txv.shown, ($td.kv | map(select(startswith(\"Transaction\"))) | join(\"\"))] | map(tostring) | join(\",\")" \
+  "false,Transaction: 1 package: 1 installed"
+expect transactions 6 "$txv.statusShown" true
+for i in 2 3 4 6 7; do expect transactions $i '.overflow | join(" | ")' ""; done
+clean_log transactions
 
 jq '.summary.openDrift = 250' "$sample" >"$work/capped.json"
 run changelog-capped "$work/capped.json" 1920x1080 "summon:$cl" HARNESS_SETTINGS='{"driftInBar":"all"}'
@@ -1104,11 +1143,11 @@ jq '.events = [
   ] + .events' "$sample" >"$work/after-two.json"
 mkdir -p "$work/home-cursor-follow"
 run cursor-follow "" 1920x1080 \
-  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=78;key:Return;key:Escape;text:F' \
+  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=84;key:Return;key:Escape;text:F' \
   HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
 expect cursor-follow 1 "[$tv.chip, $tv.cursor] | map(tostring) | join(\",\")" "all,0"
 expect cursor-follow 2 "[$tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "4,$THEME"
-expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "78,6,$THEME"
+expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "84,6,$THEME"
 expect cursor-follow 5 "[$tv.detail.form.shown, $tv.detail.form.eventId] | map(tostring) | join(\",\")" "true,$THEME"
 expect cursor-follow 7 "[$tv.chip, $tv.cursor, $tv.selected != \"$THEME\"] | map(tostring) | join(\",\")" "case,0,true"
 clean_log cursor-follow
@@ -1351,8 +1390,8 @@ rpaints() {
 plan_s="2 active cases · 6 of 9 steps done"
 risk_s="8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time"
 drift_s="13 opened · 8 resolved in 5 weeks · peak 2026-W40"
-s30="71 events on 15 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
-s90="76 events on 16 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+s30="77 events on 17 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+s90="82 events on 18 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
 s365=${s90/of 90 days/of 365 days}
 sall=${s90/of 90 days/of 366 days}
 radiant='{"section":"radiant"}'
@@ -1373,7 +1412,7 @@ expect radiant-ipc 1 '.view.sectionView.window.from + " " + .view.sectionView.wi
 expect radiant-ipc 1 .view.sectionView.caption "90 d · 2026-07-04 – 2026-10-01"
 for text in "Prime Radiant" "90 d · 2026-07-04 – 2026-10-01" "30 d" "90 d" "365 d" "All" \
   Heatmap Series DriftBars RiskDonut Timeline "The Plan" releases snapshots cases crises \
-  "76 events on 16 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
+  "82 events on 18 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
   "C-2026-003 · R3" "Omarchy auf 4.0.7 aktualisieren" "4/5 steps · agent: claude-code" "2/4 steps · agent: claude-code"; do
   shows radiant-ipc 1 "$text"
 done
@@ -1956,7 +1995,7 @@ graph_tick_ok() {
 #      and no paint after that; the legend, the date, the footer.
 graph_run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:300;pause:1000"
 expect graph-settle 2 .view.section graph
-expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "68,26,68,0"
+expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "74,26,74,0"
 expect graph-settle 2 '[.view.graph.sleeping, .view.graph.timer] | map(tostring) | join(",")' "false,true"
 expect graph-settle 3 '[.view.graph.sleeping, .view.graph.timer, .view.graph.ticks, .view.graph.run] | map(tostring) | join(",")' "true,false,200,200"
 expect graph-settle 3 '.view.graph.tickSamples > 150' true
@@ -1964,8 +2003,8 @@ graph_tick_ok graph-settle 3
 expect graph-settle 5 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
 # (the last tick's paint may still be pending at step 3: compare 4 and 5)
 check "graph-settle: no paint while asleep" "$(sed -n 5p "$work/graph-settle.steps" | jq .view.graph.paints)" "$(sed -n 4p "$work/graph-settle.steps" | jq .view.graph.paints)"
-for t in "Graph" "Play growth" "2026-10-01 · 68 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
-  "Newest 76 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
+for t in "Graph" "Play growth" "2026-10-01 · 74 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
+  "Newest 82 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
   shows graph-settle 3 "$t"
 done
 expect graph-settle 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis"
@@ -1979,7 +2018,7 @@ clean_log graph-settle
 graph_run graph-hidden "$sample" 1920x1080 "summon;text:8;pause:300;text:1;pause:1500;text:8;wait:graph.sleeping=true;hide;summon;pause:800"
 # The service builds the graph only for a shown section 8.
 expect graph-hidden 1 '[.graphBuilds, .graphNodes, .view.graph] | map(tostring) | join(",")' "0,0,null"
-expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,68"
+expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,74"
 t4=$(sed -n 4p "$work/graph-hidden.steps" | jq .view.graph.ticks)
 expect graph-hidden 3 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "graph,true"
 expect graph-hidden 4 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "today,false"
@@ -2004,7 +2043,7 @@ run graph-dirty "" 1920x1080 "summon;settle;text:8;wait:graph.sleeping=true;text
 expect graph-dirty 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "0,0"
 expect graph-dirty 4 '[.graphBuilds, .graphDirty, .view.graph.sleeping, .view.graph.ticks] | map(tostring) | join(",")' "1,false,true,200"
 expect graph-dirty 11 '[.view.section, .graphBuilds, .graphDirty] | map(tostring) | join(",")' "radiant,1,true"
-expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,68"
+expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,74"
 expect graph-dirty 12 '[.view.graph.sleeping, .view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "true,200,false"
 clean_log graph-dirty
 
@@ -2012,9 +2051,9 @@ clean_log graph-dirty
 #      ends with all of them; the slider's day (graphCut) and ←/→; Space.
 graph_run graph-replay "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphPlay;wait:graph.playing=false;graphCut:0;key:Right;key:Space;pause:300;key:Escape;wait:graph.sleeping=true"
 expect graph-replay 4 '[.view.graph.playing, .view.graph.cut] | map(tostring) | join(",")' "true,0"
-expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 68)' true
-expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,68"
-expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 68"
+expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 74)' true
+expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,74"
+expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 74"
 expect graph-replay 7 '[.view.graph.cut, .view.graph.sleeping] | map(tostring) | join(",")' "1,false"
 expect graph-replay 8 .view.graph.playing true
 expect graph-replay 9 '.view.graph.cut > 1' true
@@ -2323,6 +2362,12 @@ if [[ -n ${DESK_SHOTS:-} ]]; then
       HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
     expect "shot-graph-$theme" 5 .view.graph.hovered C-2026-004
     clean_log "shot-graph-$theme"
+    # WP-137: the interrupted transaction's detail and the mixed one's list
+    run "shot-tx-$theme" "$sample" 1920x1080 \
+      "summon:{\"section\":\"changelog\",\"filter\":\"all\"};select:$GTK4;shot:desk-$theme-tx-interrupted;select:$PIPEWIRE;shot:desk-$theme-tx-mixed;select:$GTK4;width:50;shot:desk-$theme-tx-interrupted-50;key:Return;shot:desk-$theme-tx-interrupted-50-detail" \
+      HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
+    for i in 3 5 8 9; do expect "shot-tx-$theme" $i '.overflow | join(" | ")' ""; done
+    clean_log "shot-tx-$theme"
     run "shot-uninit-$theme" "$fx/index-variants/not-initialised.json" 1920x1080 "summon;shot:desk-$theme-uninit" \
       HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
     clean_log "shot-uninit-$theme"

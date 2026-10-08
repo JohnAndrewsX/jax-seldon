@@ -2310,7 +2310,7 @@ test("eventDetail: heading, class, the key/values; why loud from the engine's ru
   same([d.kv[3], d.kv[4]], [["Case", "proposed: C-2026-003"], ["Rule", "crisis · rule always-red-paths · planned by C-2026-003, not linked"]])
   same(M.eventActions(d, {}).map(a => a.label)[0], "Link to C-2026-003…")
   // a member shows the group's proposal and rule
-  assert.ok(M.eventDetail(idx, p, LIB32).kv[4][1].indexOf("one pacman transaction (ADR-0013)") !== -1)
+  assert.ok(M.eventDetail(idx, p, LIB32).kv.find(r => r[0] === "Rule")[1].indexOf("one pacman transaction (ADR-0013)") !== -1)
   assert.strictEqual(M.eventDetail(idx, p, "nope"), null)
   const folded = p.rows.find(r => r.resolution !== "")
   assert.ok(M.eventDetail(idx, p, folded.id).kv.some(r => r[0] === "Resolved"))
@@ -2342,6 +2342,137 @@ test("eventDetail: a plugin update names its commits as plain text after What (W
   assert.ok(!variant(m => { m.commits = 3 }).includes("Commits"))
   // an event of another kind is unchanged
   assert.ok(!M.eventDetail(idx, M.deskChangelog(idx), THEME).kv.some(r => r[0] === "Commits"))
+})
+
+// WP-137 (ADR-0043): the sample's three transactions — the 09-18 mixed
+// -Syu, the 09-19 interrupted one, the 09-27 downgrade group.
+const PULSE = "01M2TRP458WGAYTYM0MEFXC2TY"
+const PIPEWIRE = "01M2TRP54G6K1N4WZF19XZFHZW"
+const GTK4 = "01M2W5S4XG9MX3PXAMR7WEEBVZ"
+const LIBADWAITA = "01M2W5S5WR0VXZGZ21D38HN54Z"
+const BTOP = "01M1MB2M1GWZYF485HTGVZ1KS3"
+
+test("transactionDetail: a mixed transaction lists every package, unusual ones first (WP-137)", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  const t = M.eventDetail(idx, p, PIPEWIRE).transaction
+  same(t.packages.map(M.txPackageLine), ["− pulseaudio  17.0-3", "+ pipewire-pulse  1:1.4.8-1",
+    "↑ pipewire  1:1.4.7-1 → 1:1.4.8-1", "↑ wireplumber  0.5.10-1 → 0.5.11-1"])
+  same(t.packages.filter(x => x.selected).map(x => x.id), [PIPEWIRE])
+  same([t.summary, t.command, t.status, t.title, t.files, t.partial, t.list],
+    ["4 packages: 1 removed, 1 installed, 2 upgraded", "pacman -Syu", "", "", 0, false, true])
+  const kv = M.eventDetail(idx, p, PIPEWIRE).kv
+  same(kv.map(r => r[0]).slice(0, 6), ["When", "Who", "What", "Command", "Transaction", "Case"])
+  same([kv[3][1], kv[4][1]], ["pacman -Syu", "4 packages: 1 removed, 1 installed, 2 upgraded"])
+  // every member shows the same transaction, its own line marked
+  same(M.eventDetail(idx, p, PULSE).transaction.packages.filter(x => x.selected).map(x => x.name), ["pulseaudio"])
+  // nothing marked: absent txStatus is "completed or not known", never said
+  assert.ok(!kv.some(r => /complete/.test(r[1])))
+  same(p.rows.filter(r => r.tx === "tx-20260918T192305").map(r => r.alert), ["", "", "", ""])
+  // one completed package: the rows say it all, no list
+  const one = M.eventDetail(idx, p, BTOP)
+  same([one.transaction.list, one.kv[3], one.kv[4]], [false, ["Command", "pacman -S btop"], ["Transaction", "1 package: 1 installed"]])
+  // anything else has no transaction
+  assert.strictEqual(M.eventDetail(idx, p, THEME).transaction, null)
+  assert.ok(!M.eventDetail(idx, p, THEME).kv.some(r => r[0] === "Command" || r[0] === "Transaction"))
+})
+
+test("transactionDetail: an interrupted transaction in the row and the detail (WP-137, ADR-0043)", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  same([GTK4, LIBADWAITA].map(id => M.changelogRow(p, id).alert), ["interrupted", "interrupted"])
+  assert.ok(M.changelogView(p, "all", {}, "interrupted").length === 2, "the word is searchable")
+  const d = M.eventDetail(idx, p, LIBADWAITA)
+  const t = d.transaction
+  same([t.status, t.title, t.list], ["interrupted", "Transaction interrupted", true])
+  assert.ok(t.text.startsWith("pacman was interrupted and stopped after the packages below"))
+  assert.ok(t.text.includes("post-transaction hooks"))
+  same(t.packages.map(M.txPackageLine), ["↑ gtk4  1:4.18.6-1 → 1:4.18.7-1", "↑ libadwaita  1:1.7.6-1 → 1:1.7.7-1"])
+  same(d.kv.find(r => r[0] === "Transaction"), ["Transaction", "2 packages: 2 upgraded · interrupted"])
+  // the class is the engine's, unchanged: routine (ADR-0043 §2)
+  same(d.cls, "routine")
+  // failed and unfinished have their own words
+  for (const s of ["failed", "unfinished"]) {
+    const v = JSON.parse(sample)
+    v.events.filter(e => e.txId === "tx-20260919T083110").forEach(e => { e.meta.txStatus = s })
+    const vp = M.deskChangelog(v)
+    const vt = M.eventDetail(v, vp, GTK4).transaction
+    same([vt.status, vt.title, M.changelogRow(vp, GTK4).alert],
+      [s, s === "failed" ? "Transaction failed" : "Transaction did not finish", s])
+  }
+  // a word the contract does not know, or one off a transaction line, marks nothing
+  const odd = JSON.parse(sample)
+  odd.events.find(e => e.id === GTK4).meta.txStatus = "completed"
+  odd.events.find(e => e.id === LIBADWAITA).meta.txStatus = "Interrupted"
+  odd.events.find(e => e.id === THEME).meta = { txStatus: "failed" }
+  const op = M.deskChangelog(odd)
+  same([GTK4, LIBADWAITA, THEME].map(id => M.changelogRow(op, id).alert), ["", "", ""])
+  same(M.eventDetail(odd, op, GTK4).transaction.status, "")
+  const noTx = JSON.parse(sample)
+  delete noTx.events.find(e => e.id === GTK4).txId
+  same(M.txStatusOf(noTx.events.find(e => e.id === GTK4)), "")
+})
+
+test("transactionDetail: a downgrade group, a cut index, a clipped command (WP-137)", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  const t = M.eventDetail(idx, p, MESA).transaction
+  same(t.packages.map(M.txPackageLine), ["↓ lib32-mesa  1:26.2.0-2 → 1:26.1.0-1",
+    "↓ mesa  1:26.2.0-2 → 1:26.1.0-1", "↓ vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"])
+  same([t.summary, t.partial], ["3 packages: 3 downgraded", false])
+  assert.ok(t.command.startsWith("pacman -U /var/cache/pacman/pkg/mesa-"))
+  // a member that the index no longer lists is not in the list (rule 4)
+  const capped = JSON.parse(sample)
+  capped.events = capped.events.filter(e => e.id !== LIB32)
+  same(M.eventDetail(capped, M.deskChangelog(capped), MESA).transaction.summary, "2 packages: 2 downgraded")
+  // the index at its cap with the transaction at its oldest end: maybe cut
+  const full = JSON.parse(sample)
+  const filler = full.events.find(e => e.id === THEME)
+  while (full.events.length < M.INDEX_EVENTS_MAX) full.events.unshift(Object.assign({}, filler, { id: "01M3VTGNY0NZG4AY8081" + String(full.events.length).padStart(6, "0") }))
+  const last = full.events[full.events.length - 1]
+  last.source = "pacman"; last.kind = "upgrade"; last.txId = "tx-old"; last.meta = { from: "1", to: "2", command: "pacman -Syu" }
+  const fp = M.deskChangelog(full)
+  same(M.eventDetail(full, fp, last.id).transaction.partial, true)
+  same(M.eventDetail(full, fp, MESA).transaction.partial, false)
+  // a command the index clipped says so
+  const clip = JSON.parse(sample)
+  clip.events.filter(e => e.txId === "tx-20260927T123000").forEach(e => { e.meta.truncated = true })
+  assert.ok(M.eventDetail(clip, M.deskChangelog(clip), MESA).kv.find(r => r[0] === "Command")[1]
+    .endsWith("(clipped in the index; the ledger has it in full)"))
+})
+
+test("transactionDetail: a file pacman left names its transaction (WP-141 hook, WP-137)", () => {
+  // WP-141 writes a pacman note with meta.transaction = the txId; not in
+  // this fixture yet, so a synthetic one
+  const v = JSON.parse(sample)
+  const NOTE = "01M2W5S6000000000000000NTE"
+  v.events.unshift({ id: NOTE, ts: "2026-09-19T08:31:11+02:00", source: "pacman", kind: "note",
+    subject: "/etc/pacman.d/mirrorlist.pacnew", detail: "/etc/pacman.d/mirrorlist installed as /etc/pacman.d/mirrorlist.pacnew",
+    actor: "system", zone: "red", meta: { command: "pacman -Syu", transaction: "tx-20260919T083110" } })
+  const p = M.deskChangelog(v)
+  const note = M.eventDetail(v, p, NOTE)
+  same(note.kv.find(r => r[0] === "Transaction"), ["Transaction", "2 packages: 2 upgraded · interrupted · left 1 file"])
+  same(note.transaction.packages.map(x => x.name), ["gtk4", "libadwaita"])
+  same(M.changelogRow(p, NOTE).alert, "", "a note is no package line")
+  // the packages' detail counts it
+  same(M.eventDetail(v, p, GTK4).kv.find(r => r[0] === "Transaction")[1], "2 packages: 2 upgraded · interrupted · left 1 file")
+  same(M.eventDetail(v, p, GTK4).transaction.files, 1)
+  // a note whose transaction the index no longer lists
+  v.events[0].meta.transaction = "tx-gone"
+  const gone = M.eventDetail(v, M.deskChangelog(v), NOTE)
+  same(gone.kv.find(r => r[0] === "Transaction")[1], "not in the index any more (it keeps the newest 500 events) · left 1 file")
+  // a note without meta.transaction (another source, or a manual note) has none
+  assert.strictEqual(M.eventTx({ source: "manual", kind: "note", meta: { transaction: "tx-1" } }), "")
+})
+
+test("EventDetail shows the transaction as plain text, Style tokens only (WP-137)", () => {
+  const qml = fs.readFileSync(path.join(root, "plugin/components/desk/EventDetail.qml"), "utf8")
+  const tx = qml.slice(qml.indexOf("// WP-137"))
+  assert.ok(tx.length > 0 && tx.includes("transactionList"), "the block is there")
+  const blocks = tx.split(/\n\s*Text \{/).slice(1)
+  assert.ok(blocks.length >= 4, String(blocks.length))
+  for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b|Qt\.rgba|"(red|orange|white|black)"/.test(tx), "no hard-coded colour")
 })
 
 test("driftRuleInfo and driftShowResult: the rule from `drift show`", () => {
