@@ -550,9 +550,9 @@ test("snapperBanner: Grant runs the script, Check again is a capture, no hint (W
   assert.ok(M.SNAPPER_FIX_SCRIPT.indexOf("then if seldon capture ") !== -1)
 })
 
-test("changelogRows: 82 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
+test("changelogRows: 83 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
-  assert.strictEqual(rows.length, 82)
+  assert.strictEqual(rows.length, 83)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
@@ -632,7 +632,7 @@ test("changelogRows: 82 events newest first, one +2 group (3 members), folded re
 
 test("changelogRows: the source filter narrows the list", () => {
   const counts = M.sourceCounts(sampleIndex)
-  assert.strictEqual(counts.all, 82)
+  assert.strictEqual(counts.all, 83)
   let total = 0
   for (const s of M.SOURCES) {
     const rows = M.changelogRows(sampleIndex, s)
@@ -640,10 +640,10 @@ test("changelogRows: the source filter narrows the list", () => {
     assert.ok(rows.every((r) => r.source === s), s)
     total += rows.length
   }
-  assert.strictEqual(total, 82)
-  assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 21)
+  assert.strictEqual(total, 83)
+  assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 22)
   assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 10)
-  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 82)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 83)
   same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
   assert.strictEqual(M.cycleFilter("all", 1), "pacman")
   assert.strictEqual(M.cycleFilter("seldon", 1), "all")
@@ -682,7 +682,7 @@ test("todayView: today's and yesterday's journal and the summary counts", () => 
   assert.strictEqual(M.entryMeta(t.entries[2]), "14:40 · human")
   // "without a case" is the attention count: 6 open drift − 2 crises
   same(t.stats.map((s) => s.label), ["events today", "in 7 days", "active", "queued", "without a case"])
-  same(t.stats.map((s) => s.value), [32, 53, 2, 3, 4])
+  same(t.stats.map((s) => s.value), [33, 54, 2, 3, 4])
   // "1 event today", not "1 events today" (WP-117)
   for (const [n, label] of [[0, "events today"], [1, "event today"], [2, "events today"]]) {
     const one = JSON.parse(sample)
@@ -1438,10 +1438,10 @@ test("periodTable: the sample's counts per period", () => {
   assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
-  same(s30.map((s) => s.detail), ["77 events", "Explicit 324 → 327", "13 opened · 8 resolved",
+  same(s30.map((s) => s.detail), ["78 events", "Explicit 324 → 327", "13 opened · 8 resolved",
     "R0 1 · R1 3 · R2 3 · R3 1 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
-  assert.strictEqual(table.periods["90"].slots[0].detail, "82 events")
+  assert.strictEqual(table.periods["90"].slots[0].detail, "83 events")
   same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 3, R3: 1 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
@@ -1587,16 +1587,16 @@ test("heatmapChart: weeks × weekdays, steps, months, hover text, layout and hit
   const table = M.periodTable(ok.index)
   const h30 = table.periods["30"].charts.heatmap
   assert.strictEqual(h30.empty, false)
-  same(h30.numbers, { days: 30, events: 77, activeDays: 17, max: 32, busiest: "2026-10-01" })
-  assert.strictEqual(h30.summary, "77 events on 17 of 30 days · busiest 2026-10-01 (32)")
+  same(h30.numbers, { days: 30, events: 78, activeDays: 17, max: 33, busiest: "2026-10-01" })
+  assert.strictEqual(h30.summary, "78 events on 17 of 30 days · busiest 2026-10-01 (33)")
   // 2026-09-02 is a Wednesday: the first column starts at row 2.
   same([h30.offset, h30.weeks, h30.cells.length], [2, 5, 30])
   same([h30.cells[0].date, h30.cells[0].col, h30.cells[0].row], ["2026-09-02", 0, 2])
   const last = h30.cells[29]
-  same([last.date, last.col, last.row, last.total, last.step], ["2026-10-01", 4, 3, 32, 5])
+  same([last.date, last.col, last.row, last.total, last.step], ["2026-10-01", 4, 3, 33, 5])
   same(h30.months.map((m) => m.col + m.label), ["0Sep", "4Oct"])
   assert.strictEqual(M.heatmapCellText(last),
-    "Thu 2026-10-01 · 32 events · seldon 8 · pacman 7 · agent 6 · snapper 4 · config 2 · manual 2 · omarchy 1 · plugins 1 · theme 1")
+    "Thu 2026-10-01 · 33 events · pacman 8 · seldon 8 · agent 6 · snapper 4 · config 2 · manual 2 · omarchy 1 · plugins 1 · theme 1")
   assert.strictEqual(M.heatmapCellText(h30.cells[1]), "Thu 2026-09-03 · 1 event · pacman 1")
   assert.strictEqual(M.heatmapCellText(null), "")
   same([365, 366].map((n) => table.periods[n === 365 ? "365" : "all"].charts.heatmap.weeks), [53, 53])
@@ -2185,7 +2185,7 @@ test("deskKpis and deskCounts on the sample; nothing without an index", () => {
   same(M.deskKpis(null), [])
   const c = M.deskCounts(idx)
   same(Object.keys(c), M.DESK_SECTIONS.map(s => s.id))
-  same(c.today, { text: "32", tone: "" })
+  same(c.today, { text: "33", tone: "" })
   same(c.changelog, { text: "6", tone: "urgent" })
   same(c.work, { text: "2 · 1 · 3", tone: "" })
   same(c.decisions, { text: "1 new", tone: "" })
@@ -2233,10 +2233,10 @@ test("deskWidthPreview and preset labels", () => {
 test("deskChangelog: every event once, by class, with title, meta, age and stripe", () => {
   const idx = M.parseIndex(sample).index
   const p = M.deskChangelog(idx)
-  assert.strictEqual(p.rows.length, 82)
+  assert.strictEqual(p.rows.length, 83)
   const byCls = {}
   for (const r of p.rows) byCls[r.cls] = (byCls[r.cls] || 0) + 1
-  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 37", "crisis 2", "routine 37"])
+  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 38", "crisis 2", "routine 37"])
   const unit = M.changelogRow(p, UNIT)
   same([unit.title, unit.listMeta, unit.age, unit.stripe, unit.cls], ["ollama.service", "config · config-add", "14:03", "crisis", "crisis"])
   const mesa = M.changelogRow(p, MESA)
@@ -2257,12 +2257,12 @@ test("rowAge: the time today, else day and month (the year when it differs)", ()
 test("changelogView and changelogChips: chips, search, Hide (attention only), a group once", () => {
   const p = M.deskChangelog(M.parseIndex(sample).index)
   same(M.changelogChips(p, {}).map(c => c.id + " " + c.count),
-    ["open 6", "crisis 2", "attention 4", "routine 37", "case 37", "all 82"])
+    ["open 6", "crisis 2", "attention 4", "routine 37", "case 38", "all 83"])
   // the drift chips list a group as its leader; "all" lists every event
   same(M.changelogView(p, "open", {}, "").map(r => r.title).slice(-1), ["mesa +2"])
   assert.strictEqual(M.changelogView(p, "open", {}, "").length, 6)
   assert.strictEqual(M.changelogView(p, "bogus", {}, "").length, 6)
-  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 82)
+  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 83)
   assert.ok(M.changelogView(p, "all", {}, "").some(r => r.id === LIB32))
   // the search matches subject, meta, detail and actor, case-insensitive
   same(M.changelogView(p, "open", {}, "OLLAMA").map(r => r.title), ["ollama.service", "ollama"])
@@ -2271,7 +2271,7 @@ test("changelogView and changelogChips: chips, search, Hide (attention only), a 
   const hidden = { [MESA]: true, [UNIT]: true }
   assert.strictEqual(M.changelogView(p, "open", hidden, "").length, 5)
   assert.strictEqual(M.changelogView(p, "crisis", hidden, "").length, 2)
-  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 82)
+  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 83)
   assert.strictEqual(M.hiddenCount(p, hidden), 1)
   same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
 })
@@ -2295,6 +2295,32 @@ test("one count everywhere: chips, sidebar, header, the quiet line, hidden (B2)"
   assert.strictEqual(M.hiddenCount(p, hidden), 1)
   same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
   assert.strictEqual(M.deskCounts(idx).changelog.text, "6")
+})
+
+test("eventDetail: a file pacman left carries the pacdiff hint, as text only (WP-141)", () => {
+  const PACNEW = "01M3V504QGJ5468NKRV7A744AY"
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  const d = M.eventDetail(idx, p, PACNEW)
+  same([d.heading, d.title, d.cls, d.open, d.caseId], ["pacman · note", "/etc/mkinitcpio.conf.pacnew", "case", false, "C-2026-003"])
+  same(d.kv.map(r => r[0]), ["When", "Who", "What", "Command", "Transaction", "Hint", "Case", "Rule", "Source", "Zone", "Event"])
+  same(d.kv[2], ["What", "/etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew"])
+  // its transaction through meta.transaction (WP-137), as for every member
+  same(d.kv[4], ["Transaction", "2 packages: 2 upgraded · left 1 file"])
+  same(d.kv[5], ["Hint", "Merge with pacdiff (from pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot tell whether that happened since."])
+  // and a package of that transaction counts the file it left
+  const hypr = M.eventDetail(idx, p, "01M3V504QG60MBGRBA2257PVQC")
+  assert.ok(hypr.kv.some(r => r[0] === "Transaction" && r[1].endsWith("left 1 file")))
+  assert.ok(!hypr.kv.some(r => r[0] === "Hint"))
+  same(M.eventActions(d, {}).map(a => a.id), ["case"], "no action runs pacdiff")
+  // the same for .pacsave and .pacorig; nothing for another note or another pacman kind
+  const hint = (source, kind, subject) => M.pacnewHint({ source: source, kind: kind, subject: subject })
+  assert.ok(hint("pacman", "note", "/etc/foo.conf.pacsave").startsWith("Merge with pacdiff"))
+  assert.ok(hint("pacman", "note", "/etc/foo.conf.pacorig").startsWith("Merge with pacdiff"))
+  for (const [s, k, sub] of [["manual", "note", "/etc/x.pacnew"], ["pacman", "install", "x.pacnew"],
+      ["pacman", "note", "/etc/x.pacnew.bak"], ["pacman", "note", "/etc/pacnew"]])
+    assert.strictEqual(hint(s, k, sub), "", `${s} ${k} ${sub}`)
+  assert.ok(!M.eventDetail(idx, p, THEME).kv.some(r => r[0] === "Hint"))
 })
 
 test("cycleChip wraps both ways", () => {
@@ -2329,6 +2355,7 @@ test("eventDetail: heading, class, the key/values; why loud from the engine's ru
   assert.ok(known("always-red").whyLoud.startsWith("A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml)"))
   assert.ok(known("attention-all").whyLoud.startsWith("[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."))
   assert.ok(known("future-rule").whyLoud.startsWith("The engine's rule: future-rule."))
+  assert.ok(known("pacnew-red").whyLoud.startsWith("pacman left a .pacnew, .pacsave or .pacorig beside a file that boot or login depend on (mkinitcpio, Limine, PAM)"))
   same(known("always-red-paths").kv[4], ["Rule", "crisis · rule always-red-paths · no case"])
   // a crisis an open case plans: the callout and the Case and Rule rows agree
   const planned = JSON.parse(sample)
@@ -2633,7 +2660,7 @@ test("deskToday and todayRows: needs you, journal, yesterday, the overview", () 
   const idx = M.parseIndex(sample).index
   const t = M.deskToday(idx, M.deskChangelog(idx))
   same([t.title, t.state.id, t.headline], ["Thursday, 1 Oct 2026", "crisis", "Seldon is recording. 2 changes need you."])
-  same(t.tiles.map(x => x.label + " " + x.value), ["events today 32", "7 days 53"])
+  same(t.tiles.map(x => x.label + " " + x.value), ["events today 33", "7 days 54"])
   same(t.needs.map(r => r.id), [UNIT, HOOK])
   same(t.cases.map(c => c.id + " " + c.text), ["C-2026-003 4/5 steps · claude-code", "C-2026-004 2/4 steps · claude-code"])
   same(M.todayRows(t, false).map(r => r.type), ["crisis", "crisis", "entry", "entry", "entry", "entry", "toggle"])
@@ -2703,6 +2730,10 @@ test("caseDetail: key/values, plan, log and linked changes from the index", () =
   assert.strictEqual(M.caseDetail(idx, p, "C-2026-999"), null)
   // contract 2: the case-updated event carries the risk into the log
   same(M.caseDetail(idx, p, "C-2026-003").log.map(r => r[1]).filter(t => t.startsWith("case-updated")).length, 1)
+  // WP-141: the .pacnew its update left is a linked change, not a Log line
+  const c3 = M.caseDetail(idx, p, "C-2026-003")
+  assert.ok(!c3.log.some(r => r[1].includes("pacnew")))
+  assert.ok(c3.linked.some(r => r[1] === "pacman note · /etc/mkinitcpio.conf.pacnew"))
 })
 
 test("free text goes exactly as typed, surrounding blanks included (N3)", () => {
@@ -2793,15 +2824,18 @@ const edgeIds = (b) => b.edges.map((e) => b.nodes[e.a].id + (e.dashed ? " ~ " : 
 
 test("graphBuild: nodes from the index, changes only, crises from drift", () => {
   const b = M.graphBuild(graphSample, 400)
-  same(b.numbers, { nodes: 74, edges: 26, areas: 6, cases: 8, decisions: 4, changes: 54, crises: 2, clusters: 0,
-    folded: 0, events: 82, completed: 2 })
+  same(b.numbers, { nodes: 75, edges: 27, areas: 6, cases: 8, decisions: 4, changes: 55, crises: 2, clusters: 0,
+    folded: 0, events: 83, completed: 2 })
   // order: areas, cases, decisions, changes by day
   const kinds = b.nodes.map((n) => (n.kind === "crisis" ? "change" : n.kind))
   same([...new Set(kinds)], ["area", "case", "decision", "change"])
   // no case lifecycle, notes, corrections, state loss
   const changeIds = new Set(b.nodes.filter((n) => n.kind === "change" || n.kind === "crisis").map((n) => n.id))
-  for (const e of graphSample.events) assert.strictEqual(changeIds.has(e.id), M.graphIsChange(e.kind), e.kind)
+  for (const e of graphSample.events) assert.strictEqual(changeIds.has(e.id), M.graphIsChange(e.kind, e.source), e.kind)
   for (const k of ["case-created", "note", "correction", "state-loss", "resolution"]) assert.ok(!M.graphIsChange(k), k)
+  // a file pacman left is a change (WP-141); other notes are not
+  assert.ok(changeIds.has("01M3V504QGJ5468NKRV7A744AY"))
+  assert.ok(M.graphIsChange("note", "pacman") && !M.graphIsChange("note", "manual") && !M.graphIsChange("note", "seldon"))
   for (const k of ["install", "plugin-disable", "theme-set", "config-remove", "command", "snapshot-delete"]) assert.ok(M.graphIsChange(k), k)
   // crisis = event id in drift with crisis: true
   const crises = b.nodes.filter((n) => n.kind === "crisis").map((n) => n.id).sort()
@@ -2812,7 +2846,7 @@ test("graphBuild: nodes from the index, changes only, crises from drift", () => 
   assert.strictEqual(nodeOf(b, "C-2026-001").done, true)
   assert.strictEqual(nodeOf(b, "C-2026-003").sub, "active · R3 · shell")
   assert.strictEqual(nodeOf(b, "C-2026-003").caseId, "C-2026-003")
-  assert.strictEqual(b.footer, "Newest 82 events · 2 completed cases in the index")
+  assert.strictEqual(b.footer, "Newest 83 events · 2 completed cases in the index")
 })
 
 test("graphBuild: edges event→case, case→area, decision→case, proposedCase dashed", () => {
@@ -2869,7 +2903,7 @@ test("graphBuild: nothing to draw without an index", () => {
     assert.strictEqual(b.empty, true)
     assert.strictEqual(b.nodes.length, 0)
   }
-  assert.strictEqual(M.graphBuild(graphSample).nodes.length, 74)
+  assert.strictEqual(M.graphBuild(graphSample).nodes.length, 75)
 })
 
 test("graphBuild: beyond the cap, changes fold by day and source; areas, cases, decisions, crises never", () => {
@@ -2937,7 +2971,7 @@ test("graphState: start layout deterministic, positions kept by id, cut kept mid
   const s1 = M.graphState(b, null)
   const s2 = M.graphState(b, null)
   same(Array.from(s1.x), Array.from(s2.x))
-  assert.strictEqual(s1.visCount, 74)
+  assert.strictEqual(s1.visCount, 75)
   assert.strictEqual(s1.cut, b.span)
   assert.strictEqual(s1.alpha, 1)
   for (let i = 0; i < 30; i++) M.graphStep(s1, 8)

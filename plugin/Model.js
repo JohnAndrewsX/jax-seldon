@@ -3961,6 +3961,7 @@ function keptDriftRules(rules, index) {
 var CRISIS_RULE_TEXTS = {
   "always-red": "A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml) was installed, removed or downgraded by name in this transaction.",
   "always-red-paths": "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml).",
+  "pacnew-red": "pacman left a .pacnew, .pacsave or .pacorig beside a file that boot or login depend on (mkinitcpio, Limine, PAM); check it with pacdiff before the next reboot.",
   "attention-all": "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."
 }
 
@@ -3982,11 +3983,23 @@ function whyLoud(row, proposedCase, info) {
   return cause + " " + plan
 }
 
+// A file pacman left beside a configuration file (WP-141: a pacman
+// `note` whose subject ends in .pacnew, .pacsave or .pacorig): what to do,
+// as text. Never a button and never a command Seldon runs (AGENTS.md §8);
+// Seldon does not read /etc, so it cannot know whether it was merged.
+var PACNEW_SUFFIX = /\.(pacnew|pacsave|pacorig)$/
+var PACNEW_HINT = "Merge with pacdiff (from pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot tell whether that happened since."
+
+function pacnewHint(row) {
+  return row && row.source === "pacman" && row.kind === "note" && PACNEW_SUFFIX.test(row.subject) ? PACNEW_HINT : ""
+}
+
 // One event as the detail shows it (prototype `eventDetail`): heading
 // "source · kind", the full subject, the class, the callout, and the
-// key/value rows When · Who · What (· Commits) · Case · Rule · Source (·
-// Zone · Resolved · Event). `info`: the engine's rule (driftRuleInfo). null when
-// the index has no such event.
+// key/value rows When · Who · What (· Commits, a plugin clone's update; ·
+// Hint, a file pacman left) · Case · Rule · Source (· Zone · Resolved ·
+// Event). `info`: the engine's rule (driftRuleInfo). null when the index has
+// no such event.
 function eventDetail(index, prepared, id, info) {
   var row = changelogRow(prepared, id)
   if (!row) return null
@@ -4013,11 +4026,15 @@ function eventDetail(index, prepared, id, info) {
   var kv = [
     ["When", stamp(e.ts)],
     ["Who", str(e.actor) !== "" ? str(e.actor) : "—"],
-    ["What", (row.detail !== "" ? row.detail : "—") + (clipped ? " (clipped in the index; the ledger has it in full)" : "")],
+    ["What", (row.detail !== "" ? row.detail : "—") + (clipped ? " (clipped in the index; the ledger has it in full)" : "")]
+  ]
+  var hint = pacnewHint(row)
+  if (hint !== "") kv.push(["Hint", hint])
+  kv = kv.concat([
     ["Case", row.caseId !== "" ? row.caseId : proposed !== "" ? "proposed: " + proposed : "—"],
     ["Rule", rule],
     ["Source", SOURCE_TEXTS[row.source] !== undefined ? SOURCE_TEXTS[row.source] : row.source]
-  ]
+  ])
   // WP-136: the commits of a plugin clone's update as the engine named
   // them (meta.commits, one subject per line, newest first; meta.git
   // pull | rollback | reset), plain text after What
@@ -4661,7 +4678,10 @@ function caseDetail(index, prepared, id) {
     if (!isObject(e)) continue
     if (typeof e.id === "string") byId[e.id] = e
     if (e.case !== id) continue
-    if (e.source !== "seldon" && e.kind !== "note" && e.kind !== "correction") continue
+    // a pacman note is a change (a file pacman left, WP-141): listed with
+    // the linked changes below, not in the Log
+    var logged = e.source === "seldon" || ((e.kind === "note" || e.kind === "correction") && e.source !== "pacman")
+    if (!logged) continue
     log.push([stamp(e.ts), [str(e.kind), str(e.actor),
       isObject(e.meta) && RISKS.indexOf(e.meta.risk) !== -1 ? e.meta.risk : "",
       e.kind === "note" || e.kind === "correction" ? str(e.detail) : ""]
@@ -4706,8 +4726,9 @@ function caseDetail(index, prepared, id) {
 //
 // The machine's memory as a network, from the index alone. Nodes: the
 // logbook's areas, the cases of all four lists, the decisions, and the
-// events whose kind is a change (GRAPH_CHANGE_KINDS; not case lifecycle,
-// notes, corrections or resolutions). A change is a crisis when its event
+// events whose kind is a change (GRAPH_CHANGE_KINDS, and a pacman note: a
+// file pacman left, WP-141; not case lifecycle, other notes, corrections or
+// resolutions). A change is a crisis when its event
 // id is in drift[] with crisis: true. Edges: event.case → case, case.area →
 // area, decision.cases → case (contract 2), and drift.proposedCase → case
 // dashed. Day index: event ts, case created, decision date; an area is as
@@ -4763,8 +4784,9 @@ var GRAPH_MAX_SPEED = 12
 var GRAPH_EXACT_MAX = 160
 var GRAPH_THETA2 = 0.81
 
-function graphIsChange(kind) {
-  return typeof kind === "string" && (GRAPH_CHANGE_KINDS.indexOf(kind) !== -1 || kind.indexOf("plugin-") === 0)
+function graphIsChange(kind, source) {
+  return typeof kind === "string" && (GRAPH_CHANGE_KINDS.indexOf(kind) !== -1 || kind.indexOf("plugin-") === 0
+    || (kind === "note" && source === "pacman"))
 }
 
 // The empty graph (no index, or nothing in it).
@@ -4926,7 +4948,7 @@ function graphBuild(index, cap) {
   var evs = []
   var seen = Object.create(null)
   function addChange(e, id) {
-    if (!isObject(e) || !graphIsChange(e.kind) || seen[id]) return
+    if (!isObject(e) || !graphIsChange(e.kind, e.source) || seen[id]) return
     var day = dayNumber(dayOf(e.ts))
     if (isNaN(day)) return
     seen[id] = true

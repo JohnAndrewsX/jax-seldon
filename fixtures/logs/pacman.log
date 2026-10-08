@@ -54,6 +54,7 @@
 [2026-08-28T14:34:45+0200] [ALPM] running '10-limine-snapper-lock.hook'...
 [2026-08-28T14:34:45+0200] [ALPM] transaction started
 [2026-08-28T14:34:45+0200] [ALPM] removed vulkan-headers (1:1.4.357.0-1)
+[2026-08-28T14:34:45+0200] [ALPM] warning: /etc/ayatana/indicator.conf saved as /etc/ayatana/indicator.conf.pacsave
 [2026-08-28T14:34:45+0200] [ALPM] removed libayatana-indicator (0.9.5-1)
 [2026-08-28T14:34:45+0200] [ALPM] removed ayatana-ido (0.10.4-1)
 [2026-08-28T14:34:45+0200] [ALPM] transaction completed
@@ -151,6 +152,7 @@ garbage line without a timestamp
 [2026-10-01T09:13:58+0200] [ALPM] running '10-limine-snapper-lock.hook'...
 [2026-10-01T09:13:58+0200] [ALPM] running '10-omarchy-hyprland-reload-pause.hook'...
 [2026-10-01T09:13:58+0200] [ALPM] transaction started
+[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew
 [2026-10-01T09:13:58+0200] [ALPM] upgraded hyprland (0.52.1-1 -> 0.53.0-1)
 [2026-10-01T09:13:58+0200] [ALPM] upgraded broken-line-without-version
 [2026-10-01T09:13:59+0200] [ALPM] upgraded omarchy (4.0.6-1 -> 4.0.7-1)

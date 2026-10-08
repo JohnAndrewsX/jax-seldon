@@ -39,7 +39,7 @@ pub fn ts(s: &str) -> DateTime<FixedOffset> {
 }
 
 /// `created` of `fixtures/logbook/.seldon/logbook.toml`: the baseline the
-/// fixture story starts from (README: cursor 6129 in pacman.log).
+/// fixture story starts from (README: cursor 6245 in pacman.log).
 pub const FIXTURE_CREATED: &str = "2026-09-01T19:00:42+02:00";
 
 /// The local zone of the fixture story (all of it is summer time).
@@ -310,7 +310,7 @@ pub fn story() -> Bench {
     assert!(out.ok, "{:?}", out.message);
     assert_eq!(
         out.events.len(),
-        21,
+        22,
         "fixtures/README.md: the ledger's pacman events, got {:?}",
         subjects(&out.events)
     );

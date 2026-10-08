@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Files pacman left (WP-141).** A `.pacnew` (the package's new default
+  was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
+  that pacman reports in `/var/log/pacman.log` is now recorded: a pacman
+  `note` named after the file, its transaction in `meta.transaction`. It
+  is its own item, never part of its transaction's group: quiet
+  attention (rule `pacnew`), a crisis beside a boot or login file —
+  mkinitcpio, Limine, PAM (rule `pacnew-red`, ADR-0042). Seldon
+  does not read `/etc`, so it cannot tell whether you merged it since.
 - **A pacman transaction that did not complete says so (WP-137,
   ADR-0043).** When pacman logs `transaction failed` or `transaction
   interrupted`, or a transaction has no end line (pacman killed, power
@@ -178,6 +186,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **The pacdiff hint (WP-141).** The Changelog's detail of a file pacman
+  left reads "Merge with pacdiff (from pacman-contrib) in a terminal." —
+  text only; the plugin runs nothing. A crisis of rule `pacnew-red` says
+  why it is loud.
 - **A transaction's packages in the Changelog (WP-137).** Selecting a
   pacman change shows every package of its transaction — ↑ upgraded,
   ↓ downgraded, + installed, − removed, ↻ reinstalled, old → new — and

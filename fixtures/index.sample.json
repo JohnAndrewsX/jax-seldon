@@ -63,8 +63,8 @@
     "queuedCases": 3,
     "openDrift": 6,
     "crisis": 2,
-    "eventsToday": 32,
-    "events7d": 53
+    "eventsToday": 33,
+    "events7d": 54
   },
   "today": {
     "date": "2026-10-01",
@@ -443,6 +443,21 @@
         "command": "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
         "from": "4.0.6-1",
         "to": "4.0.7-1"
+      }
+    },
+    {
+      "id": "01M3V504QGJ5468NKRV7A744AY",
+      "ts": "2026-10-01T09:13:58+02:00",
+      "source": "pacman",
+      "kind": "note",
+      "subject": "/etc/mkinitcpio.conf.pacnew",
+      "detail": "/etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew",
+      "actor": "agent:claude-code",
+      "case": "C-2026-003",
+      "zone": "red",
+      "meta": {
+        "command": "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
+        "transaction": "tx-20261001T091358"
       }
     },
     {
@@ -1408,6 +1423,7 @@
           "01M3V4RY8GW92AWEZ8KFTHZRAW",
           "01M3V4T4B8J32CE6CP7FQ4SS42",
           "01M3V504QG60MBGRBA2257PVQC",
+          "01M3V504QGJ5468NKRV7A744AY",
           "01M3V505PRK95EXCMDQW91M9FG",
           "01M3V5D0V0YT5KRGAHD1VQDF2Q"
         ],
@@ -3219,13 +3235,13 @@
       },
       {
         "date": "2026-10-01",
-        "total": 32,
+        "total": 33,
         "bySource": {
           "agent": 6,
           "config": 2,
           "manual": 2,
           "omarchy": 1,
-          "pacman": 7,
+          "pacman": 8,
           "plugins": 1,
           "seldon": 8,
           "snapper": 4,

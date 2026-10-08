@@ -43,12 +43,12 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-28 | `~/.config/hypr/monitors.conf` removed (the move to Lua) | `config-remove`: attention |
 | 09-29 | plugin `weather-plus` disabled and enabled again; the shell rewrites `shell.json`; a hook `post-update.d/backup-dotfiles.sh` appears (no case, `system`) | toggles and `shell.json` **routine**; the hook a **crisis** in the yellow zone (ADR-0028 §2) |
 | 09-30 | human runs a plain `pacman -Syu` without a case (firefox, libinput, noto-fonts upgraded) → stays without a resolution (WP-014) | a plain full upgrade: **routine** history since ADR-0028 (with `attention = "all"`: one yellow drift group, ADR-0013) |
-| 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (the install quiet **attention**, the unit a **crisis**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
+| 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112); the -Syu leaves `/etc/mkinitcpio.conf.pacnew` (WP-141: a pacman `note`, its transaction in `meta.transaction`, in the case by attribution, so no drift). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (the install quiet **attention**, the unit a **crisis**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
 | 10-01 (WP-120) | The engine speaks contract 2 from the start of the day (ADR-0035): at 08:55 a capture finds `owned.json` unreadable and re-baselines the config collector (`state-loss`); at 09:00 the human raises C-2026-003 to R3 (`case-updated`, `meta.risk: R3`; its Log's `set risk R2 → R3`); every case line of the day carries `meta.risk`, the older ones do not (C-2026-003 was created on 09-26, so the harm guard reads its Log). The proposal of 17:02 (`proposals/`), the autocommit of the 17:00 note (`logbook.git.autocommit`, sample only), ADR-0003 naming C-2026-004 and C-2026-005, and the long note of 09-12 (the one clipped text, `meta.truncated`) complete the v2 surfaces | `case-updated`, `state-loss`, `meta.risk`, `meta.truncated`, `decisions[].cases`, `triage` |
 | 10-01 (WP-127) | At 11:00 the human imports one item of `~/Notizen/aufgaben.md` (`seldon import task`): C-2026-007, tag `imported`, frontmatter `source`, its Intent opening with the `Imported from …` line; the Plan was written later by hand. Every case with Intent or Result text and every decision with a Decision section shows its first paragraph; every open drift item names its rule (ADR-0038) | `cases[].intent`/`result`/`source`, `decisions[].lead`, `drift[].rule` |
 | 10-01 (WP-101) | C-2026-002 had been closed by Claude (`closed-by-agent`, ADR-0027 §5: its verify and done by `agent:claude-code`); C-2026-003 was raised to R3 before the `omarchy update` (Omarchy itself is R3, ADR-0027 §2c; as R2 the update would raise the R3 advisory). The reopen of C-2026-002 lives in the variant `case-reopened` (index only) | `closed-by-agent` marker |
 
-Result: 93 ledger lines (11 resolutions), 82 index events (9 with
+Result: 94 ledger lines (11 resolutions), 83 index events (9 with
 `resolutionDetail`; 1 with `zone: green`; 1 with `meta.truncated`; 2 with `meta.txStatus`), 6 snapshots in `system.snapshots`
 (1 pre/post pair), 6 open drift items — 5 single (2 crises: the user unit
 and the hook) and 1 attention group of 3 (the mesa downgrade) —, 8 routine
@@ -230,10 +230,14 @@ Markdown table):
   (empty, no timestamp, impossible date, truncated, missing parens, unknown tag,
   an `upgraded` line without version inside a transaction) and an
   **unterminated last line** (an interrupted write; the cursor must stop before it).
-  - Baseline cursor of `seldon init`: byte offset **6129** (first line after it is
+  - Baseline cursor of `seldon init`: byte offset **6245** (first line after it is
     the 09-03 btop transaction). From there the parser must produce exactly the
-    pacman events of `logbook/ledger/*.jsonl` (21 lines; ids and attribution aside) and
-    nothing for the malformed lines. Complete lines end at byte 13254.
+    pacman events of `logbook/ledger/*.jsonl` (22 lines; ids and attribution aside) and
+    nothing for the malformed lines. Complete lines end at byte 13475.
+  - Files pacman left (WP-141): a `warning: … saved as ….pacsave` in the 08-28
+    `-Rns` transaction (before the baseline: parsed, never emitted) and a
+    `warning: … installed as ….pacnew` in the 10-01 `-Syu` (the ledger's pacman
+    `note`). `pacman-rotation/pacman.log` repeats the `.pacnew` line.
   - The 09-30 `pacman -Syu` block (WP-014) is a plain full upgrade: three
     `upgraded` lines, `explicit: false`, `meta.command` `pacman -Syu`: routine
     `sysupgrade` (ADR-0028; under `attention = "all"` the ADR-0013 yellow

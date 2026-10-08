@@ -65,6 +65,26 @@ const THEME_CODE: [&str; 5] = [
     "vscode.json",
 ];
 
+/// The boot and login files a `.pacnew`, `.pacsave` or `.pacorig` beside
+/// is a crisis (ADR-0042, WP-141): mkinitcpio, Limine (the paths
+/// `omarchy-settings` ships and Omarchy writes: `/etc/default/limine`,
+/// `/etc/limine-entry-tool.conf`, `/etc/limine-entry-tool.d/`), PAM.
+/// Not `/etc/systemd` (Omarchy uses drop-ins) or `/etc/security` (Omarchy
+/// overrides `pam`'s files there): the file in use keeps working. In the
+/// [`PathGlobs`] syntax; a directory covers what lies below it.
+const PACNEW_RED: [&str; 7] = [
+    "/etc/mkinitcpio.conf",
+    "/etc/mkinitcpio.conf.d",
+    "/etc/mkinitcpio.d",
+    "/etc/default/limine",
+    "/etc/limine*",
+    "/boot/limine*",
+    "/etc/pam.d",
+];
+
+/// The suffixes of the files pacman leaves (`collectors::pacman`).
+const PACNEW_SUFFIXES: [&str; 3] = [".pacnew", ".pacsave", ".pacorig"];
+
 /// The three classes, ordered by the attention they get.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Class {
@@ -121,6 +141,7 @@ pub struct Rules {
     routine_paths: PathGlobs,
     always_red_paths: PathGlobs,
     routine_packages: HashSet<String>,
+    pacnew_red: PathGlobs,
 }
 
 /// The home directory as the path globs see a `~`-path subject: `~/x` is
@@ -214,6 +235,7 @@ impl Rules {
             routine_paths: PathGlobs::new(&config.routine_paths),
             always_red_paths: PathGlobs::new(&config.always_red_paths),
             routine_packages: config.routine_packages.iter().cloned().collect(),
+            pacnew_red: PathGlobs::new(&PACNEW_RED.map(String::from)),
         }
     }
 
@@ -247,6 +269,9 @@ impl Rules {
     }
 
     fn pacman(&self, e: &Event, cmd: Option<&PacmanCommand>) -> Option<Verdict> {
+        if e.kind == Kind::Note {
+            return Some(self.pacnew(&e.subject));
+        }
         let red = self.always_red.matches(&e.subject);
         if cmd.is_some_and(PacmanCommand::is_plain_full_upgrade) {
             // a distro-driven upgrade, `alwaysRed` included (ADR-0028 §2
@@ -302,6 +327,23 @@ impl Rules {
             },
             // no command line: nothing says what was named
             None => Verdict::attention("other"),
+        }
+    }
+
+    /// A file pacman left beside a configuration file (WP-141): never
+    /// routine — the new default was not applied, or the user's file was
+    /// moved aside, and nothing but a merge changes that; a crisis beside a
+    /// boot or login file ([`PACNEW_RED`], ADR-0042). Its own item, never
+    /// its transaction's: it carries no `txId`.
+    fn pacnew(&self, subject: &str) -> Verdict {
+        let file = PACNEW_SUFFIXES
+            .iter()
+            .find_map(|s| subject.strip_suffix(s))
+            .unwrap_or(subject);
+        if self.pacnew_red.matches(file) {
+            Verdict::new(Class::Crisis, "pacnew-red")
+        } else {
+            Verdict::new(Class::Attention, "pacnew")
         }
     }
 
@@ -610,6 +652,17 @@ mod tests {
         e.explicit = explicit;
         e.tx_id = Some(format!("tx-{cmd}"));
         e.meta.command = Some(cmd.into());
+        e
+    }
+
+    /// A file pacman left (`collectors::pacman`, WP-141) in a transaction
+    /// whose logged command is `cmd`.
+    fn left(subject: &str, cmd: &str) -> Event {
+        let mut e = ev(Source::Pacman, Kind::Note, subject);
+        e.meta.command = Some(cmd.into());
+        e.meta
+            .extra
+            .insert("transaction".into(), format!("tx-{cmd}").into());
         e
     }
 
@@ -1205,6 +1258,116 @@ mod tests {
                 ),
                 (A, "config-remove"),
             ),
+            // a file pacman left (WP-141): attention, beside a boot, login
+            // or security file a crisis; whatever the transaction was
+            (
+                ".pacnew in a plain full upgrade",
+                left("/etc/pacman.conf.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacsave of a named removal",
+                left("/etc/ssh/sshd_config.pacsave", "pacman -Rns openssh"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacorig in a keyring transaction",
+                left("/etc/x.conf.pacorig", "pacman -Sy archlinux-keyring"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of mkinitcpio.conf, Omarchy's update",
+                left("/etc/mkinitcpio.conf.pacnew", omarchy_line),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew in mkinitcpio.conf.d",
+                left(
+                    "/etc/mkinitcpio.conf.d/omarchy_hooks.conf.pacnew",
+                    "pacman -Syu",
+                ),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew of a mkinitcpio preset",
+                left("/etc/mkinitcpio.d/linux.preset.pacnew", "pacman -Syu"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacsave of /etc/default/limine",
+                left("/etc/default/limine.pacsave", "pacman -Rns limine"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew in limine-entry-tool.d",
+                left(
+                    "/etc/limine-entry-tool.d/omarchy-defaults.conf.pacnew",
+                    "pacman -Syu",
+                ),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew of /boot/limine.conf",
+                left("/boot/limine.conf.pacnew", "pacman -Syu"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew of a systemd file (Omarchy uses drop-ins)",
+                left("/etc/systemd/logind.conf.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacorig in pam.d",
+                left("/etc/pam.d/system-login.pacorig", "pacman -S pambase"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew in /etc/security (Omarchy overrides pam's files)",
+                left("/etc/security/faillock.conf.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of fstab",
+                left("/etc/fstab.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of crypttab",
+                left("/etc/crypttab.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of sudoers",
+                left("/etc/sudoers.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacsave in pam.d",
+                left("/etc/pam.d/sudo.pacsave", "pacman -Rns sudo"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew without a command line",
+                {
+                    let mut e = left("/etc/pam.d/system-auth.pacnew", "");
+                    e.meta.command = None;
+                    e
+                },
+                (C, "pacnew-red"),
+            ),
+            (
+                "a look-alike of a system path",
+                left("/etc/pam.dx/a.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                "another root (pacman -r /mnt)",
+                left(
+                    "/mnt/etc/mkinitcpio.conf.pacnew",
+                    "pacman -r /mnt -S mkinitcpio",
+                ),
+                (A, "pacnew"),
+            ),
             // the total row
             (
                 "anything else",
@@ -1305,6 +1468,16 @@ mod tests {
             named(Kind::Install, "libnl", false),
         ];
         assert_eq!(verdict(&d, &ledger, &[1, 0]), (A, "package"));
+        // WP-141: a file the transaction left is no member and lends it no
+        // class; it is classed alone
+        let mut pacnew = left("/etc/pam.d/system-login.pacnew", "pacman -S htop");
+        pacnew.meta.extra.insert(
+            "transaction".into(),
+            ledger[0].tx_id.clone().unwrap().into(),
+        );
+        let ledger = [ledger[0].clone(), ledger[1].clone(), pacnew];
+        assert_eq!(verdict(&d, &ledger, &[1]), (A, "package"));
+        assert_eq!(verdict(&d, &ledger, &[2]), (C, "pacnew-red"));
         // K19: of mixed explicit members the highest counts, also when the
         // crisis member is no longer in the item (resolved)
         let mixed = |kind, subject: &str, explicit| {
