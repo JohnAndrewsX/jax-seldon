@@ -485,7 +485,8 @@ pub fn planned_detail(case: &str) -> String {
 }
 
 /// What rule 9 needs of a case: its id, the text of its `## Plan` as it is
-/// now without HTML comments (a template placeholder is no plan), its
+/// now without HTML comments (a template placeholder is no plan) and
+/// without its `Stop if:` item (a stop condition is no plan; WP-143), its
 /// risk over time ([`RiskRecord`]), and whether it is closed now
 /// (completed or dropped).
 #[derive(Debug, Clone)]
@@ -531,7 +532,7 @@ impl PlanningCase {
         PlanningCase {
             id: file.case.id.clone(),
             plan: cases::section(body, "Plan")
-                .map(|r| cases::strip_comments(&body[r]))
+                .map(|r| cases::without_stop_if(&cases::strip_comments(&body[r])))
                 .unwrap_or_default(),
             // fail-safe (WP-115 round 3): a record whose last risk is not
             // the frontmatter's was edited by hand or is incomplete; it
@@ -1703,6 +1704,34 @@ mod tests {
             "consistent: read"
         );
         assert_eq!(c.plan, "- linux-zen\n\n");
+    }
+
+    /// WP-143: a subject named only on the Plan's `Stop if:` line is no
+    /// planned subject; rule 9 does not link it, and links what the rest
+    /// of the Plan names.
+    #[test]
+    fn a_stop_condition_is_not_a_plan() {
+        use planned::*;
+        const A: &str = "C-2026-001";
+        let body = "# C\n\n## Plan\n- Steps: install `glow`\n- Stop if: `mdcat` would come along\n  \
+                    or `bat`\n- Verification: `glow --version`\n\n## Log\n\n## Result\n";
+        let mut file = case_file(&[]);
+        file.doc.body = body.to_string();
+        let c = PlanningCase::of(&file, &[]);
+        assert_eq!(
+            c.plan,
+            "- Steps: install `glow`\n- Verification: `glow --version`\n\n"
+        );
+        let l = links(
+            &[
+                step(1, "09:30", Kind::CaseStarted, A),
+                change(10, "10:30", "mdcat"),
+                change(11, "10:31", "glow"),
+                change(12, "10:32", "bat"),
+            ],
+            &[PlanningCase { risks: None, ..c }],
+        );
+        assert_eq!(linked(&l), [(11, A.into())]);
     }
 
     /// WP-120 round 2, B1: only the engine's own case lines tell the risk

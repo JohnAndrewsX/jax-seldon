@@ -164,6 +164,20 @@ impl Env {
         stub(&self.bin, name, body);
     }
 
+    /// Replaces this environment's `git` (a link to the host's) by a
+    /// script: `body` runs with `$REAL_GIT` set to the host's git. The
+    /// link is removed before the script is written: [`Env::stub`] would
+    /// write through it into the host's git (CI runs the tests as root).
+    pub fn wrap_git(&self, body: &str) {
+        let link = self.bin.join("git");
+        let real = std::fs::read_link(&link).expect("this environment's git is a link");
+        std::fs::remove_file(&link).unwrap();
+        write_executable(
+            &link,
+            &format!("#!/bin/sh\nREAL_GIT='{}'\n{body}\n", real.display()),
+        );
+    }
+
     /// Shims for the dossier's read-only host queries (WP-035): the package
     /// manager, `systemctl` and `omarchy` print `fixtures/logs/` files for
     /// exactly the query argument lists and fail (exit 64) for anything

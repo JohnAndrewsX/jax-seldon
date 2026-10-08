@@ -161,7 +161,8 @@ pub fn collector_state(
 /// `logbook.git`: the short HEAD and whether the work tree has changes;
 /// `None` when the logbook is not a repository or git is missing. git runs
 /// with the logbook's own environment (`git::query`: no inherited
-/// `GIT_DIR`, no walking up into a repository around the logbook).
+/// `GIT_DIR`, no walking up into a repository around the logbook, no
+/// network).
 pub fn git_info(root: &Path) -> Option<model::GitInfo> {
     if !git::is_repo(root) {
         return None;
@@ -176,14 +177,8 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
         Run::Exited { .. } => None,
         _ => return None,
     };
-    let dirty = match git::query(root, &["status", "--porcelain"], timeout) {
-        Run::Exited {
-            code: Some(0),
-            stdout,
-            ..
-        } => !stdout.trim().is_empty(),
-        _ => return None,
-    };
+    let dirty =
+        !git::status_is_empty(git::query(root, &["status", "--porcelain"], timeout)).ok()?;
     Some(model::GitInfo {
         head,
         dirty: Some(dirty),
@@ -194,21 +189,28 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
 /// `logbook.git` without running git: the 7-character HEAD from
 /// `.git/HEAD`, a loose ref or `packed-refs` (`head` absent on an unborn
 /// branch), `dirty` unknown and left out. `None` when the logbook is not a
-/// repository. Follows a `.git` file (`gitdir:`) and `commondir`.
+/// repository. Follows a `.git` file and `commondir`, each read as git
+/// reads it (WP-154): the file starts with exactly `gitdir: ` (no byte
+/// order mark, one space, lower case) and only the CRs and LFs at the end
+/// of a path are dropped (white space is part of it); a relative path is
+/// relative to the file's directory. A `commondir` that is there but
+/// cannot be read, and an empty path in either file, is no repository
+/// either (git stops there).
 pub fn git_head_fast(root: &Path) -> Option<model::GitInfo> {
     let dot = root.join(".git");
     let gitdir = if dot.is_file() {
         let text = std::fs::read_to_string(&dot).ok()?;
-        let dir = Path::new(text.trim().strip_prefix("gitdir:")?.trim());
-        root.join(dir)
+        root.join(git_path(text.strip_prefix("gitdir: ")?)?)
     } else if dot.is_dir() {
         dot
     } else {
         return None;
     };
-    let common = std::fs::read_to_string(gitdir.join("commondir"))
-        .map(|c| gitdir.join(c.trim()))
-        .unwrap_or_else(|_| gitdir.clone());
+    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+        Ok(c) => gitdir.join(git_path(&c)?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => gitdir.clone(),
+        Err(_) => return None,
+    };
     let head = std::fs::read_to_string(gitdir.join("HEAD")).ok()?;
     let head = head.trim();
     let sha = match head.strip_prefix("ref:").map(str::trim) {
@@ -233,6 +235,15 @@ pub fn git_head_fast(root: &Path) -> Option<model::GitInfo> {
         dirty: None,
         autocommit: None,
     })
+}
+
+/// A path in a git file (`.git`, `commondir`): the text without the CRs
+/// and LFs at its end, as git reads it; `None` when nothing is left (git
+/// 2.55: an empty `commondir` "failed to read", one of only a newline
+/// "not a git repository").
+fn git_path(text: &str) -> Option<&Path> {
+    let path = text.trim_end_matches(['\n', '\r']);
+    (!path.is_empty()).then(|| Path::new(path))
 }
 
 /// The index of a logbook that does not exist yet: `state.status

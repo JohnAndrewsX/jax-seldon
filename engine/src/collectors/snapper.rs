@@ -161,7 +161,7 @@ pub fn lists_current_user(program: &str, timeout: Duration) -> bool {
     else {
         return false;
     };
-    match sys::run_command(get_config_command(program), timeout) {
+    match sys::run_command(get_config_command(program), timeout, sys::OUTPUT_MAX) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -179,9 +179,10 @@ pub fn allow_users(stdout: &str) -> Option<Vec<String>> {
     Some(users.split_whitespace().map(str::to_string).collect())
 }
 
-/// Runs [`list_command`] with `timeout`.
+/// Runs [`list_command`] with `timeout`, keeping its whole output (a cut
+/// list would read as snapshots deleted).
 pub fn run_list(program: &str, timeout: Duration) -> Run {
-    sys::run_command(list_command(program), timeout)
+    sys::run_command(list_command(program), timeout, sys::WHOLE_OUTPUT)
 }
 
 /// Whether snapper's stderr is its permission error (English, see
@@ -219,6 +220,7 @@ impl Collector for Snapper {
                     None,
                 );
             }
+            Run::Cut => return Outcome::degraded("snapper's list is over the limit", None),
             Run::NotFound => return Outcome::degraded("snapper is not installed", None),
             Run::TimedOut => return Outcome::degraded("snapper did not answer in time", None),
             Run::Failed(e) => return Outcome::degraded(format!("cannot run snapper: {e}"), None),
