@@ -118,3 +118,97 @@ Branch `wp/160-stale-dblck` (from `next` `dda8b6aa`). Plan: `PLAN.md`.
    host's `/tmp` (tmpfs) was full (about 12 of 16 GB used, mostly not
    this WP's). I removed only this WP's own build folders and ran the
    mutants against the worktree's `engine/target` instead.
+
+## Round 2
+
+Stage 1 (Opus) approved with notes N1–N4 and a wording nit; the
+orchestrator's round-2 brief asked for all of them, the hardening of N2
+included, and settled the ADR question: no ADR, a clarification of
+ADR-0013 §5 and ADR-0043.
+
+### What was done
+
+- **N1.** `memory/rust-notes.md` is append-only: the bullet I had edited
+  is back as it was (`git checkout dda8b6aa -- memory/rust-notes.md`), and
+  a new section `2026-10-09 · WP-160` is appended (the `SELDON_PROC_STAT`
+  variable and the guarded defaults; `File::set_modified`; temp dirs in
+  unit tests behind a drop guard).
+- **N2, hardening.** A stale lock lets the open transaction go only when
+  its last line libalpm wrote (`[ALPM]`, `[ALPM-SCRIPTLET]`, a line the
+  table matches or not, so hook and scriptlet output count) is older than
+  `btime` too. A later line means pacman wrote since (a forward clock jump
+  after it took the lock): held back as under a held lock, and recorded
+  whole once it ends. `[PACMAN] Running` does not count (pacman logs it
+  before it takes the lock: a retry after the boot that failed on the
+  stale lock). With no open transaction, a Running line from this boot is
+  read again next time, an older one is passed. `pacman.log`'s mtime is
+  not used. `parse` now takes the `LockState` instead of a bool (the
+  rotated file passes `Absent`, as before).
+- **N2, spec.** SPEC-ENGINE §4 says what a forward clock jump still does:
+  only a capture between the jump and pacman's next line emits the
+  transaction `unfinished` while pacman runs, and the cursor moves past
+  it, so the lines pacman writes after that, up to `transaction
+  completed`, arrive as package lines outside any transaction (no
+  `txId`, `meta.command`, status or group).
+- **N3.** `lock_states` has a dangling symbolic link at the lock path:
+  `Held`, the link not followed. The spec says so.
+- **N4.** Under `SELDON_TEST_GUARD` without `SELDON_PACMAN_LOG` the log is
+  `<guard>/pacman.log`; a new test (`tests/collectors.rs`,
+  `a_guarded_capture_reads_the_guards_pacman_log`) runs a guarded
+  `capture --source pacman`: without the file the collector fails naming
+  the guard path, with it one event. No other test needed a change
+  (the whole `cargo test` is green with the new default).
+- **Doctor wording.** A lock from this boot: "db.lck from this boot: taken
+  as a running pacman; …" (a pacman killed in this boot leaves one too).
+  The stale row says "records a transaction it left open" (there may be
+  none, or one still held by the rule above).
+- **Test temp dir.** `lock_states` removes its folder through a drop
+  guard, also on a failed assertion. The two leftovers from my round-1
+  mutant runs, `/tmp/seldon-dblck-1907291` and `/tmp/seldon-dblck-1907613`
+  (an empty `db.lck` and a `stat` file each), are removed by path.
+- **DECISIONS.md.** ADR-0013: "§5 absent read as absent or stale
+  (WP-160)"; ADR-0043: "its Consequence on a stale lock is resolved by
+  WP-160".
+
+### How it was verified
+
+- New unit test `a_stale_lock_and_the_last_line`: an open transaction from
+  before the boot → `unfinished`, cursor at the end; plus a failed retry's
+  Running line after the boot → still `unfinished`; plus a package line,
+  a hook line, a scriptlet line or a `.pacnew` line after the boot (and
+  one in the boot second) → held, cursor at 0; a last line one second
+  before the boot → `unfinished`; a lone Running line from this boot →
+  read again, an older one passed.
+- `pacman_emits_the_open_transaction_of_a_stale_lock` gains the
+  reviewer's clock-jump case: stale lock, a scriptlet line after the boot
+  → held; then `upgraded mesa` and `transaction completed`, lock removed →
+  `gtk4`, `linux`, `mesa` with one `txId`, the command and no status (in
+  the reviewer's live run, before this round, `linux` came out with none
+  of them).
+- **Hand mutants, round 2: 9 of 9 killed** (against `--lib
+  collectors::pacman`, `--test collectors`, `--test doctor pacman`, the
+  source restored and `git status` clean after each): unmatched ALPM lines
+  not counted; package lines not counted; `.pacnew` lines not counted
+  (killed only after I added that case); a stale lock always lets go;
+  `before_boot` `<` → `<=`; Running lines counted for the open
+  transaction; a lone Running line never held under a stale lock;
+  `symlink_metadata` → `metadata` (the reviewer's survivor); no guard
+  default for `pacman_log`. No `/tmp/seldon-dblck-*` was left, also after
+  the mutants that made `lock_states` fail.
+- `cargo fmt --check`, `clippy --all-targets --all-features -D warnings`
+  clean; `cargo test` all green.
+- **`just check`** on `459b072a` (the code of this round; this commit adds
+  only the handover), `SELDON_FULL_CHECK=1`, private `XDG_RUNTIME_DIR`,
+  `CARGO_TARGET_DIR` the worktree's `engine/target` on disk, scratch
+  `JUST_TEMPDIR`, under `flock`: **ok**, exit 0. The one docs-check
+  warning (the German getting-started page) is the one from round 1.
+- Not repeated on the test host: the change is in the parser, covered by
+  the tests above with fake boot times; round 1's live run showed the real
+  `btime` path.
+
+### Open for stage 2
+
+- The clock-jump trade-off (review §6): the window left is a capture
+  between the jump and pacman's next libalpm line. A pacman that logs
+  nothing for a long time after the jump (a long scriptlet or hook
+  without output, for example) could still be cut there.
