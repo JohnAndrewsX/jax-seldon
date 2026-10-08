@@ -322,12 +322,17 @@ fn transaction(
     Some(t)
 }
 
-/// `text` with control, line-breaking and bidi characters as U+FFFD: a
-/// name shown on one line that cannot reorder or break it.
+/// `text` with control and line-breaking characters and the direction and
+/// format set the index drops ([`crate::import::is_direction_or_format`])
+/// as U+FFFD: a name shown on one line that cannot reorder, break or hide
+/// part of it (WP-138 stage 2, F2).
 fn shown(text: &str) -> String {
     text.chars()
         .map(|c| {
-            if c.is_control() || super::is_line_breaking(c) {
+            if c.is_control()
+                || super::is_line_breaking(c)
+                || crate::import::is_direction_or_format(c)
+            {
                 '\u{FFFD}'
             } else {
                 c
@@ -352,6 +357,11 @@ fn scan_files(
         max_files: MAX_FILES,
         deadline: Some(Instant::now() + SCAN_BUDGET),
         max_entries: SCAN_ENTRIES,
+        // the shell's own: plugins and its settings file
+        exclude: vec![
+            ctx.dirs.xdg_config_home.join("omarchy").join("plugins"),
+            ctx.dirs.xdg_config_home.join("omarchy").join("shell.json"),
+        ],
     };
     let scan = config_scan::scan(&ctx.dirs.xdg_config_home, &skip, &limits);
     let offset = *ctx.now.offset();
@@ -615,6 +625,11 @@ mod tests {
     fn shown_replaces_what_breaks_a_line() {
         assert_eq!(
             shown("a\nb\u{2028}c\u{202E}d\te"),
+            "a\u{FFFD}b\u{FFFD}c\u{FFFD}d\u{FFFD}e"
+        );
+        // the direction and format set the index drops (WP-138 stage 2, F2)
+        assert_eq!(
+            shown("a\u{200F}b\u{200E}c\u{061C}d\u{E0041}e"),
             "a\u{FFFD}b\u{FFFD}c\u{FFFD}d\u{FFFD}e"
         );
         assert_eq!(shown("~/.config/größe.conf"), "~/.config/größe.conf");

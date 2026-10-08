@@ -12,10 +12,11 @@
 //!   folder whose name holds `cache`), browser and Electron profiles (any
 //!   folder holding `Cookies` or `Local State`), state, logs, locks,
 //!   databases (SQLite, `*.db`, LevelDB, IndexedDB, Local and Session
-//!   Storage, dconf), images, `.git`, Omarchy's plugin folder
-//!   (`omarchy/plugins`), `omarchy/shell.json` (the shell's own settings),
-//!   editor swap files, `*~` and `*.bak.*` backups, and every
-//!   `[redaction] skipPaths` match.
+//!   Storage, dconf), images, `.git`, editor swap files, `*~` and
+//!   `*.bak.*` backups, every `[redaction] skipPaths` match, and what the
+//!   caller excludes ([`Limits::exclude`]: `seldon preview` passes Omarchy's
+//!   plugin folder and `omarchy/shell.json`; a capture passes its own
+//!   list). The walker never redacts: its caller decides what to show.
 //! - **Bounds** ([`Limits`]): the newest `max_files`; the walk stops at a
 //!   deadline, at `max_entries` directory entries or below `MAX_DEPTH`
 //!   folders and then says [`Scan::partial`].
@@ -39,6 +40,9 @@ pub struct Limits {
     pub deadline: Option<Instant>,
     /// The walk stops after reading this many directory entries.
     pub max_entries: usize,
+    /// Paths the walk leaves out: a folder with everything below it, a
+    /// file by its path (`Path::starts_with`, whole components).
+    pub exclude: Vec<PathBuf>,
 }
 
 /// One recently modified file.
@@ -141,8 +145,7 @@ pub fn ignored_file(name: &str) -> bool {
 /// scan) for files modified within `limits`, skipping what the module
 /// documentation lists and what `skip` matches.
 pub fn scan(config_dir: &Path, skip: &SkipPaths, limits: &Limits) -> Scan {
-    let plugins = config_dir.join("omarchy").join("plugins");
-    let shell_json = config_dir.join("omarchy").join("shell.json");
+    let excluded = |path: &Path| limits.exclude.iter().any(|e| path.starts_with(e));
     let mut out = Scan::default();
     let mut entries = 0usize;
     // (folder, depth below config_dir)
@@ -180,7 +183,7 @@ pub fn scan(config_dir: &Path, skip: &SkipPaths, limits: &Limits) -> Scan {
                 continue;
             }
             if kind.is_dir() {
-                if ignored_dir(&name) || path == plugins {
+                if ignored_dir(&name) || excluded(&path) {
                     continue;
                 }
                 if depth + 1 > MAX_DEPTH {
@@ -189,7 +192,7 @@ pub fn scan(config_dir: &Path, skip: &SkipPaths, limits: &Limits) -> Scan {
                 }
                 stack.push((path, depth + 1));
             } else if kind.is_file() {
-                if ignored_file(&name) || path == shell_json {
+                if ignored_file(&name) || excluded(&path) {
                     continue;
                 }
                 let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
@@ -262,6 +265,7 @@ mod tests {
             max_files: 80,
             deadline: None,
             max_entries: 100_000,
+            exclude: Vec::new(),
         }
     }
 
@@ -332,8 +336,6 @@ mod tests {
             "app/config.toml~",
             "hypr/hyprland.conf.bak.1759000000",
             "repo/.git/index",
-            "omarchy/plugins/jax.seldon/manifest.json",
-            "omarchy/shell.json",
         ] {
             file(root, rel, now);
         }
@@ -358,6 +360,42 @@ mod tests {
                 "app/statefile.toml",
                 "nvim/lua/plugins.lua",
                 "omarchy/hooks/theme-set",
+                "omarchy/themed/shell.json",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_caller_excludes_folders_and_files() {
+        let t = tmp("exclude");
+        let root = &t.0;
+        for rel in [
+            "omarchy/plugins/jax.seldon/manifest.json",
+            "omarchy/plugins-old/a.conf",
+            "omarchy/shell.json",
+            "omarchy/shell.json.d/x.conf",
+            "omarchy/themed/shell.json",
+        ] {
+            file(root, rel, 2 * DAY);
+        }
+        let mut all = names(&scan(root, &SkipPaths::default(), &limits()), root);
+        all.sort();
+        assert_eq!(all.len(), 5, "{all:?}");
+        let excluding = Limits {
+            exclude: vec![
+                root.join("omarchy/plugins"),
+                root.join("omarchy/shell.json"),
+            ],
+            ..limits()
+        };
+        let mut got = names(&scan(root, &SkipPaths::default(), &excluding), root);
+        got.sort();
+        // whole components: plugins-old and shell.json.d stay
+        assert_eq!(
+            got,
+            [
+                "omarchy/plugins-old/a.conf",
+                "omarchy/shell.json.d/x.conf",
                 "omarchy/themed/shell.json",
             ]
         );

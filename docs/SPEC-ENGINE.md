@@ -680,7 +680,8 @@ seldon preview [--days N] [--json]
 # same one-line rule, clipped to 512/256/256 characters. Together under 0.5 s
 # on the dev host's release build (worst case measured 0.30 s: a 100 MiB log
 # dense to its end, 50 000 files).
-# Paths `~/…`, redacted, control and bidi characters as U+FFFD. Bounds: 200
+# Paths `~/…`, redacted, control, line-breaking and the index's direction and
+# format characters (import::is_direction_or_format) as U+FFFD. Bounds: 200
 # rows (files first, the newest 80; transactions fill the rest), 10
 # packages listed per transaction (`count` all, `kinds` all), `truncated`
 # when cut. config.toml unreadable or its patterns invalid: files withheld

@@ -58,9 +58,10 @@ preview, and without a logbook.
    IndexedDB, Local and Session Storage, dconf), images, `.git`, Omarchy's
    plugin folder and `omarchy/shell.json`, editor swap files, `*~` and
    `*.bak.*`, and every `[redaction] skipPaths` match. Paths only (`~/…`,
-   redacted, control and bidi characters as U+FFFD), never content. The
+   redacted, control, bidi and format characters — the set the index
+   drops, ADR-0038 as amended by WP-140 — as U+FFFD), never content. The
    pacman side holds the same rule: package names, versions and the
-   command line are one line each (control and bidi characters as
+   command line are one line each (the same characters as
    U+FFFD) and clipped to the schema's bounds (512, 256, 256 characters);
    pacman's grammar takes any non-blank word, so the log alone does not
    guarantee it.
