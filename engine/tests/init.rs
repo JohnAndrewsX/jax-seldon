@@ -1598,7 +1598,7 @@ command changes system state.";
             "## The engine is the only writer",
             "## Work in cases",
             "## When to ask first",
-            "## R3: the one stop",
+            "## R3: always the user's go",
             "## Privileged steps and snapshots",
             "## Zones and risk",
             "## Installing software",
@@ -1654,7 +1654,7 @@ command changes system state.";
                 &["PKGBUILD", "curl … | sh", "**R3**"],
             ),
             (
-                "## R3: the one stop",
+                "## R3: always the user's go",
                 &[
                     "[drift] alwaysRed",
                     "-Sp --print-format %n",

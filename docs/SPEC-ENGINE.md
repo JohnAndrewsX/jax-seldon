@@ -548,7 +548,7 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # budget: < 11 MB on the ×10 fixture (`just check-rss`). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
-                                               # rollbacks, collectors, state, skills, omarchy, snapper,
+                                               # rollbacks, workpieces, collectors, state, skills, omarchy, snapper,
                                                # git, watch, drift checks (read-only). skills (WP-094,
                                                # WP-111): installed or no folder → ok; missing → ok, fix
                                                # `seldon hook install skills`; outdated and unedited →
@@ -751,6 +751,24 @@ snapshot before the case's next red change and write it into its Log),
 `ok` with the same words and "(completed: …)" for a completed one; `ok`
 "no case has a rollback snapshot" or "N case(s) with a rollback snapshot,
 none pruned" otherwise.
+
+`workpieces` (WP-143), information only: always `ok`, no fix. A
+workpiece folder is a directory directly under `work/` whose name is a
+case id, alone or followed by `-…` (SPEC-LOGBOOK §2; a symbolic link is
+not followed). It is left behind when no case file has its id (orphaned;
+a case file that does not parse counts as there) or when its case is
+completed or dropped and it holds more than 10 MiB (oversized; the bytes
+of its regular files). The row says `no workpiece folders`, `N workpiece
+folder(s), none orphaned or oversized`, or `K of N workpiece folder(s)
+left behind: O orphaned (no case), B oversized (a closed case, over 10.0
+MiB), <size> in all; the oldest: work/<name>/`, the oldest by case id
+(ids are chronological; no file times). The name is shown with every
+control, direction, invisible format and line-breaking character as
+`?`. The walk is bounded (WP-143 round 2): it stays on the folder's
+filesystem, reads at most 100 000 entries per folder, and measures a
+closed case's folder only until it passes 10 MiB; a size that is not
+all of a folder is shown as `≥ <size>`. An open case's folder is not
+measured.
 
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
 where one exists (an `ok` row has a fix only for the old snapper opt-in,
@@ -1114,7 +1132,17 @@ warning too, and every enabled collector row in `state.collectors` is
 
 The autocommit (WP-061): `git add -A` and `git commit -m "seldon:
 <summary>"` in the logbook, when `[git] autocommit` is on, `--no-commit`
-is not given and the logbook has its own `.git`. Every git command runs in
+is not given and the logbook has its own `.git`. A closing step names
+the case (WP-143): `plan done` commits `seldon: <ID> completed — <title>:
+<line>`, `<line>` the first line of the first paragraph of *Result*
+(HTML comments and headings skipped, a list marker dropped), and `plan
+drop` `seldon: <ID> dropped — <title>: <reason>`; without a line or a
+reason, `— <title>` alone. The text after the dash is one line —
+direction and invisible format characters (`import::is_direction_or_format`)
+dropped, so none splits a token from its pattern, control characters and
+U+2028/U+2029 turned into spaces —, redacted (§7) and then clipped to
+100 characters with `…`, so a cut never hides a secret from the patterns.
+Every other step keeps `<ID> <status>`. Every git command runs in
 the logbook with the variables that point git at another repository
 removed (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
 `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
@@ -1771,7 +1799,9 @@ After every capture:
    that instant), read from the ledger's case events only, never from the
    case file's status or dates nor from `.seldon/active-case`, which keeps
    no history; a queued case has no window; (b) `C`'s `## Plan`, as it is
-   when the rule runs and without its HTML comments, names the event's
+   when the rule runs, without its HTML comments and without its `Stop
+   if:` item and the lines indented below it (a stop condition is no plan;
+   WP-143 round 2), names the event's
    subject as a whole-word token (rule 3's test); (c) `C` is the **only**
    case for which (a) and (b) hold — and since the engine cannot read the
    Plan of a case whose file does not load (or lies outside the status

@@ -43,8 +43,7 @@ it), or when the task came as a message from the user in this session.
 A session started by a timer, a hook, another agent or any other launcher
 is unattended: record and report only. Read, plan, write the Log; change
 nothing. A cached `sudo` or a passwordless rule never makes a session
-attended. When you start another agent process, a job, a timer or a
-server that outlives your step (tmux, an editor server), unset
+attended. When you start another agent process, a job or a timer, unset
 `SELDON_ATTENDED` and `SELDON_CASE` and set `SELDON_ACTOR` to that
 agent's name (`agent:<name>`); never leave it unset. A sub-agent inside
 your own session shares your attendance and acts as you; privileged steps
@@ -88,12 +87,7 @@ Everything else is Markdown for people and agents: the *Intent*, *Plan*,
    `.seldon/active-case` names the one started last.
 2. The *Plan* is a running note, not a gate: steps so far, affected paths,
    rollback, verification. Write it as you go, name packages and paths
-   exactly. It never widens the *Intent*. Before the first change fill
-   two of its lines:
-   - `Persists:` how long the change holds: `survives reboot and update`,
-     `reboot only` (an update overwrites it) or `lost at reboot`.
-   - `Stop if:` what makes you stop, e.g. `the binding is taken by
-     another app`. When it holds, stop and ask (next section).
+   exactly. It never widens the *Intent*.
 3. Before the first privileged step print one preview line, in the
    terminal and in the case's *Log*, and go on without waiting:
    `About to: install X (+deps a, b); snapshot first; rollback: pacman -Rns X`.
@@ -104,8 +98,8 @@ Everything else is Markdown for people and agents: the *Intent*, *Plan*,
 
 ## When to ask first
 
-Ask in the terminal before the step, and wait for the answer, only in
-these four cases:
+Ask in the terminal before the step, and wait for the answer, only when
+the step is:
 
 - **outside the Intent**: another package or area, a change the user did
   not ask for. Dependencies the named software documents are inside.
@@ -116,12 +110,10 @@ these four cases:
   others depend on, overwriting a config that no snapshot and no git
   holds.
 - **R3**: it can break boot, login or the shell (next section).
-- **your own *Stop if***: the condition you wrote in the *Plan* holds.
-  Say so in the *Log* too.
 
 Everything else: do it, and say in the *Log* what you did.
 
-## R3: always the user's go
+## R3: the one stop
 
 R3 subjects: kernels, the boot loader, the initramfs, `systemd`, `glibc`,
 `pam`, `sddm`, `uwsm`, `hyprland`, `quickshell`, `omarchy` itself, `/etc`
@@ -257,11 +249,6 @@ When the *Plan*'s verification passes, close the case yourself:
 1. Fill *Result* with the evidence: what you ran and what it showed.
    Include one check that is not your own artefact: the real use case's
    exit status, `pacman -Q <package>`, `systemctl is-active <unit>`.
-   Verify the effect, not the setting: press the key binding you wrote
-   and see what it does; reading the config back proves only the write.
-   Label each claim `measured` (you ran it and saw it), `documented` (a
-   source says so; name it) or `inferred` (you concluded it). The first
-   line of *Result* goes into the closing commit: make it the outcome.
 2. `seldon plan verify <ID> --actor agent:<name>`, then
    `seldon plan done <ID> --actor agent:<name>`, in one go. The engine
    refuses an agent's `plan done` while *Result* or the *Plan*'s
@@ -291,8 +278,7 @@ say what is left; to give up, `seldon plan drop <ID> --reason "<why>"`.
 
 - Journal: `seldon log "<text>" --case <ID> --actor agent:<name>`.
 - What you learned goes into `memory/` (`memory/lessons.md`: one `## `
-  heading per lesson), not into the chat. Label each claim there as in
-  *Result*: `measured`, `documented` or `inferred`.
+  heading per lesson), not into the chat.
 - A decision that shapes the machine:
   `seldon decide --no-edit --case <ID> -- "<title>"`, then fill in the ADR.
 
@@ -338,9 +324,8 @@ The harness reports your commands to `seldon`; you do not have to:
   `seldon hook session-stop --actor agent:<name>`.
 
 The hooks serve a session in the logbook folder and a session
-`seldon agent start` launched, wherever it works, while its case is open
-(it sets `SELDON_CASE`; never set it yourself); any other session only
-when the user set `[hooks] scope = "all"`.
+`seldon agent start` launched, wherever it works (it sets `SELDON_CASE`);
+any other session only when the user set `[hooks] scope = "all"`.
 
 Recorded: package, Omarchy and `systemctl` changes (red), writes into
 watched paths (yellow), any other change only while a case is active

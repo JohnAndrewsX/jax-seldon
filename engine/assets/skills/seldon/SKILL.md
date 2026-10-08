@@ -104,18 +104,22 @@ your session.
    yours: open your own for the user's request, or ask in one line which
    case it belongs to.
 2. The *Plan* is a running note, not a gate. It never widens the *Intent*.
+   Fill its `Persists:` and `Stop if:` lines before the first change, and
+   stop when *Stop if* holds ([`case.md`](case.md)).
 3. Before the first privileged step print one preview line, in the terminal
    and in the case's *Log*, and go on without waiting:
    `About to: install X (+deps a, b); snapshot first; rollback: pacman -Rns X`.
 4. R2 or R3: snapshot first ([`snapshot.md`](snapshot.md)). Package
    transactions: resolve and check them first ([`update.md`](update.md)).
-5. Verify with a check that is not your own artefact, fill *Result*, close
-   the case yourself ([`case.md`](case.md)).
+5. Verify the effect, not the setting (press the key binding, do not only
+   read it back), with a check that is not your own artefact; fill
+   *Result*, each claim labelled `measured`, `documented` or `inferred`;
+   close the case yourself ([`case.md`](case.md)).
 
 ## When to Ask First
 
-Ask in the terminal before the step, and wait for the answer, only when the
-step is:
+Ask in the terminal before the step, and wait for the answer, only in these
+four cases:
 
 - **outside the Intent**: another package or area, a change the user did not
   ask for. Dependencies the named software documents are inside.
@@ -130,6 +134,8 @@ step is:
   depend on, overwriting a config that no snapshot and no git holds.
 - **R3**: it can break boot, login or the shell ([`update.md`](update.md)).
   One explicit go per such step.
+- **your own *Stop if***: the condition you wrote in the *Plan* holds. Say
+  so in the *Log* too.
 
 In an unattended session there is nothing to ask: change nothing.
 
