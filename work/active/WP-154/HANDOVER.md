@@ -218,3 +218,113 @@ Also added:
    `git>=2.44`? The logbook no longer needs it (the retry), but the
    plugins collector still fails closed on an older git (no commit
    lists).
+
+## Round 2
+
+The stage-1 review `WP-154-review-1.md` sent the WP back for two test
+gaps, B1 and B2, plus nits N1–N3. It found no code defect. The round
+followed the orchestrator's brief `WP-154-round-2-brief.md`. I merged
+`next` 67be5ce1 first (merge ce263c4d, one queued WP file, no conflict).
+
+Commits:
+
+- b332b8e5: tests and the two nits.
+- e3a76c8d: PKGBUILD, and the round 2 mutants.
+- e3f5b79b: an exit-code test, and the docs.
+
+### What changed
+
+- **B1: rule 2 proven for each caller.** New test:
+  `git::every_git_call_but_add_and_commit_is_a_query_without_network`.
+  - A wrapper `git` logs every call with
+    `${GIT_ALLOW_PROTOCOL-unset} ${GIT_NO_LAZY_FETCH-unset} | $*`.
+  - It runs `log`, `status`, a `capture` and `doctor`. The capture
+    upgrades the v3 agent rules: `is_clean_path`, then
+    `commit_paths`. `doctor` runs once more on a detached HEAD, which
+    reaches `branches`.
+  - Each logged line is checked:
+    - `add` and `commit`: `unset unset`, and no `--no-lazy-fetch`;
+    - every other call: `none 1`, with `--no-lazy-fetch` first.
+  - These verbs must each appear: `--version`, `rev-parse`, `status`,
+    `symbolic-ref`, `for-each-ref`, `var`, `config`, `diff`, `add`,
+    `commit`.
+  - So must the exact queries of `check_toplevel`, `check_head`/`head`,
+    the index's `rev-parse --short`, `is_clean_path`, `status` and
+    `branches`.
+  - `show-ref` is not required: it is asked on an unborn branch only.
+    Any call that does appear is checked line by line all the same.
+  - The global git config turns off auto-maintenance and gc, so the log
+    holds only the engine's own calls.
+  - The test's own `checkout --detach` passes through the wrapper and is
+    skipped.
+- **B2: rule 1 proven for `sys::run`.** `run_captures_and_reports` now
+  has a flood case with `run(…, OUTPUT_MAX)`:
+  - 1 MiB + 1 byte on stdout gives `Run::Cut`;
+  - 2 MiB on stderr keeps exactly `OUTPUT_MAX`, and stdout stays whole.
+- **N1.** `refuses_no_lazy_fetch` now counts only a stderr line that ends
+  in `--no-lazy-fetch` (after trailing white space).
+  - git 2.55's real `git --bogus` usage text lists
+    `[--no-lazy-fetch]`; it is in the unit test and is not read as the
+    refusal.
+  - Decision: I match a line that ends in the option itself, not one
+    that ends in `: --no-lazy-fetch`. A translation may put a
+    non-breaking space or another colon before the option (a French-style
+    `option inconnue\u{a0}: --no-lazy-fetch` is a test case). The usage
+    line ends in `]`, so it never matches either way.
+  - The exit code stays pinned: the refusal's own line with exit 128
+    does not count.
+- **N2.** `git_head_fast` now returns `None` when the path after
+  `gitdir: ` or in `commondir` is empty once CRs and LFs are dropped.
+  git 2.55 says "failed to read" for such a `commondir`, and "not a git
+  repository" for one that holds only a newline.
+  - `the_fast_rebuild_reads_git_files_as_git_does` adds `gitdir: ` with
+    and without an LF.
+  - It also adds `commondir` as `""`, `"\n"` and `"\r\n"`, checked while
+    the git directory has a ref of its own. Otherwise the old behaviour
+    would also have found no HEAD.
+- **N3, no change.** The `diff --cached --quiet` query before a commit is
+  not reached from `status` after the partial-clone break, because
+  `status` has nothing to commit there. A commit keeps transport by
+  design (the WP: "commit and push paths keep transport"), so in a
+  partial clone the commit after it may still lazy-fetch.
+- **PKGBUILD.** `depends=('gcc-libs' 'git>=2.44' 'glibc')`, and
+  `.SRCINFO` matches (`check-srcinfo: ok`). No packaging test pins the
+  depends line beyond the `.SRCINFO` comparison.
+- **Docs.**
+  - SPEC-ENGINE §3: the refusal is "a stderr line that ends in the
+    option".
+  - CHANGELOG: the git 2.44 dependency.
+  - TESTING.md: the round 2 tests.
+
+### Mutants
+
+`python3 work/active/WP-154/mutants.py` now runs 40 mutants. All 40 are
+killed.
+
+- **The reviewer's mutants:**
+  - A (`is_clean_path` with transport), D (`check_toplevel` with
+    transport) and E (`check_head`'s `rev-parse` with transport): killed
+    by `every_git_call_but_add_and_commit_is_a_query_without_network`.
+  - C (`sys::run` uncapped): killed by
+    `sys::tests::run_captures_and_reports`.
+- **New:** R4-N1 (the old `contains` match) and R4-N2 (an empty path
+  followed).
+- **Kept current:** I updated the patterns of four older mutants to the
+  current code (one was reflowed by rustfmt, three changed in this
+  round).
+- **One survivor on the first run:** "R2 any exit code is the refusal".
+  The N1 change had weakened its exit-128 case, whose line no longer
+  ended in the option. That case now uses the refusal's exact line, and
+  the mutant is killed.
+
+### Verification
+
+- `XDG_RUNTIME_DIR=/tmp/r154c JUST_TEMPDIR=<scratch>/justtmp flock
+  /tmp/seldon-check.lock just check` on e3f5b79b: `check: ok`, exit 0
+  (log `check-wp154-r2.log`, outside the repository). service-states
+  342/0, desk-view 1556/0, bar-view 194/0; 0 ENOSPC lines.
+  - As the brief allows, I ran it with a short private
+    `XDG_RUNTIME_DIR`, created for this run and deleted afterwards by its
+    explicit path. `/run/user/1000` is full of old quickshell instance
+    folders; nothing there was touched.
+- The added lines of `git diff next...HEAD`, grepped for `/home/`: none.
