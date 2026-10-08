@@ -144,6 +144,20 @@ Item {
     : Model.parseProposal(root.proposalText, root.index ? root.index.triage : null)
   readonly property var triageView: Model.triageView(root.indexShown ? root.index : null, root.proposal,
     root.deskChangelog, root.triageResult)
+  // WP-156: the agents `seldon agent start` launched whose window is open
+  // (or that are starting), by case ({ <caseId>: { starting, workspace,
+  // actor } }, Model.sessionsResult), from `seldon agent sessions --json` in
+  // its own process beside the queue; asked when the desk opens, after
+  // every agent or open answer, when the index changes and every
+  // Model.SESSIONS_POLL_MS while the desk is open.
+  property var agentSessions: ({})
+  property bool sessionsAgain: false
+  // The last successful `open` ({ what, atMs }): the same target is not
+  // sent again within Model.OPEN_REPEAT_MS.
+  property var lastOpen: null
+  // How often the desk stepped aside for a window it opened.
+  property int stepAsides: 0
+  readonly property bool deskOpen: !!root.desk && root.desk.opened
 
   // Build the graph if the index changed since the last build.
   function graphRefresh() {
@@ -153,10 +167,12 @@ Item {
     root.graph = Model.graphBuild(root.indexShown ? root.index : null, Model.GRAPH_CAP)
   }
   // A new index may name another proposal, or the same file rewritten
-  // (applied): read it again.
+  // (applied): read it again; and ask for the agent sessions again while
+  // the desk is open (WP-156).
   onIndexChanged: {
     root.graphDirty = true
     if (root.proposalPath !== "") proposalFile.reload()
+    if (root.deskOpen) root.refreshSessions()
   }
   onIndexShownChanged: root.graphDirty = true
 
@@ -409,12 +425,17 @@ Item {
   }
 
   // Open in editor: journal | ledger | status | logbook | <caseId> | <ADR id>.
+  // One open at a time, and not the same target again within
+  // Model.OPEN_REPEAT_MS of a successful one (WP-156: three clicks were
+  // three editors).
   function openInEditor(what) {
     var args = Model.openArgs(what)
     if (args === null) {
       console.warn("jax.seldon: refused to open " + JSON.stringify(String(what)))
       return false
     }
+    if (root.openResult && root.openResult.pending) return root.refuseBusy("open", "open", "", "")
+    if (Model.openRepeated(root.lastOpen, what, Date.now())) return false
     if (!root.run(args)) {
       root.openResult = { ok: false, pending: false, text: root.lastError }
       return false
@@ -462,6 +483,58 @@ Item {
       return false
     }
     root.planResult = { ok: true, pending: true, text: "Starting an agent on " + id + "…", action: "agent", caseId: id }
+    return true
+  }
+
+  // WP-156: *Focus* on an active case an agent works on: `seldon agent
+  // focus <caseId> --json` brings its window to the front; shares the plan
+  // result line and its one-at-a-time rule like Hand to agent.
+  function focusAgent(caseId) {
+    var id = String(caseId || "")
+    if (root.planResult && root.planResult.pending) return root.refuseBusy("plan", "focus", id, "")
+    var built = Model.agentFocusArgs(caseId)
+    if (built.error) {
+      root.planResult = { ok: false, pending: false, text: built.error, action: "focus", caseId: id }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.planResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, action: "focus", caseId: id }
+      return false
+    }
+    root.planResult = { ok: true, pending: true, text: "Bringing the agent on " + id + " to the front…", action: "focus", caseId: id }
+    return true
+  }
+
+  // WP-156: ask the engine which agents it launched still run. Read-only,
+  // its own process (never the queue); one at a time — a request while one
+  // runs asks once more after it.
+  function refreshSessions() {
+    if (root.devMode || root.engineState !== "present" || root.status === "notInitialised") return false
+    if (sessionsCall.running) {
+      root.sessionsAgain = true
+      return false
+    }
+    var args = ["agent", "sessions", "--json"]
+    if (Model.validateArgs(args) !== "") return false
+    root.sessionsAgain = false
+    sessionsCall.launch(["seldon"].concat(args))
+    return true
+  }
+
+  function sessionsDone(exitCode, out, err) {
+    if (exitCode !== 0) root.warnFailure(["agent", "sessions"], exitCode, out, err)
+    var found = Model.sessionsResult(exitCode, out)
+    if (found !== null) root.agentSessions = found
+    if (root.sessionsAgain) root.refreshSessions()
+  }
+
+  // WP-156: a window the desk opened would appear under it; close the desk
+  // (through the facade, as Esc does), as Omarchy's menus close for what
+  // they launch. Nothing when the desk is not open.
+  function stepAside() {
+    if (!root.deskOpen) return false
+    root.stepAsides++
+    root.desk.dismiss()
     return true
   }
 
@@ -737,7 +810,7 @@ Item {
       root.triageResult = result
     } else if (args[0] === "agent") {
       var isNew = args[2] === "--new"
-      result.action = isNew ? "agent-new" : "agent"
+      result.action = args[1] === "focus" ? "focus" : isNew ? "agent-new" : "agent"
       if (result.caseId === undefined || result.caseId === "") result.caseId = isNew ? "" : args[2]
       root.planResult = result
     } else if (args[0] === "rules") {
@@ -809,6 +882,7 @@ Item {
       : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
       : args[0] === "plan" && args[1] === "show" ? Model.caseShowResult(exitCode, out, err)
       : args[0] === "plan" ? Model.planResult(exitCode, out, err)
+      : args[0] === "agent" && args[1] === "focus" ? Model.focusResult(exitCode, out, err)
       : args[0] === "import" ? Model.importResult(exitCode, out, err)
       : args[0] === "agent" && args[1] === "ask" ? Model.askResult(exitCode, out, err)
       : args[0] === "agent" ? Model.agentResult(exitCode, out, err)
@@ -847,7 +921,13 @@ Item {
     if (args[0] === "decide" && args[1] !== "accept" && result && result.ok && result.decisionId !== "") root.openInEditor(result.decisionId)
     // Updated rules: ask doctor again, so the banner goes.
     if (args[0] === "rules") root.checkRules(true)
+    if (args[0] === "open" && result && result.ok) root.lastOpen = { what: args[1], atMs: Date.now() }
+    // An agent started, refused as already working, or gone, an editor
+    // opened or focused: ask again (SPEC-PLUGIN §5.4).
+    if (args[0] === "agent" || args[0] === "open") root.refreshSessions()
     root.finished(args, exitCode, out)
+    // The window it opened comes up in front (WP-156).
+    if (Model.opensWindow(args, result)) root.stepAside()
     root.pump()
   }
 
@@ -957,6 +1037,9 @@ Item {
     } else if (actionId === "terminal" && terminal) {
       // Opens on the explicit click only (ADR-0004); the script is a constant.
       Quickshell.execDetached(terminal)
+      // No answer comes back from a detached launch: step aside at once,
+      // as Omarchy's menus do (WP-156).
+      root.stepAside()
     } else if (actionId === "recheck") {
       root.probeEngine()
       root.reloadIndex()
@@ -1013,6 +1096,9 @@ Item {
       triageButton: root.triageButton,
       proposalPath: root.proposalPath,
       proposalRead: !!root.proposal,
+      agentSessions: root.agentSessions,
+      stepAsides: root.stepAsides,
+      lastOpen: root.lastOpen ? root.lastOpen.what : "",
       pill: Model.pillText(root.counts, root.driftInBar),
       driftInBar: root.driftInBar,
       deskWidth: root.deskWidth,
@@ -1109,6 +1195,11 @@ Item {
   }
 
   EngineCall {
+    id: sessionsCall
+    onDone: function(exitCode, out, err) { root.sessionsDone(exitCode, out, err) }
+  }
+
+  EngineCall {
     id: runner
     onDone: function(exitCode, out, err) { root.runnerDone(exitCode, out, err) }
     onFailedToStart: root.runnerFailedToStart()
@@ -1161,6 +1252,17 @@ Item {
     running: true
     onTriggered: root.liveNowMs = Date.now()
   }
+
+  // The live sessions while the desk is open (WP-156): an agent's window
+  // closed by hand ends its session without an index change.
+  Timer {
+    interval: Model.SESSIONS_POLL_MS
+    repeat: true
+    running: root.deskOpen && root.engineState === "present"
+    onTriggered: root.refreshSessions()
+  }
+  onDeskOpenChanged: if (root.deskOpen) root.refreshSessions()
+  onEngineStateChanged: if (root.deskOpen) root.refreshSessions()
 
   // The retry of a capture or status that found the lock held.
   Timer {

@@ -25,7 +25,7 @@ the checks in `tests/plugin/desk-view.sh` together.
 | `i` | Today's New case field, Work's intent field |
 | `e` | open in the editor: Today the journal, Changelog this month's ledger, Work the case, Decisions the decision, System STATUS.md, Memory the logbook |
 | `f` / `F` | Changelog: the next / previous chip (open, crisis, attention, routine, in case, all) |
-| `a` | Work: hand the case to the agent (twice; the only key that starts one) |
+| `a` | Work: hand the case to the agent (twice; the only key that starts one); while an agent works on the case, *Focus*: bring its window to the front (once) |
 | `x` | Work: drop the case (twice; final) |
 | `r` | Work: reopen a completed case (once) |
 | `d` | Decisions: the new-decision form (Enter twice creates) |

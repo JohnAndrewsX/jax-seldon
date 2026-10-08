@@ -148,11 +148,13 @@ seldon --version --json
 seldon status --json
 seldon capture --all --json --quiet
 seldon log [--case <id>] --json -- <text>       # free text is one argument after `--`; --json before it
-seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # path reported as JSON; the engine launches the editor
+seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # path reported as JSON; the engine launches the editor (or focuses the terminal window it opened on the path, ADR-0041)
 seldon plan new --zone <z> --risk <r> [--area <slug>] [--priority <p>] --json -- <title>
 seldon plan start|verify|done|drop <id> --json   # id validated by the schema regex; the engine enforces the transition
 seldon agent start <caseId> --json              # active case only; the engine launches the configured agent launcher detached (WP-022)
 seldon agent start --new --json -- <intent>     # WP-101: creates and starts a case from the sentence, then launches as above
+seldon agent focus <caseId> --json              # WP-156, ADR-0041: Focus, in place of a second Hand to agent; brings the agent's window to the front
+seldon agent sessions --json                    # WP-156, ADR-0041: read-only, own process beside the queue; the cases whose agent window is open
 seldon plan reopen <caseId> --json              # WP-101: a completed case only; a new active case, nothing destroyed
 seldon plan show <caseId> --json                # WP-102b, ADR-0044: read-only; `intent` {text, lines, truncated, hidden}, the whole Intent the desk shows before an imported case's Start
 seldon import task --json [--dry-run] [--area <slug>] -- <path>   # WP-102b, ADR-0044: the path one argument after `--`, never interpolated; the dry run first, then the import

@@ -52,7 +52,7 @@ cp -r "$root/plugin" "$plugin"
 cp "$root/tests/plugin/harness/DeskWindow.qml" "$plugin/components/desk/DeskWindow.qml"
 
 # Tools for the fake engine, and the fake engine; never a real seldon.
-for tool in bash env cat sed date mkdir mv sleep basename grep jq; do
+for tool in bash env cat sed date mkdir mv sleep basename grep jq rm touch; do
   ln -s "$(command -v "$tool")" "$work/bin/$tool"
 done
 install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin/seldon"
@@ -426,9 +426,11 @@ clean_log stacked
 #     and Check again (WP-117): one sentence, the plain command; the
 #     engine's message and what the grant gives on hover. Grant opens the
 #     terminal script and adds no hint. On a narrow desk the chip's title
-#     does not fit beside the KPI strip: it says "1 notice".
+#     does not fit beside the KPI strip: it says "1 notice". Grant opens a
+#     window, so the desk steps aside at once (WP-156); the case opens it
+#     again.
 run snapper "$fx/index-variants/snapper-degraded.json" 1920x1080 \
-  "summon;click:Grant;hover:Read snapshots (optional);wait:snapperTip.shown=true;view;resize:1000x900" \
+  "summon;click:Grant;summon;hover:Read snapshots (optional);wait:snapperTip.shown=true;view;resize:1000x900" \
   HARNESS_RECORD="$work/snapper.record"
 expect snapper 1 '.view.notices | join(",")' "Read snapshots (optional)"
 expect snapper 1 .view.chip "Read snapshots (optional)"
@@ -439,13 +441,15 @@ shows snapper 1 "Copy"
 shows snapper 1 "Check again"
 expect snapper 1 '[.texts[] | select(. == "Run in terminal")] | length' 0
 expect snapper 1 '[.texts[] | select(contains("snapshot directory listing"))] | length' 0
-expect snapper 2 '[.texts[] | select(startswith("When the command has finished"))] | length' 0
+expect snapper 2 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+expect snapper 2 '.calls | map(select(startswith("hide"))) | length' 1
+expect snapper 3 '[.texts[] | select(startswith("When the command has finished"))] | length' 0
 snapper_grants="The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
 snapper_message=$(jq -r '.state.collectors[] | select(.name == "snapper") | .message' "$fx/index-variants/snapper-degraded.json")
 expect snapper 1 .view.snapperTip.shown false
-expect snapper 5 .view.snapperTip.text "$snapper_message"$'\n'"$snapper_grants"
-expect snapper 5 .view.snapperTip.shown true
-expect snapper 5 .view.snapperTip.fits true
+expect snapper 6 .view.snapperTip.text "$snapper_message"$'\n'"$snapper_grants"
+expect snapper 6 .view.snapperTip.shown true
+expect snapper 6 .view.snapperTip.fits true
 # the launcher's argv is the grant script, verbatim (model.test.js pins its text)
 script=$(node -e '
   const fs = require("fs"), vm = require("vm"), M = {}
@@ -458,8 +462,8 @@ check "snapper: Grant opened the terminal with the grant script" \
   "$(cat "$work/snapper.record" 2>/dev/null || true)" \
   "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$script" --)"
 expect snapper 1 .view.chipShown "▾ Read snapshots (optional)"
-expect snapper 6 .view.chipShown "▾ 1 notice"
-expect snapper 6 '.overflow | join(" | ")' ""
+expect snapper 7 .view.chipShown "▾ 1 notice"
+expect snapper 7 '.overflow | join(" | ")' ""
 clean_log snapper
 
 # 7b. Not initialised: the status notice with its pictogram's fix, no KPI
@@ -641,7 +645,7 @@ jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00
   "$sample" >"$work/after.json"
 mkdir -p "$work/home-today-live"
 run today-live "" 1920x1080 \
-  "summon;text:n;type:  --help 2 ;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;text:2;text:e;text:c;wait:sectionView.chips.5=all 83;settle" \
+  "summon;text:n;type:  --help 2 ;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;settle;summon;text:2;text:e;settle;summon;text:c;wait:sectionView.chips.5=all 83;settle" \
   HOME="$work/home-today-live" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
   FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/today-live.record"
 tj="$tv.journal"
@@ -660,12 +664,17 @@ expect today-live 13 "$tj.caseId" C-2026-004
 shows today-live 13 "Open case"
 expect today-live 17 "$tj.result" "Saved to C-2026-004 · 01M3W1FAKE0000000000000NTE"
 expect today-live 18 "[$tj.editing, .view.keys, .view.opened] | map(tostring) | join(\",\")" "false,true,true"
-expect today-live 20 .view.section changelog
-expect today-live 22 "$tv.capturing" true
-shows today-live 22 "Capturing"
-expect today-live 23 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 37,case 38,all 83"
-expect today-live 24 "$tv.captureResult" "1 new event"
-shows today-live 24 "Last capture: 1 new event"
+# the editor opened: the desk steps aside (WP-156); summoned, it is where it was
+expect today-live 20 "[.view.opened, .service.stepAsides] | map(tostring) | join(\",\")" "false,1"
+expect today-live 21 .view.section today
+expect today-live 22 .view.section changelog
+expect today-live 24 "[.view.opened, .service.stepAsides] | map(tostring) | join(\",\")" "false,2"
+expect today-live 25 .view.section changelog
+expect today-live 26 "$tv.capturing" true
+shows today-live 26 "Capturing"
+expect today-live 27 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 37,case 38,all 83"
+expect today-live 28 "$tv.captureResult" "1 new event"
+shows today-live 28 "Last capture: 1 new event"
 argv_check today-live "$work/home-today-live" "$(printf '%s\n' "$startup" \
   "$(q log --json -- "  --help 2 ")" "$(q log --case C-2026-004 --json -- "for the case")" \
   "$(q open journal --editor --json)" "$(q open ledger --editor --json)" \
@@ -687,14 +696,15 @@ clean_log today-refuse
 
 intent='Install tool X. It needs --help $(id) and one package '
 mkdir -p "$work/home-today-new"
-run today-new "" 1920x1080 "summon;text:i;type:$intent;key:Return;settle;key:Escape" \
+run today-new "" 1920x1080 "summon;text:i;type:$intent;key:Return;settle;summon" \
   HOME="$work/home-today-new" FAKE_SELDON_FIXTURE="$sample"
 expect today-new 2 "[$tv.intentEditing, .view.keys] | map(tostring) | join(\",\")" "true,false"
 expect today-new 3 "$tv.intent" "$intent"
-expect today-new 5 "$tv.result" "Created C-2026-009 · Install tool X · agent started · launcher default (omarchy)"
-expect today-new 5 "[$tv.resultOk, $tv.intent] | map(tostring) | join(\",\")" "true,"
-expect today-new 5 "$tv.cases | join(\",\")" "C-2026-003,C-2026-004,C-2026-009"
-expect today-new 6 "[$tv.intentEditing, .view.keys, .view.opened] | map(tostring) | join(\",\")" "false,true,true"
+# the agent started: the desk steps aside (WP-156)
+expect today-new 5 "[.view.opened, .service.stepAsides, .service.planOk] | map(tostring) | join(\",\")" "false,1,true"
+expect today-new 5 ".service.plan" "Created C-2026-009 · Install tool X · agent started · launcher default (omarchy)"
+expect today-new 6 "[$tv.intent, $tv.intentEditing, .view.keys, .view.opened] | map(tostring) | join(\",\")" ",false,true,true"
+expect today-new 6 "$tv.cases | join(\",\")" "C-2026-003,C-2026-004,C-2026-009"
 argv_check today-new "$work/home-today-new" "$(printf '%s\n' "$startup" "$(q agent start --new --json -- "$intent")")"
 clean_log today-new
 
@@ -1001,7 +1011,7 @@ clean_log work-reopened
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"
 run work-live "" 1920x1080 \
-  "summon:$wk;text:+;type: --help;key:Tab;key:Right;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Left;key:Return;key:Tab;type:Dev;key:Return;key:Backspace*3;type:dev-env;key:Return;settle;wait:sectionView.selected=C-2026-009;select:C-2026-005;key:Return;key:Return;settle;wait:sectionView.case.status=active;key:Return;key:Return;settle;wait:sectionView.case.status=verification;key:Return;key:Return;settle;wait:sectionView.case.status=completed;text:e;settle;select:C-2026-008;key:Return;key:Left;key:Return;key:Return;settle;select:C-2026-004;text:x;text:x;settle;wait:sectionView.case.status=dropped;text:e;settle" \
+  "summon:$wk;text:+;type: --help;key:Tab;key:Right;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Left;key:Return;key:Tab;type:Dev;key:Return;key:Backspace*3;type:dev-env;key:Return;settle;wait:sectionView.selected=C-2026-009;select:C-2026-005;key:Return;key:Return;settle;wait:sectionView.case.status=active;key:Return;key:Return;settle;wait:sectionView.case.status=verification;key:Return;key:Return;settle;wait:sectionView.case.status=completed;text:e;settle;summon:$wk;select:C-2026-008;key:Return;key:Left;key:Return;key:Return;settle;select:C-2026-004;text:x;text:x;settle;wait:sectionView.case.status=dropped;text:e;settle" \
   HOME="$work/home-work" FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/work-live.record"
 expect work-live 1 "$tc.hint" ""
 expect work-live 2 "[$ts.open, $ts.editing, $ts.zone, $ts.risk, $ts.priority, .view.keys] | map(tostring) | join(\",\")" "true,true,yellow,R1,normal,false"
@@ -1027,16 +1037,19 @@ expect work-live 26 "[$tc.armed, ($tc.actions | join(\"+\"))] | join(\",\")" "ve
 expect work-live 29 "$tv.result" "C-2026-005: active → verification"
 expect work-live 33 "[$tv.result, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md,Reopen+Open in editor+Ask agent"
 expect work-live 33 "$tv.groups | join(\",\")" "active 2,verification 1,queued 3,completed 3"
-expect work-live 37 "$tc.armed" done
-expect work-live 38 "$tc.armed" ""
-expect work-live 39 "$tc.armed" done
+# the editor opened: the desk steps aside (WP-156); opened again, the case is still selected
+expect work-live 35 "[.view.opened, .service.stepAsides] | map(tostring) | join(\",\")" "false,1"
+expect work-live 36 "[.view.opened, .view.section, $tv.selected] | map(tostring) | join(\",\")" "true,work,C-2026-005"
+expect work-live 38 "$tc.armed" done
+expect work-live 39 "$tc.armed" ""
+expect work-live 40 "$tc.armed" done
 refusal='C-2026-008 is active; `seldon plan done` needs a case that is verification; run `seldon plan verify` first'
-expect work-live 41 "[$tv.result, $tv.resultOk, $tv.selected, .view.lastError] | map(tostring) | join(\",\")" "$refusal,false,C-2026-008,"
-shows work-live 41 "$refusal"
-expect work-live 43 "[$tc.armed, $tc.hint] | join(\",\")" "drop,Drop C-2026-004? Press x again or click Confirm. This is final."
-shows work-live 43 "Confirm drop"
-expect work-live 46 "[$tv.result, $tv.wip, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-004: active → dropped,1 / 3 active,Open in editor+Ask agent"
-expect work-live 46 "$tv.groups | join(\",\")" "active 1,verification 1,queued 3,completed 4"
+expect work-live 42 "[$tv.result, $tv.resultOk, $tv.selected, .view.lastError] | map(tostring) | join(\",\")" "$refusal,false,C-2026-008,"
+shows work-live 42 "$refusal"
+expect work-live 44 "[$tc.armed, $tc.hint] | join(\",\")" "drop,Drop C-2026-004? Press x again or click Confirm. This is final."
+shows work-live 44 "Confirm drop"
+expect work-live 47 "[$tv.result, $tv.wip, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-004: active → dropped,1 / 3 active,Open in editor+Ask agent"
+expect work-live 47 "$tv.groups | join(\",\")" "active 1,verification 1,queued 3,completed 4"
 argv_check work-live "$work/home-work" "$(printf '%s\n' "$startup" \
   "$(q plan new --zone red --risk R2 --area dev-env --priority high --json -- " --help")" \
   "$(q plan start C-2026-005 --json)" "$(q plan verify C-2026-005 --json)" "$(q plan done C-2026-005 --json)" \
@@ -1050,7 +1063,7 @@ clean_log work-live
 mkdir -p "$work/home-agent"
 echo "C-2026-004 queued" >"$work/home-agent/cases"
 run work-agent "" 1920x1080 \
-  "summon:$wk;select:C-2026-005;text:a;select:C-2026-003;text:a;key:Return;key:Down;key:Up;text:a;text:a;settle;select:C-2026-004;click:Hand to agent;click:Confirm hand to agent;settle" \
+  "summon:$wk;select:C-2026-005;text:a;select:C-2026-003;text:a;key:Return;key:Down;key:Up;text:a;text:a;settle;summon:$wk;select:C-2026-004;click:Hand to agent;click:Confirm hand to agent;settle" \
   HOME="$work/home-agent" FAKE_SELDON_FIXTURE="$sample"
 expect work-agent 3 "$tc.armed" ""
 expect work-agent 5 "[$tc.armed, $tc.hint] | join(\",\")" "agent,Hand to agent C-2026-003? Press a again or click Confirm."
@@ -1058,11 +1071,14 @@ shows work-agent 5 "Confirm hand to agent"
 # Enter never launches: after `a` it arms To verification instead (0.1's habit)
 expect work-agent 6 "[$tc.armed, $tc.hint] | join(\",\")" "verify,To verification C-2026-003? Press Enter again or click Confirm."
 expect work-agent 7 "[$tv.selected, $tc.armed] | join(\",\")" "C-2026-004,"
-expect work-agent 11 "[$tv.result, $tv.resultOk, $tc.armed] | map(tostring) | join(\",\")" "Agent started on C-2026-003 · launcher default (omarchy),true,"
-shows work-agent 11 "Agent started on C-2026-003 · launcher default (omarchy)"
-expect work-agent 13 "$tc.armed" agent
+# launched: the desk steps aside (WP-156); opened again, the answer is there
+expect work-agent 11 "[.service.plan, .service.planOk, .view.opened] | map(tostring) | join(\",\")" "Agent started on C-2026-003 · launcher default (omarchy),true,false"
+expect work-agent 12 "[$tv.result, $tv.resultOk, $tc.armed] | map(tostring) | join(\",\")" "Agent started on C-2026-003 · launcher default (omarchy),true,"
+shows work-agent 12 "Agent started on C-2026-003 · launcher default (omarchy)"
+expect work-agent 14 "$tc.armed" agent
 refusal='C-2026-004 is queued; start it first: `seldon plan start C-2026-004`'
-expect work-agent 15 "[$tv.result, $tv.resultOk, .view.lastError] | map(tostring) | join(\",\")" "$refusal,false,"
+# a refusal keeps the desk open with the engine's text
+expect work-agent 16 "[$tv.result, $tv.resultOk, .view.lastError, .view.opened] | map(tostring) | join(\",\")" "$refusal,false,,true"
 argv_check work-agent "$work/home-agent" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" "$(q agent start C-2026-004 --json)")"
 clean_log work-agent
 
@@ -1239,10 +1255,12 @@ clean_log work-locked
 
 intent=' Install tool X. It needs --help $(id) and one package'
 mkdir -p "$work/home-run"
-run work-run "" 1920x1080 "summon:$wk;text:i;type:$intent;key:Return;settle;wait:sectionView.selected=C-2026-009;key:Escape;view" \
+run work-run "" 1920x1080 "summon:$wk;text:i;type:$intent;key:Return;settle;summon:$wk;wait:sectionView.selected=C-2026-009;view" \
   HOME="$work/home-run" FAKE_SELDON_FIXTURE="$sample"
 expect work-run 2 "[$tv.intentEditing, .view.keys] | map(tostring) | join(\",\")" "true,false"
 expect work-run 3 "$tv.intent" "$intent"
+# the agent started: the desk steps aside (WP-156) and remembers the new case
+expect work-run 5 "[.view.opened, .service.stepAsides] | map(tostring) | join(\",\")" "false,1"
 expect work-run 7 "[$tv.result, $tv.resultOk, $tv.intent, $tc.status] | map(tostring) | join(\",\")" \
   "Created C-2026-009 ·  Install tool X · agent started · launcher default (omarchy),true,,active"
 expect work-run 7 "$tv.groups | join(\",\")" "active 3,verification 1,queued 3,completed 2"
@@ -1509,6 +1527,152 @@ shows details-bare 3 "The text is in the file; Open in editor shows it."
 clean_log details-bare
 
 # ---------------------------------------------------------------------------
+# 8g. The desk steps aside for what it opens; one agent per case (WP-156).
+#     A launch the engine answered closes the desk through the facade (as
+#     Esc does), a refusal keeps it open with the engine's text; an active
+#     case an agent works on shows Focus in place of Hand to agent; a
+#     button whose call is in flight is busy; a double press sends one
+#     call; the same open is not sent again within 2 s.
+w3='{"section":"work","select":"C-2026-003"}'
+w4='{"section":"work","select":"C-2026-004"}'
+sv='.service'
+hides='[.calls[] | select(startswith("hide"))] | length'
+mkdir -p "$work/home-aside"
+run aside "" 1920x1080 \
+  "summon:$w3;text:a;text:a;settle;pause:800;summon:$w3;text:a;settle;summon:$w4;click:Hand to agent;click:Confirm hand to agent;settle;pause:800;summon:$w4" \
+  HOME="$work/home-aside" FAKE_SELDON_FIXTURE="$sample"
+expect aside 1 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor,Ask agent"
+expect aside 1 "$sv.sessions | length" 0
+expect aside 3 "[($tc.actions | join(\",\")), $tc.enabled[0], $sv.planPending] | map(tostring) | join(\"|\")" \
+  "Starting…,To verification,Drop,Open in editor,Ask agent|false|true"
+shows aside 3 "Starting…"
+# launched: the desk is gone, through the facade's hide
+expect aside 4 "[.view.opened, $sv.stepAsides, $sv.planOk, ($hides)] | map(tostring) | join(\",\")" "false,1,true,1"
+expect aside 4 "$sv.plan" "Agent started on C-2026-003 · launcher default (omarchy)"
+expect aside 5 "$sv.sessions | join(\",\")" "C-2026-003"
+# opened again: Focus in place of a second Hand to agent
+expect aside 6 "[$tv.selected, ($tc.actions | join(\",\")), $tc.meta, $tc.working] | map(tostring) | join(\"|\")" \
+  "C-2026-003|Focus,To verification,Drop,Open in editor,Ask agent|agent working · C-2026-003 · R3|true"
+expect aside 6 "$tc.kv[] | select(startswith(\"Agent:\"))" "Agent: working now · agent:default · workspace 2"
+expect aside 6 "$tv.working | join(\",\")" "C-2026-003"
+# the row's aside and the bar's meta
+expect aside 6 '[.texts[] | select(startswith("agent working · "))] | length' 2
+shows aside 6 "agent working · C-2026-003 · R3"
+shows aside 6 "Focus"
+# `a` focuses at once, no arm; busy, then aside
+expect aside 7 "[$tc.armed, $tc.actions[0], $tc.enabled[0]] | map(tostring) | join(\",\")" ",Focusing…,false"
+expect aside 8 "[.view.opened, $sv.stepAsides, $sv.plan] | map(tostring) | join(\",\")" \
+  "false,2,The agent on C-2026-003 is in front · workspace 2"
+check "aside: focus reached the engine once" "$(cat "$work/home-aside/focus.log" 2>/dev/null)" "C-2026-003"
+# a click hands another case to an agent; it steps aside too
+expect aside 9 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor,Ask agent"
+expect aside 11 "$tc.actions[0]" "Starting…"
+expect aside 12 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,3"
+expect aside 13 "$sv.sessions | join(\",\")" "C-2026-003,C-2026-004"
+expect aside 14 "$tc.actions | join(\",\")" "Focus,To verification,Drop,Open in editor,Ask agent"
+argv_check aside "$work/home-aside" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" \
+  "$(q agent focus C-2026-003 --json)" "$(q agent start C-2026-004 --json)")"
+check "aside: the sessions asked beside the queue" \
+  "$(sort -u "$work/home-aside/sessions.log" 2>/dev/null)" "$(q agent sessions --json)"
+clean_log aside
+
+# The desk had not seen the session: the engine refuses, the desk stays
+# open with its text, asks again and shows Focus.
+mkdir -p "$work/home-aside-stale"
+echo C-2026-003 >"$work/home-aside-stale/sessions"
+run aside-stale "" 1920x1080 "summon:$w3;pause:600;text:a;text:a;settle;pause:800" \
+  HOME="$work/home-aside-stale" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SESSIONS_LATE=1
+expect aside-stale 2 "$tc.actions[0]" "Hand to agent"
+already='an agent is already working on C-2026-003 (window 0xf0c5 on workspace 2); focus it with `seldon agent focus C-2026-003`, or start another with `seldon agent start C-2026-003 --again`; nothing was launched'
+expect aside-stale 5 "[.view.opened, $sv.stepAsides, $tv.resultOk] | map(tostring) | join(\",\")" "true,0,false"
+expect aside-stale 5 "$tv.result" "$already"
+shows aside-stale 5 "$already"
+expect aside-stale 6 "$tc.actions | join(\",\")" "Focus,To verification,Drop,Open in editor,Ask agent"
+clean_log aside-stale 'agent exit 1: an agent is already working on C-2026-003'
+
+# The session ended since the desk asked: Focus is refused, the desk stays
+# open and shows Hand to agent again.
+mkdir -p "$work/home-aside-gone"
+echo C-2026-003 >"$work/home-aside-gone/sessions"
+run aside-gone "" 1920x1080 "summon:$w3;pause:600;text:a;settle;pause:800" \
+  HOME="$work/home-aside-gone" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FOCUS_GONE=1
+expect aside-gone 2 "$tc.actions[0]" "Focus"
+gone='no agent is working on C-2026-003: no window of an agent `seldon agent start` launched on it is open; start one with `seldon agent start C-2026-003`'
+expect aside-gone 4 "[.view.opened, $sv.stepAsides, $tv.result] | map(tostring) | join(\",\")" "true,0,$gone"
+expect aside-gone 5 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor,Ask agent"
+clean_log aside-gone 'agent exit 1: no agent is working on C-2026-003'
+
+# Double presses: one agent start, one open; the same open again within
+# 2 s sends nothing (the desk stays), after 2 s it is sent. The fake holds
+# each open until `touch:release-open` (FAKE_SELDON_HOLD_OPEN), so "in
+# flight" is a state of the case, not a race (round 2, N4).
+mkdir -p "$work/home-aside-double"
+run aside-double "" 1920x1080 \
+  "summon:$w3;text:a*4;settle;summon:$w4;text:e*3;touch:release-open;settle;summon:$w4;text:e;settle;pause:2100;text:e;touch:release-open;settle;summon:{\"section\":\"today\"};text:e*3;touch:release-open;settle" \
+  HOME="$work/home-aside-double" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_SESSION=1 FAKE_SELDON_HOLD_OPEN=1 \
+  HARNESS_RECORD="$work/aside-double.record"
+expect aside-double 2 "[$sv.planPending, $tc.actions[0]] | map(tostring) | join(\",\")" "true,Starting…"
+expect aside-double 3 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,1"
+expect aside-double 5 "[$sv.openPending, $tc.actions[3], $tc.enabled[3]] | map(tostring) | join(\",\")" "true,Opening…,false"
+shows aside-double 5 "Opening…"
+expect aside-double 7 "[.view.opened, $sv.stepAsides, $sv.open] | map(tostring) | join(\",\")" \
+  "false,2,Opened $work/home-aside-double/Seldon/work/active/C-2026-004.md in omarchy-launch-editor"
+expect aside-double 9 "[.view.opened, $sv.openPending] | map(tostring) | join(\",\")" "true,false"
+expect aside-double 10 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "true,2"
+expect aside-double 12 "[.view.opened, $sv.openPending] | map(tostring) | join(\",\")" "true,true"
+expect aside-double 14 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,3"
+# Today's `e` has no guard of its own: the service's one open at a time
+expect aside-double 16 "[$sv.openPending, $sv.busyRefusals] | map(tostring) | join(\",\")" "true,2"
+expect aside-double 18 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,4"
+argv_check aside-double "$work/home-aside-double" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" \
+  "$(q open C-2026-004 --editor --json)" "$(q open C-2026-004 --editor --json)" "$(q open journal --editor --json)")"
+clean_log aside-double
+
+# No Hyprland to ask (FAKE_SELDON_NO_TRACKING): the engine tracks nothing,
+# so the desk keeps Hand to agent and a second hand-off launches again;
+# the busy state and the 2 s floor stay (round 2).
+mkdir -p "$work/home-aside-nowindow"
+run aside-nowindow "" 1920x1080 "summon:$w3;text:a;text:a;settle;pause:800;summon:$w3;text:a;text:a;settle" \
+  HOME="$work/home-aside-nowindow" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_TRACKING=1
+expect aside-nowindow 4 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,1"
+expect aside-nowindow 5 "$sv.sessions | length" 0
+expect aside-nowindow 6 "[$tc.actions[0], $tc.working] | map(tostring) | join(\",\")" "Hand to agent,false"
+expect aside-nowindow 9 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,2"
+argv_check aside-nowindow "$work/home-aside-nowindow" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" \
+  "$(q agent start C-2026-003 --json)")"
+clean_log aside-nowindow
+
+# An index change while the desk is open asks for the sessions again: the
+# first answer has none, a capture rewrites the index, the second shows the
+# agent's window (round 2, N3/P1).
+mkdir -p "$work/home-aside-index"
+echo C-2026-003 >"$work/home-aside-index/sessions"
+run aside-index "" 1920x1080 "summon:$w3;pause:600;text:c;settle;pause:800" \
+  HOME="$work/home-aside-index" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SESSIONS_LATE=1
+expect aside-index 2 "$tc.actions[0]" "Hand to agent"
+expect aside-index 5 "$tc.actions | join(\",\")" "Focus,To verification,Drop,Open in editor,Ask agent"
+clean_log aside-index
+
+# A failed open is no open: the same target again is sent at once (round 2,
+# N3/P5: the 2 s rule starts only from a successful open).
+mkdir -p "$work/home-aside-openfail"
+run aside-openfail "" 1920x1080 "summon:$w4;text:e;settle;text:e;settle" \
+  HOME="$work/home-aside-openfail" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_UNKNOWN_CASE=C-2026-004
+expect aside-openfail 3 "[.view.opened, $sv.stepAsides, $sv.open] | map(tostring) | join(\",\")" "true,0,unknown case C-2026-004"
+argv_check aside-openfail "$work/home-aside-openfail" "$(printf '%s\n' "$startup" "$(q open C-2026-004 --editor --json)" \
+  "$(q open C-2026-004 --editor --json)")"
+clean_log aside-openfail 'open exit 1: unknown case C-2026-004'
+
+# An editor the engine opened on the file before: focused, nothing
+# launched, the desk steps aside.
+mkdir -p "$work/home-aside-focused"
+run aside-focused "" 1920x1080 "summon:$w4;text:e;settle" \
+  HOME="$work/home-aside-focused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_OPEN_FOCUSED=1 HARNESS_RECORD="$work/aside-focused.record"
+expect aside-focused 3 "[.view.opened, $sv.stepAsides, $sv.open] | map(tostring) | join(\",\")" \
+  "false,1,$work/home-aside-focused/Seldon/work/active/C-2026-004.md is already open; its window is in front"
+check "aside-focused: no editor launched" "$(cat "$work/aside-focused.record" 2>/dev/null)" ""
+clean_log aside-focused
+
 # 9. The Prime Radiant, section 7 (ADR-0034 §4, SPEC-PLUGIN §6; WP-123): the
 #    0.1 overlay's scenarios (overlay-view.sh, COVERAGE.md) on the desk.
 #    `.view.sectionView` is the section's read-out: period, window, grid
@@ -1881,7 +2045,7 @@ clean_log decision-nocases
 #      System STATUS.md. The exact argv and editor paths.
 mkdir -p "$work/home-decisions-live"
 run decisions-live "" 1920x1080 \
-  "summon;text:4;text:d;type:--help \"q\";key:Return;key:Backspace;type:\";key:Return;key:Return;settle;wait:sectionView.cursor=ADR-0005;key:Down;click:Open in editor;settle;key:Down;text:e;settle;click:Open in editor;settle;text:6;key:Down;text:e;settle;click:Open in editor;settle;text:5;text:e;settle" \
+  "summon;text:4;text:d;type:--help \"q\";key:Return;key:Backspace;type:\";key:Return;key:Return;settle;summon;wait:sectionView.cursor=ADR-0005;key:Down;click:Open in editor;settle;summon;key:Down;text:e;settle;summon;pause:2100;click:Open in editor;settle;summon;text:6;key:Down;text:e;settle;summon;pause:2100;click:Open in editor;settle;summon;text:5;text:e;settle" \
   HOME="$work/home-decisions-live" FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/decisions-live.record"
 expect decisions-live 3 '[.view.sectionView.form.open, .view.sectionView.form.editing, .view.editing, .view.keys] | map(tostring) | join(",")' "true,true,true,false"
 shows decisions-live 3 "New decision"
@@ -1895,20 +2059,25 @@ shows decisions-live 5 'Press Enter again: create the decision “--help \"q\"�
 expect decisions-live 6 '[.view.sectionView.form.armed, .view.sectionView.form.title] | map(tostring) | join(",")' 'false,--help "q'
 expect decisions-live 7 .view.sectionView.form.armed false
 expect decisions-live 8 .view.sectionView.form.armed true
-expect decisions-live 11 '[.view.sectionView.form.open, .view.sectionView.form.editing, .view.sectionView.form.title, .view.keys] | map(tostring) | join(",")' "false,false,,true"
-expect decisions-live 11 .view.sectionView.result 'Created ADR-0005 · --help "q"'
-expect decisions-live 11 '.view.sectionView.rows | join(",")' "ADR-0005,ADR-0004,ADR-0003,ADR-0002,ADR-0001"
-shows decisions-live 11 'Created ADR-0005 · --help \"q\"'
-shows decisions-live 11 "5 decisions · 2 proposed"
-expect decisions-live 12 .view.sectionView.cursor ADR-0004
-expect decisions-live 14 .view.sectionView.openResult "Opened $work/home-decisions-live/Seldon/decisions/ADR-0004-ollama-user-service.md in omarchy-launch-editor"
-expect decisions-live 15 .view.sectionView.cursor ADR-0003
-expect decisions-live 17 .view.sectionView.openResult "Opened $work/home-decisions-live/Seldon/decisions/ADR-0003-zed.md in omarchy-launch-editor"
-expect decisions-live 19 .view.sectionView.openResult "Opened $work/home-decisions-live/Seldon/decisions/ADR-0003-zed.md in omarchy-launch-editor"
-expect decisions-live 21 .view.sectionView.cursor "lesson:Theme-Overrides nie im Omarchy-Repo"
-expect decisions-live 23 .view.sectionView.openResult "Opened $work/home-decisions-live/Seldon in omarchy-launch-editor"
-expect decisions-live 28 .view.sectionView.openResult "Opened $work/home-decisions-live/Seldon/STATUS.md in omarchy-launch-editor"
-expect decisions-live 28 .view.lastError ""
+# Every open steps the desk aside (WP-156): the new decision's editor too;
+# the case summons the desk again after each, and waits 2 s before the same
+# target again (Model.OPEN_REPEAT_MS).
+expect decisions-live 10 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+expect decisions-live 12 '[.view.sectionView.form.open, .view.sectionView.form.editing, .view.sectionView.form.title, .view.keys] | map(tostring) | join(",")' "false,false,,true"
+expect decisions-live 12 .view.sectionView.result 'Created ADR-0005 · --help "q"'
+expect decisions-live 12 '.view.sectionView.rows | join(",")' "ADR-0005,ADR-0004,ADR-0003,ADR-0002,ADR-0001"
+shows decisions-live 12 'Created ADR-0005 · --help \"q\"'
+shows decisions-live 12 "5 decisions · 2 proposed"
+expect decisions-live 13 .view.sectionView.cursor ADR-0004
+expect decisions-live 15 .service.open "Opened $work/home-decisions-live/Seldon/decisions/ADR-0004-ollama-user-service.md in omarchy-launch-editor"
+expect decisions-live 17 .view.sectionView.cursor ADR-0003
+expect decisions-live 19 .service.open "Opened $work/home-decisions-live/Seldon/decisions/ADR-0003-zed.md in omarchy-launch-editor"
+expect decisions-live 21 .view.sectionView.openResult "Opened $work/home-decisions-live/Seldon/decisions/ADR-0003-zed.md in omarchy-launch-editor"
+expect decisions-live 23 .service.open "Opened $work/home-decisions-live/Seldon/decisions/ADR-0003-zed.md in omarchy-launch-editor"
+expect decisions-live 26 .view.sectionView.cursor "lesson:Theme-Overrides nie im Omarchy-Repo"
+expect decisions-live 28 .service.open "Opened $work/home-decisions-live/Seldon in omarchy-launch-editor"
+expect decisions-live 36 .service.open "Opened $work/home-decisions-live/Seldon/STATUS.md in omarchy-launch-editor"
+expect decisions-live 36 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,7"
 want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q decide --no-edit --json -- '--help "q"')" "$(q open ADR-0005 --editor --json)" \
   "$(q open ADR-0004 --editor --json)" "$(q open ADR-0003 --editor --json)" "$(q open ADR-0003 --editor --json)" \
@@ -2450,32 +2619,34 @@ ttd="$tt.detail"
 head='3 items proposed by agent:claude-code at 2026-10-01 17:02, 1 crisis held back — apply each below'
 mkdir -p "$work/home-triage"
 run triage "" 1920x1080 \
-  "summon:$cl;view;clickName:triageAsk;settle;hover:6 changes · newest first;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;click:Apply this crisis;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:Apply proposals;wait:sectionView.triage.detail.result=Applied 0 · skipped 3 · refused 0;view" \
+  "summon:$cl;view;clickName:triageAsk;settle;summon;hover:6 changes · newest first;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;click:Apply this crisis;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:Apply proposals;wait:sectionView.triage.detail.result=Applied 0 · skipped 3 · refused 0;view" \
   HOME="$work/home-triage" FAKE_SELDON_FIXTURE="$sample"
 expect triage 2 "[$tt.button, $tt.row, $tt.shown] | map(tostring) | join(\",\")" "Agent sorts 6 open changes,Proposal · $head,false"
-expect triage 4 "[$tt.ask, $tt.askOk] | map(tostring) | join(\",\")" \
+# Ask agent opened the agent's window: the desk steps aside (WP-156)
+expect triage 4 "[.view.opened, .service.stepAsides] | map(tostring) | join(\",\")" "false,1"
+expect triage 5 "[$tt.ask, $tt.askOk] | map(tostring) | join(\",\")" \
   "Agent started to sort 6 open changes; its proposal shows here · launcher default (omarchy),true"
-expect triage 7 "[$tt.shown, $ttd.head, $ttd.state, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+expect triage 8 "[$tt.shown, $ttd.head, $ttd.state, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
   "true,$head,agent:claude-code · proposal, nothing written yet,Apply proposals (2)+Discard"
-expect triage 7 "[$ttd.crises[].id] | join(\",\")" "$UNIT"
-expect triage 7 "[$ttd.regular[].id] | join(\",\")" "$THEME,$MONITORS"
-expect triage 7 "$ttd.regular[0].evidence | join(\" | \")" \
+expect triage 8 "[$ttd.crises[].id] | join(\",\")" "$UNIT"
+expect triage 8 "[$ttd.regular[].id] | join(\",\")" "$THEME,$MONITORS"
+expect triage 8 "$ttd.regular[0].evidence | join(\" | \")" \
   'Plan of C-2026-005: by human · - [ ] `omarchy theme set tokyo-night` | Journal 2026-10-01 17:00: by human · Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox.'
-expect triage 7 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "false,false,false"
-shows triage 7 "$head"
-expect triage 7 "$ttd.hint" "$head"
-expect triage 7 '.overflow | join(" | ")' ""
-shows triage 7 'by human · - [ ] `omarchy theme set tokyo-night`'
-shows triage 7 "by system · config-change ~/.config/hypr/monitors.conf: sha256 40ab1178 → 6d81c412"
-shows triage 7 "Apply this crisis"
-shows triage 7 "CRISES — EACH ON ITS OWN"
-expect triage 9 "[$ttd.regular[].outcome] | join(\",\")" "done,done"
-expect triage 9 "$ttd.crises[0].outcome" "skipped: crisis: applied only one by one (\`--item\`), never with the rest"
-expect triage 11 "$ttd.crises[0].outcome" "done"
-expect triage 13 "[$ttd.result, $ttd.resultOk, ([$ttd.regular[].outcome] | join(\"+\"))] | map(tostring) | join(\",\")" \
+expect triage 8 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "false,false,false"
+shows triage 8 "$head"
+expect triage 8 "$ttd.hint" "$head"
+expect triage 8 '.overflow | join(" | ")' ""
+shows triage 8 'by human · - [ ] `omarchy theme set tokyo-night`'
+shows triage 8 "by system · config-change ~/.config/hypr/monitors.conf: sha256 40ab1178 → 6d81c412"
+shows triage 8 "Apply this crisis"
+shows triage 8 "CRISES — EACH ON ITS OWN"
+expect triage 10 "[$ttd.regular[].outcome] | join(\",\")" "done,done"
+expect triage 10 "$ttd.crises[0].outcome" "skipped: crisis: applied only one by one (\`--item\`), never with the rest"
+expect triage 12 "$ttd.crises[0].outcome" "done"
+expect triage 14 "[$ttd.result, $ttd.resultOk, ([$ttd.regular[].outcome] | join(\"+\"))] | map(tostring) | join(\",\")" \
   "Applied 0 · skipped 3 · refused 0,true,skipped: no longer open drift: $THEME is already resolved+skipped: no longer open drift: $MONITORS is already resolved"
-expect triage 14 "$ttd.state | startswith(\"Applied \")" true
-shows triage 14 "Skipped: no longer open drift: $THEME is already resolved"
+expect triage 15 "$ttd.state | startswith(\"Applied \")" true
+shows triage 15 "Skipped: no longer open drift: $THEME is already resolved"
 argv_check triage "$work/home-triage" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)" \
   "$(q drift apply $PROPOSAL --json)" "$(q drift apply $PROPOSAL --item $UNIT --json)" "$(q drift apply $PROPOSAL --json)")"
 clean_log triage
@@ -2502,8 +2673,11 @@ clean_log triage-refused "jax\\.seldon: seldon agent exit 1: no default agent"
 # detail go, the logbook is untouched (only the three calls).
 mkdir -p "$work/home-triage-ask"
 run triage-ask "" 1920x1080 \
-  "summon:$(sel $UNIT);click:Ask agent;settle;view;text:3;select:C-2026-004;click:Ask agent;settle;view;text:2;clickName:proposalRow;click:Discard;click:Confirm discard;settle;wait:sectionView.triage.row=;view" \
+  "summon:$(sel $UNIT);click:Ask agent;settle;summon;text:3;select:C-2026-004;click:Ask agent;settle;summon;text:2;clickName:proposalRow;click:Discard;click:Confirm discard;settle;wait:sectionView.triage.row=;view" \
   HOME="$work/home-triage-ask" FAKE_SELDON_FIXTURE="$sample"
+# each ask opens the agent's window: the desk steps aside (WP-156), summoned again
+expect triage-ask 3 "[.view.opened, .service.stepAsides] | map(tostring) | join(\",\")" "false,1"
+expect triage-ask 8 "[.view.opened, .service.stepAsides] | map(tostring) | join(\",\")" "false,2"
 expect triage-ask 4 "[$td.ask, ($td.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
   "Agent asked about $UNIT; it answers in its window · launcher default (omarchy),Ask agent+Link to case…+Explain…+Dismiss…"
 expect triage-ask 9 "[$tc.ask, ($tc.actions | join(\"+\"))] | map(tostring) | join(\",\")" \

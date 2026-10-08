@@ -34,6 +34,17 @@
 //! at once is reported with its message. On a failure the previous active
 //! case is restored.
 //!
+//! One agent per case (WP-156, ADR-0041): `agent start <ID>` refuses
+//! (exit 1) while a session it launched on `<ID>` is open — a Hyprland
+//! window of class `org.omarchy.agent` whose process or a descendant
+//! carries `SELDON_CASE=<ID>` with this logbook's `SELDON_LOGBOOK`
+//! ([`crate::sessions`]), or a launch of `<ID>` less than [`LAUNCH_GRACE_S`]
+//! ago whose window is not mapped yet ([`LAUNCHES`]) — and names `seldon
+//! agent focus <ID>`, which brings that window to the front; `--again`
+//! starts another anyway. Without `hyprctl` nothing is tracked and nothing
+//! is refused. `seldon agent sessions` lists the open ones (the desk asks
+//! it to show *Focus* in place of *Hand to agent*).
+//!
 //! `seldon agent ask triage|drift <EVENT>|case <ID>` (WP-124, ADR-0036 §1)
 //! launches the same way with an [`ask_prompt`]: ids, the logbook path and
 //! the path of the skill guide the agent follows ([`installed_guide`]),
@@ -56,6 +67,7 @@ use crate::logbook::{Logbook, cases};
 use crate::model::event::ACTOR_HUMAN;
 use crate::model::{CaseStatus, Priority, Risk, Zone};
 use crate::redact::Redactor;
+use crate::sessions;
 use crate::sys::Run;
 
 /// The launcher element replaced by the prompt.
@@ -248,6 +260,20 @@ pub enum AgentCommand {
                             seldon agent ask drift 01M3VNJ9JGZ9169T01XCW16FT0\n  \
                             seldon agent ask case C-2026-004")]
     Ask(AskArgs),
+    /// Bring the window of the agent `agent start` launched on a case to the
+    /// front (Hyprland)
+    #[command(after_help = "Example:\n  seldon agent focus C-2026-004")]
+    Focus(FocusArgs),
+    /// List the agents `agent start` launched whose window is open, one per
+    /// case (Hyprland)
+    Sessions,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct FocusArgs {
+    /// The case
+    #[arg(value_name = "ID", value_parser = parse_case_id)]
+    pub id: String,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -313,6 +339,10 @@ pub struct StartArgs {
     #[arg(long, value_name = "NAME")]
     pub launcher: Option<String>,
 
+    /// Start another agent although one already works on the case
+    #[arg(long, conflicts_with = "new")]
+    pub again: bool,
+
     /// With --new: what the agent should do, as one argument after `--`
     #[arg(value_name = "INTENT", last = true, requires = "new")]
     pub intent: Option<String>,
@@ -330,19 +360,26 @@ pub fn run(ctx: &Context, args: AgentArgs) -> Result<Output> {
                 };
                 start(ctx, Target::New(new), a.launcher.as_deref())
             }
-            (false, Some(id), _) => start(ctx, Target::Case(id), a.launcher.as_deref()),
+            (false, Some(id), _) => start(
+                ctx,
+                Target::Case { id, again: a.again },
+                a.launcher.as_deref(),
+            ),
             // clap's requires/conflicts rule the other shapes out
             _ => Err(Error::user(
                 "give a case id, or --new -- \"<intent>\"".to_string(),
             )),
         },
         AgentCommand::Ask(a) => ask(ctx, a.what, a.launcher.as_deref()),
+        AgentCommand::Focus(a) => focus(ctx, &a.id),
+        AgentCommand::Sessions => list_sessions(ctx),
     }
 }
 
-/// What `agent start` works on: an active case, or a new one.
+/// What `agent start` works on: an active case (`again`: even while an
+/// agent works on it), or a new one.
 enum Target {
-    Case(String),
+    Case { id: String, again: bool },
     New(New),
 }
 
@@ -565,14 +602,14 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
     // the creator of a --new case: the caller (default human)
     let creator = match &target {
         Target::New(_) => Some(actor_or_env(None, parse_person, ACTOR_HUMAN)?),
-        Target::Case(_) => None,
+        Target::Case { .. } => None,
     };
     let (config, logbook) = ctx.open_logbook()?;
     // the launcher is checked before anything is written
     let launcher = Launcher::resolve(&config.agent, name)?;
     let actor = launcher.actor()?;
     let new = match target {
-        Target::Case(id) => {
+        Target::Case { id, again } => {
             let lock = ctx.lock()?;
             return launch_on(
                 ctx,
@@ -583,6 +620,7 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
                 &id,
                 lock,
                 None,
+                again,
             );
         }
         Target::New(new) => new,
@@ -634,12 +672,14 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
         &id,
         lock,
         Some((&created, commit)),
+        true,
     )
 }
 
 /// Launches `launcher` on case `id` under `lock`. `created`: the case
 /// `--new` made under the same lock hold (it stays active when the launch
-/// fails, and the error says how to retry).
+/// fails, and the error says how to retry). `again`: launch even while a
+/// session on `id` lives (`--again`, and `--new`, whose case is new).
 #[allow(clippy::too_many_arguments)]
 fn launch_on(
     ctx: &Context,
@@ -650,6 +690,7 @@ fn launch_on(
     id: &str,
     lock: crate::logbook::lock::Lock,
     created: Option<(&super::plan::Created, super::Commit)>,
+    again: bool,
 ) -> Result<Output> {
     let file = cases::find(logbook, id)?;
     match file.case.status {
@@ -667,6 +708,22 @@ fn launch_on(
                 "{id} has status {other}; an agent starts on an active case only"
             )));
         }
+    }
+    if !again && let Some(session) = sessions_of(ctx, logbook, Some(id)).sessions.first() {
+        let which = match &session.window {
+            Some(w) => format!(
+                "an agent is already working on {id} (window {} on workspace {})",
+                w.address, w.workspace
+            ),
+            None => format!(
+                "an agent was started on {id} {} s ago and its window is not open yet",
+                session.since_s
+            ),
+        };
+        return Err(Error::user(format!(
+            "{which}; focus it with `seldon agent focus {id}`, or start another with `seldon \
+             agent start {id} --again`; nothing was launched"
+        )));
     }
 
     let cwd = match workdir {
@@ -697,6 +754,7 @@ fn launch_on(
         restore(logbook, id, previous.as_deref());
         return Err(Error::User(e));
     }
+    record_launch(ctx, logbook, id);
     drop(lock);
 
     let program = &launcher.argv[0];
@@ -733,6 +791,272 @@ fn launch_on(
         });
     }
     Ok(Output::ok(human, out))
+}
+
+/// The launches of the last [`LAUNCH_GRACE_S`] seconds, in the state
+/// directory: `[{case, logbook, at}]`. A launch counts as a session until
+/// its window is mapped (the terminal takes a moment), so a second click
+/// right after the first is refused too.
+pub const LAUNCHES: &str = "launches.json";
+
+/// How long a launch counts as a session without a window.
+pub const LAUNCH_GRACE_S: i64 = 10;
+
+/// The class of every agent window `omarchy agent` opens.
+const AGENT_CLASS: &str = sessions::AGENT_CLASS;
+
+/// A session `agent start` launched on a case: its window (`None` while
+/// it is starting, within the launch grace), the marked processes of the
+/// window's tree (oldest first) and the actor it was launched as (when it
+/// reads as one).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Session {
+    pub case: String,
+    pub window: Option<SessionWindow>,
+    pub pids: Vec<u32>,
+    pub actor: Option<String>,
+    /// Seconds since the launch, for a session without a window.
+    pub since_s: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionWindow {
+    pub address: String,
+    pub workspace: String,
+    pub pid: i64,
+}
+
+/// What [`sessions_of`] found: `tracking` false (and nothing found) when
+/// Hyprland cannot be asked (`why` says why).
+pub struct Tracked {
+    pub tracking: bool,
+    pub why: Option<String>,
+    pub sessions: Vec<Session>,
+}
+
+/// The open sessions on `logbook` (on case `only`, when given), by case
+/// id: the agent windows whose tree carries the marker, then the launches
+/// within the grace that have no window yet.
+pub fn sessions_of(ctx: &Context, logbook: &Logbook, only: Option<&str>) -> Tracked {
+    let windows = match sessions::windows() {
+        Ok(w) => w,
+        Err(why) => {
+            return Tracked {
+                tracking: false,
+                why: Some(why),
+                sessions: Vec::new(),
+            };
+        }
+    };
+    let proc = Path::new(sessions::PROC);
+    let root = logbook.root.as_os_str();
+    let mut want = vec![(LOGBOOK_ENV, root)];
+    if let Some(id) = only {
+        want.push((CASE_ENV, std::ffi::OsStr::new(id)));
+    }
+    let mut out: Vec<Session> = Vec::new();
+    for m in sessions::marked_windows(
+        proc,
+        &windows,
+        |c| c == AGENT_CLASS,
+        &want,
+        &[CASE_ENV, ACTOR_ENV],
+    ) {
+        let Some(case) = m.values[0].clone().filter(|c| crate::model::is_case_id(c)) else {
+            continue;
+        };
+        if out.iter().any(|s| s.case == case) {
+            continue;
+        }
+        out.push(Session {
+            case,
+            window: Some(SessionWindow {
+                address: m.window.address.clone(),
+                workspace: m.window.workspace.name.clone(),
+                pid: m.window.pid,
+            }),
+            pids: m.pids,
+            actor: m.values[1].clone().filter(|a| is_actor(a)),
+            since_s: 0,
+        });
+    }
+    for (case, since_s) in recent_launches(ctx, logbook) {
+        if only.is_some_and(|id| id != case) || out.iter().any(|s| s.case == case) {
+            continue;
+        }
+        out.push(Session {
+            case,
+            window: None,
+            pids: Vec::new(),
+            actor: None,
+            since_s,
+        });
+    }
+    out.sort_by(|a, b| a.case.cmp(&b.case));
+    Tracked {
+        tracking: true,
+        why: None,
+        sessions: out,
+    }
+}
+
+/// `agent:` and a slug, as [`Launcher::actor`] makes it.
+fn is_actor(a: &str) -> bool {
+    a.strip_prefix("agent:").is_some_and(|slug| {
+        !slug.is_empty()
+            && !slug.starts_with('-')
+            && !slug.ends_with('-')
+            && slug
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    })
+}
+
+/// One launch in [`LAUNCHES`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct LaunchRecord {
+    case: String,
+    logbook: PathBuf,
+    at: chrono::DateTime<chrono::FixedOffset>,
+}
+
+fn read_launches(ctx: &Context) -> Vec<LaunchRecord> {
+    let path = ctx.dirs.state_dir.join(LAUNCHES);
+    crate::sys::read_small_file(&path, 64 * 1024)
+        .ok()
+        .flatten()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+/// The cases of `logbook` launched within the grace, with the seconds since.
+fn recent_launches(ctx: &Context, logbook: &Logbook) -> Vec<(String, i64)> {
+    read_launches(ctx)
+        .into_iter()
+        .filter(|r| r.logbook == logbook.root && crate::model::is_case_id(&r.case))
+        .filter_map(|r| {
+            let since = (ctx.now - r.at).num_seconds();
+            (0..LAUNCH_GRACE_S)
+                .contains(&since)
+                .then_some((r.case, since))
+        })
+        .collect()
+}
+
+/// Notes a launch of `id` (under the lock); records older than the grace
+/// go. A failure to write is said on stderr and changes nothing else.
+fn record_launch(ctx: &Context, logbook: &Logbook, id: &str) {
+    let mut kept: Vec<LaunchRecord> = read_launches(ctx)
+        .into_iter()
+        .filter(|r| (0..LAUNCH_GRACE_S).contains(&(ctx.now - r.at).num_seconds()))
+        .filter(|r| !(r.case == id && r.logbook == logbook.root))
+        .collect();
+    kept.push(LaunchRecord {
+        case: id.to_string(),
+        logbook: logbook.root.clone(),
+        at: ctx.now,
+    });
+    let written = serde_json::to_vec_pretty(&kept)
+        .map_err(anyhow::Error::from)
+        .and_then(|bytes| {
+            crate::sys::create_dir_private(&ctx.dirs.state_dir)?;
+            crate::sys::write_atomic(&ctx.dirs.state_dir.join(LAUNCHES), &bytes)
+        });
+    if let Err(e) = written {
+        eprintln!("seldon: cannot note the launch in {LAUNCHES}: {e}");
+    }
+}
+
+fn session_json(s: &Session) -> serde_json::Value {
+    json!({
+        "case": s.case,
+        "starting": s.window.is_none(),
+        "window": s.window.as_ref().map(|w| json!({
+            "address": w.address, "workspace": w.workspace, "pid": w.pid,
+        })),
+        "pids": s.pids,
+        "actor": s.actor,
+    })
+}
+
+/// `seldon agent focus <ID>`: the window of the session on `<ID>` to the
+/// front. Refused (exit 1) when Hyprland cannot be asked or no session is
+/// open; a session within the launch grace (no window yet) is no error:
+/// `{focused: false, starting: true}`, its window comes up when it opens.
+fn focus(ctx: &Context, id: &str) -> Result<Output> {
+    let (_, logbook) = ctx.open_logbook()?;
+    cases::find(&logbook, id)?;
+    let tracked = sessions_of(ctx, &logbook, Some(id));
+    if let Some(why) = tracked.why {
+        return Err(Error::user(format!(
+            "cannot focus the agent on {id}: {why}"
+        )));
+    }
+    let Some(session) = tracked.sessions.into_iter().next() else {
+        return Err(Error::user(format!(
+            "no agent is working on {id}: no window of an agent `seldon agent start` launched \
+             on it is open; start one with `seldon agent start {id}`"
+        )));
+    };
+    let Some(window) = &session.window else {
+        return Ok(Output::ok(
+            format!(
+                "The agent on {id} is starting ({} s ago); its window comes up when it opens",
+                session.since_s
+            ),
+            json!({ "focused": false, "starting": true, "case": id }),
+        ));
+    };
+    sessions::focus(&window.address).map_err(Error::user)?;
+    Ok(Output::ok(
+        format!(
+            "Focused the agent on {id} (window {}, workspace {})",
+            window.address, window.workspace
+        ),
+        json!({
+            "focused": true,
+            "case": id,
+            "address": window.address,
+            "workspace": window.workspace,
+            "pid": window.pid,
+            "pids": session.pids,
+            "actor": session.actor,
+        }),
+    ))
+}
+
+/// `seldon agent sessions`: read-only, no lock.
+fn list_sessions(ctx: &Context) -> Result<Output> {
+    let (_, logbook) = ctx.open_logbook()?;
+    let tracked = sessions_of(ctx, &logbook, None);
+    let human = if let Some(why) = &tracked.why {
+        format!("Not tracked: {why}")
+    } else if tracked.sessions.is_empty() {
+        "No window of an agent that `seldon agent start` launched is open.".to_string()
+    } else {
+        tracked
+            .sessions
+            .iter()
+            .map(|s| match &s.window {
+                Some(w) => format!(
+                    "{} {} (window {} on workspace {})",
+                    s.case,
+                    s.actor.as_deref().unwrap_or("agent"),
+                    w.address,
+                    w.workspace
+                ),
+                None => format!("{} starting ({} s ago)", s.case, s.since_s),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    Ok(Output::ok(
+        human,
+        json!({
+            "tracking": tracked.tracking,
+            "sessions": tracked.sessions.iter().map(session_json).collect::<Vec<_>>(),
+        }),
+    ))
 }
 
 /// The launcher's prompt (ADR-0030 §3): the case id (checked by

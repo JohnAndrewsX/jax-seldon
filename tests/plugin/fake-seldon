@@ -46,6 +46,25 @@
 #                        `attention-all` (`[drift] attention = "all"`); else
 #                        a config crisis is `always-red-paths`, a pacman one
 #                        `always-red`, attention `other` (WP-122)
+#   FAKE_SELDON_NO_SESSION  if set, `agent start` leaves no live session
+#                        behind (WP-156; see below)
+#   FAKE_SELDON_SESSIONS_LATE  N: the first N `agent sessions` calls report
+#                        none (a desk that has not seen the session yet),
+#                        counted in $HOME/sessions-calls (WP-156)
+#   FAKE_SELDON_FOCUS_GONE  if set, `agent focus` finds the session ended:
+#                        it drops the case from $HOME/sessions and refuses
+#                        (WP-156)
+#   FAKE_SELDON_NO_TRACKING  if set, the engine cannot ask Hyprland: `agent
+#                        sessions` reports tracking false and nothing, and
+#                        `agent start` neither refuses nor adds a session
+#                        (WP-156 round 2)
+#   FAKE_SELDON_HOLD_OPEN  if set, `open` waits (up to 20 s) until
+#                        $HOME/release-open exists, removes it, then answers:
+#                        the harness's `touch:release-open` step lets it go
+#                        (WP-156 round 2)
+#   FAKE_SELDON_OPEN_FOCUSED  if set, `open … --editor` answers as the
+#                        engine does when an editor it opened on the path
+#                        still runs: focused, nothing launched (WP-156)
 #   FAKE_SELDON_APPLY_REFUSED  an event id `drift apply` refuses (its
 #                        evidence "no longer resolves") (WP-124b)
 #   FAKE_SELDON_RULES    the rules row `doctor --json` reports: current
@@ -99,6 +118,15 @@
 # its own process, beside the queue, so it is kept out of calls.log and
 # argv.log); `rules update --json` sets the rules current.
 #
+# One agent per case (WP-156): $HOME/sessions lists the cases whose agent
+# window is open, one id per line. `agent start` (also `--new`) adds its case
+# unless FAKE_SELDON_NO_SESSION is set, and refuses a case listed there
+# with the engine's text. `agent sessions --json` reports the list; like
+# `doctor` it runs in its own process, so it is logged to
+# $HOME/sessions.log only. `agent focus <id>` answers focused for a listed
+# case (and logs the id to $HOME/focus.log), else the engine's "no agent is
+# working" refusal.
+#
 # `agent ask triage|drift <id>|case <id>` (WP-124b) launches nothing and
 # answers with the engine's JSON (or, with FAKE_SELDON_NO_DEFAULT_AGENT,
 # its refusal); `status` puts the proposal the fixture's `triage.path`
@@ -148,6 +176,22 @@ if [[ $cmd == doctor ]]; then
   esac
   echo "{\"checks\":[{\"name\":\"engine\",\"status\":\"ok\",\"message\":\"seldon 99.0.0-fake\"},$row]}"
   [[ $rules == damaged ]] && exit 1
+  exit 0
+fi
+if [[ $cmd == agent && ${2:-} == sessions ]]; then
+  printf '%s\n' "$(printf '%q ' "$@")" >>"$HOME/sessions.log"
+  [[ $mode == uninit ]] && { echo '{"error":{"code":3,"message":"logbook not initialised"}}'; exit 3; }
+  call=1
+  [[ -f $HOME/sessions-calls ]] && call=$(($(<"$HOME/sessions-calls") + 1))
+  echo "$call" >"$HOME/sessions-calls"
+  if [[ -n ${FAKE_SELDON_NO_TRACKING:-} ]]; then
+    echo '{"tracking":false,"sessions":[]}'
+  elif [[ -s $HOME/sessions ]] && ((call > ${FAKE_SELDON_SESSIONS_LATE:-0})); then
+    jq -cRn '{tracking: true, sessions: [inputs | select(. != "") | {case: ., starting: false,
+      window: {address: "0xf0c5", workspace: "2", pid: 4242}, pids: [4243], actor: "agent:default"}]}' <"$HOME/sessions"
+  else
+    echo '{"tracking":true,"sessions":[]}'
+  fi
   exit 0
 fi
 printf '%s\n' "$(printf '%q ' "$@")" >>"$HOME/argv.log"
@@ -510,6 +554,7 @@ agent_new() { # agent_new [--zone Z] [--risk R] [--area A] [--json] -- <intent>
   set_status "$id" active
   new_case "$id" active "$title" "$zone" "$risk" "$area" normal '[]'
   echo "$id" >"$HOME/active-case"
+  [[ -n ${FAKE_SELDON_NO_SESSION:-}${FAKE_SELDON_NO_TRACKING:-} ]] || echo "$id" >>"$HOME/sessions"
   jq -cn --arg id "$id" --arg title "$title" --arg cwd "$HOME/Seldon" '{launched: true, launcher: "default", program: "omarchy",
     argv: ["omarchy", "agent", "prompt", "{prompt}"], actor: "agent:default", case: $id, cwd: $cwd, previousActiveCase: null,
     created: {case: {id: $id, title: $title, status: "active"}, events: [], areaCreated: null, git: {committed: true}}}'
@@ -639,9 +684,28 @@ agent_start() { # agent_start <id> — the engine's checks and answer, no launch
   [[ $status == active ]] || user_error "$id has status $status; an agent starts on an active case only"
   [[ -n ${FAKE_SELDON_NO_LAUNCHER:-} ]] \
     && user_error "launcher \`default\`: \`omarchy\` not found; set \`[agent] launcher\` in config.toml"
+  [[ -z ${FAKE_SELDON_NO_TRACKING:-} ]] && working "$id" \
+    && user_error "an agent is already working on $id (window 0xf0c5 on workspace 2); focus it with \`seldon agent focus $id\`, or start another with \`seldon agent start $id --again\`; nothing was launched"
   echo "$id" >"$HOME/active-case"
+  [[ -n ${FAKE_SELDON_NO_SESSION:-}${FAKE_SELDON_NO_TRACKING:-} ]] || echo "$id" >>"$HOME/sessions"
   jq -cn --arg id "$id" --arg cwd "$HOME/Seldon" '{launched: true, launcher: "default", program: "omarchy",
     argv: ["omarchy", "agent", "prompt", "{prompt}"], case: $id, cwd: $cwd, previousActiveCase: null}'
+}
+
+working() { # working <id> — a live agent works on the case ($HOME/sessions)
+  [[ -f $HOME/sessions ]] && grep -qx -- "$1" "$HOME/sessions"
+}
+
+agent_focus() { # agent_focus <id> — the engine's answer, nothing dispatched
+  local id=$1
+  if [[ -n ${FAKE_SELDON_FOCUS_GONE:-} && -f $HOME/sessions ]]; then
+    grep -vx -- "$id" "$HOME/sessions" >"$HOME/sessions.new" || true
+    mv "$HOME/sessions.new" "$HOME/sessions"
+  fi
+  working "$id" || user_error "no agent is working on $id: no window of an agent \`seldon agent start\` launched on it is open; start one with \`seldon agent start $id\`"
+  echo "$id" >>"$HOME/focus.log"
+  jq -cn --arg id "$id" '{focused: true, case: $id, address: "0xf0c5", workspace: "2", pid: 4242,
+    pids: [4243], actor: "agent:default"}'
 }
 
 # `agent ask triage|drift <id>|case <id> --json` (WP-124b): the engine's
@@ -811,6 +875,14 @@ case "$cmd" in
     esac
     command -v omarchy-launch-editor >/dev/null \
       || user_error "cannot open $path: no terminal and no omarchy-launch-editor; set \$EDITOR or open the path yourself"
+    if [[ -n ${FAKE_SELDON_HOLD_OPEN:-} ]]; then
+      for ((i = 0; i < 200; i++)); do [[ -e $HOME/release-open ]] && break; sleep 0.1; done
+      rm -f "$HOME/release-open"
+    fi
+    if [[ -n ${FAKE_SELDON_OPEN_FOCUSED:-} ]]; then
+      echo "{\"what\":\"$what\",\"path\":\"$path\",\"editor\":{\"launched\":false,\"focused\":true,\"address\":\"0xed17\",\"pid\":4243,\"program\":\"omarchy-launch-editor\"}}"
+      exit 0
+    fi
     omarchy-launch-editor "$path"
     echo "{\"what\":\"$what\",\"path\":\"$path\",\"editor\":{\"launched\":true,\"program\":\"omarchy-launch-editor\"}}"
     ;;
@@ -874,6 +946,7 @@ case "$cmd" in
       exit 4
     fi
     case "${2:-}" in
+      focus) agent_focus "${3:-}" ;;
       start)
         if [[ ${3:-} == --new ]]; then
           shift 3

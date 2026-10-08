@@ -23,7 +23,9 @@ import qs.Ui
 // shell's reload of shell.json does (the pill pushes it to the service).
 // Then it runs HARNESS_STEPS and prints after each: Desk.view() (or
 // {"opened":false} while unloaded), the facade's calls, the writes, the
-// last call's result, every visible text and every text outside the
+// last call's result, the service's launch read-out (`service`: how often
+// the desk stepped aside, the live sessions, the open and plan results;
+// WP-156), every visible text and every text outside the
 // window, the desk or the Prime Radiant slot it sits in.
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin copy (required)
@@ -96,6 +98,9 @@ import qs.Ui
 //                                        with v; a step holds no `;`)
 //                       shot:<name>      save the window as
 //                                        $HARNESS_SHOTS/<name>.png
+//                       touch:<name>     create $HOME/<name> (a-z and -):
+//                                        lets a held fake engine call go
+//                                        (FAKE_SELDON_HOLD_OPEN)
 //                       view             no action, just report
 ShellRoot {
   id: root
@@ -336,6 +341,16 @@ ShellRoot {
       graphDirty: root.service ? root.service.graphDirty : null,
       graphNodes: root.service && root.service.graph ? root.service.graph.nodes.length : null,
       pill: root.widget ? JSON.parse(root.widget.pillReadout()) : null,
+      service: root.service ? {
+        stepAsides: root.service.stepAsides,
+        sessions: Object.keys(root.service.agentSessions || {}).sort(),
+        open: root.service.openResult ? root.service.openResult.text : "",
+        openPending: !!root.service.openResult && root.service.openResult.pending,
+        plan: root.service.planResult ? root.service.planResult.text : "",
+        planOk: !!root.service.planResult && root.service.planResult.ok,
+        planPending: !!root.service.planResult && root.service.planResult.pending,
+        busyRefusals: root.service.busyRefusals
+      } : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
       texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined)
     }))
@@ -402,6 +417,10 @@ ShellRoot {
         to: to ? { x: Math.round(to.x), y: Math.round(to.y) } : null })
     } else if (verb === "leave") {
       driver.mouseMove(win.contentItem, 0, 0)
+    } else if (verb === "touch") {
+      // a file the fake engine waits for (FAKE_SELDON_HOLD_OPEN)
+      if (/^[a-z-]+$/.test(arg)) Quickshell.execDetached(["touch", Quickshell.env("HOME") + "/" + arg])
+      else console.log("HARNESS error touch: " + arg)
     } else if (verb === "hide") {
       fakeShell.hide("jax.seldon")
     } else if (verb === "toggle") {

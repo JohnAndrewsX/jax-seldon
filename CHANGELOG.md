@@ -33,6 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attention (rule `pacnew`), a crisis beside a boot or login file —
   mkinitcpio, Limine, PAM (rule `pacnew-red`, ADR-0042). Seldon
   does not read `/etc`, so it cannot tell whether you merged it since.
+- **One agent per case (WP-156, ADR-0041).** `seldon agent start <ID>`
+  refuses (exit 1, nothing launched) while the window of an agent it
+  launched on the case is open, or for 10 s after a launch while that
+  window is still coming up, and names `seldon agent focus <ID>`, which
+  brings that window to the front (Hyprland); `--again` starts another
+  anyway. `seldon agent sessions` lists the open ones. A session is an
+  `org.omarchy.agent` window whose process or a descendant carries the
+  `SELDON_CASE`/`SELDON_LOGBOOK` marker; the engine reads the environment
+  of those windows' processes only (only those keys). Closing the window
+  frees the case, even if the agent left a background process behind.
+  Without Hyprland nothing is tracked. `seldon open --editor` from the desk
+  focuses the terminal window it already opened on the same file instead
+  of starting a second editor.
 - **A pacman transaction that did not complete says so (WP-137,
   ADR-0043).** When pacman logs `transaction failed` or `transaction
   interrupted`, or a transaction has no end line (pacman killed, power
@@ -190,6 +203,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left reads "Merge with pacdiff (from pacman-contrib) in a terminal." —
   text only; the plugin runs nothing. A crisis of rule `pacnew-red` says
   why it is loud.
+- **The desk steps aside for what it opens (WP-156).** After it starts
+  an agent, opens the editor or runs a fix in a terminal, the desk closes,
+  so the new window is in front instead of hidden behind it. An active
+  case an agent works on shows *Focus* in place of a second *Hand to
+  agent*; a button whose call is running is busy, and *Open in editor*
+  never sends the same file twice within 2 s.
 - **A transaction's packages in the Changelog (WP-137).** Selecting a
   pacman change shows every package of its transaction — ↑ upgraded,
   ↓ downgraded, + installed, − removed, ↻ reinstalled, old → new — and

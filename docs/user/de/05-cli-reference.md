@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 503ba989 -->
+<!-- source: en/05-cli-reference.md @ 3721c641 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -905,9 +905,11 @@ Start an agent on an active case, or ask one about the open changes, a change or
 Usage: seldon agent [OPTIONS] <COMMAND>
 
 Commands:
-  start  Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
-  ask    Ask an agent about the open changes, one change or one case: the prompt holds ids only and names the skill's guide; nothing in the logbook changes (ADR-0036)
-  help   Print this message or the help of the given subcommand(s)
+  start     Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
+  ask       Ask an agent about the open changes, one change or one case: the prompt holds ids only and names the skill's guide; nothing in the logbook changes (ADR-0036)
+  focus     Bring the window of the agent `agent start` launched on a case to the front (Hyprland)
+  sessions  List the agents `agent start` launched whose window is open, one per case (Hyprland)
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
 ```
@@ -950,6 +952,7 @@ Options:
       --risk <RISK>      With --new: R0 to R3 [default: R1]
       --area <AREA>      With --new: area slug; created under areas/ on first use
       --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+      --again            Start another agent although one already works on the case
 
 Examples:
   seldon agent start C-2026-004
@@ -1028,6 +1031,42 @@ Arguments:
 
 Options:
       --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+```
+<!-- /help -->
+
+**Ein Agent pro Case.** `agent start <ID>` lehnt ab, solange das Fenster
+eines Agenten, den es auf dem Case gestartet hat, offen ist (oder 10
+Sekunden nach einem Start, während das Fenster aufgeht), und nennt
+`seldon agent focus <ID>`; `--again` startet trotzdem einen weiteren.
+`agent focus` holt dieses Fenster nach vorn; `agent sessions` listet die
+offenen, eines pro Case. Die Engine schaut auf die Agent-Fenster, die
+Hyprland listet, und erkennt den Case an der Umgebung ihrer Prozesse
+(`SELDON_CASE`, `SELDON_LOGBOOK`); wer das Fenster schließt, gibt den Case
+frei. Ohne Hyprland wird nichts verfolgt und nichts abgelehnt.
+
+<!-- help: seldon agent focus -->
+```text
+Bring the window of the agent `agent start` launched on a case to the front (Hyprland)
+
+Usage: seldon agent focus [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The case
+
+Options:
+
+Example:
+  seldon agent focus C-2026-004
+```
+<!-- /help -->
+
+<!-- help: seldon agent sessions -->
+```text
+List the agents `agent start` launched whose window is open, one per case (Hyprland)
+
+Usage: seldon agent sessions [OPTIONS]
+
+Options:
 ```
 <!-- /help -->
 

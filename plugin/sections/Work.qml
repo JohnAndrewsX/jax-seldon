@@ -30,9 +30,16 @@ import "../Model.js" as Model
 // Writing actions arm on the first press or click and run on the second
 // (the desk's Arm.qml; the bar reads "Confirm …" and shows the hint);
 // Reopen runs at once (it creates a case and destroys nothing). Every call
-// goes through Service.plan(), startAgent(), startAgentNew() or
-// openInEditor() with a fixed argument list (Model.planArgs, agentArgs,
-// agentNewArgs, openArgs). The moved case arrives with the next index and
+// goes through Service.plan(), startAgent(), startAgentNew(), focusAgent()
+// or openInEditor() with a fixed argument list (Model.planArgs, agentArgs,
+// agentNewArgs, agentFocusArgs, openArgs).
+//
+// One agent per case (WP-156): an active case an agent works on
+// (Service.agentSessions) shows *Focus* in place of *Hand to agent* — it
+// brings the agent's window to the front and runs at once — "agent
+// working" in the bar and on its row. While a launch or an open is in
+// flight its button is busy. A window opened or focused closes the desk
+// (Service.stepAside). The moved case arrives with the next index and
 // the selection follows it by id, or goes to the case a Run, a reopen or
 // the sheet made.
 //
@@ -49,7 +56,7 @@ import "../Model.js" as Model
 //
 // Keys: ↑/↓ j/k move, Enter the first action that launches nothing (twice;
 // on an active case To verification — Enter never starts an agent), `a`
-// Hand to agent (twice), `x` Drop (twice), `r` Reopen, `e` Open in editor, `i` the intent
+// Hand to agent (twice) or Focus (once), `x` Drop (twice), `r` Reopen, `e` Open in editor, `i` the intent
 // field, `+` the new-case sheet; Esc leaves a field or closes the sheet
 // (its draft kept). Any other key, a new selection or a new index disarms.
 Section {
@@ -67,7 +74,8 @@ Section {
   readonly property var work: Model.workView(root.prepared, root.completedFilter, root.searchText)
   readonly property var rows: root.work.rows
   readonly property int cursor: root.rowIndex(root.selectedId)
-  readonly property var detailData: Model.caseDetail(root.index, root.prepared, root.selectedId)
+  readonly property var sessions: root.service ? root.service.agentSessions : ({})
+  readonly property var detailData: Model.withSession(Model.caseDetail(root.index, root.prepared, root.selectedId), root.sessions)
   readonly property var current: root.detailData ? root.detailData.row : null
   readonly property var caseActions: Model.caseDeskActions(root.current)
   readonly property var wip: Model.wipStatus(root.index, root.desk ? root.desk.entry.wipLimit : undefined)
@@ -75,6 +83,7 @@ Section {
   readonly property bool pending: !!root.result && root.result.pending
   readonly property bool canWrite: !!root.service && root.service.canWrite
   readonly property bool running: root.pending && !!root.result && root.result.action === "agent-new"
+  readonly property bool opening: !!root.service && !!root.service.openResult && root.service.openResult.pending
   readonly property string armPrefix: root.current ? "case:" + root.current.id + ":" : "case:"
   readonly property string armed: root.arm && root.arm.armedId.indexOf(root.armPrefix) === 0
     ? root.arm.armedId.slice(root.armPrefix.length) : ""
@@ -124,7 +133,9 @@ Section {
     root.importLine = false
     if (!action.write) {
       root.disarm()
-      return root.service ? root.service.openInEditor(c.id) : false
+      if (!root.service) return false
+      if (actionId === "focus") return root.canWrite && !root.pending ? root.service.focusAgent(c.id) : false
+      return root.opening ? false : root.service.openInEditor(c.id)
     }
     if (!root.canWrite || root.pending) return false
     if (!action.arm) return root.runAction(actionId)
@@ -206,6 +217,7 @@ Section {
     }
     if (t === "a") {
       if (Model.caseDeskAction(root.current, "agent")) root.press("agent")
+      else if (Model.caseDeskAction(root.current, "focus")) root.press("focus")
       return true
     }
     if (t === "x") {
@@ -247,15 +259,21 @@ Section {
     return true
   }
 
-  // The bar: the status actions, "Confirm …" on the armed one.
+  // The bar: the status actions, "Confirm …" on the armed one, a busy
+  // label on the one whose call is in flight.
   function barActions() {
     if (root.formOpen) return []
+    var id = root.current ? root.current.id : ""
+    var inFlight = root.pending && root.result.caseId === id ? root.result.action : ""
     var out = root.caseActions.map(function(a) {
+      var busy = a.id === "open" ? root.opening : inFlight === a.id
       return {
         id: a.id,
-        label: root.armed === a.id ? "Confirm " + a.label.toLowerCase() : a.label,
+        label: busy ? (a.id === "agent" ? "Starting…" : a.id === "focus" ? "Focusing…" : a.id === "open" ? "Opening…" : a.label)
+          : root.armed === a.id ? "Confirm " + a.label.toLowerCase() : a.label,
         primary: a.primary,
-        enabled: (a.write ? root.canWrite && !root.pending : true) && (!a.review || root.reviewed)
+        enabled: (a.id === "open" ? !root.opening
+          : a.write || a.id === "focus" ? root.canWrite && !root.pending : true) && (!a.review || root.reviewed)
       }
     })
     // Ask agent (WP-124b, ADR-0036 §1): about this case, any status; the
@@ -281,6 +299,8 @@ Section {
       wip: root.wip.text,
       cursor: root.cursor,
       selected: root.selectedId,
+      working: Object.keys(root.sessions || {}).sort(),
+      opening: root.opening,
       intent: intentField.text,
       intentEditing: intentField.activeFocus,
       pending: root.pending,
@@ -292,7 +312,10 @@ Section {
         id: root.detailData.id,
         status: root.detailData.status,
         heading: root.detailData.heading,
+        meta: root.detailData.meta,
+        working: root.detailData.working === true,
         actions: detail.actions.map(function(a) { return a.label }),
+        enabled: detail.actions.map(function(a) { return a.enabled !== false }),
         ask: root.askResult ? root.askResult.text : "",
         askOk: root.askResult ? root.askResult.ok : true,
         armed: root.armed,
@@ -522,7 +545,8 @@ Section {
       header: index === 0 || (root.rows[index - 1] || {}).group !== modelData.group ? root.work.labels[modelData.group] : ""
       title: modelData.title
       meta: modelData.listMeta
-      aside: modelData.stepsText
+      aside: (modelData.status === "active" && !!root.sessions && !!root.sessions[modelData.id] ? "agent working · " : "")
+        + modelData.stepsText
       stripe: modelData.stripe
       selected: modelData.id === root.selectedId && !root.formOpen
       cursor: false
@@ -817,7 +841,8 @@ Section {
 
         Button {
           visible: !!root.detailData && root.detailData.actionable
-          text: "Open in editor"
+          text: root.opening ? "Opening…" : "Open in editor"
+          enabled: !root.opening
           tooltipText: "The case file (key e)"
           bordered: true
           foreground: root.foreground
