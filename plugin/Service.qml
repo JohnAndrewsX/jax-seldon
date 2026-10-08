@@ -509,10 +509,21 @@ Item {
   // Asked again (a new index), the last text stays on screen, pending (so
   // Start is off until the answer), and an unchanged answer changes no text
   // (WP-102b round 2: a long Intent keeps its layout and scroll position).
+  // A new index while the answer is still in flight is remembered
+  // (`reaskWanted`) and asked once more when it arrives (WP-102b stage 2).
   function showCase(caseId, again) {
     var id = String(caseId || "")
     var c = root.caseShown
-    if (c && c.caseId === id && (c.pending || again !== true)) return false
+    if (c && c.caseId === id && c.pending) {
+      if (again === true) c.reaskWanted = true
+      return false
+    }
+    if (c && c.caseId === id && again !== true) return false
+    return root.askCase(id)
+  }
+
+  function askCase(id) {
+    var c = root.caseShown
     var built = Model.caseShowArgs(id)
     if (built.error || !root.canWrite || !root.run(built.args)) {
       root.caseShown = { ok: false, pending: false, text: built.error || root.writeBlocker || root.lastError, caseId: id,
@@ -667,6 +678,13 @@ Item {
       // the same text again: keep the string the box already lays out
       if (last && result.ok && last.ok && last.caseId === result.caseId && last.intent === result.intent)
         result.intent = last.intent
+      if (Model.reaskAfter(last, result)) {
+        // a new index came meanwhile: this answer enables nothing; ask again
+        result.pending = true
+        root.caseShown = result
+        root.askCase(result.caseId)
+        return
+      }
       root.caseShown = result
     } else if (args[0] === "import") {
       var sep = args.indexOf("--")

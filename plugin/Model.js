@@ -4522,6 +4522,16 @@ function intentReviewed(c, shown) {
     && shown.truncated !== true && !(count(shown.hidden) > 0)
 }
 
+// Whether a `plan show` answer must be asked again at once (WP-102b stage 2):
+// a new index came while it was in flight (Service.showCase set
+// `reaskWanted`), so the answer may already be stale and must not enable
+// Start. Only a successful answer for the same case; a failure is shown,
+// and the next index asks anyway.
+function reaskAfter(last, result) {
+  return isObject(last) && last.reaskWanted === true && isObject(result) && result.ok === true
+    && last.caseId === result.caseId
+}
+
 // The bar's hint while an imported case's Start is off ("" when it is on
 // or the case has no such Start).
 function reviewHint(c, shown) {
