@@ -245,3 +245,54 @@ exit 0
 ```
 
 No `/tmp/seldon-rt.*` left, `/tmp/r161` empty. Not pushed.
+
+## Into next
+
+Branch `wp/161-into-next` from `next` (cd75339a), `main` (c5bec5a2)
+merged. Conflicts: `justfile`, `docs/TESTING.md`, `tests/plugin/bar-view.sh`
+(both sides kept: next's desk shim wording, main's `$rt/ipc` dirs);
+`panel-view.sh` and `overlay-view.sh` stay deleted (next replaced them
+with the desk).
+
+- `tests/plugin/desk-view.sh`: its own `/tmp/seldon-rt.*` (0700, in the
+  EXIT trap), `XDG_RUNTIME_DIR="$rt"` instead of
+  `${XDG_RUNTIME_DIR:-$work}`.
+- `tests/plugin/graph-live.sh` (next only, not in `check`; the real desk
+  in this session's layer shell): its Quickshell ran with the session's
+  runtime dir. Now a private `$rt` that holds links to exactly the
+  session's Wayland socket (unless `WAYLAND_DISPLAY` is absolute) and its
+  `hypr` dir; the trap's `rm -rf` removes the links, not their targets
+  (checked in scratch). The line that reads the session's dir carries the
+  marker. **Not run live**: it shows the desk and takes the keyboard for
+  half a minute on the operator's session; `bash -n` and the static guard
+  only.
+- `plugin-test` on next: service-states, desk-view, bar-view, ipc-restart
+  behind the E29 rule. On next and its branches the merge base with
+  `main` differs under `plugin/`, so the harnesses in effect always run
+  there (TESTING says so).
+- `runtime-dir.test.sh`: the mutants that used panel-view/overlay-view
+  now use desk-view; graph-live joins the per-file loop, the
+  setting-dropped and the marker-dropped mutants. 45 passed, 0 failed.
+
+Two full checks at `dd98fe42`, `SELDON_FULL_CHECK=1`, under `flock`,
+`JUST_TEMPDIR` in scratch both times:
+
+```
+1) XDG_RUNTIME_DIR=/tmp/r161
+by-id before: 327
+runtime-dir.test: 45 · real-home-guard.test: 40 · deploy-test-host.test: 191
+service-states: 344 · desk-view: 1780 · bar-view: 196 · ipc-restart: 44 passed, 0 failed
+  (each: no leftover in /run/user/<uid> 327/327 and in /tmp/r161 0/0)
+check: ok · by-id after: 327 · by-id lists identical · exit 0
+
+2) XDG_RUNTIME_DIR not set by me (the session's /run/user/<uid>)
+by-id before: 327
+service-states: 343 · desk-view: 1779 · bar-view: 195 · ipc-restart: 43 passed, 0 failed
+  (each one line fewer: one watched dir; each 327 before, 327 after)
+check: ok · by-id after: 327 · by-id lists identical · exit 0
+```
+
+No `/tmp/seldon-rt.*` left after either run; `/run/user/<uid>` at 2 %.
+A guard-hook block on the way (a check command whose `bash -c` script came
+from a variable): reported, rewritten literally as the guard asks.
+Not pushed.
