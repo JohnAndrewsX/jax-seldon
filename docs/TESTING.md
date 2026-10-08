@@ -19,7 +19,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh`, `bash tests/plugin/bar-view.sh` (see "Plugin") | **no** (dev host) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` (see "Plugin") | **no** (dev host) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`, not in CI, required before the handover
@@ -945,6 +945,32 @@ since WP-039) and the bottom of the journal's last entry at the default
 font. The framed panel is 500×578, placed 22 px right of the overlay with
 36 px to spare, so the canvas is 2480×1080. Re-check both if the panel's
 layout changes. The image must stay under 1 MB (it is about 150 KB).
+
+### 3d. An IPC exit with two pills (`ipc-restart.sh`)
+
+`bash tests/plugin/ipc-restart.sh` (WP-162) starts the bar harness with
+two BarWidget instances (`HARNESS_IPC_KILL`), waits until one owns
+`jax.seldon.panel`, and ends the shell with `quickshell kill`, the way
+`omarchy restart shell` does. Up to 0.1.3 the owner handed the target to
+its sibling from `Component.onDestruction`; the sibling's IpcHandler then
+registered with the dying engine generation and Quickshell 0.3.1
+crashed. Cases: two drawn widgets and a centre placeholder next to a
+drawn one, each with the owner created first and last (Qt tears the
+newest down first; the shell's order is the owner first). Checks: no
+widget becomes the owner after "Exiting due to IPC request" (the harness
+logs every ownership change), the kill and the shell's exit status are
+0, no crash report under the scratch HOME's `.cache/quickshell/crashes`,
+nothing of the shell's session left running, a clean log, the real-home
+guard.
+
+The harness does not reach the SIGSEGV itself (the sibling's handler is
+enabled during the teardown there too, but nothing registers); the
+ownership check is the one that fails on the old code. The end-to-end
+proof is the live restart with two monitors in the release steps
+(VERSIONING.md, "Tag flow"). Each quickshell runs in its own session
+(`setsid`) and its own runtime dir under `/tmp`, both removed afterwards;
+the runtime-handover side (a monitor unplugged: the next widget takes the
+target over, and IPC `open` reaches it) is `bar-view.sh` §4 and §5.
 
 ### 4. Runtime smoke test in the shell
 
