@@ -1,7 +1,6 @@
 # ADR-0040 — Accepting a decision is the user's act: `seldon decide accept`, one click in the desk
 
-**Status:** proposed (WP-135, under the operator's decision of 2026-10-07
-(E7): "Accept accepts a decision in one click")
+**Status:** accepted 2026-10-08 (operator, E18)
 **Date:** 2026-10-07
 
 > Adds a row to CONTRACT.md's "Commands the plugin may run". ADR-0035 §6
