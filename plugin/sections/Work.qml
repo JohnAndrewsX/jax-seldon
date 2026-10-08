@@ -36,6 +36,17 @@ import "../Model.js" as Model
 // the selection follows it by id, or goes to the case a Run, a reopen or
 // the sheet made.
 //
+// *Import tasks…* (WP-102b): the user's Markdown task files as cases, in
+// ImportForm.qml in the detail — a dry run first, then one click imports
+// (`seldon import task --json [--dry-run] [--area <a>] -- <path>`, the
+// path one argument). An imported case (tag `imported`) shows "imported" in
+// the list; its detail asks the engine for the whole Intent (`seldon plan
+// show <id> --json`, read-only) and shows it as plain monospace text with
+// its provenance line, its source and its line count. Its Start never
+// fires from the list or a key: the bar enables it only while that Intent
+// is shown, and it arms by click (ADR-0027 §2(a); the engine refuses an
+// agent's start).
+//
 // Keys: ↑/↓ j/k move, Enter the first action that launches nothing (twice;
 // on an active case To verification — Enter never starts an agent), `a`
 // Hand to agent (twice), `x` Drop (twice), `r` Reopen, `e` Open in editor, `i` the intent
@@ -45,6 +56,9 @@ Section {
   id: root
 
   property bool sheetOpen: false
+  property bool importOpen: false
+  // The list's line for the last import, until another case action.
+  property bool importLine: false
   // "" or Model.COMPLETED_FILTER_AGENT.
   property string completedFilter: ""
   property string sentIntent: ""
@@ -66,8 +80,20 @@ Section {
     ? root.arm.armedId.slice(root.armPrefix.length) : ""
   readonly property color foreground: Color.popups.text
   readonly property color dim: Util.alpha(root.foreground, 0.65)
+  // WP-102b: the whole Intent of the selected imported case, as the engine
+  // gave it; Start waits for it.
+  readonly property var shown: root.service ? root.service.caseShown : null
+  readonly property bool importedCase: !!root.detailData && root.detailData.imported
+  readonly property bool reviewed: Model.intentReviewed(root.current, root.shown)
+  readonly property var review: root.importedCase && root.shown && root.shown.caseId === root.current.id ? root.shown : null
+  // Asked again for every new index: the case file may have changed.
+  // One source (detailData), so a half-updated binding never names
+  // another case.
+  readonly property string reviewKey: root.detailData && root.detailData.imported && root.detailData.actionable
+    ? root.detailData.id + "@" + (root.index ? String(root.index.generatedAt) : "") : ""
+  readonly property bool formOpen: root.sheetOpen || root.importOpen
 
-  editing: intentField.activeFocus || (root.sheetOpen && sheet.editing)
+  editing: intentField.activeFocus || (root.sheetOpen && sheet.editing) || (root.importOpen && importForm.editing)
 
   function rowIndex(id) {
     var rows = root.rows || []
@@ -93,6 +119,9 @@ Section {
     if (actionId === "ask") return !!c && !!root.service && root.service.askAgent("case", c.id)
     var action = Model.caseDeskAction(c, actionId)
     if (!action) return false
+    // an imported case starts only after its whole Intent was shown
+    if (action.review && !root.reviewed) return false
+    root.importLine = false
     if (!action.write) {
       root.disarm()
       return root.service ? root.service.openInEditor(c.id) : false
@@ -118,12 +147,13 @@ Section {
       return true
     }
     var enter = Model.caseEnterAction(root.current)
-    if (root.sheetOpen || !enter) return false
+    if (root.formOpen || !enter) return false
     return root.press(enter.id) || true
   }
 
   function runIntent() {
     if (!root.service || root.pending) return false
+    root.importLine = false
     var sent = root.service.startAgentNew(intentField.text)
     if (sent) root.sentIntent = intentField.text
     return sent
@@ -132,6 +162,7 @@ Section {
   function focusIntent() {
     root.disarm()
     if (root.sheetOpen) root.closeSheet()
+    if (root.importOpen) root.closeImport()
     if (root.stacked && root.desk) root.desk.back()
     Qt.callLater(function() { intentField.forceActiveFocus() })
   }
@@ -139,6 +170,7 @@ Section {
   function openSheet() {
     root.disarm()
     if (!root.canWrite) return
+    root.importOpen = false
     root.sheetOpen = true
     if (root.stacked && root.desk) root.desk.showDetail()
     Qt.callLater(sheet.focusTitle)
@@ -146,6 +178,20 @@ Section {
 
   function closeSheet() {
     root.sheetOpen = false
+    if (root.desk) root.desk.takeKeys()
+  }
+
+  function openImport() {
+    root.disarm()
+    if (!root.canWrite) return
+    root.sheetOpen = false
+    root.importOpen = true
+    if (root.stacked && root.desk) root.desk.showDetail()
+    Qt.callLater(importForm.focusPath)
+  }
+
+  function closeImport() {
+    root.importOpen = false
     if (root.desk) root.desk.takeKeys()
   }
 
@@ -185,12 +231,17 @@ Section {
     if (!Model.findWorkRow(root.prepared, String(id))) return false
     if (root.rowIndex(String(id)) === -1) root.completedFilter = ""
     root.sheetOpen = false
+    root.importOpen = false
     root.selectedId = String(id)
     if (root.desk) root.desk.showDetail()
     return true
   }
 
   function back() {
+    if (root.importOpen) {
+      root.closeImport()
+      return true
+    }
     if (!root.sheetOpen) return false
     root.closeSheet()
     return true
@@ -198,13 +249,13 @@ Section {
 
   // The bar: the status actions, "Confirm …" on the armed one.
   function barActions() {
-    if (root.sheetOpen) return []
+    if (root.formOpen) return []
     var out = root.caseActions.map(function(a) {
       return {
         id: a.id,
         label: root.armed === a.id ? "Confirm " + a.label.toLowerCase() : a.label,
         primary: a.primary,
-        enabled: a.write ? root.canWrite && !root.pending : true
+        enabled: (a.write ? root.canWrite && !root.pending : true) && (!a.review || root.reviewed)
       }
     })
     // Ask agent (WP-124b, ADR-0036 §1): about this case, any status; the
@@ -236,6 +287,7 @@ Section {
       running: root.running,
       result: root.result ? root.result.text : "",
       resultOk: !!root.result && root.result.ok,
+      importLine: root.importLine && root.service && root.service.importResult ? root.service.importResult.text : "",
       case: root.detailData ? {
         id: root.detailData.id,
         status: root.detailData.status,
@@ -251,8 +303,27 @@ Section {
         linked: root.detailData.linked.length,
         linkedMore: root.detailData.linkedMore,
         intent: root.detailData.intent,
-        result: root.detailData.result
+        result: root.detailData.result,
+        imported: root.detailData.imported,
+        source: root.detailData.source,
+        reviewed: root.reviewed,
+        startEnabled: root.barActions().filter(function(a) { return a.id === "start" && a.enabled }).length > 0,
+        review: root.review ? { pending: root.review.pending, ok: root.review.ok, text: root.review.text,
+          lines: root.review.lines, truncated: root.review.truncated, intent: root.review.intent } : null
       } : null,
+      import: {
+        open: root.importOpen,
+        editing: importForm.editing,
+        path: importForm.path,
+        area: importForm.area,
+        pathError: importForm.pathError,
+        canImport: importForm.canImport,
+        result: importForm.resultText,
+        rows: importForm.result && importForm.current && importForm.result.ok
+          ? importForm.result.created.map(function(c) { return [c.id, c.title, c.source].join("|") }) : [],
+        skipped: importForm.result && importForm.current && importForm.result.ok
+          ? importForm.result.skipped.map(function(k) { return [k.source, k.reason, k.caseId].join("|") }) : []
+      },
       sheet: {
         open: root.sheetOpen,
         editing: sheet.editing,
@@ -271,6 +342,7 @@ Section {
   }
 
   onSelectedIdChanged: root.disarm()
+  onReviewKeyChanged: if (root.reviewKey !== "" && root.service) root.service.showCase(root.reviewKey.split("@")[0], true)
   onRowsChanged: {
     root.disarm()
     if ((root.selectedId === "" || !Model.findWorkRow(root.prepared, root.selectedId)) && root.rows.length > 0)
@@ -289,7 +361,7 @@ Section {
     }
   }
   // Another section shown: disarm; a field gives the keys back, the sheet
-  // stays open with its draft.
+  // and the import form stay open with their drafts.
   onActiveChanged: if (!root.active) {
     root.disarm()
     if (root.editing && root.desk) root.desk.takeKeys()
@@ -374,7 +446,7 @@ Section {
 
       Button {
         id: agentFilter
-        anchors.right: newButton.left
+        anchors.right: importButton.left
         anchors.rightMargin: Style.spacing.sm
         anchors.verticalCenter: parent.verticalCenter
         text: "By agent"
@@ -386,6 +458,24 @@ Section {
         verticalPadding: Style.spacing.xs
         tooltipText: "Completed: only the cases an agent closed (a spot check)"
         onClicked: root.toggleCompletedFilter()
+      }
+
+      Button {
+        id: importButton
+        anchors.right: newButton.left
+        anchors.rightMargin: Style.spacing.sm
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Import tasks…"
+        tooltipText: root.canWrite ? "Your Markdown task files as cases: a dry run first, then one click"
+          : (root.service ? root.service.writeBlocker : "")
+        enabled: root.canWrite
+        selected: root.importOpen
+        bordered: true
+        foreground: root.foreground
+        fontFamily: Style.font.family
+        fontSize: Style.font.caption
+        verticalPadding: Style.spacing.xs
+        onClicked: root.importOpen ? root.closeImport() : root.openImport()
       }
 
       Button {
@@ -413,11 +503,12 @@ Section {
       width: parent.width
       visible: text !== ""
       textFormat: Text.PlainText
-      text: root.result && !(root.sheetOpen && root.result.action === "new") ? root.result.text : ""
+      text: root.importLine && root.service && root.service.importResult ? root.service.importResult.text
+        : root.result && !(root.sheetOpen && root.result.action === "new") ? root.result.text : ""
       wrapMode: Text.Wrap
       maximumLineCount: 3
       elide: Text.ElideRight
-      color: root.result && !root.result.ok ? Color.urgent : root.dim
+      color: !root.importLine && root.result && !root.result.ok ? Color.urgent : root.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
@@ -432,10 +523,11 @@ Section {
       meta: modelData.listMeta
       aside: modelData.stepsText
       stripe: modelData.stripe
-      selected: modelData.id === root.selectedId && !root.sheetOpen
+      selected: modelData.id === root.selectedId && !root.formOpen
       cursor: false
       onClicked: {
         root.sheetOpen = false
+        root.importOpen = false
         root.selectedId = modelData.id
         if (root.desk) root.desk.showDetail()
       }
@@ -449,14 +541,33 @@ Section {
     height: root.height
     visible: !root.stacked || root.detailShown
     backVisible: root.stacked
-    title: root.sheetOpen ? "New case" : root.detailData ? root.detailData.heading : "Work"
-    meta: root.sheetOpen || !root.detailData ? "" : root.detailData.meta
+    title: root.sheetOpen ? "New case" : root.importOpen ? "Import tasks" : root.detailData ? root.detailData.heading : "Work"
+    meta: root.formOpen || !root.detailData ? "" : root.detailData.meta
     actions: root.barActions()
     hint: root.armed !== "" && root.arm ? root.arm.hint
-      : !root.sheetOpen && !root.canWrite && root.caseActions.length > 0 && root.service ? root.service.writeBlocker
+      : !root.formOpen && !root.canWrite && root.caseActions.length > 0 && root.service ? root.service.writeBlocker
+      : !root.formOpen && Model.caseDeskAction(root.current, "start") && Model.caseDeskAction(root.current, "start").review
+        && !root.reviewed ? "Start waits until the whole Intent below is shown; only you start an imported case"
       : ""
     onBackRequested: if (root.desk) root.desk.back()
     onActionTriggered: function(id) { root.press(id) }
+
+    ImportForm {
+      id: importForm
+      width: parent.width
+      visible: root.importOpen
+      service: root.service
+      foreground: root.foreground
+      fontFamily: Style.font.family
+      onLeaveRequested: root.closeImport()
+      onImported: function(caseId) {
+        root.importOpen = false
+        root.completedFilter = ""
+        root.importLine = true
+        if (caseId !== "") root.selectedId = caseId
+        if (root.desk) root.desk.takeKeys()
+      }
+    }
 
     NewCaseSheet {
       id: sheet
@@ -476,7 +587,7 @@ Section {
 
     Text {
       width: parent.width
-      visible: !root.sheetOpen && !root.detailData
+      visible: !root.formOpen && !root.detailData
       textFormat: Text.PlainText
       text: root.index ? "Nothing selected." : "No index to show"
       color: Color.muted
@@ -487,7 +598,7 @@ Section {
 
     Column {
       width: parent.width
-      visible: !root.sheetOpen && !!root.detailData
+      visible: !root.formOpen && !!root.detailData
       spacing: Style.spacing.xxl
 
       Column {
@@ -540,10 +651,93 @@ Section {
         foreground: root.foreground
       }
 
+      // An imported case (WP-102b): the whole Intent as the engine reads it,
+      // plain monospace text, never rendered — its first line is the
+      // engine's provenance line — with its line count; Start waits for it.
+      Column {
+        objectName: "importedReview"
+        width: parent.width
+        visible: root.importedCase
+        spacing: Style.spacing.sm
+
+        Text {
+          textFormat: Text.PlainText
+          text: "IMPORTED TASK" + (root.review && root.review.ok ? " · " + Model.plural(root.review.lines, "line", "lines") : "")
+          color: Color.muted
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+          font.letterSpacing: Style.space(1)
+          font.bold: true
+        }
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: "From " + (root.detailData && root.detailData.source !== "" ? root.detailData.source : "a task file")
+            + ". Read the whole Intent before you start the case: once started, an agent acts on it without asking. Only you start it."
+          color: Color.accent
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        Text {
+          width: parent.width
+          visible: !root.review || root.review.pending || !root.review.ok
+          textFormat: Text.PlainText
+          text: !root.review ? (root.service && root.service.canWrite ? "Loading the whole Intent…"
+              : "The whole Intent needs the engine" + (root.service ? ": " + root.service.writeBlocker : ""))
+            : root.review.text
+          color: root.review && !root.review.pending && !root.review.ok ? Color.urgent : root.dim
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        // Style.font.family is the system's monospace alias (Omarchy's
+        // `omarchy font set`): the Intent reads as the file's text.
+        BorderSurface {
+          id: intentBox
+          width: parent.width
+          visible: !!root.review && root.review.ok
+          implicitHeight: intentText.implicitHeight + Style.spacing.lg * 2
+          radius: Style.cornerRadius
+          color: Style.normalFill
+          borderSpec: Border.flat(Util.alpha(root.foreground, 0.25), Math.max(1, Style.space(1)))
+
+          Text {
+            id: intentText
+            objectName: "importedIntent"
+            x: Style.spacing.xl
+            y: Style.spacing.lg
+            width: intentBox.width - Style.spacing.xl * 2
+            textFormat: Text.PlainText
+            text: root.review && root.review.ok ? root.review.intent : ""
+            color: root.foreground
+            wrapMode: Text.WrapAnywhere
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
+        }
+
+        Text {
+          width: parent.width
+          visible: !!root.review && root.review.ok && root.review.truncated
+          textFormat: Text.PlainText
+          text: "The first 64 KiB are shown; the rest is in the case file."
+          color: Color.urgent
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+
       // The first paragraph of Intent and Result (ADR-0038 §2), plain
-      // text; each hidden when the index has none.
+      // text; each hidden when the index has none (an imported case's
+      // Intent once it is shown whole above).
       Repeater {
-        model: root.detailData ? [["INTENT", root.detailData.intent], ["RESULT", root.detailData.result]]
+        model: root.detailData ? [["INTENT", root.review && root.review.ok ? "" : root.detailData.intent],
+          ["RESULT", root.detailData.result]]
           .filter(function(p) { return p[1] !== "" }) : []
 
         Column {

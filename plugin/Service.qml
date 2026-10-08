@@ -265,6 +265,14 @@ Item {
   // The rules `drift show` named: { <eventId>: { rule, cls } }, kept while
   // the item is an open crisis (Model.keptDriftRules).
   property var driftRules: ({})
+  // WP-102b, *Import tasks…*: the last `import task` call, { ok, pending,
+  // text, dryRun, path, area, created, skipped, redactedLines, caseIds }
+  // (Model.importResult); `path` and `area` are what was sent.
+  property var importResult: null
+  // WP-102b: `plan show <id> --json` of the selected imported case, { ok,
+  // pending, text, caseId, intent, lines, truncated } (Model.caseShowResult):
+  // the whole Intent the detail shows before its Start.
+  property var caseShown: null
 
   // Emitted after every engine call, for panels that wait on a result.
   signal finished(var args, int exitCode, string output)
@@ -474,6 +482,45 @@ Item {
     return true
   }
 
+  // *Import tasks…* (WP-102b): `seldon import task --json [--dry-run]
+  // [--area <slug>] -- <path>`, the path one argument after `--`. One import
+  // at a time; the created cases arrive with the index.
+  function importTasks(path, area, dryRun) {
+    var p = String(path || "")
+    var a = String(area || "")
+    var dry = dryRun === true
+    if (root.importResult && root.importResult.pending) return root.refuseBusy("import", dry ? "dry-run" : "import", "", "")
+    var fail = function(text) {
+      root.importResult = { ok: false, pending: false, text: text, dryRun: dry, path: p, area: a, created: [], skipped: [],
+        redactedLines: 0, caseIds: [] }
+      return false
+    }
+    var built = Model.importArgs(p, a, dry)
+    if (built.error) return fail(built.error)
+    if (!root.canWrite || !root.run(built.args)) return fail(root.writeBlocker || root.lastError)
+    root.importResult = { ok: true, pending: true, text: dry ? "Reading the task file…" : "Importing…", dryRun: dry,
+      path: p, area: a, created: [], skipped: [], redactedLines: 0, caseIds: [] }
+    return true
+  }
+
+  // The whole Intent of a case (WP-102b): `seldon plan show <id> --json`,
+  // read-only. A call for the case already shown or pending is not repeated
+  // unless `again`.
+  function showCase(caseId, again) {
+    var id = String(caseId || "")
+    var c = root.caseShown
+    if (c && c.caseId === id && (c.pending || again !== true)) return false
+    var built = Model.caseShowArgs(id)
+    if (built.error || !root.canWrite || !root.run(built.args)) {
+      root.caseShown = { ok: false, pending: false, text: built.error || root.writeBlocker || root.lastError, caseId: id,
+        intent: "", lines: 0, truncated: false }
+      return false
+    }
+    root.caseShown = { ok: false, pending: true, text: "Loading the whole Intent…", caseId: id, intent: "", lines: 0,
+      truncated: false }
+    return true
+  }
+
   // The rules check (WP-101): `seldon doctor --json` in its own process.
   // Read-only; skipped in dev mode, without an engine, while one runs, and
   // within Model.RULES_CHECK_MS of the last unless `force`.
@@ -604,7 +651,24 @@ Item {
     if (args[0] === "log") root.logResult = result
     else if (args[0] === "open") root.openResult = result
     else if (args[0] === "capture") root.captureResult = result
-    else if (args[0] === "plan") {
+    else if (args[0] === "plan" && args[1] === "show") {
+      result.caseId = args[2]
+      if (result.intent === undefined) result.intent = ""
+      if (result.lines === undefined) result.lines = 0
+      if (result.truncated === undefined) result.truncated = false
+      root.caseShown = result
+    } else if (args[0] === "import") {
+      var sep = args.indexOf("--")
+      var at = args.indexOf("--area")
+      result.dryRun = args.indexOf("--dry-run") !== -1
+      result.path = sep !== -1 ? args[sep + 1] : ""
+      result.area = at !== -1 && at < sep ? args[at + 1] : ""
+      if (result.created === undefined) result.created = []
+      if (result.skipped === undefined) result.skipped = []
+      if (result.caseIds === undefined) result.caseIds = []
+      if (result.redactedLines === undefined) result.redactedLines = 0
+      root.importResult = result
+    } else if (args[0] === "plan") {
       result.action = args[1]
       if (result.caseId === undefined || result.caseId === "") result.caseId = args[1] === "new" ? "" : args[2]
       root.planResult = result
@@ -689,7 +753,9 @@ Item {
     var result = args[0] === "log" ? Model.logResult(exitCode, out, err)
       : args[0] === "open" ? Model.openResult(exitCode, out, err)
       : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
+      : args[0] === "plan" && args[1] === "show" ? Model.caseShowResult(exitCode, out, err)
       : args[0] === "plan" ? Model.planResult(exitCode, out, err)
+      : args[0] === "import" ? Model.importResult(exitCode, out, err)
       : args[0] === "agent" && args[1] === "ask" ? Model.askResult(exitCode, out, err)
       : args[0] === "agent" ? Model.agentResult(exitCode, out, err)
       : args[0] === "drift" && args[1] === "apply" ? Model.applyResult(exitCode, out, err)
@@ -714,7 +780,7 @@ Item {
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
     } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "agent" && args[0] !== "drift" && args[0] !== "decide"
-        && args[0] !== "rules") {
+        && args[0] !== "rules" && args[0] !== "import") {
       // QuickEntry, the Work tab (case actions, Start agent), the drift sheet
       // and the new-decision sheet show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
@@ -884,6 +950,9 @@ Item {
       decideResult: root.decideResult,
       askResult: root.askResult,
       triageResult: root.triageResult,
+      importResult: root.importResult,
+      caseShown: root.caseShown ? { caseId: root.caseShown.caseId, ok: root.caseShown.ok, pending: root.caseShown.pending,
+        lines: root.caseShown.lines, truncated: root.caseShown.truncated, text: root.caseShown.text } : null,
       triageButton: root.triageButton,
       proposalPath: root.proposalPath,
       proposalRead: !!root.proposal,
