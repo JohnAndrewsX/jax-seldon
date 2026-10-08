@@ -426,3 +426,31 @@ Two standalone desk-view runs made before the gate used the session's
 runtime directory. They left instance folders in `/run/user/<uid>`, as the
 orchestrator reported; I did not remove them. Only this handover changed
 after 94d8d26b.
+
+## Second merge of next (2026-10-08)
+
+`next` cc94960c (WP-137, WP-135, WP-102b) merged as 3721c641. 9d81ecae
+moved the German CLI reference's source line to the merged English page.
+
+Conflicts kept both sides, so all four features work side by side:
+- DECISIONS.md: ADR-0040, 0041, 0043, 0044, in number order.
+- CHANGELOG and TESTING: both texts.
+- `validateArgs`: `agent focus`/`agent sessions`, and `import task`.
+- `caseDeskActions`: Focus for a working case, and the review gate on an
+  imported case's Start.
+- The tail of `Model.js`:
+  - WP-137's transaction detail and the WP-156 block, each taken whole and
+    checked verbatim against its parent;
+  - no function lost, none duplicated.
+- Service: the focus and import results.
+- Work's bar: the busy labels with WP-102b's review gate, under `formOpen`.
+- desk-view:
+  - `today-live` keeps the summons, with next's counts;
+  - `decisions-live` opens the editor where Accept no longer does
+    (WP-135, `decide accept`).
+
+Every harness run used a private 0700 `XDG_RUNTIME_DIR`, removed after
+the run. `flock /tmp/seldon-check.lock just check` on **9d81ecae: exit 0**
+(`check: ok`; docs-check ok, qmllint ok 48 files, model.test.js 183,
+real-home-guard 11, service-states 342, desk-view 1778, bar-view 194).
+Only this handover changed after 9d81ecae.
