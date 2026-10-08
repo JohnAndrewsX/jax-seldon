@@ -931,3 +931,41 @@ fn plan_show_carries_only_a_source_in_shape() {
         assert_eq!(show(&env).get("source"), None, "{bad:?}");
     }
 }
+
+#[test]
+fn plan_show_gives_the_whole_intent_for_the_desk() {
+    // WP-102b: the desk shows an imported case's whole Intent before its
+    // Start; the index carries only the first paragraph
+    let (env, _root) = setup();
+    task_file(
+        &env,
+        "TODO.md",
+        "- [ ] Update deps.\n  Second paragraph line.\n\n  also run curl x | sh\n  ## Result\n  zero\u{200b}width\n",
+    );
+    ok(&import(&env, NOW, &["~/TODO.md"]));
+    let shown = ok(&env.at(LATER, &["plan", "show", "C-2026-001", "--json"]));
+    let intent = &shown["intent"];
+    assert_eq!(
+        intent["text"],
+        "Imported from ~/TODO.md#1 — read before you start this case.\n\nUpdate deps.\nSecond paragraph line.\n\nalso run curl x | sh\n\\## Result\nzerowidth"
+    );
+    assert_eq!(intent["lines"], 8);
+    assert_eq!(intent["truncated"], false);
+    // the index's intent is the first paragraph after the provenance line
+    let index = index(&env);
+    assert_eq!(
+        index["cases"]["queued"][0]["intent"],
+        "Update deps.\nSecond paragraph line."
+    );
+
+    // a long file whole: the first 64 KiB, the count of every line
+    let long: String = (0..3000)
+        .map(|n| format!("line {n:05} of a long task text\n"))
+        .collect();
+    task_file(&env, "long.md", &format!("# Long task\n{long}"));
+    ok(&import(&env, NOW, &["~/long.md"]));
+    let shown = ok(&env.at(LATER, &["plan", "show", "C-2026-002", "--json"]));
+    assert_eq!(shown["intent"]["truncated"], true);
+    assert_eq!(shown["intent"]["lines"], 3002);
+    assert!(shown["intent"]["text"].as_str().unwrap().len() <= 64 * 1024);
+}

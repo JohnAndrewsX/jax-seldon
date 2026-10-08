@@ -183,6 +183,14 @@ seldon plan list [--status S] [--area A]          # a case file that does not lo
                                                  # --json `warnings`), the others are listed, exit 0 (WP-077)
 seldon plan show <ID>                            # the case file's path and text as quoted lines (`> `, as
                                                  # hook session-start, §8), under one note line; --json unquoted
+                                                 # (`case`, `body`, `activeCase`) plus `intent` (WP-102b): the
+                                                 # whole *Intent* section as display text — control characters
+                                                 # other than line breaks and tabs as spaces, direction and format
+                                                 # characters dropped, redacted (`index::build::plain_text`, the
+                                                 # index's ADR-0038 rule without the clip) — `{text, lines,
+                                                 # truncated}`, `text` at most 64 KiB cut at a character, `lines`
+                                                 # counted before the cut; `null` while `[redaction] patterns` do
+                                                 # not compile. The desk shows it before an imported case's Start
 seldon drift [--crisis-only] [--all] [--json]    # read-only: index items, crises first; totals count all; --all:
                                                  # every item that can still be resolved, routine ones too,
                                                  # uncapped (ADR-0028 §4c). Each item adds `class`

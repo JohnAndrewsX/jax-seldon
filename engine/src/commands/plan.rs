@@ -1050,8 +1050,13 @@ fn list(ctx: &Context, args: ListArgs) -> Result<Output> {
 /// `plan show`: the case file's path and text as quoted lines (`> `, as
 /// `hook session-start` prints logbook text), under a line that says what
 /// they are; `--json` gives them unquoted.
+/// The most of a case's *Intent* `plan show --json` gives in `intent.text`,
+/// in bytes (WP-102b: the desk shows it whole before an imported case's
+/// Start).
+pub const SHOW_INTENT_MAX: usize = 64 * 1024;
+
 fn show(ctx: &Context, id: &str) -> Result<Output> {
-    let (_, logbook) = ctx.open_logbook()?;
+    let (config, logbook) = ctx.open_logbook()?;
     let file = cases::find(&logbook, id)?;
     let mut human = format!(
         "Case {id}: its file's path and text.\n{}\n",
@@ -1063,7 +1068,32 @@ fn show(ctx: &Context, id: &str) -> Result<Output> {
     let mut json = json!({ "case": case_json(&logbook, &file) });
     json["body"] = Value::String(file.doc.body.clone());
     json["activeCase"] = Value::Bool(cases::active_case(&logbook).as_deref() == Some(id));
+    json["intent"] = intent_json(&config, &file.doc.body);
     Ok(Output::ok(human, json))
+}
+
+/// `plan show --json` `intent` (WP-102b): the whole *Intent* section as
+/// display text (`index::build::plain_text`: no control, direction or
+/// format characters, redacted), at most [`SHOW_INTENT_MAX`] bytes cut at a
+/// character, with its line count before the cut. `null` while the
+/// config's redaction patterns do not compile (withheld, as the index
+/// withholds its texts).
+fn intent_json(config: &crate::config::Config, body: &str) -> Value {
+    let Ok(redactor) = Redactor::for_config(config) else {
+        return Value::Null;
+    };
+    let text = crate::index::build::plain_text(&redactor, cases::intent(body));
+    let lines = if text.is_empty() {
+        0
+    } else {
+        text.lines().count()
+    };
+    let truncated = text.len() > SHOW_INTENT_MAX;
+    let mut end = text.len().min(SHOW_INTENT_MAX);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    json!({ "text": &text[..end], "lines": lines, "truncated": truncated })
 }
 
 /// A case in the shape of `case.schema.json` as the index has it: the
