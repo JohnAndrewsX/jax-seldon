@@ -1030,8 +1030,10 @@ function events(index) {
 // (ADR-0013; ADR-0015 §2: `members` present) also under its txId, so the
 // group's other members find it.
 function driftLookup(index) {
-  var byId = {}
-  var byTx = {}
+  // keyed by index text (an id, a txId a hand edit may make `constructor`):
+  // no prototype (WP-137 round 2, B2)
+  var byId = Object.create(null)
+  var byTx = Object.create(null)
   var list = index && Array.isArray(index.drift) ? index.drift : []
   for (var i = 0; i < list.length; i++) {
     var d = list[i]
@@ -3653,7 +3655,7 @@ function deskChangelog(index) {
   var base = changelogRows(index, "all")
   var today = todayDate(index)
   var rows = []
-  var byId = {}
+  var byId = Object.create(null)
   for (var i = 0; i < base.length; i++) {
     var r = base[i]
     var row = {}
@@ -5420,16 +5422,25 @@ function graphShape(ctx, kind, x, y, r) {
 
 var TX_STATUSES = ["failed", "interrupted", "unfinished"]
 // The detail's callout: its title and what the status means. pacman runs
-// its post-transaction hooks only after `transaction completed`.
+// its post-transaction hooks only after `transaction completed`
+// (alpm-hooks(5): they "will not run if the transaction fails to complete
+// for any reason"), and only for that transaction's targets: a later run
+// that no longer includes a package already changed never runs them for
+// it. Hence the safe step before a reboot (WP-137 round 2, B1). Text
+// only: the plugin runs nothing (AGENTS.md §8).
 var TX_STATUS_TITLES = {
   failed: "Transaction failed",
   interrupted: "Transaction interrupted",
   unfinished: "Transaction did not finish"
 }
+// Omarchy's 10-omarchy-hyprland-reload-pause hook pauses the auto-reload
+// before an omarchy-settings update; its 90-…-resume twin is a
+// post-transaction hook.
+var TX_STEPS_TEXT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; if it updated omarchy-settings, Hyprland's auto-reload may stay paused until those steps run. Before you reboot, reinstall the packages listed here (`pacman -S` with their names) or ask your agent in a case; a plain rerun does not run those steps for packages already upgraded."
 var TX_STATUS_TEXTS = {
-  failed: "pacman reported this transaction as failed: a package could not be removed or upgraded. The packages below may be all it changed, and its post-transaction hooks (such as the initramfs and the boot entries) did not run. pacman's output in the terminal named the error.",
-  interrupted: "pacman was interrupted and stopped after the packages below; the ones it had not reached are unchanged, and its post-transaction hooks (such as the initramfs and the boot entries) did not run. Running the update again finishes it; reboot after that.",
-  unfinished: "pacman never logged the end of this transaction: it was killed, or the machine went down while it ran. The packages below may be all it changed, the last one possibly half written, and its post-transaction hooks most likely did not run."
+  failed: "pacman reported this transaction as failed: a package could not be installed, upgraded or removed, and pacman's output in the terminal named the error. The packages below may be all it changed. " + TX_STEPS_TEXT,
+  interrupted: "pacman was interrupted and stopped after the packages below; the ones it had not reached are unchanged. " + TX_STEPS_TEXT,
+  unfinished: "pacman never logged the end of this transaction: it was killed, or the machine went down while it ran. The packages below may be all it changed, the last one possibly half written. " + TX_STEPS_TEXT
 }
 // ↑ upgraded, ↓ downgraded, + installed, − removed, ↻ reinstalled; the
 // list shows the unusual changes first.
@@ -5462,7 +5473,9 @@ function txStatusOf(e) {
 // event is one of its packages, so the cap may have cut it.
 function transactionIndex(index) {
   var all = events(index)
-  var out = {}
+  // keyed by txId or meta.transaction, text a hand-edited ledger line may
+  // make `constructor` or `__proto__`: no prototype (WP-137 round 2, B2)
+  var out = Object.create(null)
   var at = function(id) {
     if (out[id] === undefined) out[id] = { packages: [], files: 0, status: "", oldest: false }
     return out[id]
@@ -5494,7 +5507,7 @@ function txVersions(e) {
 
 // "4 packages: 1 removed, 1 installed, 2 upgraded".
 function txSummary(packages) {
-  var n = {}
+  var n = Object.create(null)
   for (var i = 0; i < packages.length; i++) n[packages[i].kind] = (n[packages[i].kind] || 0) + 1
   var parts = []
   for (var k = 0; k < TX_KINDS.length; k++)

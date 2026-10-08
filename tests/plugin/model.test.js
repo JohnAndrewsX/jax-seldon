@@ -2386,7 +2386,20 @@ test("transactionDetail: an interrupted transaction in the row and the detail (W
   const t = d.transaction
   same([t.status, t.title, t.list], ["interrupted", "Transaction interrupted", true])
   assert.ok(t.text.startsWith("pacman was interrupted and stopped after the packages below"))
-  assert.ok(t.text.includes("post-transaction hooks"))
+  // round 2, B1: the facts, then the safe step before a reboot; never
+  // "run the update again, then reboot" (a rerun skips the hooks of
+  // packages already upgraded)
+  const steps = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; "
+    + "if it updated omarchy-settings, Hyprland's auto-reload may stay paused until those steps run. "
+    + "Before you reboot, reinstall the packages listed here (`pacman -S` with their names) or ask your agent in a case; "
+    + "a plain rerun does not run those steps for packages already upgraded."
+  assert.ok(t.text.endsWith(steps), t.text)
+  for (const s of M.TX_STATUSES) {
+    assert.ok(M.TX_STATUS_TEXTS[s].endsWith(steps), s)
+    assert.ok(!/reboot after|finishes it/.test(M.TX_STATUS_TEXTS[s]), s)
+  }
+  // N5: a failed install is a failed transaction too
+  assert.ok(M.TX_STATUS_TEXTS.failed.includes("could not be installed, upgraded or removed"))
   same(t.packages.map(M.txPackageLine), ["↑ gtk4  1:4.18.6-1 → 1:4.18.7-1", "↑ libadwaita  1:1.7.6-1 → 1:1.7.7-1"])
   same(d.kv.find(r => r[0] === "Transaction"), ["Transaction", "2 packages: 2 upgraded · interrupted"])
   // the class is the engine's, unchanged: routine (ADR-0043 §2)
@@ -2444,6 +2457,47 @@ test("transactionDetail: a downgrade group, a cut index, a clipped command (WP-1
   clip.events.filter(e => e.txId === "tx-20260927T123000").forEach(e => { e.meta.truncated = true })
   assert.ok(M.eventDetail(clip, M.deskChangelog(clip), MESA).kv.find(r => r[0] === "Command")[1]
     .endsWith("(clipped in the index; the ledger has it in full)"))
+})
+
+test("transactions keyed by Object.prototype names keep the desk whole (WP-137 round 2, B2)", () => {
+  // a hand-edited ledger line may carry any txId; the engine indexes it
+  const PROTO = ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]
+  const v = JSON.parse(sample)
+  const pac = v.events.filter(e => e.source === "pacman").slice(0, PROTO.length)
+  pac.forEach((e, i) => { e.txId = PROTO[i]; e.meta = Object.assign({}, e.meta, { txStatus: "interrupted" }) })
+  // a WP-141 note naming one of them, and a drift group keyed by another
+  v.events.unshift({ id: "01M2W5S6000000000000000NTF", ts: "2026-10-01T18:00:00+02:00", source: "pacman", kind: "note",
+    subject: "/etc/x.pacnew", detail: "/etc/x installed as /etc/x.pacnew", actor: "system",
+    meta: { transaction: "__proto__" } })
+  v.drift.find(d => d.txId === "tx-20260927T123000").txId = "constructor"
+  let p
+  assert.doesNotThrow(() => { p = M.deskChangelog(v) })
+  same(p.rows.length, v.events.length)
+  same(pac.map(e => M.changelogRow(p, e.id).alert), PROTO.map(() => "interrupted"))
+  const today = M.deskToday(v, p)
+  assert.ok(Array.isArray(today.needs), "Today keeps its rows")
+  for (const e of pac) {
+    const d = M.eventDetail(v, p, e.id)
+    same([d.transaction.status, d.transaction.packages.map(x => x.id)], ["interrupted", [e.id]])
+    same(d.kv.find(r => r[0] === "Transaction")[1], "1 package: 1 " + M.TX_VERBS[e.kind] + " · interrupted"
+      + (e.txId === "__proto__" ? " · left 1 file" : ""))
+  }
+  same(M.eventDetail(v, p, "01M2W5S6000000000000000NTF").transaction.files, 1)
+  // in an index without such txIds, the names are no transactions either
+  const plain = M.transactionIndex(JSON.parse(sample))
+  for (const k of PROTO) assert.strictEqual(plain[k], undefined, k)
+})
+
+test("Today's NEEDS YOU row carries an incomplete transaction's word (WP-137 round 2, N1)", () => {
+  // a pacman crisis whose transaction was interrupted
+  const v = JSON.parse(sample)
+  const ollama = v.events.find(e => e.id === OLLAMA)
+  ollama.meta = Object.assign({}, ollama.meta, { txStatus: "interrupted" })
+  v.drift.find(d => d.eventId === OLLAMA).crisis = true
+  const p = M.deskChangelog(v)
+  const row = M.deskToday(v, p).needs.find(r => r.id === OLLAMA)
+  same([row.stripe, row.alert], ["crisis", "interrupted"])
+  same(M.deskToday(v, p).needs.filter(r => r.id !== OLLAMA).map(r => r.alert), M.deskToday(v, p).needs.filter(r => r.id !== OLLAMA).map(() => ""))
 })
 
 test("transactionDetail: a file pacman left names its transaction (WP-141 hook, WP-137)", () => {
