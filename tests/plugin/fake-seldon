@@ -115,7 +115,9 @@
 # as already imported. `plan show <id> --json` (read-only, never locked)
 # answers {case, body, activeCase, intent: {text, lines, truncated}} — the
 # kept Intent, else the index's provenance line and intent;
-# FAKE_SELDON_SHOW_WITHHELD gives `intent: null`.
+# FAKE_SELDON_SHOW_WITHHELD gives `intent: null`; FAKE_SELDON_SHOW_HIDDEN=N
+# appends N markers `‹U+E0072›` and reports `hidden: N`;
+# FAKE_SELDON_SHOW_TRUNCATED reports `truncated: true` (WP-102b round 2).
 #
 # `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
@@ -564,8 +566,12 @@ plan_show() { # plan_show <id>
     text=$(jq -r 'if .source then "Imported from " + .source + " — read before you start this case.\n\n" else "" end
       + (.intent // "")' <<<"$c")
   fi
-  jq -cn --argjson c "$c" --arg text "$text" '{case: $c, body: "", activeCase: false,
-    intent: {text: $text, lines: (if $text == "" then 0 else ($text | split("\n") | length) end), truncated: false}}'
+  local hidden=${FAKE_SELDON_SHOW_HIDDEN:-0} i
+  for ((i = 0; i < hidden; i++)); do text+="‹U+E0072›"; done
+  jq -cn --argjson c "$c" --arg text "$text" --argjson hidden "$hidden" --arg cut "${FAKE_SELDON_SHOW_TRUNCATED:-}" \
+    '{case: $c, body: "", activeCase: false,
+      intent: {text: $text, lines: (if $text == "" then 0 else ($text | split("\n") | length) end), truncated: ($cut != ""),
+        hidden: $hidden}}'
 }
 
 plan_reopen() { # plan_reopen <id>

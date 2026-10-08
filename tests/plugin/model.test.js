@@ -3260,6 +3260,50 @@ test("an imported case: marked in the list; its Start never by Enter, armed by c
   same([d.imported, d.source], [true, "~/Notizen/aufgaben.md#4"])
 })
 
+test("BAD_PATH_CHARS is exactly fixtures/bad-path-chars.json, the engine's bad_path_char (round 2, N3)", () => {
+  const fixture = JSON.parse(fs.readFileSync(path.join(root, "fixtures/bad-path-chars.json"), "utf8"))
+  const ranges = fixture.ranges.map(r => [parseInt(r[0], 16), parseInt(r[1], 16)])
+  for (let cp = 0; cp <= 0x10ffff; cp++) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue
+    const listed = ranges.some(r => cp >= r[0] && cp <= r[1])
+    const refused = M.BAD_PATH_CHARS.test(String.fromCodePoint(cp))
+    if (listed !== refused) assert.fail("U+" + cp.toString(16).toUpperCase() + ": listed " + listed + ", refused " + refused)
+  }
+  // in a path: the separators and a tag character too
+  for (const bad of ["~/x Reviewed by you.md", "~/a b.md", "~/t\u{e0072}.md", "~/s­hy.md"])
+    assert.notStrictEqual(M.importPathError(bad), "", JSON.stringify(bad))
+})
+
+test("a truncated Intent or one with hidden characters keeps Start off, with the hint (round 2, B1, B2)", () => {
+  const index = M.parseIndex(sample).index
+  const row = M.findWorkRow(M.deskWork(index), "C-2026-007")
+  const shown = { ok: true, pending: false, caseId: "C-2026-007", truncated: false, hidden: 0 }
+  assert.strictEqual(M.intentReviewed(row, shown), true)
+  assert.strictEqual(M.reviewHint(row, shown), "")
+  const cut = Object.assign({}, shown, { truncated: true })
+  assert.strictEqual(M.intentReviewed(row, cut), false)
+  assert.strictEqual(M.reviewHint(row, cut),
+    "the Intent is longer than the desk shows: read the whole Intent in the editor; start this case from the terminal.")
+  const hid = Object.assign({}, shown, { hidden: 21 })
+  assert.strictEqual(M.intentReviewed(row, hid), false)
+  assert.strictEqual(M.reviewHint(row, hid),
+    "21 hidden characters are marked: read the whole Intent in the editor; start this case from the terminal.")
+  assert.strictEqual(M.reviewHint(row, Object.assign({}, shown, { hidden: 1, truncated: true })),
+    "1 hidden character is marked and the Intent is longer than the desk shows: read the whole Intent in the editor; start this case from the terminal.")
+  assert.strictEqual(M.reviewHint(row, null), "Start waits until the whole Intent below is shown; only you start an imported case")
+  assert.strictEqual(M.reviewHint(row, Object.assign({}, shown, { pending: true })),
+    "Start waits until the whole Intent below is shown; only you start an imported case")
+  // a case that is not imported has no such hint
+  assert.strictEqual(M.reviewHint(M.findWorkRow(M.deskWork(index), "C-2026-005"), null), "")
+  const r = M.caseShowResult(0, JSON.stringify({ case: { id: "C-2026-007" },
+    intent: { text: "a‹U+E0072›", lines: 1, truncated: false, hidden: 1 } }), "")
+  same([r.ok, r.hidden], [true, 1])
+  const imp = M.importResult(0, JSON.stringify({ mode: "dry-run", created: [], droppedCharacters: 23,
+    skipped: [{ source: "~/big.md", reason: "too-long", case: null }] }), "")
+  assert.strictEqual(imp.text, "Nothing new to import · 1 task skipped · 23 invisible characters dropped")
+  assert.strictEqual(imp.skipped[0].reason, "too long to review in the desk (over 64 KiB)")
+})
+
 test("ImportForm and the imported review show engine text as plain text", () => {
   for (const f of ["plugin/components/desk/ImportForm.qml", "plugin/sections/Work.qml"]) {
     const qml = fs.readFileSync(path.join(root, f), "utf8")

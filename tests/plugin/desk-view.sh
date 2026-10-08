@@ -1091,7 +1091,7 @@ clean_log import-live
 # kept after Esc), and a whole Intent the engine withholds: Start stays off.
 mkdir -p "$work/home-import-refused"
 run import-refused "" 1920x1080 \
-  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;click:Import tasks…;type:notes.txt;key:Backspace*9;type:~/missing.md;key:Return;settle;key:Escape;click:Import tasks…;key:Escape;click:Start;click:Start" \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;click:Import tasks…;type:notes.txt;key:Backspace*9;type:~/missing.md;key:Return;settle;key:Escape;click:Import tasks…;key:Escape;click:Start;click:Start;trigger:workDetail:start;trigger:workDetail:start" \
   HOME="$work/home-import-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_WITHHELD=1
 expect import-refused 2 "[$tc.imported, $tc.startEnabled, $tc.hint, $tc.review.text] | map(tostring) | join(\",\")" \
   "true,false,Start waits until the whole Intent below is shown; only you start an imported case,The engine withholds the Intent while the redaction patterns do not compile"
@@ -1104,11 +1104,63 @@ expect import-refused 8 "$ti.result" "~/missing.md: cannot read the task file: N
 shows import-refused 8 "~/missing.md: cannot read the task file: No such file or directory (os error 2)"
 expect import-refused 9 "[$ti.open, .view.keys] | map(tostring) | join(\",\")" "false,true"
 expect import-refused 10 "[$ti.open, $ti.path] | map(tostring) | join(\",\")" "true,~/missing.md"
-# the disabled Start: two clicks arm and run nothing (the argv below)
+# the disabled Start: two clicks arm and run nothing (the argv below); two
+# stray triggers behind the bar neither (press() holds on its own)
 expect import-refused 13 "[$ti.open, $tc.armed, $tc.status, $tc.startEnabled] | map(tostring) | join(\",\")" "false,,queued,false"
+expect import-refused 15 "[$tc.armed, $tc.status] | join(\",\")" ",queued"
 argv_check import-refused "$work/home-import-refused" "$(printf '%s\n' "$startup" "$(q plan show C-2026-007 --json)" \
   "$(q import task --json --dry-run -- '~/missing.md')")"
 clean_log import-refused 'import exit 1: ~/missing\.md: cannot read the task file'
+
+# Round 2 (WP-102b): the dry run is for a path *and* an area — a new area
+# turns Import off until its own dry run (P4), and the import carries it.
+mkdir -p "$work/home-import-area/projects"
+printf '%s\n' "- [ ] One" "- [ ] Two" >"$work/home-import-area/projects/TODO.md"
+run import-area "" 1920x1080 \
+  "summon:$wk;click:Import tasks…;type:~/projects/TODO.md;key:Return;settle;key:Tab;type:dev;key:Return;settle;click:Import 2 cases;settle" \
+  HOME="$work/home-import-area" FAKE_SELDON_FIXTURE="$sample"
+expect import-area 5 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" ",true"
+expect import-area 7 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,false"
+expect import-area 9 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,true"
+argv_check import-area "$work/home-import-area" "$(printf '%s\n' "$startup" \
+  "$(q import task --json --dry-run -- '~/projects/TODO.md')" "$(q import task --json --dry-run --area dev -- '~/projects/TODO.md')" \
+  "$(q import task --json --area dev -- '~/projects/TODO.md')" "$(q plan show C-2026-009 --json)")"
+clean_log import-area
+
+# A new index asks the engine again (P2); meanwhile the last text stays on
+# screen and Start is off (P5, N2); the answer brings Start back.
+mkdir -p "$work/home-import-reask"
+run import-reask "" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;wait:sectionView.case.reviewed=true;text:c;wait:sectionView.case.review.pending=true;wait:sectionView.case.reviewed=true" \
+  HOME="$work/home-import-reask" FAKE_SELDON_FIXTURE="$sample"
+first=$(sed -n 3p "$work/import-reask.steps" | jq -r "$tc.review.intent")
+check "import-reask: the review's text" "$first" \
+  "Imported from ~/Notizen/aufgaben.md#4 — read before you start this case.
+
+Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben."
+expect import-reask 3 "[$tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true"
+expect import-reask 5 "[$tc.review.pending, $tc.review.ok, $tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true,false,false"
+expect import-reask 5 "$tc.review.intent == $(jq -Rs . <<<"$first" | sed 's/\\n"$/"/')" true
+shows import-reask 5 "IMPORTED TASK · 3 lines"
+expect import-reask 6 "[$tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true"
+check "import-reask: plan show again on the new index" "$(grep -c '^plan show C-2026-007 ' "$work/home-import-reask/argv.log")" 2
+clean_log import-reask
+
+# Hidden characters marked and an Intent longer than the desk shows: Start
+# stays off, the hint says why and where to read it (B1, B2).
+mkdir -p "$work/home-import-hidden"
+run import-hidden "" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;wait:sectionView.case.review.pending=false;click:Start;click:Start" \
+  HOME="$work/home-import-hidden" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_HIDDEN=21 FAKE_SELDON_SHOW_TRUNCATED=1
+expect import-hidden 3 "[$tc.review.ok, $tc.review.hidden, $tc.review.truncated, $tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" \
+  "true,21,true,false,false"
+expect import-hidden 3 "$tc.hint" \
+  "21 hidden characters are marked and the Intent is longer than the desk shows: read the whole Intent in the editor; start this case from the terminal."
+shows import-hidden 3 "21 hidden characters are marked ‹U+…› above: text you cannot see in the file. Read the case in the editor; start it from the terminal."
+shows import-hidden 3 "The first 64 KiB are shown; the rest is in the case file. Read the whole Intent in the editor; start this case from the terminal."
+expect import-hidden 5 "[$tc.armed, $tc.status] | join(\",\")" ",queued"
+argv_check import-hidden "$work/home-import-hidden" "$(printf '%s\n' "$startup" "$(q plan show C-2026-007 --json)")"
+clean_log import-hidden
 
 # Dev mode (read-only): an imported case shows the index's first paragraph,
 # says the whole Intent needs the engine, never enables Start; Enter does
