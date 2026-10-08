@@ -582,16 +582,19 @@ puts a form in the detail: a line on what happens ("Each open - [ ] item
 becomes a queued case; … The file is only read. An imported case is started
 by you, after you have read its whole Intent."), the path field (from the
 home `~/…` or absolute; `Model.importPathError` refuses, before any call,
-an empty path, one with a control, text-direction or invisible format
-character, a relative one, one longer than 4096 characters and one that does
+an empty path, one with a character of `BAD_PATH_CHARS` — the engine's
+`bad_path_char` set: control, direction and format characters (WP-140's
+set, the tags included), U+2028, U+2029; both sides are tested against
+`fixtures/bad-path-chars.json` —, a relative one, one longer than 4096 characters and one that does
 not end in `.md` — the engine checks the rest: under the home, outside the
 logbook, a regular file, its size and encoding) and an optional area slug.
 *Dry run* (Enter in a field) sends `seldon import task --json --dry-run
 [--area <a>] -- <path>`, the path one argument after `--`; the form lists
 what would be created (title; status · source · "changed since C-…") and
 what is skipped ("Skipped ~/…#5: done (- [x])", "already imported
-(C-…)", "no text", "the same text again"), and the line "Would create N
-cases · M tasks skipped". Only then, and only for the path and area that
+(C-…)", "no text", "the same text again", "too long to review in the
+desk (over 64 KiB)"), and the line "Would create N cases · M tasks skipped
+· K invisible characters dropped". Only then, and only for the path and area that
 dry run was for, *Import N cases* is enabled: one click sends the same
 without `--dry-run`. The engine's refusal shows in the form, urgent; the
 fields keep their text (Esc closes the form with them). After the import
@@ -601,22 +604,34 @@ text (rule 6).
 
 An imported case (tag `imported`): its detail asks the engine for the
 whole Intent — `seldon plan show <id> --json`, read-only, again with every
-new index — and shows, under IMPORTED TASK · N lines, the accent line
+new index; while it asks again the last text stays on screen, unchanged
+text is not laid out again, and Start is off until the answer — and shows, under IMPORTED TASK · N lines, the accent line
 "From ~/…#N. Read the whole Intent before you start the case: once
 started, an agent acts on it without asking. Only you start it." and the
 engine's `intent.text` as plain text in the system's monospace font
 (`Style.font.family`) in a bordered box, never rendered as Markdown; its
-first line is the engine's provenance line; "The first 64 KiB are shown;
-the rest is in the case file." when `truncated`. While it loads, or when
+first line is the engine's provenance line; a direction or format
+character the case file holds shows as `‹U+XXXX›` (the engine marks it,
+`hidden`), with "N hidden characters are marked ‹U+…› above: text you
+cannot see in the file. Read the case in the editor; start it from the
+terminal."; "The first 64 KiB are shown; the rest is in the case file.
+Read the whole Intent in the editor; start this case from the terminal."
+when `truncated` (an imported Intent never is: `import task` skips a
+longer one, ADR-0044). While it loads, or when
 the engine withholds it (`intent: null`) or cannot be asked (dev mode),
 the block says so and the index's first paragraph (INTENT) stays. **Its
 Start never fires from the list or a key** (ADR-0027 §2(a); Fable,
 WP-102 round 3): Enter has no action on an imported case (neither Start
 nor, in its place, Drop); the bar's *Start* is enabled only while the
-detail shows the whole Intent the engine gave for this case
-(`Model.intentReviewed`), and it arms by click only ("Start C-…? Click
-Confirm."); until then the bar's hint reads "Start waits until the whole
-Intent below is shown; only you start an imported case". The engine
+detail shows the whole Intent the engine gave for this case, not cut and
+with nothing hidden (`Model.intentReviewed`: `truncated` false, `hidden`
+0; ADR-0044), and it arms by click only ("Start C-…? Click Confirm.");
+until then the bar's hint (`Model.reviewHint`) reads "Start waits until
+the whole Intent below is shown; only you start an imported case", or, for
+a cut or marked Intent, "N hidden characters are marked and the Intent is
+longer than the desk shows: read the whole Intent in the editor; start
+this case from the terminal." `press()` refuses such a Start too, behind
+the bar. The engine
 refuses an agent's start of an imported case anyway.
 
 #### Decisions, System, Memory (4–6; WP-123)

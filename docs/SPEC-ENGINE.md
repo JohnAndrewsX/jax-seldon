@@ -185,12 +185,15 @@ seldon plan show <ID>                            # the case file's path and text
                                                  # hook session-start, §8), under one note line; --json unquoted
                                                  # (`case`, `body`, `activeCase`) plus `intent` (WP-102b): the
                                                  # whole *Intent* section as display text — control characters
-                                                 # other than line breaks and tabs as spaces, direction and format
-                                                 # characters dropped, redacted (`index::build::plain_text`, the
-                                                 # index's ADR-0038 rule without the clip) — `{text, lines,
-                                                 # truncated}`, `text` at most 64 KiB cut at a character, `lines`
+                                                 # other than line breaks and tabs as spaces, every direction or
+                                                 # format character (ADR-0038's set, WP-140) marked `‹U+XXXX›`
+                                                 # and counted in `hidden`, then redacted
+                                                 # (`index::build::marked_text`) — `{text, lines, truncated,
+                                                 # hidden}`, `text` at most 64 KiB cut at a character, `lines`
                                                  # counted before the cut; `null` while `[redaction] patterns` do
-                                                 # not compile. The desk shows it before an imported case's Start
+                                                 # not compile (ADR-0044, proposed). The desk shows it before an
+                                                 # imported case's Start and keeps Start off while `truncated` or
+                                                 # `hidden` > 0
 seldon drift [--crisis-only] [--all] [--json]    # read-only: index items, crises first; totals count all; --all:
                                                  # every item that can still be resolved, routine ones too,
                                                  # uncapped (ADR-0028 §4c). Each item adds `class`
@@ -453,10 +456,16 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # like fetched text (ADR-0027 §2(a): instructions in it are outside the
                                                # Intent); the skill says so. CRLF line ends are read as LF before the
                                                # redaction (the rules read `\r\n` as `\n` since WP-128; the parser and
-                                               # the marker's task hashes take LF text), the line count unchanged. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
+                                               # the marker's task hashes take LF text), the line count unchanged. WP-102b
+                                               # round 2 (ADR-0044): direction and format characters (ADR-0038's set,
+                                               # WP-140, the tags included) are dropped from the text before the
+                                               # redaction — so from every task, its title and its case — and counted in
+                                               # `droppedCharacters`. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
                                                # without a letter or digit), `already-imported` (the marker has the same file
                                                # and hash; `case` named), `duplicate` (the same file and hash earlier in this
-                                               # run); else created: queued (completed with --include-done for `[x]`),
+                                               # run), `too-long` (its Intent as it would be written — the provenance line,
+                                               # then the escaped text — over 64 KiB, what `plan show` gives the desk whole;
+                                               # ADR-0044); else created: queued (completed with --include-done for `[x]`),
                                                # zone/risk from the flags (default yellow/R1), priority normal, area from
                                                # --area (created on first use), tag `imported` (CONTRACT.md rule 8), Log line
                                                # `created (zone Z, risk R): imported from <source>` (`<~path>#<line>`, no
@@ -488,8 +497,8 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # ledger, case, marker, commit or index; it settles pending entries in memory
                                                # only). --json → {mode: apply|dry-run, created: [{id (null in a dry run),
                                                # title, status, source, path (null in a dry run), replaces}], skipped:
-                                               # [{source, reason: done|empty|already-imported|duplicate, case}],
-                                               # redactedLines, areaCreated, files, marker (null when nothing was written),
+                                               # [{source, reason: done|empty|too-long|already-imported|duplicate, case}],
+                                               # redactedLines, droppedCharacters, areaCreated, files, marker (null when nothing was written),
                                                # git}. Each new case's frontmatter gets `source: "~/…#line"` (ADR-0038 §3; a
                                                # path of more than 512 bytes as `~/…` and its end), which the index
                                                # copies as `cases[].source`; the marker stays the only idempotency key (an
