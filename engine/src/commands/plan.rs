@@ -598,7 +598,6 @@ fn step(
                 .and_then(|r| r.lines().next()),
             &redactor,
         ),
-        // the reason is redacted already
         Transition::Drop => {
             closing_summary(&args.id, to, &file.case.title, reason.as_deref(), &redactor)
         }
