@@ -75,7 +75,7 @@ Plan and decisions: `PLAN.md` (D1–D7).
   schema, docs-check, plugin validate, qmllint, plugin tests). Run on
   this host, not as root and not in UTC; nothing here depends on either
   (the tests' times carry offsets).
-- `git diff next | grep /home/`: nothing.
+- The diff against `next`, grepped for absolute home paths: none.
 
 ## Open questions
 
@@ -90,3 +90,90 @@ Plan and decisions: `PLAN.md` (D1–D7).
   is mechanical (marker, `VERSION`, tests, docs).
 - **10 MiB** threshold and the 100-character clip are my picks; both are
   one constant each.
+
+## Round 2
+
+Brief: the orchestrator's round-2 brief (stage-1 review). `next` merged
+first (d4a7a48: WP-124, WP-140).
+
+### Fixed
+
+- **B1 — format and bidi characters.** `closing_summary` now drops
+  `import::is_direction_or_format` characters before redaction (a ZWSP
+  can no longer split a token from its pattern) and turns control
+  characters and `is_line_breaking` (U+2028, U+2029) into spaces. The
+  doctor `workpieces` name shows `import::bad_path_char` and
+  line-breaking characters as `?`. Tests: a `ghp_` token split by U+200B
+  is redacted; U+202E, U+2028, U+2029 and U+200B are absent from the
+  subject (unit test) and from the shown name (integration test).
+- **B2 — "Stop if" and the stop rules.** *When to ask first* (rules en
+  and de, SKILL, AGENT-GUIDE §3) now lists four cases, the fourth
+  "**your own *Stop if***: the condition you wrote in the *Plan* holds";
+  the intro says "only in these four cases". The *Plan* lines point
+  there ("stop and ask"). The heading "R3: the one stop" is now "R3:
+  always the user's go" (rules en/de, AGENT-GUIDE, `tests/init.rs`, the
+  init golden), and AGENT-GUIDE's "R3 is the one step that keeps the
+  user's explicit go" says "R3 always keeps the user's explicit go,
+  whatever the *Plan* says". The example is `the binding is taken by
+  another app` everywhere (no `linux`).
+
+### Also in this round
+
+- **N1:** rule 9 reads the Plan without its `Stop if:` item and the lines
+  indented below it (`cases::without_stop_if`, sharing the item matcher
+  with the `Verification:` check, now `item_text` + `continuation`).
+  Tests: `cases::without_stop_if_drops_the_item_and_its_lines` and
+  `reconcile::a_stop_condition_is_not_a_plan` (a package named only under
+  *Stop if* is not linked; one in *Steps* is). SPEC-ENGINE §5 rule 9 (b),
+  SPEC-LOGBOOK and AGENT-GUIDE say so.
+- **N2:** tests now kill: A inner symlinks followed (a link to a dir and
+  to a 20 MiB file inside an orphan folder), B the de hash
+  (`the_shipped_case_templates_are_known`, both languages), C a case
+  file that does not parse counts as present (`work/queued/C-2026-050-…`
+  without frontmatter owns `work/C-2026-050/`), H the 10 MiB boundary (a
+  closed case's folder of exactly 10 MiB is not oversized).
+- **N3:** `folder_size(dir, stop_above, max_entries)`: same filesystem
+  (`MetadataExt::dev`; a mount point below is neither entered nor
+  counted), at most `WALK_MAX` = 100 000 entries per folder, a closed
+  case's folder measured only until it passes 10 MiB; when entries were
+  left the row says `≥ <size> in all`. Unit test
+  `a_workpiece_walk_is_bounded`; the integration test shows `≥`. The
+  same-filesystem check has no test (it needs a mount).
+- **N4:** WP-116 round 1's v4 block (7e7a459) is in `RELEASED_BLOCKS`
+  (en `03d1fb35…`, de `c1bd885f…`), rendered under
+  `templates/rules-v4/AGENTS-wp116r1-{en,de}.md`; the rules tests cover
+  it.
+- **N5:** `SHIPPED_TEMPLATES` is keyed by template name
+  (`shipped_template(name, text)`); a case template copied as
+  `decision.md` is not taken for the built-in one.
+- **Wording:** 0.1.4 "ships in", not "released in" (rules.rs, CHANGELOG).
+  My round-1 reply called 0.1.4 released; it is prepared, not tagged.
+
+### Verification
+
+- `cargo test --no-fail-fast`: all green; clippy `-D warnings` and fmt
+  clean.
+- Mutants (`work/active/WP-143/mutants.py`, a copy with its own target):
+  **31/31 caught**, the 17 of round 1 (patterns updated) and 14 new ones
+  for B1, N1, N2 A/B/C/H, N3 and N5.
+- `flock /tmp/seldon-check.lock just check` on c2d57b5:
+  - The plain run stopped at `check-packaging`: `just` could not write its
+    shebang script — "No space left on device" — because
+    `/run/user/1000` (tmpfs, `XDG_RUNTIME_DIR`) is 100 % full of old
+    quickshell instance folders. Nothing there was touched (orchestrator
+    note).
+  - Re-run as `just --tempdir <my scratch dir> check` (only where `just`
+    puts its own temp scripts; no recipe changed): fmt, clippy, test,
+    check-watch, check-packaging, check-install (229/0),
+    check-deploy (190/0), check-guard, schema-validate, docs-check,
+    plugin-validate, qmllint (47 files), and in plugin-test model,
+    terminal-scripts (65/0), real-home-guard (11/0): **ok**.
+  - **Environment failure:** `service-states` 312 passed, **30 failed**,
+    every one "log has errors" and every error line quickshell's
+    `Failed to copy (detailed) log from memfd … error code 28 "No space
+    left on device"` (30 + 30 lines). This branch changes nothing under
+    `plugin/`. The rest of plugin-test, run by hand under the same lock:
+    `desk-view` 1438 passed, **118 failed** (every one "log has errors",
+    the only error lines the same quickshell ENOSPC pair, 118 + 118);
+    `bar-view` 194 passed, 0 failed.
+- The diff against `next`, grepped for absolute home paths: none.
