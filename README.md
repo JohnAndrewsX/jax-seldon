@@ -242,10 +242,10 @@ an agent working on this repository follows the repository's
 
 ## Project status
 
-v0.1.3 (2026-10-05): one date per snapshot across both snapper read
-paths, doctor warns before a state reset, wider redaction (proxy, JSON,
-cookies) that stays fast, capture warnings in the panel, Seldon's own
-updates are no drift. Before 1.0.0 a
+v0.1.4 (2026-10-08): Seldon stays quiet (routine changes are history, the
+bar counts only what can break boot, login or the shell), one click
+starts an agent on a case, and the shell no longer crashes on a restart
+with the pill on two monitors. Before 1.0.0 a
 minor release may still change the CLI, the logbook layout or the
 contract; the [changelog](CHANGELOG.md) then says so under Breaking.
 Next: the AUR package, the listing in the Omarchy plugin directory and

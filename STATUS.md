@@ -637,6 +637,21 @@ submission). (see `work/queued/`)
   forces), shipped presets and user configs in Omarchy's plugin settings →
   WP-163 (0.2.x, after the operator has seen it in the 0.3 prototype); the
   whole-logbook graph export with an engine-side layout is 0.3 (ADR).
+- E32 a "Reports" area for filed bug reports (target, link, status, the
+  crash/case/package it belongs to; the engine stays offline) → 0.3 with
+  E28. E33 EASY|PRO concept version 2 accepted (Fable's changes binding)
+  → WP-167 (ADR now, the mode in 0.3). E34 a fresh install starts in EASY,
+  existing users stay in PRO with a one-time "Try EASY"; the PRO switch
+  draws attention until its first click. E35 the Quickshell bug report
+  waits one week (review 2026-10-15). E36 v0.1.4 is tagged without the
+  fresh-host reinstall: T1 on the current test host (deploy + smoke +
+  three IPC restarts with the pill in the centre). E37 the six "crises" on
+  the dev host were engine 0.1.3's red zone shown by plugin 0.1.4. E38 the
+  dev host runs only GitHub-released engine and plugin. S7 no (Seldon
+  writes no block into other agents' files). S8 boot configuration hashes
+  → WP-164. S9 `IgnorePkg` names → WP-165. AGENTS.md §6 amended for S8/S9.
+- The test host is the orchestrator's until the operator announces the
+  reinstall.
 
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
