@@ -16,7 +16,12 @@ qs_bin=$(command -v quickshell || command -v qs || true)
 command -v jq >/dev/null || { echo "service-states: jq not found" >&2; exit 1; }
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# Quickshell's runtime dir (its by-id/<id> logs, the IPC socket): private,
+# never the session's, and short, since a unix socket path has at most 107
+# bytes and $work follows TMPDIR (WP-161).
+rt=$(mktemp -d /tmp/seldon-rt.XXXXXX)
+chmod 700 "$rt"
+trap 'rm -rf "$work" "$rt"' EXIT
 source "$root/tests/plugin/real-home-guard.sh"
 
 # A PATH with the tools the fakes need but never a seldon, even when one is
@@ -57,7 +62,7 @@ run() {
   for arg in "$@"; do [[ $arg == HOME=* ]] && home=${arg#HOME=}; done
   mkdir -p "$home"
   env -u SELDON_INDEX -u SELDON_NOW -u SELDON_CONFIG -u SELDON_LOGBOOK QT_QPA_PLATFORM=offscreen \
-    HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
+    XDG_RUNTIME_DIR="$rt" HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_MS="$ms" "$@" \
     "$timeout_bin" 60 "$qs_bin" -p "$harness" >"$work/$name.log" 2>&1 || true
   sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "HARNESS final " | sed 's/.*HARNESS final //' | tail -n 1 >"$work/$name.json" || true
@@ -1217,7 +1222,7 @@ QML
     shift 2
     mkdir -p "$home"
     env -u SELDON_INDEX -u SELDON_NOW -u SELDON_CONFIG -u SELDON_LOGBOOK QT_QPA_PLATFORM=offscreen \
-      HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" PATH="$fake_path" \
+      XDG_RUNTIME_DIR="$rt" HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" PATH="$fake_path" \
       HARNESS_PLUGIN_DIR="$plugin" HARNESS_SHEETS="$script" FAKE_SELDON_FIXTURE="$fx/index.sample.json" "$@" \
       "$timeout_bin" 60 "$qs_bin" -p "$sheets/shell.qml" >"$work/$name.log" 2>&1 || true
     sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "SHEETS " | sed 's/.*SHEETS //' >"$work/$name.steps" || true
