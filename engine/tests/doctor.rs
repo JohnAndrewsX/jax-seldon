@@ -1668,3 +1668,65 @@ fn doctor_says_where_the_hooks_are() {
     );
     assert_eq!(r["fix"], "seldon hook install claude-code");
 }
+
+/// WP-143: the `workpieces` row names the `work/<case-id>/` folders that
+/// no case owns or that a closed case left large: count, size, the
+/// oldest by case id. Information only: always ok, no fix.
+#[test]
+fn doctor_reports_leftover_workpiece_folders() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    let row = || {
+        let v = json(&env.seldon(&["doctor", "--json"]));
+        check(&v, "workpieces").clone()
+    };
+    assert_eq!(row()["message"], "no workpiece folders");
+    let run = |args: &[&str]| {
+        let out = env.seldon(args);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    };
+    for title in ["big", "small", "open"] {
+        run(&["plan", "new", "--no-commit", "--", title]);
+    }
+    for id in ["C-2026-001", "C-2026-002", "C-2026-003"] {
+        run(&["plan", "start", "--no-commit", id]);
+    }
+    for id in ["C-2026-001", "C-2026-002"] {
+        run(&["plan", "verify", "--no-commit", "--no-capture", id]);
+        run(&["plan", "done", "--no-commit", "--no-capture", id]);
+    }
+    let work = root.join("work");
+    let folder = |name: &str, bytes: u64| {
+        let dir = work.join(name);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let f = std::fs::File::create(dir.join("sub/file")).unwrap();
+        f.set_len(bytes).unwrap();
+    };
+    folder("C-2026-002", 1024);
+    folder("notes", 20 << 20);
+    folder("C-2026-01x", 20 << 20);
+    assert_eq!(
+        row()["message"],
+        "1 workpiece folder(s), none orphaned or oversized"
+    );
+    folder("C-2026-001-big", 11 << 20);
+    folder("C-2026-003-open", 20 << 20);
+    folder("C-2026-1000", 10);
+    folder("C-2025-900-old", 5);
+    std::os::unix::fs::symlink(work.join("notes"), work.join("C-2024-001")).unwrap();
+    let r = row();
+    assert_eq!(r["status"], "ok", "{r}");
+    assert!(r.get("fix").is_none(), "{r}");
+    assert_eq!(
+        r["message"],
+        "3 of 5 workpiece folder(s) left behind: 2 orphaned (no case), 1 oversized (a closed \
+         case, over 10.0 MiB), 11.0 MiB in all; the oldest: work/C-2025-900-old/"
+    );
+    // a name is shown without its control characters
+    folder("C-2025-001-\u{1b}[2J", 5);
+    assert_eq!(
+        row()["message"],
+        "4 of 6 workpiece folder(s) left behind: 3 orphaned (no case), 1 oversized (a closed \
+         case, over 10.0 MiB), 11.0 MiB in all; the oldest: work/C-2025-001-?[2J/"
+    );
+}

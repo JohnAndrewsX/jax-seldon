@@ -1,6 +1,6 @@
-//! `seldon doctor`: engine, config, logbook, cases, ledger, fences,
-//! collectors, state, skills, hooks, omarchy, snapper and git checks
-//! (SPEC-ENGINE §3).
+//! `seldon doctor`: engine, config, logbook, cases, ledger, fences, rules,
+//! rollbacks, workpieces, collectors, state, skills, hooks, omarchy,
+//! snapper and git checks (SPEC-ENGINE §3).
 //! Read-only: no lock, no write; never runs anything with privileges.
 //!
 //! Every check is `ok`, `degraded` (works with less, e.g. snapper without
@@ -218,6 +218,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_rules(ctx, logbook));
             checks.push(check_rollbacks(logbook));
             checks.extend(check_planned(logbook, &cases));
+            checks.push(check_workpieces(logbook));
             checks.push(check_collectors(ctx, &effective, logbook, &shown));
             checks.extend(check_reset(ctx, logbook));
             checks.extend(check_pending_reset(ctx, &effective, logbook, source));
@@ -626,6 +627,157 @@ fn check_rollbacks(logbook: &Logbook) -> Check {
     Check::new("rollbacks", Status::Degraded, message).fix(
         "snapper's number cleanup removed it (5 numbered snapshots); before the case's next \
          red change take a new snapshot and write its number into the case's Log",
+    )
+}
+
+/// A workpiece folder of a closed case above this size is reported
+/// (WP-143).
+const WORKPIECE_LARGE: u64 = 10 * 1024 * 1024;
+
+/// The case id a workpiece folder `work/<name>/` belongs to: `name` is a
+/// case id, alone or followed by `-…` (SPEC-LOGBOOK §2).
+fn workpiece_id(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix("C-")?;
+    let year = rest.get(..4)?;
+    let num = rest.get(5..)?;
+    let digits = num.len() - num.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    let id = &name[..2 + 5 + digits];
+    (rest.as_bytes()[4] == b'-'
+        && year.bytes().all(|b| b.is_ascii_digit())
+        && digits >= 3
+        && (name.len() == id.len() || name[id.len()..].starts_with('-')))
+    .then_some(id)
+}
+
+/// The bytes of the regular files under `dir`; symbolic links are not
+/// followed, unreadable folders count as empty.
+fn folder_size(dir: &Path) -> u64 {
+    let mut total = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if meta.is_file() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+/// `bytes` for people: B, KiB, MiB or GiB.
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 3] = ["KiB", "MiB", "GiB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
+}
+
+/// Workpiece folders `work/<case-id>…/` left behind (WP-143), information
+/// only: orphaned (no case file has the id; one that does not parse
+/// counts as there) or oversized (its case is completed or dropped and
+/// the folder holds more than [`WORKPIECE_LARGE`]). Count, size, and the
+/// oldest by case id (ids are chronological). Always `ok`.
+fn check_workpieces(logbook: &Logbook) -> Check {
+    const NAME: &str = "workpieces";
+    let Ok(entries) = std::fs::read_dir(logbook.path("work")) else {
+        return Check::new(NAME, Status::Ok, "no workpiece folders");
+    };
+    let folders: Vec<(String, PathBuf)> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            workpiece_id(&name)?;
+            Some((name, e.path()))
+        })
+        .collect();
+    if folders.is_empty() {
+        return Check::new(NAME, Status::Ok, "no workpiece folders");
+    }
+    let (files, _) = crate::logbook::cases::all(logbook).unwrap_or_default();
+    let named: Vec<String> = logbook
+        .case_files()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|p| {
+            p.file_stem()?
+                .to_str()
+                .and_then(workpiece_id)
+                .map(String::from)
+        })
+        .collect();
+    let (mut orphaned, mut oversized, mut bytes) = (0, 0, 0);
+    // (year, number) of a case id: the oldest is the smallest
+    let key = |id: &str| -> (u32, u64) {
+        let (year, num) = id[2..].split_once('-').unwrap_or_default();
+        (year.parse().unwrap_or(0), num.parse().unwrap_or(0))
+    };
+    let mut oldest: Option<(&str, (u32, u64))> = None;
+    for (name, path) in &folders {
+        let id = workpiece_id(name).unwrap_or_default();
+        let left = if !named.iter().any(|n| n == id) {
+            orphaned += 1;
+            Some(folder_size(path))
+        } else {
+            let closed = files.iter().any(|f| {
+                f.case.id == id
+                    && matches!(f.case.status, CaseStatus::Completed | CaseStatus::Dropped)
+            });
+            // an open case's folder is not measured
+            closed
+                .then(|| folder_size(path))
+                .filter(|size| *size > WORKPIECE_LARGE)
+                .inspect(|_| oversized += 1)
+        };
+        if let Some(size) = left {
+            bytes += size;
+            if oldest.is_none_or(|(o, k)| (k, o) > (key(id), name.as_str())) {
+                oldest = Some((name, key(id)));
+            }
+        }
+    }
+    // a folder name is the user's: no control character reaches the terminal
+    let shown = |name: &str| -> String {
+        name.chars()
+            .map(|c| if c.is_control() { '?' } else { c })
+            .collect()
+    };
+    let Some((oldest, _)) = oldest.map(|(name, k)| (shown(name), k)) else {
+        return Check::new(
+            NAME,
+            Status::Ok,
+            format!(
+                "{} workpiece folder(s), none orphaned or oversized",
+                folders.len()
+            ),
+        );
+    };
+    Check::new(
+        NAME,
+        Status::Ok,
+        format!(
+            "{} of {} workpiece folder(s) left behind: {orphaned} orphaned (no case), {oversized} \
+             oversized (a closed case, over {}), {} in all; the oldest: work/{oldest}/",
+            orphaned + oversized,
+            folders.len(),
+            human_bytes(WORKPIECE_LARGE),
+            human_bytes(bytes)
+        ),
     )
 }
 
