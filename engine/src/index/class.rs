@@ -66,8 +66,9 @@ const THEME_CODE: [&str; 5] = [
 ];
 
 /// The boot and login files a `.pacnew`, `.pacsave` or `.pacorig` beside
-/// is a crisis (ADR-0042, WP-141): mkinitcpio, Limine (the paths Omarchy's
-/// tree writes: `/etc/default/limine`, `/etc/limine-entry-tool.d/`), PAM.
+/// is a crisis (ADR-0042, WP-141): mkinitcpio, Limine (the paths
+/// `omarchy-settings` ships and Omarchy writes: `/etc/default/limine`,
+/// `/etc/limine-entry-tool.conf`, `/etc/limine-entry-tool.d/`), PAM.
 /// Not `/etc/systemd` (Omarchy uses drop-ins) or `/etc/security` (Omarchy
 /// overrides `pam`'s files there): the file in use keeps working. In the
 /// [`PathGlobs`] syntax; a directory covers what lies below it.
