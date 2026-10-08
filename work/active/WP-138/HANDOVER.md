@@ -138,3 +138,72 @@ Not pushed (the orchestrator pushes).
 - `Merge next into wp/138-preview-before-init` (one commit: ADR-0045 EASY |
   PRO; DECISIONS.md row order resolved)
 - `work: WP-138 handover`
+
+## Round 2
+
+Stage 1 (Opus) approved with notes N1–N4 (review packet in the private
+folder). All four are done in `engine: preview's walk first with its own
+budget, an 8 MiB tail, package fields one line and bounded (WP-138 round
+2)`, then `next` merged in (two queue files only).
+
+- **N1, time.** The `~/.config` walk now runs **first**, with its own
+  deadline: `SCAN_BUDGET` 0.25 s from the walk's start, so a slow pacman
+  read can no longer empty the file list. `TAIL_MAX` is now 8 MiB (was
+  64). The dev host's release build parses 21 ms per MiB when every line
+  is in the window (8/16/32 MiB measured: 165/340/685 ms), so the pacman
+  part is at most about 0.17 s. Worst case measured on the release build
+  with a warm cache: a 100 MiB log dense to its end plus 50 000 files took
+  `elapsedMs` 262–295 and wall 269–302 ms over 5 runs. All 80 files were
+  listed, `pacman.partial: true`. The reviewer's run of the same shape
+  took 1271 ms with 0 files. ADR-0047 §2 and SPEC-ENGINE §3 now state the
+  bound as it holds: walk 0.25 s, 8 MiB parsed, under 0.5 s on the dev
+  host's release build with a warm cache. They also say that a slower
+  machine or a cold cache can take longer for the pacman part.
+- **N2, package fields.** `name`, `version`, `from` and `to` go through
+  `shown()` (control and bidi characters become U+FFFD) and are clipped
+  to the schema's bounds (512/256/256 characters, ending in `…`). This
+  also covers the human output, since a one-package transaction prints
+  its name. New test `a_hostile_log_still_gives_schema_valid_one_line_output`
+  feeds a log with ESC sequences, U+202E, U+2066, a 600-character name, a
+  300-character `from` and a 300-character version. The output validates
+  against `preview.schema.json`, and neither the JSON nor the terminal
+  text holds an ESC or a bidi control.
+- **N3, mutants.** M6 (`partial: capped` → `false`) is killed by the new
+  `a_log_denser_than_the_tail_says_partial_and_keeps_the_files`, which
+  asserts `pacman.partial` true for a 9 MiB log dense to its end and false
+  for the fixture log. P3 is killed: `model.test.js` now checks that a
+  512-character name is kept and a 513-character one is dropped.
+  Round-2 mutants were 8, all killed:
+  - M6;
+  - the name without `shown()`;
+  - the name unclipped;
+  - raw versions;
+  - unclipped versions;
+  - a zero walk budget;
+  - the old order (pacman first, the walk's deadline counted from the
+    command's start), killed by the new dense-log test;
+  - P3.
+- **N4, ADR wording.** ADR-0047 has a new §7, "No `contractVersion`
+  bump". It says why AGENTS.md §3's bump rule does not apply:
+  - `contractVersion` versions the index, and the index is unchanged;
+  - `preview.schema.json` is a new, separate schema for one command's
+    stdout;
+  - an old plugin never calls `preview`;
+  - a 0.1.x engine answers with clap's usage error, which the card shows
+    while Set up Seldon still works;
+  - the output itself carries `contractVersion: 2`, which the plugin
+    checks.
+
+  The rest of §3's rule holds (ADR, fixtures, both sides in one PR). A
+  later change to the schema that a released plugin would misread needs
+  a bump.
+- **Unchanged and still open:**
+  - the live test on the test host before `init` (the orchestrator's
+    deploy);
+  - Q1, the AGENTS.md §6 line (the operator's call);
+  - WP-139 reusing `engine/src/config_scan.rs` after this lands, as the
+    orchestrator decided.
+- **Check:** `just check`, full (`SELDON_FULL_CHECK=1`), private
+  `XDG_RUNTIME_DIR` (`/tmp/r138b`, 0700, removed afterwards), under the
+  shared lock, on the merge commit `d57207f6`: **check: ok**, exit 0
+  (desk-view 1803/0, service-states, bar-view, ipc-restart all green).
