@@ -23,11 +23,15 @@
 # finds the dying engine generation for the sibling's handler and skips the
 # registration, where the shell's handler still finds it. The first check
 # is the one that fails on the hand-over; the live restart with two monitors
-# (docs/RELEASE.md) is the end-to-end proof.
+# (docs/VERSIONING.md, "Tag flow", step 3) is the end-to-end proof.
 #
 # Cases: two drawn widgets, and a hidden centre placeholder next to a drawn
 # one (WP-078), each with the owner created first (torn down after its
 # sibling) and last (`late-owner`: torn down first, the shell's order).
+# Case `three` (WP-162 round 2): the owner, a hidden placeholder and a
+# survivor; the owner and the placeholder go at run time in one turn, both
+# still listed, and the survivor must take the target over (IPC `open`
+# reaches it) before the kill.
 #
 # Every quickshell gets its own short runtime dir (a unix socket path has at
 # most 107 bytes), removed afterwards; nothing talks to the running
@@ -78,6 +82,8 @@ printf '#!/bin/sh\nexit 1\n' >"$work/bin/hyprctl"
 printf '#!/bin/sh\necho monospace\n' >"$work/bin/fc-match"
 chmod 755 "$work/bin/hyprctl" "$work/bin/fc-match"
 ln -s "$(command -v sh)" "$work/bin/sh"
+# The harness's own IPC calls (case `three`).
+ln -s "$qs_bin" "$work/bin/quickshell"
 
 pass=0
 fail=0
@@ -176,6 +182,16 @@ run two HARNESS_IPC_KILL=1
 run two-late-owner HARNESS_IPC_KILL=late-owner
 run placeholder HARNESS_IPC_KILL=1 HARNESS_IPC_PLACEHOLDER=1
 run placeholder-late-owner HARNESS_IPC_KILL=late-owner HARNESS_IPC_PLACEHOLDER=1
+run three HARNESS_IPC_KILL=three
+three() { sed 's/\x1b\[[0-9;]*m//g' "$work/three.log" | grep -a "HARNESS kill-ready " | sed 's/.*HARNESS kill-ready //' \
+  | jq -r "$1" 2>/dev/null || echo "<no report>"; }
+check "three owners before" "$(three '.three.owners | map(tostring) | join(",")')" "true,false,false"
+check "three owners after the owner and the placeholder go" "$(three '.three.ownersAfter | map(tostring) | join(",")')" "null,null,true"
+check "three open after exit" "$(three .three.openAfter.exit)" 0
+# "Target not found." (still exit 0) when nobody took the target over
+check "three open after output" "$(three .three.openAfter.out)" ""
+check "three open after reaches the survivor" "$(three '.three.openedAfter | map(tostring) | join(",")')" "null,null,true"
+check "three one handler" "$(grep -a -c 'another handler is registered' "$work/three.log" || true)" 0
 
 real_home_check ipc-restart
 

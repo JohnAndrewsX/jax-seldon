@@ -49,8 +49,14 @@ import qs.Ui
 //                       <bool>`. Qt tears the widgets down newest first; the
 //                       value `late-owner` creates the second widget before
 //                       the owner, so the owner goes first while its sibling
-//                       is still there, as in the shell's teardown. Driven by
-//                       tests/plugin/ipc-restart.sh.
+//                       is still there, as in the shell's teardown. The value
+//                       `three` lists three widgets (the owner, a hidden
+//                       placeholder, a survivor): the owner and the
+//                       placeholder go in one turn while both are still
+//                       listed, the bar drops them afterwards; the report
+//                       `three` holds `ownersAfter`, `openAfter` (an IPC
+//                       `open`) and `openedAfter` before `kill-ready`.
+//                       Driven by tests/plugin/ipc-restart.sh.
 ShellRoot {
   id: root
 
@@ -61,6 +67,7 @@ ShellRoot {
   readonly property string ipcConfig: Quickshell.env("HARNESS_IPC") || ""
   readonly property bool placeholderMode: (Quickshell.env("HARNESS_IPC_PLACEHOLDER") || "") !== ""
   readonly property bool killMode: (Quickshell.env("HARNESS_IPC_KILL") || "") !== ""
+  readonly property bool threeMode: Quickshell.env("HARNESS_IPC_KILL") === "three"
   property var ipcReport: ({})
   property bool done: false
   readonly property string pluginDir: Quickshell.env("HARNESS_PLUGIN_DIR") || ""
@@ -182,9 +189,30 @@ ShellRoot {
   // (HARNESS_IPC_PLACEHOLDER) or the second monitor's.
   function loadOther() {
     if (!root.placeholderMode) return root.load("BarWidget.qml", slot2, { bar: api, moduleName: "jax.seldon" })
+    return root.loadPlaceholder()
+  }
+
+  function loadPlaceholder() {
     var placeholder = root.load("BarWidget.qml", slot0, { bar: api, moduleName: "jax.seldon" })
     if (placeholder) placeholder.anchors.fill = slot0
     return placeholder
+  }
+
+  // HARNESS_IPC_KILL=three: the owner and the placeholder go in one turn,
+  // both still listed while they are torn down; the bar's list drops them
+  // on the next turn.
+  function dropOwnerAndPlaceholder() {
+    var owner = root.widgets[0]
+    var placeholder = root.widgets[1]
+    owner.destroy()
+    placeholder.destroy()
+    Qt.callLater(function() { root.widgets = [null, null, root.widgets[2]] })
+  }
+
+  function killReady(extra) {
+    var r = { owners: root.owners() }
+    if (extra) r.three = extra
+    console.log("HARNESS kill-ready " + JSON.stringify(r))
   }
 
   function watchOwner(w, i) {
@@ -206,6 +234,7 @@ ShellRoot {
       if (root.placeholderMode) all.unshift(other)
       else all.push(other)
     }
+    if (root.threeMode) all.splice(1, 0, root.loadPlaceholder())
     if (root.killMode) all.forEach(function(w, i) { if (w) root.watchOwner(w, i) })
     root.widgets = all
   }
@@ -279,6 +308,12 @@ ShellRoot {
         Qt.quit()
       }
     ]
+    var three = [
+      function(r) { r.owners = root.owners(); root.dropOwnerAndPlaceholder(); ipcStep.restart() },
+      function(r) { r.ownersAfter = root.owners(); root.ipcCall("openAfter", ["open"]) },
+      function(r) { r.openedAfter = root.openedState(); root.killReady(r) }
+    ]
+    if (root.threeMode) return three
     return head.concat(root.placeholderMode ? swap : drop, tail)
   }
 
@@ -304,8 +339,8 @@ ShellRoot {
       var ready = root.service && root.service.ready && root.widget && root.widget.service && glyph && glyph.ready
       if ((!ready || waited < 1000) && waited < 15000) return
       root.done = true
-      if (root.ipcConfig !== "" && root.killMode) {
-        console.log("HARNESS kill-ready " + JSON.stringify({ owners: root.owners() }))
+      if (root.ipcConfig !== "" && root.killMode && !root.threeMode) {
+        root.killReady(null)
         return
       }
       if (root.ipcConfig !== "") {
