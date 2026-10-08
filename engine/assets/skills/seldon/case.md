@@ -60,11 +60,19 @@ seldon plan set <ID> --zone <zone> --risk <risk> --actor agent:<name>
 
 - *Plan*: steps so far, affected paths, rollback, `Verification:`. Write it
   as you go; name packages and paths exactly. It never widens the *Intent*.
+  Before the first change fill two of its lines:
+  - `Persists:` how long the change holds: `survives reboot and update`,
+    `reboot only` (an update overwrites it) or `lost at reboot`.
+  - `Stop if:` what makes you stop, e.g. `the transaction also upgrades
+    linux`, `the binding is taken by another app`. When it holds, stop:
+    say so in the *Log* and to the user, and go on only after the user's
+    go.
 - *Log*: dated lines as you go, append only. The preview line before the
   first privileged step goes here and to the terminal. Name the install
   route you took.
 - Notes and lessons: `seldon log --case <ID> --actor agent:<name> -- "<text>"`;
-  what you learned goes into `memory/lessons.md`, not into the chat.
+  what you learned goes into `memory/lessons.md`, not into the chat. Label
+  each claim there as in *Result*: `measured`, `documented` or `inferred`.
 
 ## Close It Yourself
 
@@ -73,6 +81,25 @@ When the *Plan*'s verification passes:
 1. Fill *Result* with the evidence: what you ran and what it showed. Include
    one check that is not your own artefact: the real use case's exit status,
    `pacman -Q <package>`, `systemctl is-active <unit>`.
+
+   Verify the effect, not the setting. A key binding you wrote into
+   `~/.config/hypr/bindings.lua` is proven when you press it and the app
+   opens, not when `grep` finds the line; a service when it answers, not
+   when its unit file reads right. Reading the config back proves only the
+   write.
+
+   Label each claim: `measured` (you ran it and saw it), `documented` (a
+   source says so; name it) or `inferred` (you concluded it):
+
+   ```markdown
+   SUPER+E opens Zed (measured: pressed it, the window came up).
+   The binding survives `omarchy update` (documented: Omarchy's skill —
+   an update overwrites /usr/share/omarchy, not ~/.config).
+   The old binding is gone for good (inferred: no other file defines it).
+   ```
+
+   The first line of *Result* becomes part of the closing commit
+   (`seldon: <ID> completed — <title>: <first line>`): make it the outcome.
 2. Then, in one go:
 
    ```bash

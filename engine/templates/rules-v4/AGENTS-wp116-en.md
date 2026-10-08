@@ -88,13 +88,7 @@ Everything else is Markdown for people and agents: the *Intent*, *Plan*,
    `.seldon/active-case` names the one started last.
 2. The *Plan* is a running note, not a gate: steps so far, affected paths,
    rollback, verification. Write it as you go, name packages and paths
-   exactly. It never widens the *Intent*. Before the first change fill
-   two of its lines:
-   - `Persists:` how long the change holds: `survives reboot and update`,
-     `reboot only` (an update overwrites it) or `lost at reboot`.
-   - `Stop if:` what makes you stop, e.g. `the transaction also upgrades
-     linux`. When it holds, stop: say so in the *Log* and to the user, and
-     go on only after the user's go.
+   exactly. It never widens the *Intent*.
 3. Before the first privileged step print one preview line, in the
    terminal and in the case's *Log*, and go on without waiting:
    `About to: install X (+deps a, b); snapshot first; rollback: pacman -Rns X`.
@@ -256,11 +250,6 @@ When the *Plan*'s verification passes, close the case yourself:
 1. Fill *Result* with the evidence: what you ran and what it showed.
    Include one check that is not your own artefact: the real use case's
    exit status, `pacman -Q <package>`, `systemctl is-active <unit>`.
-   Verify the effect, not the setting: press the key binding you wrote
-   and see what it does; reading the config back proves only the write.
-   Label each claim `measured` (you ran it and saw it), `documented` (a
-   source says so; name it) or `inferred` (you concluded it). The first
-   line of *Result* goes into the closing commit: make it the outcome.
 2. `seldon plan verify <ID> --actor agent:<name>`, then
    `seldon plan done <ID> --actor agent:<name>`, in one go. The engine
    refuses an agent's `plan done` while *Result* or the *Plan*'s
@@ -290,8 +279,7 @@ say what is left; to give up, `seldon plan drop <ID> --reason "<why>"`.
 
 - Journal: `seldon log "<text>" --case <ID> --actor agent:<name>`.
 - What you learned goes into `memory/` (`memory/lessons.md`: one `## `
-  heading per lesson), not into the chat. Label each claim there as in
-  *Result*: `measured`, `documented` or `inferred`.
+  heading per lesson), not into the chat.
 - A decision that shapes the machine:
   `seldon decide --no-edit --case <ID> -- "<title>"`, then fill in the ADR.
 
