@@ -80,6 +80,7 @@ use super::config::{
     FileStat, HASH_BASIS_KEY, STAT_HASH_ABOVE, SkipPaths, changed_at, persistent_hash,
 };
 use super::{Collector, Ctx, Lost, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
+use crate::import::is_direction_or_format;
 use crate::logbook::git::REPOSITORY_VARS;
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::redact::Redactor;
@@ -1057,14 +1058,14 @@ fn step(git: Git, redactor: &Redactor, dir: &Path, old: &str, new: &str) -> Opti
 
 /// A commit subject as an event holds it: control characters and the line and paragraph separators become
 /// spaces, direction and invisible format characters are dropped (the
-/// set of ADR-0038), white space at the ends trimmed, then redacted
+/// set of ADR-0038, [`is_direction_or_format`]), white space at the ends trimmed, then redacted
 /// (before the clip: a secret at the cut is masked whole) and clipped to
 /// [`COMMIT_SUBJECT_MAX`] characters with `…`. An empty one reads
 /// `(no subject)`.
 fn commit_subject(raw: &str, redactor: &Redactor) -> String {
     let clean: String = raw
         .chars()
-        .filter(|c| !invisible(*c))
+        .filter(|c| !is_direction_or_format(*c))
         .map(|c| if breaks(c) { ' ' } else { c })
         .collect();
     let clean = clean.trim();
@@ -1087,17 +1088,6 @@ fn commit_subject(raw: &str, redactor: &Redactor) -> String {
 /// two).
 fn breaks(c: char) -> bool {
     c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')
-}
-
-/// A character that turns the direction of the text around it or is an
-/// invisible format character (ADR-0038 §2): a subject is shown in the
-/// shell process, and a zero-width space inside a token would hide it
-/// from its redaction rule.
-fn invisible(c: char) -> bool {
-    matches!(
-        c,
-        '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}'
-    )
 }
 
 /// The later mtime of `manifest` and its directory (a clone or a pull
@@ -1687,6 +1677,39 @@ mod tests {
             "reset: 1 commit in, 4 out: x"
         );
         assert_eq!(step("pull", 2, 0, &[]).summary(), "pulled 2 commits");
+    }
+
+    /// WP-140: each code point of the widened set is dropped before the
+    /// redaction, so none hides a token in a commit subject from its rule.
+    #[test]
+    fn a_subject_drops_every_format_character_before_the_redaction() {
+        let r = Redactor::builtin();
+        for c in [
+            '\u{00AD}',
+            '\u{0600}',
+            '\u{0605}',
+            '\u{061C}',
+            '\u{180E}',
+            '\u{2061}',
+            '\u{2064}',
+            '\u{206A}',
+            '\u{206F}',
+            '\u{FFF9}',
+            '\u{FFFB}',
+            '\u{1BCA0}',
+            '\u{1BCA3}',
+            '\u{1D173}',
+            '\u{1D17A}',
+            '\u{E0001}',
+            '\u{E007F}',
+        ] {
+            assert_eq!(
+                commit_subject(&format!("Fix to{c}ken=abc{c}def here"), &r),
+                "Fix token=‹redacted› here",
+                "U+{:04X}",
+                c as u32
+            );
+        }
     }
 
     #[test]

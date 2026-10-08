@@ -25,6 +25,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **More secrets are redacted (WP-140).** A PEM private key
+  (`-----BEGIN … PRIVATE KEY-----`, OpenSSH, RSA, EC, encrypted, PGP) is
+  masked whole between its BEGIN and END lines, also when a clip cut one
+  of them off; a header value in quotes (`Authorization: "Bearer …"`,
+  `"Authorization": "…"`, `x-api-key: '…'`) and a JSON `"x-api-key"` are
+  masked, also HTTPie's and xh's `Authorization:'Bearer …'`; nmcli's
+  secrets (`password X`, `wifi-sec.psk X`,
+  `802-1x.password X`, `vpn.secrets X`, …) are masked and the rest of
+  the line stays. The hooks record a line that gives a secret as a plain
+  argument or pipes it in (`htpasswd -b`, `echo u:pw | chpasswd`,
+  `usermod -p`/`--password`, `smbpasswd -s`, `passwd` fed from the line,
+  `cryptsetup` with a key piped in or written on the same line, `openssl
+  passwd`, `wpa_passphrase`) as `<program> ‹redacted›`. More invisible characters are
+  dropped from the index texts and commit subjects, so none hides a token
+  from its rule (soft hyphen, U+0600–U+0605, U+061C, U+180E,
+  U+2061–U+2064, U+206A–U+206F, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
+  U+1D173–U+1D17A, tags), and the hooks drop them from a command line
+  before reading it. A second redaction no longer
+  merges markers a user pattern left beside a built-in one, and the vault
+  import masks a secret that spans lines. An empty header value
+  (`Authorization:` at the line end) is no longer masked: there is
+  nothing in it.
 - The agent hooks record every command an agent runs with `sudo`,
   `doas`, `pkexec` or `run0`, also a program Seldon does not know: an
   agent's `pkexec lpadmin …` printer setup is now one red `agent/command`

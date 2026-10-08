@@ -163,3 +163,18 @@ and reconciliation, `validate-fixtures.py` and one fixture item.
 - **Treat reads as probes.** Rejected: a read as root is still a use of
   privilege the user granted with a password; the WP's goal is every
   privileged command in the record.
+
+## Amendment note (WP-140, 2026-10-07)
+
+A follow-up of §2's stdin bullet, from WP-129's Fable stage 2, not a new
+decision. Besides a password on sudo's stdin, a line is recorded as
+`<program> ‹redacted›` when any command takes its secret as a plain
+argument or from stdin that the line feeds, in a form no SPEC-ENGINE §7
+rule can tell from its other words: `chpasswd`, `chgpasswd`, `htpasswd
+-b`/`-i`, `smbpasswd -s`/`-w`, `passwd -s`/`--stdin` or fed from the
+line, `useradd`, `usermod`, `groupadd` and `groupmod` with `-p` or
+`--password`, `cryptsetup` on a line that feeds it (a pipe, a
+here-string, a process substitution, or a file the line writes),
+`openssl passwd` and `wpa_passphrase` (SPEC-ENGINE §8). The list is hook-local, as the stdin check is. nmcli's secrets are
+named by their property, so they are a §7 rule (`nmcli-secret`) and an
+nmcli line keeps its other words.

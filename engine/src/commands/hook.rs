@@ -97,6 +97,7 @@ pub const CLAUDE_CODE: &str = "agent:claude-code";
 pub(crate) const LOCK_PATIENCE: Duration = Duration::from_secs(8);
 
 mod context;
+mod secret_args;
 pub use context::{DATA_NOTE, quote, session_start};
 
 /// `seldon hook <command>`.
@@ -1009,16 +1010,31 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
 /// path `[redaction] skipPaths` matches is recorded as `<program>
 /// ‹redacted›` (the program of [`Mutation::subject`]), as an `Edit` of such
 /// a file is recorded as `Edit ‹redacted›`; so is a line in which a wrapper
-/// reads the password from stdin (`echo PW | sudo -S …`, ADR-0039): the
-/// password is somewhere in the line, in a form no rule of SPEC-ENGINE §7
-/// knows.
+/// reads the password from stdin (`echo PW | sudo -S …`, ADR-0039), and a
+/// line that runs a program which takes its secret as a plain argument or
+/// from stdin the line feeds (`htpasswd -b`, `echo u:pw | chpasswd`,
+/// `usermod -p`, [`secret_args`], WP-140): the secret is somewhere in the
+/// line, in a form no rule of SPEC-ENGINE §7 knows.
+///
+/// The line's direction and format characters
+/// ([`crate::import::is_direction_or_format`]) are dropped before it is
+/// read and recorded: a shell line has no use for them, and one inside a
+/// word (`tok<U+200B>en=…`, `Autho<U+200B>rization:`) would hide a secret
+/// from its rule (WP-140 round 3). A note keeps them (a ZWNJ or ZWJ
+/// belongs to its words).
 fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
-    let line = parse_shell(command);
+    let command: String = command
+        .chars()
+        .filter(|c| !crate::import::is_direction_or_format(*c))
+        .collect();
+    let line = parse_shell(&command);
     let found = mutations(&line, &setup.scope, cwd);
     if found.is_empty() {
         return Vec::new();
     }
-    let skipped = password_on_stdin(&line) || names_skipped_path(&line, setup, cwd);
+    let skipped = password_on_stdin(&line)
+        || secret_args::secret_on_the_line(&line)
+        || names_skipped_path(&line, setup, cwd);
     found
         .into_iter()
         .map(|mutation| Record {

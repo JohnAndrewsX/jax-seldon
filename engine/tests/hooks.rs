@@ -3135,6 +3135,159 @@ mod privileged {
         assert_eq!(events[0]["meta"]["wrapper"], "doas");
     }
 
+    /// WP-140: a program that takes its secret as a plain argument, or from
+    /// stdin the line feeds, is recorded as `<program> ‹redacted›`, as a
+    /// password piped into `sudo -S` is; an nmcli secret is masked by its
+    /// SPEC-ENGINE §7 rule and the rest of the line stays; a line of the
+    /// same programs without a secret stays whole.
+    #[test]
+    fn a_secret_given_as_an_argument_is_never_recorded() {
+        let h = Hooks::new();
+        let lines = [
+            (
+                "echo 'alice:hunter2' | sudo chpasswd",
+                "chpasswd ‹redacted›",
+            ),
+            (
+                "sudo htpasswd -b /etc/nginx/.htpasswd alice hunter2",
+                "htpasswd ‹redacted›",
+            ),
+            (
+                "echo hunter2 | sudo passwd --stdin alice",
+                "passwd ‹redacted›",
+            ),
+            (
+                "sudo usermod -aG wheel -p 'hunter2hash' alice",
+                "usermod ‹redacted›",
+            ),
+            (
+                "(echo hunter2; echo hunter2) | sudo smbpasswd -s -a alice",
+                "smbpasswd ‹redacted›",
+            ),
+            (
+                "echo -n hunter2 | sudo cryptsetup open /dev/sdb1 vault -d -",
+                "cryptsetup ‹redacted›",
+            ),
+            // the first command of the script is the privileged record's
+            // (WP-129 decision 6)
+            (
+                "sudo sh -c 'echo alice:hunter2 | chpasswd'",
+                "echo ‹redacted›",
+            ),
+            (
+                "sudo nmcli dev wifi connect Home password hunter2 ifname wlan0",
+                "sudo nmcli dev wifi connect Home password ‹redacted› ifname wlan0",
+            ),
+            (
+                "sudo nmcli con mod Home wifi-sec.psk 'hunter2 x' ipv4.dns 9.9.9.9",
+                "sudo nmcli con mod Home wifi-sec.psk ‹redacted› ipv4.dns 9.9.9.9",
+            ),
+            (
+                "sudo usermod -aG wheel alice",
+                "sudo usermod -aG wheel alice",
+            ),
+            (
+                "sudo cryptsetup open /dev/sdb1 vault",
+                "sudo cryptsetup open /dev/sdb1 vault",
+            ),
+            // round 2: a key file the line writes (B1), and a write that
+            // holds none
+            (
+                "printf hunter2 > k; sudo cryptsetup open /dev/sdb1 vault -d k",
+                "cryptsetup ‹redacted›",
+            ),
+            (
+                "sudo cryptsetup open /dev/sdb1 vault -d /root/key 2>/dev/null",
+                "sudo cryptsetup open /dev/sdb1 vault -d /root/key 2>/dev/null",
+            ),
+            // passwd fed from the line (B2); its status stays
+            (
+                "printf 'hunter2\\nhunter2' | sudo passwd alice",
+                "passwd ‹redacted›",
+            ),
+            (
+                "sudo passwd alice <<< $'hunter2\\nhunter2'",
+                "passwd ‹redacted›",
+            ),
+            ("sudo passwd -S alice", "sudo passwd -S alice"),
+            // the long option's prefix and a hash made on the line (N1)
+            (
+                "sudo usermod --passw=hunter2hash alice",
+                "usermod ‹redacted›",
+            ),
+            (
+                "sudo useradd -m --password $(openssl passwd -6 hunter2) alice",
+                "useradd ‹redacted›",
+            ),
+            // more programs
+            ("sudo openssl passwd -6 hunter2", "openssl ‹redacted›"),
+            (
+                "sudo wpa_passphrase Home hunter2 > /etc/wpa_supplicant/w.conf",
+                "wpa_passphrase ‹redacted›",
+            ),
+        ];
+        for (n, (line, _)) in lines.iter().enumerate() {
+            bash(&h, line, &format!("toolu_args_{n}"));
+        }
+        let events = h.commands();
+        let got: Vec<&str> = events
+            .iter()
+            .map(|e| e["meta"]["command"].as_str().unwrap())
+            .collect();
+        let want: Vec<&str> = lines.iter().map(|(_, c)| *c).collect();
+        assert_eq!(got, want);
+        for e in &events {
+            let shown = format!("asked to run: {}", e["meta"]["command"].as_str().unwrap());
+            assert_eq!(e["detail"], shown.as_str());
+        }
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(!ledger.contains("hunter2"), "{ledger}");
+        let index = read(&h.home().join(".local/state/seldon/index.json"));
+        assert!(index.contains("chpasswd ‹redacted›"), "{index}");
+        assert!(!index.contains("hunter2"), "{index}");
+    }
+
+    /// WP-140 round 3: a command line's direction and format characters
+    /// are dropped before it is read and recorded, so a zero-width space
+    /// inside `token=` or `Authorization:` hides no secret; a note keeps a
+    /// zero-width joiner.
+    #[test]
+    fn format_characters_hide_no_secret_on_a_command_line() {
+        let h = Hooks::new();
+        bash(
+            &h,
+            "sudo lpadmin -x Office tok\u{200B}en=hunter2abc",
+            "toolu_fmt_1",
+        );
+        bash(
+            &h,
+            "sudo lpadmin -p Office -v 'ipp://h.example/p?x=\u{2060}1' -o 'Autho\u{200B}rization:\u{00AD} Bearer hunter2xyz'",
+            "toolu_fmt_2",
+        );
+        let events = h.commands();
+        let got: Vec<&str> = events
+            .iter()
+            .map(|e| e["meta"]["command"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            got,
+            [
+                "sudo lpadmin -x Office token=‹redacted›",
+                "sudo lpadmin -p Office -v 'ipp://h.example/p?x=1' -o 'Authorization: ‹redacted›'",
+            ]
+        );
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(!ledger.contains("hunter2"), "{ledger}");
+        for c in ['\u{200B}', '\u{2060}', '\u{00AD}'] {
+            assert!(!ledger.contains(c), "U+{:04X} in the ledger", c as u32);
+        }
+        // a note is no command line: its joiner stays
+        let out = h.run(&["log", "--", "क्\u{200D}ष note"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(ledger.contains("क्\u{200D}ष note"), "{ledger}");
+    }
+
     /// Round 2, B1: a password piped into `sudo -S` is somewhere in the
     /// line, in a form no redaction rule knows: the line is recorded as
     /// `<program> ‹redacted›`, every record of it, as for skipPaths.

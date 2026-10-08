@@ -4,11 +4,12 @@
 //! `meta` of every event, and by the commands that write free text into
 //! the logbook (`log`, `plan`, `decide`, `drift explain|dismiss`) before
 //! anything is written, through [`Redactor::for_config`]. Built-in rules:
-//! URLs with userinfo, `--password` (also wget's `--http-password`),
+//! the body of a PEM private key, URLs with userinfo, `--password` (also wget's `--http-password`),
 //! `--token`/`--api-key`/`--secret`/`--pass`/`--oauth2-bearer`-style
 //! options, the `pass:…` value of openssl's `-pass`/`-passin`/`-passout`-style
 //! options, `token=` and `…KEY=`/`…TOKEN=`/`…SECRET=`/`…PASSWORD=`-style
-//! assignments, `Authorization:` and `X-…-Key:`-style headers, AWS access
+//! assignments, `Authorization:` and `X-…-Key:`-style headers (a quoted
+//! value too), AWS access
 //! keys, GitHub, GitLab and Slack tokens, `sk-`/`sk_` keys, anything after
 //! `-p` for `mysql|psql|smbclient`, the credentials after `curl -u`, the
 //! password after `sshpass -p` and `docker|podman … login -p`, proxy
@@ -17,7 +18,7 @@
 //! `"…token"`-style keys, `Cookie:`/`Set-Cookie:` header values and the
 //! cookies after `curl -b`/`--cookie`, a client certificate with its
 //! password after `curl -E`/`--cert`, the value after `http|xh -a`/`--auth`,
-//! the local part of an e-mail address (the domain stays); plus the
+//! nmcli's secret properties (`wifi-sec.psk X`, `password X`), the local part of an e-mail address (the domain stays); plus the
 //! user's regexes from `config.toml [redaction] patterns`, each of which
 //! replaces its whole match. The replacement is always [`REDACTED`].
 //!
@@ -30,9 +31,11 @@
 //! `hotkey=Super` stay as they are.
 //!
 //! Redacting twice gives the same text for the built-in rules: a match
-//! that lies inside an existing [`REDACTED`] marker is left alone, so text
-//! redacted by a command and again by the ledger reads the same in both
-//! places.
+//! that lies inside an existing [`REDACTED`] marker is left alone, and so
+//! is one whose masked part holds only markers ([`Rule::masks_only_markers`],
+//! WP-140), so text redacted by a command and again by the ledger reads the
+//! same in both places, also after a user pattern masked a gap next to a
+//! marker.
 //!
 //! Word boundaries are ASCII (`(?-u:\b)`): with a Unicode `\b` a regex
 //! leaves its fast matcher on any non-ASCII text, the marker of an
@@ -126,6 +129,52 @@ const GAP: &str = r"(?:\s|\\\r?\n)";
 /// end, `;`, `&` or `|`: a match needs only one of the two readings, so
 /// every command the plain form reaches is still reached.
 const COMMAND_REST: &str = r#"(?:[^\n;&|]*?|(?:\$'(?:[^'\\]|\\(?s:.))*'|[^\n;&|'"\\]|\\(?:\r\n|(?s:.))|[<>]&|&>|>\||'[^']*'|"(?:[^"\\]|\\(?s:.))*")*?(?:['"][^\n;&|'"]*?)?)"#;
+
+/// A quoted header value (`Authorization: "Bearer x"`, WP-140): a string
+/// closed on its line, `"…"` with `\"` inside, `\"…\"` inside a shell
+/// string, or `'…'`, after a Python string prefix (`f'Bearer {t}'`, `r`,
+/// `b`, `u`, two of them), with the text glued after its closing quote up
+/// to white space, a quote, a backslash, `,`, `;`, a closing bracket or a
+/// marker (`"Bearer "SECRET`; round 2). A quote the line does not close
+/// starts no value.
+const HEADER_QUOTED: &str = r#"(?:[rRbBuUfF]{1,2})?(?:"(?:[^"\\\r\n]|\\[^\r\n])*"|\\"(?:[^"\\\r\n]|\\[^"\r\n])*\\"|'[^'\r\n]*')[^\s'"\\,;)\]}‹]*"#;
+
+/// A bare header value: the rest of the line up to a quote, whose last
+/// character is no `\r`, so a CRLF line end reads as an LF one (WP-128).
+/// It starts at no white space (an empty value is none) and no
+/// [`REDACTED`] marker: after `"Authorization": "x", "Accept": …` is
+/// masked, a second pass must not take the marker and the text after it
+/// for a new value (WP-140).
+const HEADER_BARE: &str = r#"[^'"\s‹](?:[^'"\n]*[^'"\r\n])?"#;
+
+/// The header `name` (a regex) and its value as group 1, 2 or 3 and the
+/// rest ([`KEEP_EITHER`]): a quoted value ([`HEADER_QUOTED`]) after white
+/// space, or, with `key_quote`, right after a name written as a quoted JSON
+/// or dict key (`"Authorization":"x"`, `\"Authorization\": …`,
+/// `'Authorization': …`); else a bare one ([`HEADER_BARE`]). A quote right
+/// after the colon of a bare name opens a value when white space does not
+/// follow it ([`HEADER_GLUED`]: HTTPie's and xh's `Authorization:'Bearer
+/// x'`, round 3); followed by white space it closes the shell word around
+/// it (`curl -H 'Authorization:'`, `grep 'authorization:' f 'x'`) and
+/// starts no value.
+fn header(name: &str, key_quote: bool) -> String {
+    let quoted_name = if key_quote { r#"(?:\\?"|'):\s*|"# } else { "" };
+    format!(
+        r"(?i)({name}(?:{quoted_name}:\s+))(?:{HEADER_QUOTED}|{HEADER_BARE})|({name}:){HEADER_BARE}|({name}:){HEADER_GLUED}"
+    )
+}
+
+/// A quoted header value right after the colon of a bare name, as HTTPie
+/// and xh take a header (`http POST u Authorization:'Bearer x'`,
+/// `X-Api-Key:"k"`): its first character is no white space, with the text
+/// glued after its closing quote as for [`HEADER_QUOTED`] (WP-140 round 3).
+const HEADER_GLUED: &str =
+    r#"(?:'[^'\s][^'\r\n]*'|"[^"\\\s](?:[^"\\\r\n]|\\[^\r\n])*")[^\s'"\\,;)\]}‹]*"#;
+
+/// The label of a PEM private key: `PRIVATE KEY` after any words (`RSA`,
+/// `EC`, `DSA`, `OPENSSH`, `ENCRYPTED`, …), and PGP's `PRIVATE KEY
+/// BLOCK`; not `PUBLIC KEY` or `CERTIFICATE`.
+const PEM_LABEL: &str = r"(?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?";
 
 /// The shortest value that counts as a credential when it mixes at least
 /// two character classes (lower case, upper case, digits, other).
@@ -288,10 +337,52 @@ impl Rule {
         let i = markers.partition_point(|&(start, _)| start <= m_start);
         let inside = i > 0 && m_end <= markers[i - 1].1;
         !inside
+            && !self.masks_only_markers(found, text, markers)
             && !self.kept(found, text, next)
             && self
                 .check
                 .is_none_or(|check| found.caps.name("v").is_some_and(|v| check(v.as_str())))
+    }
+
+    /// Whether this built-in match masks nothing but markers: the part of
+    /// it that the replacement does not keep (the groups `${…}` it names
+    /// stay) holds a [`REDACTED`] and else only white space. A second pass
+    /// then leaves it as it is rather than merge the markers a user
+    /// pattern left next to its own (`--password ‹redacted›‹redacted›`
+    /// after a pattern that masks `;`), so redacting twice gives the same
+    /// text (WP-140, WP-128 decision 5). A user pattern's match is
+    /// replaced as written.
+    fn masks_only_markers(&self, found: &Found, text: &str, markers: &[(usize, usize)]) -> bool {
+        let (m_start, m_end) = found.range();
+        // most matches hold no marker: one binary search
+        let first = markers.partition_point(|&(_, end)| end <= m_start);
+        if self.name == USER_PATTERN || markers.get(first).is_none_or(|&(s, _)| s >= m_end) {
+            return false;
+        }
+        let mut kept: Vec<(usize, usize)> = self
+            .replacement
+            .split("${")
+            .skip(1)
+            .filter_map(|g| g.split_once('}').map(|(g, _)| g))
+            .filter_map(|g| match g.parse::<usize>() {
+                Ok(n) => found.caps.get(n),
+                Err(_) => found.caps.name(g),
+            })
+            .map(|g| (found.offset + g.start(), found.offset + g.end()))
+            .collect();
+        kept.sort_unstable();
+        let mut masked = String::new();
+        let mut at = m_start;
+        for (start, end) in kept {
+            masked.push_str(&text[at..start.max(at)]);
+            at = at.max(end);
+        }
+        masked.push_str(&text[at..m_end.max(at)]);
+        masked.contains(REDACTED)
+            && masked
+                .replace(REDACTED, "")
+                .chars()
+                .all(char::is_whitespace)
     }
 
     /// `text` with every match this rule applies to replaced.
@@ -418,6 +509,8 @@ pub fn looks_like_credential(value: &str) -> bool {
 
 /// Keep group 1, redact the rest of the match.
 const KEEP_PREFIX: &str = "${1}‹redacted›";
+/// Keep group 1, 2 or 3 (whichever took part), redact the rest.
+const KEEP_EITHER: &str = "${1}${2}${3}‹redacted›";
 /// Redact the whole match.
 const WHOLE: &str = "‹redacted›";
 
@@ -429,7 +522,8 @@ pub struct Redactor {
 }
 
 /// Names of the built-in rules, in the order they run (for tests and docs).
-pub const BUILTIN: [&str; 27] = [
+pub const BUILTIN: [&str; 29] = [
+    "private-key",
     "url-userinfo",
     "password-option",
     "secret-option",
@@ -456,6 +550,7 @@ pub const BUILTIN: [&str; 27] = [
     "httpie-auth",
     "sshpass-password",
     "registry-login-password",
+    "nmcli-secret",
     "email",
 ];
 
@@ -500,6 +595,8 @@ pub fn holds_trigger(text: &str, lower: &str, trigger: &str) -> bool {
 /// new check.
 pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
+        // both ends of a block hold the label's last words
+        "private-key" => &["private key"],
         // the `@` after the scheme: a URL without userinfo holds none
         "url-userinfo" => &["://>@"],
         "password-option" => &["--password", "--http-password", "--ftp-password"],
@@ -530,10 +627,18 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
             "token\\\"",
             "api_key\"",
             "api_key\\\"",
+            "api-key\"",
+            "api-key\\\"",
             "apikey\"",
             "apikey\\\"",
         ],
-        "authorization-header" => &["authorization:"],
+        // the name, then `:` or a quote and `:` (`"Authorization":`)
+        "authorization-header" => &[
+            "authorization:",
+            "authorization\":",
+            "authorization\\\":",
+            "authorization':",
+        ],
         "secret-header" => &["x-", "api-key", "apikey", "private-token"],
         "cookie-header" => &["cookie"],
         "aws-access-key" => &["akia", "asia"],
@@ -579,6 +684,13 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         ],
         "sshpass-password" => &["sshpass"],
         "registry-login-password" => &["login"],
+        "nmcli-secret" => &[
+            "nmcli+pass",
+            "nmcli+psk",
+            "nmcli+secret",
+            "nmcli+key",
+            "nmcli+pin",
+        ],
         "email" => &["@"],
         _ => &[],
     }
@@ -658,6 +770,8 @@ fn again(name: &str) -> &'static [&'static str] {
         // `--auth` holds `-a`
         "httpie-auth" => &["-a"],
         "registry-login-password" => &["-p"],
+        // every secret property or keyword holds one
+        "nmcli-secret" => &["pass", "psk", "secret", "key", "pin"],
         _ => &[],
     }
 }
@@ -676,6 +790,18 @@ const CURL: &str = r"(?-u:\b)curl(?-u:\b)";
 
 fn builtin_rules() -> Vec<Rule> {
     let rules = vec![
+        // a PEM private key: the BEGIN line stays, the body up to the END
+        // line is masked, or up to the end of the text when a clip cut
+        // the END off; a lone END line (the start cut off) masks the
+        // base64 run before it. First, so no later rule cuts the body
+        // into pieces (WP-140)
+        rule(
+            "private-key",
+            &format!(
+                r"(?i)(?P<begin>-----BEGIN {PEM_LABEL}-----)(?s:.*?)(?P<end>-----END {PEM_LABEL}-----|\z)|[A-Za-z0-9+/=\\ \t\r\n]+(?P<tail>-----END {PEM_LABEL}-----)"
+            ),
+            "${begin}‹redacted›${end}${tail}",
+        ),
         // scheme://user:pass@host → scheme://‹redacted›@host. With a
         // `:` in the userinfo, everything from `://` up to the last
         // `@` before white space or a quote, so a password may hold
@@ -744,30 +870,33 @@ fn builtin_rules() -> Vec<Rule> {
             looks_like_credential,
         ),
         // `"password": "…"`, `"client_secret":"…"`, `"access_token"`,
-        // `"api_key"`, `"apiKey"`, also with the quotes escaped inside a
+        // `"api_key"`, `"apiKey"`, `"x-api-key"`, also with the quotes escaped inside a
         // shell string (`\"password\":\"…\"`) and with white space,
         // newlines included, around the `:`: a non-empty string value;
         // not `"password_hint"` or `"token_type"`
         checked_rule(
             "json-secret",
-            r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api_?key)\\?"\s*:\s*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
+            r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key)\\?"\s*:\s*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
             has_json_value,
         ),
-        // the header value up to a closing quote or the end of the line;
-        // its last character is no `\r`, so an empty value before a CRLF
-        // line end reads as before an LF one (WP-128)
+        // the header value ([`header`]): a quoted string, or up to a
+        // closing quote or the end of the line; also after the name as a
+        // quoted key (`"Authorization": "Bearer x"`)
         rule(
             "authorization-header",
-            r#"(?i)(authorization:\s*)[^'"\n]*[^'"\r\n]"#,
-            KEEP_PREFIX,
+            &header("authorization", true),
+            KEEP_EITHER,
         ),
         // header names that end in a credential word: `X-Api-Key`,
         // `X-Auth-Token`, `X-Auth`, `Api-Key`, `Private-Token`; not
         // `X-Author`
         rule(
             "secret-header",
-            r#"(?i)((?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]*[^'"\r\n]"#,
-            KEEP_PREFIX,
+            &header(
+                r"(?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*",
+                false,
+            ),
+            KEEP_EITHER,
         ),
         // `Cookie: a=b; c=d`, `Set-Cookie: …`: a value that starts with a
         // cookie pair `name=` (RFC 6265), up to a closing quote or the end
@@ -885,6 +1014,23 @@ fn builtin_rules() -> Vec<Rule> {
             "registry-login-password",
             &command(r"(?-u:\b)(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login(?-u:\b)"),
             &format!(r"\s-p{GAP}*"),
+            "",
+            &format!("(?:{WORD})"),
+            KEEP_PREFIX,
+        ),
+        // nmcli's secrets given as arguments: the keyword `password`
+        // (`dev wifi connect`, `hotspot`, `con add type gsm`) and a
+        // property that names one (`wifi-sec.psk`, `802-1x.password`,
+        // `802-1x.private-key-password`, `vpn.secrets`,
+        // `wifi-sec.wep-key0`, `wireguard.private-key`, `gsm.pin`; also
+        // with `+`/`-` before it): the value, within one command, every
+        // time; not `wifi-sec.key-mgmt wpa-psk` or `…-flags` (WP-140)
+        option_rule(
+            "nmcli-secret",
+            &command(r"(?-u:\b)nmcli(?-u:\b)"),
+            &format!(
+                r"\s[+-]?(?:password|(?:[a-z0-9-]+\.)+[a-z0-9-]*(?:password|password-raw|psk|secrets|wep-key[0-3]|private-key|preshared-key|pin)){GAP}+"
+            ),
             "",
             &format!("(?:{WORD})"),
             KEEP_PREFIX,
@@ -1031,6 +1177,36 @@ impl Redactor {
             .map(|r| r.name)
             .collect()
     }
+
+    /// [`Redactor::matching_rules`] for each line of `text` (split at
+    /// `\n`): the rules with a match that would be replaced and that
+    /// touches the line, in the order the rules run. A match over several
+    /// lines (a PEM private key, a continued `mysql … -p`) counts on each
+    /// of them (the vault import's report, WP-140).
+    pub fn matching_rules_by_line(&self, text: &str) -> Vec<Vec<&'static str>> {
+        let starts: Vec<usize> = std::iter::once(0)
+            .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        let line_of = |at: usize| starts.partition_point(|&start| start <= at) - 1;
+        let mut out = vec![Vec::new(); starts.len()];
+        let markers = markers(text);
+        let lower = trigger_text(text);
+        for r in self.rules().filter(|r| r.triggered(text, &lower)) {
+            let all = r.matches(text);
+            for (i, found) in all.iter().enumerate() {
+                if !r.applies(found, all.get(i + 1), text, &markers) {
+                    continue;
+                }
+                let (start, end) = found.range();
+                for line in &mut out[line_of(start)..=line_of(end.max(start + 1) - 1)] {
+                    if line.last() != Some(&r.name) {
+                        line.push(r.name);
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -1097,6 +1273,27 @@ mod tests {
             (
                 "registry-login-password",
                 "docker login -p fakeG1 r -pfakeG2",
+            ),
+            // nmcli: a second secret property for each literal (WP-140)
+            (
+                "nmcli-secret",
+                "nmcli c m x wifi-sec.psk fakeH1 y 802-1x.password fakeH2",
+            ),
+            (
+                "nmcli-secret",
+                "nmcli c m x 802-1x.password fakeH1 y wifi-sec.psk fakeH2",
+            ),
+            (
+                "nmcli-secret",
+                "nmcli c m x wifi-sec.psk fakeH1 y vpn.secrets fakeH2",
+            ),
+            (
+                "nmcli-secret",
+                "nmcli c m x wifi-sec.psk fakeH1 y wireguard.private-key fakeH2",
+            ),
+            (
+                "nmcli-secret",
+                "nmcli c m x wifi-sec.psk fakeH1 y gsm.pin fakeH2",
             ),
         ] {
             let rules = builtin_rules();

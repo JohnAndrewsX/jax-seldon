@@ -354,8 +354,11 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # `packages.history` and `deviations.table` the same way). Inbox, Dashboard, templates,
                                                # STRUCTURE.md, the rest of system/, .obsidian/ and symlinks are listed,
                                                # not imported. Every imported line passes §7 redaction (config
-                                               # patterns included) and `/home/<user>` at the start of a path becomes
-                                               # `~`. A case the kit layout says to import but that cannot be mapped
+                                               # patterns included; each file's whole text, its line breaks kept, so
+                                               # a secret over lines — a PEM private key, a continued `mysql … -p` —
+                                               # is masked whole; a changed line counts under every rule with a
+                                               # match that touches it, WP-140) and `/home/<user>` at the start of a
+                                               # path becomes `~`. A case the kit layout says to import but that cannot be mapped
                                                # (no or invalid frontmatter, unknown status/zone/risk/priority, bad
                                                # date, not UTF-8, a file or folder name that is not UTF-8 (shown
                                                # with U+FFFD), not readable) or a day file with invalid frontmatter
@@ -407,8 +410,11 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # extension `.md` (any case) under the home (not the home itself), not inside
                                                # the logbook, at most 1 MiB, UTF-8; neither the path as given nor the
                                                # resolved path may hold a control character or a text-direction character
-                                               # (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible format
-                                               # character (U+200B–U+200D, U+2060, U+FEFF) (a linked folder cannot bring
+                                               # (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible
+                                               # format character (U+00AD, U+0600–U+0605, U+180E, U+200B–U+200D,
+                                               # U+2060–U+2064, U+206A–U+206F, U+FEFF, U+FFF9–U+FFFB,
+                                               # U+1BCA0–U+1BCA3, U+1D173–U+1D17A, U+E0000–U+E007F; WP-140)
+                                               # (`import::is_direction_or_format`; a linked folder cannot bring
                                                # one in); a directory is refused ("name the Markdown files in it"). The same
                                                # file named twice is read once. Each file is redacted before it is parsed:
                                                # the whole text through §7 with the config's patterns, as a note's (the rules
@@ -1351,7 +1357,7 @@ git itself is killed, with the same bounded pipe wait. Rules:
   ancestor) the ones that left — as `meta.git`, `meta.commits` (at most
   20 subjects, newest first, one per line; control characters and
   U+2028/U+2029 → spaces, direction and invisible format characters
-  dropped, redacted (§7), then clipped to 100 characters with `…`; an
+  (§6's set, `import::is_direction_or_format`) dropped, redacted (§7), then clipped to 100 characters with `…`; an
   empty one `(no subject)`) and the detail `<from> → <to>, pulled N
   commits: <newest> …` (`rolled back N commits: …`, `reset: N commits
   in, M out: …`; no `…` for one commit).
@@ -2035,8 +2041,14 @@ the lines up to the next blank one, each trimmed at the end. An imported
 case (tag `imported`) whose first paragraph is exactly its `Imported from
 … — read before you start this case.` line takes the next paragraph. Each
 text: control characters other than `\n` and `\t` become spaces and
-direction and format characters (U+200B–U+200F, U+202A–U+202E, U+2060,
-U+2066–U+2069, U+FEFF) are dropped, then the logbook's redaction (before
+direction and format characters (`import::is_direction_or_format`:
+U+00AD, U+0600–U+0605, U+061C, U+180E, U+200B–U+200F, U+202A–U+202E,
+U+2060–U+2064, U+2066–U+206F, U+FEFF, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
+U+1D173–U+1D17A, U+E0000–U+E007F; WP-140 added U+00AD, U+0600–U+0605,
+U+061C, U+180E, U+2061–U+2064, U+206A–U+206F, U+FFF9–U+FFFB,
+U+1BCA0–U+1BCA3, U+1D173–U+1D17A and the tags; `scripts/validate-fixtures.py`
+holds the same set, tested) are dropped, so none splits a secret from its rule, then the
+logbook's redaction (before
 the clip, so a secret at the cut is masked whole) (`[redaction] patterns` included; patterns that do not
 compile withhold all four fields), then the clip of rule 5 with `… (N more
 characters in the file)`; no text, no field. The section is read only up
@@ -2084,7 +2096,16 @@ way. While `config.toml` cannot be parsed or a `[redaction] patterns`
 entry is invalid, these show `collectors::MESSAGE_WITHHELD` in place of
 the message instead (WP-105).
 The rules
-(`redact::BUILTIN`, in this order): URLs with userinfo; `--password`
+(`redact::BUILTIN`, in this order): the body of a PEM private key
+(`private-key`, WP-140: `-----BEGIN … PRIVATE KEY-----`, any label
+words before `PRIVATE KEY` — none, `RSA`, `EC`, `DSA`, `OPENSSH`,
+`ENCRYPTED`, … — and PGP's `PRIVATE KEY BLOCK`; the BEGIN and END lines
+stay and everything between them becomes one `‹redacted›`, over any
+number of lines, LF or CRLF; a block whose END a clip cut off is masked
+to the end of the text, and an END line whose BEGIN was cut off masks
+the run of base64 characters, white space and line ends before it; its
+trigger is `private key`; first, so no later rule cuts the body into
+pieces); URLs with userinfo; `--password`
 (also wget's `--http-password` and `--ftp-password`);
 `--token`, `--with-token`, `--secret`, `--client-secret`, `--passphrase`,
 curl's `--pass`, `--proxy-pass` and `--oauth2-bearer`, xh's `--bearer`
@@ -2099,12 +2120,29 @@ its trigger is `pass:`); `--api-key`, `--access-key`, `--secret-key`;
 `…_PASS=`, `SSHPASS=` assignments (also `PGPASSWORD=`); `…KEY=`
 assignments (also `?api_key=`); the non-empty string value of an inline
 JSON key that ends in `password`, `passwd`, `passphrase`, `secret`,
-`token`, `api_key` or `apiKey` (`"password": "…"`, `"client_secret":"…"`,
-`"openaiApiKey": "…"`, also escaped inside a shell string as
+`token`, `api_key`, `api-key` or `apiKey` (`"password": "…"`, `"client_secret":"…"`,
+`"openaiApiKey": "…"`, `"x-api-key": "…"`, also escaped inside a shell string as
 `\"password\":\"…\"`, with white space and newlines around the `:`;
-not `"password_hint"` or `"token_type"`); `Authorization:`; headers whose name ends in
+not `"password_hint"` or `"token_type"`); `Authorization:`, also as a
+quoted key (`"Authorization": …`, `\"Authorization\": …`,
+`'Authorization': …`); headers whose name ends in
 a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
-`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`); a
+`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`): the
+header's value is a quoted string closed on its line (`"…"` with `\"`
+inside, `\"…\"` inside a shell string, or `'…'`; WP-140), also after a
+Python string prefix (`f'Bearer {t}'`, `r`, `b`, `u`, two of them) and
+with the text glued after its closing quote up to white space, a quote,
+a backslash, `,`, `;`, a closing bracket or a marker (`"Bearer "SECRET`;
+round 2), after white
+space or after a quoted name (`"Authorization":"Bearer x"`), else the
+rest of the line up to a quote; a quote right after the colon of a
+bare name opens a value when no white space follows it (HTTPie's and
+xh's `Authorization:'Bearer x'`, `X-Api-Key:"k"`; round 3), and with
+white space after it closes the shell word around it (`curl -H
+'Authorization:' -H 'X: y'`, `grep -i 'authorization:' f 'x'`) and
+starts no value, and neither white space
+alone (an empty value; WP-128 masked it) nor a `‹redacted›` starts one;
+a
 `Cookie:` or `Set-Cookie:` value on the same line that starts with a
 cookie pair `name=` (RFC 6265; not `cookie: banner fixed` or
 `Cookie: $COOKIE`);
@@ -2129,7 +2167,16 @@ space, tab, line end or `\` before a line end, so `http://` is none,
 and its triggers are those words with that character: `httpie-auth`,
 WP-097); after
 `sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
-login`; e-mail addresses (`email`, WP-093: the local part, the domain
+login`; nmcli's secrets given as arguments (`nmcli-secret`, WP-140): the
+value after the keyword `password` (`dev wifi connect`, `hotspot`,
+`con add type gsm`) or after a property whose last part names a secret
+(`wifi-sec.psk`, `802-1x.password`, `….password-raw`,
+`802-1x.private-key-password`, `vpn.secrets`, `wifi-sec.wep-key0`…`3`,
+`wireguard.private-key`, `….preshared-key`, `gsm.pin`; also with `+` or
+`-` before it), within one `nmcli` command and every time it gives one;
+not `wifi-sec.key-mgmt wpa-psk`, `wifi-sec.psk-flags 1` or `passwd-file`;
+its triggers are `nmcli` and `pass`, `psk`, `secret`, `key` or `pin`;
+e-mail addresses (`email`, WP-093: the local part, the domain
 stays: `‹redacted›@example.com`); and user-supplied patterns in
 `config.toml [redaction] patterns`.
 Replacement: `‹redacted›`; the option, key or header name stays in front
@@ -2161,8 +2208,21 @@ holds a `:` is cut from `://` up to the last `@` before the next white
 space or quote, so a password may contain `/ ? # : @`; userinfo without
 a `:` (a bare token) is cut up to the last `@` before the path. Redacting
 twice gives the same text for the built-in rules: a match that lies
-inside an existing `‹redacted›` is left alone (a user pattern that
-matches across the marker's edge is applied as written). Each built-in
+inside an existing `‹redacted›` is left alone, and so is a match whose
+masked part (the match without the groups its replacement keeps, the
+option or header name) holds a `‹redacted›` and else only markers and
+white space (WP-140), so no rule counts on such text in the import
+report. With user patterns, two passes give the same text when a pattern
+masks a gap at the end of a built-in value, followed by white space, a
+line end or the end of the text (`--password x;` with a pattern for `;`
+gives `--password ‹redacted›‹redacted›` both times, `Authorization: x`
+with CRLF and a pattern for `\r` gives `Authorization:
+‹redacted›‹redacted›`): the second pass merges no markers. They do not
+when text is glued after the masked gap: the second pass reads it as
+part of the value and masks it too (`--password x;tail` with a pattern
+for `;` gives `--password ‹redacted›‹redacted›tail`, then `--password
+‹redacted›`; more, never less), and a user pattern that matches across
+a marker's edge is applied as written (WP-140 round 2). Each built-in
 rule is compiled once per process, and only when the text holds one of
 its literal triggers (`redact::triggers`), checked on the text in lower
 case with the Kelvin sign and the long s folded onto `k` and `s`, as
@@ -2234,7 +2294,17 @@ which are not `--pass`. Not masked (WP-106): a password given directly
 rather than as `pass:…` (`openssl enc -k`, `-srppass`, keytool's
 `-storepass`); a `pass:` that quotes or an escape split (`pa'ss':x`,
 `\pass:x`), or an option name in quotes; the glued `-passpass:…`,
-which openssl rejects. Masked too much, by design: an
+which openssl rejects. Not masked (WP-140): a quoted header value that
+its line does not close (`Authorization: "Bearer x` at the line end);
+a quoted value right after the colon of a bare header name that starts
+with white space (`Authorization:' Bearer x'`, read as the end of a
+shell word and the start of the next); a header name in
+quotes other than `Authorization` and the JSON keys above (`"X-Auth":
+"x"`); a PEM private key whose BEGIN or END line is written otherwise
+(fewer dashes, two spaces); an nmcli secret in a file (`passwd-file`)
+or asked for (`--ask`); and in a note (`seldon log`, a case file) the
+plain-argument forms the hook masks whole (§8: `htpasswd -b`, `echo
+u:pw | chpasswd`, `usermod -p`, …), which no §7 rule reads. Masked too much, by design: an
 option word inside a quoted argument that spans lines (`git commit -m
 "…curl…⏎… -U flag"`, as on one line); a stray apostrophe (in the
 command's context, up to the line end; an option value with an unclosed
@@ -2248,7 +2318,11 @@ redirect … ls -a home`; the gap after the word may be a line end); and a
 `\` at the end of a comment, which continues the command for redaction
 (bash does not); `pass:…` after any option whose name holds `pass` or
 `secret` (`--bypass pass:x`), the empty `pass:`, and the rest of the line
-after `$"pass:…"`, which reads as an unclosed quote. A `pass:…` value
+after `$"pass:…"`, which reads as an unclosed quote; after a PEM BEGIN
+line without an END, the rest of the text, and before a lone END line,
+the words of base64 characters and blanks before it, prose glued to the
+body included; the word after nmcli's `password` when it is a name
+(WP-140). A `pass:…` value
 after an option another rule also masks (`--pass`, `--password=`,
 `--secret-key`, …) is counted under both rules in the import report; the
 earlier rule in the order masks it, `openssl-pass` before `key-option`;
@@ -2300,7 +2374,14 @@ The `…=` assignment rules have no boundary, so a name that starts with
 build and `doctor` still run and withhold every collector message
 (above). `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
-before a rule existed are not rewritten.
+before a rule existed are not rewritten. Direction and format characters
+(the set of §6, `import::is_direction_or_format`) are dropped before the
+redaction from a hook's command line (round 3: a shell line has no use
+for them, and `tok<U+200B>en=` would hide its value), from the index's
+case and decision texts and `source` (§6) and from plugin commit subjects
+(§4); they stay in a note, a case or decision file, the journal and an
+event's other texts, where a zero-width joiner or non-joiner belongs to
+its words, so a secret split by one there is not masked.
 
 `[redaction] skipPaths` (config collector and the hook, ADR-0014 §4): a
 pattern with `/` matches the full path (`~/` = home), as a file or as a
@@ -2380,7 +2461,26 @@ in which any command has sudo read the password from stdin (`-S`,
 `--stdin` or an abbreviation of it, also in a cluster such as `-Su` and
 beside a probe: `echo PW | sudo -S …`) is recorded as `<program>
 ‹redacted›`, every record of it, as for `skipPaths` below; `doas`,
-`pkexec` and `run0` read no password from stdin. A privileged `snapper`
+`pkexec` and `run0` read no password from stdin. So is a line in which
+any command (after its wrappers, `sh -c` opened) takes its secret as a
+plain argument or from stdin the line feeds, which no §7 rule can tell
+from its other words (WP-140): `chpasswd` and `chgpasswd` (always);
+`htpasswd` with `-b` or `-i`; `smbpasswd` with `-s` or `-w`; `passwd`
+with `-s` or `--stdin` (not `-S`), or on a line that feeds it (PAM reads
+the new password from stdin without a terminal: `printf 'PW\nPW' |
+passwd alice`, `passwd alice <<< …`); `useradd`, `usermod`, `groupadd`
+and `groupmod` with `-p` or `--password` (also a prefix such as
+`--passw`, and a value §7 cannot read whole, `--password $(openssl
+passwd -6 PW)`); `cryptsetup` on a line that feeds it; `openssl passwd`
+and `wpa_passphrase` (always). A line feeds a command when its text holds
+`|`, `<<<` or `<(` (a key piped in, a here-string, a process substitution
+as `--key-file`) or one of its commands writes a file (`printf PW > k;
+cryptsetup … -d k`; a write to `/dev/null`, `/dev/stdout` or
+`/dev/stderr` is none; round 2); a heredoc's body is cut from the line
+before it is recorded. A short option counts also in a cluster
+(`-Bbc`, `-mp`), a long one also as a prefix getopt takes (`--std`).
+nmcli's secrets are a §7 rule (`nmcli-secret`), so its line keeps its
+other words. A privileged `snapper`
 command is no snapshot command for §5's case notes. It is not drift in
 contract 2: `drift[].source` admits no `agent`; the system change it
 makes is drift through its own collector (ADR-0039 §3). A command line that names a path

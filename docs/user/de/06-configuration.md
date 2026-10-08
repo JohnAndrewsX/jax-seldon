@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ d79db7a -->
+<!-- source: en/06-configuration.md @ 08faaab -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -264,11 +264,14 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   Kleinbuchstaben, Großbuchstaben, Ziffern und anderen Zeichen mischen
   (`sort --key=2` und `hotkey=Super` bleiben also, wie sie sind);
 - `Authorization:`, `X-Api-Key:`, `Private-Token:` und andere Header,
-  deren Name auf Key, Token, Secret oder Auth endet, sowie die Cookies
+  deren Name auf Key, Token, Secret oder Auth endet, auch ein Wert in
+  Anführungszeichen (`Authorization: "Bearer …"`, `"Authorization": "…"`
+  in JSON), sowie die Cookies
   nach `Cookie:` und `Set-Cookie:` (ein `name=value`; `cookie: banner
   fixed` bleibt);
 - der Wert eines JSON-Schlüssels wie `"password"`, `"passwd"`,
-  `"client_secret"`, `"access_token"`, `"api_key"` oder `"apiKey"` in
+  `"client_secret"`, `"access_token"`, `"api_key"`, `"x-api-key"` oder
+  `"apiKey"` in
   eingebettetem JSON (`curl -d '{"password": "…"}'`); `"password_hint"`
   bleibt;
 - AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
@@ -285,6 +288,12 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
 - Proxy-Zugangsdaten: nach `curl -U`, `--proxy-user` und
   `--proxy-password` sowie `user:pass@` im Proxy nach `curl -x`,
   `--proxy` oder in `https_proxy=`;
+- ein privater PEM-Schlüssel (`-----BEGIN OPENSSH PRIVATE KEY-----` und
+  die anderen `… PRIVATE KEY`-Blöcke): alles zwischen seiner BEGIN- und
+  END-Zeile wird ein einziges `‹redacted›`;
+- Passwörter und Schlüssel von nmcli: der Wert nach `password`,
+  `wifi-sec.psk`, `802-1x.password`, `vpn.secrets` und den anderen
+  geheimen Eigenschaften;
 - Benutzer und Passwort in einer URL (`https://user:secret@host`), auch
   wenn das Passwort `/`, `?`, `#` oder `:` enthält.
 - der Teil vor dem `@` einer E-Mail-Adresse: `me@example.com` lautet

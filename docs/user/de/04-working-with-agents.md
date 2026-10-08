@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 38018fd -->
+<!-- source: en/04-working-with-agents.md @ 4479e33 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -317,7 +317,12 @@ aufgezeichnet. Prüfungen, die nichts ändern (`sudo -l`, `sudo -n true`,
 läuft vor dem Befehl, deshalb sagt der Eintrag „asked to run“: Er steht
 auch dann da, wenn du den Passwortdialog abbrichst. Eine Zeile, die ein
 Passwort an `sudo -S` weiterreicht, wird nur als Programm und
-`‹redacted›` aufgezeichnet. Ein solcher Eintrag steht im Case und im
+`‹redacted›` aufgezeichnet, ebenso eine Zeile, die ein Passwort als
+einfaches Argument angibt oder es an das Programm weiterreicht
+(`htpasswd -b`, `echo user:pw | chpasswd`, `usermod -p`, `smbpasswd -s`,
+`passwd`, das sein Passwort aus der Zeile bekommt, `openssl passwd`, ein
+Schlüssel, der an `cryptsetup` geht oder in derselben Zeile in eine Datei
+geschrieben wird). Ein solcher Eintrag steht im Case und im
 Changelog; als Drift wird er nicht gelistet (die Änderung, die er
 bewirkt, schon, durch den Collector, der sie sieht).
 
