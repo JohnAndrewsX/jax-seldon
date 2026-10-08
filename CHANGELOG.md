@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lost), each of its package events records `meta.txStatus`; the month's
   ledger view adds `· transaction interrupted`. Lines written before keep
   none. `seldon event --meta txStatus=…` is refused.
+- **`seldon decide accept ADR-NNNN` (ADR-0040).** Accepts a proposed
+  decision: `status: accepted` and today's date in its frontmatter, a
+  `seldon` note in the ledger, `DECISIONS.md`, the commit and the index.
+  A second run changes nothing; a superseded decision is refused.
+  Accepting is the user's: an agent actor or an agent's session is
+  refused. A decision titled "accept" is now made with `seldon decide --
+  accept` (WP-135).
 - **Rules for every git call (WP-154).** Every program the engine runs
   keeps at most a cap of its output, named at each call (1 MiB for git
   and short answers; a 100 MB flood of stderr from git costs 1 MiB), and
@@ -188,6 +195,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing. *Discard* throws a proposal away. *Ask agent* on an open
   change and on a case asks your agent about it (WP-124).
 
+- **Accept accepts.** *Accept* on a proposed decision in the desk's
+  Decisions section no longer opens the editor: the first click arms it
+  (*Confirm accept*), the second runs `seldon decide accept`, and the
+  decision shows as accepted with the next index (WP-135).
 - The desk's "Why loud?" callout reads the rule from the index: selecting
   a crisis in the Changelog no longer runs `seldon drift show` (it still
   does against an engine whose index has no rule). Work's case detail

@@ -75,7 +75,12 @@
 #
 # `decide` (WP-023) adds the next ADR, status proposed, to the state index's
 # decisions (newest first, as the engine lists them) and answers in the
-# SPEC-ENGINE §3 shape; it writes no ledger event, like the engine. `open
+# SPEC-ENGINE §3 shape; it writes no ledger event, like the engine.
+# `decide accept <ADR-NNNN>` (WP-135) sets a proposed decision of the state
+# index to accepted with the date 2026-10-07, answers `already` for an
+# accepted one and refuses a superseded or unknown one with the engine's
+# messages; FAKE_SELDON_ACCEPT_REFUSE=<text> makes it refuse with that
+# text (exit 1, nothing changed). `open
 # ADR-NNNN` opens the path the state index lists for it; `open logbook` the
 # logbook folder.
 #
@@ -426,6 +431,24 @@ decide() { # decide --no-edit [--json] -- <title>
     git: {committed: true, message: ($id + " proposed")}}' "$index"
 }
 
+decide_accept() { # decide accept <ADR-NNNN> --json
+  local id=${1:-} index status
+  [[ $id =~ ^ADR-[0-9]{4}$ ]] || user_error "invalid value '$id' for '<ID>': \`$id\` is not a decision id (ADR-NNNN)"
+  [[ -z ${FAKE_SELDON_ACCEPT_REFUSE:-} ]] || user_error "$FAKE_SELDON_ACCEPT_REFUSE"
+  index=$(state_index)
+  status=$(jq -r --arg id "$id" '[.decisions[] | select(.id == $id) | .status][0] // ""' "$index")
+  case $status in
+    "") user_error "unknown decision $id" ;;
+    superseded) user_error "$id is superseded; only a proposed decision is accepted" ;;
+    proposed) rewrite_index '(.decisions[] | select(.id == $id)) |= (.status = "accepted" | .date = "2026-10-07")' --arg id "$id" ;;
+  esac
+  jq -c --arg id "$id" --argjson already "$([[ $status == accepted ]] && echo true || echo false)" \
+    '([.decisions[] | select(.id == $id)][0]) as $d | {decision: ($d + {cases: ($d.cases // [])}), already: $already,
+      event: (if $already then null else {source: "seldon", kind: "note", subject: $id, actor: "human"} end),
+      git: (if $already then {committed: false, reason: "nothing changed"} else {committed: true, message: ($id + " accepted")} end),
+      warnings: []}' "$index"
+}
+
 # A new case in the state index, in column $2 (queued | active), with the
 # tags of the JSON list $8: new_case <id> <status> <title> <zone> <risk> <area> <priority> <tags>
 new_case() {
@@ -704,7 +727,12 @@ case "$cmd" in
       exit 4
     fi
     shift
-    decide "$@"
+    if [[ ${1:-} == accept ]]; then
+      shift
+      decide_accept "$@"
+    else
+      decide "$@"
+    fi
     ;;
   drift)
     sleep 0.2

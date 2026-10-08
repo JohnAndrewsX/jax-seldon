@@ -211,7 +211,11 @@ with broken frontmatter is a user error and is left untouched (WP-057).
 ### Decision (`decisions/ADR-NNNN-slug.md`)
 
 Frontmatter `id, type: decision, title, status (proposed|accepted|superseded),
-date, supersedes, cases`. Body: Context / Decision / Consequences; the first
+date, supersedes, cases`. `seldon decide` writes `proposed` and the day;
+`seldon decide accept` (the user's act, ADR-0040) changes a proposed
+decision to `accepted` and `date` to the day of the acceptance, nothing
+else; `superseded` and `supersedes` are set by hand. Body: Context /
+Decision / Consequences; the first
 paragraph of *Decision* is the index's `decisions[].lead` (ADR-0038), as the
 first paragraphs of a case's *Intent* and *Result* are its `intent` and
 `result`.

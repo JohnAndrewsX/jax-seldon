@@ -1642,7 +1642,9 @@ done
 #      first, the proposed one striped and selected, its detail with Accept
 #      and Open in editor and what Accept means; ↓/↑ move the selection and
 #      the detail follows (an accepted one has no Accept); a click on a row
-#      selects it; `e` and Accept are refused with dev mode's reason; `d`
+#      selects it; `e` is refused with dev mode's reason, Accept is shown
+#      but disabled (dev mode writes nothing: a click neither arms nor
+#      runs); `d`
 #      opens no form without an engine to write; `/` narrows the list, Esc
 #      clears it; `call select` picks a decision ("not found" for none).
 #      The sample is contract 2: every decision has its CASES block
@@ -1652,12 +1654,12 @@ run decisions "$sample" 1920x1080 \
 expect decisions 2 .view.section decisions
 expect decisions 2 '.view.sectionView.rows | join(",")' "ADR-0004,ADR-0003,ADR-0002,ADR-0001"
 expect decisions 2 '[.view.sectionView.cursor, .view.selected] | join(",")' "ADR-0004,ADR-0004"
-expect decisions 2 '.view.sectionView.actions | join(",")' "Accept,Open in editor"
+expect decisions 2 '.view.sectionView.actions | join(",")' "Open in editor"
 expect decisions 2 '.view.sectionView.cases | length' 0
 for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur als User-Service mit Case" "ADR-0004 · proposed" \
   "2026-10-01" "Logbuch-Sprache Deutsch, Struktur Englisch" "ADR-0001 · accepted" "2026-09-01" \
   "ADR-0004 · PROPOSED · 2026-10-01" "Accept" "Open in editor" "decisions/ADR-0004-ollama-user-service.md" \
-  "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture." \
+  "Proposed: it waits for your decision. Accept marks it accepted with today's date and notes it in the ledger; Open in editor shows the whole text." \
   "Lokale Modelle nur über einen Case; ollama läuft, wenn überhaupt, als User-Service ohne Autostart." \
   "The whole text is in the file; Open in editor shows it."; do
   shows decisions 2 "$text"
@@ -1676,6 +1678,7 @@ expect decisions 6 '[.view.sectionView.cursor, .view.keys] | map(tostring) | joi
 expect decisions 7 .view.sectionView.openResult "dev mode (SELDON_INDEX): engine calls are disabled"
 expect decisions 9 .view.sectionView.cursor ADR-0004
 expect decisions 9 .view.sectionView.openResult "dev mode (SELDON_INDEX): engine calls are disabled"
+expect decisions 9 '[.view.sectionView.accept.armed, .view.sectionView.accept.result, .view.arm.armed] | map(tostring) | join(",")' "false,,"
 expect decisions 10 '[.view.sectionView.form.open, .view.editing] | map(tostring) | join(",")' "false,false"
 expect decisions 13 '[.view.search.text, (.view.sectionView.rows | join(",")), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "snap|ADR-0002|ADR-0002|true"
 expect decisions 14 '[.view.search.text, (.view.sectionView.rows | length), .view.opened] | map(tostring) | join(",")' ",4,true"
@@ -1713,12 +1716,12 @@ clean_log decision-nocases
 #      twice creates it: `decide --no-edit --json -- <title>`, then `open
 #      ADR-0005 --editor --json` from the answer; the form closes, the keys
 #      come back and the selection sits on ADR-0005 once the index lists it.
-#      Then Accept on the proposed ADR-0004, `e` and Open in editor on
+#      Then Open in editor on the proposed ADR-0004, `e` and Open in editor on
 #      ADR-0003; on Memory `e` and Open in editor open the logbook, on
 #      System STATUS.md. The exact argv and editor paths.
 mkdir -p "$work/home-decisions-live"
 run decisions-live "" 1920x1080 \
-  "summon;text:4;text:d;type:--help \"q\";key:Return;key:Backspace;type:\";key:Return;key:Return;settle;wait:sectionView.cursor=ADR-0005;key:Down;click:Accept;settle;key:Down;text:e;settle;click:Open in editor;settle;text:6;key:Down;text:e;settle;click:Open in editor;settle;text:5;text:e;settle" \
+  "summon;text:4;text:d;type:--help \"q\";key:Return;key:Backspace;type:\";key:Return;key:Return;settle;wait:sectionView.cursor=ADR-0005;key:Down;click:Open in editor;settle;key:Down;text:e;settle;click:Open in editor;settle;text:6;key:Down;text:e;settle;click:Open in editor;settle;text:5;text:e;settle" \
   HOME="$work/home-decisions-live" FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/decisions-live.record"
 expect decisions-live 3 '[.view.sectionView.form.open, .view.sectionView.form.editing, .view.editing, .view.keys] | map(tostring) | join(",")' "true,true,true,false"
 shows decisions-live 3 "New decision"
@@ -1759,6 +1762,85 @@ want=$(printf '%s\n' omarchy-launch-editor "$d/decisions/ADR-0005-help-q.md" -- 
   omarchy-launch-editor "$d" -- omarchy-launch-editor "$d" -- omarchy-launch-editor "$d/STATUS.md" --)
 check "decisions-live: editor paths" "$(cat "$work/decisions-live.record" 2>/dev/null || true)" "$want"
 clean_log decisions-live
+
+# 10c'. Accept (WP-135, ADR-0040), live: Accept on the proposed ADR-0004
+#      arms ("Confirm accept", the hint in the sticky bar) and runs nothing;
+#      another key disarms, and so does a click on another decision (no
+#      key); armed again, the
+#      second click runs `decide accept ADR-0004 --json` — once, and no
+#      `open` — and the decision arrives accepted with the index: no
+#      Accept, the engine's answer in the detail (that decision's only),
+#      nothing proposed. The
+#      engine's refusal shows in place and the decision stays proposed; a
+#      held lock too.
+mkdir -p "$work/home-decisions-accept"
+run decisions-accept "" 1920x1080 \
+  "summon;text:4;click:Accept;text:z;click:Accept;click:Zed statt VS Code als Zweiteditor;key:Up;click:Accept;click:Confirm accept;settle;key:Down" \
+  HOME="$work/home-decisions-accept" FAKE_SELDON_FIXTURE="$sample"
+ta="$tv.accept"
+expect decisions-accept 2 '[.view.sectionView.cursor, (.view.sectionView.actions | join(","))] | join("|")' "ADR-0004|Accept,Open in editor"
+expect decisions-accept 3 "[$ta.armed, $ta.hint, .view.arm.armed] | map(tostring) | join(\"|\")" \
+  "true|Accept ADR-0004? Click Confirm: it becomes accepted with today's date.|decision:ADR-0004:accept"
+expect decisions-accept 3 '.view.sectionView.actions | join(",")' "Confirm accept,Open in editor"
+shows decisions-accept 3 "Confirm accept"
+shows decisions-accept 3 "Accept ADR-0004? Click Confirm: it becomes accepted with today's date."
+expect decisions-accept 4 "[$ta.armed, $ta.hint, .view.arm.armed] | map(tostring) | join(\"|\")" "false||"
+expect decisions-accept 4 '.view.sectionView.actions | join(",")' "Accept,Open in editor"
+expect decisions-accept 5 "$ta.armed" true
+expect decisions-accept 6 "[.view.sectionView.cursor, $ta.armed, .view.arm.armed] | map(tostring) | join(\"|\")" "ADR-0003|false|"
+expect decisions-accept 7 "[.view.sectionView.cursor, $ta.armed] | map(tostring) | join(\"|\")" "ADR-0004|false"
+expect decisions-accept 8 "$ta.armed" true
+expect decisions-accept 9 "$ta.armed" false
+expect decisions-accept 10 "[.view.sectionView.cursor, $ta.result, $ta.pending] | map(tostring) | join(\"|\")" \
+  "ADR-0004|Accepted ADR-0004 · Ollama nur als User-Service mit Case|false"
+expect decisions-accept 10 '.view.sectionView.actions | join(",")' "Open in editor"
+expect decisions-accept 10 '[.texts[] | select(. == "Accept" or . == "Confirm accept")] | length' 0
+for text in "Accepted ADR-0004 · Ollama nur als User-Service mit Case" "ADR-0004 · ACCEPTED · 2026-10-07" "4 decisions"; do
+  shows decisions-accept 10 "$text"
+done
+expect decisions-accept 10 '.view.lastError' ""
+expect decisions-accept 11 "[.view.sectionView.cursor, $ta.result] | join(\"|\")" "ADR-0003|"
+for i in 3 10; do expect decisions-accept $i '.overflow | join(" | ")' ""; done
+argv_check decisions-accept "$work/home-decisions-accept" "$(printf '%s\n' "$startup" "$(q decide accept ADR-0004 --json)")"
+clean_log decisions-accept
+
+# the engine's own text for an agent session (decide.rs user_actor)
+refusal='ADR-0004 is not accepted: agent:claude-code may propose a decision (`seldon decide`), only the user accepts one (ADR-0040); ask them to accept it in the desk or in their own terminal'
+mkdir -p "$work/home-decisions-accept-refused"
+run decisions-accept-refused "" 1920x1080 "summon;text:4;click:Accept;click:Confirm accept;settle" \
+  HOME="$work/home-decisions-accept-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_ACCEPT_REFUSE="$refusal"
+expect decisions-accept-refused 5 "[.view.sectionView.cursor, $ta.result, $ta.armed] | map(tostring) | join(\"|\")" "ADR-0004|$refusal|false"
+expect decisions-accept-refused 5 '.view.sectionView.actions | join(",")' "Accept,Open in editor"
+shows decisions-accept-refused 5 "$refusal"
+shows decisions-accept-refused 5 "4 decisions · 1 proposed"
+expect decisions-accept-refused 5 '.view.lastError' ""
+argv_check decisions-accept-refused "$work/home-decisions-accept-refused" "$(printf '%s\n' "$startup" "$(q decide accept ADR-0004 --json)")"
+clean_log decisions-accept-refused 'jax\.seldon: seldon decide exit 1: ADR-0004 is not accepted: '
+
+# A new index disarms Accept (Decisions.qml onAllRowsChanged; round 2,
+# N4): armed, then a capture from the pill's right click — no key, no click
+# in the desk — makes the fake engine write an index with one more
+# decision (ADR-0005, proposed); Accept is no longer armed, nothing ran.
+jq '.decisions = [{id: "ADR-0005", title: "Neuer Vorschlag", status: "proposed", date: "2026-10-07", cases: [],
+    path: "decisions/ADR-0005-neuer-vorschlag.md"}] + .decisions' "$sample" >"$work/decisions-after.json"
+mkdir -p "$work/home-decisions-accept-index"
+run decisions-accept-index "" 1920x1080 \
+  "summon;text:4;click:Accept;pill:right;wait:sectionView.summary=5 decisions · 2 proposed" \
+  HOME="$work/home-decisions-accept-index" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/decisions-after.json"
+expect decisions-accept-index 3 "[.view.sectionView.cursor, $ta.armed] | map(tostring) | join(\"|\")" "ADR-0004|true"
+expect decisions-accept-index 5 "[.view.section, .view.sectionView.cursor, $ta.armed, .view.arm.armed] | map(tostring) | join(\"|\")" \
+  "decisions|ADR-0004|false|"
+expect decisions-accept-index 5 '.view.sectionView.actions | join(",")' "Accept,Open in editor"
+argv_check decisions-accept-index "$work/home-decisions-accept-index" \
+  "$(printf '%s\n' "$startup" "$(q capture --all --json --quiet)" "$(q status --json)")"
+clean_log decisions-accept-index
+
+mkdir -p "$work/home-decisions-accept-locked"
+run decisions-accept-locked "" 1920x1080 "summon;text:4;click:Accept;click:Confirm accept;settle" \
+  HOME="$work/home-decisions-accept-locked" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_LOCKED=1
+expect decisions-accept-locked 5 "[$ta.result, (.view.sectionView.actions | join(\",\"))] | join(\"|\")" \
+  "the logbook is locked by another seldon (pid 4242)|Accept,Open in editor"
+clean_log decisions-accept-locked
 
 # 10d. Refusals keep the title (panel scenario 22): Enter on a blank title is
 #      refused in the plugin; the engine refuses the decision (lock held, exit

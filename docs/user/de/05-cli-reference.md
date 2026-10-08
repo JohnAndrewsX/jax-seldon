@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 953bb965 -->
+<!-- source: en/05-cli-reference.md @ 503ba989 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -34,7 +34,7 @@ Commands:
   log               Write a note: a ledger event and a journal entry
   event             Record an event by hand (hooks, scripts)
   plan              Plan and track cases: new, start, verify, done, drop, list, show
-  decide            Create a decision record (ADR) and open it in the editor
+  decide            Create a decision record (ADR) and open it in the editor; accept a proposed one
   open              Print the path of a logbook file; --editor opens it
   index             Rebuild index.json and the ledger/*.md views; --check validates
   status            Regenerate STATUS.md, the ledger views and index.json; print a summary
@@ -620,20 +620,53 @@ Options:
 
 Legt `decisions/ADR-NNNN-<slug>.md` mit dem Status *proposed* an und
 öffnet die Datei in deinem Editor; `--no-edit` lässt den Editor weg. Es
-schreibt kein Ereignis ins Ledger.
+schreibt kein Ereignis ins Ledger. Eine Entscheidung mit dem Titel
+„accept“ steht hinter `--` (`seldon decide -- accept`): ein bloßes
+`accept` ist der Unterbefehl unten.
 
 <!-- help: seldon decide -->
 ```text
-Create a decision record (ADR) and open it in the editor
+Create a decision record (ADR) and open it in the editor; accept a proposed one
 
 Usage: seldon decide [OPTIONS] <TITLE>
+       seldon decide <COMMAND>
+
+Commands:
+  accept  Accept a proposed decision: status accepted, today's date, a ledger note. The user's act; an agent is refused
+  help    Print this message or the help of the given subcommand(s)
 
 Arguments:
-  <TITLE>  The decision title, as one argument
+  <TITLE>  The decision title, as one argument (a title `accept` goes after `--`)
 
 Options:
       --case <ID>      The case this decision belongs to
       --no-edit        Do not open the editor
+```
+<!-- /help -->
+
+### seldon decide accept
+
+Nimmt eine vorgeschlagene Entscheidung an: ihr Frontmatter bekommt
+`status: accepted` und das heutige Datum, das Ledger eine
+`seldon`-Notiz (Subjekt die Entscheidungs-ID), `DECISIONS.md` und der
+Index ziehen nach, und das Logbuch committet. Eine schon angenommene
+Entscheidung bleibt, wie sie ist (Exit 0, `already` in `--json`); eine
+ersetzte (*superseded*) wird abgelehnt. Annehmen ist deine Sache: ein
+Agent (`--actor agent:…` oder `SELDON_ACTOR`) wird abgelehnt, ebenso
+`--actor human` in der Sitzung eines Agenten (Exit 1). *Accept* im
+Desk führt den Befehl aus.
+
+<!-- help: seldon decide accept -->
+```text
+Accept a proposed decision: status accepted, today's date, a ledger note. The user's act; an agent is refused
+
+Usage: seldon decide accept [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The decision, ADR-NNNN
+
+Options:
+      --actor <ACTOR>  Who accepts it: human (the default); an agent is refused
 ```
 <!-- /help -->
 

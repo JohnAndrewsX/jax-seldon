@@ -419,7 +419,7 @@ test("validateArgs accepts every CONTRACT.md command form", () => {
     ["decide", "--no-edit", "--", "Use zed"], ["rebuild", "--json"], ["update-impact", "--json"],
     ["open", "journal", "--editor"], ["open", "C-2026-003", "--editor"],
     ["decide", "--no-edit", "--json", "--", "--help"], ["open", "ADR-0004", "--editor", "--json"],
-    ["open", "logbook", "--editor", "--json"]
+    ["open", "logbook", "--editor", "--json"], ["decide", "accept", "ADR-0004", "--json"]
   ]
   for (const a of good) assert.strictEqual(M.validateArgs(a), "", JSON.stringify(a))
 })
@@ -456,7 +456,13 @@ test("validateArgs refuses everything else", () => {
     ["open", "ADR-4", "--editor"], ["open", "ADR-00041", "--editor"], ["open", "adr-0004", "--editor"],
     ["open", "ADR-0004; reboot", "--editor"], ["open", "ADR-0004", "--editor", "--", "x"],
     ["open", "memory", "--editor"], ["open", "memory/lessons.md", "--editor"],
-    ["log", "--", 42], ["log", "--", "a\u0000b"]
+    ["log", "--", 42], ["log", "--", "a\u0000b"],
+    // WP-135: decide accept takes one ADR id and --json, nothing else
+    ["decide", "accept", "ADR-0004"], ["decide", "accept", "--json"], ["decide", "accept", "ADR-4", "--json"],
+    ["decide", "accept", "ADR-0004; reboot", "--json"], ["decide", "accept", "C-2026-001", "--json"],
+    ["decide", "accept", "ADR-0004", "--actor", "human", "--json"], ["decide", "accept", "ADR-0004", "ADR-0003", "--json"],
+    ["decide", "accept", "--json", "--", "ADR-0004"], ["decide", "accept", "ADR-0004", "--json", "--", "x"],
+    ["decide", "--no-edit", "accept", "ADR-0004", "--json"], ["decide", "Accept", "ADR-0004", "--json"]
   ]
   for (const a of bad) assert.notStrictEqual(M.validateArgs(a), "", JSON.stringify(a))
 })
@@ -1222,6 +1228,29 @@ test("decideResult reads the SPEC-ENGINE §3 decide shape and refusals", () => {
   same(M.decideResult(4, "", "lock held"), { ok: false, text: "lock held", decisionId: "" })
 })
 
+test("acceptArgs: decide accept <ADR id> --json, the id checked (WP-135)", () => {
+  same(M.acceptArgs("ADR-0004"), { args: ["decide", "accept", "ADR-0004", "--json"] })
+  assert.strictEqual(M.validateArgs(M.acceptArgs("ADR-0004").args), "")
+  for (const bad of ["", null, undefined, "ADR-4", "ADR-00041", "adr-0004", "ADR-0004; reboot", "--help", "C-2026-001", " ADR-0004"])
+    assert.strictEqual(M.acceptArgs(bad).error, "Not a decision id: " + String(bad || ""), String(bad))
+  assert.strictEqual(M.acceptArmHint("ADR-0004"), "Accept ADR-0004? Click Confirm: it becomes accepted with today's date.")
+})
+
+test("acceptResult reads the SPEC-ENGINE §3 decide accept shape and refusals", () => {
+  const decision = { id: "ADR-0004", title: "Ollama nur als User-Service", status: "accepted", date: "2026-10-07",
+    cases: [], path: "decisions/ADR-0004-ollama-user-service.md" }
+  same(M.acceptResult(0, JSON.stringify({ decision, already: false, event: {}, git: { committed: true }, warnings: [] }), ""),
+    { ok: true, text: "Accepted ADR-0004 · Ollama nur als User-Service", decisionId: "ADR-0004", already: false })
+  same(M.acceptResult(0, JSON.stringify({ decision, already: true, event: null, git: { committed: false }, warnings: [] }), ""),
+    { ok: true, text: "ADR-0004 is accepted already", decisionId: "ADR-0004", already: true })
+  same(M.acceptResult(0, JSON.stringify({ decision: { id: "ADR-4; reboot", title: "x" }, already: "yes" }), ""),
+    { ok: true, text: "Accepted the decision · x", decisionId: "", already: false })
+  same(M.acceptResult(0, "not json", ""), { ok: true, text: "Accepted the decision", decisionId: "", already: false })
+  same(M.acceptResult(1, '{"error":{"code":1,"message":"ADR-0002 is superseded; only a proposed decision is accepted"}}', ""),
+    { ok: false, text: "ADR-0002 is superseded; only a proposed decision is accepted", decisionId: "", already: false })
+  same(M.acceptResult(4, "", "lock held"), { ok: false, text: "lock held", decisionId: "", already: false })
+})
+
 test("memoryRows: the sample's three lessons and two topics", () => {
   const rows = M.memoryRows(sampleIndex)
   same(rows.map((r) => r.kind + " " + r.title), [
@@ -1263,13 +1292,14 @@ test("deskFilter: every word, any field, case-insensitive", () => {
   same(M.deskFilter(null, "x", ["id"]), [])
 })
 
-test("decisionDetail: Accept only while proposed; nothing writes", () => {
+test("decisionDetail: Accept only while proposed; Accept writes, Open does not", () => {
   const rows = M.decisionRows(sampleIndex)
   const proposed = M.decisionDetail(rows[0])
   assert.strictEqual(proposed.heading, "ADR-0004 · proposed · 2026-10-01")
   same(proposed.rows, [["Status", "proposed"], ["Date", "2026-10-01"], ["File", "decisions/ADR-0004-ollama-user-service.md"]])
-  same(proposed.actions.map((a) => a.id + ":" + a.primary + ":" + a.enabled), ["accept:true:true", "open:false:true"])
-  assert.ok(proposed.note.indexOf("set status: accepted in its frontmatter") !== -1)
+  same(proposed.actions.map((a) => a.id + ":" + a.primary + ":" + a.enabled + ":" + a.write),
+    ["accept:true:true:true", "open:false:true:false"])
+  assert.strictEqual(proposed.note, "Proposed: it waits for your decision. Accept marks it accepted with today's date and notes it in the ledger; Open in editor shows the whole text.")
   const accepted = M.decisionDetail(rows[1])
   same(accepted.actions.map((a) => a.id), ["open"])
   assert.strictEqual(accepted.note, "")

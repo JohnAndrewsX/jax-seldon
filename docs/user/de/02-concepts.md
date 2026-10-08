@@ -1,6 +1,6 @@
 # Konzepte
 
-<!-- source: en/02-concepts.md @ d79db7a -->
+<!-- source: en/02-concepts.md @ 04088da1 -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
 Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory. Lies sie
@@ -249,8 +249,12 @@ Eine Entscheidung ist eine kurze Aufzeichnung einer Wahl, die die
 Maschine prägt, im ADR-Format (Architecture Decision Record): Kontext,
 Entscheidung, Folgen. `seldon decide -- "<titel>"` legt
 `decisions/ADR-NNNN-<slug>.md` mit dem Status *proposed* an und öffnet
-sie in deinem Editor. Den Status änderst du in der Datei auf *accepted*
-oder *superseded*. Der Tab Decisions listet sie auf.
+sie in deinem Editor. *Accept* im Bereich Decisions des Desks (zweimal:
+der erste Klick macht scharf) oder `seldon decide accept ADR-NNNN` setzt
+sie auf *accepted* mit dem heutigen Datum und vermerkt das im Ledger.
+Annehmen ist deine Sache: ein Agent darf eine Entscheidung vorschlagen,
+nie annehmen. *Superseded* setzt du in der Datei. Der Bereich Decisions
+listet sie auf.
 
 ## Memory
 

@@ -500,8 +500,11 @@ the 4 MiB limit; `triageSeen` (none, current, replaced, gone);
 with refused items; a static check that every `Text` of
 `TriageDetail.qml` is `PlainText` and nothing is elided.
 For the desk's sections 4–6 (WP-123): `deskFilter` (every word, any
-field, case-insensitive); `decisionDetail` (Accept only while proposed,
-nothing enabled for a malformed id, the notes); `decisionCases` (the
+field, case-insensitive); `decisionDetail` (Accept only while proposed
+and marked as a write, nothing enabled for a malformed id, the notes);
+`acceptArgs`, `acceptResult` and `validateArgs` for `decide accept
+<ADR-NNNN> --json` (WP-135: the id checked, nothing else admitted; the
+answer, `already`, refusals); `decisionCases` (the
 sample's, null for an index without the field, titles and status from
 the case lists, an unknown case by its id, non-text entries dropped); `systemTiles` (five tiles, big values
 and leads on the sample, a failing collector's stripe, "—" and "Not in
@@ -863,8 +866,15 @@ in all three (Decisions by title, System by lead and value, Memory by
 title and path; the first `j` after a search hid the selection),
 `select`, decision cases when the index carries them, the new-decision
 form live against the fake engine (Enter arms, a change disarms, the
-exact argv and editor paths of decide, Accept, `e`, Open in editor on
-all three) and its refusals (title kept), System's five tiles with every
+exact argv and editor paths of decide, `e`, Open in editor on
+all three) and its refusals (title kept); Accept (WP-135,
+`decisions-accept`): the first click arms it (*Confirm accept*, the
+hint), a key, a click on another decision and a new index (a capture
+from the pill, `decisions-accept-index`) disarm, the second click runs `decide
+accept ADR-0004 --json` once and no `open`, the decision arrives
+accepted without Accept; the engine's refusal and a held lock show in
+place (`decisions-accept-refused`, `-locked`); in dev mode Accept is
+disabled; System's five tiles with every
 field optional and a failing collector, Memory, not initialised, the
 stacked layout and label fit at 1366 and 3840 px. Every case ends with a
 log free of warnings, `TypeError`s and binding loops. `DESK_SHOTS=<dir>`
