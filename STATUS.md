@@ -633,6 +633,10 @@ submission). (see `work/queued/`)
   AGENTS.md §6 permission for the CUPS files is withdrawn. WP-129 (the hook
   records an agent's privileged commands) stays; it is verified live on the
   next real `pkexec`/`sudo` an agent runs. No printer test (T3).
+- E31 graph: an Obsidian-like config panel (filters, groups, display,
+  forces), shipped presets and user configs in Omarchy's plugin settings →
+  WP-163 (0.2.x, after the operator has seen it in the 0.3 prototype); the
+  whole-logbook graph export with an engine-side layout is 0.3 (ADR).
 
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
