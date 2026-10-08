@@ -206,3 +206,42 @@ on a variable is left in the file (the one `sed` left reads the mutant's
 file). Verified locally: `bash -n` ok, `runtime-dir.test: 36 passed,
 0 failed`, the helper's output checked by hand. shellcheck still only in
 CI. No full check rerun (one test file, failure-path output only).
+
+## Round 4
+
+`main` (f4929993, WP-162) merged; conflicts in `justfile` and
+`docs/TESTING.md` resolved keeping both: `ipc-restart.sh` is the fifth
+Quickshell harness behind the E29 rule, the `plugin-test` row lists it.
+
+`ipc-restart.sh` already gives every run a private
+`rt=$(mktemp -d /tmp/seldon-rt.XXXXXX)`, but passes it through an env
+array (`envs=(… XDG_RUNTIME_DIR="$rt" …)`, expanded as `"${envs[@]}"` in
+the start command) and removes it in `cleanup()`, called by
+`trap cleanup EXIT`. The static guard now accepts both forms (an array
+expanded in the start command whose definition sets the variable; `"$rt"`
+in the body of the function the EXIT trap calls); `ipc-restart.sh` is
+unchanged. New mutants: `ipc-restart` default back and session passed
+(in the per-file loop), the setting dropped from `envs`, the `rm` of
+`$rt` dropped from `cleanup`, the trap calling another function.
+`runtime-dir.test`: 42 passed, 0 failed.
+
+Full check at `e0204571`, `SELDON_FULL_CHECK=1`, `flock`,
+`XDG_RUNTIME_DIR=/tmp/r161`, `JUST_TEMPDIR` in scratch:
+
+```
+lock taken 14:45:26
+tmpfs 3.2G 50M 3.1G 2% /run/user/<uid>
+by-id before: 327
+deploy-test-host.test: 191 passed, 0 failed
+runtime-dir.test: 42 passed, 0 failed
+real-home-guard.test: 40 passed, 0 failed
+service-states: 332 · panel-view: 925 · overlay-view: 328 · bar-view: 196 · ipc-restart: 44 passed, 0 failed
+  (each: no leftover, 327 before, 327 after; /tmp/r161 0/0)
+plugin-test: ok
+check: ok
+by-id after: 327
+by-id lists identical
+exit 0
+```
+
+No `/tmp/seldon-rt.*` left, `/tmp/r161` empty. Not pushed.
