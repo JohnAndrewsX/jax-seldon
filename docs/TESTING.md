@@ -7,19 +7,21 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 
 | Step | Recipe | What it runs | CI |
 |---|---|---|---|
+| Runtime space | `check-runtime-space` | `df -h /run/user/<uid>` and the number of entries in its `quickshell/by-id`; a warning above 50 % full, a refusal above 80 % (see "The session's runtime dir"); `just` runs a recipe once per invocation, so in `check` it runs once, at the start, and `just plugin-test` on its own runs it first | skipped (no `/run/user/<uid>`) |
 | Format | `fmt-check` | `cargo fmt --check` on `engine/` | yes |
 | Lint | `clippy` | `cargo clippy --all-targets -- -D warnings` | yes |
 | Tests | `test` | `cargo test` (unit + CLI tests in `engine/tests/`) | yes |
 | Watch feature | `check-watch` | `cargo clippy --all-targets --features watch -- -D warnings`, `cargo test --features watch` (see "The `watch` feature") | yes |
 | Packaging | `check-packaging` | `bash -n` and (when installed) `shellcheck` on `packaging/PKGBUILD` and its scripts, `packaging/check-srcinfo.sh` (`.SRCINFO` in step with the PKGBUILD), `bash tests/release/release-notes.test.sh` (the release body from `CHANGELOG.md`: the real `0.1.0` section, a middle and a last section, outer blank lines trimmed; missing, empty and prefix-only versions, malformed input exit 1) | yes |
 | Install script | `check-install` | `bash tests/install/install.test.sh`: `install.sh` against a mock of the release layout served as `file://` URLs, scratch `HOME` and prefixes, no network — latest via the API with and without `jq`, a re-run changes nothing (bytes and mtimes), update and downgrade, `--unit` (the unit byte-identical for `~/.local`, `ExecStart` rewritten for other prefixes, never enabled), refusals before the first write (checksum mismatch, no `SHA256SUMS` line, wrong binary version, missing release, bad arguments, a foreign `jax-seldon`), the script piped to `bash` and truncated, `--uninstall` (only matching files; refused while the unit is enabled), the man page and the completions (WP-049: the fake binary answers `completions`/`mangen`; a scratch `/usr/share` via `SELDON_INSTALL_SHARE` has the bash-completion, fish and zsh directories, and fake `fish`/`zsh` in a PATH dir decide which shells exist (the host's zsh and fish are left off PATH): zsh's directory without `zsh` installs nothing, a fake `zsh` adds its completion and the `fpath` hint, `fish` without its directory installs nothing; a release without the commands skips them; a foreign completion is kept unless `--force`; a completion of a shell that is gone stays in the manifest and `--uninstall` removes it), the build-provenance check (WP-080: the host's `gh` is left off PATH; `gh` stubs that verify against the mock releases' attestations, fail on their own, are not logged in, too old or missing an option, or absent, each with and without `--require-verified`, plus `--skip-provenance`; a tampered release, one attested only for a branch, one from a self-hosted runner, one before attestations (v0.1.1), a `GH_HOST` of another server, the exact `gh` argv), no `sudo`/`systemctl` call, the real `~/.local/bin`, `~/.config/systemd/user`, completions and man page untouched; `shellcheck` when installed | yes (`shellcheck` in the release workflow's container) |
-| Deploy script | `check-deploy` | `bash tests/deploy/deploy-test-host.test.sh` (WP-098): `scripts/deploy-test-host.sh` in a scratch git repository with a bare origin, against a fake test host — an `ssh` stub runs the remote scripts here under `env -i` with a scratch `HOME` and a `PATH` of stubs (`omarchy-shell`, `omarchy-restart-shell`, `omarchy`, `curl`, `git clone`) plus single linked tools, so the host's real `omarchy-*`, `quickshell`, `hyprctl` and `systemctl` are out of reach; a `cargo` stub builds a fake engine. Refusals before any build or change (no or unlisted host, a machine-id that does not match the pin (one ssh call, no id printed), no pin or no pin file (with the hint; a commented pin does not count), a prefix or comment word of a listed one, an ssh option as host, no host list, the host is this machine, not on `main`, a modified or untracked file, HEAD not pushed, a check log missing, not ending in `exit 0`, without a first line `head <full sha>`, with a short, unknown or other-branch sha, or with `engine/`, `plugin/`, `schema/` or the script changed since that sha — a docs-only commit passes —, Windows line endings, bad arguments, a symlinked plugin dir, a missing remote tool); dry run (no build, the host unchanged); first deploy (marked build with `--features watch` into the repo's target dir, `ssh -G` and the engine found in the dry run, a host without an engine, `ping` before the restart, `seldon.prev`, the release clone moved out of the plugins dir, HEAD's plugin files plus `.seldon-dev-build`, one restart, smoke, log line); an engine-only change (no restart, unchanged plugin files keep their mtime, an exported `CARGO_TARGET_DIR` ignored); the settle wait; removed and added plugin files; each locked state and an unreadable lock status (restart pending, caught up by the next deploy on an unlocked session); a restart notice while the restart is pending (a note); a failing restart, doctor, capture, service version, restart notice, host-side validation, build, a build without the marker, and no graphical session (named in the summary); an active `seldon-watch.service` restarted on the new binary, an inactive one left alone, a failed unit restart (exit 2); `--release` (install.sh with `--force`, the watcher restarted on the release binary, the clone at the tag, the dev copy moved aside), a clone that fails validation, a checksum mismatch and a missing release; the real `~/.local/bin/seldon`, plugin dir and `~/.local/state/seldon-dev` untouched; `shellcheck` when installed | yes |
+| Deploy script | `check-deploy` | `bash tests/deploy/deploy-test-host.test.sh` (WP-098): `scripts/deploy-test-host.sh` in a scratch git repository with a bare origin, against a fake test host — an `ssh` stub runs the remote scripts here under `env -i` with a scratch `HOME` and a `PATH` of stubs (`omarchy-shell`, `omarchy-restart-shell`, `omarchy`, `curl`, `git clone`) plus single linked tools, so the host's real `omarchy-*`, `quickshell`, `hyprctl` and `systemctl` are out of reach; a `cargo` stub builds a fake engine. Refusals before any build or change (no or unlisted host, a machine-id that does not match the pin (one ssh call, no id printed), no pin or no pin file (with the hint; a commented pin does not count), a prefix or comment word of a listed one, an ssh option as host, no host list, the host is this machine, not on `main`, a modified or untracked file, HEAD not pushed, a check log missing, not ending in `exit 0`, saying the Quickshell harnesses were skipped (WP-161), without a first line `head <full sha>`, with a short, unknown or other-branch sha, or with `engine/`, `plugin/`, `schema/` or the script changed since that sha — a docs-only commit passes —, Windows line endings, bad arguments, a symlinked plugin dir, a missing remote tool); dry run (no build, the host unchanged); first deploy (marked build with `--features watch` into the repo's target dir, `ssh -G` and the engine found in the dry run, a host without an engine, `ping` before the restart, `seldon.prev`, the release clone moved out of the plugins dir, HEAD's plugin files plus `.seldon-dev-build`, one restart, smoke, log line); an engine-only change (no restart, unchanged plugin files keep their mtime, an exported `CARGO_TARGET_DIR` ignored); the settle wait; removed and added plugin files; each locked state and an unreadable lock status (restart pending, caught up by the next deploy on an unlocked session); a restart notice while the restart is pending (a note); a failing restart, doctor, capture, service version, restart notice, host-side validation, build, a build without the marker, and no graphical session (named in the summary); an active `seldon-watch.service` restarted on the new binary, an inactive one left alone, a failed unit restart (exit 2); `--release` (install.sh with `--force`, the watcher restarted on the release binary, the clone at the tag, the dev copy moved aside), a clone that fails validation, a checksum mismatch and a missing release; the real `~/.local/bin/seldon`, plugin dir and `~/.local/state/seldon-dev` untouched; `shellcheck` when installed | yes |
 | Dev-host guard | `check-guard` | The PreToolUse guard hook `scripts/guard.sh` (WP-130; it runs `scripts/guard.py`, a bash parser that decides on the command position): `bash scripts/guard-test.sh`, the expectation table (one row per allowed or blocked case, a fixed fake `HOME` and working directory, nothing is executed), then `python3 scripts/guard-mutants.py`: each mutant drops one rule of `guard.py` and the table must fail for every one; `shellcheck` when installed | yes |
+| Runtime dir | `check-runtime-dir` | `bash tests/plugin/runtime-dir.test.sh` (WP-161): under `tests/` and `scripts/`, outside comments, no mention of the name `XDG_RUNTIME_DIR` other than an assignment (no expansion with or without a default, no `printenv XDG_RUNTIME_DIR`, no `v=XDG_RUNTIME_DIR` for a `${!v}`) and no `/run/user` path unless the line carries `# live runtime dir: <reason>`; every Quickshell (`"$qs_bin"`, `${qs_bin}`, `$qs_bin`, `quickshell`, `qs`) started with `-p`, `--path` or `--path=` sets `XDG_RUNTIME_DIR` in the same command, itself or through an array it expands (`"${envs[@]}"`) whose definition sets it; every file that makes `rt=$(mktemp …)` removes `"$rt"` in an EXIT trap, itself or in the function the trap calls (`trap cleanup EXIT`); no `*.rs` under `engine/` names `XDG_RUNTIME_DIR`. Then mutants of the harnesses, `e2e.sh`, `deploy-test-host.sh` and the leak guard (the old `${XDG_RUNTIME_DIR:-…}` back, `:=`, the session's dir passed on directly, through `printenv` or `${!v}`, the setting dropped under each start spelling, the trap without `"$rt"`, a marker dropped) must each be caught for the right reason; `shellcheck` when installed | yes |
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` (see "Plugin") | **no** (dev host) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | **no** (dev host) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`, not in CI, required before the handover
@@ -387,6 +389,64 @@ host.
   does not replace the runtime smoke test: it knows nothing about other
   types.
 
+## The session's runtime dir
+
+`/run/user/<uid>` is a small tmpfs (3.2 GB on the dev host) that Hyprland,
+Xwayland and every Wayland client write into. When it is full, the
+compositor dies (2026-10-08: SIGBUS in Hyprland, the session lost). The
+plugin harnesses filled it: they passed `${XDG_RUNTIME_DIR:-$work}` to
+their Quickshells, which in a desktop session is the real dir, and
+Quickshell leaves a `quickshell/by-id/<id>/` dir (lock and logs) behind
+for every instance, even after a clean exit. About 34 700 runs in three
+days filled it. Hence (WP-161):
+
+- **Every Quickshell a test starts gets its own runtime dir:**
+  `rt=$(mktemp -d /tmp/seldon-rt.XXXXXX)`, mode 700, removed by the
+  script's EXIT trap, passed as `XDG_RUNTIME_DIR="$rt"`. It sits under
+  `/tmp` and not under `$work` because `$work` follows `TMPDIR`, and the
+  IPC socket `<rt>/quickshell/by-id/<id>/ipc.sock` must stay under 108
+  bytes. Never `${XDG_RUNTIME_DIR:-…}`: in a session it is always set,
+  and it is expanded before `env -i` clears anything.
+- **Only remote preludes reach a live runtime dir:** `scripts/deploy-test-host.sh`
+  and the remote side of `tests/integration/e2e.sh` drive the test host's
+  live shell; their lines carry `# live runtime dir: <reason>`, which
+  `check-runtime-dir` requires.
+- **The leak guard** (`tests/plugin/real-home-guard.sh`) lists the entries
+  of `quickshell/by-id` in `/run/user/<uid>` and, when it is another dir,
+  in the inherited `XDG_RUNTIME_DIR` before a harness runs, and each
+  harness ends with one line per dir: the counts before and after, and a
+  failure naming every new entry that no running process holds open (a
+  harness's Quickshells have exited by then, so their leftovers are held
+  by nobody). A new entry a running process holds is a live instance —
+  another Quickshell app, a restarted shell — and only noted. The
+  leftover of a concurrent run of an older harness fails it too; the line
+  says which dir grew.
+- **`check-runtime-space`** is the first dependency of `check` and a
+  dependency of `plugin-test`; `just` runs a recipe once per invocation,
+  so `just check` runs it once, at the start (not again right before the
+  harnesses), and `just plugin-test` on its own runs it first. It prints `df -h /run/user/<uid>` and the `by-id` count, warns above
+  50 % and refuses above 80 %. Above 50 %, look before cleaning up:
+  `du -sh /run/user/<uid>/*` and `ls /run/user/<uid>/quickshell/by-id | wc -l`.
+  The running Omarchy shell has its own `by-id` entry; never remove
+  entries of a live instance (`quickshell list -a` lists them).
+- **Less load (operator decision E29):** a WP's `just check` runs the five
+  Quickshell harnesses only when their inputs changed against the merge
+  base with `main` (`plugin/`, `tests/plugin/`, `schema/`, `fixtures/`,
+  the `justfile`). They always run when `HEAD` is the merge base: on
+  `main`, at a detached `main`, on a branch without its own commit, so
+  the main check after a merge never skips them. Gates set
+  `SELDON_FULL_CHECK=1` to run them whatever changed. No git or no merge
+  base: they run. A skipped run prints `plugin-test: Quickshell harnesses
+  skipped (…)`, and `deploy-test-host` refuses a check log with that line.
+- **Engine and cargo tests** inherit the session's `XDG_RUNTIME_DIR` (only
+  Quickshell starts get a private one), which is harmless because the
+  engine never reads it: no `*.rs` file under `engine/` names the
+  variable, and `check-runtime-dir` fails if one does.
+
+`just` itself writes its shebang recipe scripts under `XDG_RUNTIME_DIR`
+(`just/just-*/`, removed after each recipe) unless `JUST_TEMPDIR` names
+another dir; an agent's check sets both to private dirs.
+
 ## Dev host vs test host
 
 | | Dev host | Test host |
@@ -620,7 +680,8 @@ Isolation: the scenarios run with a `PATH` made of symlinks to the few
 tools the fakes need, so a `seldon` installed system-wide never leaks in.
 Every run, here and in layer 3, gets its own `HOME`, `XDG_STATE_HOME` and
 `XDG_CONFIG_HOME` inside the temp dir (a case may name its own `HOME`; the
-XDG dirs follow it). Both scripts end with a check
+XDG dirs follow it), and every Quickshell gets a private
+`XDG_RUNTIME_DIR` (see "The session's runtime dir"). Both scripts end with a check
 (`tests/plugin/real-home-guard.sh`) that the real `~/.local/state/seldon`
 and `~/.config/seldon` neither appeared nor changed during the run; it
 compares existence, size, mtime and ctime of every entry, so an engine run
@@ -635,8 +696,10 @@ changed entry is the state dir or its `index.json`, `lock`,
 logbook `config.toml` names (`logbook.path`) and the machine it named
 before the run (`logbook.machine`). It reads only `config.toml` and those
 two index fields, never the logbook. Anything else still fails, with the
-reason. `tests/plugin/real-home-guard.test.sh` (part of `just plugin-test`)
-proves both sides in scratch HOMEs.
+reason. The same check fails when a new entry that no running process holds
+appeared in the session's `quickshell/by-id` (WP-161). `tests/plugin/real-home-guard.test.sh` (part of `just plugin-test`)
+proves both sides in scratch HOMEs, and the runtime check in scratch
+runtime dirs.
 
 To watch one case by hand:
 

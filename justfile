@@ -16,8 +16,32 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard schema-validate docs-check plugin-validate qmllint plugin-test
+check: check-runtime-space fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard check-runtime-dir schema-validate docs-check plugin-validate qmllint plugin-test
     @echo "check: ok"
+
+# The session's runtime dir (WP-161): a full /run/user/<uid> takes the
+# desktop down. Warns above 50 %, refuses above 80 %; skipped where the dir
+# does not exist (CI).
+check-runtime-space:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir=/run/user/$(id -u)
+    if [[ ! -d $dir ]]; then
+      echo "check-runtime-space: skipped ($dir does not exist)"
+      exit 0
+    fi
+    df -h "$dir"
+    use=$(df --output=pcent "$dir" | tail -n 1 | tr -dc '0-9')
+    entries=0
+    [[ -d $dir/quickshell/by-id ]] && entries=$(find "$dir/quickshell/by-id" -mindepth 1 -maxdepth 1 | wc -l)
+    echo "check-runtime-space: $dir is $use % full, $entries entries in quickshell/by-id"
+    if ((use > 80)); then
+      echo "check-runtime-space: refusing to run above 80 %; find what fills $dir first (docs/TESTING.md, \"The session's runtime dir\")" >&2
+      exit 1
+    fi
+    if ((use > 50)); then
+      echo "check-runtime-space: WARNING: $dir is over 50 % full; find what fills it before a long run" >&2
+    fi
 
 # rustfmt, no changes allowed.
 fmt-check:
@@ -140,6 +164,16 @@ check-guard:
     GUARD_TEST_QUIET=1 bash scripts/guard-test.sh
     python3 scripts/guard-mutants.py
 
+# No test or script reaches the session's runtime dir (WP-161): every
+# Quickshell a test starts sets its own XDG_RUNTIME_DIR; the guard's
+# mutants prove it catches the old pattern; shellcheck when installed.
+check-runtime-dir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash -n tests/plugin/runtime-dir.test.sh
+    if command -v shellcheck >/dev/null; then shellcheck tests/plugin/runtime-dir.test.sh; fi
+    bash tests/plugin/runtime-dir.test.sh
+
 # `omarchy plugin validate plugin/` (host only).
 plugin-validate:
     #!/usr/bin/env bash
@@ -198,7 +232,11 @@ qmllint:
     echo "qmllint: ok (${#files[@]} files)"
 
 # Plugin logic: Model.js under node; the banners' terminal scripts under bash with stubs; Service.qml states, Panel.qml tabs, keys and banners, Overlay.qml, the pill (BarWidget.qml) and an IPC exit with two pills in a private headless Quickshell (host only).
-plugin-test:
+# The Quickshell harnesses run only when plugin/, tests/plugin/, schema/,
+# fixtures/ or this justfile changed against the merge base with main, and
+# always on main itself (HEAD is the merge base) or with SELDON_FULL_CHECK=1
+# (gates set it); see docs/TESTING.md.
+plugin-test: check-runtime-space
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -n "{{ skip_host }}" ]]; then
@@ -210,11 +248,25 @@ plugin-test:
     node tests/plugin/model.bench.js
     bash tests/plugin/terminal-scripts.sh
     bash tests/plugin/real-home-guard.test.sh
-    bash tests/plugin/service-states.sh
-    bash tests/plugin/panel-view.sh
-    bash tests/plugin/overlay-view.sh
-    bash tests/plugin/bar-view.sh
-    bash tests/plugin/ipc-restart.sh
+    # Operator decision E29 (WP-161): less load on the dev host. Without git
+    # or a merge base the harnesses run; at the merge base itself (main, a
+    # detached main, a fresh branch with no commit yet) they run too, so
+    # the main check never skips them.
+    paths=(plugin tests/plugin schema fixtures justfile)
+    if [[ ${SELDON_FULL_CHECK:-} != 1 ]] \
+      && base=$(git merge-base HEAD main 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null) \
+      && [[ $base != "$(git rev-parse HEAD)" ]] \
+      && changed=$(git diff --name-only "$base" -- "${paths[@]}") \
+      && untracked=$(git ls-files --others --exclude-standard -- "${paths[@]}") \
+      && [[ -z $changed$untracked ]]; then
+      echo "plugin-test: Quickshell harnesses skipped (nothing under ${paths[*]} changed against ${base:0:12}, the merge base with main; SELDON_FULL_CHECK=1 runs them; deploy-test-host refuses this log)"
+    else
+      bash tests/plugin/service-states.sh
+      bash tests/plugin/panel-view.sh
+      bash tests/plugin/overlay-view.sh
+      bash tests/plugin/bar-view.sh
+      bash tests/plugin/ipc-restart.sh
+    fi
     echo "plugin-test: ok"
 
 # Not part of `check` (it needs a release compile); CI runs it as its own step.
