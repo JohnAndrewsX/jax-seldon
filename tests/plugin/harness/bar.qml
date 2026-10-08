@@ -40,6 +40,17 @@ import qs.Ui
 //                       open/close a reconfiguration draws the placeholder
 //                       and hides the other (report `ownersSwapped`,
 //                       `openedSwapped`), then the owner goes.
+//   HARNESS_IPC_KILL    with HARNESS_IPC: once the two widgets are ready,
+//                       prints `HARNESS kill-ready {json}` (which widget owns
+//                       the target) and waits to be ended from outside by
+//                       `quickshell kill`, as `omarchy restart shell` ends the
+//                       shell (WP-162). Every change of a widget's ownership,
+//                       the teardown included, prints `HARNESS owner <i>
+//                       <bool>`. Qt tears the widgets down newest first; the
+//                       value `late-owner` creates the second widget before
+//                       the owner, so the owner goes first while its sibling
+//                       is still there, as in the shell's teardown. Driven by
+//                       tests/plugin/ipc-restart.sh.
 ShellRoot {
   id: root
 
@@ -49,6 +60,7 @@ ShellRoot {
   property var widgets: []
   readonly property string ipcConfig: Quickshell.env("HARNESS_IPC") || ""
   readonly property bool placeholderMode: (Quickshell.env("HARNESS_IPC_PLACEHOLDER") || "") !== ""
+  readonly property bool killMode: (Quickshell.env("HARNESS_IPC_KILL") || "") !== ""
   property var ipcReport: ({})
   property bool done: false
   readonly property string pluginDir: Quickshell.env("HARNESS_PLUGIN_DIR") || ""
@@ -166,21 +178,35 @@ ShellRoot {
     }
   }
 
+  // The second widget of HARNESS_IPC: the centre placeholder
+  // (HARNESS_IPC_PLACEHOLDER) or the second monitor's.
+  function loadOther() {
+    if (!root.placeholderMode) return root.load("BarWidget.qml", slot2, { bar: api, moduleName: "jax.seldon" })
+    var placeholder = root.load("BarWidget.qml", slot0, { bar: api, moduleName: "jax.seldon" })
+    if (placeholder) placeholder.anchors.fill = slot0
+    return placeholder
+  }
+
+  function watchOwner(w, i) {
+    w.ipcOwnerChanged.connect(function() { console.log("HARNESS owner " + i + " " + w.ipcOwner) })
+  }
+
   Component.onCompleted: {
     root.service = root.load("Service.qml", null, {})
     var settingsJson = Quickshell.env("HARNESS_SETTINGS") || ""
     var props = { bar: api, moduleName: "jax.seldon" }
     if (settingsJson !== "") props.settings = JSON.parse(settingsJson)
+    // HARNESS_IPC_KILL=late-owner: the other widget first (see the top).
+    var other = root.ipcConfig !== "" && Quickshell.env("HARNESS_IPC_KILL") === "late-owner" ? root.loadOther() : null
     root.widget = root.load("BarWidget.qml", slot, props)
     if (root.widget) root.widget.anchors.fill = slot
     var all = [root.widget]
-    if (root.ipcConfig !== "" && root.placeholderMode) {
-      var placeholder = root.load("BarWidget.qml", slot0, { bar: api, moduleName: "jax.seldon" })
-      if (placeholder) placeholder.anchors.fill = slot0
-      all.unshift(placeholder)
-    } else if (root.ipcConfig !== "") {
-      all.push(root.load("BarWidget.qml", slot2, { bar: api, moduleName: "jax.seldon" }))
+    if (root.ipcConfig !== "") {
+      if (!other) other = root.loadOther()
+      if (root.placeholderMode) all.unshift(other)
+      else all.push(other)
     }
+    if (root.killMode) all.forEach(function(w, i) { if (w) root.watchOwner(w, i) })
     root.widgets = all
   }
 
@@ -278,6 +304,10 @@ ShellRoot {
       var ready = root.service && root.service.ready && root.widget && root.widget.service && glyph && glyph.ready
       if ((!ready || waited < 1000) && waited < 15000) return
       root.done = true
+      if (root.ipcConfig !== "" && root.killMode) {
+        console.log("HARNESS kill-ready " + JSON.stringify({ owners: root.owners() }))
+        return
+      }
       if (root.ipcConfig !== "") {
         ipcStep.start()
         return
