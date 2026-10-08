@@ -2023,7 +2023,26 @@ graph_time_ok() {
     echo "     $name:$miss over the time budget, runs once more (a loaded host?)"
     eval "run ${graph_args[$name]}"
   fi
+  if [[ -n $miss ]] && graph_timing_soft; then
+    miss=""
+    for i in "$@"; do
+      [[ $(sed -n "${i}p" "$work/$name.steps" | jq -r "$cond" 2>/dev/null) == true ]] || miss="$miss #$i"
+    done
+    if [[ -n $miss ]]; then
+      echo "     WARN $name:$miss over the time budget twice on a loaded host ($(graph_load)); counted only with SELDON_PERF_STRICT=1"
+      return 0
+    fi
+  fi
   for i in "$@"; do expect "$name" "$i" "$cond" true; done
+}
+# graph_timing_soft — true when a timing miss may be a warning: not under
+# SELDON_PERF_STRICT and the host's 1-minute load is at least half its
+# cores (other checks and builds running). The test host's live run
+# (graph-live.sh) and SELDON_PERF_STRICT=1 keep every budget strict.
+graph_load() { cut -d' ' -f1 /proc/loadavg; }
+graph_timing_soft() {
+  [[ -z ${SELDON_PERF_STRICT:-} ]] || return 1
+  awk -v l="$(graph_load)" -v n="$(nproc)" 'BEGIN { exit !(l >= n / 2) }'
 }
 # graph_time_min <case> <path> <max> <step>… — a timing gate on the fastest
 # of several reports of the same work (a still picture's paints): load
@@ -2038,6 +2057,10 @@ graph_time_min() {
     graph_retried[$name]=1
     echo "     $name: the fastest $path $(min_of) over $max, runs once more (a loaded host?)"
     eval "run ${graph_args[$name]}"
+  fi
+  if ! jq -en "$(min_of) <= $max" >/dev/null && graph_timing_soft; then
+    echo "     WARN $name: the fastest $path $(min_of) over $max twice on a loaded host ($(graph_load)); counted only with SELDON_PERF_STRICT=1"
+    return 0
   fi
   check "$name: the fastest $path of steps $* ≤ $max ($(min_of))" "$(jq -n "$(min_of) <= $max")" true
 }
