@@ -207,3 +207,30 @@ budget, an 8 MiB tail, package fields one line and bounded (WP-138 round
   `XDG_RUNTIME_DIR` (`/tmp/r138b`, 0700, removed afterwards), under the
   shared lock, on the merge commit `d57207f6`: **check: ok**, exit 0
   (desk-view 1803/0, service-states, bar-view, ipc-restart all green).
+
+## Stage 2 edits (Fable approved; F2(b), F4)
+
+- **F2(b):** `shown()` in `preview.rs` now also replaces the direction
+  and format set the index drops (`import::is_direction_or_format`:
+  U+200E/200F, U+061C, U+FEFF, the tags, …) with U+FFFD, for paths, names,
+  versions and the command line alike. `shown_replaces_what_breaks_a_line`
+  covers U+200F, U+200E, U+061C and a tag character. ADR-0047 §3,
+  SPEC-ENGINE §3 and the schema's descriptions say so.
+- **F4:** `config_scan::Limits` has `pub exclude: Vec<PathBuf>` (matched
+  with `Path::starts_with`, whole components, for folders and files). The
+  hard-coded `omarchy/plugins` and `omarchy/shell.json` moved out of the
+  walker into what `seldon preview` passes. WP-139 can pass watch paths,
+  Seldon's folders and the plugin folder without touching the walker.
+  `MAX_DEPTH` stays a const, and the walker still never redacts.
+  New test `the_caller_excludes_folders_and_files` (`plugins-old` and
+  `shell.json.d` stay listed).
+- **Mutants:** 3.
+  - Killed: preview passing no exclusions (the golden sample) and the
+    format set dropped from `shown()`.
+  - One equivalent survivor: `starts_with` → exact equality. An excluded
+    folder is never entered, so the two differ only for an exclude that
+    is an ancestor of the walked root.
+- **Check:** full, `SELDON_FULL_CHECK=1`, private runtime dir
+  `/tmp/r138c` (removed afterwards), on `36af71f3`: **check: ok**,
+  exit 0.
+- The merge waits for the operator to accept ADR-0047.
