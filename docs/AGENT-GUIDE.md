@@ -341,6 +341,7 @@ Pass `--actor agent:<name>` wherever a command takes it (`log`, `event`,
 | `seldon plan new … -- "<title>"` | the user asked for work and no case exists (§3) |
 | `seldon plan start\|verify\|done\|drop <ID>` | the case steps of §3 and §8 |
 | `seldon log --case <ID> --actor agent:<name> -- "<text>"` | a journal note: what you did, found or decided |
+| `seldon inbox add --title "<title>" --tag crash --actor agent:<name> --file -` | after a crash analysis (Omarchy's `diagnose-crash`): the report on stdin goes into `inbox/`, redacted; then ask the user whether it becomes a case |
 | `seldon event <source> <kind> --subject S --actor agent:<name>` | to record something no hook or collector sees, e.g. a change made through a GUI |
 | `seldon decide --no-edit --case <ID> -- "<title>"` | a decision that shapes the machine; then fill in *Context*, *Decision*, *Consequences* of the new `decisions/ADR-NNNN-*.md`. It stays *proposed*: accepting it is the user's (`seldon decide accept` refuses an agent, ADR-0040) |
 | `seldon drift link\|explain\|dismiss …` | §7, only when you know the reason |
