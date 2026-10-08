@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 08faaab -->
+<!-- source: en/06-configuration.md @ 391f7a7 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -462,8 +462,10 @@ Seine Fehlerausgabe landet in `~/.local/state/seldon/agent-launch.log`.
 ## Git
 
 Mit `autocommit = true` committet jeder schreibende Befehl das Logbuch,
-mit einer Nachricht wie `seldon: C-2026-004 active`. Der Commit nimmt den
-ganzen Ordner, also gehen Änderungen, die du seit dem letzten Befehl im
+mit einer Nachricht wie `seldon: C-2026-004 active`. Der Abschluss eines
+Case nennt ihn: `seldon: C-2026-004 completed — Zed installieren: SUPER+E
+öffnet Zed`, Titel und erste Zeile seines *Result* (beim Verwerfen der
+Grund). Der Commit nimmt den ganzen Ordner, also gehen Änderungen, die du seit dem letzten Befehl im
 Editor gemacht hast, mit. Die Geschichte ist dein Backup und dein
 Rückgängig.
 

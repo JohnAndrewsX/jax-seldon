@@ -588,7 +588,22 @@ fn step(
         Some(pending) => Some(pending.write()?.path),
         None => None,
     };
-    let commit = autocommit(ctx, &config, &logbook, &format!("{} {}", args.id, to));
+    let summary = match transition {
+        Transition::Done => closing_summary(
+            &args.id,
+            to,
+            &file.case.title,
+            cases::first_paragraph(&file.doc.body, "Result")
+                .as_deref()
+                .and_then(|r| r.lines().next()),
+            &redactor,
+        ),
+        Transition::Drop => {
+            closing_summary(&args.id, to, &file.case.title, reason.as_deref(), &redactor)
+        }
+        _ => format!("{} {}", args.id, to),
+    };
+    let commit = autocommit(ctx, &config, &logbook, &summary);
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
@@ -997,6 +1012,56 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
     ))
 }
 
+/// The most characters of a closing commit's text after the dash.
+const CLOSING_TAIL_MAX: usize = 100;
+
+/// The summary of a closing step's commit (WP-143): `<ID> completed —
+/// <title>: <line>`, `line` the first line of the case's *Result* (`plan
+/// done`) or the reason (`plan drop`), left out when there is none, a
+/// list marker before it dropped. The text after the dash is one line
+/// (direction and invisible format characters dropped, so none splits a
+/// token; control characters and line or paragraph separators become
+/// spaces), redacted and then clipped: the patterns see the whole text,
+/// so a cut cannot hide a secret from them.
+fn closing_summary(
+    id: &str,
+    to: CaseStatus,
+    title: &str,
+    line: Option<&str>,
+    redactor: &Redactor,
+) -> String {
+    let line = line
+        .map(|l| {
+            let l = l.trim();
+            l.strip_prefix(['-', '*', '+'])
+                .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+                .unwrap_or(l)
+                .trim()
+        })
+        .filter(|l| !l.is_empty());
+    let tail = match line {
+        Some(l) => format!("{}: {l}", title.trim()),
+        None => title.trim().to_string(),
+    };
+    let tail: String = tail
+        .chars()
+        .filter(|c| !crate::import::is_direction_or_format(*c))
+        .map(|c| {
+            if c.is_control() || super::is_line_breaking(c) {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let tail = clip(redactor.redact(&tail).trim(), CLOSING_TAIL_MAX);
+    if tail.is_empty() {
+        format!("{id} {to}")
+    } else {
+        format!("{id} {to} — {tail}")
+    }
+}
+
 /// The ledger kind of a step (`event.schema.json`).
 fn kind(transition: Transition) -> Kind {
     match transition {
@@ -1102,4 +1167,82 @@ pub fn case_json(logbook: &Logbook, file: &CaseFile) -> Value {
         v["source"] = json!(s);
     }
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn summary(title: &str, line: Option<&str>) -> String {
+        closing_summary(
+            "C-2026-012",
+            CaseStatus::Completed,
+            title,
+            line,
+            &Redactor::builtin(),
+        )
+    }
+
+    #[test]
+    fn a_closing_summary_carries_the_title_and_the_result_line() {
+        assert_eq!(
+            summary(
+                "Install Zed",
+                Some("- `zed --version` prints 0.200 (measured)")
+            ),
+            "C-2026-012 completed — Install Zed: `zed --version` prints 0.200 (measured)"
+        );
+        assert_eq!(
+            summary("Install Zed", None),
+            "C-2026-012 completed — Install Zed"
+        );
+        assert_eq!(
+            summary("Install Zed", Some("  -  ")),
+            "C-2026-012 completed — Install Zed"
+        );
+        // one line, whatever the title holds
+        assert_eq!(
+            summary("a\tb\u{7}c", Some("x\ry")),
+            "C-2026-012 completed — a b c: x y"
+        );
+        assert_eq!(summary(" ", None), "C-2026-012 completed");
+        assert_eq!(
+            closing_summary(
+                "C-2026-012",
+                CaseStatus::Dropped,
+                "Zed",
+                Some("not needed"),
+                &Redactor::builtin()
+            ),
+            "C-2026-012 dropped — Zed: not needed"
+        );
+    }
+
+    #[test]
+    fn a_closing_summary_is_clipped_after_redaction() {
+        let long = "x".repeat(300);
+        let s = summary("T", Some(&long));
+        let tail = s.strip_prefix("C-2026-012 completed — ").unwrap();
+        assert_eq!(tail.chars().count(), CLOSING_TAIL_MAX);
+        assert!(tail.ends_with('…'));
+        // a zero-width space inside a token does not hide it, and no
+        // direction or line-breaking character reaches the subject
+        let s = summary(
+            "T\u{202E}x",
+            Some("token ghp_0123\u{200B}456789abcdefghijABCDEFGHIJ012345\u{2028}y\u{2029}z"),
+        );
+        assert!(!s.contains("ghp_0123"), "{s}");
+        assert!(
+            !s.contains(['\u{202E}', '\u{2028}', '\u{2029}', '\u{200B}']),
+            "{s}"
+        );
+        assert!(s.starts_with("C-2026-012 completed — Tx: token "), "{s}");
+        assert!(s.ends_with(" y z"), "{s}");
+        // a secret that a clip would have cut is redacted first
+        let secret = "ghp_0123456789abcdefghijABCDEFGHIJ012345";
+        let title = format!("{}token {secret}", "y".repeat(80));
+        let s = summary(&title, None);
+        assert!(!s.contains("ghp_0123"), "{s}");
+        assert!(!s.contains(secret), "{s}");
+    }
 }

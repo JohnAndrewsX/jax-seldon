@@ -120,6 +120,33 @@ mod plan {
         assert!(events[0].get("zone").is_none());
     }
 
+    /// WP-143: the Plan has `Persists:` and `Stop if:`, empty; a logbook
+    /// whose `.seldon/templates/case.md` is the one an earlier engine
+    /// copied gets them too, an edited copy is used as it is.
+    #[test]
+    fn new_writes_persists_and_stop_if_into_the_plan() {
+        const PLAN: &str = "## Plan\n- Goal:\n- Steps:\n- Affected paths:\n- Persists: <!-- survives reboot and update | reboot only | lost at reboot -->\n- Rollback:\n- Verification:\n- Stop if:\n\n## Log\n";
+        // the case template of WP-006, as `init` copied it
+        const OLD: &str = "# {{id}} — {{title}}\n\n## Intent\n<!-- Why this case? What should be different afterwards? -->\n\n## Plan\n- Goal:\n- Steps:\n- Affected paths:\n- Rollback:\n- Verification:\n\n## Log\n<!-- append-only; engine and agents add dated lines -->\n\n## Result\n";
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let id = new_case(&env, "a", &[]);
+        assert!(case_at(&root, &id).2.contains(PLAN));
+
+        let template = root.join(".seldon/templates/case.md");
+        std::fs::write(&template, OLD).unwrap();
+        let id = new_case(&env, "b", &[]);
+        assert!(case_at(&root, &id).2.contains(PLAN));
+        assert_eq!(read(&template), OLD, "nothing written");
+
+        let mine = OLD.replace("- Goal:\n", "- Goal:\n- Owner:\n");
+        std::fs::write(&template, &mine).unwrap();
+        let id = new_case(&env, "c", &[]);
+        let body = case_at(&root, &id).2;
+        assert!(body.contains("- Owner:\n"), "{body}");
+        assert!(!body.contains("Stop if"), "{body}");
+    }
+
     #[test]
     fn title_without_double_dash_and_defaults() {
         let env = Env::new(Snapper::Missing);
@@ -726,11 +753,80 @@ mod plan {
 
         let out = env.at(T2, &["plan", "done", "C-2026-001", "--json"]);
         assert_eq!(json(&out)["git"]["committed"], true);
-        assert_eq!(head(&env), "seldon: C-2026-001 completed");
+        assert_eq!(head(&env), "seldon: C-2026-001 completed — x");
         // the edits of the uncommitted steps went in with it
         assert_eq!(stdout(&env.git(&root, &["status", "--porcelain"])), "");
         let ignored = stdout(&env.git(&root, &["check-ignore", ".seldon/active-case"]));
         assert_eq!(ignored.trim(), ".seldon/active-case");
+    }
+
+    /// WP-143: a closing commit names the case's title and the first line
+    /// of its Result (`plan done`) or the reason (`plan drop`), redacted
+    /// and clipped.
+    #[test]
+    fn closing_commits_carry_the_title_and_the_result_line() {
+        let env = Env::new(Snapper::Missing);
+        if !env.has_git {
+            return;
+        }
+        let root = env.init_logbook();
+        let head = |env: &Env| {
+            stdout(&env.git(&root, &["log", "-1", "--format=%B"]))
+                .trim_end()
+                .to_string()
+        };
+        let id = new_case(&env, "Install Zed", &[]);
+        let (path, _, _) = case_at(&root, &id);
+        let text = read(&path).replacen(
+            "## Result\n",
+            "## Result\n<!-- evidence -->\n### Checks\n- `zed --version` prints 0.200 (measured)\n  token ghp_0123456789abcdefghijABCDEFGHIJ012345\n\nMore.\n",
+            1,
+        );
+        std::fs::write(&path, text).unwrap();
+        for step in ["start", "verify", "done"] {
+            let out = env.at(T1, &["plan", step, &id]);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        }
+        assert_eq!(
+            head(&env),
+            "seldon: C-2026-001 completed — Install Zed: `zed --version` prints 0.200 (measured)"
+        );
+
+        // a long line is clipped, a secret in it redacted before the clip
+        let id = new_case(&env, "Long", &[]);
+        let (path, _, _) = case_at(&root, &id);
+        let line = format!(
+            "{}token ghp_0123456789abcdefghijABCDEFGHIJ012345",
+            "y".repeat(85)
+        );
+        std::fs::write(
+            &path,
+            read(&path).replacen("## Result\n", &format!("## Result\n{line}\n"), 1),
+        )
+        .unwrap();
+        for step in ["start", "verify", "done"] {
+            let out = env.at(T1, &["plan", step, &id]);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        }
+        let subject = head(&env);
+        assert!(
+            subject.starts_with("seldon: C-2026-002 completed — Long: yyy"),
+            "{subject}"
+        );
+        assert!(subject.ends_with('…'), "{subject}");
+        assert!(!subject.contains("ghp_0123"), "{subject}");
+
+        // a drop names its reason
+        let id = new_case(&env, "Other", &[]);
+        let out = env.at(T1, &["plan", "drop", &id, "--reason", "not needed"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(head(&env), "seldon: C-2026-003 dropped — Other: not needed");
+        // the other steps keep their summary
+        let id = new_case(&env, "Plain", &[]);
+        assert_eq!(head(&env), format!("seldon: {id} created"));
+        let out = env.at(T1, &["plan", "start", &id]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(head(&env), format!("seldon: {id} active"));
     }
 
     /// Everything a plan step may change: every work file, the marker, the

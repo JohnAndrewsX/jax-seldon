@@ -877,7 +877,11 @@ initialised).
 The graph (WP-125, section 11): on the sample it settles and sleeps
 (200 ticks, the Timer off, no tick and no paint after), each reported
 `tickMs` ≤ 8 and at most 2 of the ticks over it (`slowTicks` names
-them). A case that misses runs once more and must pass then: the
+them). A case that misses runs once more and must pass then; if it
+misses twice while the host's 1-minute load is at least half its cores,
+the miss is printed as a `WARN` line and not counted, unless
+`SELDON_PERF_STRICT=1` is set (the live run on the test host keeps every
+budget strict). Why it retries: the
 sample's ticks take 1–3 ms, but this host compiles other work packages
 at the same time, and the harness's own polling (`wait:` builds the
 desk's whole `view()` every 100 ms) makes the garbage collector run —
