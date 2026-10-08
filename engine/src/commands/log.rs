@@ -39,7 +39,7 @@ pub struct LogArgs {
 }
 
 /// An Obsidian-style tag: letters, digits, `_`, `-`, `/`; not only digits.
-fn parse_tag(s: &str) -> Result<String, String> {
+pub(crate) fn parse_tag(s: &str) -> Result<String, String> {
     let s = s.strip_prefix('#').unwrap_or(s);
     let ok = !s.is_empty()
         && !s.chars().all(|c| c.is_ascii_digit())

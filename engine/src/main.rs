@@ -139,6 +139,9 @@ enum Command {
     /// task files as cases
     Import(commands::import::ImportArgs),
 
+    /// File a text into the logbook's inbox (an agent's crash analysis, a finding)
+    Inbox(commands::inbox::InboxArgs),
+
     /// The agent rules in the logbook's AGENTS.md: update
     Rules(commands::rules::RulesArgs),
 
@@ -378,6 +381,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Watch(a) => commands::watch::run(&ctx, a),
         Command::Dossier(a) => commands::dossier::run(&ctx, a),
         Command::Import(a) => commands::import::run(&ctx, a),
+        Command::Inbox(a) => commands::inbox::run(&ctx, a),
         Command::Rules(a) => commands::rules::run(&ctx, a),
     }
 }

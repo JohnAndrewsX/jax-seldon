@@ -10,6 +10,7 @@ pub mod drift;
 pub mod event;
 pub mod hook;
 pub mod import;
+pub mod inbox;
 pub mod index;
 pub mod init;
 pub mod log;
