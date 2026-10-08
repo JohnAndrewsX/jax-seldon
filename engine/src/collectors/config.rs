@@ -30,6 +30,13 @@
 //! - files whose `~`-path cannot be an event subject (control characters,
 //!   longer than [`SUBJECT_MAX`]): counted in the collector's message.
 //!
+//! The collector also hashes the boot configuration, whatever `watchPaths`
+//! says ([`boot_roots`], AGENTS.md §6, WP-164): mkinitcpio's and Limine's
+//! files under `Sources::etc_dir`, a directory among them one level deep,
+//! without the files pacman left there ([`PACMAN_LEFTOVERS`]). Hashes
+//! only; a boot file that cannot be read is hashed by its metadata
+//! ([`stat_hash`], `meta.hashBasis = "stat"`).
+//!
 //! The manifest lives in `$XDG_STATE_HOME/seldon/manifest.json`
 //! ([`Manifest`]); the cursor holds the hash of the generation the ledger has
 //! caught up with. `capture` saves cursors only after the ledger write, so
@@ -125,6 +132,32 @@ pub const CUT_OFF: &str = "seldon: linked directory cut off\n";
 pub const HASH_BASIS_KEY: &str = "hashBasis";
 
 pub struct ConfigFiles;
+
+/// The boot configuration the collector hashes besides `watchPaths`
+/// (AGENTS.md §6, WP-164), under `etc`: mkinitcpio's file, drop-ins and
+/// presets, Limine's defaults (`default/limine`, which also overrides
+/// every drop-in) and `limine-entry-tool`'s file and drop-ins. A directory
+/// among them is read one level deep, its files only. `/boot/limine*.conf`
+/// is not among them: on Omarchy `/boot` is root's alone (the ESP, mode
+/// 0700), so not even its metadata can be read, and the Limine tools
+/// regenerate it from these files on every snapshot and kernel build.
+pub fn boot_roots(etc: &Path) -> [PathBuf; 6] {
+    [
+        "mkinitcpio.conf",
+        "mkinitcpio.conf.d",
+        "mkinitcpio.d",
+        "default/limine",
+        "limine-entry-tool.conf",
+        "limine-entry-tool.d",
+    ]
+    .map(|r| etc.join(r))
+}
+
+/// The suffixes of the files pacman leaves beside a configuration file
+/// (`collectors::pacman`, WP-141). In a boot directory they are not
+/// hashed: the tools read only `*.conf` and the presets, and the pacman
+/// collector records each as a note already.
+pub const PACMAN_LEFTOVERS: [&str; 3] = [".pacnew", ".pacsave", ".pacorig"];
 
 /// One state of the watched files.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -647,7 +680,8 @@ struct Scan {
     /// Files under a persistence path that could not be read: their last
     /// hash is kept (WP-113 round 2, N1).
     unreadable: usize,
-    /// Files hashed by [`stat_hash`] (larger than [`STAT_HASH_ABOVE`]).
+    /// Files hashed by [`stat_hash`] (larger than [`STAT_HASH_ABOVE`], or
+    /// a boot file that cannot be read).
     stat_hashed: BTreeSet<String>,
 }
 
@@ -666,6 +700,9 @@ struct Walker<'a> {
     /// Seldon's own directories, canonical: the logbook, the state
     /// directory, `~/.config/seldon`. No link into them is followed.
     own: &'a [PathBuf],
+    /// [`boot_roots`]: hashed by [`system_hash`]; a directory among them
+    /// is read one level deep.
+    system: &'a [PathBuf],
 }
 
 /// One walk's state of the directory links it follows.
@@ -705,7 +742,14 @@ impl Walker<'_> {
             match std::fs::metadata(root) {
                 Ok(m) if m.is_dir() => {
                     follow.visited.insert((m.dev(), m.ino()));
-                    self.walk(root, 0, &mut scan, &mut follow);
+                    // a boot directory: its files, no directory below
+                    // (AGENTS.md §6)
+                    let depth = if self.system.contains(root) {
+                        MAX_DEPTH
+                    } else {
+                        0
+                    };
+                    self.walk(root, depth, &mut scan, &mut follow);
                 }
                 Ok(m) if m.is_file() => self.file(root, &m, &mut scan),
                 _ => {}
@@ -715,7 +759,28 @@ impl Walker<'_> {
     }
 
     fn ignored(&self, path: &Path) -> bool {
-        self.excluded.iter().any(|x| path.starts_with(x)) || self.skip.matches(path)
+        self.excluded.iter().any(|x| path.starts_with(x))
+            || self.skip.matches(path)
+            || self.is_pacman_leftover(path)
+    }
+
+    /// Whether `path` is a file pacman left in a boot directory
+    /// ([`PACMAN_LEFTOVERS`]).
+    fn is_pacman_leftover(&self, path: &Path) -> bool {
+        path.parent()
+            .is_some_and(|d| self.system.iter().any(|p| p == d))
+            && path.file_name().is_some_and(|n| {
+                let n = n.to_string_lossy();
+                PACMAN_LEFTOVERS.iter().any(|s| n.ends_with(s))
+            })
+    }
+
+    /// Whether `path` is a boot file: one of [`boot_roots`] or a file
+    /// directly in one.
+    fn is_system(&self, path: &Path) -> bool {
+        self.system
+            .iter()
+            .any(|p| path == p || path.parent() == Some(p))
     }
 
     /// Whether the directory `path` is, or may hold, a persistence path: a
@@ -860,13 +925,20 @@ impl Walker<'_> {
                 .then(|| last.cloned())
                 .flatten()
         });
+        let system = self.is_system(path);
         let hash = known.or_else(|| {
-            if every {
+            if system {
+                Some(system_hash(path, meta))
+            } else if every {
                 persistent_hash(path, meta)
             } else {
                 hash_file(path, meta.len())
             }
         });
+        // also when the stored hash is reused: equal stats, equal stat hash
+        if system && hash.as_ref() == Some(&stat_hash(meta)) {
+            scan.stat_hashed.insert(key.clone());
+        }
         match hash {
             Some(hash) => {
                 if let Some(s) = stat {
@@ -903,6 +975,16 @@ pub(crate) fn persistent_hash(path: &Path, meta: &std::fs::Metadata) -> Option<S
     } else {
         hash_any(path)
     }
+}
+
+/// The hash of a boot file (WP-164): its content, any size up to
+/// [`STAT_HASH_ABOVE`] ([`hash_any`]); [`stat_hash`] for a larger file or
+/// one that cannot be read.
+fn system_hash(path: &Path, meta: &std::fs::Metadata) -> String {
+    (meta.len() <= STAT_HASH_ABOVE)
+        .then(|| hash_any(path))
+        .flatten()
+        .unwrap_or_else(|| stat_hash(meta))
 }
 
 /// SHA-256 of a file's size, modification time (ns), change time and
@@ -1556,6 +1638,7 @@ impl ConfigFiles {
         .flatten()
         .filter_map(|p| std::fs::canonicalize(p).ok())
         .collect();
+        let system = boot_roots(&ctx.sources.etc_dir);
         let scope = WatchScope::new(ctx.dirs, roots, excluded, skip_paths);
         let scan = Walker {
             dirs: ctx.dirs,
@@ -1565,6 +1648,7 @@ impl ConfigFiles {
             known: stored.as_ref(),
             started: SystemTime::now(),
             own: &own,
+            system: &system,
         }
         .scan(roots);
         let current = Generation {
@@ -1717,12 +1801,19 @@ impl Collector for ConfigFiles {
     }
 
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
-        let roots: Vec<PathBuf> = ctx
+        let mut roots: Vec<PathBuf> = ctx
             .config
             .watch_paths
             .iter()
             .filter_map(|p| ctx.dirs.expand_config(p))
             .collect();
+        // the boot files, whatever `watchPaths` says (WP-164); one a watch
+        // path covers is walked there
+        for p in boot_roots(&ctx.sources.etc_dir) {
+            if !roots.iter().any(|r| p.starts_with(r)) {
+                roots.push(p);
+            }
+        }
         let excluded = [
             Plugins::dir(ctx.sources, &ctx.dirs.home),
             ctx.dirs.home.join(MIME_CACHE),
@@ -1822,6 +1913,101 @@ mod tests {
             assert!(!copy_trusted(&copy, &tree, 0));
         }
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// WP-164: a boot file is hashed by its content when it can be read,
+    /// else by its metadata; the content hash is the plain SHA-256.
+    #[test]
+    fn a_boot_file_is_hashed_by_content_or_metadata() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = std::env::temp_dir().join(format!("seldon-boot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let file = tmp.join("mkinitcpio.conf");
+        std::fs::write(&file, "HOOKS=(base udev)\n").unwrap();
+        let meta = std::fs::metadata(&file).unwrap();
+        assert_eq!(
+            system_hash(&file, &meta),
+            sys::sha256_hex(b"HOOKS=(base udev)\n")
+        );
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let meta = std::fs::metadata(&file).unwrap();
+        let root = std::fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0);
+        if !root {
+            assert_eq!(system_hash(&file, &meta), stat_hash(&meta));
+        }
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn boot_roots_are_the_listed_files() {
+        assert_eq!(
+            boot_roots(Path::new("/etc")).map(|p| p.display().to_string()),
+            [
+                "/etc/mkinitcpio.conf",
+                "/etc/mkinitcpio.conf.d",
+                "/etc/mkinitcpio.d",
+                "/etc/default/limine",
+                "/etc/limine-entry-tool.conf",
+                "/etc/limine-entry-tool.d",
+            ]
+        );
+    }
+
+    /// WP-164: pacman's leftovers are left out in a boot directory only;
+    /// a boot file is a root or a file directly in a root directory.
+    #[test]
+    fn boot_files_and_pacman_leftovers() {
+        let dirs = Dirs {
+            home: PathBuf::from("/home/user"),
+            xdg_config_home: PathBuf::from("/home/user/.config"),
+            state_dir: PathBuf::from("/home/user/.local/state/seldon"),
+        };
+        let system = boot_roots(Path::new("/etc"));
+        let (skip, persist) = (SkipPaths::default(), SkipPaths::default());
+        let w = Walker {
+            dirs: &dirs,
+            excluded: &[],
+            skip: &skip,
+            persist: &persist,
+            known: None,
+            started: SystemTime::now(),
+            own: &[],
+            system: &system,
+        };
+        let p = |s: &str| PathBuf::from(s);
+        for leftover in [
+            "/etc/mkinitcpio.conf.d/omarchy_hooks.conf.pacnew",
+            "/etc/mkinitcpio.d/linux.preset.pacsave",
+            "/etc/limine-entry-tool.d/omarchy-defaults.conf.pacorig",
+        ] {
+            assert!(w.ignored(&p(leftover)), "{leftover}");
+        }
+        for kept in [
+            "/etc/mkinitcpio.conf.d/omarchy_hooks.conf",
+            "/etc/mkinitcpio.conf.d/omarchy_hooks.pacnew.conf",
+            "/etc/mkinitcpio.conf.d/sub/x.pacnew",
+            "/etc/mkinitcpio.conf.pacnew",
+            "/home/user/.config/hypr/x.pacnew",
+        ] {
+            assert!(!w.ignored(&p(kept)), "{kept}");
+        }
+        for boot in [
+            "/etc/mkinitcpio.conf",
+            "/etc/default/limine",
+            "/etc/limine-entry-tool.d/omarchy-uki.conf",
+            "/etc/mkinitcpio.d/linux.preset",
+        ] {
+            assert!(w.is_system(&p(boot)), "{boot}");
+        }
+        for other in [
+            "/etc/mkinitcpio.conf.d/sub/x.conf",
+            "/etc/default/grub",
+            "/etc/pacman.conf",
+            "/etc/limine-entry-tool.conf.d/x.conf",
+        ] {
+            assert!(!w.is_system(&p(other)), "{other}");
+        }
     }
 
     fn skip(patterns: &[&str]) -> SkipPaths {
