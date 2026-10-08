@@ -117,7 +117,10 @@
 # kept Intent, else the index's provenance line and intent;
 # FAKE_SELDON_SHOW_WITHHELD gives `intent: null`; FAKE_SELDON_SHOW_HIDDEN=N
 # appends N markers `‹U+E0072›` and reports `hidden: N`;
-# FAKE_SELDON_SHOW_TRUNCATED reports `truncated: true` (WP-102b round 2).
+# FAKE_SELDON_SHOW_TRUNCATED reports `truncated: true` (WP-102b round 2);
+# FAKE_SELDON_SHOW_TOUCH: the first `plan show` rewrites the state index
+# (a new generatedAt, a second later) while it is still running, as another
+# writer would (WP-102b stage 2).
 #
 # `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
@@ -556,6 +559,12 @@ plan_show() { # plan_show <id>
   index=$(state_index)
   c=$(jq -c --arg id "$id" '[.cases[][] | select(.id == $id)][0]' "$index")
   [[ $c != null ]] || user_error "unknown case $id"
+  if [[ -n ${FAKE_SELDON_SHOW_TOUCH:-} && ! -f $HOME/show-touched ]]; then
+    : >"$HOME/show-touched"
+    sleep 1
+    rewrite_index '.'
+    sleep 0.5
+  fi
   if [[ -n ${FAKE_SELDON_SHOW_WITHHELD:-} ]]; then
     jq -cn --argjson c "$c" '{case: $c, body: "", activeCase: false, intent: null}'
     return

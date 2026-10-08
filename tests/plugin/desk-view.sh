@@ -1122,17 +1122,24 @@ run import-area "" 1920x1080 \
 expect import-area 5 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" ",true"
 expect import-area 7 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,false"
 expect import-area 9 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,true"
-argv_check import-area "$work/home-import-area" "$(printf '%s\n' "$startup" \
-  "$(q import task --json --dry-run -- '~/projects/TODO.md')" "$(q import task --json --dry-run --area dev -- '~/projects/TODO.md')" \
-  "$(q import task --json --area dev -- '~/projects/TODO.md')" "$(q plan show C-2026-009 --json)")"
+# `plan show` once or twice (the import's index may come while it runs)
+check "import-area: engine argv without plan show" "$(grep -v '^plan show ' "$work/home-import-area/argv.log" | tr '\n' '|')" \
+  "$(printf '%s\n' "$startup" "$(q import task --json --dry-run -- '~/projects/TODO.md')" \
+    "$(q import task --json --dry-run --area dev -- '~/projects/TODO.md')" \
+    "$(q import task --json --area dev -- '~/projects/TODO.md')" | tr '\n' '|')"
+check "import-area: plan show names only the new case" \
+  "$(grep '^plan show ' "$work/home-import-area/argv.log" | sort -u | tr '\n' '|')" "$(q plan show C-2026-009 --json)|"
 clean_log import-area
 
 # A new index asks the engine again (P2); meanwhile the last text stays on
-# screen and Start is off (P5, N2); the answer brings Start back.
+# screen and Start is off (P5, N2); the answer brings Start back. Stage 2:
+# the first `plan show` sees the index rewritten while it runs
+# (FAKE_SELDON_SHOW_TOUCH): its answer enables nothing and is asked again
+# once.
 mkdir -p "$work/home-import-reask"
 run import-reask "" 1920x1080 \
   "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;wait:sectionView.case.reviewed=true;text:c;wait:sectionView.case.review.pending=true;wait:sectionView.case.reviewed=true" \
-  HOME="$work/home-import-reask" FAKE_SELDON_FIXTURE="$sample"
+  HOME="$work/home-import-reask" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_TOUCH=1
 first=$(sed -n 3p "$work/import-reask.steps" | jq -r "$tc.review.intent")
 check "import-reask: the review's text" "$first" \
   "Imported from ~/Notizen/aufgaben.md#4 — read before you start this case.
@@ -1143,7 +1150,10 @@ expect import-reask 5 "[$tc.review.pending, $tc.review.ok, $tc.reviewed, $tc.sta
 expect import-reask 5 "$tc.review.intent == $(jq -Rs . <<<"$first" | sed 's/\\n"$/"/')" true
 shows import-reask 5 "IMPORTED TASK · 3 lines"
 expect import-reask 6 "[$tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true"
-check "import-reask: plan show again on the new index" "$(grep -c '^plan show C-2026-007 ' "$work/home-import-reask/argv.log")" 2
+# once on select, once more for the index that came while it ran, once for
+# the capture's index
+check "import-reask: the index rewritten during the first plan show" "$([[ -f $work/home-import-reask/show-touched ]] && echo yes)" yes
+check "import-reask: plan show again on each new index" "$(grep -c '^plan show C-2026-007 ' "$work/home-import-reask/argv.log")" 3
 clean_log import-reask
 
 # Hidden characters marked and an Intent longer than the desk shows: Start

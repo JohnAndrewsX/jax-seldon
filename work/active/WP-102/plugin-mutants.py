@@ -17,9 +17,12 @@ M = [
  ("B1 truncated counts as reviewed", "plugin/Model.js", "    && shown.truncated !== true && !(count(shown.hidden) > 0)", "    && !(count(shown.hidden) > 0)"),
  ("B2 hidden characters count as reviewed", "plugin/Model.js", "    && shown.truncated !== true && !(count(shown.hidden) > 0)", "    && shown.truncated !== true"),
  ("N3 separators allowed in plugin paths", "plugin/Model.js", "\\u2028-\\u202e", "\\u202a-\\u202e"),
+ # stage 2
+ ("re-ask while pending dropped", "plugin/Service.qml", "      if (again === true) c.reaskWanted = true\n", ""),
  ("validateArgs skips the path check", "plugin/Model.js", " && importPathError(free[0]) === \"\"\n      ? \"\" : \"import must be", "\n      ? \"\" : \"import must be"),
 ]
-for name, f, a, b in M:
+ONLY = sys.argv[2] if len(sys.argv) > 2 else ""
+for name, f, a, b in [m for m in M if ONLY in m[0]]:
     p = os.path.join(WT, f); orig = open(p).read()
     if orig.count(a) != 1: print(name, "PATTERN", orig.count(a)); continue
     try:

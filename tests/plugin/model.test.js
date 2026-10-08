@@ -3305,6 +3305,15 @@ test("a truncated Intent or one with hidden characters keeps Start off, with the
   assert.strictEqual(imp.skipped[0].reason, "too long to review in the desk (over 64 KiB)")
 })
 
+test("reaskAfter: an answer that a new index overtook is asked again, never enables Start (stage 2)", () => {
+  const ok = { ok: true, caseId: "C-2026-007" }
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-007", pending: true, reaskWanted: true }, ok), true)
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-007", pending: true }, ok), false)
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-005", pending: true, reaskWanted: true }, ok), false)
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-007", pending: true, reaskWanted: true }, { ok: false, caseId: "C-2026-007" }), false)
+  assert.strictEqual(M.reaskAfter(null, ok), false)
+})
+
 test("ImportForm and the imported review show engine text as plain text", () => {
   for (const f of ["plugin/components/desk/ImportForm.qml", "plugin/sections/Work.qml"]) {
     const qml = fs.readFileSync(path.join(root, f), "utf8")
