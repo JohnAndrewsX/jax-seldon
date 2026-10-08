@@ -294,3 +294,45 @@ the operator accepts it (ADR-0035 §6).
   a prototype name" assertion was added), Today's `alert` (P9) and the
   N5 wording: 4 of 4 killed. The N3 behaviour is pinned by the new
   collector test; no engine mutant was run for it this round.
+
+## Round 3
+
+From the Fable stage 2 (SEND BACK, text only) and the orchestrator's
+brief. `next` merged first (WP-154; one CHANGELOG conflict, both entries
+kept). No engine change.
+
+- **Callout text** (`plugin/Model.js`): the heads now differ by what is
+  proven. `failed` and `unfinished`: "pacman's after-update steps (boot
+  image, boot menu, Omarchy's resume hooks) did not run for this
+  transaction; if omarchy-settings was in it, Hyprland's auto-reload may
+  stay paused for this session." `interrupted`, not verified against
+  libalpm's source: "… may not have run for every package of this
+  transaction; …". The shared tail names only what a reinstall repairs:
+  "Before you reboot, reinstall the packages marked ↑ or ↻ below (`pacman
+  -S` with their names): that runs those steps for them; a plain rerun
+  does not. A package marked − stays removed; for one marked ↓, or when
+  unsure, ask your agent in a case." The comment above
+  `TX_STATUS_TITLES` says what alpm-hooks(5) proves (failed, a killed
+  pacman) and what it does not (interrupted). SPEC-PLUGIN follows.
+- **Tests** (`model.test.js`): the tail names ↑ and ↻ only and never asks
+  to reinstall a − or ↓; `interrupted`'s head differs (no "did not run");
+  the mixed 09-18 transaction (− + ↑ ↑) and the 09-27 ↓ group, given a
+  status, show the right text. Two text mutants (interrupted with the
+  "did not" head; ↓ added to the reinstall list): both killed.
+- **ADR-0043**: §1 `interrupted` row "(Ctrl-C, or the terminal closed:
+  pacman finishes the current package)"; §1 "The status is final: a
+  later end line, a rotation or a removed lock never revises it.";
+  Consequences: "After a crash `db.lck` usually stays; the transaction is
+  held back and marked only once the lock is gone (WP-160)." Then, on the
+  operator's acceptance today, **Status: accepted 2026-10-08 (operator,
+  E21)**; DECISIONS.md row accepted; CONTRACT.md rule 9 no longer says
+  "proposed".
+- **Gate:** `df -h /run/user/1000` 1 % before; `flock
+  /tmp/seldon-check.lock just check` on `80d3fed4` (the text change; the
+  commit after it touches only the ADR status, DECISIONS.md, CONTRACT.md
+  and this handover, and `docs-check` passed on it) with
+  `XDG_RUNTIME_DIR=/tmp/r137c` (made with `mkdir -m 700`, deleted by
+  explicit path afterwards) and `JUST_TEMPDIR` in my scratch dir: **exit
+  0, `check: ok`**, no ENOSPC — validate-fixtures ok, docs-check ok,
+  qmllint 47 files, `model.test.js` 165, service-states 342/0, desk-view
+  1586/0, bar-view 194/0. `/run/user/1000` 2 % afterwards.

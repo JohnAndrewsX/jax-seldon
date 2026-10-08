@@ -41,6 +41,6 @@
 | ADR-0037 | ADR-0028 amended: toggles are routine both ways, `system-link` narrowed, the `authorized_keys` files default persistence paths | accepted |
 | ADR-0038 | The index carries what the desk's details show: `drift[].rule`, `cases[].intent`/`result`/`source`, `decisions[].lead` (optional, contract 2) | accepted |
 | ADR-0039 | The hook records an agent's privileged commands (`sudo`, `doas`, `pkexec`, `run0`); events, not drift, in contract 2 | accepted |
-| ADR-0043 | A pacman transaction that did not complete says so: `meta.txStatus` `failed`/`interrupted`/`unfinished` (optional, contract 2) | proposed |
+| ADR-0043 | A pacman transaction that did not complete says so: `meta.txStatus` `failed`/`interrupted`/`unfinished` (optional, contract 2) | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

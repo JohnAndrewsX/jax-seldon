@@ -1,7 +1,6 @@
 # ADR-0043 — A pacman transaction that did not complete says so: `meta.txStatus`
 
-**Status:** proposed (WP-137; contract question answered by the
-orchestrator 2026-10-08, for the operator's acceptance)
+**Status:** accepted 2026-10-08 (operator, E21)
 **Date:** 2026-10-08
 
 > Adds one **optional** `meta` key to contract 2 under ADR-0035 §6,
