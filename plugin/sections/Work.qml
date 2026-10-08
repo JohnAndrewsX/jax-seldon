@@ -309,7 +309,8 @@ Section {
         reviewed: root.reviewed,
         startEnabled: root.barActions().filter(function(a) { return a.id === "start" && a.enabled }).length > 0,
         review: root.review ? { pending: root.review.pending, ok: root.review.ok, text: root.review.text,
-          lines: root.review.lines, truncated: root.review.truncated, intent: root.review.intent } : null
+          lines: root.review.lines, truncated: root.review.truncated, hidden: root.review.hidden,
+          intent: root.review.intent } : null
       } : null,
       import: {
         open: root.importOpen,
@@ -536,6 +537,7 @@ Section {
 
   DetailPane {
     id: detail
+    objectName: "workDetail"
     x: root.stacked ? 0 : list.width
     width: root.width - x
     height: root.height
@@ -546,8 +548,7 @@ Section {
     actions: root.barActions()
     hint: root.armed !== "" && root.arm ? root.arm.hint
       : !root.formOpen && !root.canWrite && root.caseActions.length > 0 && root.service ? root.service.writeBlocker
-      : !root.formOpen && Model.caseDeskAction(root.current, "start") && Model.caseDeskAction(root.current, "start").review
-        && !root.reviewed ? "Start waits until the whole Intent below is shown; only you start an imported case"
+      : !root.formOpen ? Model.reviewHint(root.current, root.shown)
       : ""
     onBackRequested: if (root.desk) root.desk.back()
     onActionTriggered: function(id) { root.press(id) }
@@ -722,9 +723,21 @@ Section {
 
         Text {
           width: parent.width
+          visible: !!root.review && root.review.ok && root.review.hidden > 0
+          textFormat: Text.PlainText
+          text: root.review ? Model.plural(root.review.hidden, "hidden character is", "hidden characters are")
+            + " marked ‹U+…› above: text you cannot see in the file. Read the case in the editor; start it from the terminal." : ""
+          color: Color.urgent
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        Text {
+          width: parent.width
           visible: !!root.review && root.review.ok && root.review.truncated
           textFormat: Text.PlainText
-          text: "The first 64 KiB are shown; the rest is in the case file."
+          text: "The first 64 KiB are shown; the rest is in the case file. Read the whole Intent in the editor; start this case from the terminal."
           color: Color.urgent
           wrapMode: Text.Wrap
           font.family: Style.font.family

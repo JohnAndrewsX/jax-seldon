@@ -506,6 +506,9 @@ Item {
   // The whole Intent of a case (WP-102b): `seldon plan show <id> --json`,
   // read-only. A call for the case already shown or pending is not repeated
   // unless `again`.
+  // Asked again (a new index), the last text stays on screen, pending (so
+  // Start is off until the answer), and an unchanged answer changes no text
+  // (WP-102b round 2: a long Intent keeps its layout and scroll position).
   function showCase(caseId, again) {
     var id = String(caseId || "")
     var c = root.caseShown
@@ -513,11 +516,14 @@ Item {
     var built = Model.caseShowArgs(id)
     if (built.error || !root.canWrite || !root.run(built.args)) {
       root.caseShown = { ok: false, pending: false, text: built.error || root.writeBlocker || root.lastError, caseId: id,
-        intent: "", lines: 0, truncated: false }
+        intent: "", lines: 0, truncated: false, hidden: 0 }
       return false
     }
-    root.caseShown = { ok: false, pending: true, text: "Loading the whole Intent…", caseId: id, intent: "", lines: 0,
-      truncated: false }
+    root.caseShown = c && c.caseId === id && c.ok
+      ? { ok: true, pending: true, text: "Asking the engine again…", caseId: id, intent: c.intent, lines: c.lines,
+          truncated: c.truncated, hidden: c.hidden }
+      : { ok: false, pending: true, text: "Loading the whole Intent…", caseId: id, intent: "", lines: 0,
+          truncated: false, hidden: 0 }
     return true
   }
 
@@ -656,6 +662,11 @@ Item {
       if (result.intent === undefined) result.intent = ""
       if (result.lines === undefined) result.lines = 0
       if (result.truncated === undefined) result.truncated = false
+      if (result.hidden === undefined) result.hidden = 0
+      var last = root.caseShown
+      // the same text again: keep the string the box already lays out
+      if (last && result.ok && last.ok && last.caseId === result.caseId && last.intent === result.intent)
+        result.intent = last.intent
       root.caseShown = result
     } else if (args[0] === "import") {
       var sep = args.indexOf("--")
@@ -952,7 +963,8 @@ Item {
       triageResult: root.triageResult,
       importResult: root.importResult,
       caseShown: root.caseShown ? { caseId: root.caseShown.caseId, ok: root.caseShown.ok, pending: root.caseShown.pending,
-        lines: root.caseShown.lines, truncated: root.caseShown.truncated, text: root.caseShown.text } : null,
+        lines: root.caseShown.lines, truncated: root.caseShown.truncated, hidden: root.caseShown.hidden,
+        text: root.caseShown.text } : null,
       triageButton: root.triageButton,
       proposalPath: root.proposalPath,
       proposalRead: !!root.proposal,

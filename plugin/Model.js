@@ -1621,9 +1621,12 @@ function agentNewArgs(intent) {
 // cannot be right.
 
 var IMPORT_PATH_MAX = 4096
-// The engine's `bad_path_char`: control, text-direction and invisible format
-// characters.
-var BAD_PATH_CHARS = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/
+// The engine's `bad_path_char`, one set (WP-102b round 2): control
+// characters, direction and format characters (the engine's
+// `is_direction_or_format`, WP-140's set with the tags) and the line and
+// paragraph separators. Both sides are tested against
+// fixtures/bad-path-chars.json.
+var BAD_PATH_CHARS = /[\u0000-\u001f\u007f-\u009f\u00ad\u0600-\u0605\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e007f}]/u
 
 // "" when `path` may go to the engine, else why not (plain text).
 function importPathError(path) {
@@ -1654,7 +1657,8 @@ var IMPORT_SKIP_REASONS = {
   done: "done (- [x])",
   empty: "no text",
   "already-imported": "already imported",
-  duplicate: "the same text again"
+  duplicate: "the same text again",
+  "too-long": "too long to review in the desk (over 64 KiB)"
 }
 
 // `seldon import task --json` → { ok, text, dryRun, created: [{ id, title,
@@ -1690,10 +1694,12 @@ function importResult(exitCode, stdoutText, stderrText) {
     ? (n > 0 ? "Would create " + plural(n, "case", "cases") : "Nothing new to import")
     : (n > 0 ? "Imported " + plural(n, "case", "cases") + (ids.length > 0 ? ": " + ids.join(", ") : "") : "Nothing new imported")
   var tail = [skipped.length > 0 ? plural(skipped.length, "task", "tasks") + " skipped" : "",
-    count(data.redactedLines) > 0 ? plural(count(data.redactedLines), "line", "lines") + " redacted" : ""]
+    count(data.redactedLines) > 0 ? plural(count(data.redactedLines), "line", "lines") + " redacted" : "",
+    count(data.droppedCharacters) > 0
+      ? plural(count(data.droppedCharacters), "invisible character", "invisible characters") + " dropped" : ""]
     .filter(function(p) { return p !== "" })
   return { ok: true, text: [head].concat(tail).join(" · "), dryRun: dryRun, created: created, skipped: skipped,
-    redactedLines: count(data.redactedLines), caseIds: ids }
+    redactedLines: count(data.redactedLines), droppedCharacters: count(data.droppedCharacters), caseIds: ids }
 }
 
 // `seldon plan show <caseId> --json` (WP-102b): the whole Intent the desk
@@ -1704,19 +1710,22 @@ function caseShowArgs(caseId) {
   return { args: ["plan", "show", id, "--json"] }
 }
 
-// → { ok, text, caseId, intent, lines, truncated }; `intent` is the
-// engine's display text (no control, direction or format characters,
-// redacted), shown as plain text.
+// → { ok, text, caseId, intent, lines, truncated, hidden }; `intent` is
+// the engine's display text (control characters as spaces, every direction
+// or format character marked ‹U+XXXX› and counted in `hidden`, redacted),
+// shown as plain text.
 function caseShowResult(exitCode, stdoutText, stderrText) {
-  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "", intent: "", lines: 0, truncated: false }
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "", intent: "", lines: 0,
+    truncated: false, hidden: 0 }
   var data = parseJson(stdoutText)
   var c = data && isObject(data.case) ? data.case : null
   var id = c && typeof c.id === "string" && CASE_ID.test(c.id) ? c.id : ""
   var it = data && isObject(data.intent) ? data.intent : null
   if (!it || typeof it.text !== "string")
     return { ok: false, text: "The engine withholds the Intent while the redaction patterns do not compile", caseId: id,
-      intent: "", lines: 0, truncated: false }
-  return { ok: true, text: "", caseId: id, intent: it.text, lines: count(it.lines), truncated: it.truncated === true }
+      intent: "", lines: 0, truncated: false, hidden: 0 }
+  return { ok: true, text: "", caseId: id, intent: it.text, lines: count(it.lines), truncated: it.truncated === true,
+    hidden: count(it.hidden) }
 }
 
 function agentResult(exitCode, stdoutText, stderrText) {
@@ -4505,9 +4514,25 @@ function caseDeskActions(c) {
 }
 
 // Whether the detail shows the whole Intent of case `c` as the engine gave
-// it (Service.caseShown), so an imported case's Start may be pressed.
+// it (Service.caseShown), so an imported case's Start may be pressed: this
+// case's finished, successful `plan show`, not cut at 64 KiB and without a
+// hidden character (WP-102b round 2: the box would not show it all).
 function intentReviewed(c, shown) {
   return !!c && isObject(shown) && !shown.pending && shown.ok === true && shown.caseId === c.id
+    && shown.truncated !== true && !(count(shown.hidden) > 0)
+}
+
+// The bar's hint while an imported case's Start is off ("" when it is on
+// or the case has no such Start).
+function reviewHint(c, shown) {
+  var start = caseDeskAction(c, "start")
+  if (!start || !start.review || intentReviewed(c, shown)) return ""
+  var mine = isObject(shown) && shown.caseId === c.id && !shown.pending && shown.ok === true
+  if (!mine) return "Start waits until the whole Intent below is shown; only you start an imported case"
+  var why = []
+  if (count(shown.hidden) > 0) why.push(plural(count(shown.hidden), "hidden character is", "hidden characters are") + " marked")
+  if (shown.truncated === true) why.push("the Intent is longer than the desk shows")
+  return why.join(" and ") + ": read the whole Intent in the editor; start this case from the terminal."
 }
 
 // The action Enter takes on a case: the first that launches nothing.
