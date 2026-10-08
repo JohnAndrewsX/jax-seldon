@@ -36,7 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport. A plugin clone's HEAD and the logbook's `.git` file are
   read only in the bytes git writes; anything else (a CR, a byte order
   mark, a `packed-refs` git would refuse, a SHA-256 clone) is left to
-  git.
+  git. The package now depends on git 2.44 or later
+  (`--no-lazy-fetch`).
 - **More secrets are redacted (WP-140).** A PEM private key
   (`-----BEGIN … PRIVATE KEY-----`, OpenSSH, RSA, EC, encrypted, PGP) is
   masked whole between its BEGIN and END lines, also when a clip cut one

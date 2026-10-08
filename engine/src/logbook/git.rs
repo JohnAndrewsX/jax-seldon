@@ -594,9 +594,10 @@ mod tests {
             129,
             &format!("unknown option: --bogus\n{usage_2_55}")
         )));
+        // the refusal's line with another exit code
         assert!(!refuses_no_lazy_fetch(&exited(
             128,
-            "fatal: --no-lazy-fetch something"
+            "unknown option: --no-lazy-fetch\n"
         )));
         assert!(!refuses_no_lazy_fetch(&exited(0, "")));
         for other in [Run::Cut, Run::NotFound, Run::TimedOut] {
