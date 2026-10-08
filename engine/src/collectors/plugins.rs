@@ -110,8 +110,8 @@ const COMMIT_SUBJECT_COLUMNS: usize = 200;
 const GIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Most bytes kept of each output pipe of a git query; the rest is read
-/// and dropped ([`sys::run_command_capped`]), and a cut stdout is no
-/// answer. A query's real output is a few KiB.
+/// and dropped ([`sys::run_command`]), and a cut stdout is no answer
+/// ([`Run::Cut`]). A query's real output is a few KiB.
 const GIT_OUTPUT_MAX: usize = 64 * 1024;
 
 /// Options before every git query: no pager; no lazy fetch of a missing
@@ -695,7 +695,8 @@ fn unrecorded(
 pub fn list(omarchy: &str) -> Result<Vec<Listed>, String> {
     const WHAT: &str = "omarchy plugin list --json";
     let cmd = sys::omarchy_command(omarchy, &["plugin", "list", "--json"]);
-    match sys::run_command(cmd, RUN_TIMEOUT) {
+    // the whole list: a cut one would read as plugins removed
+    match sys::run_command(cmd, RUN_TIMEOUT, sys::WHOLE_OUTPUT) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -719,6 +720,7 @@ pub fn list(omarchy: &str) -> Result<Vec<Listed>, String> {
                 "{WHAT}: {reason} (it needs the running Omarchy shell)"
             ))
         }
+        Run::Cut => Err(format!("{WHAT}: output over the limit")),
         Run::NotFound => Err(format!("{WHAT}: `{omarchy}` not found")),
         Run::TimedOut => Err(format!("{WHAT}: timed out")),
         Run::Failed(e) => Err(format!("{WHAT}: {e}")),
@@ -736,6 +738,7 @@ fn catalog(omarchy: &str) -> BTreeMap<String, PathBuf> {
     } = sys::run_command(
         sys::omarchy_command(omarchy, &["plugin", "catalog"]),
         RUN_TIMEOUT,
+        sys::WHOLE_OUTPUT,
     )
     else {
         return BTreeMap::new();
@@ -873,40 +876,108 @@ const PACKED_REFS_MAX: u64 = 1024 * 1024;
 /// process (a capture runs on every agent command; one git process costs
 /// about 10 ms there): `.git/HEAD` holds the object name, or `ref:
 /// refs/…` whose object name is in `.git/<ref>` or `.git/packed-refs`.
-/// `None` for anything else — a `.git` file (a linked work tree), a
-/// symbolic link (`sys::read_small_file` refuses them), the reftable
-/// format, an unborn branch, a ref name that is not plain — and git
-/// answers instead.
+///
+/// Only the bytes git itself writes are read; anything else is git's to
+/// answer, so the HEAD read here is never one git would not read
+/// (WP-154). `None`, and git asked instead, for:
+/// - a `.git` file (a linked work tree), a symbolic link, a file that is
+///   not regular, too large or not UTF-8 (`sys::read_small_file`), the
+///   reftable format, an unborn branch;
+/// - a config that names an object format: an object name has 40 digits
+///   only in a SHA-1 repository, and git reads a 64-digit one there as
+///   broken (and the other way round);
+/// - a HEAD or loose ref that is not `ref: <name>` or a lower-case
+///   object name followed by exactly one LF: a byte order mark (git
+///   refuses it), a CR or more white space (git reads them, the files do
+///   not);
+/// - a ref name that is not plain (below `refs/heads/`, ASCII letters,
+///   digits and `-_.+@`, no component that starts with `.` or ends in
+///   `.lock`, no `..`, no final `.`);
+/// - a loose ref that is there but refused (git reads it, never the
+///   packed one behind it);
+/// - a `packed-refs` that is not as git writes it ([`packed_ref`]).
 fn head_from_files(dir: &Path) -> Option<String> {
     let git_dir = dir.join(".git");
-    let read = |rel: &str, max: u64| sys::read_small_file(&git_dir.join(rel), max).ok()?;
-    let head = read("HEAD", 4096)?;
-    let head = head.trim_end_matches('\n');
-    let full = |s: &str| (is_hash(s) && matches!(s.len(), 40 | 64)).then(|| s.to_string());
+    let read = |rel: &str, max: u64| sys::read_small_file(&git_dir.join(rel), max);
+    for name in ["config", "config.worktree"] {
+        match read(name, GIT_CONFIG_MAX) {
+            Ok(None) => {}
+            Ok(Some(text)) if !text.to_ascii_lowercase().contains("objectformat") => {}
+            _ => return None,
+        }
+    }
+    let head = read("HEAD", 4096).ok()??;
+    let head = head.strip_suffix('\n')?;
     let Some(name) = head.strip_prefix("ref: ") else {
-        return full(head); // a detached HEAD
+        return sha1(head).then(|| head.to_string()); // a detached HEAD
     };
-    let plain = name.starts_with("refs/heads/")
+    if !plain_branch(name) {
+        return None;
+    }
+    match read(name, 4096) {
+        Ok(Some(loose)) => {
+            let loose = loose.strip_suffix('\n')?;
+            sha1(loose).then(|| loose.to_string())
+        }
+        Ok(None) => packed_ref(&read("packed-refs", PACKED_REFS_MAX).ok()??, name),
+        Err(_) => None,
+    }
+}
+
+/// A SHA-1 object name as git writes it: 40 lower-case hexadecimal
+/// digits.
+fn sha1(s: &str) -> bool {
+    s.len() == 40 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Whether `name` is a plain branch ref ([`head_from_files`]): a subset of
+/// what git's `check_refname_format` allows.
+fn plain_branch(name: &str) -> bool {
+    name.starts_with("refs/heads/")
+        && !name.contains("..")
+        && !name.ends_with('.')
         && name.split('/').all(|part| {
             !part.is_empty()
                 && !part.starts_with('.')
+                && !part.ends_with(".lock")
                 && part
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || "-_.+@".contains(c))
-        });
-    if !plain || name.contains("..") || name.ends_with(".lock") {
-        return None;
-    }
-    if let Some(loose) = read(name, 4096) {
-        return full(loose.trim_end_matches('\n'));
-    }
-    read("packed-refs", PACKED_REFS_MAX)?
-        .lines()
-        .filter(|l| !l.starts_with('#') && !l.starts_with('^'))
-        .find_map(|l| match l.split_once(' ') {
-            Some((hash, n)) if n == name => full(hash),
-            _ => None,
         })
+}
+
+/// The object name of the ref `name` in a `packed-refs` text, read only
+/// as git writes it: an optional first line `# pack-refs with: …`, then
+/// one line `<object name> <ref>` per ref, each followed by at most one
+/// line `^<object name>`, the refs in ascending order, every line ended by
+/// LF. Anything else is `None` (git's to read), the whole file checked
+/// before an answer: git refuses a file whose last line has no LF or that
+/// has a `#` line further down, and reads a CR as part of the ref name.
+fn packed_ref(text: &str, name: &str) -> Option<String> {
+    let mut lines = text.strip_suffix('\n')?.split('\n').peekable();
+    lines.next_if(|l| l.starts_with("# pack-refs with:"));
+    let mut found = None;
+    let mut last: Option<&str> = None;
+    let mut peelable = false;
+    for line in lines {
+        if let Some(peeled) = line.strip_prefix('^') {
+            if !std::mem::take(&mut peelable) || !sha1(peeled) {
+                return None;
+            }
+            continue;
+        }
+        let (hash, r) = line.split_once(' ')?;
+        let named = !r.is_empty() && !r.chars().any(|c| c.is_whitespace() || c.is_control());
+        if !sha1(hash) || !named || last.is_some_and(|l| l >= r) {
+            return None;
+        }
+        if r == name {
+            found = Some(hash.to_string());
+        }
+        last = Some(r);
+        peelable = true;
+    }
+    found
 }
 
 /// A hexadecimal object name of 4 to 64 digits.
@@ -952,14 +1023,12 @@ impl Git<'_> {
     /// The output of a query that exited 0 with stdout under
     /// [`GIT_OUTPUT_MAX`] (invalid UTF-8 read lossily).
     fn stdout(&self, dir: &Path, args: &[&str]) -> Option<String> {
-        let (run, cut) =
-            sys::run_command_capped(self.command(dir, args), self.timeout, GIT_OUTPUT_MAX);
-        match run {
+        match sys::run_command(self.command(dir, args), self.timeout, GIT_OUTPUT_MAX) {
             Run::Exited {
                 code: Some(0),
                 stdout,
                 ..
-            } if !cut => Some(stdout),
+            } => Some(stdout),
             _ => None,
         }
     }
@@ -1516,6 +1585,15 @@ mod tests {
         // a file
         std::fs::write(git.join("config"), [0xff, 0xfe, b'\n']).unwrap();
         assert_eq!(git_dir(&dir), GitDir::Outside);
+        // WP-154: the scan's limit, to the byte (a config past it is not
+        // scanned, so it is not read)
+        let mut big = config.as_bytes().to_vec();
+        big.resize(1024 * 1024, b'\n');
+        std::fs::write(git.join("config"), &big).unwrap();
+        assert_eq!(git_dir(&dir), GitDir::Contained, "{} bytes", big.len());
+        big.push(b'\n');
+        std::fs::write(git.join("config"), &big).unwrap();
+        assert_eq!(git_dir(&dir), GitDir::Outside, "{} bytes", big.len());
         std::fs::remove_file(git.join("config")).unwrap();
         std::os::unix::fs::symlink("/dev/null", git.join("config")).unwrap();
         assert_eq!(git_dir(&dir), GitDir::Outside);
@@ -1601,27 +1679,29 @@ mod tests {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, text).unwrap();
         };
-        let (a, b) = ("a".repeat(40), "b".repeat(64));
+        let (a, b) = ("a".repeat(40), "b".repeat(40));
         // detached
         git("HEAD", &format!("{a}\n"));
         assert_eq!(head_from_files(&dir), Some(a.clone()));
-        // a branch: loose, then packed (a sha256 clone)
+        // a branch: loose, then packed
         git("HEAD", "ref: refs/heads/main\n");
         assert_eq!(head_from_files(&dir), None, "unborn");
         git(
             "packed-refs",
             &format!(
-                "# pack-refs with: peeled fully-peeled sorted\n{a} refs/heads/mainline\n{b} refs/heads/main\n^{a}\n"
+                "# pack-refs with: peeled fully-peeled sorted \n{a} refs/heads/main\n{b} refs/heads/mainline\n{a} refs/tags/v1\n^{b}\n"
             ),
         );
-        assert_eq!(head_from_files(&dir), Some(b.clone()));
-        git("refs/heads/main", &format!("{a}\n"));
-        assert_eq!(head_from_files(&dir), Some(a.clone()), "a loose ref wins");
+        assert_eq!(head_from_files(&dir), Some(a.clone()));
+        git("refs/heads/main", &format!("{b}\n"));
+        assert_eq!(head_from_files(&dir), Some(b.clone()), "a loose ref wins");
         // anything else is git's to answer, even where a file answers
         for rel in [
             "refs/heads/.invalid",
             "outside",
             "refs/heads/main.lock",
+            "refs/heads/x.lock/y",
+            "refs/heads/a.",
             "refs/tags/main",
         ] {
             git(rel, &format!("{a}\n"));
@@ -1633,6 +1713,8 @@ mod tests {
             "ref: refs/tags/main\n",
             "ref: refs/heads/a b\n",
             "ref: refs/heads/main.lock\n",
+            "ref: refs/heads/x.lock/y\n",
+            "ref: refs/heads/a.\n",
             "ref: refs/heads/a..b\n",
             "0123\n",
             "",
@@ -1641,7 +1723,7 @@ mod tests {
             assert_eq!(head_from_files(&dir), None, "{head:?}");
         }
         git("HEAD", "ref: refs/heads/main\n");
-        assert_eq!(head_from_files(&dir), Some(a.clone()));
+        assert_eq!(head_from_files(&dir), Some(b.clone()));
         git("refs/heads/main", "not a hash\n");
         assert_eq!(head_from_files(&dir), None);
         // a `.git` file (a linked work tree) or a linked HEAD
@@ -1653,6 +1735,148 @@ mod tests {
         std::fs::write(s.0.join("head"), format!("{a}\n")).unwrap();
         std::os::unix::fs::symlink(s.0.join("head"), dir.join(".git/HEAD")).unwrap();
         assert_eq!(head_from_files(&dir), None);
+    }
+
+    /// WP-154 rule 3: the HEAD files byte for byte. What git refuses is
+    /// never read here; what git reads differently (a CR, more white
+    /// space) is left to git as well. git 2.55 on each case is noted.
+    #[test]
+    fn head_files_are_read_byte_for_byte_as_git_writes_them() {
+        let s = Scratch::new("bytes");
+        let dir = s.clone_dir();
+        let git_dir = dir.join(".git");
+        let put = |rel: &str, bytes: &[u8]| {
+            let path = git_dir.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        };
+        let unset = |rel: &str| {
+            let _ = std::fs::remove_file(git_dir.join(rel));
+        };
+        let (a, b) = ("a".repeat(40), "b".repeat(40));
+        let long = "c".repeat(64);
+        let reset = || {
+            for rel in [
+                "HEAD",
+                "refs/heads/main",
+                "packed-refs",
+                "config",
+                "config.worktree",
+            ] {
+                unset(rel);
+            }
+        };
+        // HEAD: exactly `ref: <name>` LF or `<object name>` LF
+        for (bytes, read) in [
+            (format!("{a}\n"), true),
+            (format!("{a}\r\n"), false),       // git: reads it
+            (a.clone(), false),                // git: reads it
+            (format!("{a}\n\n"), false),       // git: reads it
+            (format!("\u{FEFF}{a}\n"), false), // git: not a repository
+            (format!(" {a}\n"), false),
+            (format!("{}\n", a.to_uppercase()), false),
+            (format!("{long}\n"), false), // git, SHA-1: broken
+            (format!("{}\n", &a[..39]), false),
+        ] {
+            reset();
+            put("HEAD", bytes.as_bytes());
+            let want = read.then(|| a.clone());
+            assert_eq!(head_from_files(&dir), want, "HEAD {bytes:?}");
+        }
+        // HEAD as a ref, and the loose ref
+        for (head, loose, read) in [
+            ("ref: refs/heads/main\n", format!("{b}\n"), true),
+            ("ref: refs/heads/main\r\n", format!("{b}\n"), false), // git: reads it
+            ("ref:refs/heads/main\n", format!("{b}\n"), false),    // git: reads it
+            ("ref: refs/heads/main \n", format!("{b}\n"), false),  // git: reads it
+            ("\u{FEFF}ref: refs/heads/main\n", format!("{b}\n"), false), // git: not a repository
+            ("ref: refs/heads/main\n", format!("{b}\r\n"), false), // git: reads it
+            ("ref: refs/heads/main\n", format!("\u{FEFF}{b}\n"), false), // git: broken
+            ("ref: refs/heads/main\n", format!("{b} x\n"), false), // git: reads it
+            ("ref: refs/heads/main\n", format!("{long}\n"), false), // git, SHA-1: broken
+        ] {
+            reset();
+            put("HEAD", head.as_bytes());
+            put("refs/heads/main", loose.as_bytes());
+            let want = read.then(|| b.clone());
+            assert_eq!(head_from_files(&dir), want, "{head:?} {loose:?}");
+        }
+        // a loose ref that is there but refused: never the packed one
+        reset();
+        put("HEAD", b"ref: refs/heads/main\n");
+        put("packed-refs", format!("{a} refs/heads/main\n").as_bytes());
+        assert_eq!(head_from_files(&dir), Some(a.clone()));
+        std::fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
+        std::os::unix::fs::symlink(s.0.join("elsewhere"), git_dir.join("refs/heads/main")).unwrap();
+        assert_eq!(head_from_files(&dir), None, "a linked loose ref");
+        unset("refs/heads/main");
+        put("refs/heads/main", &[0xff, b'\n']);
+        assert_eq!(head_from_files(&dir), None, "a loose ref not UTF-8");
+        // packed-refs as git writes it, and what git refuses or reads
+        // otherwise
+        let header = "# pack-refs with: peeled fully-peeled sorted \n";
+        for (text, read) in [
+            (
+                format!("{header}{b} refs/heads/a\n{a} refs/heads/main\n"),
+                true,
+            ),
+            (format!("{a} refs/heads/main\n"), true),
+            (format!("{header}{a} refs/heads/main\n^{b}\n"), true),
+            (format!("{a} refs/heads/main"), false), // git: refuses (no final LF)
+            (format!("{a} refs/heads/main\r\n"), false), // git: unknown revision
+            (
+                format!("{header}{b} refs/heads/a\n# x\n{a} refs/heads/main\n"),
+                false,
+            ), // git: refuses
+            (format!("\u{FEFF}{header}{a} refs/heads/main\n"), false),
+            (format!("{header}{a} refs/heads/main \n"), false), // git: unknown revision
+            (format!("{header}{long} refs/heads/main\n"), false), // git, SHA-1: refuses
+            (format!("{header}{a} refs/heads/main\n^{b}\n^{b}\n"), false),
+            (format!("{header}^{b}\n{a} refs/heads/main\n"), false),
+            (format!("{header}{a} refs/heads/main\n\n"), false),
+            (
+                format!("{header}{a} refs/heads/z\n{a} refs/heads/main\n"),
+                false,
+            ), // unsorted
+            (
+                format!("{header}{a} refs/heads/main\n{b} refs/heads/main\n"),
+                false,
+            ), // twice
+            (format!("{header}{a}  refs/heads/main\n"), false),
+            // a bad name on another line: git still reads `main`, the
+            // file is left to it all the same
+            (format!("{b} refs/heads/a b\n{a} refs/heads/main\n"), false),
+            (format!("{b} refs/heads/a\t\n{a} refs/heads/main\n"), false),
+            (format!("{b} refs/heads/a\r\n{a} refs/heads/main\n"), false),
+        ] {
+            reset();
+            put("HEAD", b"ref: refs/heads/main\n");
+            put("packed-refs", text.as_bytes());
+            let want = read.then(|| a.clone());
+            assert_eq!(head_from_files(&dir), want, "packed-refs {text:?}");
+        }
+        // a config that names an object format (SHA-256: 64 digits)
+        for (rel, text) in [
+            ("config", "[extensions]\n\tobjectFormat = sha256\n"),
+            (
+                "config",
+                "\u{FEFF}[extensions]\r\n\tOBJECTFORMAT = sha256\r\n",
+            ),
+            ("config.worktree", "[extensions]\n\tobjectformat = sha256\n"),
+        ] {
+            reset();
+            put("HEAD", format!("{long}\n").as_bytes());
+            put(rel, text.as_bytes());
+            assert_eq!(head_from_files(&dir), None, "{rel} {text:?}");
+            put("HEAD", format!("{a}\n").as_bytes());
+            assert_eq!(head_from_files(&dir), None, "{rel} {text:?}, 40 digits");
+        }
+        reset();
+        put("HEAD", format!("{a}\n").as_bytes());
+        put("config", b"[core]\n\tbare = false\n");
+        assert_eq!(head_from_files(&dir), Some(a.clone()));
+        put("config", &[0xff, b'\n']);
+        assert_eq!(head_from_files(&dir), None, "a config not UTF-8");
     }
 
     #[test]

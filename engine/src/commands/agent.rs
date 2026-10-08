@@ -1029,6 +1029,8 @@ fn launch(
             launcher.name
         )),
         Run::TimedOut => Err(format!("{program} did not return")),
+        // a detached launch captures no output
+        Run::Cut => Err(format!("{program}: output over the limit")),
         Run::Failed(e) => Err(format!("cannot start {program}: {e}")),
     }
 }

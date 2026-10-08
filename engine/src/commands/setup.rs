@@ -593,6 +593,7 @@ pub fn install_theme_hook(_lock: &Lock, dirs: &Dirs, omarchy: &str) -> ThemeHook
         &["hook", "install", "theme-set", arg],
         None,
         OMARCHY_TIMEOUT,
+        sys::OUTPUT_MAX,
     ) {
         Run::Exited { code: Some(0), .. } => ThemeHook::Installed { script, hook },
         Run::Exited {
@@ -611,6 +612,7 @@ pub fn install_theme_hook(_lock: &Lock, dirs: &Dirs, omarchy: &str) -> ThemeHook
         }
         Run::NotFound => failed(format!("`{omarchy}` is not installed")),
         Run::TimedOut => failed("`omarchy hook install` timed out".into()),
+        Run::Cut => failed("`omarchy hook install`: output over the limit".into()),
         Run::Failed(e) => failed(format!("cannot run `{omarchy}`: {e}")),
     }
 }

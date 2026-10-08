@@ -1480,7 +1480,11 @@ fn check_omarchy(config: &Config, shown: &ShownMessages) -> Check {
     }
     // the program the collector runs (`SELDON_OMARCHY_VERSION`)
     let program = Sources::from_env().omarchy_version;
-    match sys::run_command(sys::omarchy_command(&program, &[]), PROBE_TIMEOUT) {
+    match sys::run_command(
+        sys::omarchy_command(&program, &[]),
+        PROBE_TIMEOUT,
+        sys::OUTPUT_MAX,
+    ) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -1763,6 +1767,7 @@ fn describe(run: &Run) -> String {
                 None => format!("killed by a signal: {first}"),
             }
         }
+        Run::Cut => "output over the limit".into(),
         Run::NotFound => "not found".into(),
         Run::TimedOut => format!("no answer within {}s", PROBE_TIMEOUT.as_secs()),
         Run::Failed(e) => e.clone(),

@@ -109,7 +109,11 @@ pub fn current_version(sources: &Sources) -> Option<String> {
     };
     let valid = |v: &str| !v.is_empty() && !v.contains(char::is_whitespace);
     let omarchy_version = sys::omarchy_command(&sources.omarchy_version, &[]);
-    if let Some(out) = ok(sys::run_command(omarchy_version, RUN_TIMEOUT)) {
+    if let Some(out) = ok(sys::run_command(
+        omarchy_version,
+        RUN_TIMEOUT,
+        sys::OUTPUT_MAX,
+    )) {
         let v = out.trim();
         if valid(v) {
             return Some(v.to_string());
@@ -120,6 +124,7 @@ pub fn current_version(sources: &Sources) -> Option<String> {
         &["-Q", "omarchy"],
         None,
         RUN_TIMEOUT,
+        sys::OUTPUT_MAX,
     ))?;
     let mut words = out.split_whitespace();
     match (words.next(), words.next()) {
