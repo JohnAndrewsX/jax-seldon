@@ -600,6 +600,56 @@ submission). (see `work/queued/`)
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
 
+## Decided 2026-10-08 (operator, all as recommended)
+- Incidents 2026-10-08: the plugin view harnesses wrote into the real
+  `/run/user/1000` until it was full and Hyprland died (SIGBUS); the
+  plugin's bar widget crashes the shell on every IPC restart with two
+  widgets (since 0.1.3).
+- E25 harnesses use their own runtime dir, first on main and next → WP-161.
+- E26 the IPC restart crash is a 0.1.4 release blocker → WP-162; v0.1.4 is
+  tagged only after it is merged and verified live with two monitors.
+- E27 AGENTS.md §6: the journal may be read for metadata only (own
+  coredump entries, boot errors, failed units).
+- E28 crash reports: step 1 in 0.2.x (an engine command files an agent's
+  analysis into the logbook; the skill says when), steps 2–3 (coredump
+  collector, `crash` event kind, desk list, report drafts) for 0.3 with an
+  ADR.
+- E29 less test load: the view harnesses run only when plugin, test,
+  schema or fixture files changed (gates run everything); check the
+  runtime dir before long runs.
+- No online artifacts any more; reports are local files.
+- E18 ADR-0040 accepted (`seldon decide accept`; a new plugin command row
+  needs an ADR) → WP-135. E19 ADR-0041 accepted (sessions are windows; the
+  bounded /proc environ read as worded) → WP-156. E20 ADR-0042 accepted
+  (files pacman left; a `.pacnew` under `/etc/pam.d` stays a crisis) →
+  WP-141. E21 ADR-0043 accepted (`meta.txStatus`) → WP-137. E22 ADR-0044
+  accepted (`plan show` / `import task` rows, the review gate before Start)
+  → WP-102b. E23 the logbook's git config stays trusted like `~/.gitconfig`
+  (only plugin clones are third-party). E24 the runtime dir was cleared by
+  the reboot; the harness fix is WP-161.
+- E30 printers: WP-131 (printer configuration hashes) is parked. cupsd
+  rewrites `printers.conf` and every PPD on each print job, and the user
+  cannot read them, so a stat hash would report every printed page. The
+  AGENTS.md §6 permission for the CUPS files is withdrawn. WP-129 (the hook
+  records an agent's privileged commands) stays; it is verified live on the
+  next real `pkexec`/`sudo` an agent runs. No printer test (T3).
+- E31 graph: an Obsidian-like config panel (filters, groups, display,
+  forces), shipped presets and user configs in Omarchy's plugin settings →
+  WP-163 (0.2.x, after the operator has seen it in the 0.3 prototype); the
+  whole-logbook graph export with an engine-side layout is 0.3 (ADR).
+
+## Decided 2026-10-07, afternoon (operator)
+- E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
+- E16 ADR-0039 accepted (the hook records an agent's privileged commands;
+  WP-129). E17 0.2.0 is tagged only with WP-140 merged (plain-argument
+  secrets on privileged lines).
+- "What changed" ideas W1–W4 for 0.2.0 → WP-136..139. Predecessor studies
+  (private): Omar P1–P5 → WP-141..143, WP-033 additions, recipes notes;
+  JARVIS J1–J5 → WP-144 (0.2.0), WP-143 additions, WP-145..148 (0.2.x).
+  omarchy-troubleshooter / omarchy-setup S1–S5 → WP-149..153 (0.2.x).
+- The test host's reinstall moved to 2026-10-08 morning; until then it runs
+  `next` for live tests.
+
 ## Decided 2026-10-07 (operator, all as recommended)
 - E1 WP-130 guard merged into main after the table review. E2 Omarchy
   routes by a read-only allow-list → WP-132. E3 the guard also checks

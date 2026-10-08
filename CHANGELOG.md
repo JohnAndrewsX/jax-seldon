@@ -728,6 +728,15 @@ and the package does not exist yet. Update the plugin first:
 
 ### Plugin
 
+- **The shell no longer crashes when it restarts (WP-162).** Since
+  0.1.3, with more than one Seldon pill in the bar (two monitors, or the
+  pill in the bar's centre section, which adds a hidden copy), every
+  `omarchy restart shell`, so every `omarchy update`, ended in a
+  Quickshell crash (SIGSEGV) and up to three crash reports in a row. The pill handed its IPC target
+  (`jax.seldon.panel`) to another pill while the shell was exiting; it
+  now only lets go then. When one pill goes while the shell runs (a
+  monitor unplugged, the pill removed from the bar), the next one still
+  takes the target over.
 - **Quiet surfaces (ADR-0028).** The bar's second number now counts
   crises only: changes that can affect boot, login or the shell and have
   no case. Other changes without a case no longer show in the bar; the

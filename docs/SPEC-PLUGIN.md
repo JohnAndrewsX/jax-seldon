@@ -1314,7 +1314,8 @@ id).
   placeholder only when no instance is drawn (WP-078). When an instance
   comes, goes, or is drawn or hidden, every instance looks again, the
   owner first, so the next one takes the target over with one handler at
-  a time (WP-067).
+  a time (WP-067). The hand-over is deferred (Qt.callLater); nothing is
+  enabled during teardown (WP-162).
 - Service: `IpcHandler` target **`jax.seldon.service`** (`status`,
   `refresh`, `capture`) — read-only state and the two actions any local
   process could trigger anyway; it is how the test host reads plugin state
