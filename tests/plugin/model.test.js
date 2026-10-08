@@ -544,9 +544,9 @@ test("snapperBanner: Grant runs the script, Check again is a capture, no hint (W
   assert.ok(M.SNAPPER_FIX_SCRIPT.indexOf("then if seldon capture ") !== -1)
 })
 
-test("changelogRows: 76 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
+test("changelogRows: 82 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
-  assert.strictEqual(rows.length, 76)
+  assert.strictEqual(rows.length, 82)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
@@ -626,7 +626,7 @@ test("changelogRows: 76 events newest first, one +2 group (3 members), folded re
 
 test("changelogRows: the source filter narrows the list", () => {
   const counts = M.sourceCounts(sampleIndex)
-  assert.strictEqual(counts.all, 76)
+  assert.strictEqual(counts.all, 82)
   let total = 0
   for (const s of M.SOURCES) {
     const rows = M.changelogRows(sampleIndex, s)
@@ -634,10 +634,10 @@ test("changelogRows: the source filter narrows the list", () => {
     assert.ok(rows.every((r) => r.source === s), s)
     total += rows.length
   }
-  assert.strictEqual(total, 76)
-  assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 15)
+  assert.strictEqual(total, 82)
+  assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 21)
   assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 10)
-  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 76)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 82)
   same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
   assert.strictEqual(M.cycleFilter("all", 1), "pacman")
   assert.strictEqual(M.cycleFilter("seldon", 1), "all")
@@ -1408,10 +1408,10 @@ test("periodTable: the sample's counts per period", () => {
   assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
-  same(s30.map((s) => s.detail), ["71 events", "Explicit 324 → 327", "13 opened · 8 resolved",
+  same(s30.map((s) => s.detail), ["77 events", "Explicit 324 → 327", "13 opened · 8 resolved",
     "R0 1 · R1 3 · R2 3 · R3 1 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
-  assert.strictEqual(table.periods["90"].slots[0].detail, "76 events")
+  assert.strictEqual(table.periods["90"].slots[0].detail, "82 events")
   same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 3, R3: 1 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
@@ -1557,8 +1557,8 @@ test("heatmapChart: weeks × weekdays, steps, months, hover text, layout and hit
   const table = M.periodTable(ok.index)
   const h30 = table.periods["30"].charts.heatmap
   assert.strictEqual(h30.empty, false)
-  same(h30.numbers, { days: 30, events: 71, activeDays: 15, max: 32, busiest: "2026-10-01" })
-  assert.strictEqual(h30.summary, "71 events on 15 of 30 days · busiest 2026-10-01 (32)")
+  same(h30.numbers, { days: 30, events: 77, activeDays: 17, max: 32, busiest: "2026-10-01" })
+  assert.strictEqual(h30.summary, "77 events on 17 of 30 days · busiest 2026-10-01 (32)")
   // 2026-09-02 is a Wednesday: the first column starts at row 2.
   same([h30.offset, h30.weeks, h30.cells.length], [2, 5, 30])
   same([h30.cells[0].date, h30.cells[0].col, h30.cells[0].row], ["2026-09-02", 0, 2])
@@ -2203,10 +2203,10 @@ test("deskWidthPreview and preset labels", () => {
 test("deskChangelog: every event once, by class, with title, meta, age and stripe", () => {
   const idx = M.parseIndex(sample).index
   const p = M.deskChangelog(idx)
-  assert.strictEqual(p.rows.length, 76)
+  assert.strictEqual(p.rows.length, 82)
   const byCls = {}
   for (const r of p.rows) byCls[r.cls] = (byCls[r.cls] || 0) + 1
-  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 37", "crisis 2", "routine 31"])
+  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 37", "crisis 2", "routine 37"])
   const unit = M.changelogRow(p, UNIT)
   same([unit.title, unit.listMeta, unit.age, unit.stripe, unit.cls], ["ollama.service", "config · config-add", "14:03", "crisis", "crisis"])
   const mesa = M.changelogRow(p, MESA)
@@ -2227,12 +2227,12 @@ test("rowAge: the time today, else day and month (the year when it differs)", ()
 test("changelogView and changelogChips: chips, search, Hide (attention only), a group once", () => {
   const p = M.deskChangelog(M.parseIndex(sample).index)
   same(M.changelogChips(p, {}).map(c => c.id + " " + c.count),
-    ["open 6", "crisis 2", "attention 4", "routine 31", "case 37", "all 76"])
+    ["open 6", "crisis 2", "attention 4", "routine 37", "case 37", "all 82"])
   // the drift chips list a group as its leader; "all" lists every event
   same(M.changelogView(p, "open", {}, "").map(r => r.title).slice(-1), ["mesa +2"])
   assert.strictEqual(M.changelogView(p, "open", {}, "").length, 6)
   assert.strictEqual(M.changelogView(p, "bogus", {}, "").length, 6)
-  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 76)
+  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 82)
   assert.ok(M.changelogView(p, "all", {}, "").some(r => r.id === LIB32))
   // the search matches subject, meta, detail and actor, case-insensitive
   same(M.changelogView(p, "open", {}, "OLLAMA").map(r => r.title), ["ollama.service", "ollama"])
@@ -2241,7 +2241,7 @@ test("changelogView and changelogChips: chips, search, Hide (attention only), a 
   const hidden = { [MESA]: true, [UNIT]: true }
   assert.strictEqual(M.changelogView(p, "open", hidden, "").length, 5)
   assert.strictEqual(M.changelogView(p, "crisis", hidden, "").length, 2)
-  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 76)
+  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 82)
   assert.strictEqual(M.hiddenCount(p, hidden), 1)
   same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
 })
@@ -2541,8 +2541,8 @@ const edgeIds = (b) => b.edges.map((e) => b.nodes[e.a].id + (e.dashed ? " ~ " : 
 
 test("graphBuild: nodes from the index, changes only, crises from drift", () => {
   const b = M.graphBuild(graphSample, 400)
-  same(b.numbers, { nodes: 68, edges: 26, areas: 6, cases: 8, decisions: 4, changes: 48, crises: 2, clusters: 0,
-    folded: 0, events: 76, completed: 2 })
+  same(b.numbers, { nodes: 74, edges: 26, areas: 6, cases: 8, decisions: 4, changes: 54, crises: 2, clusters: 0,
+    folded: 0, events: 82, completed: 2 })
   // order: areas, cases, decisions, changes by day
   const kinds = b.nodes.map((n) => (n.kind === "crisis" ? "change" : n.kind))
   same([...new Set(kinds)], ["area", "case", "decision", "change"])
@@ -2560,7 +2560,7 @@ test("graphBuild: nodes from the index, changes only, crises from drift", () => 
   assert.strictEqual(nodeOf(b, "C-2026-001").done, true)
   assert.strictEqual(nodeOf(b, "C-2026-003").sub, "active · R3 · shell")
   assert.strictEqual(nodeOf(b, "C-2026-003").caseId, "C-2026-003")
-  assert.strictEqual(b.footer, "Newest 76 events · 2 completed cases in the index")
+  assert.strictEqual(b.footer, "Newest 82 events · 2 completed cases in the index")
 })
 
 test("graphBuild: edges event→case, case→area, decision→case, proposedCase dashed", () => {
@@ -2617,7 +2617,7 @@ test("graphBuild: nothing to draw without an index", () => {
     assert.strictEqual(b.empty, true)
     assert.strictEqual(b.nodes.length, 0)
   }
-  assert.strictEqual(M.graphBuild(graphSample).nodes.length, 68)
+  assert.strictEqual(M.graphBuild(graphSample).nodes.length, 74)
 })
 
 test("graphBuild: beyond the cap, changes fold by day and source; areas, cases, decisions, crises never", () => {
@@ -2685,7 +2685,7 @@ test("graphState: start layout deterministic, positions kept by id, cut kept mid
   const s1 = M.graphState(b, null)
   const s2 = M.graphState(b, null)
   same(Array.from(s1.x), Array.from(s2.x))
-  assert.strictEqual(s1.visCount, 68)
+  assert.strictEqual(s1.visCount, 74)
   assert.strictEqual(s1.cut, b.span)
   assert.strictEqual(s1.alpha, 1)
   for (let i = 0; i < 30; i++) M.graphStep(s1, 8)

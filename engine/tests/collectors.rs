@@ -47,7 +47,7 @@ mod collectors {
     fn pacman_offsets_match_the_fixture_readme() {
         let log = std::fs::read(fixture("logs/pacman.log")).unwrap();
         let parsed = pacman::parse(&log, 0, false, cest());
-        assert_eq!(parsed.resume, 11832, "complete lines end at byte 11832");
+        assert_eq!(parsed.resume, 13254, "complete lines end at byte 13254");
         // the unterminated last line is never read, even with pacman idle
         assert!(
             parsed
@@ -77,7 +77,7 @@ mod collectors {
             out.cursor,
             Some(to_cursor(&PacmanCursor {
                 inode,
-                offset: 11832
+                offset: 13254
             }))
         );
     }
@@ -109,7 +109,7 @@ mod collectors {
                 .any(|e| e.subject == "omarchy" && e.meta.to.as_deref() == Some("4.0.6-1")),
             "the repeated 09-15 upgrade is not emitted twice"
         );
-        assert_eq!(second.events.len(), 13);
+        assert_eq!(second.events.len(), 19);
         assert_eq!(
             normalised_sorted(&b.ledger_events(Source::Pacman)),
             normalised_sorted(&fixture_events(Source::Pacman))
@@ -146,7 +146,7 @@ mod collectors {
             .filter(|e| e.subject == "omarchy")
             .collect();
         assert_eq!(omarchy.len(), 2, "4.0.6 once (from the old file) and 4.0.7");
-        assert_eq!(out.events.len(), 14);
+        assert_eq!(out.events.len(), 20);
     }
 
     #[test]
