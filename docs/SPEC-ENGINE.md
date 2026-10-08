@@ -1622,9 +1622,15 @@ git itself is killed, with the same bounded pipe wait. Rules:
   (`*.pacnew`, `*.pacsave`, `*.pacorig`) are not hashed: the tools read
   only `*.conf` and the presets, and the pacman collector records each as
   a note (§4 pacman, ADR-0042); a merge (`pacdiff`) shows as the
-  `config-change` of the file itself. Nothing else under `/etc` is opened
-  or stat'ed, unless the user's own `watchPaths` reach it; a boot file a
-  watch path covers is walked there, once. The content goes into SHA-256
+  `config-change` of the file itself. A symbolic link there is followed
+  to its file and recorded under the link's own path (hash only, whatever
+  the target is: only root can place it, and `mkinitcpio` sources it as
+  well); a link whose target lies under `/usr/` carries `meta.matches =
+  "system-link"` (§4 evidence marks) and is routine. A link to a
+  directory is not followed, nor is a FIFO, socket or device opened.
+  Nothing else under `/etc` is opened or stat'ed, unless the user's own
+  `watchPaths` reach it; a boot file a watch path covers is walked
+  there, once. The content goes into SHA-256
   and nowhere else (a kernel command line can name devices and keys):
   never into an event, the manifest, a message or a log. A boot file is
   hashed whole whatever its content and size; one that cannot be read or
