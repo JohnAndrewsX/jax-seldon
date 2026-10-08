@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""WP-166 manual mutants: each one undoes one rule of `seldon inbox add`;
+`--test inbox` or the unit tests of `commands::inbox` must fail for every
+one. Run it from a copy of the tree: it rewrites the source in place and
+puts it back. Names given as arguments run only the mutants whose name
+contains one of them; `--check` only applies each mutant."""
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# the checkout this script lives in: work/active/WP-166/mutants.py
+WT = str(Path(__file__).resolve().parents[3])
+# a target dir of its own: a mutated build must never reach another run
+TARGET = f"{WT}/engine/target/mutants-wp166"
+INBOX = "engine/src/commands/inbox.rs"
+
+
+def plain(a, b, count=1):
+    def apply(src):
+        assert src.count(a) == count, (a, src.count(a))
+        return src.replace(a, b)
+    return apply
+
+
+MUTANTS = [
+    # the text, as `import task` treats a task file
+    ("text: format characters kept", INBOX, plain(".filter(|c| !is_direction_or_format(*c))", ".filter(|_| true)")),
+    ("text: format characters not counted", INBOX, plain("text.chars().count() - kept.chars().count()", "0")),
+    ("text: CRLF kept", INBOX, plain('raw.replace("\\r\\n", "\\n")', "raw.clone()")),
+    ("text: not scrubbed", INBOX, plain('trim_blank_lines(&scrubber.text("text", &text))', "trim_blank_lines(&text)")),
+    ("text: outer blank lines kept", INBOX, plain('trim_blank_lines(&scrubber.text("text", &text))', 'scrubber.text("text", &text)')),
+    ("text: blank text filed", INBOX, plain("    if text.is_empty() {\n        return Err(Error::user(\"the text must not be empty\"));\n    }\n", "")),
+    ("text: stdin size not checked", INBOX, plain("if bytes.len() as u64 > MAX_TEXT_BYTES {", "if false {")),
+    ("text: stdin size off by one", INBOX, plain("if bytes.len() as u64 > MAX_TEXT_BYTES {", "if bytes.len() as u64 >= MAX_TEXT_BYTES {")),
+    ("text: stdin not UTF-8 accepted", INBOX, plain('return String::from_utf8(bytes).map_err(|_| Error::user("the text on stdin is not UTF-8"));', "return Ok(String::from_utf8_lossy(&bytes).into_owned());")),
+    ("text: a file read through its link", INBOX, plain("match sys::read_small_file(file, MAX_TEXT_BYTES) {", "match std::fs::read_to_string(file).map(Some).map_err(|e| e.to_string()) {")),
+    # the title
+    ("title: format characters kept", INBOX, plain("let (title, title_dropped) = drop_format(&args.title);", "let (title, title_dropped) = (args.title.clone(), 0);")),
+    ("title: several lines", INBOX, plain('let title = one_line("the title", &title)?;', 'let title = super::required_text("the title", &title)?;')),
+    ("title: not scrubbed", INBOX, plain('let title = scrubber.text("title", &title);', "let title = title.clone();")),
+    ("title: no length limit", INBOX, plain("if title.chars().count() > MAX_TITLE_CHARS {", "if false {")),
+    ("title: length off by one", INBOX, plain("if title.chars().count() > MAX_TITLE_CHARS {", "if title.chars().count() >= MAX_TITLE_CHARS {")),
+    ("title: the fallback slug", INBOX, plain('const FALLBACK_SLUG: &str = "note";', 'const FALLBACK_SLUG: &str = "";')),
+    # counts
+    ("count: hits, not lines", INBOX, plain("    lines.len()\n}", "    scrubber.hits.len()\n}")),
+    ("count: lines of title and text merged", INBOX, plain(".map(|h| (h.file.as_str(), h.line))", '.map(|h| ("", h.line))')),
+    ("count: no private paths", INBOX, plain('"privatePaths": scrubber.private_paths,', '"privatePaths": 0,')),
+    ("tags: not redacted", INBOX, plain("args.tags.iter().map(|t| redactor.redact(t)).collect()", "args.tags.clone()")),
+    # the file
+    ("file: frontmatter without the actor", INBOX, plain('        ("actor", FmValue::str(actor)),\n', "")),
+    ("file: the date of the name", INBOX, plain('ctx.now.format("%Y-%m-%d")', 'ctx.now.format("%Y%m%d")')),
+    ("file: the first name numbered", INBOX, plain("            1 => format!(\"{stem}.md\"),\n", "")),
+    ("file: one name fewer", INBOX, plain("const MAX_SUFFIX: u32 = 99;", "const MAX_SUFFIX: u32 = 98;")),
+    ("file: one name more", INBOX, plain("const MAX_SUFFIX: u32 = 99;", "const MAX_SUFFIX: u32 = 100;")),
+    ("file: a taken name is an error", INBOX, plain("Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),", "Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(Error::user(\"taken\")),")),
+    ("file: a taken name overwritten", INBOX, plain("let mut file = match sys::create_new_private(path) {", "let _ = std::fs::remove_file(path);\n    let mut file = match sys::create_new_private(path) {")),
+    ("file: inbox/ not created", INBOX, plain("    sys::create_dir_private(&dir).with_context(|| format!(\"cannot create {}\", dir.display()))?;\n", "")),
+    # idempotency
+    ("filed: never found", INBOX, plain("    let (path, filed) = match already_filed(&logbook, &body) {", "    let (path, filed) = match None::<String> {")),
+    ("filed: the frontmatter counts", INBOX, plain("(doc.body == body).then(", "(text == body).then(")),
+    ("filed: only the first name looked at", INBOX, plain("    names.into_iter().find_map(|name| {", "    names.into_iter().take(1).find_map(|name| {")),
+    ("filed: committed anyway", INBOX, plain("    let commit = if filed {", "    let commit = if true {")),
+    # the record
+    ("record: the user's edits committed too", INBOX, plain('autocommit_paths(ctx, &config, &logbook, &[&path], "inbox add")', 'super::autocommit(ctx, &config, &logbook, "inbox add")')),
+    ("record: no index rebuild", INBOX, plain("        crate::index::rebuild_if_initialised(ctx);\n", "")),
+    ("record: no lock", INBOX, plain("    let lock = ctx.lock()?;\n", "    let lock = ();\n")),
+]
+
+check = "--check" in sys.argv
+only = [a for a in sys.argv[1:] if a != "--check"]
+env = dict(os.environ, CARGO_TARGET_DIR=TARGET)
+cargo = ["cargo", "test", "--manifest-path", "engine/Cargo.toml", "--no-fail-fast"]
+runs = [
+    cargo + ["--lib", "--", "commands::inbox", "--test-threads=4"],
+    cargo + ["--test", "inbox", "--", "--test-threads=4"],
+]
+results = []
+for name, file, mutate in MUTANTS:
+    if only and not any(o in name for o in only):
+        continue
+    path = os.path.join(WT, file)
+    orig = open(path).read()
+    try:
+        mutated = mutate(orig)
+    except (AssertionError, ValueError) as e:
+        results.append((name, f"NOT APPLIED {e}"))
+        continue
+    if mutated == orig:
+        results.append((name, "NOT APPLIED (no change)"))
+        continue
+    if check:
+        results.append((name, "killed (not run)"))
+        continue
+    try:
+        open(path, "w").write(mutated)
+        failed = []
+        for cmd in runs:
+            r = subprocess.run(cmd, cwd=WT, env=env, capture_output=True, text=True)
+            if "error[E" in r.stderr or "error: could not compile" in r.stderr:
+                failed.append("does not compile")
+                break
+            if r.returncode != 0:
+                failed.append(cmd[6] if cmd[5] == "--test" else "lib")
+    finally:
+        open(path, "w").write(orig)
+    results.append((name, f"killed ({', '.join(failed)})" if failed else "SURVIVED"))
+    print(f"{name}: {results[-1][1]}", flush=True)
+
+print()
+killed = sum(r.startswith("killed") for _, r in results)
+print(f"{killed}/{len(results)} killed")
+for name, r in results:
+    if not r.startswith("killed"):
+        print(f"  {name}: {r}")

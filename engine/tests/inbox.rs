@@ -141,6 +141,17 @@ fn a_report_on_stdin_is_filed_and_committed_alone() {
         assert_eq!(files, format!("{rel}\n"));
         let status = git_out(&env, &root, &["status", "--porcelain"]);
         assert!(status.contains("inbox/zed.md"), "{status}");
+        // the index was rebuilt after the commit
+        let index: Value =
+            serde_json::from_str(&read(&env.home.join(".local/state/seldon/index.json"))).unwrap();
+        let head = git_out(&env, &root, &["rev-parse", "HEAD"]);
+        let git = &index["logbook"]["git"];
+        let short = git["head"].as_str().unwrap_or_default();
+        assert!(short.len() >= 7 && head.starts_with(short), "{git}");
+        assert_eq!(
+            index["logbook"]["git"]["autocommit"]["message"],
+            "seldon: inbox add"
+        );
     }
 }
 
@@ -202,8 +213,8 @@ fn secrets_home_paths_and_format_characters_never_reach_the_inbox() {
     let root = env.init_logbook();
     let key_body = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\nb3RoZXJsaW5lb2ZiYXNlNjRrZXltYXRlcmlhbGhlcmU0Mg==";
     let text = format!(
-        "core: /home/alice/.cache/waybar/core.4242\n\
-         env: GITHUB_TOKEN=ghp_0123456789abcdefghijABCDEFGHIJ012345\n\
+        "env: GITHUB_TOKEN=ghp_0123456789abcdefghijABCDEFGHIJ012345\n\
+         core: /home/alice/.cache/waybar/core.4242\n\
          cmd: curl -H 'Authorization: Bearer s3cr3tbearervalue' https://x\n\
          split: to\u{200B}ken=zerowidthsecret42\n\
          -----BEGIN PRIVATE KEY-----\n{key_body}\n-----END PRIVATE KEY-----\n\
@@ -214,7 +225,12 @@ fn secrets_home_paths_and_format_characters_never_reach_the_inbox() {
         T0,
         "Crash in /home/alice/bin/tool with password=hunter2hunter2",
         &text,
-        &["--tag", "crash"],
+        &[
+            "--tag",
+            "crash",
+            "--tag",
+            "ghp_0123456789abcdefghijABCDEFGHIJ012345",
+        ],
     );
     let path = root.join(v["path"].as_str().unwrap());
     let filed = read(&path);
@@ -250,7 +266,13 @@ fn secrets_home_paths_and_format_characters_never_reach_the_inbox() {
     );
     assert_eq!(v["privatePaths"], 2, "{v}");
     assert_eq!(v["droppedCharacters"], 1, "{v}");
-    // env, cmd, split, the key's four lines, the title
+    assert_eq!(v["tags"], serde_json::json!(["crash", "‹redacted›"]));
+    assert!(
+        filed.contains("\ntags: [crash, \"‹redacted›\"]\n"),
+        "{filed}"
+    );
+    // env, cmd, split, the key's four lines, the title (its line 1 is not
+    // the text's line 1)
     assert_eq!(v["redactedLines"], 8, "{v}");
     assert_eq!(
         v["path"],
@@ -323,6 +345,11 @@ fn the_same_text_is_filed_once_and_another_under_a_taken_name_gets_a_number() {
     let again = add(&env, T0, "Crash: waybar", "It crashed again.\n", &[]);
     assert_eq!(again["filed"], false);
     assert_eq!(again["path"], "inbox/2026-10-08-crash-waybar-2.md");
+
+    // the first text again, now behind the numbered names
+    let again = add(&env, T0, "Crash: waybar", REPORT, &[]);
+    assert_eq!(again["filed"], false);
+    assert_eq!(again["path"], "inbox/2026-10-08-crash-waybar.md");
 
     // the same text under another title is another filing
     let other = add(&env, T0, "Waybar crash", REPORT, &[]);
@@ -400,6 +427,7 @@ fn what_is_refused_writes_nothing() {
     let big = file("big.md", &vec![b'a'; 1024 * 1024 + 1]);
     let missing = env.tmp.path().join("missing.md");
     let long = "x".repeat(121);
+    let big_stdin = "a".repeat(1024 * 1024 + 1);
     let cases: Vec<(Vec<&str>, Option<&str>, &str)> = vec![
         (
             vec!["--title", "t", "--file", "-"],
@@ -465,6 +493,11 @@ fn what_is_refused_writes_nothing() {
             vec!["--title", "t", "--file", env.tmp.path().to_str().unwrap()],
             None,
             "a directory",
+        ),
+        (
+            vec!["--title", "t", "--file", "-"],
+            Some(&big_stdin),
+            "larger than 1024 KiB",
         ),
         (
             vec!["--title", "t", "--file", "-", "--tag", "two words"],
@@ -554,4 +587,50 @@ fn the_skill_s_recipe_files_the_report_verbatim_and_runs_none_of_it() {
         "{}",
         filed[0].1
     );
+}
+
+#[test]
+fn the_limits_hold_up_to_their_edge() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    // a title of 120 characters and a text of 1 MiB on stdin are filed
+    let title = "x".repeat(120);
+    let v = add(&env, T0, &title, &"a".repeat(1024 * 1024), &[]);
+    assert_eq!(v["title"], title.as_str());
+    // Latin-1 on stdin is not
+    let mut cmd = env.command(&["inbox", "add", "--title", "t", "--file", "-"]);
+    cmd.env("SELDON_NOW", T0)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child.stdin.take().unwrap().write_all(b"caf\xe9\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("not UTF-8"), "{}", stderr(&out));
+
+    // a title's name and 97 numbered ones taken: the 99th is the last
+    let taken = |n: u32| match n {
+        1 => root.join("inbox/2026-10-08-full.md"),
+        n => root.join(format!("inbox/2026-10-08-full-{n}.md")),
+    };
+    for n in 1..=98 {
+        std::fs::write(taken(n), format!("# Full\n\nhand-written {n}\n")).unwrap();
+    }
+    let v = add(&env, T0, "Full", "the 99th\n", &[]);
+    assert_eq!(v["path"], "inbox/2026-10-08-full-99.md");
+    let snapshot = tree(&root);
+    let out = run(
+        &env,
+        T0,
+        &["inbox", "add", "--title", "Full", "--file", "-"],
+        Some("the 100th\n"),
+    );
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("inbox/2026-10-08-full.md and 98 more of that name are taken"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(tree(&root), snapshot);
 }
