@@ -1073,16 +1073,17 @@ fn show(ctx: &Context, id: &str) -> Result<Output> {
 }
 
 /// `plan show --json` `intent` (WP-102b): the whole *Intent* section as
-/// display text (`index::build::plain_text`: no control, direction or
-/// format characters, redacted), at most [`SHOW_INTENT_MAX`] bytes cut at a
-/// character, with its line count before the cut. `null` while the
+/// display text (`index::build::marked_text`: control characters as
+/// spaces, every direction or format character marked `‹U+XXXX›` and
+/// counted in `hidden`, redacted), at most [`SHOW_INTENT_MAX`] bytes cut at
+/// a character, with its line count before the cut. `null` while the
 /// config's redaction patterns do not compile (withheld, as the index
 /// withholds its texts).
 fn intent_json(config: &crate::config::Config, body: &str) -> Value {
     let Ok(redactor) = Redactor::for_config(config) else {
         return Value::Null;
     };
-    let text = crate::index::build::plain_text(&redactor, cases::intent(body));
+    let (text, hidden) = crate::index::build::marked_text(&redactor, cases::intent(body));
     let lines = if text.is_empty() {
         0
     } else {
@@ -1093,7 +1094,7 @@ fn intent_json(config: &crate::config::Config, body: &str) -> Value {
     while !text.is_char_boundary(end) {
         end -= 1;
     }
-    json!({ "text": &text[..end], "lines": lines, "truncated": truncated })
+    json!({ "text": &text[..end], "lines": lines, "truncated": truncated, "hidden": hidden })
 }
 
 /// A case in the shape of `case.schema.json` as the index has it: the
