@@ -112,6 +112,22 @@ fn a_capture_lists_recent_files_outside_the_watch_paths_and_writes_no_event() {
 }
 
 #[test]
+fn a_config_file_elsewhere_under_dot_config_is_not_listed() {
+    let (env, _) = setup();
+    let elsewhere = env.home.join(".config/mine/seldon.toml");
+    std::fs::create_dir_all(elsewhere.parent().unwrap()).unwrap();
+    std::fs::copy(env.config_file(), &elsewhere).unwrap();
+    file(&env, ".config/mine/other.conf", HOUR);
+    let out = env
+        .command(&["capture", "--json"])
+        .env("SELDON_CONFIG", &elsewhere)
+        .output()
+        .unwrap();
+    ok(&out);
+    assert_eq!(recent_paths(&index(&env)), ["~/.config/mine/other.conf"]);
+}
+
+#[test]
 fn only_a_capture_that_runs_the_config_collector_scans() {
     let (env, _) = setup();
     let state = env.home.join(".local/state/seldon/recent-config.json");

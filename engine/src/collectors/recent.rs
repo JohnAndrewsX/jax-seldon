@@ -257,10 +257,11 @@ fn own_dirs(dirs: &Dirs) -> Vec<PathBuf> {
     ]
 }
 
-/// `t` in `now`'s offset, whole seconds, never after `now`.
+/// `t` in `now`'s offset, whole seconds (the walk keeps no time after
+/// `now`).
 fn at(t: SystemTime, now: DateTime<FixedOffset>) -> DateTime<FixedOffset> {
     let t = DateTime::<Utc>::from(t).with_timezone(now.offset());
-    t.with_nanosecond(0).unwrap_or(t).min(now)
+    t.with_nanosecond(0).unwrap_or(t)
 }
 
 impl Walk<'_> {
@@ -641,6 +642,29 @@ mod tests {
     }
 
     #[test]
+    fn a_time_after_the_scan_is_the_scan_time() {
+        let h = Home::new("future");
+        let path = h.file(".config/app/ahead.conf", Duration::ZERO);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(SystemTime::from(h.now) + 2 * HOUR)
+            .unwrap();
+        h.file(".config/app/now.conf", Duration::from_secs(1));
+        // a file system's nanoseconds are cut to whole seconds
+        h.file(
+            ".config/app/fraction.conf",
+            HOUR - Duration::from_millis(300),
+        );
+        let scan = h.scan(&Config::default());
+        assert_eq!(scan.files[0].0, "~/.config/app/ahead.conf");
+        assert_eq!(scan.files[0].1, h.now);
+        assert_eq!(scan.files[2].0, "~/.config/app/fraction.conf");
+        assert_eq!(format_ts(&scan.files[2].1), "2026-10-08T11:00:00+02:00");
+    }
+
+    #[test]
     fn skip_paths_are_honoured_also_through_a_folder_name() {
         let h = Home::new("skip");
         h.file(".config/secret/app.conf", HOUR);
@@ -658,6 +682,8 @@ mod tests {
         let h = Home::new("watch");
         h.file(".config/hypr/hyprland.lua", HOUR);
         h.file(".config/alacritty/alacritty.toml", 2 * HOUR);
+        // Omarchy's plugin folder stays out without its watch path too
+        h.file(".config/omarchy/plugins/x.weather/manifest.json", HOUR);
         let config = Config {
             watch_paths: vec!["~/.config/alacritty/alacritty.toml".into()],
             ..Config::default()
