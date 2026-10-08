@@ -592,6 +592,9 @@ ausführlich sagt:
 - die offenen Änderungen auf deinen Wunsch zu einem Vorschlag sortieren,
   den du anwendest, mit Belegen, die die Engine nachschlagen kann
   (`triage.md`);
+- nach der Diagnose eines Absturzes mit Omarchys Skill `diagnose-crash`
+  den Bericht im `inbox/` des Logbuchs ablegen und dich fragen, ob daraus
+  ein Case wird (unten);
 - für Omarchy selbst (Hyprland, die Leiste, Themes) Omarchys eigenem
   Skill folgen.
 
@@ -616,6 +619,28 @@ wirkt nur dort, wo heute Seldons Skill liegt: Ein Ordner, aus dem du den
 Skill entfernt hast, bleibt ohne ihn, und einen Ordner namens `seldon`,
 den Seldon nicht geschrieben hat, lässt er in Ruhe. `seldon hook uninstall skills` entfernt, was Seldon geschrieben
 hat, und behält, was du geändert oder hinzugefügt hast.
+
+### Absturzanalysen landen in `inbox/`
+
+Hat ein Agent einen Absturz mit Omarchys Skill `diagnose-crash`
+untersucht (zum Beispiel nach einer Benachrichtigung „Process crashed“)
+und gibt es ein Logbuch, sagt ihm der Seldon-Skill, den Bericht im
+`inbox/` des Logbuchs abzulegen und dich dann in einer Zeile zu fragen, ob
+aus dem Absturz ein Case wird. Omarchys Benachrichtigung und sein Skill
+bleiben, wie sie sind. Der Agent legt den Bericht über die Engine ab:
+
+```sh
+seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file -
+```
+
+Die Engine schwärzt den Bericht wie eine Notiz (Tokens, Schlüssel,
+Passwörter; Pfade im Home-Verzeichnis werden zu `~`), schreibt
+`inbox/<datum>-<titel>.md` und committet diese Datei für sich. Derselbe
+Bericht noch einmal ändert nichts; ein anderer Bericht unter demselben
+Titel bekommt eine Nummer (`-2`). Sagst du ja, legt der Agent einen Case
+an, der die Datei in `inbox/` nennt; sagst du nein, wartet der Bericht
+dort, bis du ihn einsortierst. Ein Agent in einer unbeaufsichtigten
+Sitzung legt den Bericht ab und fragt nichts.
 
 ## Das Omarchy-Agent-Kit
 

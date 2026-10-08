@@ -45,6 +45,7 @@ Commands:
   watch             Rebuild index.json when the logbook changes (feature "watch")
   dossier           Refresh the generated fences of system/*.md from read-only queries
   import            Import an earlier logbook (dry run unless --apply) or your Markdown task files as cases
+  inbox             File a text into the logbook's inbox (an agent's crash analysis, a finding)
   rules             The agent rules in the logbook's AGENTS.md: update
   completions       Print a shell completion script for bash, zsh or fish
   mangen            Print the man page seldon(1), generated from this help
@@ -271,6 +272,49 @@ Options:
 Examples:
   seldon log -- "Switched the terminal font to Iosevka"
   seldon log --case C-2026-004 --tag fonts -- "Tried two fonts, kept the first"
+```
+<!-- /help -->
+
+### seldon inbox
+
+<!-- help: seldon inbox -->
+```text
+File a text into the logbook's inbox (an agent's crash analysis, a finding)
+
+Usage: seldon inbox [OPTIONS] <COMMAND>
+
+Commands:
+  add   File a text into the logbook's inbox/, redacted; the same text again changes nothing
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+```
+<!-- /help -->
+
+### seldon inbox add
+
+Legt einen Text im `inbox/` des Logbuchs ab, zum Beispiel die
+Absturzanalyse eines Agenten (wann, sagt der Agentenskill). Der Text wird
+wie eine Notiz geschwärzt, Pfade im Home-Verzeichnis werden zu `~`, und er
+landet in `inbox/<datum>-<titel>.md`, für sich committet. Derselbe Text
+noch einmal ändert nichts; ein anderer Text unter einem Titel, dessen
+Datei es schon gibt, bekommt `-2`. `--file -` liest den Text von stdin.
+
+<!-- help: seldon inbox add -->
+```text
+File a text into the logbook's inbox/, redacted; the same text again changes nothing
+
+Usage: seldon inbox add [OPTIONS] --title <TITLE> --file <FILE>
+
+Options:
+      --title <TITLE>  The title: one line, the file's `# heading` and name
+      --file <FILE>    The text: a Markdown file, or `-` for stdin (at most 1 MiB, UTF-8)
+      --tag <TAG>      Tag the text (repeatable): `tags` in the file's frontmatter
+      --actor <ACTOR>  Who files it: human or agent:NAME (default: $SELDON_ACTOR, else human)
+
+Examples:
+  seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file report.md
+  printf '%s\n' "Zed ignores the theme" | seldon inbox add --title "Zed theme" --file -
 ```
 <!-- /help -->
 

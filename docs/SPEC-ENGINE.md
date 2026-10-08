@@ -532,6 +532,37 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # copies as `cases[].source`; the marker stays the only idempotency key (an
                                                # edited or removed `source` imports nothing again). Debug builds: `SELDON_TEST_IMPORT_CRASH=after-create:<n>`
                                                # exits 99 after the n-th case, before its entry is settled (tests).
+seldon inbox add --title T --file FILE|- [--tag T]… [--actor A] [--json]
+                                               # WP-166 (E28 step 1): files a text — an agent's crash analysis
+                                               # (the skill says when), a finding — into the logbook's `inbox/`, so
+                                               # the engine stays the only writer. `--file -` reads stdin (a terminal
+                                               # is refused, exit 1), else a regular file (no symbolic link, FIFO,
+                                               # device or directory; checked before it is opened; any path, never
+                                               # recorded) of at most 1 MiB; UTF-8 either way (exit 1 otherwise). The
+                                               # text as `import task` treats a task file: CRLF as LF, direction and
+                                               # format characters (`import::is_direction_or_format`) dropped and
+                                               # counted, then the import's scrubber: the whole text through §7 with
+                                               # the config's patterns keeping its lines (`redact_keeping_lines`, so a
+                                               # PEM key's line breaks follow its marker), then `/home/<user>` → `~`;
+                                               # leading and trailing blank lines dropped; blank after that → exit 1.
+                                               # Title: format characters dropped, one line (`one_line`), scrubbed the
+                                               # same way, at most 120 characters (exit 1). Tags: `log`'s `--tag`,
+                                               # redacted. Actor: --actor, else $SELDON_ACTOR, else human. The file
+                                               # `inbox/<YYYY-MM-DD>-<slug>.md` (local date, `cases::slug` of the
+                                               # title, `note` without letters), frontmatter `type: inbox`, `created`,
+                                               # `actor`, `tags`, then `# <title>`, a blank line and the text. Under
+                                               # the lock (exit 4; no logbook → 3). Idempotent: an `inbox/*.md` (top
+                                               # level, a regular file) whose body after its frontmatter equals this
+                                               # one is "already filed" — nothing written, exit 0, `filed: false`,
+                                               # its path named; actor, tags and date do not count. Otherwise the file
+                                               # is created exclusively (O_EXCL: never overwritten, a link there never
+                                               # followed), a taken name gets `-2` … `-99` (then exit 1); `inbox/` is
+                                               # created when missing. One autocommit of the new file alone (`git
+                                               # commit -- <path>`, the user's other changes stay out), `seldon: inbox
+                                               # add`, and an index rebuild; none when already filed. No ledger
+                                               # event (a `crash` kind is E28 step 2, with an ADR). --json → {filed,
+                                               # path, title, actor, tags, redactedLines (lines of title and text the
+                                               # redaction changed), privatePaths, droppedCharacters, git}
 seldon hook install claude-code [--settings FILE]
                                                # ADR-0030 (WP-116): default the user-wide
                                                # $CLAUDE_CONFIG_DIR/settings.json, else
@@ -2286,7 +2317,9 @@ a check fails (release, 2026-10-04 on the dev host: ×150 build 80 ms,
 Before writing any event, `subject`, `detail` and every string value of
 `meta` are passed through redaction. The commands that write free text
 into the logbook (`log` with its tags, `plan new` and the `plan` step
-reasons, `decide`, `drift explain|dismiss`) pass that text through the
+reasons, `decide`, `drift explain|dismiss`, `inbox add` with its title
+and tags — its text whole and keeping its lines, as `import task`'s,
+WP-166) pass that text through the
 same redaction before
 the first write, so the ledger, the journal, case and decision files,
 `STATUS.md` and the index hold the same redacted text (WP-062). The

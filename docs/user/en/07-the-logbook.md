@@ -39,7 +39,7 @@ Seldon/
 | `PROJECT.md` | what the machine is for, what must not happen on it | you |
 | `STATUS.md` | active cases, open drift, latest events | the engine (`seldon status`) |
 | `DECISIONS.md` | the entry page for `decisions/`; the engine fills the table between its markers on every `seldon decide` and `seldon status` | you, outside the markers |
-| `inbox/` | anything you want to sort later | you |
+| `inbox/` | anything you want to sort later, an agent's crash analysis too | you; the engine for `seldon inbox add` |
 | `journal/` | one file per day; entries are `## HH:MM · actor · case` headings | the engine appends, you add text |
 | `ledger/*.jsonl` | the events; append-only | the engine only |
 | `ledger/*.md` | a readable view of each month, with links to cases | the engine (generated) |

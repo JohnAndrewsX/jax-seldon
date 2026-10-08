@@ -539,6 +539,9 @@ at length:
   line;
 - sort the open changes into a proposal you apply, with evidence the
   engine can look up, when you ask it to (`triage.md`);
+- after it diagnosed a crash with Omarchy's `diagnose-crash` skill, file
+  the report into the logbook's inbox and ask you whether it becomes a
+  case (below);
 - for Omarchy itself (Hyprland, the bar, themes), follow Omarchy's own
   skill.
 
@@ -562,6 +565,27 @@ shipped and commits the archive. It acts only where Seldon's skill is
 today: a folder you removed the skill from stays without it, and a
 folder named `seldon` that Seldon did not write is left alone. `seldon hook uninstall skills` removes what
 Seldon wrote and keeps what you changed or added.
+
+### Crash analyses go into the inbox
+
+When an agent has diagnosed a crash with Omarchy's `diagnose-crash` skill
+(for example after a "Process crashed" notification) and there is a
+logbook, the Seldon skill tells it to file the report into the logbook's
+`inbox/` and then to ask you in one line whether the crash becomes a case.
+Omarchy's notification and its skill stay as they are. The agent files the
+report through the engine:
+
+```sh
+seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file -
+```
+
+The engine redacts the report like a note (tokens, keys, passwords; home
+paths become `~`), writes `inbox/<date>-<title>.md` and commits that file
+on its own. The same report filed again changes nothing; another report
+under the same title gets a number (`-2`). Say yes, and the agent opens a
+case that names the inbox file; say no, and the report waits in the inbox
+until you sort it. An agent in an unattended session files the report and
+asks nothing.
 
 ## The Omarchy-Agent kit
 
