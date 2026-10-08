@@ -37,7 +37,7 @@ Plan and decisions: `PLAN.md` (D1–D7).
    `engine/templates/rules-v4/AGENTS-wp116-{en,de}.md` and its two hashes
    are in `RELEASED_BLOCKS`, so the next capture upgrades an unedited
    0.1.4 block silently (`rules update (unedited, v4 → v4)`); an edited
-   one shows doctor's `outdated (v4, its text differs …)`.
+   one shows doctor's `changed`, left to `rules update`.
 8. Docs: SPEC-LOGBOOK §2/§3, SPEC-ENGINE §3 (doctor list and
    `workpieces`, the autocommit), AGENT-GUIDE §3/§8, user guide 06, 07,
    10 (en; de follows with its source line), CHANGELOG [Unreleased].
@@ -118,6 +118,10 @@ first (d4a7a48: WP-124, WP-140).
   another app` everywhere (no `linux`).
 
 ### Also in this round
+
+- **Known limit (stage 2):** a user with an edited 0.1.4 block is not
+  told that a newer v4 text exists. If 0.1.4 ships widely before 0.2.0,
+  the rules text becomes v5.
 
 - **N1:** rule 9 reads the Plan without its `Stop if:` item and the lines
   indented below it (`cases::without_stop_if`, sharing the item matcher
