@@ -2321,7 +2321,7 @@ clean_log memory
 run search-sections "$sample" 1920x1080 \
   "summon;text:5;text:/;type:aur;key:Return;key:Escape;text:/;type:installed;key:Return;key:Escape;text:6;text:/;type:hyprland;key:Return;text:j;text:k;key:Escape;text:/;type:memory/hyp;key:Return"
 expect search-sections 5 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "packages|packages|true"
-expect search-sections 6 '[(.view.sectionView.rows | length), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "5|omarchy|false"
+expect search-sections 6 '[(.view.sectionView.rows | length), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "6|omarchy|false"
 expect search-sections 9 '.view.sectionView.rows | join(",")' "packages"
 expect search-sections 14 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor] | join("|")' "lesson:Hyprland reload nach bindings.conf,topic:hyprland|lesson:Hyprland reload nach bindings.conf"
 expect search-sections 14 .view.selected 'lesson:`omarchy pkg add` statt yay direkt'
