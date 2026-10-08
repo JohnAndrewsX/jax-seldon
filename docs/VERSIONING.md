@@ -120,7 +120,14 @@ All on `main`, after every work package of the release is merged:
    tag's version.
 2. Move the `[Unreleased]` lines under `## [X.Y.Z] - YYYY-MM-DD`; update
    the link references; run `bash packaging/release-notes.sh X.Y.Z`.
-3. `just check` green; commit (`release: X.Y.Z`); push.
+3. `just check` green; commit (`release: X.Y.Z`); push. Then the live
+   restart test on a host with the plugin in the bar on two monitors
+   (WP-162; it restarts that host's shell, so on the dev host only with
+   the operator's go): install the release's plugin, note
+   `ls ~/.cache/quickshell/crashes | wc -l` and `coredumpctl list
+   quickshell`, run `omarchy restart shell` three times (wait for the
+   bar after each), and compare: no new crash report and no new
+   quickshell core.
 4. Run the release workflow's dry run on `main` and read its summary
    (packaging/README.md, "Dry run"). It must be green. One gate, before
    anything is built, is `cargo audit` of `engine/Cargo.lock`: a

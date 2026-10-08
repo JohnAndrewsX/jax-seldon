@@ -113,8 +113,18 @@ Panel view (`jax.seldon.panel view`, Changelog, filter all):
      org.quickshell`, workspace 6), which stayed open.
    - A later restart (`quickshell kill -p … --any-display`) closed it:
      the host is back to one `quickshell` process.
-   - Not attributable to jax.seldon: the trace has no QML frame, and the
-     host has older crash reports from August, before Seldon.
+   - ~~Not attributable to jax.seldon: the trace has no QML frame, and the
+     host has older crash reports from August, before Seldon.~~
+     **Correction (WP-162, 2026-10-08): unexplained.** An unsymbolised
+     trace without a QML frame does not clear the plugin. The 0.1.3 crash
+     on every IPC restart (WP-162) also had no QML frame until the core
+     was symbolised; only then did the stack and `p *this` name the
+     `jax.seldon.panel` IpcHandler. That mechanism (the hand-over in
+     BarWidget's `Component.onDestruction`, WP-067/WP-078) did not exist
+     yet at WP-013, so it is not this crash; whether the same Quickshell
+     bug was reached another way cannot be told without the test host's
+     cores, which were not symbolised. Symbolise first (debuginfod, gdb
+     with `-iex 'set debuginfod enabled on'`; `memory/pitfalls.md`).
    - What the script does about it:
      - it rsyncs with `--checksum`;
      - it waits for the reloads (ping, then 5 s) before any restart;
@@ -195,7 +205,8 @@ Setup and step table: `live/RESULTS.md`.
    4th crash report (15:13:11, signal 11) came from a shell restart that
    no WP-013 run made: my last contact with the host before it was at
    15:06. A Quickshell crash-report window (`org.quickshell`) is still
-   open from it.
+   open from it. (WP-162, 2026-10-08: the cause is unexplained, see §4
+   item 1; it was never symbolised.)
 
 ## 6. Driving the live shell: pitfalls found
 
