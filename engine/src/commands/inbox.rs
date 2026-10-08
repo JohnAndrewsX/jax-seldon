@@ -89,18 +89,27 @@ pub fn run(ctx: &Context, args: InboxArgs) -> Result<Output> {
 }
 
 /// `text` without direction and format characters, and how many there were.
+/// The one place the text's invisible characters go: WP-159's shared
+/// helper (which also takes C0/C1 controls) replaces its body.
 fn drop_format(text: &str) -> (String, usize) {
-    let kept: String = text
-        .chars()
-        .filter(|c| !is_direction_or_format(*c))
-        .collect();
+    drop_chars(text, is_direction_or_format)
+}
+
+/// `text` without the characters `drop` names, and how many there were.
+fn drop_chars(text: &str, drop: fn(char) -> bool) -> (String, usize) {
+    let kept: String = text.chars().filter(|c| !drop(*c)).collect();
     let dropped = text.chars().count() - kept.chars().count();
     (kept, dropped)
 }
 
 fn add(ctx: &Context, args: AddArgs) -> Result<Output> {
-    let (title, title_dropped) = drop_format(&args.title);
+    let (title, format_dropped) = drop_format(&args.title);
     let title = one_line("the title", &title)?;
+    // no control character in a title: an ESC would reach the terminal
+    // line that names it; `one_line` refused the line breaks first
+    let (title, controls_dropped) = drop_chars(&title, char::is_control);
+    let title = super::required_text("the title", &title)?;
+    let title_dropped = format_dropped + controls_dropped;
     let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
@@ -123,6 +132,7 @@ fn add(ctx: &Context, args: AddArgs) -> Result<Output> {
     let body = format!("# {title}\n\n{text}");
 
     let lock = ctx.lock()?;
+    checked_inbox(ctx, &logbook)?;
     let (path, filed) = match already_filed(&logbook, &body) {
         Some(path) => (path, false),
         None => {
@@ -201,12 +211,43 @@ fn read_text(file: &Path) -> Result<String> {
     }
     let shown = file.display();
     match sys::read_small_file(file, MAX_TEXT_BYTES) {
+        // a file the kernel sizes 0 that holds data is a procfs or sysfs
+        // view (`/proc/self/environ`): live process state, never a report
+        Ok(Some(text))
+            if !text.is_empty() && std::fs::symlink_metadata(file).is_ok_and(|m| m.len() == 0) =>
+        {
+            Err(Error::user(format!(
+                "{shown}: cannot file it: a file of size 0 that holds data (a /proc or /sys view); copy what the report needs into a file"
+            )))
+        }
         Ok(Some(text)) => Ok(text),
         Ok(None) => Err(Error::user(format!("{shown}: no such file"))),
         Err(why) => Err(Error::user(format!(
             "{shown}: cannot file it: {why} (a regular file of at most {} KiB, UTF-8; or pipe it with `--file -`)",
             MAX_TEXT_BYTES / 1024
         ))),
+    }
+}
+
+/// `inbox/` as the engine writes it: a directory, or missing (it is made);
+/// a symbolic link or anything else is refused, so nothing is written
+/// through it to a place outside the logbook (WP-166 round 2, as
+/// `triage::checked_dir`).
+fn checked_inbox(ctx: &Context, logbook: &Logbook) -> Result<()> {
+    let dir = logbook.path(INBOX);
+    match std::fs::symlink_metadata(&dir) {
+        Ok(m) if m.file_type().is_dir() => Ok(()),
+        Ok(m) => Err(Error::user(format!(
+            "{} is {}, not the logbook's inbox folder; make it a folder and run the command again",
+            ctx.dirs.display(&dir),
+            if m.file_type().is_symlink() {
+                "a symbolic link"
+            } else {
+                "no directory"
+            }
+        ))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(anyhow::anyhow!("{}: {e}", dir.display()).into()),
     }
 }
 
@@ -292,6 +333,14 @@ fn create_new(path: &Path, text: &str) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn controls_are_dropped_and_counted() {
+        assert_eq!(
+            drop_chars("a\u{1b}[31mb\u{7}\u{9b}c\td", char::is_control),
+            ("a[31mbcd".to_string(), 4)
+        );
+    }
 
     #[test]
     fn format_characters_are_dropped_and_counted() {

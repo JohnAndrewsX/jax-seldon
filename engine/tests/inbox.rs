@@ -634,3 +634,205 @@ fn the_limits_hold_up_to_their_edge() {
     );
     assert_eq!(tree(&root), snapshot);
 }
+
+#[test]
+fn a_linked_or_odd_inbox_is_refused_and_nothing_written_through_it() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let outside = env.tmp.path().join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::remove_dir_all(root.join("inbox")).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("inbox")).unwrap();
+    let out = run(
+        &env,
+        T0,
+        &["inbox", "add", "--title", "Link test", "--file", "-"],
+        Some("hello crash\n"),
+    );
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("is a symbolic link"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+
+    std::fs::remove_file(root.join("inbox")).unwrap();
+    std::fs::write(root.join("inbox"), "a file\n").unwrap();
+    let out = run(
+        &env,
+        T0,
+        &["inbox", "add", "--title", "File test", "--file", "-"],
+        Some("hello crash\n"),
+    );
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("is no directory"), "{}", stderr(&out));
+    assert_eq!(read(&root.join("inbox")), "a file\n");
+}
+
+#[test]
+fn a_link_at_an_inbox_name_is_never_read_as_filed() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    // a file outside with exactly what the filing would hold, linked in
+    let outside = env.tmp.path().join("same.md");
+    std::fs::write(
+        &outside,
+        format!(
+            "---\ntype: inbox\ncreated: {T0}\nactor: human\ntags: []\n---\n# Linked\n\n{REPORT}"
+        ),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("inbox/linked.md")).unwrap();
+    let v = add(&env, T0, "Linked", REPORT, &[]);
+    assert_eq!(v["filed"], true, "{v}");
+    assert_eq!(v["path"], "inbox/2026-10-08-linked.md");
+}
+
+#[test]
+fn a_title_s_invisible_and_control_characters_are_dropped_and_counted() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    // the text holds none: the count is the title's alone
+    let v = add(
+        &env,
+        T0,
+        "Crash\u{200B} in \u{1b}[31mwaybar\u{7}\u{9b}",
+        "plain\n",
+        &[],
+    );
+    assert_eq!(v["title"], "Crash in [31mwaybar", "{v}");
+    assert_eq!(v["droppedCharacters"], 4, "{v}");
+    let filed = read(&root.join(v["path"].as_str().unwrap()));
+    assert!(filed.contains("\n# Crash in [31mwaybar\n"), "{filed}");
+    // nor does an ESC reach the human line
+    let out = run(
+        &env,
+        T0,
+        &[
+            "inbox",
+            "add",
+            "--title",
+            "\u{1b}]0;x\u{7}Other",
+            "--file",
+            "-",
+        ],
+        Some("other\n"),
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    // no control character but the final line break
+    let line = stdout(&out);
+    assert!(
+        !line.trim_end_matches('\n').chars().any(char::is_control),
+        "{line:?}"
+    );
+    assert!(stdout(&out).contains(": ]0;xOther"), "{}", stdout(&out));
+    // a title of control characters only is empty
+    let out = run(
+        &env,
+        T0,
+        &["inbox", "add", "--title", "\u{1b}\u{7}", "--file", "-"],
+        Some("x\n"),
+    );
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("the title must not be empty"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn a_proc_view_is_not_filed() {
+    let status = Path::new("/proc/self/status");
+    if !status.exists() {
+        eprintln!("skipped: no /proc");
+        return;
+    }
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let snapshot = tree(&root);
+    for file in ["/proc/self/status", "/proc/self/environ"] {
+        let out = run(
+            &env,
+            T0,
+            &["inbox", "add", "--title", "t", "--file", file],
+            None,
+        );
+        assert_eq!(out.status.code(), Some(1), "{file}: {}", stderr(&out));
+        assert!(
+            stderr(&out).contains("a file of size 0 that holds data"),
+            "{file}: {}",
+            stderr(&out)
+        );
+    }
+    // an empty regular file is refused as empty text, not as a view
+    let empty = env.tmp.path().join("empty.md");
+    std::fs::write(&empty, "").unwrap();
+    let out = env.at(
+        T0,
+        &[
+            "inbox",
+            "add",
+            "--title",
+            "t",
+            "--file",
+            empty.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("the text must not be empty"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(tree(&root), snapshot);
+}
+
+#[test]
+fn a_terminal_on_stdin_is_refused() {
+    // util-linux `script` gives the command a pseudo-terminal as stdin
+    let Some(script) = ["/usr/bin/script", "/bin/script"]
+        .iter()
+        .map(PathBuf::from)
+        .find(|p| p.exists())
+    else {
+        eprintln!("skipped: script (util-linux) not installed");
+        return;
+    };
+    let Some(sh) = ["/usr/bin/sh", "/bin/sh"]
+        .iter()
+        .map(PathBuf::from)
+        .find(|p| p.exists())
+    else {
+        eprintln!("skipped: no sh");
+        return;
+    };
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let snapshot = tree(&root);
+    let base = env.command(&[]);
+    let mut cmd = std::process::Command::new(&script);
+    cmd.env_clear();
+    for (k, v) in base.get_envs() {
+        if let Some(v) = v {
+            cmd.env(k, v);
+        }
+    }
+    let line = format!(
+        "'{}' inbox add --title t --file -",
+        env!("CARGO_BIN_EXE_seldon")
+    );
+    let out = cmd
+        .env("SHELL", &sh)
+        .env("SELDON_NOW", T0)
+        .args(["-qec", &line, "/dev/null"])
+        .current_dir(env.tmp.path())
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let shown = format!("{}{}", stdout(&out), stderr(&out));
+    assert_eq!(out.status.code(), Some(1), "{shown}");
+    assert!(shown.contains("pipe the text on stdin"), "{shown}");
+    assert_eq!(tree(&root), snapshot);
+}
