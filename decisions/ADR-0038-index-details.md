@@ -184,23 +184,3 @@ U+E0000–U+E007F (tags). Each of them can split a token from its
 redaction rule without showing. The commit subjects of ADR-0036's plugin
 updates use the same set. The contract is unchanged (contract 2): the
 fields only hold fewer invisible characters.
-
-## Amendment note (WP-159, 2026-10-08)
-
-A wording follow-up, not a new decision. The set of §2's dropped
-characters — and of §3's refused `source` characters — is now
-`redact::is_invisible`, which WP-159 widened (WP-143 Fable stage 2,
-WP-102b review 1): besides the set of the WP-140 note it holds the
-fillers U+034F (combining grapheme joiner), U+115F, U+1160 (Hangul
-fillers), U+17B4, U+17B5 (Khmer inherent vowels), U+3164 (Hangul
-filler), U+FFA0 (halfwidth Hangul filler), the variation selectors
-U+180B–U+180D, U+180F (Mongolian), U+FE00–U+FE0F and U+E0100–U+E01EF,
-and U+2065, so it holds every assigned default-ignorable code point of
-Unicode. Each draws nothing, or only changes the glyph before it, and can
-split a token from its redaction rule or carry hidden bytes. The
-redaction itself now reads every text without the set (SPEC-ENGINE §7),
-so the drop before it is no longer what keeps a secret out; §2 and §3
-keep it because a hidden character in a shown text can mislead. The
-contract is unchanged (contract 2): the fields only hold fewer invisible
-characters, and every `source` the engine writes still matches the
-schema's pattern.

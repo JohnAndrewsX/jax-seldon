@@ -1045,14 +1045,15 @@ fn a_secret_split_by_an_invisible_character_never_reaches_an_imported_case() {
     task_file(
         &env,
         "TODO.md",
-        "- [ ] Rotate to\u{FE0F}ken=hunter2abc now\n  Authorization: Bearer\u{3164} tokABC123secret\n  push ghp_0123\u{E0100}456789abcdefghijABCDEFGHIJ012345 x\n",
+        "- [ ] Rotate to\u{FE0F}ken=hunter2abc now\n  Authorization: Bearer\u{3164} tokABC123secret\n  push ghp_0123\u{E0100}456789abcdefghijABCDEFGHIJ012345 x\n  use x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX and /ho\u{200B}me/alice/notes\n",
     );
     let report = ok(&import(&env, NOW, &["~/TODO.md"]));
-    assert_eq!(report["droppedCharacters"], 3);
+    // round 2: the count is of the file's, those inside a masked secret too
+    assert_eq!(report["droppedCharacters"], 5);
     let id = ids(&report)[0].clone();
     let text = case_text(&root, "queued", &id);
     assert!(
-        text.contains("Rotate token=‹redacted› now\nAuthorization: ‹redacted›\npush ‹redacted› x"),
+        text.contains("Rotate token=‹redacted› now\nAuthorization: ‹redacted›\npush ‹redacted› x\nuse x‹redacted› and ~/notes"),
         "{text}"
     );
     let shown = ok(&env.at(LATER, &["plan", "show", &id, "--json"]));
@@ -1060,10 +1061,41 @@ fn a_secret_split_by_an_invisible_character_never_reaches_an_imported_case() {
         "{text}{report}{shown}{}",
         read(&root.join("ledger/2026-10.jsonl"))
     );
-    for secret in ["hunter2", "tokABC123", "456789abc"] {
+    for secret in [
+        "hunter2",
+        "tokABC123",
+        "456789abc",
+        "ABCDEFGHIJ",
+        "/home/alice",
+    ] {
         assert!(!all.contains(secret), "{secret}");
     }
-    assert!(!all.contains(['\u{FE0F}', '\u{3164}', '\u{E0100}']));
+    assert!(!all.contains(['\u{FE0F}', '\u{3164}', '\u{E0100}', '\u{200B}']));
+}
+
+/// WP-159 round 2, B2: `plan show --json` marks the invisible characters
+/// after the redaction, so a hand-edited case's split secrets are masked;
+/// `hidden` counts every one the file holds.
+#[test]
+fn plan_show_redacts_before_it_marks() {
+    let (env, root) = setup();
+    let id = hand_case(
+        &env,
+        &root,
+        "Rotate to\u{200B}ken=hunter2abc and ghp_0123\u{FE0F}456789abcdefghijABCDEFGHIJ012345 plain token=s3cr3tvalue1 x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX",
+    );
+    let shown = ok(&env.at(LATER, &["plan", "show", &id, "--json"]));
+    assert_eq!(
+        shown["intent"]["text"],
+        "Rotate token=‹redacted› and ‹redacted› plain token=‹redacted› x‹U+200B›‹redacted›"
+    );
+    assert_eq!(shown["intent"]["hidden"], 3);
+    // the review text; the file itself (`body`, the human output) is the
+    // user's own, shown as it is
+    let intent = shown["intent"].to_string();
+    for secret in ["hunter2", "456789abc", "s3cr3t", "ABCDEFGHIJ"] {
+        assert!(!intent.contains(secret), "{secret}");
+    }
 }
 
 #[test]

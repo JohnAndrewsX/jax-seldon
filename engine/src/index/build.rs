@@ -17,7 +17,7 @@ use crate::config::{AttentionMode, DriftConfig};
 use crate::import::is_case_source;
 use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, TRUNCATED, format_ts};
 use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
-use crate::redact::{Redactor, is_invisible, without_invisible};
+use crate::redact::{Redactor, is_invisible};
 
 /// Most events the index lists (CONTRACT.md rule 4).
 pub const MAX_EVENTS: usize = 500;
@@ -745,10 +745,11 @@ fn cap_drift(drift: Vec<DriftItem>) -> Vec<DriftItem> {
 }
 
 /// A case's or decision's text as the index carries it (ADR-0038 §2):
-/// control characters other than line breaks and tabs as spaces, invisible
-/// characters dropped ([`without_invisible`]: a reordered line can mislead,
-/// and the redaction reads the text without them anyway), then redacted, then [`clip_with`] the
-/// file marker: redaction first, so a cut never leaves a secret's prefix.
+/// control characters other than line breaks and tabs as spaces, redacted,
+/// then invisible characters dropped ([`Redactor::redact_dropping_invisible`]:
+/// a reordered line can mislead; after the redaction, so the rules read
+/// the boundary one makes, WP-159 round 2), then [`clip_with`] the file
+/// marker: redaction first, so a cut never leaves a secret's prefix.
 /// `None` without a redactor (withheld) or without text.
 pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
     let redacted = plain_text(redactor?, text);
@@ -757,11 +758,16 @@ pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
 }
 
 /// [`shown_text`] without the clip: control characters other than line
-/// breaks and tabs as spaces, invisible characters dropped, then
-/// redacted.
+/// breaks and tabs as spaces, redacted, then invisible characters
+/// dropped.
 pub fn plain_text(redactor: &Redactor, text: &str) -> String {
-    let plain: String = without_invisible(text)
-        .chars()
+    redactor.redact_dropping_invisible(&spaced(text))
+}
+
+/// `text` with its control characters other than line breaks and tabs as
+/// spaces.
+fn spaced(text: &str) -> String {
+    text.chars()
         .map(|c| {
             if c.is_control() && c != '\n' && c != '\t' {
                 ' '
@@ -769,29 +775,31 @@ pub fn plain_text(redactor: &Redactor, text: &str) -> String {
                 c
             }
         })
-        .collect();
-    redactor.redact(&plain)
+        .collect()
 }
 
 /// [`plain_text`] for a text a person reviews before an agent may act on
 /// it (`plan show --json` `intent`, WP-102b round 2): every invisible
 /// character ([`is_invisible`], WP-159: a variation selector too, which can
 /// carry hidden bytes) is not dropped but shown as `‹U+XXXX›`, so nothing is
-/// hidden from the review; the count of them comes back too.
+/// hidden from the review. The marks are set after the redaction, so the
+/// rules read the text as [`plain_text`] does and a secret split by one is
+/// masked (WP-159 round 2, B2); one inside a masked secret goes with it.
+/// The count that comes back is of every invisible character the text
+/// holds, those inside a masked secret too: the file still holds them, and
+/// an agent reads the file.
 pub fn marked_text(redactor: &Redactor, text: &str) -> (String, usize) {
-    let mut hidden = 0;
-    let mut marked = String::with_capacity(text.len());
-    for c in text.chars() {
+    let hidden = text.chars().filter(|c| is_invisible(*c)).count();
+    let redacted = redactor.redact(&spaced(text));
+    let mut marked = String::with_capacity(redacted.len());
+    for c in redacted.chars() {
         if is_invisible(c) {
-            hidden += 1;
             marked.push_str(&format!("‹U+{:04X}›", c as u32));
-        } else if c.is_control() && c != '\n' && c != '\t' {
-            marked.push(' ');
         } else {
             marked.push(c);
         }
     }
-    (redactor.redact(&marked), hidden)
+    (marked, hidden)
 }
 
 /// An imported case's `source` as the index carries it (ADR-0038 §3):
@@ -1110,4 +1118,33 @@ fn timeline(
         (&a.ts, order(a.kind), &a.reference).cmp(&(&b.ts, order(b.kind), &b.reference))
     });
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WP-159 round 2, B1b and B2: the index's texts and `plan show`'s
+    /// review text are redacted before an invisible character is dropped
+    /// or marked, so one before a secret (a boundary) or inside one hides
+    /// nothing; the count is of every invisible character the text holds.
+    #[test]
+    fn shown_texts_are_redacted_before_invisible_characters_go() {
+        let r = Redactor::builtin();
+        let text = "x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX y to\u{200B}ken=hunter2abc \
+                    ghp_0123\u{FE0F}456789abcdefghijABCDEFGHIJ012345 a\u{200D}b";
+        assert_eq!(
+            plain_text(&r, text),
+            "x‹redacted› y token=‹redacted› ‹redacted› ab"
+        );
+        let (marked, hidden) = marked_text(&r, text);
+        assert_eq!(
+            marked,
+            "x‹U+200B›‹redacted› y token=‹redacted› ‹redacted› a‹U+200D›b"
+        );
+        assert_eq!(hidden, 4);
+        // control characters as spaces, as before
+        assert_eq!(marked_text(&r, "a\u{7}b\tc\n").0, "a b\tc\n");
+        assert_eq!(plain_text(&r, "a\u{1B}b"), "a b");
+    }
 }

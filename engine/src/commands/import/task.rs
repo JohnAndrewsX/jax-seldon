@@ -39,6 +39,7 @@ use crate::logbook::cases;
 use crate::model::event::ACTOR_HUMAN;
 use crate::model::{Priority, Risk, Zone, is_agent, is_slug};
 use crate::redact::Redactor;
+use crate::redact::is_invisible;
 use crate::sys;
 
 /// The tag of an imported case (CONTRACT.md rule 8).
@@ -599,15 +600,14 @@ fn read_source(
     let text = text.replace("\r\n", "\n");
     // invisible characters out (WP-102b round 2, B2; the set WP-159): an
     // invisible instruction would reach the case, its title and an agent
-    // while the desk's review drops it (the redaction reads the text
-    // without them in any case)
-    let before = text.chars().count();
-    let text = crate::redact::without_invisible(&text).into_owned();
-    let dropped = before - text.chars().count();
+    // while the desk's review drops it. The count is of the file's
+    let dropped = text.chars().filter(|c| is_invisible(*c)).count();
     // the scrubber redacts the whole text, as a note's, keeping its line
-    // breaks (WP-140), then rewrites home paths line by line
+    // breaks (WP-140), then drops the invisible characters (after the
+    // redaction, so the rules read the boundary one makes, WP-159 round
+    // 2) and rewrites home paths line by line
     let first_hit = scrubber.hits.len();
-    let text = scrubber.text(&shown, &text);
+    let text = scrubber.text_dropping_invisible(&shown, &text);
     let changed: BTreeSet<usize> = scrubber.hits[first_hit..].iter().map(|h| h.line).collect();
     let stem = path
         .file_stem()

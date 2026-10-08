@@ -15,11 +15,12 @@ pub mod omarchy_agent;
 pub mod report;
 pub mod task;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use regex::Regex;
 
-use crate::redact::{Redactor, is_invisible};
+use crate::redact::{Redactor, is_invisible, without_invisible};
 
 /// `outputs/IMPORT-<source>.md`, relative to the logbook root.
 pub fn report_path(source: &str) -> String {
@@ -116,6 +117,19 @@ impl Scrubber {
     /// A changed line counts under every rule with a match that touches it
     /// ([`Redactor::matching_rules_by_line`]).
     pub fn text(&mut self, file: &str, text: &str) -> String {
+        self.text_with(file, text, false)
+    }
+
+    /// [`Scrubber::text`] that also drops the invisible characters
+    /// ([`without_invisible`]) after the redaction and before the home
+    /// paths are rewritten: the rules read the boundary one makes
+    /// (`x<U+200B>sk-…`), and `/ho<U+200B>me/alice` is still a home path
+    /// (`seldon import task`, WP-159 round 2).
+    pub fn text_dropping_invisible(&mut self, file: &str, text: &str) -> String {
+        self.text_with(file, text, true)
+    }
+
+    fn text_with(&mut self, file: &str, text: &str, drop_invisible: bool) -> String {
         let whole = self.redactor.redact_keeping_lines(text);
         let lines: Vec<&str> = text.split('\n').collect();
         let done: Vec<&str> = whole.split('\n').collect();
@@ -143,8 +157,14 @@ impl Scrubber {
                 }
             }
             let content = done.trim_end_matches('\r');
-            out.push_str(&self.home_paths(content));
-            out.push_str(&done[content.len()..]);
+            let ending = &done[content.len()..];
+            let content = if drop_invisible {
+                without_invisible(content)
+            } else {
+                Cow::Borrowed(content)
+            };
+            out.push_str(&self.home_paths(&content));
+            out.push_str(ending);
             if n + 1 < lines.len() {
                 out.push('\n');
             }
