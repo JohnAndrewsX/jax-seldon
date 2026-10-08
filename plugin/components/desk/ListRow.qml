@@ -5,7 +5,9 @@ import qs.Ui
 // One row of a desk list (prototype `.row`): a stripe at the left (crisis
 // in the urgent colour, attention in the accent, none), the title over a
 // muted meta line, a right-aligned small text (`aside`) (an age, a date), the
-// selection's accent border and the cursor's hover fill. User content is
+// selection's accent border and the cursor's hover fill. `alert`, one
+// word in the urgent colour before the meta line, says what went wrong
+// (WP-137: a pacman transaction that did not complete). User content is
 // plain text and elides; Enter or the detail shows it in full.
 Item {
   id: root
@@ -14,6 +16,7 @@ Item {
   property string meta: ""
   property string aside: ""
   property string stripe: ""
+  property string alert: ""
   property bool selected: false
   property bool cursor: false
   property color foreground: Color.popups.text
@@ -57,15 +60,35 @@ Item {
       font.pixelSize: Style.font.body
     }
 
-    Text {
-      visible: root.meta !== ""
+    Item {
+      visible: root.meta !== "" || root.alert !== ""
       width: parent.width
-      textFormat: Text.PlainText
-      text: root.meta
-      color: Color.muted
-      elide: Text.ElideRight
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      implicitHeight: Math.max(alertText.implicitHeight, metaText.implicitHeight)
+
+      Text {
+        id: alertText
+        objectName: "rowAlert"
+        visible: root.alert !== ""
+        textFormat: Text.PlainText
+        text: root.alert
+        color: root.urgent
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        font.bold: true
+      }
+
+      Text {
+        id: metaText
+        x: alertText.visible ? alertText.implicitWidth + Style.spacing.md : 0
+        width: parent.width - x
+        visible: root.meta !== ""
+        textFormat: Text.PlainText
+        text: root.meta
+        color: Color.muted
+        elide: Text.ElideRight
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
     }
   }
 

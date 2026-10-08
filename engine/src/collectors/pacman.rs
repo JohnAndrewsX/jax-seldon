@@ -25,6 +25,11 @@
 //!   the end of the log when pacman's `db.lck` is absent. While pacman still
 //!   runs, the cursor stays at the start of the transaction's block, so
 //!   the next capture reads it whole (ADR-0013 §5).
+//! - **Status** (ADR-0043). A transaction that ended with `transaction
+//!   failed` or `transaction interrupted` writes that word as
+//!   `meta.txStatus` on each of its events; one closed by the next
+//!   `transaction started` or by the end of the log without `db.lck` writes
+//!   `unfinished`. A completed one writes none.
 //! - **Explicit or dependency.** `meta.command` is parsed as argv ([`parse_command`],
 //!   pacman logs it unquoted, so it is split on whitespace). Packages the
 //!   command names are `explicit: true`; the others in the transaction are
@@ -61,7 +66,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{Collector, Ctx, Lost, Outcome, Tz, to_cursor, typed_cursor};
-use crate::model::event::{Event, Kind, Meta, Source};
+use crate::model::event::{Event, Kind, Meta, Source, TxStatus};
 
 // The command parser and the hook causes live in neutral modules (WP-009);
 // re-exported so the collector's callers and tests keep their paths.
@@ -113,7 +118,11 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
             let old = rotated(path);
             if std::fs::metadata(&old).is_ok_and(|m| m.ino() == c.inode) {
                 let bytes = read_from(&old, c.offset)?;
-                // the old file is closed for good: emit what it has
+                // the old file is closed for good: emit what it has. A
+                // transaction still open there is `unfinished` (ADR-0043):
+                // holding it back would lose it, since the cursor moves to
+                // the new file; a pacman still running at the rotation
+                // writes its end into the old file, which is not read again
                 txs.extend(parse(&bytes, c.offset, false, ctx.tz).txs);
             }
             0
@@ -170,8 +179,9 @@ pub enum Line {
     Command(String),
     /// `[ALPM] transaction started`.
     TxStart,
-    /// `[ALPM] transaction completed|failed|interrupted`.
-    TxEnd,
+    /// `[ALPM] transaction completed|failed|interrupted`: `None` when it
+    /// completed (ADR-0043).
+    TxEnd(Option<TxStatus>),
     /// `[ALPM] <verb> <name> (<version>)` or `(<from> -> <to>)`.
     Package {
         kind: Kind,
@@ -218,8 +228,14 @@ pub static LINE_RULES: LazyLock<Vec<(&'static str, Regex, Build)>> = LazyLock::n
         }),
         (
             "ALPM",
-            re(r"^transaction (?:completed|failed|interrupted)$"),
-            |_| Some(Line::TxEnd),
+            re(r"^transaction (completed|failed|interrupted)$"),
+            |c| {
+                Some(Line::TxEnd(match &c[1] {
+                    "failed" => Some(TxStatus::Failed),
+                    "interrupted" => Some(TxStatus::Interrupted),
+                    _ => None,
+                }))
+            },
         ),
         (
             "ALPM",
@@ -331,6 +347,10 @@ pub struct Tx {
     pub lines: Vec<PkgLine>,
     /// The files it left, in log order.
     pub left: Vec<LeftLine>,
+    /// How it ended when it did not complete (ADR-0043): pacman's `failed`
+    /// or `interrupted`, or `unfinished` without an end line. `None` when
+    /// it completed, and outside any transaction.
+    pub status: Option<TxStatus>,
 }
 
 impl Tx {
@@ -369,6 +389,7 @@ impl Tx {
             .map(|l| {
                 let mut meta = Meta {
                     command: self.command.clone(),
+                    tx_status: self.status,
                     ..Meta::default()
                 };
                 let detail = match &l.from {
@@ -428,7 +449,9 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
         match line {
             Line::Command(c) => command = Some((at, ts, c)),
             Line::TxStart => {
-                if let Some(o) = open.take() {
+                // a transaction without an end line did not complete
+                if let Some(mut o) = open.take() {
+                    o.tx.status = Some(TxStatus::Unfinished);
                     txs.push(o.tx);
                 }
                 let (rewind, began, cmd) = match command.take() {
@@ -442,12 +465,14 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
                         began,
                         lines: Vec::new(),
                         left: Vec::new(),
+                        status: None,
                     },
                     rewind,
                 });
             }
-            Line::TxEnd => {
-                if let Some(o) = open.take() {
+            Line::TxEnd(status) => {
+                if let Some(mut o) = open.take() {
+                    o.tx.status = status;
                     txs.push(o.tx);
                 }
             }
@@ -472,6 +497,7 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
                         began: ts,
                         lines: vec![line],
                         left: Vec::new(),
+                        status: None,
                     }),
                 }
             }
@@ -485,6 +511,7 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
                         began: ts,
                         lines: Vec::new(),
                         left: vec![line],
+                        status: None,
                     }),
                 }
             }
@@ -493,7 +520,11 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
     let mut resume = base + pos as u64;
     match open {
         Some(o) if lock_present => resume = o.rewind,
-        Some(o) => txs.push(o.tx),
+        // pacman is gone and never ended it (killed, a crash, power loss)
+        Some(mut o) => {
+            o.tx.status = Some(TxStatus::Unfinished);
+            txs.push(o.tx);
+        }
         // a Running line whose transaction has not started yet (pacman is
         // still downloading): read it again next time, or the transaction
         // would lose its command line
@@ -653,6 +684,27 @@ mod tests {
             l("[2026-09-03T21:14:06+0200] [PACMAN] Running 'pacman -S btop'"),
             Some(Line::Command("pacman -S btop".into()))
         );
+        // ADR-0043: the end line says how it ended
+        for (msg, want) in [
+            ("completed", None),
+            ("failed", Some(TxStatus::Failed)),
+            ("interrupted", Some(TxStatus::Interrupted)),
+        ] {
+            assert_eq!(
+                l(&format!(
+                    "[2026-09-19T08:31:12+0200] [ALPM] transaction {msg}"
+                )),
+                Some(Line::TxEnd(want)),
+                "{msg}"
+            );
+        }
+        for bad in [
+            "[2026-09-19T08:31:12+0200] [ALPM] transaction aborted",
+            "[2026-09-19T08:31:12+0200] [ALPM] transaction interrupted by user",
+            "[2026-09-19T08:31:12+0200] [PACMAN] transaction interrupted",
+        ] {
+            assert_eq!(l(bad), None, "{bad}");
+        }
         for bad in [
             "",
             "garbage line without a timestamp",
@@ -930,5 +982,93 @@ mod tests {
             p.resume as usize,
             more.len() - "[2026-10-01T10:06:00+0200] [ALPM] installed half (1-".len()
         );
+        // ADR-0043: the first never logged its end, the second completed
+        assert_eq!(p.txs[0].status, Some(TxStatus::Unfinished));
+        assert_eq!(p.txs[1].status, None);
+    }
+
+    /// ADR-0043: how a transaction ended reaches each of its events as
+    /// `meta.txStatus`; a completed one, a package line outside any
+    /// transaction and a transaction pacman still runs carry none.
+    #[test]
+    fn transaction_status() {
+        let block = |end: &str| {
+            format!(
+                "[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -Syu'\n\
+                 [2026-10-01T10:00:01+0200] [ALPM] transaction started\n\
+                 [2026-10-01T10:00:02+0200] [ALPM] upgraded gtk4 (1:4.18.6-1 -> 1:4.18.7-1)\n\
+                 [2026-10-01T10:00:02+0200] [ALPM] removed pulseaudio (17.0-3)\n\
+                 {end}"
+            )
+        };
+        for (end, lock, want) in [
+            (
+                "[2026-10-01T10:00:03+0200] [ALPM] transaction completed\n",
+                false,
+                None,
+            ),
+            (
+                "[2026-10-01T10:00:03+0200] [ALPM] transaction completed\n",
+                true,
+                None,
+            ),
+            (
+                "[2026-10-01T10:00:03+0200] [ALPM] transaction failed\n",
+                false,
+                Some(TxStatus::Failed),
+            ),
+            (
+                "[2026-10-01T10:00:03+0200] [ALPM] transaction interrupted\n",
+                true,
+                Some(TxStatus::Interrupted),
+            ),
+            // the log ends and pacman is gone: killed, a crash, power loss
+            ("", false, Some(TxStatus::Unfinished)),
+            // a later transaction began without this one's end line
+            (
+                "[2026-10-01T10:05:00+0200] [ALPM] transaction started\n\
+                 [2026-10-01T10:05:01+0200] [ALPM] installed zed (2-1)\n\
+                 [2026-10-01T10:05:01+0200] [ALPM] transaction completed\n",
+                false,
+                Some(TxStatus::Unfinished),
+            ),
+        ] {
+            let p = parse(&lines(&block(end)), 0, lock, tz());
+            assert_eq!(p.txs[0].status, want, "{end:?} lock {lock}");
+            let events = p.txs[0].events();
+            assert_eq!(events.len(), 2);
+            assert!(events.iter().all(|e| e.meta.tx_status == want), "{end:?}");
+            if let Some(next) = p.txs.get(1) {
+                assert_eq!(next.status, None, "the later one completed");
+                assert_eq!(next.events()[0].meta.tx_status, None);
+            }
+        }
+        // still running: held back, so no status is guessed
+        let p = parse(&lines(&block("")), 0, true, tz());
+        assert!(p.txs.is_empty());
+        // a package line outside any transaction (old logs) has no status
+        let p = parse(
+            &lines("[2019-01-01 12:00] [ALPM] installed btop (1.0-1)\n"),
+            0,
+            false,
+            tz(),
+        );
+        assert_eq!(p.txs[0].tx_id, None);
+        assert_eq!(p.txs[0].status, None);
+        assert_eq!(p.txs[0].events()[0].meta.tx_status, None);
+        // an end line without a start closes nothing
+        let p = parse(
+            &lines(
+                "[2026-10-01T10:00:03+0200] [ALPM] transaction interrupted\n\
+                 [2026-10-01T10:00:04+0200] [ALPM] transaction started\n\
+                 [2026-10-01T10:00:05+0200] [ALPM] installed zed (2-1)\n\
+                 [2026-10-01T10:00:06+0200] [ALPM] transaction completed\n",
+            ),
+            0,
+            false,
+            tz(),
+        );
+        assert_eq!(p.txs.len(), 1);
+        assert_eq!(p.txs[0].status, None);
     }
 }

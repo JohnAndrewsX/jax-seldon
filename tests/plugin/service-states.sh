@@ -970,8 +970,8 @@ fi
 clean_log capture-gives-up "jax.seldon: seldon capture exit 4: another seldon process holds the lock "
 
 # 34. A one-at-a-time guard that refuses tells the caller (WP-068): a
-#     second plan call, a second drift call and a second decide while the
-#     first is pending get no engine call, a `false` and Model.BUSY_TEXT
+#     second plan call, a second drift call, a second decide and a second
+#     accept (WP-135) while the first is pending get no engine call, a `false` and Model.BUSY_TEXT
 #     in busyRefusal; the pending result lines stay pending until their
 #     engine answers.
 busy_text="Another action is running — try again in a moment"
@@ -979,23 +979,25 @@ mkdir -p "$work/home-busy"
 actions=$(jq -cn --arg u "$UNIT" --arg t "$THEME" '[
   ["plan", "start", "C-2026-005"], ["plan", "new", {title: "Second case", zone: "yellow", risk: "R1"}], ["snapshot"], ["wait"],
   ["drift", "dismiss", {eventId: $u, text: "x"}], ["drift", "link", {eventId: $t, caseId: "C-2026-005"}], ["snapshot"], ["wait"],
-  ["decide", "first"], ["decide", "second"], ["snapshot"]]')
+  ["decide", "first"], ["decide", "second"], ["snapshot"], ["wait"],
+  ["accept", "ADR-0004"], ["accept", "ADR-0004"], ["snapshot"]]')
 run busy 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-busy" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 argv_check busy "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q plan start C-2026-005 --json)" "$(q drift dismiss $UNIT --json -- x)" "$(q decide --no-edit --json -- first)" \
-  "$(q open ADR-0005 --editor --json)")"
+  "$(q open ADR-0005 --editor --json)" "$(q decide accept ADR-0004 --json)")"
 refusals=$(sed 's/\x1b\[[0-9;]*m//g' "$work/busy.log" | grep -a "HARNESS snapshot " | sed 's/.*HARNESS snapshot //' \
   | jq -r '[.busyRefusal.family, .busyRefusal.action, .busyRefusal.caseId, .busyRefusal.eventId, .busyRefusal.text,
-      ((.planResult // {}).pending), ((.driftResult // {}).pending), ((.decideResult // {}).pending)] | map(tostring) | join(" | ")' 2>/dev/null || true)
-want_refusals=$(printf '%s\n' "plan | new |  |  | $busy_text | true | null | null" \
-  "drift | link |  | $THEME | $busy_text | false | true | null" \
-  "decide | decide |  |  | $busy_text | false | false | true")
+      ((.planResult // {}).pending), ((.driftResult // {}).pending), ((.decideResult // {}).pending), ((.acceptResult // {}).pending)] | map(tostring) | join(" | ")' 2>/dev/null || true)
+want_refusals=$(printf '%s\n' "plan | new |  |  | $busy_text | true | null | null | null" \
+  "drift | link |  | $THEME | $busy_text | false | true | null | null" \
+  "decide | decide |  |  | $busy_text | false | false | true | null" \
+  "accept | accept |  |  | $busy_text | false | false | false | true")
 if [[ $refusals == "$want_refusals" ]]; then
   pass=$((pass + 1)); echo "ok   busy: each refusal names its call and the busy text; the pending lines stay"
 else
   fail=$((fail + 1)); echo "FAIL busy: refusals were:"; echo "$refusals" | sed 's/^/     /'
 fi
-if [[ $(grep -a 'HARNESS action ' "$work/busy.log" | sed 's/.* //' | tr '\n' ' ') == "true false true false true false " ]]; then
+if [[ $(grep -a 'HARNESS action ' "$work/busy.log" | sed 's/.* //' | tr '\n' ' ') == "true false true false true false true false " ]]; then
   pass=$((pass + 1)); echo "ok   busy: the second call of each family is refused"
 else
   fail=$((fail + 1)); echo "FAIL busy: $(grep -a 'HARNESS action' "$work/busy.log")"

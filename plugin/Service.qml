@@ -230,7 +230,8 @@ Item {
   // the result is about), the drift sheet (`drift`;
   // also `action`, `eventId`, `caseId` — the linked or created case — and
   // `already` for a no-op re-run), the new-decision sheet (`decide`; also
-  // `decisionId`, the created decision, which is then opened in the editor).
+  // `decisionId`, the created decision, which is then opened in the editor),
+  // Accept on a decision (`decide accept`; also `decisionId` and `already`).
   property var logResult: null
   property var openResult: null
   property var captureResult: null
@@ -253,6 +254,7 @@ Item {
   readonly property var rulesNotice: Model.rulesNotice(root.rulesResult)
   property var driftResult: null
   property var decideResult: null
+  property var acceptResult: null
   // `agent ask …` (WP-124b): { ok, pending, text, what, target }.
   property var askResult: null
   // `drift apply|discard …` of a proposal: { ok, pending, text, action,
@@ -265,6 +267,14 @@ Item {
   // The rules `drift show` named: { <eventId>: { rule, cls } }, kept while
   // the item is an open crisis (Model.keptDriftRules).
   property var driftRules: ({})
+  // WP-102b, *Import tasks…*: the last `import task` call, { ok, pending,
+  // text, dryRun, path, area, created, skipped, redactedLines, caseIds }
+  // (Model.importResult); `path` and `area` are what was sent.
+  property var importResult: null
+  // WP-102b: `plan show <id> --json` of the selected imported case, { ok,
+  // pending, text, caseId, intent, lines, truncated } (Model.caseShowResult):
+  // the whole Intent the detail shows before its Start.
+  property var caseShown: null
 
   // Emitted after every engine call, for panels that wait on a result.
   signal finished(var args, int exitCode, string output)
@@ -474,6 +484,62 @@ Item {
     return true
   }
 
+  // *Import tasks…* (WP-102b): `seldon import task --json [--dry-run]
+  // [--area <slug>] -- <path>`, the path one argument after `--`. One import
+  // at a time; the created cases arrive with the index.
+  function importTasks(path, area, dryRun) {
+    var p = String(path || "")
+    var a = String(area || "")
+    var dry = dryRun === true
+    if (root.importResult && root.importResult.pending) return root.refuseBusy("import", dry ? "dry-run" : "import", "", "")
+    var fail = function(text) {
+      root.importResult = { ok: false, pending: false, text: text, dryRun: dry, path: p, area: a, created: [], skipped: [],
+        redactedLines: 0, caseIds: [] }
+      return false
+    }
+    var built = Model.importArgs(p, a, dry)
+    if (built.error) return fail(built.error)
+    if (!root.canWrite || !root.run(built.args)) return fail(root.writeBlocker || root.lastError)
+    root.importResult = { ok: true, pending: true, text: dry ? "Reading the task file…" : "Importing…", dryRun: dry,
+      path: p, area: a, created: [], skipped: [], redactedLines: 0, caseIds: [] }
+    return true
+  }
+
+  // The whole Intent of a case (WP-102b): `seldon plan show <id> --json`,
+  // read-only. A call for the case already shown or pending is not repeated
+  // unless `again`.
+  // Asked again (a new index), the last text stays on screen, pending (so
+  // Start is off until the answer), and an unchanged answer changes no text
+  // (WP-102b round 2: a long Intent keeps its layout and scroll position).
+  // A new index while the answer is still in flight is remembered
+  // (`reaskWanted`) and asked once more when it arrives (WP-102b stage 2).
+  function showCase(caseId, again) {
+    var id = String(caseId || "")
+    var c = root.caseShown
+    if (c && c.caseId === id && c.pending) {
+      if (again === true) c.reaskWanted = true
+      return false
+    }
+    if (c && c.caseId === id && again !== true) return false
+    return root.askCase(id)
+  }
+
+  function askCase(id) {
+    var c = root.caseShown
+    var built = Model.caseShowArgs(id)
+    if (built.error || !root.canWrite || !root.run(built.args)) {
+      root.caseShown = { ok: false, pending: false, text: built.error || root.writeBlocker || root.lastError, caseId: id,
+        intent: "", lines: 0, truncated: false, hidden: 0 }
+      return false
+    }
+    root.caseShown = c && c.caseId === id && c.ok
+      ? { ok: true, pending: true, text: "Asking the engine again…", caseId: id, intent: c.intent, lines: c.lines,
+          truncated: c.truncated, hidden: c.hidden }
+      : { ok: false, pending: true, text: "Loading the whole Intent…", caseId: id, intent: "", lines: 0,
+          truncated: false, hidden: 0 }
+    return true
+  }
+
   // The rules check (WP-101): `seldon doctor --json` in its own process.
   // Read-only; skipped in dev mode, without an engine, while one runs, and
   // within Model.RULES_CHECK_MS of the last unless `force`.
@@ -535,6 +601,25 @@ Item {
       return false
     }
     root.decideResult = { ok: true, pending: true, text: "Creating the decision…", decisionId: "" }
+    return true
+  }
+
+  // Accept on a proposed decision (WP-135, ADR-0040): `seldon decide accept
+  // <ADR-NNNN> --json`, the id checked against the schema pattern. One
+  // accept at a time; the accepted decision arrives with the index.
+  function acceptDecision(decisionId) {
+    var id = String(decisionId || "")
+    if (root.acceptResult && root.acceptResult.pending) return root.refuseBusy("accept", "accept", "", "")
+    var built = Model.acceptArgs(id)
+    if (built.error) {
+      root.acceptResult = { ok: false, pending: false, text: built.error, decisionId: id, already: false }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.acceptResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, decisionId: id, already: false }
+      return false
+    }
+    root.acceptResult = { ok: true, pending: true, text: "Accepting " + id + "…", decisionId: id, already: false }
     return true
   }
 
@@ -604,7 +689,36 @@ Item {
     if (args[0] === "log") root.logResult = result
     else if (args[0] === "open") root.openResult = result
     else if (args[0] === "capture") root.captureResult = result
-    else if (args[0] === "plan") {
+    else if (args[0] === "plan" && args[1] === "show") {
+      result.caseId = args[2]
+      if (result.intent === undefined) result.intent = ""
+      if (result.lines === undefined) result.lines = 0
+      if (result.truncated === undefined) result.truncated = false
+      if (result.hidden === undefined) result.hidden = 0
+      var last = root.caseShown
+      // the same text again: keep the string the box already lays out
+      if (last && result.ok && last.ok && last.caseId === result.caseId && last.intent === result.intent)
+        result.intent = last.intent
+      if (Model.reaskAfter(last, result)) {
+        // a new index came meanwhile: this answer enables nothing; ask again
+        result.pending = true
+        root.caseShown = result
+        root.askCase(result.caseId)
+        return
+      }
+      root.caseShown = result
+    } else if (args[0] === "import") {
+      var sep = args.indexOf("--")
+      var at = args.indexOf("--area")
+      result.dryRun = args.indexOf("--dry-run") !== -1
+      result.path = sep !== -1 ? args[sep + 1] : ""
+      result.area = at !== -1 && at < sep ? args[at + 1] : ""
+      if (result.created === undefined) result.created = []
+      if (result.skipped === undefined) result.skipped = []
+      if (result.caseIds === undefined) result.caseIds = []
+      if (result.redactedLines === undefined) result.redactedLines = 0
+      root.importResult = result
+    } else if (args[0] === "plan") {
       result.action = args[1]
       if (result.caseId === undefined || result.caseId === "") result.caseId = args[1] === "new" ? "" : args[2]
       root.planResult = result
@@ -638,6 +752,10 @@ Item {
         root.driftRules = rules
       }
       root.driftShown = result
+    } else if (args[0] === "decide" && args[1] === "accept") {
+      if (result.decisionId === undefined || result.decisionId === "") result.decisionId = args[2]
+      if (result.already === undefined) result.already = false
+      root.acceptResult = result
     } else if (args[0] === "decide") {
       if (result.decisionId === undefined) result.decisionId = ""
       root.decideResult = result
@@ -689,13 +807,16 @@ Item {
     var result = args[0] === "log" ? Model.logResult(exitCode, out, err)
       : args[0] === "open" ? Model.openResult(exitCode, out, err)
       : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
+      : args[0] === "plan" && args[1] === "show" ? Model.caseShowResult(exitCode, out, err)
       : args[0] === "plan" ? Model.planResult(exitCode, out, err)
+      : args[0] === "import" ? Model.importResult(exitCode, out, err)
       : args[0] === "agent" && args[1] === "ask" ? Model.askResult(exitCode, out, err)
       : args[0] === "agent" ? Model.agentResult(exitCode, out, err)
       : args[0] === "drift" && args[1] === "apply" ? Model.applyResult(exitCode, out, err)
       : args[0] === "drift" && args[1] === "discard" ? Model.discardResult(exitCode, out, err)
       : args[0] === "drift" && args[1] === "show" ? Model.driftShowResult(exitCode, out, err)
       : args[0] === "drift" ? Model.driftResult(args[1], exitCode, out, err)
+      : args[0] === "decide" && args[1] === "accept" ? Model.acceptResult(exitCode, out, err)
       : args[0] === "decide" ? Model.decideResult(exitCode, out, err)
       : args[0] === "rules" ? Model.rulesUpdateResult(exitCode, out, err)
       : null
@@ -714,16 +835,16 @@ Item {
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
     } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "agent" && args[0] !== "drift" && args[0] !== "decide"
-        && args[0] !== "rules") {
+        && args[0] !== "rules" && args[0] !== "import") {
       // QuickEntry, the Work tab (case actions, Start agent), the drift sheet
-      // and the new-decision sheet show their own errors in place.
+      // and the new-decision sheet and Accept show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch
     // missed the rename.
     indexFile.reload()
     // A created decision opens in the editor (the id is checked).
-    if (args[0] === "decide" && result && result.ok && result.decisionId !== "") root.openInEditor(result.decisionId)
+    if (args[0] === "decide" && args[1] !== "accept" && result && result.ok && result.decisionId !== "") root.openInEditor(result.decisionId)
     // Updated rules: ask doctor again, so the banner goes.
     if (args[0] === "rules") root.checkRules(true)
     root.finished(args, exitCode, out)
@@ -882,8 +1003,13 @@ Item {
       driftResult: root.driftResult,
       driftShown: root.driftShown,
       decideResult: root.decideResult,
+      acceptResult: root.acceptResult,
       askResult: root.askResult,
       triageResult: root.triageResult,
+      importResult: root.importResult,
+      caseShown: root.caseShown ? { caseId: root.caseShown.caseId, ok: root.caseShown.ok, pending: root.caseShown.pending,
+        lines: root.caseShown.lines, truncated: root.caseShown.truncated, hidden: root.caseShown.hidden,
+        text: root.caseShown.text } : null,
       triageButton: root.triageButton,
       proposalPath: root.proposalPath,
       proposalRead: !!root.proposal,

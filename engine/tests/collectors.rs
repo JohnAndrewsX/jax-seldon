@@ -47,7 +47,7 @@ mod collectors {
     fn pacman_offsets_match_the_fixture_readme() {
         let log = std::fs::read(fixture("logs/pacman.log")).unwrap();
         let parsed = pacman::parse(&log, 0, false, cest());
-        assert_eq!(parsed.resume, 12053, "complete lines end at byte 12053");
+        assert_eq!(parsed.resume, 13475, "complete lines end at byte 13475");
         // both forms of a file pacman left (WP-141): the `.pacsave` before
         // the baseline, the `.pacnew` in the 10-01 `omarchy update`
         let left: Vec<&str> = parsed
@@ -91,7 +91,7 @@ mod collectors {
             out.cursor,
             Some(to_cursor(&PacmanCursor {
                 inode,
-                offset: 12053
+                offset: 13475
             }))
         );
     }
@@ -123,7 +123,7 @@ mod collectors {
                 .any(|e| e.subject == "omarchy" && e.meta.to.as_deref() == Some("4.0.6-1")),
             "the repeated 09-15 upgrade is not emitted twice"
         );
-        assert_eq!(second.events.len(), 14);
+        assert_eq!(second.events.len(), 20);
         assert_eq!(
             normalised_sorted(&b.ledger_events(Source::Pacman)),
             normalised_sorted(&fixture_events(Source::Pacman))
@@ -160,7 +160,7 @@ mod collectors {
             .filter(|e| e.subject == "omarchy")
             .collect();
         assert_eq!(omarchy.len(), 2, "4.0.6 once (from the old file) and 4.0.7");
-        assert_eq!(out.events.len(), 15);
+        assert_eq!(out.events.len(), 21);
     }
 
     #[test]
@@ -213,6 +213,55 @@ mod collectors {
         let out = b.run(&Pacman, "2026-10-01T11:00:03+02:00");
         assert_eq!(subjects(&out.events), ["btop"]);
         assert_eq!(out.events[0].explicit, None, "no command line, no explicit");
+    }
+
+    /// ADR-0043, WP-137 round 2 (N3): a transaction still open at the end
+    /// of the rotated file is emitted `unfinished` even while pacman holds
+    /// db.lck (holding it back would lose it: the cursor moves to the new
+    /// file); the new file's own open transaction is held back as before.
+    #[test]
+    fn pacman_rotation_marks_an_open_old_transaction_unfinished() {
+        let mut b = Bench::new("rotation-open");
+        let log = b.scratch.path("pacman.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::write(
+            &log,
+            "[2026-10-01T10:00:00+0200] [ALPM] transaction started\n\
+             [2026-10-01T10:00:01+0200] [ALPM] installed zed (0.198.4-1)\n\
+             [2026-10-01T10:00:01+0200] [ALPM] transaction completed\n",
+        )
+        .unwrap();
+        assert_eq!(
+            subjects(&b.run(&Pacman, "2026-10-01T10:00:02+02:00").events),
+            ["zed"]
+        );
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&log)
+            .unwrap()
+            .write_all(
+                b"[2026-10-01T11:00:00+0200] [ALPM] transaction started\n\
+                  [2026-10-01T11:00:01+0200] [ALPM] upgraded gtk4 (1:4.18.6-1 -> 1:4.18.7-1)\n",
+            )
+            .unwrap();
+        std::fs::rename(&log, b.scratch.path("pacman.log.1")).unwrap();
+        std::fs::write(
+            &log,
+            "[2026-10-01T11:05:00+0200] [ALPM] transaction started\n\
+             [2026-10-01T11:05:01+0200] [ALPM] installed btop (1.4.5-1)\n",
+        )
+        .unwrap();
+        std::fs::write(&b.sources.pacman_db_lock, "").unwrap();
+        let out = b.run(&Pacman, "2026-10-01T11:05:02+02:00");
+        assert_eq!(
+            subjects(&out.events),
+            ["gtk4"],
+            "the new file's transaction is held back"
+        );
+        assert_eq!(
+            out.events[0].meta.tx_status,
+            Some(seldon::model::event::TxStatus::Unfinished)
+        );
     }
 
     #[test]

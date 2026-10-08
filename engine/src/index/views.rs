@@ -69,7 +69,9 @@ pub fn ledger_views(built: &Built) -> BTreeMap<String, String> {
 }
 
 /// `- HH:MM source · kind `subject` detail · [[case]] · actor · state`
-/// (the format of `fixtures/logbook/ledger/*.md`). `system` is not named;
+/// (the format of `fixtures/logbook/ledger/*.md`); a pacman line of a
+/// transaction that did not complete adds `transaction <status>` after
+/// its detail (ADR-0043). `system` is not named;
 /// case events do not link the case they are about; a resolution shows
 /// how it resolved; a resolved event shows how, an open drift event
 /// `**drift**`.
@@ -90,6 +92,12 @@ fn ledger_line(e: &Event, folded: Option<&IndexEvent>, built: &Built) -> String 
         && let Some(d) = &e.detail
     {
         let _ = write!(line, " {}", one_line(d));
+    }
+    if let Some(status) = e.meta.tx_status
+        && e.source == Source::Pacman
+        && e.tx_id.is_some()
+    {
+        let _ = write!(line, " · transaction {status}");
     }
     if let Some(case) = &event.case
         && !is_case_kind(e.kind)

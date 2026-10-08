@@ -11,6 +11,7 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0026), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`, `case-reopened` (ADR-0027); generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
 | `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v3` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
 | `proposals/<id>.json` | the agent's triage proposal the sample's `triage` points at (ADR-0034 §6, ADR-0035 §6): a link (tokyo-night → C-2026-005, evidence a Plan line and a journal entry), an explain (the `monitors.conf` removal) and a crisis item (the ollama unit); `logbook` is the sample's `/home/user/Seldon`. In the engine's state directory in real life; the plugin's dev mode reads it next to the index | `schema/proposal.schema.json` |
+| `bad-path-chars.txt` | the characters a task file's path may not hold (WP-102b): inclusive code-point ranges, one per line (text, so no schema) that the engine's `import::bad_path_char` and the plugin's `Model.BAD_PATH_CHARS` are both tested against, so the two sets stay one | — |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
 | `logs/omarchy-packages/` | verbatim copies of Omarchy's `install/omarchy-base.packages` and `omarchy-other.packages` (dev host, 2026-10-01); the dossier's `SELDON_OMARCHY_PACKAGES` in tests (WP-036) | — |
@@ -31,6 +32,8 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-12/13 | C-2026-002 monitors: pre/post snapshots 108/109; Claude edits `monitors.conf` with the Edit tool (no Bash hook) → drift with proposal → *linked*; a note and its correction | `linked`, `correction`, `pairOf` |
 | 09-13 (WP-115) | during C-2026-002's verification the human adds the plugin `io.github.example.display-profiles`, which its Plan names, from Omarchy's menu (`actor: system`, no hook saw it); Claude closes the case without a capture; the next capture links it to the case (SPEC-ENGINE §5 rule 9, ADR-0029) | `linked` by `system` (`planned by C-2026-002; active at the time`), the case's Log line `linked after the fact: …` |
 | 09-15 | `omarchy update` 4.0.5 → 4.0.6 without a case → two drift items → *explained* | snapshot by `omarchy update`, release marker |
+| 09-18 (WP-137) | human runs a plain `pacman -Syu` that replaces `pulseaudio` with `pipewire-pulse` (`:: Replace`): − pulseaudio, ↑ pipewire, + pipewire-pulse, ↑ wireplumber, all `explicit: false` | a **mixed** transaction (remove, install, upgrade): routine `sysupgrade`, one `txId` |
+| 09-19 (WP-137) | the next morning's `pacman -Syu` is interrupted after gtk4 and libadwaita (`transaction interrupted`) | `meta.txStatus: interrupted` on both lines (ADR-0043): routine, marked in the urgent style; the ledger view says `transaction interrupted` |
 | 09-20/21 | theme `kanagawa` tried → *dismissed* | `dismissed` |
 | 09-22 (WP-113) | the human edits `weather-plus`'s forecast panel in place (no version change) → one `plugin-update` `files changed (sha256 … → …)` with the tree hashes → *explained* | plugin tree hashing (ADR-0028 WP-E): an in-place edit of a third-party plugin, attention until explained |
 | 09-24 | plugin update (a pull of three commits) → *explained* | plugin-update with `meta.git` and `meta.commits` (WP-136) |
@@ -45,12 +48,12 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 10-01 (WP-127) | At 11:00 the human imports one item of `~/Notizen/aufgaben.md` (`seldon import task`): C-2026-007, tag `imported`, frontmatter `source`, its Intent opening with the `Imported from …` line; the Plan was written later by hand. Every case with Intent or Result text and every decision with a Decision section shows its first paragraph; every open drift item names its rule (ADR-0038) | `cases[].intent`/`result`/`source`, `decisions[].lead`, `drift[].rule` |
 | 10-01 (WP-101) | C-2026-002 had been closed by Claude (`closed-by-agent`, ADR-0027 §5: its verify and done by `agent:claude-code`); C-2026-003 was raised to R3 before the `omarchy update` (Omarchy itself is R3, ADR-0027 §2c; as R2 the update would raise the R3 advisory). The reopen of C-2026-002 lives in the variant `case-reopened` (index only) | `closed-by-agent` marker |
 
-Result: 88 ledger lines (11 resolutions), 77 index events (9 with
-`resolutionDetail`; 1 with `zone: green`; 1 with `meta.truncated`), 6 snapshots in `system.snapshots`
+Result: 94 ledger lines (11 resolutions), 83 index events (9 with
+`resolutionDetail`; 1 with `zone: green`; 1 with `meta.truncated`; 2 with `meta.txStatus`), 6 snapshots in `system.snapshots`
 (1 pre/post pair), 6 open drift items — 5 single (2 crises: the user unit
-and the hook) and 1 attention group of 3 (the mesa downgrade) —, 6 routine
-items (`drift --all`: the `-Syu` group, the two theme switches, the two
-toggles, `shell.json`), 8 cases (3 queued, 2 active, 1 verification, 2
+and the hook) and 1 attention group of 3 (the mesa downgrade) —, 8 routine
+items (`drift --all`: the three `-Syu` groups of 09-18, 09-19 and 09-30, the
+two theme switches, the two toggles, `shell.json`), 8 cases (3 queued, 2 active, 1 verification, 2
 completed; C-2026-007 imported), 4 decisions (1 proposed; ADR-0003 names two
 cases; each with a lead), 1 triage proposal (3 items, 1 crisis).
 
@@ -229,8 +232,8 @@ Markdown table):
   **unterminated last line** (an interrupted write; the cursor must stop before it).
   - Baseline cursor of `seldon init`: byte offset **6245** (first line after it is
     the 09-03 btop transaction). From there the parser must produce exactly the
-    pacman events of `logbook/ledger/*.jsonl` (16 lines; ids and attribution aside) and
-    nothing for the malformed lines. Complete lines end at byte 12053.
+    pacman events of `logbook/ledger/*.jsonl` (22 lines; ids and attribution aside) and
+    nothing for the malformed lines. Complete lines end at byte 13475.
   - Files pacman left (WP-141): a `warning: … saved as ….pacsave` in the 08-28
     `-Rns` transaction (before the baseline: parsed, never emitted) and a
     `warning: … installed as ….pacnew` in the 10-01 `-Syu` (the ledger's pacman
@@ -239,11 +242,14 @@ Markdown table):
     `upgraded` lines, `explicit: false`, `meta.command` `pacman -Syu`: routine
     `sysupgrade` (ADR-0028; under `attention = "all"` the ADR-0013 yellow
     group). The 09-27 `pacman -U` block downgrades three packages from the
-    cache, each named (`explicit: true`): one attention group.
+    cache, each named (`explicit: true`): one attention group. The 09-18
+    `pacman -Syu` block removes, installs and upgrades (a `:: Replace`);
+    the 09-19 one ends with `transaction interrupted` (ADR-0043:
+    `meta.txStatus`). Both are routine `sysupgrade` (WP-137).
 - `pacman-rotation/` — `pacman.log.1` (old inode, ends after the 09-15
   transaction, 7359 bytes; cursor at its end) and the new `pacman.log`, which
   starts by **repeating the 09-15 transaction** (copytruncate race) and continues
-  with the 09-27 downgrade and the 09-30 `-Syu` to 10-01. Expected: restart from 0 on the inode change, dedupe by
+  with the 09-18 and 09-19 transactions, the 09-27 downgrade and the 09-30 `-Syu` to 10-01. Expected: restart from 0 on the inode change, dedupe by
   `(ts, kind, subject, version)`, so the 09-15 upgrade is not emitted twice.
 - `snapper-before.json` (2026-09-30 18:00, has pre/post 108/109) and `snapper.json`
   (2026-10-01 17:05, has pre/post 114/115; the collector links them through

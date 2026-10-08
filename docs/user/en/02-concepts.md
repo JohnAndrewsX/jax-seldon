@@ -229,8 +229,11 @@ A decision is a short record of a choice that shapes the machine,
 in the ADR format (architecture decision record): context, decision,
 consequences. `seldon decide -- "<title>"` creates
 `decisions/ADR-NNNN-<slug>.md` with the status *proposed* and opens it in
-your editor. You change the status to *accepted* or *superseded* in the
-file. The Decisions tab lists them.
+your editor. *Accept* in the desk's Decisions section (twice: the first
+click arms it) or `seldon decide accept ADR-NNNN` makes it *accepted*
+with today's date and notes it in the ledger. Accepting is yours: an
+agent may propose a decision, never accept one. *Superseded* you set in
+the file. The Decisions section lists them.
 
 ## Memory
 

@@ -179,3 +179,21 @@ by `/etc/limine*`, no code change), the systemd drop-ins as
   `.pacnew` unter `/etc/pam.d/`, das nach jedem pambase-/sddm-Update auf
   jedem Omarchy-Rechner einmal auftritt, die Leiste rot machen (Krise),
   oder nur still gelistet werden?
+
+## Merge of next (cc94960: WP-137, WP-135, WP-102b)
+
+- Code: the collector keeps both `Tx.left` (WP-141) and `Tx.status`
+  (WP-137, ADR-0043); `meta.txStatus` stays on package lines (it needs a
+  `txId`), never on a note. The event detail keeps the Hint, WP-136's
+  Commits and WP-137's Command and Transaction rows.
+- **Fable's follow-up is done by the merge:** WP-137's `eventTx` reads a
+  note's `meta.transaction`, so the note's detail shows *Command* and
+  *Transaction* ("2 packages: 2 upgraded · left 1 file") and the
+  packages of that transaction say "left 1 file"; `model.test.js` pins
+  both.
+- Fixtures: the logs and ledgers merged by themselves (both stories);
+  every index and variant regenerated with `--write-index`; counts are
+  next's plus one (94 ledger lines, 83 index events, 22 pacman lines in
+  the story, offsets 6245 / 13475, one more graph node and edge).
+  Docs, DECISIONS (0039, 0040, 0042, 0043, 0044) and CHANGELOG keep both
+  sides; the schema names both `transaction` and `txStatus`.

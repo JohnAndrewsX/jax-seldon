@@ -1223,8 +1223,8 @@ mod idempotency {
         let cli = Cli::new();
         let first = cli.capture(&["--since", FIXTURE_CREATED]);
         assert_eq!(
-            first["written"], 19,
-            "3 snapshots + 16 pacman events: {first}"
+            first["written"], 25,
+            "3 snapshots + 22 pacman events: {first}"
         );
         assert_eq!(first["ok"], true);
         assert_eq!(cli.capture(&[])["written"], 0);
@@ -1292,7 +1292,7 @@ mod idempotency {
                 count(Source::Snapper),
                 count(Source::Omarchy)
             ),
-            (16, 10, 1)
+            (22, 10, 1)
         );
         // state stays in the fake home
         assert!(
@@ -1313,7 +1313,7 @@ mod idempotency {
         assert_eq!(snapper["name"], "snapper");
         assert_eq!(snapper["ok"], false);
         assert_eq!(snapper["fix"], seldon::commands::doctor::SNAPPER_FIX);
-        assert_eq!(out["written"], 16, "the other collectors still run");
+        assert_eq!(out["written"], 22, "the other collectors still run");
     }
 
     #[test]

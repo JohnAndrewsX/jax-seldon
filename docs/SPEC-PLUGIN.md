@@ -125,7 +125,8 @@ plugin/
   carries the JSON; only exits above 1 log a warning line. The banner's
   click queues `["seldon", "rules", "update", "--json"]` like any write,
   then forces a new check.
-- One call at a time per family (plan and agent, drift, decide): a call
+- One call at a time per family (plan and agent, drift, decide, decide
+  accept): a call
   refused because one of its family is pending returns false and sets
   `busyRefusal` to `{ family, action, caseId, eventId, text }` with the
   text "Another action is running — try again in a moment"; the new-case,
@@ -488,8 +489,12 @@ ask for the rule. Then, from `proposedCase`, "C-… plans it (its plan names
 this change); nothing has linked it yet." or "No open case plans it, and no
 case is linked." — the Case row ("proposed: C-…") and the Rule row
 ("crisis · rule … · planned by C-…, not linked" or "· no case") say the
-same. The key/values When · Who · What (· Commits) · Case · Rule · Source · Zone ·
-Resolved · Event (Commits, WP-136: a plugin update's `meta.commits` as
+same. The key/values When · Who · What (· Command · Transaction) (· Commits) · Case · Rule · Source · Zone ·
+Resolved · Event (Command and Transaction, WP-137: a pacman event's
+`meta.command` and its transaction — "4 packages: 1 removed, 1 installed,
+2 upgraded", then the status when it did not complete and "left N files"
+for the files pacman left in it, WP-141's notes, which show the same row
+by their `meta.transaction`; Commits, WP-136: a plugin update's `meta.commits` as
 plain text, one subject per line, keyed "Rolled back" when `meta.git` is
 `rollback`; absent when the event has no such string;
 values wrap at word boundaries; a longer token breaks
@@ -500,8 +505,40 @@ subject ends in `.pacnew`, `.pacsave` or `.pacorig`, SPEC-ENGINE §4,
 WP-141 — a row **Hint** after What: "Merge with pacdiff (from
 pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot
 tell whether that happened since." — text only, never a button or a
-command the plugin runs, AGENTS.md §8), a
-group's members (`seldon drift show` for those the index no longer lists),
+command the plugin runs, AGENTS.md §8), **the transaction** (WP-137): for a
+pacman event whose transaction did not complete (`meta.txStatus`,
+ADR-0043) an urgent callout above the key/values — *Transaction failed*,
+*Transaction interrupted* or *Transaction did not finish*, with what
+that means (the packages listed may be all it changed; a failed one could
+not be installed, upgraded or removed), then the steps — for `failed`
+and `unfinished` "pacman's after-update steps (boot image, boot menu,
+Omarchy's resume hooks) did not run for this transaction; if
+omarchy-settings was in it, Hyprland's auto-reload may stay paused for
+this session.", for `interrupted` the same with "may not have run for
+every package of this transaction" — and one shared tail: "Before you
+reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with
+their names): that runs those steps for them; a plain rerun does not. A
+package marked − stays removed; for one marked ↓, or when unsure, ask
+your agent in a case." (alpm-hooks(5) CAVEATS: post-transaction hooks do
+not run after a failed transaction or a killed pacman, and run only for
+a transaction's targets; for `interrupted` not verified against
+libalpm's source; WP-137 rounds 2 and 3.) Text only: the plugin runs
+nothing — whatever the event's class; then, below the key/values, "N packages: … in this
+transaction" and every package of the transaction the index lists, the
+unusual first (↓ downgraded, − removed, + installed, ↑ upgraded, ↻
+reinstalled; by name within a kind), "name  old → new" or "name
+version", the selected event's line in bold; shown for two or more
+packages, a status or files left (one completed package says no more
+than the rows); a transaction whose oldest line is the index's oldest
+event at its 500-event cap (CONTRACT.md rule 4) says older lines are in
+the ledger. Without `meta.txStatus` nothing is marked and nothing claims
+the transaction completed (an index of an earlier build, or a line
+written before ADR-0043). The Changelog row (and Today's NEEDS YOU row)
+of such an event shows the status as one word in the urgent colour
+before its meta line (`ListRow.alert`), and the sidebar search finds the
+word; the class, the stripe and the counts are unchanged. Then a
+group's members (`seldon drift show` for those the index no longer lists;
+hidden when the transaction above lists every open member),
 "proposed for C-…", and "None of this is required. An agent explains only
 what it can prove." The bar's Link, Explain and Dismiss only open the
 inline form (`DriftForm.qml`, the 0.1 drift sheet's logic and API): Link
@@ -532,10 +569,13 @@ selected); the WIP line "2 / 3 active" against the bar setting `wipLimit`
 (default 3; "· at the limit" in the accent, "· over the limit" urgent;
 warns, never blocks); *By agent* (the Completed group narrowed to the cases
 an agent closed, a spot check, ADR-0027 §5; its header then reads
-"COMPLETED · 1 / 2"); *New case* (`+`); the engine's answer to the last
-case action. Then the cases by group — ACTIVE · VERIFICATION · QUEUED ·
-COMPLETED (completed and dropped, the index's last 50) — with "id · risk ·
-area · closed by agent · reopens … · N proposed" and the plan's steps.
+"COMPLETED · 1 / 2"); *Import tasks…* (WP-102b, below); *New case* (`+`);
+the engine's answer to the last case action (after an import: "Imported N
+cases: C-… · M tasks skipped"). Then the cases by group — ACTIVE ·
+VERIFICATION · QUEUED · COMPLETED (completed and dropped, the index's last
+50) — with "id · imported · risk · area · closed by agent · reopens … · N
+proposed" (`imported` from the tag, CONTRACT.md rule 8) and the plan's
+steps.
 
 The detail: the sticky bar by status (`Model.caseDeskActions`) — queued:
 *Start*, *Drop*; active: *Hand to agent* (`agent start <id> --json`), *To
@@ -582,6 +622,66 @@ fields keep their text until the engine has made the case; Esc closes the
 sheet with its draft, `+` brings it back). "Back to active" (prototype) is
 not built: no engine verb moves a case from verification to active.
 
+*Import tasks…* (WP-102b, ADR-0034 §2; `components/desk/ImportForm.qml`)
+puts a form in the detail: a line on what happens ("Each open - [ ] item
+becomes a queued case; … The file is only read. An imported case is started
+by you, after you have read its whole Intent."), the path field (from the
+home `~/…` or absolute; `Model.importPathError` refuses, before any call,
+an empty path, one with a character of `BAD_PATH_CHARS` — the engine's
+`bad_path_char` set: control, direction and format characters (WP-140's
+set, the tags included), U+2028, U+2029; both sides are tested against
+`fixtures/bad-path-chars.txt` —, a relative one, one longer than 4096 characters and one that does
+not end in `.md` — the engine checks the rest: under the home, outside the
+logbook, a regular file, its size and encoding) and an optional area slug.
+*Dry run* (Enter in a field) sends `seldon import task --json --dry-run
+[--area <a>] -- <path>`, the path one argument after `--`; the form lists
+what would be created (title; status · source · "changed since C-…") and
+what is skipped ("Skipped ~/…#5: done (- [x])", "already imported
+(C-…)", "no text", "the same text again", "too long to review in the
+desk (over 64 KiB)"), and the line "Would create N cases · M tasks skipped
+· K invisible characters dropped". Only then, and only for the path and area that
+dry run was for, *Import N cases* is enabled: one click sends the same
+without `--dry-run`. The engine's refusal shows in the form, urgent; the
+fields keep their text (Esc closes the form with them). After the import
+the form closes, its fields empty, and the first new case is selected. One
+import at a time (Service.importTasks); every text from the engine is plain
+text (rule 6).
+
+An imported case (tag `imported`): its detail asks the engine for the
+whole Intent — `seldon plan show <id> --json`, read-only, again with every
+new index, and once more for an index that arrives while an answer is in
+flight (that answer enables nothing); while it asks again the last text
+stays on screen, unchanged text is not laid out again, and Start is off
+until the answer — and shows, under IMPORTED TASK · N lines, the accent line
+"From ~/…#N. Read the whole Intent before you start the case: once
+started, an agent acts on it without asking. Only you start it." and the
+engine's `intent.text` as plain text in the system's monospace font
+(`Style.font.family`) in a bordered box, never rendered as Markdown; its
+first line is the engine's provenance line; a direction or format
+character the case file holds shows as `‹U+XXXX›` (the engine marks it,
+`hidden`), with "N hidden characters are marked ‹U+…› above: text you
+cannot see in the file. Read the case in the editor; start it from the
+terminal."; "The first 64 KiB are shown; the rest is in the case file.
+Read the whole Intent in the editor; start this case from the terminal."
+when `truncated` (an imported Intent normally is not: `import task`
+skips a longer one, ADR-0044; a later pattern change can cut it, and Start
+then stays off). While it loads, or when
+the engine withholds it (`intent: null`) or cannot be asked (dev mode),
+the block says so and the index's first paragraph (INTENT) stays. **Its
+Start never fires from the list or a key** (ADR-0027 §2(a); Fable,
+WP-102 round 3): Enter has no action on an imported case (neither Start
+nor, in its place, Drop); the bar's *Start* is enabled only while the
+detail shows the whole Intent the engine gave for this case, not cut and
+with nothing hidden (`Model.intentReviewed`: `truncated` false, `hidden`
+0; ADR-0044), and it arms by click only ("Start C-…? Click Confirm.");
+until then the bar's hint (`Model.reviewHint`) reads "Start waits until
+the whole Intent below is shown; only you start an imported case", or, for
+a cut or marked Intent, "N hidden characters are marked and the Intent is
+longer than the desk shows: read the whole Intent in the editor; start
+this case from the terminal." `press()` refuses such a Start too, behind
+the bar. The engine
+refuses an agent's start of an imported case anyway.
+
 #### Decisions, System, Memory (4–6; WP-123)
 
 The three reading sections share `sections/ReadingSection.qml`: a list of
@@ -612,11 +712,19 @@ and no action runs.
   it in Work; "This decision names no case." for an empty list); an index
   without the field hides the block.
   Sticky bar: *Accept* (only while proposed, primary) and *Open in
-  editor*, the id at the right. **Accept is the existing path:** the
-  engine accepts no decision itself; the user sets `status: accepted` in
-  the frontmatter, so Accept runs `seldon open ADR-NNNN --editor --json`
-  as Open in editor does (id validated) and the index follows on the next
-  capture. Neither writes, so neither arms. `e` opens; `d` or *New
+  editor*, the id at the right. **Accept writes (WP-135, ADR-0040)**, so
+  it arms: the first click arms it — the bar reads *Confirm accept* and
+  shows "Accept ADR-NNNN? Click Confirm: it becomes accepted with today's
+  date." — the second runs `seldon decide accept ADR-NNNN --json`
+  (`Service.acceptDecision`, id validated; one accept at a time, the busy
+  text of §3 otherwise). Any key, another selection, another section or
+  a new index disarms. Accept has no key of its own; it is disabled while
+  nothing can write (dev mode, no engine, not initialised) and while an
+  accept is pending. The engine's answer ("Accepted ADR-NNNN · title",
+  "ADR-NNNN is accepted already" or its refusal) shows at the top of that
+  decision's detail; the accepted decision arrives with the index (no
+  Accept any more). Open in editor writes nothing and does not arm. `e`
+  opens; `d` or *New
   decision* shows the form (`components/desk/NewDecisionForm.qml`) in the
   detail pane: title → Enter arms ("Press Enter again: create the
   decision “…”"), Enter again (or a click on *Create*) runs `seldon decide

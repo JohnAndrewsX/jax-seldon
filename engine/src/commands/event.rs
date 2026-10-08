@@ -154,6 +154,29 @@ fn checked_env_actor(
         .map_err(|e| Error::user(format!("{ACTOR_ENV} (the actor when none is named): {e}")))
 }
 
+/// `$SELDON_ACTOR` for an act only the user may do (`decide accept`,
+/// `drift apply|discard`; WP-135 round 2): a value that is set but does
+/// not read is refused whatever `--actor` says, because the session may be
+/// an agent's and the act would be recorded as human. `refused` begins the
+/// message (what was not done); the rest names the variable as the
+/// session's actor, since `--actor` may be given (round 3).
+pub fn session_actor_for_user_act(refused: &str) -> Result<Option<String>> {
+    let Some(value) = std::env::var_os(ACTOR_ENV).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let why = match value.to_str() {
+        Some(v) => match parse_person(v) {
+            Ok(actor) => return Ok(Some(actor)),
+            Err(e) => e,
+        },
+        None => "it is not UTF-8".to_string(),
+    };
+    Err(Error::user(format!(
+        "{refused}: {ACTOR_ENV} (the session's actor): {why}. A session whose actor cannot be \
+         read may be an agent's, and this act is recorded as human: fix or unset {ACTOR_ENV}"
+    )))
+}
+
 /// clap value parser: `C-YYYY-NNN`.
 pub fn parse_case_id(s: &str) -> Result<String, String> {
     if is_case_id(s) {
@@ -380,6 +403,11 @@ fn parse_meta(pairs: &[String]) -> Result<Meta> {
                     "--meta risk is only written on case lines (`seldon plan`)",
                 ));
             }
+            "txStatus" => {
+                return Err(Error::user(
+                    "--meta txStatus is written by the pacman collector only",
+                ));
+            }
             crate::model::event::TRUNCATED => {
                 return Err(Error::user(
                     "--meta truncated is index-only; the ledger keeps every text whole",
@@ -440,6 +468,7 @@ mod tests {
             "pairOf=x",
             "risk=R1",
             "truncated=true",
+            "txStatus=interrupted",
             "=1",
             "a b=1",
         ] {

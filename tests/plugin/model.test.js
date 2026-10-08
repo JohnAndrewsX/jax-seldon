@@ -419,7 +419,7 @@ test("validateArgs accepts every CONTRACT.md command form", () => {
     ["decide", "--no-edit", "--", "Use zed"], ["rebuild", "--json"], ["update-impact", "--json"],
     ["open", "journal", "--editor"], ["open", "C-2026-003", "--editor"],
     ["decide", "--no-edit", "--json", "--", "--help"], ["open", "ADR-0004", "--editor", "--json"],
-    ["open", "logbook", "--editor", "--json"]
+    ["open", "logbook", "--editor", "--json"], ["decide", "accept", "ADR-0004", "--json"]
   ]
   for (const a of good) assert.strictEqual(M.validateArgs(a), "", JSON.stringify(a))
 })
@@ -456,7 +456,13 @@ test("validateArgs refuses everything else", () => {
     ["open", "ADR-4", "--editor"], ["open", "ADR-00041", "--editor"], ["open", "adr-0004", "--editor"],
     ["open", "ADR-0004; reboot", "--editor"], ["open", "ADR-0004", "--editor", "--", "x"],
     ["open", "memory", "--editor"], ["open", "memory/lessons.md", "--editor"],
-    ["log", "--", 42], ["log", "--", "a\u0000b"]
+    ["log", "--", 42], ["log", "--", "a\u0000b"],
+    // WP-135: decide accept takes one ADR id and --json, nothing else
+    ["decide", "accept", "ADR-0004"], ["decide", "accept", "--json"], ["decide", "accept", "ADR-4", "--json"],
+    ["decide", "accept", "ADR-0004; reboot", "--json"], ["decide", "accept", "C-2026-001", "--json"],
+    ["decide", "accept", "ADR-0004", "--actor", "human", "--json"], ["decide", "accept", "ADR-0004", "ADR-0003", "--json"],
+    ["decide", "accept", "--json", "--", "ADR-0004"], ["decide", "accept", "ADR-0004", "--json", "--", "x"],
+    ["decide", "--no-edit", "accept", "ADR-0004", "--json"], ["decide", "Accept", "ADR-0004", "--json"]
   ]
   for (const a of bad) assert.notStrictEqual(M.validateArgs(a), "", JSON.stringify(a))
 })
@@ -544,9 +550,9 @@ test("snapperBanner: Grant runs the script, Check again is a capture, no hint (W
   assert.ok(M.SNAPPER_FIX_SCRIPT.indexOf("then if seldon capture ") !== -1)
 })
 
-test("changelogRows: 77 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
+test("changelogRows: 83 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
-  assert.strictEqual(rows.length, 77)
+  assert.strictEqual(rows.length, 83)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
@@ -626,7 +632,7 @@ test("changelogRows: 77 events newest first, one +2 group (3 members), folded re
 
 test("changelogRows: the source filter narrows the list", () => {
   const counts = M.sourceCounts(sampleIndex)
-  assert.strictEqual(counts.all, 77)
+  assert.strictEqual(counts.all, 83)
   let total = 0
   for (const s of M.SOURCES) {
     const rows = M.changelogRows(sampleIndex, s)
@@ -634,10 +640,10 @@ test("changelogRows: the source filter narrows the list", () => {
     assert.ok(rows.every((r) => r.source === s), s)
     total += rows.length
   }
-  assert.strictEqual(total, 77)
-  assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 16)
+  assert.strictEqual(total, 83)
+  assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 22)
   assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 10)
-  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 77)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 83)
   same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
   assert.strictEqual(M.cycleFilter("all", 1), "pacman")
   assert.strictEqual(M.cycleFilter("seldon", 1), "all")
@@ -1222,6 +1228,29 @@ test("decideResult reads the SPEC-ENGINE §3 decide shape and refusals", () => {
   same(M.decideResult(4, "", "lock held"), { ok: false, text: "lock held", decisionId: "" })
 })
 
+test("acceptArgs: decide accept <ADR id> --json, the id checked (WP-135)", () => {
+  same(M.acceptArgs("ADR-0004"), { args: ["decide", "accept", "ADR-0004", "--json"] })
+  assert.strictEqual(M.validateArgs(M.acceptArgs("ADR-0004").args), "")
+  for (const bad of ["", null, undefined, "ADR-4", "ADR-00041", "adr-0004", "ADR-0004; reboot", "--help", "C-2026-001", " ADR-0004"])
+    assert.strictEqual(M.acceptArgs(bad).error, "Not a decision id: " + String(bad || ""), String(bad))
+  assert.strictEqual(M.acceptArmHint("ADR-0004"), "Accept ADR-0004? Click Confirm: it becomes accepted with today's date.")
+})
+
+test("acceptResult reads the SPEC-ENGINE §3 decide accept shape and refusals", () => {
+  const decision = { id: "ADR-0004", title: "Ollama nur als User-Service", status: "accepted", date: "2026-10-07",
+    cases: [], path: "decisions/ADR-0004-ollama-user-service.md" }
+  same(M.acceptResult(0, JSON.stringify({ decision, already: false, event: {}, git: { committed: true }, warnings: [] }), ""),
+    { ok: true, text: "Accepted ADR-0004 · Ollama nur als User-Service", decisionId: "ADR-0004", already: false })
+  same(M.acceptResult(0, JSON.stringify({ decision, already: true, event: null, git: { committed: false }, warnings: [] }), ""),
+    { ok: true, text: "ADR-0004 is accepted already", decisionId: "ADR-0004", already: true })
+  same(M.acceptResult(0, JSON.stringify({ decision: { id: "ADR-4; reboot", title: "x" }, already: "yes" }), ""),
+    { ok: true, text: "Accepted the decision · x", decisionId: "", already: false })
+  same(M.acceptResult(0, "not json", ""), { ok: true, text: "Accepted the decision", decisionId: "", already: false })
+  same(M.acceptResult(1, '{"error":{"code":1,"message":"ADR-0002 is superseded; only a proposed decision is accepted"}}', ""),
+    { ok: false, text: "ADR-0002 is superseded; only a proposed decision is accepted", decisionId: "", already: false })
+  same(M.acceptResult(4, "", "lock held"), { ok: false, text: "lock held", decisionId: "", already: false })
+})
+
 test("memoryRows: the sample's three lessons and two topics", () => {
   const rows = M.memoryRows(sampleIndex)
   same(rows.map((r) => r.kind + " " + r.title), [
@@ -1263,13 +1292,14 @@ test("deskFilter: every word, any field, case-insensitive", () => {
   same(M.deskFilter(null, "x", ["id"]), [])
 })
 
-test("decisionDetail: Accept only while proposed; nothing writes", () => {
+test("decisionDetail: Accept only while proposed; Accept writes, Open does not", () => {
   const rows = M.decisionRows(sampleIndex)
   const proposed = M.decisionDetail(rows[0])
   assert.strictEqual(proposed.heading, "ADR-0004 · proposed · 2026-10-01")
   same(proposed.rows, [["Status", "proposed"], ["Date", "2026-10-01"], ["File", "decisions/ADR-0004-ollama-user-service.md"]])
-  same(proposed.actions.map((a) => a.id + ":" + a.primary + ":" + a.enabled), ["accept:true:true", "open:false:true"])
-  assert.ok(proposed.note.indexOf("set status: accepted in its frontmatter") !== -1)
+  same(proposed.actions.map((a) => a.id + ":" + a.primary + ":" + a.enabled + ":" + a.write),
+    ["accept:true:true:true", "open:false:true:false"])
+  assert.strictEqual(proposed.note, "Proposed: it waits for your decision. Accept marks it accepted with today's date and notes it in the ledger; Open in editor shows the whole text.")
   const accepted = M.decisionDetail(rows[1])
   same(accepted.actions.map((a) => a.id), ["open"])
   assert.strictEqual(accepted.note, "")
@@ -1408,10 +1438,10 @@ test("periodTable: the sample's counts per period", () => {
   assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
-  same(s30.map((s) => s.detail), ["72 events", "Explicit 324 → 327", "13 opened · 8 resolved",
+  same(s30.map((s) => s.detail), ["78 events", "Explicit 324 → 327", "13 opened · 8 resolved",
     "R0 1 · R1 3 · R2 3 · R3 1 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
-  assert.strictEqual(table.periods["90"].slots[0].detail, "77 events")
+  assert.strictEqual(table.periods["90"].slots[0].detail, "83 events")
   same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 3, R3: 1 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
@@ -1557,8 +1587,8 @@ test("heatmapChart: weeks × weekdays, steps, months, hover text, layout and hit
   const table = M.periodTable(ok.index)
   const h30 = table.periods["30"].charts.heatmap
   assert.strictEqual(h30.empty, false)
-  same(h30.numbers, { days: 30, events: 72, activeDays: 15, max: 33, busiest: "2026-10-01" })
-  assert.strictEqual(h30.summary, "72 events on 15 of 30 days · busiest 2026-10-01 (33)")
+  same(h30.numbers, { days: 30, events: 78, activeDays: 17, max: 33, busiest: "2026-10-01" })
+  assert.strictEqual(h30.summary, "78 events on 17 of 30 days · busiest 2026-10-01 (33)")
   // 2026-09-02 is a Wednesday: the first column starts at row 2.
   same([h30.offset, h30.weeks, h30.cells.length], [2, 5, 30])
   same([h30.cells[0].date, h30.cells[0].col, h30.cells[0].row], ["2026-09-02", 0, 2])
@@ -2203,10 +2233,10 @@ test("deskWidthPreview and preset labels", () => {
 test("deskChangelog: every event once, by class, with title, meta, age and stripe", () => {
   const idx = M.parseIndex(sample).index
   const p = M.deskChangelog(idx)
-  assert.strictEqual(p.rows.length, 77)
+  assert.strictEqual(p.rows.length, 83)
   const byCls = {}
   for (const r of p.rows) byCls[r.cls] = (byCls[r.cls] || 0) + 1
-  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 38", "crisis 2", "routine 31"])
+  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 38", "crisis 2", "routine 37"])
   const unit = M.changelogRow(p, UNIT)
   same([unit.title, unit.listMeta, unit.age, unit.stripe, unit.cls], ["ollama.service", "config · config-add", "14:03", "crisis", "crisis"])
   const mesa = M.changelogRow(p, MESA)
@@ -2227,12 +2257,12 @@ test("rowAge: the time today, else day and month (the year when it differs)", ()
 test("changelogView and changelogChips: chips, search, Hide (attention only), a group once", () => {
   const p = M.deskChangelog(M.parseIndex(sample).index)
   same(M.changelogChips(p, {}).map(c => c.id + " " + c.count),
-    ["open 6", "crisis 2", "attention 4", "routine 31", "case 38", "all 77"])
+    ["open 6", "crisis 2", "attention 4", "routine 37", "case 38", "all 83"])
   // the drift chips list a group as its leader; "all" lists every event
   same(M.changelogView(p, "open", {}, "").map(r => r.title).slice(-1), ["mesa +2"])
   assert.strictEqual(M.changelogView(p, "open", {}, "").length, 6)
   assert.strictEqual(M.changelogView(p, "bogus", {}, "").length, 6)
-  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 77)
+  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 83)
   assert.ok(M.changelogView(p, "all", {}, "").some(r => r.id === LIB32))
   // the search matches subject, meta, detail and actor, case-insensitive
   same(M.changelogView(p, "open", {}, "OLLAMA").map(r => r.title), ["ollama.service", "ollama"])
@@ -2241,7 +2271,7 @@ test("changelogView and changelogChips: chips, search, Hide (attention only), a 
   const hidden = { [MESA]: true, [UNIT]: true }
   assert.strictEqual(M.changelogView(p, "open", hidden, "").length, 5)
   assert.strictEqual(M.changelogView(p, "crisis", hidden, "").length, 2)
-  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 77)
+  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 83)
   assert.strictEqual(M.hiddenCount(p, hidden), 1)
   same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
 })
@@ -2273,9 +2303,15 @@ test("eventDetail: a file pacman left carries the pacdiff hint, as text only (WP
   const p = M.deskChangelog(idx)
   const d = M.eventDetail(idx, p, PACNEW)
   same([d.heading, d.title, d.cls, d.open, d.caseId], ["pacman · note", "/etc/mkinitcpio.conf.pacnew", "case", false, "C-2026-003"])
-  same(d.kv.map(r => r[0]), ["When", "Who", "What", "Hint", "Case", "Rule", "Source", "Zone", "Event"])
+  same(d.kv.map(r => r[0]), ["When", "Who", "What", "Command", "Transaction", "Hint", "Case", "Rule", "Source", "Zone", "Event"])
   same(d.kv[2], ["What", "/etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew"])
-  same(d.kv[3], ["Hint", "Merge with pacdiff (from pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot tell whether that happened since."])
+  // its transaction through meta.transaction (WP-137), as for every member
+  same(d.kv[4], ["Transaction", "2 packages: 2 upgraded · left 1 file"])
+  same(d.kv[5], ["Hint", "Merge with pacdiff (from pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot tell whether that happened since."])
+  // and a package of that transaction counts the file it left
+  const hypr = M.eventDetail(idx, p, "01M3V504QG60MBGRBA2257PVQC")
+  assert.ok(hypr.kv.some(r => r[0] === "Transaction" && r[1].endsWith("left 1 file")))
+  assert.ok(!hypr.kv.some(r => r[0] === "Hint"))
   same(M.eventActions(d, {}).map(a => a.id), ["case"], "no action runs pacdiff")
   // the same for .pacsave and .pacorig; nothing for another note or another pacman kind
   const hint = (source, kind, subject) => M.pacnewHint({ source: source, kind: kind, subject: subject })
@@ -2331,7 +2367,7 @@ test("eventDetail: heading, class, the key/values; why loud from the engine's ru
   same([d.kv[3], d.kv[4]], [["Case", "proposed: C-2026-003"], ["Rule", "crisis · rule always-red-paths · planned by C-2026-003, not linked"]])
   same(M.eventActions(d, {}).map(a => a.label)[0], "Link to C-2026-003…")
   // a member shows the group's proposal and rule
-  assert.ok(M.eventDetail(idx, p, LIB32).kv[4][1].indexOf("one pacman transaction (ADR-0013)") !== -1)
+  assert.ok(M.eventDetail(idx, p, LIB32).kv.find(r => r[0] === "Rule")[1].indexOf("one pacman transaction (ADR-0013)") !== -1)
   assert.strictEqual(M.eventDetail(idx, p, "nope"), null)
   const folded = p.rows.find(r => r.resolution !== "")
   assert.ok(M.eventDetail(idx, p, folded.id).kv.some(r => r[0] === "Resolved"))
@@ -2363,6 +2399,228 @@ test("eventDetail: a plugin update names its commits as plain text after What (W
   assert.ok(!variant(m => { m.commits = 3 }).includes("Commits"))
   // an event of another kind is unchanged
   assert.ok(!M.eventDetail(idx, M.deskChangelog(idx), THEME).kv.some(r => r[0] === "Commits"))
+})
+
+// WP-137 (ADR-0043): the sample's three transactions — the 09-18 mixed
+// -Syu, the 09-19 interrupted one, the 09-27 downgrade group.
+const PULSE = "01M2TRP458WGAYTYM0MEFXC2TY"
+const PIPEWIRE = "01M2TRP54G6K1N4WZF19XZFHZW"
+const GTK4 = "01M2W5S4XG9MX3PXAMR7WEEBVZ"
+const LIBADWAITA = "01M2W5S5WR0VXZGZ21D38HN54Z"
+const BTOP = "01M1MB2M1GWZYF485HTGVZ1KS3"
+
+test("transactionDetail: a mixed transaction lists every package, unusual ones first (WP-137)", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  const t = M.eventDetail(idx, p, PIPEWIRE).transaction
+  same(t.packages.map(M.txPackageLine), ["− pulseaudio  17.0-3", "+ pipewire-pulse  1:1.4.8-1",
+    "↑ pipewire  1:1.4.7-1 → 1:1.4.8-1", "↑ wireplumber  0.5.10-1 → 0.5.11-1"])
+  same(t.packages.filter(x => x.selected).map(x => x.id), [PIPEWIRE])
+  same([t.summary, t.command, t.status, t.title, t.files, t.partial, t.list],
+    ["4 packages: 1 removed, 1 installed, 2 upgraded", "pacman -Syu", "", "", 0, false, true])
+  const kv = M.eventDetail(idx, p, PIPEWIRE).kv
+  same(kv.map(r => r[0]).slice(0, 6), ["When", "Who", "What", "Command", "Transaction", "Case"])
+  same([kv[3][1], kv[4][1]], ["pacman -Syu", "4 packages: 1 removed, 1 installed, 2 upgraded"])
+  // every member shows the same transaction, its own line marked
+  same(M.eventDetail(idx, p, PULSE).transaction.packages.filter(x => x.selected).map(x => x.name), ["pulseaudio"])
+  // nothing marked: absent txStatus is "completed or not known", never said
+  assert.ok(!kv.some(r => /complete/.test(r[1])))
+  same(p.rows.filter(r => r.tx === "tx-20260918T192305").map(r => r.alert), ["", "", "", ""])
+  // one completed package: the rows say it all, no list
+  const one = M.eventDetail(idx, p, BTOP)
+  same([one.transaction.list, one.kv[3], one.kv[4]], [false, ["Command", "pacman -S btop"], ["Transaction", "1 package: 1 installed"]])
+  // anything else has no transaction
+  assert.strictEqual(M.eventDetail(idx, p, THEME).transaction, null)
+  assert.ok(!M.eventDetail(idx, p, THEME).kv.some(r => r[0] === "Command" || r[0] === "Transaction"))
+})
+
+test("transactionDetail: an interrupted transaction in the row and the detail (WP-137, ADR-0043)", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  same([GTK4, LIBADWAITA].map(id => M.changelogRow(p, id).alert), ["interrupted", "interrupted"])
+  assert.ok(M.changelogView(p, "all", {}, "interrupted").length === 2, "the word is searchable")
+  const d = M.eventDetail(idx, p, LIBADWAITA)
+  const t = d.transaction
+  same([t.status, t.title, t.list], ["interrupted", "Transaction interrupted", true])
+  assert.ok(t.text.startsWith("pacman was interrupted and stopped after the packages below"))
+  // rounds 2 and 3: the facts, then the safe step before a reboot; never
+  // "run the update again, then reboot" (a rerun skips the hooks of
+  // packages already upgraded). The step names only ↑ and ↻ (a reinstall
+  // repairs those); − stays removed, ↓ goes to the agent.
+  const tail = "Before you reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with their names): "
+    + "that runs those steps for them; a plain rerun does not. "
+    + "A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
+  const didNot = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; "
+    + "if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session. "
+  const mayNot = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; "
+    + "if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session. "
+  assert.ok(t.text.endsWith(mayNot + tail), t.text)
+  assert.ok(M.TX_STATUS_TEXTS.failed.endsWith(didNot + tail))
+  assert.ok(M.TX_STATUS_TEXTS.unfinished.endsWith(didNot + tail))
+  // interrupted is not proven to skip every hook: its head differs
+  assert.ok(!M.TX_STATUS_TEXTS.interrupted.includes("did not run"))
+  for (const s of M.TX_STATUSES) {
+    const x = M.TX_STATUS_TEXTS[s]
+    assert.ok(x.endsWith(tail), s)
+    assert.ok(!/reboot after|finishes it|packages listed here/.test(x), s)
+    // the reinstall names ↑ and ↻ only, never − or ↓
+    assert.ok(/reinstall the packages marked ↑ or ↻ below/.test(x), s)
+    assert.ok(!/reinstall[^.;]*[−↓]/.test(x), s)
+  }
+  // a mixed transaction (− + ↑ ↑) and the ↓ group carry the same text, and
+  // their glyphs are the ones the text names
+  for (const [id, glyphs] of [[PIPEWIRE, ["−", "+", "↑", "↑"]], [MESA, ["↓", "↓", "↓"]]]) {
+    const v = JSON.parse(sample)
+    const tx = v.events.find(e => e.id === id).txId
+    v.events.filter(e => e.txId === tx).forEach(e => { e.meta = Object.assign({}, e.meta, { txStatus: "failed" }) })
+    const vt = M.eventDetail(v, M.deskChangelog(v), id).transaction
+    same([vt.packages.map(x => x.glyph), vt.text.endsWith(didNot + tail)], [glyphs, true])
+  }
+  // N5: a failed install is a failed transaction too
+  assert.ok(M.TX_STATUS_TEXTS.failed.includes("could not be installed, upgraded or removed"))
+  same(t.packages.map(M.txPackageLine), ["↑ gtk4  1:4.18.6-1 → 1:4.18.7-1", "↑ libadwaita  1:1.7.6-1 → 1:1.7.7-1"])
+  same(d.kv.find(r => r[0] === "Transaction"), ["Transaction", "2 packages: 2 upgraded · interrupted"])
+  // the class is the engine's, unchanged: routine (ADR-0043 §2)
+  same(d.cls, "routine")
+  // failed and unfinished have their own words
+  for (const s of ["failed", "unfinished"]) {
+    const v = JSON.parse(sample)
+    v.events.filter(e => e.txId === "tx-20260919T083110").forEach(e => { e.meta.txStatus = s })
+    const vp = M.deskChangelog(v)
+    const vt = M.eventDetail(v, vp, GTK4).transaction
+    same([vt.status, vt.title, M.changelogRow(vp, GTK4).alert],
+      [s, s === "failed" ? "Transaction failed" : "Transaction did not finish", s])
+  }
+  // a word the contract does not know, or one off a transaction line, marks nothing
+  const odd = JSON.parse(sample)
+  odd.events.find(e => e.id === GTK4).meta.txStatus = "completed"
+  odd.events.find(e => e.id === LIBADWAITA).meta.txStatus = "Interrupted"
+  odd.events.find(e => e.id === THEME).meta = { txStatus: "failed" }
+  const op = M.deskChangelog(odd)
+  same([GTK4, LIBADWAITA, THEME].map(id => M.changelogRow(op, id).alert), ["", "", ""])
+  same(M.eventDetail(odd, op, GTK4).transaction.status, "")
+  const noTx = JSON.parse(sample)
+  delete noTx.events.find(e => e.id === GTK4).txId
+  same(M.txStatusOf(noTx.events.find(e => e.id === GTK4)), "")
+})
+
+test("transactionDetail: a downgrade group, a cut index, a clipped command (WP-137)", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  const t = M.eventDetail(idx, p, MESA).transaction
+  same(t.packages.map(M.txPackageLine), ["↓ lib32-mesa  1:26.2.0-2 → 1:26.1.0-1",
+    "↓ mesa  1:26.2.0-2 → 1:26.1.0-1", "↓ vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"])
+  same([t.summary, t.partial], ["3 packages: 3 downgraded", false])
+  assert.ok(t.command.startsWith("pacman -U /var/cache/pacman/pkg/mesa-"))
+  // a member that the index no longer lists is not in the list (rule 4)
+  const capped = JSON.parse(sample)
+  capped.events = capped.events.filter(e => e.id !== LIB32)
+  same(M.eventDetail(capped, M.deskChangelog(capped), MESA).transaction.summary, "2 packages: 2 downgraded")
+  // the index at its cap with the transaction at its oldest end: maybe cut
+  const full = JSON.parse(sample)
+  const filler = full.events.find(e => e.id === THEME)
+  while (full.events.length < M.INDEX_EVENTS_MAX) full.events.unshift(Object.assign({}, filler, { id: "01M3VTGNY0NZG4AY8081" + String(full.events.length).padStart(6, "0") }))
+  const last = full.events[full.events.length - 1]
+  last.source = "pacman"; last.kind = "upgrade"; last.txId = "tx-old"; last.meta = { from: "1", to: "2", command: "pacman -Syu" }
+  const fp = M.deskChangelog(full)
+  same(M.eventDetail(full, fp, last.id).transaction.partial, true)
+  same(M.eventDetail(full, fp, MESA).transaction.partial, false)
+  // under the cap a transaction at the oldest end is whole
+  const under = JSON.parse(sample)
+  const oldest = under.events[under.events.length - 1]
+  Object.assign(oldest, { source: "pacman", kind: "upgrade", txId: "tx-old", meta: { from: "1", to: "2" } })
+  same(M.eventDetail(under, M.deskChangelog(under), oldest.id).transaction.partial, false)
+  // a command the index clipped says so
+  const clip = JSON.parse(sample)
+  clip.events.filter(e => e.txId === "tx-20260927T123000").forEach(e => { e.meta.truncated = true })
+  assert.ok(M.eventDetail(clip, M.deskChangelog(clip), MESA).kv.find(r => r[0] === "Command")[1]
+    .endsWith("(clipped in the index; the ledger has it in full)"))
+})
+
+test("transactions keyed by Object.prototype names keep the desk whole (WP-137 round 2, B2)", () => {
+  // a hand-edited ledger line may carry any txId; the engine indexes it
+  const PROTO = ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]
+  const v = JSON.parse(sample)
+  const pac = v.events.filter(e => e.source === "pacman").slice(0, PROTO.length)
+  pac.forEach((e, i) => { e.txId = PROTO[i]; e.meta = Object.assign({}, e.meta, { txStatus: "interrupted" }) })
+  // a WP-141 note naming one of them, and a drift group keyed by another
+  v.events.unshift({ id: "01M2W5S6000000000000000NTF", ts: "2026-10-01T18:00:00+02:00", source: "pacman", kind: "note",
+    subject: "/etc/x.pacnew", detail: "/etc/x installed as /etc/x.pacnew", actor: "system",
+    meta: { transaction: "__proto__" } })
+  v.drift.find(d => d.txId === "tx-20260927T123000").txId = "constructor"
+  let p
+  assert.doesNotThrow(() => { p = M.deskChangelog(v) })
+  same(p.rows.length, v.events.length)
+  same(pac.map(e => M.changelogRow(p, e.id).alert), PROTO.map(() => "interrupted"))
+  // no row turns into drift or a group member by a prototype name
+  const base = M.deskChangelog(JSON.parse(sample))
+  same(pac.map(e => [M.changelogRow(p, e.id).drift, M.changelogRow(p, e.id).groupLeader]),
+    pac.map(e => [M.changelogRow(base, e.id).drift, M.changelogRow(base, e.id).groupLeader]))
+  // a caseless, unresolved line in a transaction named like a prototype member
+  const loose = JSON.parse(JSON.stringify(v))
+  const free = loose.events.find(e => e.id === pac[1].id)
+  delete free.case; delete free.resolution; delete free.resolutionDetail
+  free.txId = "toString"
+  const lp = M.deskChangelog(loose)
+  same([M.changelogRow(lp, free.id).drift, M.changelogRow(lp, free.id).groupLeader], [false, ""])
+  const today = M.deskToday(v, p)
+  assert.ok(Array.isArray(today.needs), "Today keeps its rows")
+  for (const e of pac) {
+    const d = M.eventDetail(v, p, e.id)
+    same([d.transaction.status, d.transaction.packages.map(x => x.id)], ["interrupted", [e.id]])
+    same(d.kv.find(r => r[0] === "Transaction")[1], "1 package: 1 " + M.TX_VERBS[e.kind] + " · interrupted"
+      + (e.txId === "__proto__" ? " · left 1 file" : ""))
+  }
+  same(M.eventDetail(v, p, "01M2W5S6000000000000000NTF").transaction.files, 1)
+  // in an index without such txIds, the names are no transactions either
+  const plain = M.transactionIndex(JSON.parse(sample))
+  for (const k of PROTO) assert.strictEqual(plain[k], undefined, k)
+})
+
+test("Today's NEEDS YOU row carries an incomplete transaction's word (WP-137 round 2, N1)", () => {
+  // a pacman crisis whose transaction was interrupted
+  const v = JSON.parse(sample)
+  const ollama = v.events.find(e => e.id === OLLAMA)
+  ollama.meta = Object.assign({}, ollama.meta, { txStatus: "interrupted" })
+  v.drift.find(d => d.eventId === OLLAMA).crisis = true
+  const p = M.deskChangelog(v)
+  const row = M.deskToday(v, p).needs.find(r => r.id === OLLAMA)
+  same([row.stripe, row.alert], ["crisis", "interrupted"])
+  same(M.deskToday(v, p).needs.filter(r => r.id !== OLLAMA).map(r => r.alert), M.deskToday(v, p).needs.filter(r => r.id !== OLLAMA).map(() => ""))
+})
+
+test("transactionDetail: a file pacman left names its transaction (WP-141 hook, WP-137)", () => {
+  // WP-141 writes a pacman note with meta.transaction = the txId; not in
+  // this fixture yet, so a synthetic one
+  const v = JSON.parse(sample)
+  const NOTE = "01M2W5S6000000000000000NTE"
+  v.events.unshift({ id: NOTE, ts: "2026-09-19T08:31:11+02:00", source: "pacman", kind: "note",
+    subject: "/etc/pacman.d/mirrorlist.pacnew", detail: "/etc/pacman.d/mirrorlist installed as /etc/pacman.d/mirrorlist.pacnew",
+    actor: "system", zone: "red", meta: { command: "pacman -Syu", transaction: "tx-20260919T083110" } })
+  const p = M.deskChangelog(v)
+  const note = M.eventDetail(v, p, NOTE)
+  same(note.kv.find(r => r[0] === "Transaction"), ["Transaction", "2 packages: 2 upgraded · interrupted · left 1 file"])
+  same(note.transaction.packages.map(x => x.name), ["gtk4", "libadwaita"])
+  same(M.changelogRow(p, NOTE).alert, "", "a note is no package line")
+  // the packages' detail counts it
+  same(M.eventDetail(v, p, GTK4).kv.find(r => r[0] === "Transaction")[1], "2 packages: 2 upgraded · interrupted · left 1 file")
+  same(M.eventDetail(v, p, GTK4).transaction.files, 1)
+  // a note whose transaction the index no longer lists
+  v.events[0].meta.transaction = "tx-gone"
+  const gone = M.eventDetail(v, M.deskChangelog(v), NOTE)
+  same(gone.kv.find(r => r[0] === "Transaction")[1], "not in the index any more (it keeps the newest 500 events) · left 1 file")
+  // a note without meta.transaction (another source, or a manual note) has none
+  assert.strictEqual(M.eventTx({ source: "manual", kind: "note", meta: { transaction: "tx-1" } }), "")
+})
+
+test("EventDetail shows the transaction as plain text, Style tokens only (WP-137)", () => {
+  const qml = fs.readFileSync(path.join(root, "plugin/components/desk/EventDetail.qml"), "utf8")
+  const tx = qml.slice(qml.indexOf("// WP-137"))
+  assert.ok(tx.length > 0 && tx.includes("transactionList"), "the block is there")
+  const blocks = tx.split(/\n\s*Text \{/).slice(1)
+  assert.ok(blocks.length >= 4, String(blocks.length))
+  for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b|Qt\.rgba|"(red|orange|white|black)"/.test(tx), "no hard-coded colour")
 })
 
 test("driftRuleInfo and driftShowResult: the rule from `drift show`", () => {
@@ -2566,8 +2824,8 @@ const edgeIds = (b) => b.edges.map((e) => b.nodes[e.a].id + (e.dashed ? " ~ " : 
 
 test("graphBuild: nodes from the index, changes only, crises from drift", () => {
   const b = M.graphBuild(graphSample, 400)
-  same(b.numbers, { nodes: 69, edges: 27, areas: 6, cases: 8, decisions: 4, changes: 49, crises: 2, clusters: 0,
-    folded: 0, events: 77, completed: 2 })
+  same(b.numbers, { nodes: 75, edges: 27, areas: 6, cases: 8, decisions: 4, changes: 55, crises: 2, clusters: 0,
+    folded: 0, events: 83, completed: 2 })
   // order: areas, cases, decisions, changes by day
   const kinds = b.nodes.map((n) => (n.kind === "crisis" ? "change" : n.kind))
   same([...new Set(kinds)], ["area", "case", "decision", "change"])
@@ -2588,7 +2846,7 @@ test("graphBuild: nodes from the index, changes only, crises from drift", () => 
   assert.strictEqual(nodeOf(b, "C-2026-001").done, true)
   assert.strictEqual(nodeOf(b, "C-2026-003").sub, "active · R3 · shell")
   assert.strictEqual(nodeOf(b, "C-2026-003").caseId, "C-2026-003")
-  assert.strictEqual(b.footer, "Newest 77 events · 2 completed cases in the index")
+  assert.strictEqual(b.footer, "Newest 83 events · 2 completed cases in the index")
 })
 
 test("graphBuild: edges event→case, case→area, decision→case, proposedCase dashed", () => {
@@ -2645,7 +2903,7 @@ test("graphBuild: nothing to draw without an index", () => {
     assert.strictEqual(b.empty, true)
     assert.strictEqual(b.nodes.length, 0)
   }
-  assert.strictEqual(M.graphBuild(graphSample).nodes.length, 69)
+  assert.strictEqual(M.graphBuild(graphSample).nodes.length, 75)
 })
 
 test("graphBuild: beyond the cap, changes fold by day and source; areas, cases, decisions, crises never", () => {
@@ -2713,7 +2971,7 @@ test("graphState: start layout deterministic, positions kept by id, cut kept mid
   const s1 = M.graphState(b, null)
   const s2 = M.graphState(b, null)
   same(Array.from(s1.x), Array.from(s2.x))
-  assert.strictEqual(s1.visCount, 69)
+  assert.strictEqual(s1.visCount, 75)
   assert.strictEqual(s1.cut, b.span)
   assert.strictEqual(s1.alpha, 1)
   for (let i = 0; i < 30; i++) M.graphStep(s1, 8)
@@ -3178,6 +3436,177 @@ test("TriageDetail shows logbook and agent text as plain text, never clipped (R3
   const blocks = qml.split(/\n\s*(?:component \w+: )?Text \{/).slice(1)
   assert.ok(blocks.length >= 2, String(blocks.length))
   for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
+})
+
+// ---- WP-102b: Import tasks…, the whole Intent before an imported case's Start
+
+test("importPathError: what the form refuses before the engine is asked", () => {
+  assert.strictEqual(M.importPathError("~/projects/TODO.md"), "")
+  assert.strictEqual(M.importPathError("/srv/notes/Tasks.MD"), "")
+  assert.strictEqual(M.importPathError("~/-dashed.md"), "")
+  for (const bad of ["", "  ", "TODO.md", "./TODO.md", "~user/x.md", "~/notes.txt", "~/x.md\n", "~/a‮b.md",
+    "~/zero​width.md", "~/bom﻿.md", "~/nul\u0000.md", "~/" + "x".repeat(4100) + ".md"]) {
+    assert.notStrictEqual(M.importPathError(bad), "", JSON.stringify(bad.slice(0, 40)))
+  }
+  assert.notStrictEqual(M.importPathError(null), "")
+})
+
+test("importArgs: the path one argument after --, area a slug, --dry-run before it", () => {
+  same(M.importArgs("~/a.md", "", true), { args: ["import", "task", "--json", "--dry-run", "--", "~/a.md"] })
+  same(M.importArgs("~/a.md", "dev-env", false), { args: ["import", "task", "--json", "--area", "dev-env", "--", "~/a.md"] })
+  same(M.importArgs("~/a b; rm -rf ~.md", "", false), { args: ["import", "task", "--json", "--", "~/a b; rm -rf ~.md"] })
+  assert.ok(M.importArgs("~/a.md", "Dev", true).error)
+  assert.ok(M.importArgs("~/a.md", "--json", true).error)
+  assert.ok(M.importArgs("notes.txt", "", true).error)
+})
+
+test("validateArgs: import task and plan show in their contract forms only", () => {
+  for (const ok of [
+    ["import", "task", "--json", "--", "~/a.md"],
+    ["import", "task", "--json", "--dry-run", "--", "~/a.md"],
+    ["import", "task", "--json", "--dry-run", "--area", "dev", "--", "/srv/x/a.md"],
+    ["import", "task", "--json", "--area", "dev", "--", "~/a.md"],
+    ["plan", "show", "C-2026-001", "--json"]
+  ]) assert.strictEqual(M.validateArgs(ok), "", ok.join(" "))
+  for (const bad of [
+    ["import", "task", "--", "~/a.md"],
+    ["import", "task", "--json", "~/a.md"],
+    ["import", "task", "--json", "--", "~/a.txt"],
+    ["import", "task", "--json", "--", "~/a.md\nb.md"],
+    ["import", "task", "--json", "--", "relative.md"],
+    ["import", "task", "--json", "--area", "Bad", "--", "~/a.md"],
+    ["import", "task", "--json", "--area", "--", "~/a.md"],
+    ["import", "task", "--json", "--include-done", "--", "~/a.md"],
+    ["import", "task", "--json", "--", "~/a.md", "~/b.md"],
+    ["import", "task", "--dry-run", "--json", "--", "~/a.md"],
+    ["import", "omarchy-agent", "--json", "--", "~/vault.md"],
+    ["plan", "show", "C-2026-001"],
+    ["plan", "show", "../x", "--json"]
+  ]) assert.notStrictEqual(M.validateArgs(bad), "", bad.join(" "))
+})
+
+test("importResult: the dry run's list, the import's ids, the engine's refusal; ids checked", () => {
+  const dry = M.importResult(0, JSON.stringify({ mode: "dry-run", created: [
+    { id: null, title: "Fix it", status: "queued", source: "~/t.md#2", path: null, replaces: null },
+    { id: null, title: "B", status: "completed", source: "~/t.md#4", replaces: "C-2026-001" }],
+  skipped: [{ source: "~/t.md#5", reason: "already-imported", case: "C-2026-002" }, { source: "~/t.md#6", reason: "odd", case: "x" }],
+  redactedLines: 1 }), "")
+  assert.strictEqual(dry.ok, true)
+  assert.strictEqual(dry.dryRun, true)
+  assert.strictEqual(dry.text, "Would create 2 cases · 2 tasks skipped · 1 line redacted")
+  same(dry.created.map(c => [c.id, c.title, c.status, c.source, c.replaces]),
+    [["", "Fix it", "queued", "~/t.md#2", ""], ["", "B", "completed", "~/t.md#4", "C-2026-001"]])
+  same(dry.skipped, [{ source: "~/t.md#5", reason: "already imported", caseId: "C-2026-002" },
+    { source: "~/t.md#6", reason: "odd", caseId: "" }])
+  same(dry.caseIds, [])
+  const done = M.importResult(0, JSON.stringify({ mode: "apply", created: [{ id: "C-2026-009", title: "A" },
+    { id: "not-an-id", title: "B" }], skipped: [] }), "")
+  assert.strictEqual(done.text, "Imported 2 cases: C-2026-009")
+  same(done.caseIds, ["C-2026-009"])
+  assert.strictEqual(M.importResult(0, JSON.stringify({ mode: "apply", created: [], skipped: [] }), "").text, "Nothing new imported")
+  const refused = M.importResult(1, JSON.stringify({ error: { code: 1, message: "~/x.md is inside the logbook" } }), "")
+  assert.strictEqual(refused.ok, false)
+  assert.strictEqual(refused.text, "~/x.md is inside the logbook")
+  assert.strictEqual(M.importResult(0, "not json", "").ok, false)
+})
+
+test("caseShowArgs/caseShowResult: the whole Intent, or why not", () => {
+  same(M.caseShowArgs("C-2026-007"), { args: ["plan", "show", "C-2026-007", "--json"] })
+  assert.ok(M.caseShowArgs("C-2026-007 --x").error)
+  const r = M.caseShowResult(0, JSON.stringify({ case: { id: "C-2026-007" }, body: "x",
+    intent: { text: "Imported from ~/t.md#2 — read before you start this case.\n\nA", lines: 3, truncated: false } }), "")
+  same([r.ok, r.caseId, r.lines, r.truncated], [true, "C-2026-007", 3, false])
+  assert.ok(r.intent.indexOf("Imported from ~/t.md#2") === 0)
+  const withheld = M.caseShowResult(0, JSON.stringify({ case: { id: "C-2026-007" }, intent: null }), "")
+  assert.strictEqual(withheld.ok, false)
+  assert.ok(/withholds/.test(withheld.text))
+  assert.strictEqual(M.caseShowResult(1, "", "unknown case C-2026-099").text, "unknown case C-2026-099")
+})
+
+test("an imported case: marked in the list; its Start never by Enter, armed by click, after the review", () => {
+  const index = M.parseIndex(sample).index
+  const prepared = M.deskWork(index)
+  const row = M.findWorkRow(prepared, "C-2026-007")
+  assert.strictEqual(row.imported, true)
+  assert.strictEqual(row.listMeta, "C-2026-007 · imported · R1 · dev-env")
+  const actions = M.caseDeskActions(row)
+  same(actions.map(a => [a.id, a.enter, a.review, a.key]), [["start", false, true, ""], ["drop", false, false, "x"],
+    ["open", false, false, "e"]])
+  // Enter has nothing on it: neither Start nor, in its place, Drop
+  assert.strictEqual(M.caseEnterAction(row), null)
+  assert.strictEqual(M.caseArmHint(actions[0], "C-2026-007"), "Start C-2026-007? Click Confirm.")
+  // a case that is not imported keeps Start on Enter
+  assert.strictEqual(M.caseEnterAction(M.findWorkRow(prepared, "C-2026-005")).id, "start")
+  assert.strictEqual(M.intentReviewed(row, null), false)
+  assert.strictEqual(M.intentReviewed(row, { ok: true, pending: false, caseId: "C-2026-005" }), false)
+  assert.strictEqual(M.intentReviewed(row, { ok: true, pending: true, caseId: "C-2026-007" }), false)
+  assert.strictEqual(M.intentReviewed(row, { ok: false, pending: false, caseId: "C-2026-007" }), false)
+  assert.strictEqual(M.intentReviewed(row, { ok: true, pending: false, caseId: "C-2026-007" }), true)
+  const d = M.caseDetail(index, prepared, "C-2026-007")
+  same([d.imported, d.source], [true, "~/Notizen/aufgaben.md#4"])
+})
+
+test("BAD_PATH_CHARS is exactly fixtures/bad-path-chars.txt, the engine's bad_path_char (round 2, N3)", () => {
+  const ranges = fs.readFileSync(path.join(root, "fixtures/bad-path-chars.txt"), "utf8").split("\n")
+    .filter(l => l.trim() !== "" && !l.startsWith("#")).map(l => l.trim().split(" ").map(h => parseInt(h, 16)))
+  assert.ok(ranges.length > 10)
+  for (let cp = 0; cp <= 0x10ffff; cp++) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue
+    const listed = ranges.some(r => cp >= r[0] && cp <= r[1])
+    const refused = M.BAD_PATH_CHARS.test(String.fromCodePoint(cp))
+    if (listed !== refused) assert.fail("U+" + cp.toString(16).toUpperCase() + ": listed " + listed + ", refused " + refused)
+  }
+  // in a path: the separators and a tag character too
+  for (const bad of ["~/x Reviewed by you.md", "~/a b.md", "~/t\u{e0072}.md", "~/s­hy.md"])
+    assert.notStrictEqual(M.importPathError(bad), "", JSON.stringify(bad))
+})
+
+test("a truncated Intent or one with hidden characters keeps Start off, with the hint (round 2, B1, B2)", () => {
+  const index = M.parseIndex(sample).index
+  const row = M.findWorkRow(M.deskWork(index), "C-2026-007")
+  const shown = { ok: true, pending: false, caseId: "C-2026-007", truncated: false, hidden: 0 }
+  assert.strictEqual(M.intentReviewed(row, shown), true)
+  assert.strictEqual(M.reviewHint(row, shown), "")
+  const cut = Object.assign({}, shown, { truncated: true })
+  assert.strictEqual(M.intentReviewed(row, cut), false)
+  assert.strictEqual(M.reviewHint(row, cut),
+    "the Intent is longer than the desk shows: read the whole Intent in the editor; start this case from the terminal.")
+  const hid = Object.assign({}, shown, { hidden: 21 })
+  assert.strictEqual(M.intentReviewed(row, hid), false)
+  assert.strictEqual(M.reviewHint(row, hid),
+    "21 hidden characters are marked: read the whole Intent in the editor; start this case from the terminal.")
+  assert.strictEqual(M.reviewHint(row, Object.assign({}, shown, { hidden: 1, truncated: true })),
+    "1 hidden character is marked and the Intent is longer than the desk shows: read the whole Intent in the editor; start this case from the terminal.")
+  assert.strictEqual(M.reviewHint(row, null), "Start waits until the whole Intent below is shown; only you start an imported case")
+  assert.strictEqual(M.reviewHint(row, Object.assign({}, shown, { pending: true })),
+    "Start waits until the whole Intent below is shown; only you start an imported case")
+  // a case that is not imported has no such hint
+  assert.strictEqual(M.reviewHint(M.findWorkRow(M.deskWork(index), "C-2026-005"), null), "")
+  const r = M.caseShowResult(0, JSON.stringify({ case: { id: "C-2026-007" },
+    intent: { text: "a‹U+E0072›", lines: 1, truncated: false, hidden: 1 } }), "")
+  same([r.ok, r.hidden], [true, 1])
+  const imp = M.importResult(0, JSON.stringify({ mode: "dry-run", created: [], droppedCharacters: 23,
+    skipped: [{ source: "~/big.md", reason: "too-long", case: null }] }), "")
+  assert.strictEqual(imp.text, "Nothing new to import · 1 task skipped · 23 invisible characters dropped")
+  assert.strictEqual(imp.skipped[0].reason, "too long to review in the desk (over 64 KiB)")
+})
+
+test("reaskAfter: an answer that a new index overtook is asked again, never enables Start (stage 2)", () => {
+  const ok = { ok: true, caseId: "C-2026-007" }
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-007", pending: true, reaskWanted: true }, ok), true)
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-007", pending: true }, ok), false)
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-005", pending: true, reaskWanted: true }, ok), false)
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-007", pending: true, reaskWanted: true }, { ok: false, caseId: "C-2026-007" }), false)
+  assert.strictEqual(M.reaskAfter(null, ok), false)
+})
+
+test("ImportForm and the imported review show engine text as plain text", () => {
+  for (const f of ["plugin/components/desk/ImportForm.qml", "plugin/sections/Work.qml"]) {
+    const qml = fs.readFileSync(path.join(root, f), "utf8")
+    assert.ok(!/StyledText|RichText|MarkdownText|AutoText/.test(qml), f + ": only Text.PlainText")
+    const blocks = qml.split(/\n\s*Text \{/).slice(1)
+    for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), f + ": " + b.slice(0, 120))
+  }
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

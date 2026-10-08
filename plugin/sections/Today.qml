@@ -311,6 +311,7 @@ Section {
       meta: modelData.meta
       aside: modelData.aside
       stripe: modelData.stripe
+      alert: modelData.alert || ""
       selected: modelData.id === root.selectedId
       cursor: false
       onClicked: {

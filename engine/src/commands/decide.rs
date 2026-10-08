@@ -2,25 +2,37 @@
 //! a new `decisions/ADR-NNNN-slug.md` with status `proposed`, opened in the
 //! editor unless `--no-edit`; the `decisions.index` table of `DECISIONS.md`
 //! is filled in the same commit (WP-050).
+//!
+//! `seldon decide accept <ADR-NNNN>` (WP-135, ADR-0040): the user accepts a
+//! proposed decision — `status: accepted` and the day in its frontmatter, a
+//! `seldon` note in the ledger. An agent proposes; it never accepts.
 
-use clap::Args;
+use clap::{Args, Subcommand};
 use serde_json::json;
 
-use super::event::parse_case_id;
+use super::event::{
+    ACTOR_ENV, actor_or_env, emit_one, event_json, parse_case_id, parse_person,
+    session_actor_for_user_act,
+};
 use super::index::warnings_human;
 use super::open::{edit, editor_json};
 use super::{Context, Output, autocommit, one_line, write_new};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::index::{build, load, views};
 use crate::logbook::{Logbook, cases};
-use crate::model::{self, Decision, DecisionStatus};
+use crate::model::event::{ACTOR_HUMAN, Event, Kind, Source};
+use crate::model::{self, Decision, DecisionStatus, is_agent, is_decision_id};
 use crate::redact::Redactor;
 
 #[derive(Debug, Clone, Args)]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
 pub struct DecideArgs {
-    /// The decision title, as one argument
-    #[arg(value_name = "TITLE", allow_hyphen_values = true)]
-    pub title: String,
+    #[command(subcommand)]
+    pub command: Option<DecideCommand>,
+
+    /// The decision title, as one argument (a title `accept` goes after `--`)
+    #[arg(value_name = "TITLE", allow_hyphen_values = true, required = true)]
+    pub title: Option<String>,
 
     /// The case this decision belongs to
     #[arg(long = "case", value_name = "ID", value_parser = parse_case_id)]
@@ -31,8 +43,42 @@ pub struct DecideArgs {
     pub no_edit: bool,
 }
 
+#[derive(Debug, Clone, Subcommand)]
+pub enum DecideCommand {
+    /// Accept a proposed decision: status accepted, today's date, a ledger
+    /// note. The user's act; an agent is refused
+    Accept(AcceptArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct AcceptArgs {
+    /// The decision, ADR-NNNN
+    #[arg(value_name = "ID", value_parser = parse_decision_id)]
+    pub id: String,
+
+    /// Who accepts it: human (the default); an agent is refused
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
+}
+
+/// clap value parser: `ADR-NNNN`.
+fn parse_decision_id(s: &str) -> std::result::Result<String, String> {
+    if is_decision_id(s) {
+        Ok(s.to_string())
+    } else {
+        Err(format!("`{s}` is not a decision id (ADR-NNNN)"))
+    }
+}
+
 pub fn run(ctx: &Context, args: DecideArgs) -> Result<Output> {
-    let title = one_line("the title", &args.title)?;
+    match args.command {
+        Some(DecideCommand::Accept(a)) => accept(ctx, a),
+        None => new(ctx, args),
+    }
+}
+
+fn new(ctx: &Context, args: DecideArgs) -> Result<Output> {
+    let title = one_line("the title", args.title.as_deref().unwrap_or_default())?;
     let (config, logbook) = ctx.open_logbook()?;
     // the decision file, its name and DECISIONS.md get the redacted title
     let title = Redactor::for_config(&config)?.redact(&title);
@@ -83,6 +129,141 @@ pub fn run(ctx: &Context, args: DecideArgs) -> Result<Output> {
             "warnings": warnings,
         }),
     ))
+}
+
+/// Accepting a decision is the user's act (ADR-0040; the B2 pattern of
+/// WP-102 and WP-124): an agent actor (`--actor`, or `$SELDON_ACTOR`
+/// without it) is refused, and so is `--actor human` in an agent's session
+/// (an agent's act is never recorded as human, ADR-0027 §5), and so is a
+/// `$SELDON_ACTOR` that is set but does not read (round 2, N3). Checked
+/// before anything is read.
+fn user_actor(flag: Option<String>, id: &str) -> Result<String> {
+    let session =
+        session_actor_for_user_act(&format!("{id} is not accepted"))?.filter(|s| is_agent(s));
+    let actor = actor_or_env(flag, parse_person, ACTOR_HUMAN)?;
+    if is_agent(&actor) {
+        return Err(Error::user(format!(
+            "{id} is not accepted: {actor} may propose a decision (`seldon decide`), only the \
+             user accepts one (ADR-0040); ask them to accept it in the desk or in their own terminal"
+        )));
+    }
+    if let Some(agent) = session {
+        return Err(Error::user(format!(
+            "{id} is not accepted: `--actor {actor}` in a session of {agent} ({ACTOR_ENV}); an \
+             agent's act is never recorded as human (ADR-0027 §5). Accept it from a session of \
+             your own (the desk's Accept)"
+        )));
+    }
+    Ok(actor)
+}
+
+/// `seldon decide accept <ADR-NNNN> [--actor A]`: a proposed decision
+/// becomes accepted with today's date; one `seldon` note (subject the id)
+/// records it. Accepted already: nothing is written (exit 0, `already`).
+/// Superseded: refused. The ledger first, as a plan step: when it cannot be
+/// written, the file stays proposed.
+fn accept(ctx: &Context, args: AcceptArgs) -> Result<Output> {
+    let id = args.id;
+    let actor = user_actor(args.actor, &id)?;
+    let (config, logbook) = ctx.open_logbook()?;
+    let lock = ctx.lock()?;
+    // two files with one id (a hand-made copy): which one the user means is
+    // not for the engine to guess (round 3)
+    let path = match logbook.decision_files_of(&id)?.as_slice() {
+        [] => return Err(Error::user(format!("unknown decision {id}"))),
+        [one] => one.clone(),
+        many => {
+            let names: Vec<String> = many.iter().map(|p| cases::relative(&logbook, p)).collect();
+            return Err(Error::user(format!(
+                "{id} is ambiguous: {} carry it; keep one of them, then accept it again",
+                names.join(" and ")
+            )));
+        }
+    };
+    let rel = cases::relative(&logbook, &path);
+    let (mut decision, mut doc) =
+        model::load::<Decision>(&path).map_err(|e| Error::user(format!("{e:#}")))?;
+    if decision.id != id {
+        return Err(Error::user(format!(
+            "{rel} names {} in its frontmatter, not {id}; fix the file first",
+            decision.id
+        )));
+    }
+    match decision.status {
+        DecisionStatus::Proposed => {}
+        DecisionStatus::Accepted => {
+            drop(lock);
+            return Ok(accept_output(&rel, &decision, true, None, None, Vec::new()));
+        }
+        DecisionStatus::Superseded => {
+            return Err(Error::user(format!(
+                "{id} is superseded; only a proposed decision is accepted"
+            )));
+        }
+    }
+    decision.status = DecisionStatus::Accepted;
+    decision.date = ctx.now.date_naive();
+    // read back before anything is written (WP-066): a frontmatter the
+    // update cannot carry fails here, the ledger untouched
+    model::update(&mut doc, &decision)
+        .map_err(|e| Error::user(format!("{rel}: the status is not changed: {e}")))?;
+    let event = Event::new(ctx.now, Source::Seldon, Kind::Note, &id)
+        .actor(&actor)
+        .detail(format!("accepted: {}", decision.title));
+    let event = emit_one(&lock, &config, &logbook, event)?;
+    crate::sys::write_atomic(&path, doc.render().as_bytes())?;
+    let warnings = fill_index(&logbook);
+    let commit = autocommit(ctx, &config, &logbook, &format!("{id} accepted"));
+    crate::index::rebuild_if_initialised(ctx);
+    drop(lock);
+    Ok(accept_output(
+        &rel,
+        &decision,
+        false,
+        Some(&event),
+        Some(&commit),
+        warnings,
+    ))
+}
+
+fn accept_output(
+    rel: &str,
+    decision: &Decision,
+    already: bool,
+    event: Option<&Event>,
+    commit: Option<&super::Commit>,
+    warnings: Vec<String>,
+) -> Output {
+    let id = &decision.id;
+    let mut human = if already {
+        format!("{id} is accepted already; nothing changed")
+    } else {
+        format!("Accepted {id} \"{}\" in {rel}", decision.title)
+    };
+    if let Some(c) = commit {
+        human.push_str(&c.human());
+    }
+    human.push_str(&warnings_human(&warnings));
+    Output::ok(
+        human,
+        json!({
+            "decision": {
+                "id": id,
+                "title": decision.title,
+                "status": decision.status,
+                "date": decision.date.to_string(),
+                "cases": decision.cases,
+                "path": rel,
+            },
+            "already": already,
+            "event": event.map(event_json),
+            "git": commit.map_or_else(
+                || json!({ "committed": false, "reason": "nothing changed" }),
+                super::Commit::json,
+            ),
+            "warnings": warnings,
+        }),
+    )
 }
 
 /// Fills the `decisions.index` fence of `DECISIONS.md` (WP-050), in the
