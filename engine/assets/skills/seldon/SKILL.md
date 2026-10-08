@@ -7,8 +7,9 @@ description: >
   installing, removing or upgrading software (pacman, yay, makepkg,
   `omarchy pkg`, `omarchy update`), running sudo or pkexec, enabling services,
   editing files under ~/.config, taking snapper snapshots, or when asked about
-  cases, drift, the logbook or why something is on this machine. Not needed
-  for read-only questions or for work that changes only a project's own files.
+  cases, drift, the logbook or why something is on this machine, and after
+  diagnosing a crash (the report goes into the logbook). Not needed for other
+  read-only questions or for work that changes only a project's own files.
 ---
 
 # Seldon Skill
@@ -226,6 +227,26 @@ commands, where a config lives — use Omarchy's own skill (`omarchy`) and
 follow it. This skill adds only the account: the case, the snapshot, the
 record.
 
+## After a Crash Analysis
+
+When you have diagnosed a crash with Omarchy's `diagnose-crash` skill and
+there is a logbook, file your report in its inbox, then ask the user in one
+line whether it becomes a case (in an unattended session, file it and ask
+nothing):
+
+```bash
+seldon inbox add --title "<title>" --tag crash --actor agent:<name> --file - <<'SELDON_REPORT'
+<your report>
+SELDON_REPORT
+```
+
+The quoted heredoc expands nothing; if a line of the report is
+`SELDON_REPORT`, use another word in both places. Seldon redacts the report
+and files it once, as `inbox/<date>-<slug>.md`. Never put the core, memory
+contents or the process environment into it. Filing changes nothing on the
+machine and needs no case; when the user says yes, open one
+([`case.md`](case.md)) and name the inbox file in its *Intent*.
+
 ## Decision Framework
 
 1. **Read-only?** Go ahead; no case.
@@ -240,3 +261,5 @@ record.
 7. **Drift in the context?** Explain only what you can prove
    ([`drift.md`](drift.md)).
 8. **Done?** Verify, fill *Result*, `seldon plan verify`, `seldon plan done`.
+9. **A crash diagnosed?** File the report, then ask (*After a Crash
+   Analysis*).
