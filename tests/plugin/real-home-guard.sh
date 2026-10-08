@@ -27,9 +27,12 @@
 # a quickshell/by-id/<id> dir behind for every instance and a full
 # /run/user/<uid> takes the desktop down. The entries of quickshell/by-id
 # in /run/user/<uid>, and in the inherited XDG_RUNTIME_DIR when that is
-# another dir, are listed before the run; a new one fails the run (a shell
-# restart during the run, or another test run on an old harness, also
-# shows up here).
+# another dir, are listed before the run; a new one fails the run unless a
+# running process holds a file in it (a live instance: another Quickshell
+# app or a restarted shell started during the run). A harness's own
+# Quickshells have exited by then, so what they leave is held by nobody;
+# so is the leftover of another test run on an old harness, which fails
+# here too.
 
 real_home=$HOME
 # Only Seldon's own dirs: files a fake engine of an older harness version
@@ -124,23 +127,36 @@ real_engine_change() {
     || { echo "index.json names another machine"; return; }
 }
 
+# real_runtime_live <runtime dir> <entry> — true when a running process
+# holds a file under <runtime dir>/quickshell/by-id/<entry> open. find
+# exits 1 on the /proc entries of other users; only its output counts.
+real_runtime_live() {
+  [[ -n $(find /proc/[0-9]*/fd -lname "$1/quickshell/by-id/$2/*" -print -quit 2>/dev/null || true) ]]
+}
+
 # real_runtime_check <script name> — one pass/fail line per watched runtime
 # dir, counted in $pass/$fail.
 real_runtime_check() {
-  local dir before after new count_before count_after
+  local dir before after entry count_before count_after live left note
   for dir in "${real_runtime_dirs[@]}"; do
     before=${real_runtime_before[$dir]}
     after=$(real_runtime_entries "$dir")
     count_before=$(grep -c . <<<"$before" || true)
     count_after=$(grep -c . <<<"$after" || true)
-    new=$(LC_ALL=C comm -13 <(echo "$before") <(echo "$after") | grep . || true)
-    if [[ -z $new ]]; then
+    live=() left=()
+    while IFS= read -r entry; do
+      [[ -n $entry ]] || continue
+      if real_runtime_live "$dir" "$entry"; then live+=("$entry"); else left+=("$entry"); fi
+    done < <(LC_ALL=C comm -13 <(echo "$before") <(echo "$after"))
+    note=""
+    ((${#live[@]} == 0)) || note="; ${#live[@]} new held by a running process, not a leftover: ${live[*]}"
+    if ((${#left[@]} == 0)); then
       pass=$((pass + 1))
-      echo "ok   $1: no new entry in $dir/quickshell/by-id ($count_before before, $count_after after)"
+      echo "ok   $1: no leftover in $dir/quickshell/by-id ($count_before before, $count_after after$note)"
     else
       fail=$((fail + 1))
-      echo "FAIL $1: new entries in $dir/quickshell/by-id ($count_before before, $count_after after): a Quickshell ran in this runtime dir:"
-      sed 's/^/     /' <<<"$new"
+      echo "FAIL $1: new entries no process holds in $dir/quickshell/by-id ($count_before before, $count_after after$note): a Quickshell ran in this runtime dir and left them:"
+      printf '     %s\n' "${left[@]}"
     fi
   done
 }

@@ -38,7 +38,7 @@ guard_case() {
     cd "$HOME"; eval "$2"
     real_home_check guard' _ "$root" "$mutation" || true)
   rt_got=ok
-  grep -q '^FAIL guard: new entries in ' <<<"$out" && rt_got=FAIL
+  grep -q '^FAIL guard: new entries no process holds in ' <<<"$out" && rt_got=FAIL
   if [[ $rt_got != "$rt_want" ]]; then
     total_fail=$((total_fail + 1)); echo "FAIL $name runtime: $rt_got (want $rt_want)"; echo "$out" | sed 's/^/     /'
   else
@@ -80,6 +80,11 @@ guard_case runtime-new-instance ok "@/Seldon" "mkdir run/quickshell/by-id/test2"
 guard_case runtime-first-instance ok "@/Seldon" "rm -r run/quickshell; mkdir -p run/quickshell/by-id/test2" FAIL
 guard_case runtime-instance-gone ok "@/Seldon" "rm -r run/quickshell/by-id/shell1"
 guard_case runtime-swapped ok "@/Seldon" "rm -r run/quickshell/by-id/shell1; mkdir run/quickshell/by-id/test2" FAIL
+# A live instance started during the run (another Quickshell app, a shell
+# restart) holds its files open and is no leftover; one held by nobody
+# next to it still fails.
+guard_case runtime-live-instance ok "@/Seldon" "mkdir run/quickshell/by-id/live2; exec 9>run/quickshell/by-id/live2/instance.lock"
+guard_case runtime-live-and-leftover ok "@/Seldon" "mkdir run/quickshell/by-id/live2 run/quickshell/by-id/test2; exec 9>run/quickshell/by-id/live2/instance.lock" FAIL
 # An inherited XDG_RUNTIME_DIR (a private one for the whole check) is
 # watched as well.
 guard_case runtime-xdg-untouched ok "@/Seldon" ": xdg"

@@ -415,9 +415,12 @@ days filled it. Hence (WP-161):
   of `quickshell/by-id` in `/run/user/<uid>` and, when it is another dir,
   in the inherited `XDG_RUNTIME_DIR` before a harness runs, and each
   harness ends with one line per dir: the counts before and after, and a
-  failure naming every new entry. A shell restart during the run, or a
-  concurrent run of an older harness, fails it too; the line says which
-  dir grew.
+  failure naming every new entry that no running process holds open (a
+  harness's Quickshells have exited by then, so their leftovers are held
+  by nobody). A new entry a running process holds is a live instance —
+  another Quickshell app, a restarted shell — and only noted. The
+  leftover of a concurrent run of an older harness fails it too; the line
+  says which dir grew.
 - **`check-runtime-space`** runs first in `check` and before `plugin-test`:
   it prints `df -h /run/user/<uid>` and the `by-id` count, warns above
   50 % and refuses above 80 %. Above 50 %, look before cleaning up:
@@ -683,8 +686,8 @@ changed entry is the state dir or its `index.json`, `lock`,
 logbook `config.toml` names (`logbook.path`) and the machine it named
 before the run (`logbook.machine`). It reads only `config.toml` and those
 two index fields, never the logbook. Anything else still fails, with the
-reason. The same check fails when a new entry appeared in the session's
-`quickshell/by-id` (WP-161). `tests/plugin/real-home-guard.test.sh` (part of `just plugin-test`)
+reason. The same check fails when a new entry that no running process holds
+appeared in the session's `quickshell/by-id` (WP-161). `tests/plugin/real-home-guard.test.sh` (part of `just plugin-test`)
 proves both sides in scratch HOMEs, and the runtime check in scratch
 runtime dirs.
 
