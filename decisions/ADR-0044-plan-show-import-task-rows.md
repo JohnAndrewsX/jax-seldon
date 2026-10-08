@@ -7,8 +7,9 @@
 > shape of one field of an existing command's `--json`. ADR-0035 §6 does not
 > cover either: it lets a later ADR on `next` add optional fields to the v2
 > schemas, not commands, and no `schema/*.json` describes a command's
-> output. ADR-0040 (proposed, WP-135) asks for an ADR whenever a row is
-> added to that list; this is that ADR for WP-102b. The index's shape does
+> output. ADR-0040 (proposed, WP-135) treats a new row in that list as a
+> contract change recorded by an ADR; this ADR follows that precedent for
+> WP-102b. The index's shape does
 > not change: `contractVersion` stays 2, no fixture changes. Builds on
 > ADR-0027 §2(a) (instructions in fetched text are outside the Intent),
 > §7 (the import), ADR-0034 §2 (*Import tasks…* in the Work section) and
@@ -39,10 +40,12 @@ title and `plan show` for an agent kept them.
 
 1. **Two rows in CONTRACT.md:**
    - `seldon plan show <caseId> --json` — read-only; the plugin reads its
-     `intent` (2.) and nothing else from it;
+     `intent` (2.) and `case.id`, nothing else;
    - `seldon import task --json [--dry-run] [--area <slug>] -- <path>` —
      the path one argument after `--`, never interpolated; the dry run
-     first, then the import.
+     first, then the import — the dry run for the same path and area is
+     the arm of this writing action (the two-press rule of SPEC-PLUGIN
+     §5.7).
 
    Both run through the plugin's one engine queue with a fixed argument
    list (`Model.validateArgs`); the case id matches the schema's pattern,
@@ -60,6 +63,11 @@ title and `plan show` for an agent kept them.
      before the cut;
    - `intent` is `null` while `[redaction] patterns` do not compile
      (withheld, as the index withholds its texts).
+
+   `plan show` marks the invisible characters *before* it redacts, so a
+   secret split by such a character in a hand-made case can show unmasked
+   in the review box; `hidden > 0` keeps Start off there (5.), and the
+   index, which drops them before its redaction, masks it.
 3. **An imported Intent always fits what the desk shows (B1).**
    `import task` skips a task whose *Intent* as it would be written (the
    provenance line, then the escaped text) is longer than 64 KiB: reason
@@ -73,8 +81,12 @@ title and `plan show` for an agent kept them.
    detail shows this case's finished, successful `plan show` with
    `truncated` false and `hidden` 0. Otherwise it stays off, and the bar
    says why and where to go: "Read the whole Intent in the editor; start
-   this case from the terminal." Asked again on every new index, the last
-   text stays on screen and Start is off until the answer. The path
+   this case from the terminal." The desk asks again on every new index;
+   one that arrives while an answer is still in flight is remembered, that
+   answer enables nothing, and the engine is asked once more. Meanwhile
+   the last text stays on screen and Start is off until the answer. *Ask
+   agent* on an imported case is not gated: an ask hands the agent no case
+   to work (ADR-0036 §1) and its Intent holds nothing hidden (4.). The path
    characters a task file may not hold are one set on both sides — the
    engine's `bad_path_char` (control, direction and format characters,
    U+2028, U+2029) and the plugin's `BAD_PATH_CHARS` — both tested
@@ -82,8 +94,9 @@ title and `plan show` for an agent kept them.
 
 **Open (N6).** `plan start` is not bound to the text the user was shown:
 if the case file changes between the last `plan show` and the click, the
-user starts text they did not see (the re-ask on every new index narrows
-the window; an edit made without any engine command does not move the
+user starts text they did not see (the re-ask on every new index — and
+once more for one that comes while an answer is in flight — narrows the
+window; an edit made without any engine command does not move the
 index). A later `plan start --intent-sha <sha256 of intent.text>`,
 refused when the Intent changed, would close it; not in 0.2.0.
 

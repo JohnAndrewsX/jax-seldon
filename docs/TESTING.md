@@ -858,7 +858,9 @@ area turns Import off until its own dry run and the import carries
 `--area`, a capture's new index asks `plan show` again with the last text
 kept on screen and Start off until the answer, a marked (`hidden` 21) and
 cut Intent keeps Start off with the hint and both notes
-(`FAKE_SELDON_SHOW_HIDDEN`, `FAKE_SELDON_SHOW_TRUNCATED`); a
+(`FAKE_SELDON_SHOW_HIDDEN`, `FAKE_SELDON_SHOW_TRUNCATED`); stage 2: the index rewritten while the first
+`plan show` runs (`FAKE_SELDON_SHOW_TOUCH`) asks once more (three `plan
+show` in all) and `Model.reaskAfter`'s cases; a
 section change gives the keys back from a field and keeps its
 draft; the Changelog's selection follows its event across an index update
 (the acceptance's cursor stability); Capture now over a lock retry; one

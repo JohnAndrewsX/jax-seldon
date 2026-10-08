@@ -604,8 +604,10 @@ text (rule 6).
 
 An imported case (tag `imported`): its detail asks the engine for the
 whole Intent — `seldon plan show <id> --json`, read-only, again with every
-new index; while it asks again the last text stays on screen, unchanged
-text is not laid out again, and Start is off until the answer — and shows, under IMPORTED TASK · N lines, the accent line
+new index, and once more for an index that arrives while an answer is in
+flight (that answer enables nothing); while it asks again the last text
+stays on screen, unchanged text is not laid out again, and Start is off
+until the answer — and shows, under IMPORTED TASK · N lines, the accent line
 "From ~/…#N. Read the whole Intent before you start the case: once
 started, an agent acts on it without asking. Only you start it." and the
 engine's `intent.text` as plain text in the system's monospace font
@@ -616,8 +618,9 @@ character the case file holds shows as `‹U+XXXX›` (the engine marks it,
 cannot see in the file. Read the case in the editor; start it from the
 terminal."; "The first 64 KiB are shown; the rest is in the case file.
 Read the whole Intent in the editor; start this case from the terminal."
-when `truncated` (an imported Intent never is: `import task` skips a
-longer one, ADR-0044). While it loads, or when
+when `truncated` (an imported Intent normally is not: `import task`
+skips a longer one, ADR-0044; a later pattern change can cut it, and Start
+then stays off). While it loads, or when
 the engine withholds it (`intent: null`) or cannot be asked (dev mode),
 the block says so and the index's first paragraph (INTENT) stays. **Its
 Start never fires from the list or a key** (ADR-0027 §2(a); Fable,
