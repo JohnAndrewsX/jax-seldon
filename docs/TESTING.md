@@ -480,6 +480,20 @@ reads the `decide --json` shape and passes on only an id matching
 decision id (not `ADR-4`, `adr-0004`, a padded id, a path or `memory`);
 `memoryRows` gives the sample's three lessons and two topics (path and
 `updated`), every part optional, all opening the fixed target `logbook`.
+For Import tasks… (WP-102b): `importPathError` (empty, relative, `~user`,
+not `.md`, a newline, U+202E, U+200B, a BOM, NUL, over 4096 characters);
+`importArgs` (the path one argument after `--`, a shell-looking path kept
+whole, the area a slug); `validateArgs` takes `import task --json
+[--dry-run] [--area <slug>] -- <path>` and `plan show <caseId> --json` and
+refuses the rest (no `--json`, flags out of order, `--include-done`, two
+paths, a bad area or path, `omarchy-agent`); `importResult` (the dry run's
+list, the import's ids — one that is no case id dropped —, the reasons in
+words, the engine's refusal, not JSON); `caseShowArgs`/`caseShowResult`
+(the whole Intent, `intent: null` withheld, a refusal); an imported case's
+list mark, its Start without Enter and without a key (and no Drop on Enter
+in its place), armed by click, `intentReviewed` only for this case's
+finished, successful `plan show`; ImportForm and Work show engine text as
+Text.PlainText only.
 For bulk triage (WP-124b): `validateArgs` takes `agent ask triage|drift
 <eventId>|case <caseId> --json`, `drift apply <proposalId> [--item
 <eventId>] --json` and `drift discard <proposalId> --json`, and refuses
@@ -822,7 +836,18 @@ detail, the bar by status, dev mode's refusal, By agent, a reopen) and
 live (the new-case sheet by keys, start → to verification → complete,
 each armed then run, Open in editor, the engine's refusal, `x x`, hand to
 agent and its refusal, a locked new case, Run and its refusal, Reopen and
-`r`); a section change gives the keys back from a field and keeps its
+`r`); Import tasks… (WP-102b) live against the fake engine (`import
+task` and `plan show` there): the form, the dry run's list and skips, one
+click imports, the first case selected with the list's line, its detail's
+whole Intent (plain text, 5 lines, the provenance line, the source) and
+no first-paragraph INTENT beside it, Enter twice does nothing, Start armed
+by click and run, a second dry run all `already imported`, the argv with
+the path as one argument after `--` and `plan show` only for the imported
+case and before its Start; the form's own path check, the engine's
+refusal in the form and the fields kept after Esc, a withheld Intent that
+leaves Start off; dev mode: the index's first paragraph, "needs the
+engine", no Start, the form shut, nothing outside the desk at 50 %; a
+section change gives the keys back from a field and keeps its
 draft; the Changelog's selection follows its event across an index update
 (the acceptance's cursor stability); Capture now over a lock retry; one
 count everywhere (chips = sidebar = header = the quiet line, a group once,
