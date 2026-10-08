@@ -173,3 +173,13 @@ branch.
 **Still open.** The live test (test host positive control A; dev host
 with two monitors B, with the operator's go). CI after the orchestrator's
 push.
+
+## Live test (orchestrator, 2026-10-08, dev host, operator's go)
+
+Fix 49c7c2b3 installed into the dev host's plugin; one monitor, the pill in
+the bar's centre section (drawn pill plus placeholder: the layout of the six
+crashes that morning). Three `omarchy restart shell`: crash reports 6 → 6,
+`coredumpctl list quickshell --since T0` empty, three "Exiting due to IPC
+request", no "Process crashed", no "another handler is registered" or
+"Unable to identify engine generation" in the new shells' logs, one shell
+running at the end. PASS. Stage 2 (Fable): APPROVE.
