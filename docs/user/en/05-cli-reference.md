@@ -32,7 +32,7 @@ Commands:
   log               Write a note: a ledger event and a journal entry
   event             Record an event by hand (hooks, scripts)
   plan              Plan and track cases: new, start, verify, done, drop, list, show
-  decide            Create a decision record (ADR) and open it in the editor
+  decide            Create a decision record (ADR) and open it in the editor; accept a proposed one
   open              Print the path of a logbook file; --editor opens it
   index             Rebuild index.json and the ledger/*.md views; --check validates
   status            Regenerate STATUS.md, the ledger views and index.json; print a summary
@@ -599,20 +599,50 @@ Options:
 
 Creates `decisions/ADR-NNNN-<slug>.md` with the status *proposed* and
 opens it in your editor; `--no-edit` skips the editor. It writes no
-ledger event.
+ledger event. A decision titled "accept" goes after `--`
+(`seldon decide -- accept`): a bare `accept` is the subcommand below.
 
 <!-- help: seldon decide -->
 ```text
-Create a decision record (ADR) and open it in the editor
+Create a decision record (ADR) and open it in the editor; accept a proposed one
 
 Usage: seldon decide [OPTIONS] <TITLE>
+       seldon decide <COMMAND>
+
+Commands:
+  accept  Accept a proposed decision: status accepted, today's date, a ledger note. The user's act; an agent is refused
+  help    Print this message or the help of the given subcommand(s)
 
 Arguments:
-  <TITLE>  The decision title, as one argument
+  <TITLE>  The decision title, as one argument (a title `accept` goes after `--`)
 
 Options:
       --case <ID>      The case this decision belongs to
       --no-edit        Do not open the editor
+```
+<!-- /help -->
+
+### seldon decide accept
+
+Accepts a proposed decision: its frontmatter gets `status: accepted` and
+today's date, the ledger a `seldon` note (subject the decision id),
+`DECISIONS.md` and the index follow, and the logbook commits. A decision
+that is accepted already is left as it is (exit 0, `already` in
+`--json`); a superseded one is refused. Accepting is yours: an agent
+(`--actor agent:…` or `SELDON_ACTOR`) is refused, and so is `--actor
+human` in an agent's session (exit 1). The desk's *Accept* runs it.
+
+<!-- help: seldon decide accept -->
+```text
+Accept a proposed decision: status accepted, today's date, a ledger note. The user's act; an agent is refused
+
+Usage: seldon decide accept [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The decision, ADR-NNNN
+
+Options:
+      --actor <ACTOR>  Who accepts it: human (the default); an agent is refused
 ```
 <!-- /help -->
 

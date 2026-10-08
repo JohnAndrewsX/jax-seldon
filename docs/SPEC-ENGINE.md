@@ -106,7 +106,7 @@ seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
 # `case-completed` and `case-dropped` carry none. Lines written before contract
 # 2 are never rewritten. `seldon event` refuses the kinds `case-*`,
 # `state-loss` and `resolution`/`correction` (engine-only) and the `--meta`
-# keys `txId`, `risk` (engine-only) and `truncated` (index-only).
+# keys `txId`, `risk`, `txStatus` (engine-only) and `truncated` (index-only).
 seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A] [--no-capture]
 # ADR-0029 §2 (WP-115): `plan verify` and `plan done` run a default `seldon
 # capture` first — a complete capture under its own lock hold (waiting for a
@@ -192,6 +192,17 @@ seldon plan list [--status S] [--area A]          # a case file that does not lo
                                                  # --json `warnings`), the others are listed, exit 0 (WP-077)
 seldon plan show <ID>                            # the case file's path and text as quoted lines (`> `, as
                                                  # hook session-start, §8), under one note line; --json unquoted
+                                                 # (`case`, `body`, `activeCase`) plus `intent` (WP-102b): the
+                                                 # whole *Intent* section as display text — control characters
+                                                 # other than line breaks and tabs as spaces, every direction or
+                                                 # format character (ADR-0038's set, WP-140) marked `‹U+XXXX›`
+                                                 # and counted in `hidden`, then redacted
+                                                 # (`index::build::marked_text`) — `{text, lines, truncated,
+                                                 # hidden}`, `text` at most 64 KiB cut at a character, `lines`
+                                                 # counted before the cut; `null` while `[redaction] patterns` do
+                                                 # not compile (ADR-0044). The desk shows it before an
+                                                 # imported case's Start and keeps Start off while `truncated` or
+                                                 # `hidden` > 0
 seldon drift [--crisis-only] [--all] [--json]    # read-only: index items, crises first; totals count all; --all:
                                                  # every item that can still be resolved, routine ones too,
                                                  # uncapped (ADR-0028 §4c). Each item adds `class`
@@ -218,8 +229,9 @@ seldon drift discard <PROPOSAL> [--actor A] [--json]       # removes the proposa
 # --json → {proposal: {id, at, actor, path, counts: {items, crises}}, items,
 # replaced: [{id, applied}]}; the human output says "Replaced the unapplied
 # proposal <id>." when one was unapplied.
-# apply, discard: the user's (actor human: an agent actor, and `--actor human`
-# in an agent's session, exit 1). apply --json → {proposal, applied,
+# apply, discard: the user's (actor human: an agent actor, `--actor human`
+# in an agent's session, and a SELDON_ACTOR that is set but does not read,
+# exit 1; WP-135 round 2). apply --json → {proposal, applied,
 # markedApplied (this run set `applied`; it marks the run, not the items),
 # done: [{eventId, action, resolved, case, events, warning}], skipped:
 # [{eventId, reason}], refused: [{eventId, reason}], git}; exit 0 when the
@@ -243,6 +255,24 @@ seldon drift discard <PROPOSAL> [--actor A] [--json]       # removes the proposa
 # link, explain and dismiss (exit 1 naming the conflict; WP-109 round 2,
 # as WP-101 for `plan done`)
 seldon decide "<title>" [--case ID] [--no-edit] # creates ADR, opens $EDITOR unless --no-edit
+                                               # (a title `accept` goes after `--`: `decide -- accept`)
+seldon decide accept <ADR-NNNN> [--actor A]    # WP-135, ADR-0040: a proposed decision → `status: accepted`
+# and `date` today (only these two frontmatter keys change; read back before
+# anything is written), one ledger line `source: seldon`, `kind: note`,
+# `subject` the id, `detail` `accepted: <title>`, actor human, no case (the
+# ledger first, then the file, as a plan step: a ledger that cannot be written
+# leaves the decision proposed; a file write that fails after the ledger line
+# leaves the `accepted:` note with the decision still proposed, and a re-run
+# adds a second note — the plan step's pattern); the `decisions.index` fence of
+# DECISIONS.md, autocommit `seldon: ADR-NNNN accepted`, index rebuilt.
+# Accepted already: exit 0, nothing written (`already: true`). Superseded, an
+# unknown id, a file that does not read or whose frontmatter names another id,
+# two or more files with the id (ambiguous; both named): exit 1, nothing written. The user's act (as `drift apply`, WP-124, and an
+# imported case's start, WP-102): an agent `--actor`, an agent SELDON_ACTOR
+# without `--actor`, `--actor human` in an agent's session, and a SELDON_ACTOR
+# that is set but does not read (whatever `--actor` says: the session may be
+# an agent's; WP-135 round 2) are exit 1, before anything is read; `system` is
+# refused by the parser
 seldon status                                  # regenerates STATUS.md + index
 # decide and status (WP-050) fill the `decisions.index` fence of the logbook's
 # DECISIONS.md from decisions/*.md frontmatter: `| [[id]] | title | status |
@@ -454,10 +484,16 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # like fetched text (ADR-0027 §2(a): instructions in it are outside the
                                                # Intent); the skill says so. CRLF line ends are read as LF before the
                                                # redaction (the rules read `\r\n` as `\n` since WP-128; the parser and
-                                               # the marker's task hashes take LF text), the line count unchanged. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
+                                               # the marker's task hashes take LF text), the line count unchanged. WP-102b
+                                               # round 2 (ADR-0044): direction and format characters (ADR-0038's set,
+                                               # WP-140, the tags included) are dropped from the text before the
+                                               # redaction — so from every task, its title and its case — and counted in
+                                               # `droppedCharacters`. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
                                                # without a letter or digit), `already-imported` (the marker has the same file
                                                # and hash; `case` named), `duplicate` (the same file and hash earlier in this
-                                               # run); else created: queued (completed with --include-done for `[x]`),
+                                               # run), `too-long` (its Intent as it would be written — the provenance line,
+                                               # then the escaped text — over 64 KiB, what `plan show` gives the desk whole;
+                                               # ADR-0044); else created: queued (completed with --include-done for `[x]`),
                                                # zone/risk from the flags (default yellow/R1), priority normal, area from
                                                # --area (created on first use), tag `imported` (CONTRACT.md rule 8), Log line
                                                # `created (zone Z, risk R): imported from <source>` (`<~path>#<line>`, no
@@ -489,8 +525,8 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # ledger, case, marker, commit or index; it settles pending entries in memory
                                                # only). --json → {mode: apply|dry-run, created: [{id (null in a dry run),
                                                # title, status, source, path (null in a dry run), replaces}], skipped:
-                                               # [{source, reason: done|empty|already-imported|duplicate, case}],
-                                               # redactedLines, areaCreated, files, marker (null when nothing was written),
+                                               # [{source, reason: done|empty|too-long|already-imported|duplicate, case}],
+                                               # redactedLines, droppedCharacters, areaCreated, files, marker (null when nothing was written),
                                                # git}. Each new case's frontmatter gets `source: "~/…#line"` (ADR-0038 §3; a
                                                # path of more than 512 bytes as `~/…` and its end), which the index
                                                # copies as `cases[].source`; the marker stays the only idempotency key (an
@@ -934,7 +970,9 @@ verify|done` did; WP-050, WP-115) and, for `plan verify|done`, `capture`
 (above); `decide --json` returns
 `{"decision": {id, title, status, date, cases, path}, "editor", "git",
 "warnings"}` (`warnings`: the `decisions.index` fill, WP-050)
-(no ledger event). `plan new` defaults:
+(no ledger event); `decide accept --json` returns `{"decision": {id,
+title, status, date, cases, path}, "already", "event" (the ledger line,
+null when already), "git", "warnings"}`. `plan new` defaults:
 `--zone yellow --risk R1 --priority normal`; `--actor` is accepted on every
 plan step so agents identify themselves; without `--actor`, `plan`, `log`,
 `drift` and `event` take `$SELDON_ACTOR` (WP-096, ADR-0027 §5; `seldon agent
@@ -954,8 +992,8 @@ NEL, U+2028, U+2029; leading and trailing ones are trimmed first) with exit 1 an
 line, before anything is read or written; a person's note may have
 several lines (WP-058). `SELDON_NOW=<RFC 3339>` overrides
 the clock for tests and demos; `SELDON_CONFIG=FILE` is the config
-override. `decide` writes no ledger event (no fitting kind; revisit with
-WP-008). `.seldon/active-case` names the case started last; `done`/`drop`
+override. `decide` writes no ledger event for a new decision (no fitting
+kind); `decide accept` writes the `seldon` note above (ADR-0040). `.seldon/active-case` names the case started last; `done`/`drop`
 clear it only when it names that case.
 
 ```
@@ -1290,7 +1328,19 @@ git itself is killed, with the same bounded pipe wait. Rules:
   completed`, the next `transaction started`, or when
   `/var/lib/pacman/db.lck` is absent at capture time; until then the
   cursor stays at the transaction's `[PACMAN] Running` line, else
-  `transaction started` (ADR-0013 §5). `meta.command` is parsed as argv,
+  `transaction started` (ADR-0013 §5). **Status** (ADR-0043): a
+  transaction that ends with `transaction failed` or `transaction
+  interrupted` writes that word as `meta.txStatus` on each of its package
+  events; one closed by the next `transaction started`, or still open at
+  the end of the log while `db.lck` is absent, writes `unfinished`; a
+  completed one writes none, nor does a package line outside any
+  transaction. Lines written before ADR-0043 have none (append-only); the
+  index keeps the key only on pacman events with a `txId`. A transaction
+  still open at the end of the rotated `<log>.1` is emitted as
+  `unfinished` even while pacman runs: the cursor moves on to the new
+  file, so holding it back would lose it, and a pacman that keeps writing
+  to the old file through its open handle ends it there, unread (rare:
+  Arch does not rotate pacman.log by default). `meta.command` is parsed as argv,
   never matched as a substring; the parser (`command_intent`,
   `parse_command`, `is_plain_full_upgrade`) is shared with the hook (§8)
   and the drift routine rule (§5): the intent of a hook `command` event is
@@ -2027,7 +2077,8 @@ through a link); the index is rebuilt when anything changed. `propose`,
 `apply` and `discard` refuse a `proposals` folder that is a symbolic link
 or no directory (exit 1); the index build skips it with a warning.
 `apply` and `discard` refuse an agent actor (`--actor`, else
-`SELDON_ACTOR`): that stops an agent in its launched session, not a
+`SELDON_ACTOR`) and, with any `--actor`, a `SELDON_ACTOR` that is set but
+does not read (WP-135 round 2): that stops an agent in its launched session, not a
 process of the same user that drops the variable (ADR-0036 §4).
 
 **Case notes after a capture (WP-101, ADR-0027 §2c, §3).** After the

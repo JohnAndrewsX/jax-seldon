@@ -66,6 +66,7 @@ import qs.Ui
 //                       click:<text>     click the first visible item whose
 //                                        text is <text>
 //                       clickName:<objectName>  … whose objectName is that
+//                       trigger:<objectName>:<id>  that item's actionTriggered(id), no button (WP-102b)
 //                       clickAt:<x>,<y>  click that window point
 //                       drag:<objectName>:<f1>,<f2>  press at fraction f1 of
 //                                        the item's width, move to f2 in
@@ -490,6 +491,14 @@ ShellRoot {
     } else if (verb === "clickName") {
       var named = root.findName(arg)
       if (named) driver.mouseClick(named)
+      else console.log("HARNESS nothing to click: " + arg)
+    } else if (verb === "trigger") {
+      // trigger:<objectName>:<action id> — the item's actionTriggered(id), as
+      // a stray trigger would (no button involved): a guard behind the bar
+      // must hold on its own (WP-102b round 2)
+      var at = arg.indexOf(":")
+      var target = root.findName(arg.slice(0, at))
+      if (target && typeof target.actionTriggered === "function") target.actionTriggered(arg.slice(at + 1))
       else console.log("HARNESS nothing to click: " + arg)
     } else if (verb === "clickAt") {
       var xy = arg.split(",")

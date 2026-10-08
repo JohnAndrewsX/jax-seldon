@@ -682,8 +682,10 @@ function validateArgs(args) {
     if (!withText && n === 3 && matches(PLAN_STEPS, a[1]) && CASE_ID.test(a[2])) return ""
     // WP-101: reopen a completed case (a new case; nothing is destroyed)
     if (!withText && n === 3 && a[1] === "reopen" && CASE_ID.test(a[2]) && json) return ""
+    // WP-102b: read-only, the whole Intent of an imported case before its Start
+    if (!withText && n === 3 && a[1] === "show" && CASE_ID.test(a[2]) && json) return ""
     return "plan must be: plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] -- <title>"
-      + " | plan start|verify|done|drop <caseId> | plan reopen <caseId> --json"
+      + " | plan start|verify|done|drop <caseId> | plan reopen <caseId> --json | plan show <caseId> --json"
   case "drift":
     // WP-124 (ADR-0036): apply or discard the proposal index.triage names;
     // a crisis one --item per run. Never `propose` (the agent's command).
@@ -724,6 +726,16 @@ function validateArgs(args) {
     return "agent must be: agent start <caseId> --json | agent start --new --json -- <intent>"
       + " | agent ask triage --json | agent ask drift <eventId> --json | agent ask case <caseId> --json"
       + " | agent focus <caseId> --json | agent sessions --json"
+  case "import": {
+    // WP-102b: `import task --json [--dry-run] [--area <slug>] -- <path>`,
+    // the path one argument after `--`, checked as importPathError does
+    var pre = sep === -1 ? args.slice() : args.slice(0, sep)
+    var k = 3
+    if (pre[k] === "--dry-run") k += 1
+    if (pre[k] === "--area" && k + 1 < pre.length && AREA.test(pre[k + 1])) k += 2
+    return withText && pre[1] === "task" && pre[2] === "--json" && k === pre.length && importPathError(free[0]) === ""
+      ? "" : "import must be: import task --json [--dry-run] [--area <slug>] -- <path to a .md file>"
+  }
   case "doctor":
     // WP-101: read-only, the rules row only (Service.checkRules); no probe
     return !withText && n === 3 && a[1] === "--only" && a[2] === "rules" && json
@@ -731,7 +743,10 @@ function validateArgs(args) {
   case "rules":
     return !withText && n === 2 && a[1] === "update" && json ? "" : "rules must be: rules update --json"
   case "decide":
-    return withText && n === 2 && a[1] === "--no-edit" ? "" : "decide must be: decide --no-edit -- <title>"
+    if (withText && n === 2 && a[1] === "--no-edit") return ""
+    // WP-135, ADR-0040: the user accepts a proposed decision
+    if (!withText && n === 3 && a[1] === "accept" && DECISION_ID.test(a[2]) && json) return ""
+    return "decide must be: decide --no-edit -- <title> | decide accept <ADR id> --json"
   case "open":
     return !withText && n === 3 && (matches(OPEN_TARGETS, a[1]) || CASE_ID.test(a[1]) || DECISION_ID.test(a[1]))
       && a[2] === "--editor" ? "" : "open must be: open journal|ledger|status|logbook|<caseId>|<ADR id> --editor"
@@ -1039,8 +1054,10 @@ function events(index) {
 // (ADR-0013; ADR-0015 §2: `members` present) also under its txId, so the
 // group's other members find it.
 function driftLookup(index) {
-  var byId = {}
-  var byTx = {}
+  // keyed by index text (an id, a txId a hand edit may make `constructor`):
+  // no prototype (WP-137 round 2, B2)
+  var byId = Object.create(null)
+  var byTx = Object.create(null)
   var list = index && Array.isArray(index.drift) ? index.drift : []
   for (var i = 0; i < list.length; i++) {
     var d = list[i]
@@ -1103,7 +1120,12 @@ function changelogRows(index, filter) {
       badge: grouped && leader.members > 1 ? "+" + (leader.members - 1) : "",
       txId: grouped ? str(leader.txId) : "",
       groupLeader: group ? str(group.eventId) : "",
-      groupSubject: group ? str(group.subject) : ""
+      groupSubject: group ? str(group.subject) : "",
+      // WP-137, ADR-0043: the pacman transaction the event belongs to (a
+      // file pacman left names it in meta.transaction, WP-141) and how it
+      // ended when it did not complete
+      tx: eventTx(e),
+      txStatus: txStatusOf(e)
     })
   }
   return rows
@@ -1377,6 +1399,7 @@ function workCase(c, group, column) {
     agents: Array.isArray(c.agents) ? c.agents.filter(function(a) { return typeof a === "string" && a !== "" }) : [],
     closedByAgent: caseTags(c).indexOf(TAG_CLOSED_BY_AGENT) !== -1,
     reopens: reopensOf(c),
+    imported: caseTags(c).indexOf(TAG_IMPORTED) !== -1,
     actionable: CASE_ID.test(id)
   }
 }
@@ -1385,6 +1408,9 @@ function workCase(c, group, column) {
 // case; the case reopens another (`reopens:<caseId>`).
 var TAG_CLOSED_BY_AGENT = "closed-by-agent"
 var TAG_REOPENS = "reopens:"
+// `seldon import task` made the case (WP-102): its Intent is text from a
+// file, and only the user starts it (ADR-0027 §2(a)).
+var TAG_IMPORTED = "imported"
 
 // A case's tags, strings only.
 function caseTags(c) {
@@ -1602,6 +1628,123 @@ function agentNewArgs(intent) {
   if (!hasText(intent)) return { error: "Say what the agent should do" }
   if (String(intent).indexOf("\u0000") !== -1) return { error: "The text contains a NUL character" }
   return { args: ["agent", "start", "--new", "--json", "--", String(intent)] }
+}
+
+// ---- Import tasks (WP-102b; SPEC-ENGINE §3 `import task`) --------------------
+//
+// The desk's *Import tasks…* form: a path to the user's own Markdown task
+// file, an optional area, a dry run first, then one click imports. The path
+// is one argument after `--`, never interpolated (CONTRACT.md); the engine
+// checks it for real (under the home, outside the logbook, a regular `.md`
+// file, its size and encoding); this check only spares the call for what
+// cannot be right.
+
+var IMPORT_PATH_MAX = 4096
+// The engine's `bad_path_char`, one set (WP-102b round 2): control
+// characters, direction and format characters (the engine's
+// `is_direction_or_format`, WP-140's set with the tags) and the line and
+// paragraph separators. Both sides are tested against
+// fixtures/bad-path-chars.txt.
+var BAD_PATH_CHARS = /[\u0000-\u001f\u007f-\u009f\u00ad\u0600-\u0605\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e007f}]/u
+
+// "" when `path` may go to the engine, else why not (plain text).
+function importPathError(path) {
+  var p = typeof path === "string" ? path : ""
+  if (p.trim() === "") return "Name a Markdown task file, e.g. ~/projects/TODO.md"
+  if (BAD_PATH_CHARS.test(p)) return "The path holds a control, text-direction or invisible character"
+  if (p.length > IMPORT_PATH_MAX) return "The path is too long"
+  if (p.indexOf("~/") !== 0 && p.charAt(0) !== "/") return "Give the path from your home (~/…) or from / (absolute)"
+  if (!/\.md$/i.test(p)) return "A task file ends in .md"
+  return ""
+}
+
+// `seldon import task --json [--dry-run] [--area <slug>] -- <path>`:
+// { args } or { error }.
+function importArgs(path, area, dryRun) {
+  var why = importPathError(path)
+  if (why !== "") return { error: why }
+  var a = typeof area === "string" ? area : ""
+  if (a !== "" && !AREA.test(a)) return { error: "Area must be a lowercase slug: letters, digits and -" }
+  var args = ["import", "task", "--json"]
+  if (dryRun) args.push("--dry-run")
+  if (a !== "") args.push("--area", a)
+  return { args: args.concat(["--", path]) }
+}
+
+// The engine's reasons a task was not imported, as the desk says them.
+var IMPORT_SKIP_REASONS = {
+  done: "done (- [x])",
+  empty: "no text",
+  "already-imported": "already imported",
+  duplicate: "the same text again",
+  "too-long": "too long to review in the desk (over 64 KiB)"
+}
+
+// `seldon import task --json` → { ok, text, dryRun, created: [{ id, title,
+// status, source, replaces }], skipped: [{ source, reason, caseId }],
+// redactedLines, caseIds }. Every text is user content (rule 6); an id
+// that is no case id is shown as "" and never passed on.
+function importResult(exitCode, stdoutText, stderrText) {
+  var empty = { created: [], skipped: [], redactedLines: 0, caseIds: [], dryRun: false }
+  if (exitCode !== 0) {
+    empty.ok = false
+    empty.text = engineError(stdoutText, stderrText, exitCode)
+    return empty
+  }
+  var data = parseJson(stdoutText)
+  if (!data) {
+    empty.ok = false
+    empty.text = "The engine's answer was not JSON"
+    return empty
+  }
+  var dryRun = data.mode === "dry-run"
+  var caseId = function(v) { return typeof v === "string" && CASE_ID.test(v) ? v : "" }
+  var created = (Array.isArray(data.created) ? data.created : []).filter(isObject).map(function(c) {
+    return { id: caseId(c.id), title: str(c.title), status: str(c.status), source: str(c.source), replaces: caseId(c.replaces) }
+  })
+  var skipped = (Array.isArray(data.skipped) ? data.skipped : []).filter(isObject).map(function(k) {
+    var reason = str(k.reason)
+    return { source: str(k.source), reason: IMPORT_SKIP_REASONS[reason] !== undefined ? IMPORT_SKIP_REASONS[reason] : reason,
+      caseId: caseId(k.case) }
+  })
+  var ids = created.map(function(c) { return c.id }).filter(function(id) { return id !== "" })
+  var n = created.length
+  var head = dryRun
+    ? (n > 0 ? "Would create " + plural(n, "case", "cases") : "Nothing new to import")
+    : (n > 0 ? "Imported " + plural(n, "case", "cases") + (ids.length > 0 ? ": " + ids.join(", ") : "") : "Nothing new imported")
+  var tail = [skipped.length > 0 ? plural(skipped.length, "task", "tasks") + " skipped" : "",
+    count(data.redactedLines) > 0 ? plural(count(data.redactedLines), "line", "lines") + " redacted" : "",
+    count(data.droppedCharacters) > 0
+      ? plural(count(data.droppedCharacters), "invisible character", "invisible characters") + " dropped" : ""]
+    .filter(function(p) { return p !== "" })
+  return { ok: true, text: [head].concat(tail).join(" · "), dryRun: dryRun, created: created, skipped: skipped,
+    redactedLines: count(data.redactedLines), droppedCharacters: count(data.droppedCharacters), caseIds: ids }
+}
+
+// `seldon plan show <caseId> --json` (WP-102b): the whole Intent the desk
+// shows before an imported case's Start. { args } or { error }.
+function caseShowArgs(caseId) {
+  var id = String(caseId || "")
+  if (!CASE_ID.test(id)) return { error: "Not a case id: " + id }
+  return { args: ["plan", "show", id, "--json"] }
+}
+
+// → { ok, text, caseId, intent, lines, truncated, hidden }; `intent` is
+// the engine's display text (control characters as spaces, every direction
+// or format character marked ‹U+XXXX› and counted in `hidden`, redacted),
+// shown as plain text.
+function caseShowResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "", intent: "", lines: 0,
+    truncated: false, hidden: 0 }
+  var data = parseJson(stdoutText)
+  var c = data && isObject(data.case) ? data.case : null
+  var id = c && typeof c.id === "string" && CASE_ID.test(c.id) ? c.id : ""
+  var it = data && isObject(data.intent) ? data.intent : null
+  if (!it || typeof it.text !== "string")
+    return { ok: false, text: "The engine withholds the Intent while the redaction patterns do not compile", caseId: id,
+      intent: "", lines: 0, truncated: false, hidden: 0 }
+  return { ok: true, text: "", caseId: id, intent: it.text, lines: count(it.lines), truncated: it.truncated === true,
+    hidden: count(it.hidden) }
 }
 
 function agentResult(exitCode, stdoutText, stderrText) {
@@ -2007,6 +2150,35 @@ function decideResult(exitCode, stdoutText, stderrText) {
   return { ok: true, text: text, decisionId: id }
 }
 
+// `seldon decide accept <ADR-NNNN> --json` (WP-135, ADR-0040): the user
+// accepts a proposed decision; the engine refuses one that is not proposed
+// and an agent. Returns { args } or { error }; the id must match the
+// schema pattern, it goes into an argument list.
+function acceptArgs(decisionId) {
+  var id = String(decisionId || "")
+  if (!DECISION_ID.test(id)) return { error: "Not a decision id: " + id }
+  return { args: ["decide", "accept", id, "--json"] }
+}
+
+// `seldon decide accept --json` → {"decision": {id, title, status, date,
+// cases, path}, "already", "event", "git", "warnings"}. Returns { ok, text,
+// decisionId, already }; decisionId is "" unless it matches the pattern.
+function acceptResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), decisionId: "", already: false }
+  var data = parseJson(stdoutText)
+  var d = data && isObject(data.decision) ? data.decision : null
+  var id = d && typeof d.id === "string" && DECISION_ID.test(d.id) ? d.id : ""
+  var already = !!data && data.already === true
+  var text = already ? (id !== "" ? id : "The decision") + " is accepted already"
+    : "Accepted " + (id !== "" ? id : "the decision") + (d && typeof d.title === "string" && d.title !== "" ? " · " + d.title : "")
+  return { ok: true, text: text, decisionId: id, already: already }
+}
+
+// The sticky bar's hint while Accept is armed.
+function acceptArmHint(decisionId) {
+  return "Accept " + decisionId + "? Click Confirm: it becomes accepted with today's date."
+}
+
 // ---- Memory (WP-023) --------------------------------------------------------
 
 // What the Memory tab opens. The engine's `seldon open` has no memory target
@@ -2092,10 +2264,9 @@ function decisionCases(index, decisionId) {
 
 // What a decision's detail shows besides its title: `text`, the first
 // paragraph of its Decision when the index carries it (ADR-0038 §2; plain
-// text, "" otherwise), the rest is in the file. `actions` for the sticky bar: Accept while it
-// is proposed — the engine accepts nothing itself, the user sets the
-// status in the frontmatter, so Accept opens the file like Open in editor —
-// then Open in editor. Neither writes, so neither arms.
+// text, "" otherwise), the rest is in the file. `actions` for the sticky
+// bar: Accept while it is proposed — `seldon decide accept` (WP-135,
+// ADR-0040), a write, so it arms (`write`) — then Open in editor.
 function decisionDetail(row) {
   if (!row) return null
   var rows = []
@@ -2103,14 +2274,14 @@ function decisionDetail(row) {
   if (row.date !== "") rows.push(["Date", row.date])
   if (row.path !== "") rows.push(["File", row.path])
   var actions = []
-  if (row.status === "proposed") actions.push({ id: "accept", label: "Accept", primary: true, enabled: row.actionable })
-  actions.push({ id: "open", label: "Open in editor", primary: false, enabled: row.actionable })
+  if (row.status === "proposed") actions.push({ id: "accept", label: "Accept", primary: true, enabled: row.actionable, write: true })
+  actions.push({ id: "open", label: "Open in editor", primary: false, enabled: row.actionable, write: false })
   return {
     heading: [row.id, row.status, row.date].filter(function(p) { return p !== "" }).join(" · "),
     rows: rows,
     actions: actions,
     note: row.status === "proposed"
-      ? "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture."
+      ? "Proposed: it waits for your decision. Accept marks it accepted with today's date and notes it in the ledger; Open in editor shows the whole text."
       : row.status === "superseded" ? "Superseded by a later decision; kept for the record." : "",
     text: str(row.lead),
     lead: !row.actionable ? "This id does not match ADR-NNNN; Seldon does not open it."
@@ -3657,7 +3828,7 @@ function deskChangelog(index) {
   var base = changelogRows(index, "all")
   var today = todayDate(index)
   var rows = []
-  var byId = {}
+  var byId = Object.create(null)
   for (var i = 0; i < base.length; i++) {
     var r = base[i]
     var row = {}
@@ -3668,11 +3839,14 @@ function deskChangelog(index) {
     row.age = rowAge(r.day, r.time, today)
     row.stripe = row.cls === "crisis" ? "crisis" : row.cls === "attention" ? "attention" : ""
     row.hideKey = hideKey(r)
-    row.search = [r.subject, row.listMeta, r.detail, r.actor, r.resolution, r.resolutionDetail].join(" ").toLowerCase()
+    // WP-137: the row says in the urgent style that its transaction did
+    // not complete (ListRow `alert`)
+    row.alert = r.txStatus
+    row.search = [r.subject, row.listMeta, r.detail, r.actor, r.resolution, r.resolutionDetail, r.txStatus].join(" ").toLowerCase()
     if (row.id !== "" && byId[row.id] === undefined) byId[row.id] = rows.length
     rows.push(row)
   }
-  return { rows: rows, byId: byId, today: today }
+  return { rows: rows, byId: byId, today: today, tx: transactionIndex(index) }
 }
 
 function changelogRow(prepared, id) {
@@ -3858,6 +4032,10 @@ function eventDetail(index, prepared, id, info) {
   // pull | rollback | reset), plain text after What
   var commits = isObject(e.meta) ? str(e.meta.commits) : ""
   if (commits !== "") kv.splice(3, 0, [e.meta.git === "rollback" ? "Rolled back" : "Commits", commits])
+  // WP-137: a pacman transaction's command and what it did, after What
+  var tx = transactionDetail(index, prepared, row.id)
+  var txRows = transactionRows(tx)
+  for (var t = 0; t < txRows.length; t++) kv.splice(3 + t, 0, txRows[t])
   if (row.zone !== "") kv.push(["Zone", row.zone])
   if (row.resolution !== "") kv.push(["Resolved", rowStatus(row)])
   kv.push(["Event", row.id])
@@ -3872,7 +4050,8 @@ function eventDetail(index, prepared, id, info) {
     proposedCase: proposed,
     hideKey: row.hideKey,
     whyLoud: whyLoud(row, proposed, r),
-    kv: kv
+    kv: kv,
+    transaction: tx
   }
 }
 
@@ -4200,7 +4379,7 @@ function deskToday(index, prepared) {
     var r = rows[i]
     if (r.cls !== "crisis" || r.groupLeader !== "") continue
     needs.push({ id: r.id, type: "crisis", title: r.title, meta: r.kind + " · " + (r.actor !== "" ? r.actor : r.source),
-      aside: r.age, stripe: "crisis", group: "needs" })
+      aside: r.age, stripe: "crisis", group: "needs", alert: r.alert })
   }
   var cases = []
   var active = index && isObject(index.cases) && Array.isArray(index.cases.active) ? index.cases.active : []
@@ -4293,11 +4472,11 @@ function deskWork(index) {
       var total = steps ? count(steps.total) : 0
       c.group = group
       c.progress = total > 0 ? Math.min(count(steps.done), total) / total : 0
-      c.listMeta = [c.id, c.risk, c.area, c.status === "dropped" ? "dropped" : "",
+      c.listMeta = [c.id, c.imported ? "imported" : "", c.risk, c.area, c.status === "dropped" ? "dropped" : "",
         c.closedByAgent ? "closed by agent" : "", c.reopens !== "" ? "reopens " + c.reopens : "",
         c.proposed > 0 ? c.proposed + " proposed" : ""].filter(function(p) { return p !== "" }).join(" · ")
       c.stripe = group === "active" ? "attention" : ""
-      c.search = [c.id, c.title, c.area, c.status, c.risk].join(" ").toLowerCase()
+      c.search = [c.id, c.title, c.area, c.status, c.risk, c.imported ? "imported" : ""].join(" ").toLowerCase()
       rows.push(c)
     }
   }
@@ -4369,20 +4548,60 @@ var CASE_DESK_BY_STATUS = {
   dropped: ["open"]
 }
 
+//
+// An imported case's Start (WP-102b, ADR-0027 §2(a)): never from a key or
+// the list; `review` — the bar enables it only while the detail shows the
+// whole Intent the engine gave (`plan show`), and it arms by click only.
+// Such a case has no Enter action at all.
 function caseDeskActions(c) {
   if (!c || !c.actionable || CASE_DESK_BY_STATUS[c.status] === undefined) return []
   var ids = CASE_DESK_BY_STATUS[c.status]
   // one agent per case (WP-156): Focus brings the working one to the front
   if (c.working === true) ids = ids.map(function(id) { return id === "agent" ? "focus" : id })
+  var review = function(id) { return id === "start" && c.imported === true }
   var enter = ""
   for (var k = 0; k < ids.length && enter === ""; k++) if (CASE_DESK_ACTIONS[ids[k]].launches !== true) enter = ids[k]
+  // an imported case's Enter would be its Start: none (never Drop instead)
+  if (review(enter)) enter = ""
   return ids.map(function(id, i) {
     var a = CASE_DESK_ACTIONS[id]
     var isEnter = id === enter && a.arm
     return { id: a.id, label: a.label, write: a.write, arm: a.arm, final: a.final === true, primary: i === 0,
-      enter: id === enter, launches: a.launches === true,
-      key: isEnter ? (a.key !== "" && a.key !== "Enter" ? a.key + " or Enter" : "Enter") : a.key }
+      enter: id === enter, launches: a.launches === true, review: review(id),
+      key: review(id) ? "" : isEnter ? (a.key !== "" && a.key !== "Enter" ? a.key + " or Enter" : "Enter") : a.key }
   })
+}
+
+// Whether the detail shows the whole Intent of case `c` as the engine gave
+// it (Service.caseShown), so an imported case's Start may be pressed: this
+// case's finished, successful `plan show`, not cut at 64 KiB and without a
+// hidden character (WP-102b round 2: the box would not show it all).
+function intentReviewed(c, shown) {
+  return !!c && isObject(shown) && !shown.pending && shown.ok === true && shown.caseId === c.id
+    && shown.truncated !== true && !(count(shown.hidden) > 0)
+}
+
+// Whether a `plan show` answer must be asked again at once (WP-102b stage 2):
+// a new index came while it was in flight (Service.showCase set
+// `reaskWanted`), so the answer may already be stale and must not enable
+// Start. Only a successful answer for the same case; a failure is shown,
+// and the next index asks anyway.
+function reaskAfter(last, result) {
+  return isObject(last) && last.reaskWanted === true && isObject(result) && result.ok === true
+    && last.caseId === result.caseId
+}
+
+// The bar's hint while an imported case's Start is off ("" when it is on
+// or the case has no such Start).
+function reviewHint(c, shown) {
+  var start = caseDeskAction(c, "start")
+  if (!start || !start.review || intentReviewed(c, shown)) return ""
+  var mine = isObject(shown) && shown.caseId === c.id && !shown.pending && shown.ok === true
+  if (!mine) return "Start waits until the whole Intent below is shown; only you start an imported case"
+  var why = []
+  if (count(shown.hidden) > 0) why.push(plural(count(shown.hidden), "hidden character is", "hidden characters are") + " marked")
+  if (shown.truncated === true) why.push("the Intent is longer than the desk shows")
+  return why.join(" and ") + ": read the whole Intent in the editor; start this case from the terminal."
 }
 
 // The action Enter takes on a case: the first that launches nothing.
@@ -4481,6 +4700,8 @@ function caseDetail(index, prepared, id) {
     actionable: wc.actionable,
     closedByAgent: wc.closedByAgent,
     reopens: wc.reopens,
+    imported: wc.imported,
+    source: str(raw.source),
     path: wc.path,
     kv: kv,
     plan: { done: done, total: total, progress: total > 0 ? done / total : 0,
@@ -5403,6 +5624,177 @@ function graphShape(ctx, kind, x, y, r) {
     ctx.moveTo(x + r, y)
     ctx.arc(x, y, r, 0, 2 * Math.PI, false)
   }
+}
+
+// ---- A pacman transaction in the event detail (WP-137; ADR-0043) ------------
+//
+// Every package event of a transaction carries its `txId`, its versions
+// (meta.from/meta.to, meta.version) and the command (meta.command);
+// `meta.txStatus` says how a transaction that did not complete ended
+// (ADR-0043: failed | interrupted | unfinished; absent when it completed
+// and on lines written before, so "absent" never reads as "completed").
+// The desk indexes the transactions once per index (`deskChangelog().tx`)
+// and the detail looks them up by the selected event. A file pacman left
+// (WP-141: a pacman note naming its transaction in meta.transaction) is
+// counted beside the packages, never listed as one. Every text is user
+// content, shown as plain text (CONTRACT.md rule 6).
+
+var TX_STATUSES = ["failed", "interrupted", "unfinished"]
+// The detail's callout: its title and what the status means. pacman's
+// post-transaction hooks do not run after `failed` or a killed pacman
+// (alpm-hooks(5) CAVEATS); for `interrupted` not verified against
+// libalpm's source, hence "may not have run". They run only for that
+// transaction's targets: a later run that no longer includes a package
+// already changed never runs them for it. Hence the safe step before a
+// reboot, which names only what a reinstall can repair: ↑ and ↻ (WP-137
+// rounds 2 and 3). Text only: the plugin runs nothing (AGENTS.md §8).
+var TX_STATUS_TITLES = {
+  failed: "Transaction failed",
+  interrupted: "Transaction interrupted",
+  unfinished: "Transaction did not finish"
+}
+// Omarchy's 10-omarchy-hyprland-reload-pause hook pauses the auto-reload
+// before an omarchy-settings update; its 90-…-resume twin is a
+// post-transaction hook.
+var TX_STEPS_DID_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_STEPS_MAY_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_SAFE_STEP = "Before you reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with their names): that runs those steps for them; a plain rerun does not. A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
+var TX_STATUS_TEXTS = {
+  failed: "pacman reported this transaction as failed: a package could not be installed, upgraded or removed, and pacman's output in the terminal named the error. The packages below may be all it changed. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP,
+  interrupted: "pacman was interrupted and stopped after the packages below; the ones it had not reached are unchanged. " + TX_STEPS_MAY_NOT + " " + TX_SAFE_STEP,
+  unfinished: "pacman never logged the end of this transaction: it was killed, or the machine went down while it ran. The packages below may be all it changed, the last one possibly half written. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP
+}
+// ↑ upgraded, ↓ downgraded, + installed, − removed, ↻ reinstalled; the
+// list shows the unusual changes first.
+var TX_KINDS = ["downgrade", "remove", "install", "upgrade", "reinstall"]
+var TX_GLYPHS = { upgrade: "↑", downgrade: "↓", install: "+", remove: "−", reinstall: "↻" }
+var TX_VERBS = { upgrade: "upgraded", downgrade: "downgraded", install: "installed", remove: "removed", reinstall: "reinstalled" }
+// CONTRACT.md rule 4: the index lists the newest 500 events.
+var INDEX_EVENTS_MAX = 500
+
+// The transaction an event belongs to: a pacman package event's own
+// `txId`, a file pacman left by its meta.transaction (WP-141), else "".
+function eventTx(e) {
+  if (!isObject(e) || e.source !== "pacman") return ""
+  if (TX_VERBS[e.kind] !== undefined) return str(e.txId)
+  if (e.kind === "note" && isObject(e.meta)) return str(e.meta.transaction)
+  return ""
+}
+
+// How the event's transaction ended when it did not complete (ADR-0043),
+// "" otherwise: only one of the three words, only on a pacman package
+// event with a `txId`.
+function txStatusOf(e) {
+  if (!isObject(e) || e.source !== "pacman" || TX_VERBS[e.kind] === undefined || str(e.txId) === "") return ""
+  var s = isObject(e.meta) ? e.meta.txStatus : undefined
+  return TX_STATUSES.indexOf(s) !== -1 ? s : ""
+}
+
+// The transactions of an index: { <txId>: { packages: [event], files: n,
+// status, oldest } }, built once per index. `oldest`: the index's oldest
+// event is one of its packages, so the cap may have cut it.
+function transactionIndex(index) {
+  var all = events(index)
+  // keyed by txId or meta.transaction, text a hand-edited ledger line may
+  // make `constructor` or `__proto__`: no prototype (WP-137 round 2, B2)
+  var out = Object.create(null)
+  var at = function(id) {
+    if (out[id] === undefined) out[id] = { packages: [], files: 0, status: "", oldest: false }
+    return out[id]
+  }
+  for (var i = 0; i < all.length; i++) {
+    var e = all[i]
+    var id = eventTx(e)
+    if (id === "") continue
+    var t = at(id)
+    if (e.kind === "note") {
+      t.files++
+      continue
+    }
+    t.packages.push(e)
+    if (t.status === "") t.status = txStatusOf(e)
+    if (i === all.length - 1 && all.length >= INDEX_EVENTS_MAX) t.oldest = true
+  }
+  return out
+}
+
+// "old → new" for an upgrade or downgrade, the version otherwise; the
+// detail when meta lacks them.
+function txVersions(e) {
+  var m = isObject(e.meta) ? e.meta : {}
+  if (typeof m.from === "string" && typeof m.to === "string") return m.from + " → " + m.to
+  if (typeof m.version === "string") return m.version
+  return str(e.detail)
+}
+
+// "4 packages: 1 removed, 1 installed, 2 upgraded".
+function txSummary(packages) {
+  var n = Object.create(null)
+  for (var i = 0; i < packages.length; i++) n[packages[i].kind] = (n[packages[i].kind] || 0) + 1
+  var parts = []
+  for (var k = 0; k < TX_KINDS.length; k++)
+    if (n[TX_KINDS[k]]) parts.push(n[TX_KINDS[k]] + " " + TX_VERBS[TX_KINDS[k]])
+  return plural(packages.length, "package", "packages") + (parts.length > 0 ? ": " + parts.join(", ") : "")
+}
+
+// The selected event's transaction as the detail shows it, or null when
+// the event belongs to none: { status, title, text, command, clipped,
+// summary, packages: [{ id, glyph, verb, name, versions, selected }],
+// files, partial, list } — `list`: the package list is worth showing (two
+// or more packages, a status, or files left; one completed package says
+// no more than the detail's own rows).
+function transactionDetail(index, prepared, id) {
+  var row = changelogRow(prepared, id)
+  if (!row || row.tx === "") return null
+  var all = prepared && isObject(prepared.tx) ? prepared.tx : transactionIndex(index)
+  var t = all[row.tx] || { packages: [], files: 0, status: "", oldest: false }
+  var sorted = t.packages.slice().sort(function(a, b) {
+    var k = TX_KINDS.indexOf(a.kind) - TX_KINDS.indexOf(b.kind)
+    return k !== 0 ? k : str(a.subject) < str(b.subject) ? -1 : str(a.subject) > str(b.subject) ? 1 : 0
+  })
+  var packages = sorted.map(function(e) {
+    return { id: str(e.id), glyph: TX_GLYPHS[e.kind], verb: TX_VERBS[e.kind], name: str(e.subject),
+      versions: txVersions(e), selected: e.id === row.id }
+  })
+  // the command as the selected event logged it, else as any package did
+  var self = findEvent(index, row.id)
+  var withCommand = [self].concat(t.packages).filter(function(e) {
+    return isObject(e) && isObject(e.meta) && typeof e.meta.command === "string" && e.meta.command !== ""
+  })[0]
+  var status = t.status
+  return {
+    status: status,
+    title: status !== "" ? TX_STATUS_TITLES[status] : "",
+    text: status !== "" ? TX_STATUS_TEXTS[status] : "",
+    command: withCommand ? withCommand.meta.command : "",
+    clipped: !!withCommand && withCommand.meta.truncated === true,
+    summary: txSummary(t.packages),
+    packages: packages,
+    files: t.files,
+    partial: t.oldest,
+    list: packages.length > 1 || status !== "" || t.files > 0
+  }
+}
+
+// The detail's key/value rows for a transaction (after What): Command,
+// then Transaction ("4 packages · interrupted · left 1 file"). A file
+// pacman left whose transaction the index no longer lists says so.
+function transactionRows(tx) {
+  if (!tx) return []
+  var out = []
+  if (tx.command !== "") out.push(["Command", tx.command + (tx.clipped ? " (clipped in the index; the ledger has it in full)" : "")])
+  var parts = [tx.packages.length > 0 ? tx.summary
+    : "not in the index any more (it keeps the newest " + INDEX_EVENTS_MAX + " events)"]
+  if (tx.status !== "") parts.push(tx.status)
+  if (tx.files > 0) parts.push("left " + plural(tx.files, "file", "files"))
+  out.push(["Transaction", parts.join(" · ")])
+  return out
+}
+
+// One package line of the list (also the harness's text): "↑ pipewire
+// 1:1.4.7-1 → 1:1.4.8-1".
+function txPackageLine(p) {
+  return p.glyph + " " + p.name + (p.versions !== "" ? "  " + p.versions : "")
 }
 
 // ---- The desk steps aside; one agent per case (WP-156) -----------------------

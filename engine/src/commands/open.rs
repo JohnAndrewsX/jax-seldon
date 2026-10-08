@@ -106,19 +106,9 @@ fn resolve(ctx: &Context, logbook: &Logbook, what: &str, editor: bool) -> Result
         "status" => logbook.path("STATUS.md"),
         "logbook" => logbook.root.clone(),
         id if is_case_id(id) => cases::find(logbook, id)?.path,
-        id if is_decision_id(id) => {
-            let prefix = format!("{id}-");
-            logbook
-                .decision_files()?
-                .into_iter()
-                .find(|p| {
-                    p.file_name().is_some_and(|n| {
-                        let n = n.to_string_lossy();
-                        n.starts_with(&prefix) || n == format!("{id}.md")
-                    })
-                })
-                .ok_or_else(|| Error::user(format!("unknown decision {id}")))?
-        }
+        id if is_decision_id(id) => logbook
+            .decision_file(id)?
+            .ok_or_else(|| Error::user(format!("unknown decision {id}")))?,
         other => {
             return Err(Error::user(format!(
                 "cannot open `{other}`: use case, journal, ledger, status, logbook, C-YYYY-NNN or ADR-NNNN"

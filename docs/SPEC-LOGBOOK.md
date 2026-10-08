@@ -211,7 +211,11 @@ with broken frontmatter is a user error and is left untouched (WP-057).
 ### Decision (`decisions/ADR-NNNN-slug.md`)
 
 Frontmatter `id, type: decision, title, status (proposed|accepted|superseded),
-date, supersedes, cases`. Body: Context / Decision / Consequences; the first
+date, supersedes, cases`. `seldon decide` writes `proposed` and the day;
+`seldon decide accept` (the user's act, ADR-0040) changes a proposed
+decision to `accepted` and `date` to the day of the acceptance, nothing
+else; `superseded` and `supersedes` are set by hand. Body: Context /
+Decision / Consequences; the first
 paragraph of *Decision* is the index's `decisions[].lead` (ADR-0038), as the
 first paragraphs of a case's *Intent* and *Result* are its `intent` and
 `result`.
@@ -292,6 +296,10 @@ directory is a `state-loss` line; older lines stay as they were written.
 - 14:02 pacman · install `ollama` 0.6.1 · **drift** · agent:codex
 - 14:30 snapper · snapshot 113 "pre: ollama"
 ```
+
+A pacman line of a transaction that did not complete (`meta.txStatus`,
+ADR-0043) adds `· transaction interrupted` (or `failed`, `unfinished`)
+after its version.
 
 Wikilinks `[[C-2026-004]]` are used for cases so Obsidian's graph works.
 

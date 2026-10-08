@@ -142,6 +142,17 @@ The dry run lists what it would create and writes nothing. Without
 `--dry-run` the import applies at once and commits as
 `seldon: import task`.
 
+In the desk, **Import tasks…** in the Work list does the same: type the
+path (and, if you like, an area), look at the dry run's list, then click
+**Import N cases**. Imported cases show "imported" in the list. Their
+detail shows the whole Intent as plain text, with the file it came from
+and its number of lines; **Start** becomes clickable only once that text
+is shown, and Enter never starts an imported case. If a case's Intent
+holds invisible characters (someone edited the file by hand), the desk
+marks each as `‹U+…›` and keeps Start off; so it does for an Intent
+longer than it shows. Then read the case in the editor and start it from
+the terminal (`seldon plan start <id>`).
+
 - Every open item (`- [ ] …`) becomes one **queued** case. Its title is
   the item's first sentence (at most 72 characters); its *Intent* is the
   item with the lines indented below it (nested items too) and the
@@ -154,6 +165,11 @@ The dry run lists what it would create and writes nothing. Without
   `--area` set other values for all of them.
 - Each case gets the tag `imported` and a Log line `imported from
   ~/projects/desk/TODO.md#12` (the file and the item's line).
+- A task whose text is longer than the desk can show (64 KiB) is skipped
+  ("too long"): split it, or make the case by hand.
+- Invisible characters (zero-width spaces, direction marks, the Unicode
+  "tag" characters that can spell hidden words) are removed from the
+  text before it is written; the report counts them.
 
 Your task file is only read: never changed, moved or run. Its text goes
 through the same redaction as a note, so a token in it does not reach

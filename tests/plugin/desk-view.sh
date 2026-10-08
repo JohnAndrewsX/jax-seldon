@@ -645,7 +645,7 @@ jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00
   "$sample" >"$work/after.json"
 mkdir -p "$work/home-today-live"
 run today-live "" 1920x1080 \
-  "summon;text:n;type:  --help 2 ;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;settle;summon;text:2;text:e;settle;summon;text:c;wait:sectionView.chips.5=all 76;settle" \
+  "summon;text:n;type:  --help 2 ;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;settle;summon;text:2;text:e;settle;summon;text:c;wait:sectionView.chips.5=all 82;settle" \
   HOME="$work/home-today-live" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
   FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/today-live.record"
 tj="$tv.journal"
@@ -672,7 +672,7 @@ expect today-live 24 "[.view.opened, .service.stepAsides] | map(tostring) | join
 expect today-live 25 .view.section changelog
 expect today-live 26 "$tv.capturing" true
 shows today-live 26 "Capturing"
-expect today-live 27 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 31,case 37,all 76"
+expect today-live 27 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 37,case 37,all 82"
 expect today-live 28 "$tv.captureResult" "1 new event"
 shows today-live 28 "Last capture: 1 new event"
 argv_check today-live "$work/home-today-live" "$(printf '%s\n' "$startup" \
@@ -718,7 +718,7 @@ clean_log today-new
 run changelog "$sample" 1920x1080 \
   "summon:$cl;text:f;text:F;text:F;select:$MESA;key:Return;key:Escape;shim:filter:pacman;key:Escape;shim:resolve:$LIB32;key:Return;key:Escape;shim:resolve:crisis;select:$THEME;click:Hide;text:f;click:Show"
 expect changelog 1 "[.view.section, $tv.chip] | join(\",\")" "changelog,open"
-expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 31,case 37,all 76"
+expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 37,case 37,all 82"
 expect changelog 1 "[$tv.rows, $tv.cursor] | map(tostring) | join(\",\")" "6,0"
 # One count everywhere (B2): the open chip = the sidebar's Changelog count,
 # crisis = the header's crises, attention = the header's attention = the
@@ -742,23 +742,25 @@ for text in "6 changes · newest first" "4 changes without a case" "proposed for
 done
 expect changelog 2 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "crisis,2,$UNIT"
 expect changelog 3 "$tv.chip" open
-expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,76"
+expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,82"
 expect changelog 5 "[.call, $tv.selected, $tf.subject, $tf.badge] | join(\",\")" "ok,$MESA,mesa,+2"
 expect changelog 5 "$tf.members | join(\" | \")" \
   "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
-shows changelog 5 "3 packages in one transaction:"
+# WP-137: the transaction above lists every open member, so the form's lines hide
+expect changelog 5 "[$tf.membersShown, $td.transaction.shown] | map(tostring) | join(\",\")" "false,true"
+shows changelog 5 "3 packages: 3 downgraded in this transaction"
 expect changelog 6 "[$tf.shown, $tf.editing, $tf.action, .view.keys] | map(tostring) | join(\",\")" "true,true,explain,false"
 shows changelog 6 "All 3"
 shows changelog 6 "Only mesa"
 shows changelog 6 "EXPLAIN"
 expect changelog 7 "[$tf.shown, $tf.editing, .view.keys, .view.opened] | map(tostring) | join(\",\")" "false,false,true,true"
-expect changelog 8 "[.call, $tv.chip, .view.search.text, $tv.rows] | map(tostring) | join(\",\")" "ok,all,pacman,16"
-expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",76,true"
+expect changelog 8 "[.call, $tv.chip, .view.search.text, $tv.rows] | map(tostring) | join(\",\")" "ok,all,pacman,22"
+expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",82,true"
 expect changelog 10 "[$tv.selected, $tf.eventId, $tf.subject] | join(\",\")" "$LIB32,$LIB32,mesa"
 shows changelog 11 "Only lib32-mesa"
 expect changelog 13 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "crisis,2"
 expect changelog 14 "[.call, $tv.chip, $tv.selected] | join(\",\")" "ok,all,$THEME"
-expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,76"
+expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,82"
 expect changelog 15 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Show"
 shows changelog 15 "attention · hidden this session"
 expect changelog 16 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "open,5,$UNIT"
@@ -768,6 +770,43 @@ expect changelog 16 "[$tv.hidden, ($tv.chips[0:3] | join(\"+\")), .view.counts.c
 expect changelog 17 "[$tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "0,6"
 for i in 1 5 6 10 16; do expect changelog $i '.overflow | join(" | ")' ""; done
 clean_log changelog
+
+# 8b'. A pacman transaction's packages (WP-137, ADR-0043) on the sample: the
+#      09-19 -Syu interrupted after two upgrades is marked in the urgent
+#      style in its rows and in the detail (callout); the 09-18 mixed -Syu
+#      lists − + ↑ ↑ with old → new and its command; the 09-27 downgrade
+#      group lists ↓ ×3 and its form's member lines give way to the list;
+#      the btop install (one package) has the rows and no list; nothing
+#      overflows at 100 % and 50 %.
+PIPEWIRE=01M2TRP54G6K1N4WZF19XZFHZW GTK4=01M2W5S4XG9MX3PXAMR7WEEBVZ BTOP=01M1MB2M1GWZYF485HTGVZ1KS3
+run transactions "$sample" 1920x1080 \
+  "summon:{\"section\":\"changelog\",\"filter\":\"all\"};select:$GTK4;select:$PIPEWIRE;select:$MESA;select:$BTOP;select:$GTK4;width:50;view"
+txv="$td.transaction"
+expect transactions 1 "$tv.alerts | join(\",\")" "libadwaita interrupted,gtk4 interrupted"
+shows transactions 2 "interrupted"
+expect transactions 2 "[$txv.status, $txv.statusShown, $txv.title, $txv.summary] | map(tostring) | join(\",\")" \
+  "interrupted,true,Transaction interrupted,2 packages: 2 upgraded in this transaction"
+expect transactions 2 "$txv.lines | join(\" | \")" "↑ gtk4  1:4.18.6-1 → 1:4.18.7-1 | ↑ libadwaita  1:1.7.6-1 → 1:1.7.7-1"
+expect transactions 2 "$txv.selected | join(\",\")" "gtk4"
+expect transactions 2 "[$td.cls, ($td.kv | map(select(startswith(\"Command\") or startswith(\"Transaction\"))) | join(\" | \"))] | join(\",\")" \
+  "routine,Command: pacman -Syu | Transaction: 2 packages: 2 upgraded · interrupted"
+for text in "Transaction interrupted" "gtk4  1:4.18.6-1 → 1:4.18.7-1" "↑" "pacman -Syu"; do shows transactions 2 "$text"; done
+expect transactions 3 "[$txv.status, $txv.statusShown, $txv.summary] | map(tostring) | join(\",\")" \
+  ",false,4 packages: 1 removed, 1 installed, 2 upgraded in this transaction"
+expect transactions 3 "$txv.lines | join(\" | \")" \
+  "− pulseaudio  17.0-3 | + pipewire-pulse  1:1.4.8-1 | ↑ pipewire  1:1.4.7-1 → 1:1.4.8-1 | ↑ wireplumber  0.5.10-1 → 0.5.11-1"
+expect transactions 3 "$txv.selected | join(\",\")" "pipewire"
+for text in "−" "+" "pulseaudio  17.0-3" "pipewire-pulse  1:1.4.8-1"; do shows transactions 3 "$text"; done
+expect transactions 3 '[.texts[] | select(. == "Transaction interrupted")] | length' 0
+expect transactions 4 "$txv.lines | join(\" | \")" \
+  "↓ lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | ↓ mesa  1:26.2.0-2 → 1:26.1.0-1 | ↓ vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
+expect transactions 4 "[$tf.membersShown, $txv.statusShown] | map(tostring) | join(\",\")" "false,false"
+expect transactions 4 '[.texts[] | select(. == "3 packages in one transaction:")] | length' 0
+expect transactions 5 "[$txv.shown, ($td.kv | map(select(startswith(\"Transaction\"))) | join(\"\"))] | map(tostring) | join(\",\")" \
+  "false,Transaction: 1 package: 1 installed"
+expect transactions 6 "$txv.statusShown" true
+for i in 2 3 4 6 7; do expect transactions $i '.overflow | join(" | ")' ""; done
+clean_log transactions
 
 jq '.summary.openDrift = 250' "$sample" >"$work/capped.json"
 run changelog-capped "$work/capped.json" 1920x1080 "summon:$cl" HARNESS_SETTINGS='{"driftInBar":"all"}'
@@ -1043,6 +1082,166 @@ expect work-agent 16 "[$tv.result, $tv.resultOk, .view.lastError, .view.opened] 
 argv_check work-agent "$work/home-agent" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" "$(q agent start C-2026-004 --json)")"
 clean_log work-agent
 
+# WP-102b, Import tasks…: the form in the detail, a dry run first (the list
+# of what would be created and what is skipped), then one click imports;
+# the cases arrive with the index, the first is selected, its detail asks
+# the engine for the whole Intent (`plan show`, read-only) and shows it as
+# plain text, and only then enables Start, which arms by click; Enter
+# neither starts nor drops it. A second dry run reports the tasks as
+# already imported. The path is one argument after `--` (argv compared).
+mkdir -p "$work/home-import/projects"
+printf '%s\n' "# Desk" "- [ ] Fix the bar flicker" "  Only after resume." "  ## Result" "- [x] Install zed" \
+  "- [ ] Try a lighter theme" >"$work/home-import/projects/TODO.md"
+run import-live "" 1920x1080 \
+  "summon:$wk;view;click:Import tasks…;type:~/projects/TODO.md;key:Return;settle;click:Import 2 cases;settle;wait:sectionView.case.reviewed=true;key:Return;key:Return;click:Start;click:Confirm start;settle;wait:sectionView.case.status=active;click:Import tasks…;type:~/projects/TODO.md;key:Return;settle" \
+  HOME="$work/home-import" FAKE_SELDON_FIXTURE="$sample"
+ti="$tv.import"
+shows import-live 2 "Import tasks…"
+shows import-live 2 "C-2026-007 · imported · R1 · dev-env"
+expect import-live 3 "[$ti.open, $ti.editing, .view.sectionView.case.id] | map(tostring) | join(\",\")" "true,true,C-2026-003"
+shows import-live 3 "IMPORT TASKS"
+expect import-live 3 "$tc.actions | join(\",\")" ""
+expect import-live 6 "[$ti.result, $ti.canImport, ($ti.rows | join(\"+\")), ($ti.skipped | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "Would create 2 cases · 1 task skipped,true,|Fix the bar flicker|~/projects/TODO.md#2+|Try a lighter theme|~/projects/TODO.md#6,~/projects/TODO.md#5|done (- [x])|"
+for text in "Import 2 cases" "Would create 2 cases · 1 task skipped" "Fix the bar flicker" "queued · ~/projects/TODO.md#2" \
+  "Skipped ~/projects/TODO.md#5: done (- [x])"; do
+  shows import-live 6 "$text"
+done
+expect import-live 9 "[$ti.open, $tv.selected, $tv.importLine, $tc.imported, $tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" \
+  "false,C-2026-009,Imported 2 cases: C-2026-009, C-2026-010 · 1 task skipped,true,true,true"
+expect import-live 9 "[$tc.review.lines, $tc.review.intent] | map(tostring) | join(\"|\")" \
+  "5|Imported from ~/projects/TODO.md#2 — read before you start this case.
+
+Fix the bar flicker
+Only after resume.
+## Result"
+expect import-live 9 "[$tc.kv[] | select(startswith(\"Imported from\"))] | join(\",\")" "Imported from: ~/projects/TODO.md#2"
+for text in "C-2026-009 · imported · R1" "IMPORTED TASK · 5 lines" \
+  "From ~/projects/TODO.md#2. Read the whole Intent before you start the case: once started, an agent acts on it without asking. Only you start it."; do
+  shows import-live 9 "$text"
+done
+# shown whole: no first-paragraph INTENT block beside it
+expect import-live 9 '[.texts[] | select(. == "INTENT")] | length' 0
+# Enter neither starts nor drops an imported case; Start arms by click
+expect import-live 11 "[$tc.armed, $tc.status] | join(\",\")" ",queued"
+expect import-live 12 "[$tc.armed, $tc.hint] | join(\",\")" "start,Start C-2026-009? Click Confirm."
+expect import-live 15 "[$tc.status, $tv.result] | join(\",\")" "active,C-2026-009: queued → active"
+expect import-live 19 "[$ti.open, $ti.result, $ti.canImport, ($ti.skipped | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "true,Nothing new to import · 3 tasks skipped,false,~/projects/TODO.md#2|already imported|C-2026-009+~/projects/TODO.md#5|done (- [x])|+~/projects/TODO.md#6|already imported|C-2026-010"
+shows import-live 19 "Skipped ~/projects/TODO.md#6: already imported (C-2026-010)"
+for i in 6 9 19; do expect import-live $i '.overflow | join(" | ")' ""; done
+# the path one argument after `--`; `plan show` (read-only) only for the
+# imported case, at least once before its Start (more when the index moves)
+check "import-live: engine argv without plan show" "$(grep -v '^plan show ' "$work/home-import/argv.log" | tr '\n' '|')" \
+  "$(printf '%s\n' "$startup" "$(q import task --json --dry-run -- '~/projects/TODO.md')" \
+    "$(q import task --json -- '~/projects/TODO.md')" "$(q plan start C-2026-009 --json)" \
+    "$(q import task --json --dry-run -- '~/projects/TODO.md')" | tr '\n' '|')"
+check "import-live: plan show names only the imported case" \
+  "$(grep '^plan show ' "$work/home-import/argv.log" | sort -u | tr '\n' '|')" "$(q plan show C-2026-009 --json)|"
+check "import-live: plan show before Start" "$(grep -m 1 -e '^plan show ' -e '^plan start ' "$work/home-import/argv.log")" \
+  "$(q plan show C-2026-009 --json)"
+clean_log import-live
+
+# The form's own check, the engine's refusal (shown in the form, fields
+# kept after Esc), and a whole Intent the engine withholds: Start stays off.
+mkdir -p "$work/home-import-refused"
+run import-refused "" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;click:Import tasks…;type:notes.txt;key:Backspace*9;type:~/missing.md;key:Return;settle;key:Escape;click:Import tasks…;key:Escape;click:Start;click:Start;trigger:workDetail:start;trigger:workDetail:start" \
+  HOME="$work/home-import-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_WITHHELD=1
+expect import-refused 2 "[$tc.imported, $tc.startEnabled, $tc.hint, $tc.review.text] | map(tostring) | join(\",\")" \
+  "true,false,Start waits until the whole Intent below is shown; only you start an imported case,The engine withholds the Intent while the redaction patterns do not compile"
+shows import-refused 2 "The engine withholds the Intent while the redaction patterns do not compile"
+# withheld: the index's first paragraph stays
+shows import-refused 2 "INTENT"
+expect import-refused 4 "[$ti.pathError, $ti.canImport] | map(tostring) | join(\",\")" "Give the path from your home (~/…) or from / (absolute),false"
+shows import-refused 4 "Give the path from your home (~/…) or from / (absolute)"
+expect import-refused 8 "$ti.result" "~/missing.md: cannot read the task file: No such file or directory (os error 2)"
+shows import-refused 8 "~/missing.md: cannot read the task file: No such file or directory (os error 2)"
+expect import-refused 9 "[$ti.open, .view.keys] | map(tostring) | join(\",\")" "false,true"
+expect import-refused 10 "[$ti.open, $ti.path] | map(tostring) | join(\",\")" "true,~/missing.md"
+# the disabled Start: two clicks arm and run nothing (the argv below); two
+# stray triggers behind the bar neither (press() holds on its own)
+expect import-refused 13 "[$ti.open, $tc.armed, $tc.status, $tc.startEnabled] | map(tostring) | join(\",\")" "false,,queued,false"
+expect import-refused 15 "[$tc.armed, $tc.status] | join(\",\")" ",queued"
+argv_check import-refused "$work/home-import-refused" "$(printf '%s\n' "$startup" "$(q plan show C-2026-007 --json)" \
+  "$(q import task --json --dry-run -- '~/missing.md')")"
+clean_log import-refused 'import exit 1: ~/missing\.md: cannot read the task file'
+
+# Round 2 (WP-102b): the dry run is for a path *and* an area — a new area
+# turns Import off until its own dry run (P4), and the import carries it.
+mkdir -p "$work/home-import-area/projects"
+printf '%s\n' "- [ ] One" "- [ ] Two" >"$work/home-import-area/projects/TODO.md"
+run import-area "" 1920x1080 \
+  "summon:$wk;click:Import tasks…;type:~/projects/TODO.md;key:Return;settle;key:Tab;type:dev;key:Return;settle;click:Import 2 cases;settle" \
+  HOME="$work/home-import-area" FAKE_SELDON_FIXTURE="$sample"
+expect import-area 5 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" ",true"
+expect import-area 7 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,false"
+expect import-area 9 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,true"
+# `plan show` once or twice (the import's index may come while it runs)
+check "import-area: engine argv without plan show" "$(grep -v '^plan show ' "$work/home-import-area/argv.log" | tr '\n' '|')" \
+  "$(printf '%s\n' "$startup" "$(q import task --json --dry-run -- '~/projects/TODO.md')" \
+    "$(q import task --json --dry-run --area dev -- '~/projects/TODO.md')" \
+    "$(q import task --json --area dev -- '~/projects/TODO.md')" | tr '\n' '|')"
+check "import-area: plan show names only the new case" \
+  "$(grep '^plan show ' "$work/home-import-area/argv.log" | sort -u | tr '\n' '|')" "$(q plan show C-2026-009 --json)|"
+clean_log import-area
+
+# A new index asks the engine again (P2); meanwhile the last text stays on
+# screen and Start is off (P5, N2); the answer brings Start back. Stage 2:
+# the first `plan show` sees the index rewritten while it runs
+# (FAKE_SELDON_SHOW_TOUCH): its answer enables nothing and is asked again
+# once.
+mkdir -p "$work/home-import-reask"
+run import-reask "" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;wait:sectionView.case.reviewed=true;text:c;wait:sectionView.case.review.pending=true;wait:sectionView.case.reviewed=true" \
+  HOME="$work/home-import-reask" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_TOUCH=1
+first=$(sed -n 3p "$work/import-reask.steps" | jq -r "$tc.review.intent")
+check "import-reask: the review's text" "$first" \
+  "Imported from ~/Notizen/aufgaben.md#4 — read before you start this case.
+
+Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben."
+expect import-reask 3 "[$tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true"
+expect import-reask 5 "[$tc.review.pending, $tc.review.ok, $tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true,false,false"
+expect import-reask 5 "$tc.review.intent == $(jq -Rs . <<<"$first" | sed 's/\\n"$/"/')" true
+shows import-reask 5 "IMPORTED TASK · 3 lines"
+expect import-reask 6 "[$tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true"
+# once on select, once more for the index that came while it ran, once for
+# the capture's index
+check "import-reask: the index rewritten during the first plan show" "$([[ -f $work/home-import-reask/show-touched ]] && echo yes)" yes
+check "import-reask: plan show again on each new index" "$(grep -c '^plan show C-2026-007 ' "$work/home-import-reask/argv.log")" 3
+clean_log import-reask
+
+# Hidden characters marked and an Intent longer than the desk shows: Start
+# stays off, the hint says why and where to read it (B1, B2).
+mkdir -p "$work/home-import-hidden"
+run import-hidden "" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;wait:sectionView.case.review.pending=false;click:Start;click:Start" \
+  HOME="$work/home-import-hidden" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_HIDDEN=21 FAKE_SELDON_SHOW_TRUNCATED=1
+expect import-hidden 3 "[$tc.review.ok, $tc.review.hidden, $tc.review.truncated, $tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" \
+  "true,21,true,false,false"
+expect import-hidden 3 "$tc.hint" \
+  "21 hidden characters are marked and the Intent is longer than the desk shows: read the whole Intent in the editor; start this case from the terminal."
+shows import-hidden 3 "21 hidden characters are marked ‹U+…› above: text you cannot see in the file. Read the case in the editor; start it from the terminal."
+shows import-hidden 3 "The first 64 KiB are shown; the rest is in the case file. Read the whole Intent in the editor; start this case from the terminal."
+expect import-hidden 5 "[$tc.armed, $tc.status] | join(\",\")" ",queued"
+argv_check import-hidden "$work/home-import-hidden" "$(printf '%s\n' "$startup" "$(q plan show C-2026-007 --json)")"
+clean_log import-hidden
+
+# Dev mode (read-only): an imported case shows the index's first paragraph,
+# says the whole Intent needs the engine, never enables Start; Enter does
+# nothing; Import tasks… stays shut.
+run import-dev "$sample" 1920x1080 "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};key:Return;click:Import tasks…;width:50"
+expect import-dev 1 "[$tc.imported, $tc.startEnabled, $tc.hint, $tc.review.text] | map(tostring) | join(\",\")" \
+  "true,false,Dev mode is read-only,Dev mode is read-only"
+for text in "C-2026-007 · imported · R1 · dev-env" "IMPORTED TASK" "INTENT" "Dev mode is read-only" \
+  "Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben."; do
+  shows import-dev 1 "$text"
+done
+expect import-dev 2 "$tc.armed" ""
+expect import-dev 3 "$ti.open" false
+for i in 1 4; do expect import-dev $i '.overflow | join(" | ")' ""; done
+clean_log import-dev
+
 mkdir -p "$work/home-work-locked"
 run work-locked "" 1920x1080 "summon:$wk;text:+;type:keep me;key:Return;settle;key:Escape;view;text:+" \
   HOME="$work/home-work-locked" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_LOCKED=1
@@ -1122,11 +1321,11 @@ jq '.events = [
   ] + .events' "$sample" >"$work/after-two.json"
 mkdir -p "$work/home-cursor-follow"
 run cursor-follow "" 1920x1080 \
-  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=78;key:Return;key:Escape;text:F' \
+  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=84;key:Return;key:Escape;text:F' \
   HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
 expect cursor-follow 1 "[$tv.chip, $tv.cursor] | map(tostring) | join(\",\")" "all,0"
 expect cursor-follow 2 "[$tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "4,$THEME"
-expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "78,6,$THEME"
+expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "84,6,$THEME"
 expect cursor-follow 5 "[$tv.detail.form.shown, $tv.detail.form.eventId] | map(tostring) | join(\",\")" "true,$THEME"
 expect cursor-follow 7 "[$tv.chip, $tv.cursor, $tv.selected != \"$THEME\"] | map(tostring) | join(\",\")" "case,0,true"
 clean_log cursor-follow
@@ -1515,8 +1714,8 @@ rpaints() {
 plan_s="2 active cases · 6 of 9 steps done"
 risk_s="8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time"
 drift_s="13 opened · 8 resolved in 5 weeks · peak 2026-W40"
-s30="71 events on 15 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
-s90="76 events on 16 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+s30="77 events on 17 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+s90="82 events on 18 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
 s365=${s90/of 90 days/of 365 days}
 sall=${s90/of 90 days/of 366 days}
 radiant='{"section":"radiant"}'
@@ -1537,7 +1736,7 @@ expect radiant-ipc 1 '.view.sectionView.window.from + " " + .view.sectionView.wi
 expect radiant-ipc 1 .view.sectionView.caption "90 d · 2026-07-04 – 2026-10-01"
 for text in "Prime Radiant" "90 d · 2026-07-04 – 2026-10-01" "30 d" "90 d" "365 d" "All" \
   Heatmap Series DriftBars RiskDonut Timeline "The Plan" releases snapshots cases crises \
-  "76 events on 16 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
+  "82 events on 18 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
   "C-2026-003 · R3" "Omarchy auf 4.0.7 aktualisieren" "4/5 steps · agent: claude-code" "2/4 steps · agent: claude-code"; do
   shows radiant-ipc 1 "$text"
 done
@@ -1767,7 +1966,9 @@ done
 #      first, the proposed one striped and selected, its detail with Accept
 #      and Open in editor and what Accept means; ↓/↑ move the selection and
 #      the detail follows (an accepted one has no Accept); a click on a row
-#      selects it; `e` and Accept are refused with dev mode's reason; `d`
+#      selects it; `e` is refused with dev mode's reason, Accept is shown
+#      but disabled (dev mode writes nothing: a click neither arms nor
+#      runs); `d`
 #      opens no form without an engine to write; `/` narrows the list, Esc
 #      clears it; `call select` picks a decision ("not found" for none).
 #      The sample is contract 2: every decision has its CASES block
@@ -1777,12 +1978,12 @@ run decisions "$sample" 1920x1080 \
 expect decisions 2 .view.section decisions
 expect decisions 2 '.view.sectionView.rows | join(",")' "ADR-0004,ADR-0003,ADR-0002,ADR-0001"
 expect decisions 2 '[.view.sectionView.cursor, .view.selected] | join(",")' "ADR-0004,ADR-0004"
-expect decisions 2 '.view.sectionView.actions | join(",")' "Accept,Open in editor"
+expect decisions 2 '.view.sectionView.actions | join(",")' "Open in editor"
 expect decisions 2 '.view.sectionView.cases | length' 0
 for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur als User-Service mit Case" "ADR-0004 · proposed" \
   "2026-10-01" "Logbuch-Sprache Deutsch, Struktur Englisch" "ADR-0001 · accepted" "2026-09-01" \
   "ADR-0004 · PROPOSED · 2026-10-01" "Accept" "Open in editor" "decisions/ADR-0004-ollama-user-service.md" \
-  "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture." \
+  "Proposed: it waits for your decision. Accept marks it accepted with today's date and notes it in the ledger; Open in editor shows the whole text." \
   "Lokale Modelle nur über einen Case; ollama läuft, wenn überhaupt, als User-Service ohne Autostart." \
   "The whole text is in the file; Open in editor shows it."; do
   shows decisions 2 "$text"
@@ -1801,6 +2002,7 @@ expect decisions 6 '[.view.sectionView.cursor, .view.keys] | map(tostring) | joi
 expect decisions 7 .view.sectionView.openResult "dev mode (SELDON_INDEX): engine calls are disabled"
 expect decisions 9 .view.sectionView.cursor ADR-0004
 expect decisions 9 .view.sectionView.openResult "dev mode (SELDON_INDEX): engine calls are disabled"
+expect decisions 9 '[.view.sectionView.accept.armed, .view.sectionView.accept.result, .view.arm.armed] | map(tostring) | join(",")' "false,,"
 expect decisions 10 '[.view.sectionView.form.open, .view.editing] | map(tostring) | join(",")' "false,false"
 expect decisions 13 '[.view.search.text, (.view.sectionView.rows | join(",")), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "snap|ADR-0002|ADR-0002|true"
 expect decisions 14 '[.view.search.text, (.view.sectionView.rows | length), .view.opened] | map(tostring) | join(",")' ",4,true"
@@ -1838,12 +2040,12 @@ clean_log decision-nocases
 #      twice creates it: `decide --no-edit --json -- <title>`, then `open
 #      ADR-0005 --editor --json` from the answer; the form closes, the keys
 #      come back and the selection sits on ADR-0005 once the index lists it.
-#      Then Accept on the proposed ADR-0004, `e` and Open in editor on
+#      Then Open in editor on the proposed ADR-0004, `e` and Open in editor on
 #      ADR-0003; on Memory `e` and Open in editor open the logbook, on
 #      System STATUS.md. The exact argv and editor paths.
 mkdir -p "$work/home-decisions-live"
 run decisions-live "" 1920x1080 \
-  "summon;text:4;text:d;type:--help \"q\";key:Return;key:Backspace;type:\";key:Return;key:Return;settle;summon;wait:sectionView.cursor=ADR-0005;key:Down;click:Accept;settle;summon;key:Down;text:e;settle;summon;pause:2100;click:Open in editor;settle;summon;text:6;key:Down;text:e;settle;summon;pause:2100;click:Open in editor;settle;summon;text:5;text:e;settle" \
+  "summon;text:4;text:d;type:--help \"q\";key:Return;key:Backspace;type:\";key:Return;key:Return;settle;summon;wait:sectionView.cursor=ADR-0005;key:Down;click:Open in editor;settle;summon;key:Down;text:e;settle;summon;pause:2100;click:Open in editor;settle;summon;text:6;key:Down;text:e;settle;summon;pause:2100;click:Open in editor;settle;summon;text:5;text:e;settle" \
   HOME="$work/home-decisions-live" FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/decisions-live.record"
 expect decisions-live 3 '[.view.sectionView.form.open, .view.sectionView.form.editing, .view.editing, .view.keys] | map(tostring) | join(",")' "true,true,true,false"
 shows decisions-live 3 "New decision"
@@ -1889,6 +2091,85 @@ want=$(printf '%s\n' omarchy-launch-editor "$d/decisions/ADR-0005-help-q.md" -- 
   omarchy-launch-editor "$d" -- omarchy-launch-editor "$d" -- omarchy-launch-editor "$d/STATUS.md" --)
 check "decisions-live: editor paths" "$(cat "$work/decisions-live.record" 2>/dev/null || true)" "$want"
 clean_log decisions-live
+
+# 10c'. Accept (WP-135, ADR-0040), live: Accept on the proposed ADR-0004
+#      arms ("Confirm accept", the hint in the sticky bar) and runs nothing;
+#      another key disarms, and so does a click on another decision (no
+#      key); armed again, the
+#      second click runs `decide accept ADR-0004 --json` — once, and no
+#      `open` — and the decision arrives accepted with the index: no
+#      Accept, the engine's answer in the detail (that decision's only),
+#      nothing proposed. The
+#      engine's refusal shows in place and the decision stays proposed; a
+#      held lock too.
+mkdir -p "$work/home-decisions-accept"
+run decisions-accept "" 1920x1080 \
+  "summon;text:4;click:Accept;text:z;click:Accept;click:Zed statt VS Code als Zweiteditor;key:Up;click:Accept;click:Confirm accept;settle;key:Down" \
+  HOME="$work/home-decisions-accept" FAKE_SELDON_FIXTURE="$sample"
+ta="$tv.accept"
+expect decisions-accept 2 '[.view.sectionView.cursor, (.view.sectionView.actions | join(","))] | join("|")' "ADR-0004|Accept,Open in editor"
+expect decisions-accept 3 "[$ta.armed, $ta.hint, .view.arm.armed] | map(tostring) | join(\"|\")" \
+  "true|Accept ADR-0004? Click Confirm: it becomes accepted with today's date.|decision:ADR-0004:accept"
+expect decisions-accept 3 '.view.sectionView.actions | join(",")' "Confirm accept,Open in editor"
+shows decisions-accept 3 "Confirm accept"
+shows decisions-accept 3 "Accept ADR-0004? Click Confirm: it becomes accepted with today's date."
+expect decisions-accept 4 "[$ta.armed, $ta.hint, .view.arm.armed] | map(tostring) | join(\"|\")" "false||"
+expect decisions-accept 4 '.view.sectionView.actions | join(",")' "Accept,Open in editor"
+expect decisions-accept 5 "$ta.armed" true
+expect decisions-accept 6 "[.view.sectionView.cursor, $ta.armed, .view.arm.armed] | map(tostring) | join(\"|\")" "ADR-0003|false|"
+expect decisions-accept 7 "[.view.sectionView.cursor, $ta.armed] | map(tostring) | join(\"|\")" "ADR-0004|false"
+expect decisions-accept 8 "$ta.armed" true
+expect decisions-accept 9 "$ta.armed" false
+expect decisions-accept 10 "[.view.sectionView.cursor, $ta.result, $ta.pending] | map(tostring) | join(\"|\")" \
+  "ADR-0004|Accepted ADR-0004 · Ollama nur als User-Service mit Case|false"
+expect decisions-accept 10 '.view.sectionView.actions | join(",")' "Open in editor"
+expect decisions-accept 10 '[.texts[] | select(. == "Accept" or . == "Confirm accept")] | length' 0
+for text in "Accepted ADR-0004 · Ollama nur als User-Service mit Case" "ADR-0004 · ACCEPTED · 2026-10-07" "4 decisions"; do
+  shows decisions-accept 10 "$text"
+done
+expect decisions-accept 10 '.view.lastError' ""
+expect decisions-accept 11 "[.view.sectionView.cursor, $ta.result] | join(\"|\")" "ADR-0003|"
+for i in 3 10; do expect decisions-accept $i '.overflow | join(" | ")' ""; done
+argv_check decisions-accept "$work/home-decisions-accept" "$(printf '%s\n' "$startup" "$(q decide accept ADR-0004 --json)")"
+clean_log decisions-accept
+
+# the engine's own text for an agent session (decide.rs user_actor)
+refusal='ADR-0004 is not accepted: agent:claude-code may propose a decision (`seldon decide`), only the user accepts one (ADR-0040); ask them to accept it in the desk or in their own terminal'
+mkdir -p "$work/home-decisions-accept-refused"
+run decisions-accept-refused "" 1920x1080 "summon;text:4;click:Accept;click:Confirm accept;settle" \
+  HOME="$work/home-decisions-accept-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_ACCEPT_REFUSE="$refusal"
+expect decisions-accept-refused 5 "[.view.sectionView.cursor, $ta.result, $ta.armed] | map(tostring) | join(\"|\")" "ADR-0004|$refusal|false"
+expect decisions-accept-refused 5 '.view.sectionView.actions | join(",")' "Accept,Open in editor"
+shows decisions-accept-refused 5 "$refusal"
+shows decisions-accept-refused 5 "4 decisions · 1 proposed"
+expect decisions-accept-refused 5 '.view.lastError' ""
+argv_check decisions-accept-refused "$work/home-decisions-accept-refused" "$(printf '%s\n' "$startup" "$(q decide accept ADR-0004 --json)")"
+clean_log decisions-accept-refused 'jax\.seldon: seldon decide exit 1: ADR-0004 is not accepted: '
+
+# A new index disarms Accept (Decisions.qml onAllRowsChanged; round 2,
+# N4): armed, then a capture from the pill's right click — no key, no click
+# in the desk — makes the fake engine write an index with one more
+# decision (ADR-0005, proposed); Accept is no longer armed, nothing ran.
+jq '.decisions = [{id: "ADR-0005", title: "Neuer Vorschlag", status: "proposed", date: "2026-10-07", cases: [],
+    path: "decisions/ADR-0005-neuer-vorschlag.md"}] + .decisions' "$sample" >"$work/decisions-after.json"
+mkdir -p "$work/home-decisions-accept-index"
+run decisions-accept-index "" 1920x1080 \
+  "summon;text:4;click:Accept;pill:right;wait:sectionView.summary=5 decisions · 2 proposed" \
+  HOME="$work/home-decisions-accept-index" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/decisions-after.json"
+expect decisions-accept-index 3 "[.view.sectionView.cursor, $ta.armed] | map(tostring) | join(\"|\")" "ADR-0004|true"
+expect decisions-accept-index 5 "[.view.section, .view.sectionView.cursor, $ta.armed, .view.arm.armed] | map(tostring) | join(\"|\")" \
+  "decisions|ADR-0004|false|"
+expect decisions-accept-index 5 '.view.sectionView.actions | join(",")' "Accept,Open in editor"
+argv_check decisions-accept-index "$work/home-decisions-accept-index" \
+  "$(printf '%s\n' "$startup" "$(q capture --all --json --quiet)" "$(q status --json)")"
+clean_log decisions-accept-index
+
+mkdir -p "$work/home-decisions-accept-locked"
+run decisions-accept-locked "" 1920x1080 "summon;text:4;click:Accept;click:Confirm accept;settle" \
+  HOME="$work/home-decisions-accept-locked" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_LOCKED=1
+expect decisions-accept-locked 5 "[$ta.result, (.view.sectionView.actions | join(\",\"))] | join(\"|\")" \
+  "the logbook is locked by another seldon (pid 4242)|Accept,Open in editor"
+clean_log decisions-accept-locked
 
 # 10d. Refusals keep the title (panel scenario 22): Enter on a blank title is
 #      refused in the plugin; the engine refuses the decision (lock held, exit
@@ -2148,7 +2429,7 @@ graph_tick_ok() {
 #      and no paint after that; the legend, the date, the footer.
 graph_run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:300;pause:1000"
 expect graph-settle 2 .view.section graph
-expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "68,26,68,0"
+expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "74,26,74,0"
 expect graph-settle 2 '[.view.graph.sleeping, .view.graph.timer] | map(tostring) | join(",")' "false,true"
 expect graph-settle 3 '[.view.graph.sleeping, .view.graph.timer, .view.graph.ticks, .view.graph.run] | map(tostring) | join(",")' "true,false,200,200"
 expect graph-settle 3 '.view.graph.tickSamples > 150' true
@@ -2156,8 +2437,8 @@ graph_tick_ok graph-settle 3
 expect graph-settle 5 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
 # (the last tick's paint may still be pending at step 3: compare 4 and 5)
 check "graph-settle: no paint while asleep" "$(sed -n 5p "$work/graph-settle.steps" | jq .view.graph.paints)" "$(sed -n 4p "$work/graph-settle.steps" | jq .view.graph.paints)"
-for t in "Graph" "Play growth" "2026-10-01 · 68 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
-  "Newest 76 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
+for t in "Graph" "Play growth" "2026-10-01 · 74 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
+  "Newest 82 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
   shows graph-settle 3 "$t"
 done
 expect graph-settle 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis"
@@ -2171,7 +2452,7 @@ clean_log graph-settle
 graph_run graph-hidden "$sample" 1920x1080 "summon;text:8;pause:300;text:1;pause:1500;text:8;wait:graph.sleeping=true;hide;summon;pause:800"
 # The service builds the graph only for a shown section 8.
 expect graph-hidden 1 '[.graphBuilds, .graphNodes, .view.graph] | map(tostring) | join(",")' "0,0,null"
-expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,68"
+expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,74"
 t4=$(sed -n 4p "$work/graph-hidden.steps" | jq .view.graph.ticks)
 expect graph-hidden 3 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "graph,true"
 expect graph-hidden 4 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "today,false"
@@ -2196,7 +2477,7 @@ run graph-dirty "" 1920x1080 "summon;settle;text:8;wait:graph.sleeping=true;text
 expect graph-dirty 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "0,0"
 expect graph-dirty 4 '[.graphBuilds, .graphDirty, .view.graph.sleeping, .view.graph.ticks] | map(tostring) | join(",")' "1,false,true,200"
 expect graph-dirty 11 '[.view.section, .graphBuilds, .graphDirty] | map(tostring) | join(",")' "radiant,1,true"
-expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,68"
+expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,74"
 expect graph-dirty 12 '[.view.graph.sleeping, .view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "true,200,false"
 clean_log graph-dirty
 
@@ -2204,9 +2485,9 @@ clean_log graph-dirty
 #      ends with all of them; the slider's day (graphCut) and ←/→; Space.
 graph_run graph-replay "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphPlay;wait:graph.playing=false;graphCut:0;key:Right;key:Space;pause:300;key:Escape;wait:graph.sleeping=true"
 expect graph-replay 4 '[.view.graph.playing, .view.graph.cut] | map(tostring) | join(",")' "true,0"
-expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 68)' true
-expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,68"
-expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 68"
+expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 74)' true
+expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,74"
+expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 74"
 expect graph-replay 7 '[.view.graph.cut, .view.graph.sleeping] | map(tostring) | join(",")' "1,false"
 expect graph-replay 8 .view.graph.playing true
 expect graph-replay 9 '.view.graph.cut > 1' true
@@ -2520,6 +2801,12 @@ if [[ -n ${DESK_SHOTS:-} ]]; then
       HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
     expect "shot-graph-$theme" 5 .view.graph.hovered C-2026-004
     clean_log "shot-graph-$theme"
+    # WP-137: the interrupted transaction's detail and the mixed one's list
+    run "shot-tx-$theme" "$sample" 1920x1080 \
+      "summon:{\"section\":\"changelog\",\"filter\":\"all\"};select:$GTK4;shot:desk-$theme-tx-interrupted;select:$PIPEWIRE;shot:desk-$theme-tx-mixed;select:$GTK4;width:50;shot:desk-$theme-tx-interrupted-50;key:Return;shot:desk-$theme-tx-interrupted-50-detail" \
+      HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
+    for i in 3 5 8 9; do expect "shot-tx-$theme" $i '.overflow | join(" | ")' ""; done
+    clean_log "shot-tx-$theme"
     run "shot-uninit-$theme" "$fx/index-variants/not-initialised.json" 1920x1080 "summon;shot:desk-$theme-uninit" \
       HOME="$home" HARNESS_SHOTS="$DESK_SHOTS"
     clean_log "shot-uninit-$theme"

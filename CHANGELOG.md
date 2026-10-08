@@ -38,6 +38,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Without Hyprland nothing is tracked. `seldon open --editor` from the desk
   focuses the terminal window it already opened on the same file instead
   of starting a second editor.
+- **A pacman transaction that did not complete says so (WP-137,
+  ADR-0043).** When pacman logs `transaction failed` or `transaction
+  interrupted`, or a transaction has no end line (pacman killed, power
+  lost), each of its package events records `meta.txStatus`; the month's
+  ledger view adds `· transaction interrupted`. Lines written before keep
+  none. `seldon event --meta txStatus=…` is refused.
+- **`seldon decide accept ADR-NNNN` (ADR-0040).** Accepts a proposed
+  decision: `status: accepted` and today's date in its frontmatter, a
+  `seldon` note in the ledger, `DECISIONS.md`, the commit and the index.
+  A second run changes nothing; a superseded decision is refused.
+  Accepting is the user's: an agent actor or an agent's session is
+  refused. A decision titled "accept" is now made with `seldon decide --
+  accept` (WP-135).
 - **Rules for every git call (WP-154).** Every program the engine runs
   keeps at most a cap of its output, named at each call (1 MiB for git
   and short answers; a 100 MB flood of stderr from git costs 1 MiB), and
@@ -184,6 +197,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   case an agent works on shows *Focus* in place of a second *Hand to
   agent*; a button whose call is running is busy, and *Open in editor*
   never sends the same file twice within 2 s.
+- **A transaction's packages in the Changelog (WP-137).** Selecting a
+  pacman change shows every package of its transaction — ↑ upgraded,
+  ↓ downgraded, + installed, − removed, ↻ reinstalled, old → new — and
+  the command that started it. A transaction that failed, was
+  interrupted or never finished is marked in the urgent colour in its
+  rows and explained in the detail.
+- **Import tasks…** in the desk's Work list: name your Markdown task file
+  (and an area), see the dry run's list, then import with one click; the
+  path goes to the engine as one argument. Imported cases are marked
+  "imported"; their detail shows the whole Intent as plain text, with its
+  source and line count, and Start is enabled only after that, by click,
+  never by Enter. `seldon plan show --json` gives the whole Intent for it,
+  invisible characters marked `‹U+…›`; such an Intent, or one longer than
+  64 KiB, keeps Start off. `seldon import task` removes invisible
+  characters and skips a task too long to review (WP-102b, ADR-0044).
+
 - **Agent sorts N open changes.** The Changelog's head asks your
   agent to sort the open changes; its proposal shows as a row and a
   detail: every item with the change, the link or explanation, and every
@@ -194,6 +223,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing. *Discard* throws a proposal away. *Ask agent* on an open
   change and on a case asks your agent about it (WP-124).
 
+- **Accept accepts.** *Accept* on a proposed decision in the desk's
+  Decisions section no longer opens the editor: the first click arms it
+  (*Confirm accept*), the second runs `seldon decide accept`, and the
+  decision shows as accepted with the next index (WP-135).
 - The desk's "Why loud?" callout reads the rule from the index: selecting
   a crisis in the Changelog no longer runs `seldon drift show` (it still
   does against an engine whose index has no rule). Work's case detail

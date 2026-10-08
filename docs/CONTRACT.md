@@ -126,6 +126,14 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
        that shape is left out with a build warning). Display only: never
        an argument of any command. The import's marker stays the only
        idempotency key.
+   - Optional, ADR-0043 (WP-137): `meta.txStatus` on every
+     package event of a pacman transaction that did not complete —
+     `failed` or `interrupted` (pacman logged that end), `unfinished`
+     (no end line: the next transaction started, or the log ended with
+     pacman gone). Only on `source: pacman` with a `txId`; absent when the
+     transaction completed and on lines written before, so absent means
+     "completed or not known". The index drops it anywhere else and reads
+     another word as none.
 
 ## Changing the contract
 
@@ -148,6 +156,8 @@ seldon agent start --new --json -- <intent>     # WP-101: creates and starts a c
 seldon agent focus <caseId> --json              # WP-156, ADR-0041: Focus, in place of a second Hand to agent; brings the agent's window to the front
 seldon agent sessions --json                    # WP-156, ADR-0041: read-only, own process beside the queue; the cases whose agent window is open
 seldon plan reopen <caseId> --json              # WP-101: a completed case only; a new active case, nothing destroyed
+seldon plan show <caseId> --json                # WP-102b, ADR-0044: read-only; `intent` {text, lines, truncated, hidden}, the whole Intent the desk shows before an imported case's Start
+seldon import task --json [--dry-run] [--area <slug>] -- <path>   # WP-102b, ADR-0044: the path one argument after `--`, never interpolated; the dry run first, then the import
 seldon drift link <eventId> <caseId> [--only] --json
 seldon drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <slug>] --json -- <text>
 seldon drift dismiss <eventId> [--only] --json -- <reason>   # same rule as explain: text after `--`
@@ -157,6 +167,7 @@ seldon agent ask drift|case <id> --json          # Ask agent on an event (open d
 seldon drift apply <proposalId> [--item <eventId>]… --json   # applies index.triage's proposal as the user; a crisis only by --item
 seldon drift discard <proposalId> --json         # removes the proposal file; the logbook is untouched
 seldon decide --no-edit --json -- <title>        # then `open <newId> --editor --json` from the result
+seldon decide accept <ADR-NNNN> --json           # WP-135, ADR-0040: Accept, armed twice; a proposed decision only; the user's act (an agent is refused)
 seldon rebuild --json
 seldon update-impact --json
 seldon doctor --only rules --json               # WP-101: read-only, on panel open (own process, not the queue); runs no probe

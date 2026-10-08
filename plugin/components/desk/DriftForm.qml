@@ -119,6 +119,9 @@ FocusScope {
   // The form under the sticky bar is shown (showForm); the members, the
   // resolution and the answer show without it.
   property bool formShown: false
+  // The event detail lists the whole transaction above, every member open
+  // (WP-137): the member lines would repeat it, so they hide.
+  property bool membersShownAbove: false
 
   // The keys leave the form (Esc, Cancel, the item resolved).
   signal leaveRequested()
@@ -321,7 +324,7 @@ FocusScope {
     // `seldon drift show`.
     Text {
       width: parent.width
-      visible: root.memberLines.length > 0
+      visible: root.memberLines.length > 0 && !root.membersShownAbove
       textFormat: Text.PlainText
       text: root.shown ? Model.plural(root.shown.members, "package", "packages") + " in one transaction:" : ""
       color: root.dim
@@ -330,7 +333,7 @@ FocusScope {
     }
 
     Repeater {
-      model: root.memberLines
+      model: root.membersShownAbove ? [] : root.memberLines
 
       Text {
         required property string modelData
