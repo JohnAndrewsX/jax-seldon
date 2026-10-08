@@ -1133,7 +1133,7 @@ fn index_build_on_x10_fixtures_is_fast() {
     let tmp = TempDir::new("x10");
     let root = tmp.path().join("logbook");
     let lines = common::scale::scaled_logbook(&fixture_logbook(), &root, 10);
-    assert_eq!(lines, 850, "85 ledger lines ×10");
+    assert_eq!(lines, 870, "87 ledger lines ×10");
     let logbook = Logbook::open(&root).unwrap();
     let dirs = Dirs {
         home: tmp.path().into(),
@@ -1704,6 +1704,63 @@ fn clip_probes() -> Vec<String> {
     out
 }
 
+/// WP-140 round 2: the reference's set of direction and format
+/// characters (`scripts/validate-fixtures.py`, `DIRECTION_OR_FORMAT` and
+/// `BAD_PATH` without the control characters) is the engine's
+/// `import::is_direction_or_format`, code point for code point.
+#[test]
+fn the_reference_drops_the_engines_format_characters() {
+    let python = ["python3", "python"].into_iter().find(|p| {
+        std::process::Command::new(p)
+            .arg("--version")
+            .output()
+            .is_ok()
+    });
+    let Some(python) = python else {
+        eprintln!("skipped: no python3 on PATH (scripts/validate-fixtures.py needs it)");
+        return;
+    };
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/validate-fixtures.py");
+    // `-B`: no `__pycache__` beside the script
+    let probe = r#"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("vf", sys.argv[1])
+vf = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(vf)
+for name, rx in (("format", vf.DIRECTION_OR_FORMAT), ("path", vf.BAD_PATH)):
+    for c in range(0x110000):
+        if 0xD800 <= c <= 0xDFFF:
+            continue
+        ch = chr(c)
+        if rx.match(ch) and not (name == "path" and (c < 0x20 or 0x7F <= c <= 0x9F)):
+            print(name, c)
+"#;
+    let out = std::process::Command::new(python)
+        .args(["-I", "-B", "-c", probe])
+        .arg(&script)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let engine: Vec<u32> = (0..=0x10FFFF)
+        .filter_map(char::from_u32)
+        .filter(|c| seldon::import::is_direction_or_format(*c))
+        .map(u32::from)
+        .collect();
+    assert!(engine.len() > 150, "{}", engine.len());
+    for name in ["format", "path"] {
+        let reference: Vec<u32> = stdout
+            .lines()
+            .filter_map(|l| l.strip_prefix(name)?.trim().parse().ok())
+            .collect();
+        assert_eq!(reference, engine, "{name}");
+    }
+}
+
 /// ADR-0025 (WP-077): the reference `derive()` of
 /// `scripts/validate-fixtures.py` clips as the engine does. A copy of the
 /// fixture logbook gets caseless config events whose `detail` and `meta`
@@ -1934,7 +1991,7 @@ fn a_ledger_truncated_mark_is_dropped() {
 // --------------------------------------------------------------------------
 
 /// `seldon status` at the scale of the budget (`scale::stated_scale`:
-/// 10 540 ledger lines, 304 cases, 365 journal files): median wall time of
+/// 10 788 ledger lines, 304 cases, 365 journal files): median wall time of
 /// 11 runs, process start included, < 100 ms (`assert_within_budget`).
 #[test]
 #[ignore = "release timing at scale: `just check-perf`"]
@@ -1944,7 +2001,7 @@ fn status_at_10_000_ledger_lines_is_under_100_ms() {
     let env = Env::new(Snapper::Missing);
     let root = env.tmp.path().join("logbook");
     let lines = common::scale::stated_scale(&fixture_logbook(), &root);
-    assert_eq!(lines, 10_540);
+    assert_eq!(lines, 10_788);
     let args = ["--logbook", root.to_str().unwrap(), "status", "--json"];
     let out = env.at(GENERATED_AT, &args);
     assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));

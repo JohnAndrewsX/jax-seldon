@@ -94,7 +94,14 @@ PACMAN_LONG_OPS = {"--sync": "S", "--database": "D", "--files": "F", "--query": 
                    "--deptest": "T", "--upgrade": "U", "--version": "V"}
 PACMAN_LONG_WITH_ARG = {"--arch", "--ask", "--assume-installed", "--cachedir", "--color", "--config",
                         "--dbpath", "--gpgdir", "--hookdir", "--ignore", "--ignoregroup", "--logfile",
-                        "--overwrite", "--print-format", "--root", "--sysroot"}
+                        "--overwrite", "--print-format", "--root", "--sysroot",
+                        # yay and paru (WP-113; engine/src/pkgcmd.rs LONG_WITH_ARG)
+                        "--aururl", "--aurrpcurl", "--builddir", "--editor", "--editorflags", "--makepkg",
+                        "--pacman", "--git", "--gitflags", "--gpg", "--gpgflags", "--makepkgconf",
+                        "--requestsplitn", "--completioninterval", "--sortby", "--searchby",
+                        "--answerclean", "--answerdiff", "--answeredit", "--answerupgrade", "--mflags",
+                        "--sudo", "--sudoflags", "--clonedir", "--pacman-conf", "--fm", "--fmflags",
+                        "--bat", "--batflags", "--limit"}
 PACMAN_SHORT_WITH_ARG = "br"  # -b/--dbpath, -r/--root
 
 
@@ -145,11 +152,13 @@ def routine(e):
 # ADR-0028 §2 (WP-109): the class of a drift-eligible event, routine < attention < crisis. Keep in
 # step with engine/src/index/class.rs and the [drift] defaults of engine/src/config.rs.
 ROUTINE_RULES = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "theme",
-                 "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo"]
+                 "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
 ROUTINE_PATHS = ["~/.config/omarchy/shell.json", "**/*.bak.*"]
 ROUTINE_PACKAGES = ["archlinux-keyring", "omarchy-keyring"]
+EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 ALWAYS_RED_PATHS = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**",
-                    "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile"]
+                    "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile",
+                    "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
 CLASS_ORDER = {"routine": 0, "attention": 1, "crisis": 2}
 THEME_CODE = {"alacritty.toml", "foot.ini", "ghostty.conf", "kitty.conf", "vscode.json"}
 OMARCHY_LOOKBACK = dt.timedelta(days=31)
@@ -330,6 +339,13 @@ class Classifier:
         if src == "config":
             mark = meta.get("matches")
             removed = kind == "config-remove"
+            # ADR-0037 §1: a flag file in the toggles directory, created or removed
+            if subject.startswith("~/.local/state/omarchy/toggles/"):
+                h = meta.get("hashFrom") if removed else meta.get("hashTo")
+                if h == EMPTY_SHA256:
+                    return ("routine", "toggle-flag")
+                if removed and mark == "omarchy-default":
+                    return ("routine", "omarchy-default")
             if not removed and mark in ("omarchy-default", "system-link"):
                 return ("routine", mark)
             # the persistence paths right after the evidence rows; a backup there needs evidence
@@ -900,7 +916,12 @@ def case_intent(fm, body):
     return ps[0] if ps else None
 
 
-DIRECTION_OR_FORMAT = re.compile("[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
+# engine: import::is_direction_or_format (ADR-0038 §2, the set WP-140 widened)
+FORMAT_SET = (
+    "\u00ad\u0600-\u0605\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f"
+    "\ufeff\ufff9-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e007f"
+)
+DIRECTION_OR_FORMAT = re.compile(f"[{FORMAT_SET}]")
 
 
 def shown_text(text):
@@ -916,7 +937,7 @@ def shown_text(text):
     return text if text.strip(WHITE_SPACE) else None
 
 
-BAD_PATH = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
+BAD_PATH = re.compile(f"[\x00-\x1f\x7f-\x9f{FORMAT_SET}]")
 
 
 def case_source(fm, problems, where):
@@ -1681,9 +1702,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/69/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/69/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/69/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/70/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/70/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/70/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".

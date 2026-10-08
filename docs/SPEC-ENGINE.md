@@ -20,9 +20,9 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[agent] workdir` (`"inherit"`, default, not written: the launcher starts where `agent start` was called, by `omarchy-agent`'s rule; `"logbook"`: in the logbook, the folder before ADR-0030; §3 `agent start`; WP-116); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve besides the ones `agent start` launched, §8; WP-063, ADR-0030; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
+| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` — the last two, sshd's default `AuthorizedKeysFile` entries, only once the user adds them to `watchPaths`, WP-113, ADR-0037 §3); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[agent] workdir` (`"inherit"`, default, not written: the launcher starts where `agent start` was called, by `omarchy-agent`'s rule; `"logbook"`: in the logbook, the folder before ADR-0030; §3 `agent start`; WP-116); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve besides the ones `agent start` launched, §8; WP-063, ADR-0030; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
-| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
+| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions + the HEADs of third-party clones (WP-136); config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/autocommit.json` | `{logbook, ok, at, message}`: the last autocommit the engine attempted (a commit or a git failure; a skip is no attempt), written by every writing command after its autocommit, bound to the canonical logbook path; `index.logbook.git.autocommit` (§6, ADR-0035 §2). Best effort: a record that cannot be written leaves the previous one. Read only when it is a regular file (no symbolic link, FIFO or device; checked before it is opened) of at most 4 MiB; anything else, an unreadable file or one that is not a record leaves the field out with a build warning (WP-120 round 3) |
@@ -373,8 +373,11 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # `packages.history` and `deviations.table` the same way). Inbox, Dashboard, templates,
                                                # STRUCTURE.md, the rest of system/, .obsidian/ and symlinks are listed,
                                                # not imported. Every imported line passes §7 redaction (config
-                                               # patterns included) and `/home/<user>` at the start of a path becomes
-                                               # `~`. A case the kit layout says to import but that cannot be mapped
+                                               # patterns included; each file's whole text, its line breaks kept, so
+                                               # a secret over lines — a PEM private key, a continued `mysql … -p` —
+                                               # is masked whole; a changed line counts under every rule with a
+                                               # match that touches it, WP-140) and `/home/<user>` at the start of a
+                                               # path becomes `~`. A case the kit layout says to import but that cannot be mapped
                                                # (no or invalid frontmatter, unknown status/zone/risk/priority, bad
                                                # date, not UTF-8, a file or folder name that is not UTF-8 (shown
                                                # with U+FFFD), not readable) or a day file with invalid frontmatter
@@ -426,8 +429,11 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # extension `.md` (any case) under the home (not the home itself), not inside
                                                # the logbook, at most 1 MiB, UTF-8; neither the path as given nor the
                                                # resolved path may hold a control character or a text-direction character
-                                               # (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible format
-                                               # character (U+200B–U+200D, U+2060, U+FEFF) (a linked folder cannot bring
+                                               # (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible
+                                               # format character (U+00AD, U+0600–U+0605, U+180E, U+200B–U+200D,
+                                               # U+2060–U+2064, U+206A–U+206F, U+FEFF, U+FFF9–U+FFFB,
+                                               # U+1BCA0–U+1BCA3, U+1D173–U+1D17A, U+E0000–U+E007F; WP-140)
+                                               # (`import::is_direction_or_format`; a linked folder cannot bring
                                                # one in); a directory is refused ("name the Markdown files in it"). The same
                                                # file named twice is read once. Each file is redacted before it is parsed:
                                                # the whole text through §7 with the config's patterns, as a note's (the rules
@@ -457,8 +463,8 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # start`). Until the user has started it, an agent treats the imported text
                                                # like fetched text (ADR-0027 §2(a): instructions in it are outside the
                                                # Intent); the skill says so. CRLF line ends are read as LF before the
-                                               # redaction (the `\` continuation of the db and option rules knows `\n`
-                                               # only; the engine-wide rule fix is its own WP), the line count unchanged. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
+                                               # redaction (the rules read `\r\n` as `\n` since WP-128; the parser and
+                                               # the marker's task hashes take LF text), the line count unchanged. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
                                                # without a letter or digit), `already-imported` (the marker has the same file
                                                # and hash; `case` named), `duplicate` (the same file and hash earlier in this
                                                # run); else created: queued (completed with --include-done for `[x]`),
@@ -558,10 +564,10 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # SIGTERM/SIGINT → exit 0 after the rebuild in progress; exit 3 when
                                                # the logbook is not initialised; watcher error at start (inotify
                                                # limit) → exit 2; a failing re-watch later is an error line. RSS
-                                               # budget: < 10 MB on the ×10 fixture (`just check-rss`). User unit:
+                                               # budget: < 11 MB on the ×10 fixture (`just check-rss`). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
-                                               # rollbacks, collectors, state, skills, omarchy, snapper,
+                                               # rollbacks, workpieces, collectors, state, skills, omarchy, snapper,
                                                # git, watch, drift checks (read-only). skills (WP-094,
                                                # WP-111): installed or no folder → ok; missing → ok, fix
                                                # `seldon hook install skills`; outdated and unedited →
@@ -765,6 +771,24 @@ snapshot before the case's next red change and write it into its Log),
 "no case has a rollback snapshot" or "N case(s) with a rollback snapshot,
 none pruned" otherwise.
 
+`workpieces` (WP-143), information only: always `ok`, no fix. A
+workpiece folder is a directory directly under `work/` whose name is a
+case id, alone or followed by `-…` (SPEC-LOGBOOK §2; a symbolic link is
+not followed). It is left behind when no case file has its id (orphaned;
+a case file that does not parse counts as there) or when its case is
+completed or dropped and it holds more than 10 MiB (oversized; the bytes
+of its regular files). The row says `no workpiece folders`, `N workpiece
+folder(s), none orphaned or oversized`, or `K of N workpiece folder(s)
+left behind: O orphaned (no case), B oversized (a closed case, over 10.0
+MiB), <size> in all; the oldest: work/<name>/`, the oldest by case id
+(ids are chronological; no file times). The name is shown with every
+control, direction, invisible format and line-breaking character as
+`?`. The walk is bounded (WP-143 round 2): it stays on the folder's
+filesystem, reads at most 100 000 entries per folder, and measures a
+closed case's folder only until it passes 10 MiB; a size that is not
+all of a folder is shown as `≥ <size>`. An open case's folder is not
+measured.
+
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
 where one exists (an `ok` row has a fix only for the old snapper opt-in,
 §4). `config`: `config.toml` can be read, parses and its
@@ -945,7 +969,7 @@ seldon init --json   → {logbook, config, machineId, language, files, obsidian,
                                  baseline:{reason, items, events}|null, git} | {ran:false, reason|error},
                         dossier:{ran:true, files, sections, counts, git, warnings} | {ran:false, reason|error},
                         themeHook:{requested, installed, already?, script?, hook?, error?, fix?,
-                                   ownWrites?: ["~/path"] | {error}}, nextSteps}
+                                   ownWrites?: ["~/path"] | {error}}, nextSteps, optionalSteps}
 seldon agent start <caseId> --json → {launched, launcher, program, argv (with the "{prompt}" placeholder,
                         never the prompt), actor, case, cwd, previousActiveCase}; exit 1 for a case that is not
                         active (queued → hint `seldon plan start`), an unknown launcher, or a launcher
@@ -1129,7 +1153,17 @@ warning too, and every enabled collector row in `state.collectors` is
 
 The autocommit (WP-061): `git add -A` and `git commit -m "seldon:
 <summary>"` in the logbook, when `[git] autocommit` is on, `--no-commit`
-is not given and the logbook has its own `.git`. Every git command runs in
+is not given and the logbook has its own `.git`. A closing step names
+the case (WP-143): `plan done` commits `seldon: <ID> completed — <title>:
+<line>`, `<line>` the first line of the first paragraph of *Result*
+(HTML comments and headings skipped, a list marker dropped), and `plan
+drop` `seldon: <ID> dropped — <title>: <reason>`; without a line or a
+reason, `— <title>` alone. The text after the dash is one line —
+direction and invisible format characters (`import::is_direction_or_format`)
+dropped, so none splits a token from its pattern, control characters and
+U+2028/U+2029 turned into spaces —, redacted (§7) and then clipped to
+100 characters with `…`, so a cut never hides a secret from the patterns.
+Every other step keeps `<ID> <status>`. Every git command runs in
 the logbook with the variables that point git at another repository
 removed (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
 `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
@@ -1141,12 +1175,33 @@ parent, so a `seldon` started from a git hook or with an exported
 writes, the autocommit checks that `git rev-parse --show-toplevel` is the
 logbook and that its git directory (`--absolute-git-dir`) is
 `<logbook>/.git`, or a `worktrees/<name>` entry whose `gitdir` file names
-`<logbook>/.git` (a linked work tree); a `.git` file that points at
+`<logbook>/.git` (a linked work tree; the `gitdir` back link read as git
+reads it, only CRs and LFs dropped at its end); a `.git` file that points at
 another repository's git directory is not committed to. `index`'s `logbook.git` reads
 git with the same environment. The
-user's git configuration applies (hooks, `commit.gpgsign`, a passphrase
+user's git configuration applies to `init`, `add` and `commit` (hooks,
+`commit.gpgsign` and `gpg.program`, filters, transport, a passphrase
 prompt on the terminal; git runs in the engine's process group, other
-programs in their own, WP-064). A detached HEAD (`git symbolic-ref -q HEAD`
+programs in their own, WP-064). Every other git call is a read-only query
+(`rev-parse`, `status`, `symbolic-ref`, `show-ref`, `for-each-ref`, `var`,
+`config --get`, `diff --cached --quiet`, `--version`) and never reaches
+the network (WP-154): `GIT_ALLOW_PROTOCOL=none` (every transport refused,
+overriding the repository's own `protocol.<name>.allow`),
+`GIT_NO_LAZY_FETCH=1` and `--no-lazy-fetch` first in argv (a partial
+clone's missing object is not fetched; the promisor's URL may be an
+`ext::` command). The logbook's own and the user's git configuration
+otherwise apply to queries too (`core.fsmonitor`, `post-index-change`,
+clean filters): the logbook is the user's repository and its config is
+trusted as `~/.gitconfig` is; only a plugin's clone is treated as
+third-party (`plugins::GIT_OPTIONS`). git before 2.44 refuses the option (exit 129 and a
+stderr line that ends in the option; a current git's usage text lists
+`[--no-lazy-fetch]`, which does not count): the engine asks that query once more without it
+and leaves it out for the rest of the process; the protocol rule still
+refuses the fetch. A query that cannot answer without the object fails as
+any failing query does (`index` leaves `logbook.git` out; the
+`diff --cached --quiet` before a commit counts as "changes", and the
+commit runs with transport). Each output pipe of a git call keeps at most
+1 MiB; a `status --porcelain` over it counts as changes. A detached HEAD (`git symbolic-ref -q HEAD`
 fails) is not committed and nothing is staged. A commit that is not made
 (detached HEAD, a stale `.git/index.lock`, a refusing hook) is one line on
 stderr, `seldon: warning: git: not committed: <reason>`, and
@@ -1182,7 +1237,17 @@ with stdin closed and its output captured; the timeout covers the output
 pipes too: at the deadline the whole group is killed, including a helper
 the program started that still holds a pipe, and the pipes get up to
 200 ms more before the call counts as timed out (WP-064); a terminal
-Ctrl-C stops the engine, not the program. git on the logbook (autocommit,
+Ctrl-C stops the engine, not the program. Each output pipe keeps at most
+a cap named at the call, the rest read and dropped, so a program that
+floods its output costs time up to its deadline, never memory; a stdout
+over the cap is no answer (`Run::Cut`), a stderr over it is kept cut
+(WP-154). The cap is 1 MiB (`sys::OUTPUT_MAX`) for every git call and
+every short answer (`omarchy-version`, `pacman -Q omarchy`, `snapper
+get-config`, `omarchy hook install`); none (`sys::WHOLE_OUTPUT`) where a
+whole list of a trusted system program is parsed and a cut one would read
+as entries removed (the dossier's package and unit queries, `snapper
+list`, `omarchy plugin list` and `catalog`); 64 KiB for the plugins
+collector's queries of a clone. git on the logbook (autocommit,
 the git state in the index) stays in the engine's process group, because git,
 its hooks or a signing prompt may read the terminal: at the deadline only
 git itself is killed, with the same bounded pipe wait. Rules:
@@ -1313,11 +1378,110 @@ git itself is killed, with the same bounded pipe wait. Rules:
   `manifestPath`, else `~/.config/omarchy/plugins/<id>/manifest.json`, else
   the plugin directory's own git HEAD short hash, else the last version
   seen (ADR-0014 §3). `plugin-update` only for `firstParty: false`
-  (ADR-0018); enable/disable fire for every plugin. `plugin-add|update`
+  (ADR-0018); enable/disable fire for every plugin. **Plugin trees
+  (WP-113, ADR-0028 §8 WP-E; hashes only):** the directory
+  `~/.config/omarchy/plugins/<id>/` of every listed third-party plugin is
+  hashed as one tree — SHA-256 over the sorted lines `<relative path> NUL
+  <file sha256> LF` of every regular file at any size and content, `.git`
+  left out (the git HEAD is the version), `[redaction] skipPaths`
+  honoured, links to files followed (their content), any other link as
+  `link <sha256 of its target as written>` and not walked (Omarchy's
+  `omarchy-plugin-validate` refuses links inside a plugin folder); the
+  plugin directory itself may be a link. A tree-hash change is **one**
+  `plugin-update`: `meta.hashFrom`/`hashTo` (the tree hashes), with
+  `from`/`to` and the detail `<from> → <to>` when the version moved too,
+  else no `from`/`to` and the detail `files changed (sha256 <8> → <8>)`.
+  The cursor keeps the tree hash per plugin and, outside the hash that
+  decides whether to diff, a fingerprint of every entry's path, size,
+  mtime, ctime and inode (WP-069's rule, 2 s racy window): while it holds,
+  the tree is not read. A plugin seen without a tree hash (a cursor from
+  before WP-113, a new plugin) takes it without an event. **WP-113 round
+  2:** an entry that cannot be read (a file that cannot be opened, a
+  directory that cannot be listed) is the line `<rel> NUL unreadable
+  <sha256 of size, mtime, ctime, mode>` (a directory's `<rel>` ends in `/`), so
+  the tree changes once and an edit elsewhere still shows; a file over
+  64 MiB is `stat <sha256 of size, mtime, ctime, inode>` (event `meta.hashBasis
+  = "stat"`); the walk is sorted and reads at most 10 000 entries, past
+  which the tree is cut off (a last line `NUL cut`). A tree with an
+  unreadable entry or a cut is `partial: true` in the cursor and in the
+  event's meta; the collector's message counts both. Only a plugin
+  directory that cannot be read keeps the last hash. First-party plugins have
+  no tree (the `omarchy` package covers them). The tree's newest file
+  mtime counts for the `plugin-add|update` `ts` below. `plugin-add|update`
   `ts` = the plugin directory's mtime clamped to [last check, now], like
   theme and config, so the ADR-0017 window can match the agent's command;
   `plugin-remove|enable|disable` get the capture time (the attribution
-  window below reaches back to the last check for them). Events the
+  window below reaches back to the last check for them). A third-party
+  plugin whose directory is its own git clone keeps its full HEAD in the
+  cursor (WP-136). Its own clone: `<dir>/.git` is a real directory (not a
+  link, not a `gitdir:` file) whose repository stays inside it — no link
+  at `.git/objects`, `.git/refs`, `.git/packed-refs` or `.git/HEAD`, no
+  `objects/info/alternates`, no `commondir`, no `include`/`includeIf`
+  section in `config` or `config.worktree` (an unreadable, linked or
+  non-UTF-8 config counts as one); never a repository further up. The
+  include scan looks for `[include` anywhere in the text,
+  case-insensitive, not at line starts, because git's parser reads a
+  section header where a line scan would not: after a UTF-8 byte order
+  mark (git skips EF BB BF), after a lone CR (white space to git, no line
+  end to a line scan) or another header on the same line, and on the
+  line after a value continued with a backslash; `[include` in a comment
+  or a value refuses a clone it need not, never the other way round. Any other `.git` is not read at all (no HEAD, no git version): its
+  `plugin-update` keeps the version step and adds `commit history not read
+  (the repository points outside the plugin folder)`. A clone's
+  `plugin-add` has `meta.git: clone` and the detail `<version>, installed
+  by git clone`; its `plugin-update` (a version or a tree change, so also
+  a pull that leaves the manifest's version as it is) whose HEAD moved
+  names the commits —
+  `pull` (the old HEAD is an ancestor of the new one) and `reset`
+  (another history) the ones that came in, `rollback` (the new HEAD is an
+  ancestor) the ones that left — as `meta.git`, `meta.commits` (at most
+  20 subjects, newest first, one per line; control characters and
+  U+2028/U+2029 → spaces, direction and invisible format characters
+  (§6's set, `import::is_direction_or_format`) dropped, redacted (§7), then clipped to 100 characters with `…`; an
+  empty one `(no subject)`) and the detail `<from> → <to>, pulled N
+  commits: <newest> …` (`rolled back N commits: …`, `reset: N commits
+  in, M out: …`; no `…` for one commit).
+  git runs read-only with a fixed argv and `-C <clone>`. What each setting
+  stops: `--no-pager` a pager; `--no-lazy-fetch` and
+  `GIT_NO_LAZY_FETCH=1` the fetch of an object a partial clone lacks
+  (git 2.44 or later; an older git refuses the option, and the query
+  names nothing); `GIT_ALLOW_PROTOCOL=none` every transport, overriding
+  the clone's own `protocol.<name>.allow` (`-c protocol.allow=never` is
+  only the default for protocols the config does not name, so a clone's
+  `protocol.ext.allow=always` beats it); `--no-replace-objects` replace
+  refs; `GIT_GRAFT_FILE=/dev/null` the clone's `info/grafts` (fake parents,
+  and a line of stderr per bad line); `core.hooksPath=/dev/null` hooks;
+  `core.fsmonitor=false` a monitor program; `log.showSignature=false`
+  gpg; `color.ui=false` colour; `i18n.logOutputEncoding=UTF-8` a log in
+  another encoding (UTF-16 puts NULs into `-z` output); output that is not
+  UTF-8 is read lossily; `GIT_CONFIG_NOSYSTEM=1` and
+  `GIT_CONFIG_GLOBAL=/dev/null` the system and the user's config;
+  `GIT_TERMINAL_PROMPT=0` a prompt; `GIT_OPTIONAL_LOCKS=0` an index
+  refresh lock; the repository variables (`GIT_DIR` …) removed and the
+  clone's parent as `GIT_CEILING_DIRECTORIES` another repository. Own
+  process group, killed whole at 2 s per call; at most 64 KiB kept of
+  each output pipe, the rest read and dropped (`sys::run_command`),
+  and a cut stdout is no answer. The HEAD is read from the clone's files without a
+  process (`.git/HEAD`, a plain `refs/heads/…` loose or in `packed-refs`),
+  only in the bytes git itself writes (WP-154): `ref: <name>` or a
+  40-digit lower-case object name followed by one LF; a `packed-refs`
+  with an optional `# pack-refs with:` first line, `<object name> <ref>`
+  lines in ascending ref order, each followed by at most one
+  `^<object name>`, every line ended by LF; a plain name is below
+  `refs/heads/`, of ASCII letters, digits and `-_.+@`, with no component
+  that starts with `.` or ends in `.lock`, no `..` and no final `.`.
+  Anything else — a byte order mark (git refuses it), a CR or more white
+  space (git reads them), a missing final LF or a `#` line further down
+  in `packed-refs` (git refuses the file), a loose ref that is there but
+  refused (git reads it, never the packed one), a config or
+  `config.worktree` that names an object format (SHA-256: git reads a
+  40-digit name as broken there and a 64-digit one in SHA-1), reftable
+  or any other ref name — is git's to answer: `rev-parse HEAD --short
+  HEAD`, which also gives the short version fallback; per moved update a
+  `rev-list --left-right --count` and a `log --max-count=20`. A HEAD in
+  the cursor that is not an object name never reaches git. git missing,
+  failing or timing out: the same event without `meta.git`/`meta.commits`.
+  The index clips `meta.commits` like every meta string (ADR-0025). Events the
   ledger already holds since the cursor's last check (same kind, id,
   version, enabled state and `from`/`to`) are dropped, so a capture
   whose cursor save failed after its ledger write repeats nothing
@@ -1335,10 +1499,16 @@ git itself is killed, with the same bounded pipe wait. Rules:
   built from are watched), and the persistence paths of ADR-0028 §4d
   `~/.config/systemd/user`, `~/.config/autostart`,
   `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
-  `~/.bash_profile` (WP-109; `init` writes all twelve into a new config;
-  user list). **Upgrade (ADR-0028 §4d):** a `config.toml` whose
+  `~/.bash_profile` (WP-109), and Omarchy's toggle state directory
+  `~/.local/state/omarchy/toggles` (WP-113; Hyprland loads every `.lua`
+  under its `hypr/`, operator decision 2026-10-06: hashes only; `init`
+  writes all thirteen into a new config; user list).
+  `~/.ssh/authorized_keys` and `~/.ssh/authorized_keys2` are no default:
+  the user opts in by adding both (they are in the default
+  `alwaysRedPaths`). **Upgrade (ADR-0028 §4d):** a `config.toml` whose
   `watchPaths` equals the default list of an earlier engine, in any order
-  (0.1.0–0.1.3: the first five; WP-089: the first six), gains the current
+  (0.1.0–0.1.3: the first five; WP-089: the first six; 0.1.4: the first
+  twelve), gains the current
   defaults it lacks at the next `capture`, which saves the file under the
   lock and says so once (`note: config.toml now also watches …`,
   `watchPathsAdded`). Only the `watchPaths` array is edited: the paths
@@ -1356,11 +1526,17 @@ git itself is killed, with the same bounded pipe wait. Rules:
   equals Omarchy's shipped copy (`omarchy-default`: `$OMARCHY_PATH/config/
   <rel>` for `~/.config/<rel>`; for `~/.local/share/applications/<name>`
   `$OMARCHY_PATH/applications/<name>`, and for `Alacritty.desktop`
-  `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`), or it lies in a
+  `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`; for a toggle
+  `~/.local/state/omarchy/toggles/<app>/<rel>`
+  `$OMARCHY_PATH/default/<app>/toggles/<rel>`, the flag
+  `omarchy-hyprland-toggle` copies, WP-113), or it lies in a
   theme directory `~/.config/omarchy/themes/<slug>/` that is no link and
   holds a real `.git` directory, not a file and not a link (`theme-repo`:
   `omarchy theme install` clones there and strips a theme's code;
-  Omarchy's own test, WP-109 round 2). Only the fact is recorded, never the link target or the
+  Omarchy's own test, WP-109 round 2). A `config-remove` in the toggles
+  directory whose `hashFrom` is Omarchy's flag (a toggle turned off)
+  carries `omarchy-default` too (WP-113): the one removal whose mark the
+  classifier reads (§5, ADR-0037 §1). Only the fact is recorded, never the link target or the
   content; old events have no mark and classify by path. `OMARCHY_PATH`
   defaults to `/usr/share/omarchy` (under `SELDON_TEST_GUARD` without
   the variable: `<guard>/omarchy`); the files there are only read and
@@ -1375,9 +1551,48 @@ git itself is killed, with the same bounded pipe wait. Rules:
   removed → `config-add|config-change|config-remove` with the path written
   with `~` and both hashes (`detail` `sha256 <8> → <8>`). Binary files (a
   NUL in the first 8000 bytes) and files over 1 MiB are listed as
-  `skipped` without a hash, so growing past the limit is not a removal;
-  `.git` directories are never walked, symlinked directories are not
-  followed, `~/.config/omarchy/plugins/` and
+  `skipped` without a hash, so growing past the limit is not a removal —
+  except under `[drift] alwaysRedPaths` (as configured, at capture),
+  where every file is hashed whatever its content, read in pieces
+  (WP-113: `omarchy-hook` runs `bash <file>`, which runs a script with a
+  NUL after its first line or over 1 MiB), and a file over 64 MiB by
+  its size, mtime (ns), ctime (s, ns) and inode instead of its content
+  (WP-113 rounds 2 and 3; the event carries `meta.hashBasis = "stat"`; a
+  `touch` changes it, and so does an in-place write whose mtime was put
+  back, as no user can reset the ctime). Every file under
+  `~/.local/state/omarchy/toggles/` is hashed the same way (WP-113 round
+  3: Hyprland loads its Lua whatever it holds); a
+  file that moves between `skipped` and hashed is no event either way,
+  so the upgrade writes nothing. A file under a persistence path that
+  cannot be read keeps the hash it had when it last could, so its
+  content is compared when it is readable again (counted: `N file(s)
+  under persistence paths could not be read; their last hash is kept`;
+  one never read is `skipped`). `.git` directories are never walked;
+  symlinked directories are not followed, except one at or below a
+  persistence path (a pattern matches the link or what lies below it):
+  it is walked under the link's own name, with one walk-wide set of the
+  directories walked (device and inode) — a link to one of them is not
+  followed (counted: `N linked director(ies) not followed: walked
+  already`) and below a link none is walked twice — and one walk-wide
+  budget of 4096 entries (files, directories, links) read below links. A
+  link whose walk runs out of it is **cut off**: nothing read below it is
+  kept, the files the manifest had below it keep their hashes (no
+  removal, and a change made meanwhile shows once the link fits again),
+  and the link itself is recorded as one entry with the hash of the text
+  `seldon: linked directory cut off` (event detail `linked directory cut
+  off: more than 4096 entries below links`, `meta.cutOff: true`, never an
+  evidence mark) — under its persistence path that is a crisis: nobody
+  can see into it, so decoys cannot hide a payload (counted: `N linked
+  director(ies) cut off`). When it fits again, its entry is removed
+  (`linked directory watched in full again`). A directory's files are
+  taken before its subdirectories. No link — to a file or a directory —
+  whose canonical target lies in the logbook, the state directory or
+  `~/.config/seldon` is followed, and below a link no directory whose
+  canonical path holds one of them (a link to `~/.local` walks beside the
+  state directory, not into it) is walked (WP-113 rounds 2 and 3: it
+  would change with every capture; counted: `N link(s) into Seldon's own
+  files not followed`). A cut stays with its link: the walk above it and
+  the later watch paths go on. `~/.config/omarchy/plugins/` and
   `~/.local/share/applications/mimeinfo.cache` are excluded wherever the
   watch paths reach them. Known secret-bearing
   files are listed in `config.toml [redaction] skipPaths` and are never
@@ -1490,7 +1705,13 @@ After every capture:
    ids (`drift show`): pacman in a plain full upgrade (argv `-S` with
    `-u` naming no package and no `-` that reads targets from stdin,
    pacman, yay or paru: `-Syu`, `-Syyuu`, `-Su`,
-   bare `yay`, Omarchy's `pacman -Syu --noconfirm --overwrite …`) —
+   bare `yay`, Omarchy's `pacman -Syu --noconfirm --overwrite …`; an
+   option with a value consumes the next word — pacman's, yay's and
+   paru's (`--answerdiff`, `--mflags`, `--editor`, `--sudo`, `--fm`, …,
+   WP-113; `engine/src/pkgcmd.rs` `LONG_WITH_ARG`; yay's from `man 8
+  yay`, paru's unchecked — paru was not installed where they were
+  written); an unknown option
+   takes none, so its word is a package) —
    `upgrade`, `reinstall`, `install` and a removal (`:: Replace`) are
    `sysupgrade`, `alwaysRed` subjects included; a downgrade or removal of
    an `alwaysRed` member is attention `sysupgrade-red`, another downgrade
@@ -1511,8 +1732,12 @@ After every capture:
    (a bare `dev`, a downgrade, unattributed). Plugins: `plugin-enable`/
    `-disable` routine `plugin-toggle`; `-add`/`-remove`/`-update`
    attention `plugin`. `theme-set` routine `theme`. Config, in this order
-   (ADR-0028 §2; WP-109 round 2): `meta.matches` `omarchy-default`/
-   `system-link` routine (not for a removal); then, for an addition or
+   (ADR-0028 §2; WP-109 round 2): under `~/.local/state/omarchy/toggles/`
+   (ADR-0037 §1) an event whose content — `hashTo`, for a
+   removal `hashFrom` — is empty routine `toggle-flag`, a removal with
+   `meta.matches` `omarchy-default` routine `omarchy-default`; then
+   `meta.matches` `omarchy-default`/`system-link` routine (not for a
+   removal); then, for an addition or
    change, `alwaysRedPaths` **crisis** `always-red-paths` (a `*.sample`
    file under `~/.config/omarchy/hooks/` is not: `omarchy-hook` never
    runs it) — a file there that also matches `routinePaths` (a
@@ -1639,7 +1864,9 @@ After every capture:
    that instant), read from the ledger's case events only, never from the
    case file's status or dates nor from `.seldon/active-case`, which keeps
    no history; a queued case has no window; (b) `C`'s `## Plan`, as it is
-   when the rule runs and without its HTML comments, names the event's
+   when the rule runs, without its HTML comments and without its `Stop
+   if:` item and the lines indented below it (a stop condition is no plan;
+   WP-143 round 2), names the event's
    subject as a whole-word token (rule 3's test); (c) `C` is the **only**
    case for which (a) and (b) hold — and since the engine cannot read the
    Plan of a case whose file does not load (or lies outside the status
@@ -1738,11 +1965,11 @@ whoever completed or dropped it; `plan` `<ID>` —
 the first non-blank line of the case's `## Plan` that names a member's
 subject as a whole word (ADR-0015 §4), by the case's authors and every
 agent in its `agents` (a Plan line carries no author of its own; shown as
-`by <first case author> (worked by <agents>)`). A ref
+`by <case authors> (worked by <agents>)`). A ref
 one of whose authors is the proposing agent does not resolve ("<agent>
 wrote it; an agent's own text is no evidence for its proposal"). Refs
 longer than 64 characters, malformed refs and an empty result do not
-resolve. The text is `by <first author> · <words>`, the words redacted
+resolve. The text is `by <authors> · <words>` (every author, the first first, joined by `, `; WP-124b round 2), the words redacted
 (§7) and made one line (control characters spaces, white space runs one
 space), the whole clipped to 256 characters. `crisis` is the item's class
 at propose time. `drift apply` takes the items in file order (with
@@ -1910,8 +2137,14 @@ the lines up to the next blank one, each trimmed at the end. An imported
 case (tag `imported`) whose first paragraph is exactly its `Imported from
 … — read before you start this case.` line takes the next paragraph. Each
 text: control characters other than `\n` and `\t` become spaces and
-direction and format characters (U+200B–U+200F, U+202A–U+202E, U+2060,
-U+2066–U+2069, U+FEFF) are dropped, then the logbook's redaction (before
+direction and format characters (`import::is_direction_or_format`:
+U+00AD, U+0600–U+0605, U+061C, U+180E, U+200B–U+200F, U+202A–U+202E,
+U+2060–U+2064, U+2066–U+206F, U+FEFF, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
+U+1D173–U+1D17A, U+E0000–U+E007F; WP-140 added U+00AD, U+0600–U+0605,
+U+061C, U+180E, U+2061–U+2064, U+206A–U+206F, U+FFF9–U+FFFB,
+U+1BCA0–U+1BCA3, U+1D173–U+1D17A and the tags; `scripts/validate-fixtures.py`
+holds the same set, tested) are dropped, so none splits a secret from its rule, then the
+logbook's redaction (before
 the clip, so a secret at the cut is masked whole) (`[redaction] patterns` included; patterns that do not
 compile withhold all four fields), then the clip of rule 5 with `… (N more
 characters in the file)`; no text, no field. The section is read only up
@@ -1923,9 +2156,9 @@ warning naming the case, which still loads.
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. `cargo bench --bench index` (`just bench`, CI) asserts the index
-build in-process on the fixture logbook scaled ×10 and prints ×150 (12 750
+build in-process on the fixture logbook scaled ×10 and prints ×150 (13 050
 ledger lines, 1 200 cases); `just check-perf` (opt-in, quiet host) asserts
-×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 540 ledger
+×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 788 ledger
 lines, 304 cases and 365 journal files, median wall time of 11 runs,
 process start included. A median over budget is measured once more before
 a check fails (release, 2026-10-04 on the dev host: ×150 build 80 ms,
@@ -1959,7 +2192,16 @@ way. While `config.toml` cannot be parsed or a `[redaction] patterns`
 entry is invalid, these show `collectors::MESSAGE_WITHHELD` in place of
 the message instead (WP-105).
 The rules
-(`redact::BUILTIN`, in this order): URLs with userinfo; `--password`
+(`redact::BUILTIN`, in this order): the body of a PEM private key
+(`private-key`, WP-140: `-----BEGIN … PRIVATE KEY-----`, any label
+words before `PRIVATE KEY` — none, `RSA`, `EC`, `DSA`, `OPENSSH`,
+`ENCRYPTED`, … — and PGP's `PRIVATE KEY BLOCK`; the BEGIN and END lines
+stay and everything between them becomes one `‹redacted›`, over any
+number of lines, LF or CRLF; a block whose END a clip cut off is masked
+to the end of the text, and an END line whose BEGIN was cut off masks
+the run of base64 characters, white space and line ends before it; its
+trigger is `private key`; first, so no later rule cuts the body into
+pieces); URLs with userinfo; `--password`
 (also wget's `--http-password` and `--ftp-password`);
 `--token`, `--with-token`, `--secret`, `--client-secret`, `--passphrase`,
 curl's `--pass`, `--proxy-pass` and `--oauth2-bearer`, xh's `--bearer`
@@ -1974,12 +2216,29 @@ its trigger is `pass:`); `--api-key`, `--access-key`, `--secret-key`;
 `…_PASS=`, `SSHPASS=` assignments (also `PGPASSWORD=`); `…KEY=`
 assignments (also `?api_key=`); the non-empty string value of an inline
 JSON key that ends in `password`, `passwd`, `passphrase`, `secret`,
-`token`, `api_key` or `apiKey` (`"password": "…"`, `"client_secret":"…"`,
-`"openaiApiKey": "…"`, also escaped inside a shell string as
+`token`, `api_key`, `api-key` or `apiKey` (`"password": "…"`, `"client_secret":"…"`,
+`"openaiApiKey": "…"`, `"x-api-key": "…"`, also escaped inside a shell string as
 `\"password\":\"…\"`, with white space and newlines around the `:`;
-not `"password_hint"` or `"token_type"`); `Authorization:`; headers whose name ends in
+not `"password_hint"` or `"token_type"`); `Authorization:`, also as a
+quoted key (`"Authorization": …`, `\"Authorization\": …`,
+`'Authorization': …`); headers whose name ends in
 a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
-`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`); a
+`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`): the
+header's value is a quoted string closed on its line (`"…"` with `\"`
+inside, `\"…\"` inside a shell string, or `'…'`; WP-140), also after a
+Python string prefix (`f'Bearer {t}'`, `r`, `b`, `u`, two of them) and
+with the text glued after its closing quote up to white space, a quote,
+a backslash, `,`, `;`, a closing bracket or a marker (`"Bearer "SECRET`;
+round 2), after white
+space or after a quoted name (`"Authorization":"Bearer x"`), else the
+rest of the line up to a quote; a quote right after the colon of a
+bare name opens a value when no white space follows it (HTTPie's and
+xh's `Authorization:'Bearer x'`, `X-Api-Key:"k"`; round 3), and with
+white space after it closes the shell word around it (`curl -H
+'Authorization:' -H 'X: y'`, `grep -i 'authorization:' f 'x'`) and
+starts no value, and neither white space
+alone (an empty value; WP-128 masked it) nor a `‹redacted›` starts one;
+a
 `Cookie:` or `Set-Cookie:` value on the same line that starts with a
 cookie pair `name=` (RFC 6265; not `cookie: banner fixed` or
 `Cookie: $COOKIE`);
@@ -2004,7 +2263,16 @@ space, tab, line end or `\` before a line end, so `http://` is none,
 and its triggers are those words with that character: `httpie-auth`,
 WP-097); after
 `sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
-login`; e-mail addresses (`email`, WP-093: the local part, the domain
+login`; nmcli's secrets given as arguments (`nmcli-secret`, WP-140): the
+value after the keyword `password` (`dev wifi connect`, `hotspot`,
+`con add type gsm`) or after a property whose last part names a secret
+(`wifi-sec.psk`, `802-1x.password`, `….password-raw`,
+`802-1x.private-key-password`, `vpn.secrets`, `wifi-sec.wep-key0`…`3`,
+`wireguard.private-key`, `….preshared-key`, `gsm.pin`; also with `+` or
+`-` before it), within one `nmcli` command and every time it gives one;
+not `wifi-sec.key-mgmt wpa-psk`, `wifi-sec.psk-flags 1` or `passwd-file`;
+its triggers are `nmcli` and `pass`, `psk`, `secret`, `key` or `pin`;
+e-mail addresses (`email`, WP-093: the local part, the domain
 stays: `‹redacted›@example.com`); and user-supplied patterns in
 `config.toml [redaction] patterns`.
 Replacement: `‹redacted›`; the option, key or header name stays in front
@@ -2036,8 +2304,21 @@ holds a `:` is cut from `://` up to the last `@` before the next white
 space or quote, so a password may contain `/ ? # : @`; userinfo without
 a `:` (a bare token) is cut up to the last `@` before the path. Redacting
 twice gives the same text for the built-in rules: a match that lies
-inside an existing `‹redacted›` is left alone (a user pattern that
-matches across the marker's edge is applied as written). Each built-in
+inside an existing `‹redacted›` is left alone, and so is a match whose
+masked part (the match without the groups its replacement keeps, the
+option or header name) holds a `‹redacted›` and else only markers and
+white space (WP-140), so no rule counts on such text in the import
+report. With user patterns, two passes give the same text when a pattern
+masks a gap at the end of a built-in value, followed by white space, a
+line end or the end of the text (`--password x;` with a pattern for `;`
+gives `--password ‹redacted›‹redacted›` both times, `Authorization: x`
+with CRLF and a pattern for `\r` gives `Authorization:
+‹redacted›‹redacted›`): the second pass merges no markers. They do not
+when text is glued after the masked gap: the second pass reads it as
+part of the value and masks it too (`--password x;tail` with a pattern
+for `;` gives `--password ‹redacted›‹redacted›tail`, then `--password
+‹redacted›`; more, never less), and a user pattern that matches across
+a marker's edge is applied as written (WP-140 round 2). Each built-in
 rule is compiled once per process, and only when the text holds one of
 its literal triggers (`redact::triggers`), checked on the text in lower
 case with the Kelvin sign and the long s folded onto `k` and `s`, as
@@ -2071,7 +2352,22 @@ whole. A quoted part ends at a line end that no `\` escapes: a
 double-quoted part that never closes as escapes are read is taken up to
 the next `"` on its line as written, and a quote its line does not close
 (`bob's` in a note, `-u 'admin:pw`) takes the rest of that line only
-(WP-097 round 2). The value after `token=`,
+(WP-097 round 2). A line end is `\n` or `\r\n` for every rule that
+reads one: a `\` before `\r\n` continues a command, an option's gap, a
+value (bare, in `"…"` or `$'…'`, a `pass:` value too) and the rest of a
+`mysql … -p` command as a `\` before `\n` does, and HTTPie's gap after
+the command word may be `\r\n` (its triggers name `\r`); a header
+value (`Authorization:`, `X-…-Key:`) ends before the `\r` of its line
+end, an empty one too; a `\r` that ends the match of a built-in rule
+stays after `‹redacted›` (a user pattern's match is replaced whole, a
+`\r` in it too, so a second pass finds no new one), and
+`Redactor::redact_keeping_lines` puts back each line break as it was,
+so a text edited on Windows keeps no secret on a continued line and
+keeps its CRLF line ends, through `seldon log`, the other notes and the
+hook alike; the import reads CRLF as LF first (§3), so its cases hold
+LF (WP-128). A lone `\r` (classic Mac line ends) is no line end: a `\`
+before it continues nothing (`curl -u \`, `\r`, then the credentials
+keeps them), and HTTPie's gap is not one. The value after `token=`,
 `…PASSWORD=` and the other assignments is one quoted or bare part, so a
 query `?token=abc` inside a quoted URL stops at the closing quote; a
 double-quoted value may hold `\"` (WP-097).
@@ -2094,7 +2390,17 @@ which are not `--pass`. Not masked (WP-106): a password given directly
 rather than as `pass:…` (`openssl enc -k`, `-srppass`, keytool's
 `-storepass`); a `pass:` that quotes or an escape split (`pa'ss':x`,
 `\pass:x`), or an option name in quotes; the glued `-passpass:…`,
-which openssl rejects. Masked too much, by design: an
+which openssl rejects. Not masked (WP-140): a quoted header value that
+its line does not close (`Authorization: "Bearer x` at the line end);
+a quoted value right after the colon of a bare header name that starts
+with white space (`Authorization:' Bearer x'`, read as the end of a
+shell word and the start of the next); a header name in
+quotes other than `Authorization` and the JSON keys above (`"X-Auth":
+"x"`); a PEM private key whose BEGIN or END line is written otherwise
+(fewer dashes, two spaces); an nmcli secret in a file (`passwd-file`)
+or asked for (`--ask`); and in a note (`seldon log`, a case file) the
+plain-argument forms the hook masks whole (§8: `htpasswd -b`, `echo
+u:pw | chpasswd`, `usermod -p`, …), which no §7 rule reads. Masked too much, by design: an
 option word inside a quoted argument that spans lines (`git commit -m
 "…curl…⏎… -U flag"`, as on one line); a stray apostrophe (in the
 command's context, up to the line end; an option value with an unclosed
@@ -2108,7 +2414,11 @@ redirect … ls -a home`; the gap after the word may be a line end); and a
 `\` at the end of a comment, which continues the command for redaction
 (bash does not); `pass:…` after any option whose name holds `pass` or
 `secret` (`--bypass pass:x`), the empty `pass:`, and the rest of the line
-after `$"pass:…"`, which reads as an unclosed quote. A `pass:…` value
+after `$"pass:…"`, which reads as an unclosed quote; after a PEM BEGIN
+line without an END, the rest of the text, and before a lone END line,
+the words of base64 characters and blanks before it, prose glued to the
+body included; the word after nmcli's `password` when it is a name
+(WP-140). A `pass:…` value
 after an option another rule also masks (`--pass`, `--password=`,
 `--secret-key`, …) is counted under both rules in the import report; the
 earlier rule in the order masks it, `openssl-pass` before `key-option`;
@@ -2160,7 +2470,14 @@ The `…=` assignment rules have no boundary, so a name that starts with
 build and `doctor` still run and withhold every collector message
 (above). `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
-before a rule existed are not rewritten.
+before a rule existed are not rewritten. Direction and format characters
+(the set of §6, `import::is_direction_or_format`) are dropped before the
+redaction from a hook's command line (round 3: a shell line has no use
+for them, and `tok<U+200B>en=` would hide its value), from the index's
+case and decision texts and `source` (§6) and from plugin commit subjects
+(§4); they stay in a note, a case or decision file, the journal and an
+event's other texts, where a zero-width joiner or non-joiner belongs to
+its words, so a secret split by one there is not masked.
 
 `[redaction] skipPaths` (config collector and the hook, ADR-0014 §4): a
 pattern with `/` matches the full path (`~/` = home), as a file or as a
@@ -2198,7 +2515,9 @@ sub-commands inside the XDG config home or the logbook, a snapshot command
 (`snapper [-c CONFIG] … create`, `omarchy-snapshot create`, `omarchy
 snapshot create`: green, subject `snapper`, recorded only with a case;
 the capture after it fills the case's `snapshotBefore` when it is empty,
-§5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed. Limits of this reading: the
+§5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed; a
+shell reserved word before a command (`do`, `if`, `!`, `{`; also `then`,
+`elif`, `else`, `while`, `until`) is read past. Limits of this reading: the
 commands inside `$(…)`, backticks and `<(…)` are not classified (their
 words count only for `skipPaths`); the string of `env -S` is not opened
 as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like
@@ -2213,7 +2532,54 @@ line stays when commands follow it, so the record reads as the same
 commands; `<<` inside `((…))`, `$((…))` and `$[…]` is a shift, not a
 heredoc (WP-071). Redaction runs before the
 4096-character cut. Green events per ADR-0019 only while a case is set.
-Non-mutating commands produce no event. A command line that names a path
+Non-mutating commands produce no event, except privileged commands
+(below).
+**Privileged commands (ADR-0039, WP-129):** a simple command that runs
+under `sudo`, `doas`, `pkexec` or `run0` — its own wrapper, or the one of
+the `sh -c`/`eval` it was opened from (`pkexec sh -c 'lpadmin …'`) — a
+program that is no probe is recorded even when no class above names it.
+Probes record nothing: the wrappers' own (`sudo -l|-v|-K|-V`, `pkexec
+--version|--help`, `run0 --help`, `doas -C|-L`, `command -v|-V`) and
+`true`, `false`, `:`, `id`, `whoami`, `test`, `[` (`sudo -n true`). No
+privileged record when a class records the command by itself (a record
+that needs no case, or a snapshot command); a green record that would
+need a case (`sudo tee /etc/x`) gives way to it. One per line, for its
+first privileged command, beside the line's class record when another
+command has one (`pkexec pacman -S cups && pkexec lpadmin …`: two events
+of one tool call). The record: `agent/command`, subject the program's
+last path component (`lpadmin`), zone red, `meta.command` the redacted
+line as above, `detail` the same after `asked to run: ` (the hook runs
+at PreToolUse, before the password prompt: a refused or cancelled prompt
+still leaves the record; nothing confirms that the command ran),
+`meta.wrapper` the first wrapper it runs under (only privileged records
+carry the key); with or without a case, linked to the active one. A line
+in which any command has sudo read the password from stdin (`-S`,
+`--stdin` or an abbreviation of it, also in a cluster such as `-Su` and
+beside a probe: `echo PW | sudo -S …`) is recorded as `<program>
+‹redacted›`, every record of it, as for `skipPaths` below; `doas`,
+`pkexec` and `run0` read no password from stdin. So is a line in which
+any command (after its wrappers, `sh -c` opened) takes its secret as a
+plain argument or from stdin the line feeds, which no §7 rule can tell
+from its other words (WP-140): `chpasswd` and `chgpasswd` (always);
+`htpasswd` with `-b` or `-i`; `smbpasswd` with `-s` or `-w`; `passwd`
+with `-s` or `--stdin` (not `-S`), or on a line that feeds it (PAM reads
+the new password from stdin without a terminal: `printf 'PW\nPW' |
+passwd alice`, `passwd alice <<< …`); `useradd`, `usermod`, `groupadd`
+and `groupmod` with `-p` or `--password` (also a prefix such as
+`--passw`, and a value §7 cannot read whole, `--password $(openssl
+passwd -6 PW)`); `cryptsetup` on a line that feeds it; `openssl passwd`
+and `wpa_passphrase` (always). A line feeds a command when its text holds
+`|`, `<<<` or `<(` (a key piped in, a here-string, a process substitution
+as `--key-file`) or one of its commands writes a file (`printf PW > k;
+cryptsetup … -d k`; a write to `/dev/null`, `/dev/stdout` or
+`/dev/stderr` is none; round 2); a heredoc's body is cut from the line
+before it is recorded. A short option counts also in a cluster
+(`-Bbc`, `-mp`), a long one also as a prefix getopt takes (`--std`).
+nmcli's secrets are a §7 rule (`nmcli-secret`), so its line keeps its
+other words. A privileged `snapper`
+command is no snapshot command for §5's case notes. It is not drift in
+contract 2: `drift[].source` admits no `agent`; the system change it
+makes is drift through its own collector (ADR-0039 §3). A command line that names a path
 `[redaction] skipPaths` matches (§7) is recorded as `<program>
 ‹redacted›` (the event's subject), as an `Edit` of such a file is
 recorded as `Edit ‹redacted›`; the line is read for such paths more
@@ -2426,9 +2792,15 @@ Interactive via `dialoguer` (no `gum` dependency; gum is optional eye candy
 later). The wizard asks: path (the options of ADR-0010: `~/Seldon`,
 `~/Documents/Seldon`, a detected project folder, custom) → language →
 Obsidian config yes/no → collectors (all on by default) → watched config
-paths (defaults shown) → harnesses (`claude-code`, `omarchy-agent`) →
-theme hook yes/no (default no) → git → backfill (a note explains the
-drift consequence, then a date or empty). Then `init` runs, in order
+paths (defaults shown) → agent setup (`claude-code`, `skills`, and
+`omarchy-agent` only when the kit directory exists, labelled as a private
+template, WP-118) → theme hook (a note above a short yes/no question,
+default no) → git → backfill (a note: older changes are mostly routine
+history, the rest can be marked as the baseline; then a date or empty).
+Every question and list item, dialoguer's marks included, fits on one
+line of a 70-column terminal (Omarchy's presentation terminal is wider);
+an explanation is a plain line above it (a prompt or item that wraps is
+drawn twice). Then `init` runs, in order
 (WP-024): `config.toml` saved with the choices (first, WP-074: a save that
 fails writes nothing into the logbook folder, so the same `init` runs
 again once it is fixed; `[git] autocommit = false` when git is declined,
@@ -2461,8 +2833,20 @@ for it is explained and opens no drift (WP-038); the step takes the
 state lock before it writes the script and holds it through `omarchy
 hook install` and the record (WP-074, as `hook install` since WP-049), so
 no capture sees the copy before its record, and while another `seldon`
-holds the lock it writes nothing and is reported without a fix → next steps (`seldon
-drift` when drift stays open). A failure after the layout is reported, never fatal.
+holds the lock it writes nothing and is reported without a fix → the
+result (WP-118): aligned rows `Logbook` (path, language, git, Obsidian),
+`Config` (the file, where noisy files go), `Recording` (the collectors,
+the theme hook), `Agents` (the harnesses set up; one more line per
+harness that is not), `History` (the first capture, the backfill and its
+baseline, open drift, degraded collectors), `Snapshots`; then `Next
+steps:` with only what is left to do (`seldon capture --all`, `seldon
+dossier`, `seldon drift` when drift stays open, `seldon doctor` for a
+degraded collector or git, `seldon hook install <harness>`, the theme
+hook's manual command), or "Seldon is recording. Nothing else to do.";
+last the optional snapshot read grant (or, for a user in `ALLOW_USERS`,
+the recommended revert and grant) with what it grants. No machine id,
+file count or hook counts (`--json` has them). A failure after the layout
+is reported, never fatal.
 
 `seldon init --remove-theme-hook` (WP-049) undoes the theme hook: it
 deletes `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh` (a name

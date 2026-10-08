@@ -3,105 +3,79 @@
 # Claude Code PreToolUse hook for Bash: reads the hook JSON on stdin,
 # exits 2 (block) when the command touches the host system.
 # Runs in every permission mode, including bypassPermissions.
+#
+# The rule (WP-130): the guard parses the command like bash and decides on
+# the command position of every simple command, not on words in the text.
+# - Commands are found after `;` `&` `&&` `||` `|` and newlines, inside
+#   `$(…)`, backticks, `<(…)`, compound commands and functions, behind
+#   wrappers (`env`, `command`, `exec`, `nice`, `nohup`, `time`, `timeout`,
+#   `flock`, `xargs`, `find -exec`, `watch`, `taskset`, `chrt`,
+#   `systemd-inhibit`, `ssh-agent`, `dbus-run-session`, `uwsm app`,
+#   terminals with `-e`, `VAR=…` prefixes), in functions at their call,
+#   and in strings that are code: `bash -c`/`sh -c` bodies, `eval`, `trap`,
+#   `script -c`, `hyprctl dispatch exec`, `tmux new|run-shell|send-keys`
+#   strings, heredocs and here-strings fed to a shell, `script` or `ssh`,
+#   and the remote command of `ssh` (checked by the same rules; to this
+#   machine — localhost, its own name, a computed host — by the local
+#   rules).
+# - An unknown program whose arguments name a red-zone command (`strace
+#   pacman …`) or `<shell> -c` fails closed, unless it only reads its
+#   arguments as data (`man sudo`, `which sudo`).
+# - Everything else is data: quoted strings, heredoc bodies written to a
+#   file or fed to any other program, `echo`/`printf`/`grep`/`jq`/`git
+#   commit -m`/`herdr agent prompt` arguments.
+# - Blocked at a command position: sudo/doas/su/pkexec/run0; pacman except
+#   `-Q…` and `-S` with `-p`/`--print` (no -y/-u/-c/-w); yay, paru, makepkg,
+#   pacstrap; systemctl except status/show/cat/is-*/list-*; loginctl,
+#   reboot, shutdown, mkinitcpio, grub-*, systemd-run (read-only loginctl
+#   and systemctl verbs pass); Omarchy commands
+#   that change the system (pkg, update, install, theme set, plugin
+#   add/remove/update/clone/enable/disable, snapshot, migrate, refresh,
+#   hook, dev link, branch, channel set; also as omarchy-* binaries) or
+#   launch agents/apps (`omarchy … --help` only prints help); Omarchy's own
+#   scripts (`$OMARCHY_PATH/install.sh`, `migrations/…`; `bash -n` passes);
+#   writes (redirections, tee, cp/mv/ln/install, rm, mkdir, touch, chmod,
+#   sed -i, dd of=, rsync/scp destinations, find -delete, patch, tar -x,
+#   unzip, curl -o/-O, wget, git clone/init/worktree add and git commands
+#   that change a work tree) under /etc /usr /boot /var, under ~/.config
+#   outside ~/.config/omarchy/plugins/jax.seldon, and under the real
+#   ~/Seldon and ~/.local/state/seldon. `~`, `$HOME`, `cd` (a cd that may
+#   fail keeps the old directory as a candidate, `cd -`, `$OLDPWD`) and
+#   links made earlier in the command are resolved; a scratch HOME set
+#   earlier in the command (`export HOME=/tmp/x; mkdir ~/.config/…`) is
+#   not the real home.
+# - Over ssh, the remote command runs on another machine: agent and app
+#   launchers pass; `omarchy theme set` passes when the ssh call is the
+#   whole command; writes under ~/.config/seldon pass when the ssh call is
+#   the first command and the write the first remote command.
+# - Test hosts: a command that is ONE ssh invocation to a host listed in
+#   scripts/guard-hosts.local (git-ignored: real names stay out of the
+#   repo; one host per line, `#` comments) runs on that host, which the
+#   operator released to the agents (operator decision 2026-10-05). Nothing
+#   may run locally: one line, the remote command one quoted string or
+#   plain words without `;`, `&`, `|`; a local `$(…)`, backticks or a
+#   redirection are still checked here. `GUARD_HOSTS_FILE` replaces the
+#   file only when `SELDON_TEST_GUARD` is set (the test table), so a
+#   settings `env` block cannot widen the list.
+# - The two makepkg forms packaging/README.md uses on the test host over
+#   ssh pass as exact strings (ORCHESTRATION.md §11, WP-040 review).
+# - Fail closed: input it cannot parse, a computed command name, a shell
+#   reading commands from a pipe, `env -S`, a changed IFS, an alias, an
+#   exec option the guard cannot follow (`git -c core.pager=…`, `tar -I`,
+#   `rg --pre`, `gdb -ex`, `bwrap`, `parallel`) or an internal error is
+#   blocked with the reason. So is work the hook's 5 s timeout could cut off (a
+#   timed-out hook does not block): hook input over 256 KB, more than 256
+#   variables in one command, more than 3 s of checking.
+# The parser and the rules live in guard.py (Python 3 standard library);
+# the expectation table is scripts/guard-test.sh.
 set -u
-input=$(cat)
-cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
-[[ -n $cmd ]] || exit 0
-
-# Heredoc bodies are data (the command's stdin), never commands: drop every
-# line between `<<[-]['"]?WORD['"]?` and its terminator before matching, so
-# file contents written through a heredoc cannot trigger the rules below.
-# The heredoc operator line itself stays and is still checked.
-# Exceptions: a heredoc fed to a shell, `eval`, `su`, `ssh` or `sudo` IS
-# executed, so its body stays and is matched; a `<<` inside quotes (an odd
-# number of quote characters before it on the line) is text, not a heredoc.
-cmd=$(printf '%s\n' "$cmd" | awk '
-  BEGIN { term = "" }
-  term != "" { if ($0 == term || ($0 ~ /^[[:space:]]+/ && dash && $0 ~ ("^[[:space:]]*" term "$"))) { term = ""; keep = 0 } ; if (keep) print; next }
-  {
-    print
-    if (match($0, /<<-?[[:space:]]*["'"'"']?[A-Za-z_][A-Za-z0-9_]*["'"'"']?/)) {
-      pre = substr($0, 1, RSTART - 1)
-      nq = gsub(/["'"'"']/, "", pre)
-      if (nq % 2 == 1) next
-      s = substr($0, RSTART, RLENGTH); dash = (s ~ /<<-/)
-      gsub(/^<<-?[[:space:]]*["'"'"']?/, "", s); gsub(/["'"'"']$/, "", s); term = s
-      keep = ($0 ~ /(^|[;&|][[:space:]]*|[[:space:]])(bash|sh|zsh|dash|ksh|eval|su|ssh|sudo)([[:space:]]|$)/)
-    }
-  }')
-
-block() { echo "guard: blocked (AGENTS.md §6 red zone): $1" >&2; exit 2; }
-
-# test hosts: a command that is ONE ssh invocation to a host listed in
-# scripts/guard-hosts.local (git-ignored: real names stay out of the repo;
-# one host per line, `#` comments) runs on that host, which the operator
-# has released to the agents as a test subject (operator decision
-# 2026-10-05). Nothing may follow the ssh call locally: the remote command
-# is one quoted string or plain words without `;`, `&`, `|` outside quotes.
-# `GUARD_HOSTS_FILE` overrides the file (the test table uses it).
-hosts_file=${GUARD_HOSTS_FILE:-$(dirname "$0")/guard-hosts.local}
-if [[ -r $hosts_file ]]; then
-  while IFS= read -r host; do
-    host=${host%%#*}; host=${host//[[:space:]]/}
-    [[ -n $host ]] || continue
-    if printf '%s' "$cmd" | grep -Eq "^[[:space:]]*(timeout[[:space:]]+[0-9]+[[:space:]]+)?ssh([[:space:]]+-[A-Za-z]+([[:space:]]+[^[:space:]]+)?)*[[:space:]]+$host([[:space:]]+('[^']*'|\"[^\"]*\"|[^;&|'\"]*))?[[:space:]]*$"; then
-      exit 0
-    fi
-  done < "$hosts_file"
+here=$(dirname "$0")
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "guard: blocked (fail closed, cannot check this command): python3 is missing" >&2
+  exit 2
 fi
-
-# privilege and package management
-# exact whitelist: the two makepkg forms packaging/README.md uses on the test
-# host over ssh (no -s/-i/--syncdeps/--install, no command chaining inside
-# the quotes); ORCHESTRATION.md §11, WP-040 review
-if printf '%s' "$cmd" | grep -Eq "^[[:space:]]*ssh[[:space:]]+[A-Za-z0-9._@-]+[[:space:]]+'cd /tmp/[A-Za-z0-9._-]+ && makepkg (-f|--printsrcinfo > SRCINFO\.new)'[[:space:]]*$"; then
-  exit 0
-fi
-# only as the first word of a command segment (after ; & | && || or at the
-# start), optionally behind `env`/`command`/`nice`/`time` — not as a word inside
-# heredoc text, comments or file contents
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*|\$\([[:space:]]*|`[[:space:]]*)((env|command|nice|time|exec)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(sudo|doas|su|pkexec|pacman|yay|paru|makepkg|pacstrap)([[:space:]]|$)'; then
-  block "privileged or package command"
-fi
-# services and boot
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*|\$\([[:space:]]*|`[[:space:]]*)((env|command|nice|time|exec)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(systemctl|loginctl|reboot|shutdown|poweroff|mkinitcpio|grub-[a-z-]+)([[:space:]]|$)'; then
-  # allow read-only systemctl queries
-  if ! printf '%s' "$cmd" | grep -Eq 'systemctl[[:space:]]+(--user[[:space:]]+)?(status|list-|show|is-|cat)'; then
-    block "service or boot command"
-  fi
-fi
-# omarchy commands that change the system (observing is fine)
-# exception: `ssh <test-host> ... omarchy theme set ...` — the theme sweep on
-# the test host is allowed (docs/ORCHESTRATION.md §11); everything else stays
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])omarchy([[:space:]]+(pkg[[:space:]]+(add|aur|drop|install|remove)|update|install|theme[[:space:]]+set|plugin[[:space:]]+(add|remove|update|clone)|snapshot|migrate|refresh|hook[[:space:]]+install|dev[[:space:]]+link))' \
-   && ! printf '%s' "$cmd" | grep -Eq '^[[:space:]]*ssh[[:space:]][^;&|]*omarchy[[:space:]]+theme[[:space:]]+(set|current)([^;&|]*)$'; then
-  block "omarchy command that changes the system"
-fi
-# agent launches and app launchers on the dev host: an unattended agent or a
-# terminal window is the operator's seat, never a worker's (WP-022). Allowed
-# only over ssh to the test host. `omarchy agent usage` (budget) stays allowed.
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*)(omarchy[[:space:]]+(agent[[:space:]]+(prompt|launch|start|run|chat|ask)|launch[[:space:]])|omarchy-agent(-[a-z-]+)?([[:space:]]|$)|omarchy-launch-[a-z-]+([[:space:]]|$))' \
-   && ! printf '%s' "$cmd" | grep -Eq '^[[:space:]]*ssh[[:space:]]'; then
-  block "agent or app launcher on the dev host"
-fi
-# writes under /etc or /usr
-# redirections and tee: the system path right after the operator; file
-# commands: only when the system path is the LAST argument of the segment
-# (the destination) — a /usr or /var path used as a read-only source is fine
-if printf '%s' "$cmd" | grep -Eq '(>|>>|tee([[:space:]]+-[a-z]+)*)[[:space:]]*/(etc|usr|boot|var)/' \
-   || printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*)(ssh[[:space:]]+[^[:space:]]+[[:space:]]+["'\'']?)?(sudo[[:space:]]+)?(cp|mv|install|rm|rmdir|sed[[:space:]]+-i[^[:space:]]*|chmod|chown|ln|mkdir|touch|truncate)([[:space:]]+[^|;&[:space:]]+)*[[:space:]]+/(etc|usr|boot|var)/[^|;&[:space:]]*[[:space:]]*($|[|;&])'; then
-  block "write under /etc, /usr, /boot or /var"
-fi
-# writes under ~/.config outside the plugin dev install
-# same shape as the system-path rule: redirections/tee anywhere, file commands
-# only at a command position — not inside heredoc bodies or quoted test data
-if printf '%s' "$cmd" | grep -Eq '(>|>>|tee([[:space:]]+-[a-z]+)*)[[:space:]]*(~|\$HOME|/home/[^/]+)/\.config/' \
-   || printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*)(ssh[[:space:]]+[^[:space:]]+[[:space:]]+["'\'']?)?(sudo[[:space:]]+)?(cp|mv|install|rm|rmdir|sed[[:space:]]+-i[^[:space:]]*|chmod|chown|ln|mkdir|touch|truncate)([[:space:]]+[^|;&[:space:]]+)*[[:space:]]+(~|\$HOME|/home/[^/]+)/\.config/'; then
-  # exceptions: the plugin dev install, and — over ssh to the test host only —
-  # Seldon's own config dir there (smoke-test restore, docs/HERDR-SETUP.md §5)
-  if ! printf '%s' "$cmd" | grep -Eq '\.config/omarchy/plugins/jax\.seldon' \
-     && ! printf '%s' "$cmd" | grep -Eq '^[[:space:]]*ssh[[:space:]][^;&|]*\.config/seldon(/[^[:space:]]*)?([[:space:]]|$|["'"'"'])'; then
-    block "write under ~/.config outside the jax.seldon plugin dir"
-  fi
-fi
-exit 0
+python3 -I "$here/guard.py"
+rc=$?
+[ "$rc" -eq 0 ] && exit 0
+[ "$rc" -eq 2 ] || echo "guard: blocked (fail closed, cannot check this command): guard.py exited $rc" >&2
+exit 2

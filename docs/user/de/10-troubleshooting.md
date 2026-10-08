@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 4e03e44 -->
+<!-- source: en/10-troubleshooting.md @ 391f7a7 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -12,7 +12,7 @@ der Engine und die häufigsten Probleme.
 seldon doctor
 ```
 
-Es prüft elf Dinge und nennt für jedes, das nicht `ok` ist, eine
+Es prüft zwölf Dinge und nennt für jedes, das nicht `ok` ist, eine
 Abhilfe. Es liest nur: Es ändert keine Datei, nimmt keine Sperre und
 führt nichts mit `sudo` aus.
 
@@ -24,6 +24,7 @@ führt nichts mit `sudo` aus.
 | `cases` | jede Case-ID hat eine Datei | `error`: ein Case existiert zweimal (eine veraltete Kopie); behalte die Datei im Ordner ihres Status |
 | `ledger` | jede Zeile in `ledger/*.jsonl` ist ein Ereignis | `degraded`: Zeilen, die keine Ereignisse sind (ein abgerissener Schreibvorgang, eine Handänderung), werden übersprungen; die Zeile nennt Monat, Anzahl und Zeilen |
 | `fences` | die generierten Teile von `STATUS.md` und `DECISIONS.md` haben ihre Markerzeilen | `degraded`: eine Markerzeile fehlt, also lässt `seldon status` die Datei in Ruhe; oder ein End-Marker schließt keinen Abschnitt. `error`: die Datei ist nicht lesbar |
+| `workpieces` | immer ok, nur zur Information: wie viele `work/<case-id>/`-Ordner keinem Case gehören (verwaist) oder von einem abgeschlossenen Case mit über 10 MiB übrig sind (übergroß), ihre Größe, der älteste | (nie; verschieb oder lösch so einen Ordner selbst, wenn du ihn nicht mehr brauchst — git behält seine Geschichte) |
 | `collectors` | der letzte Capture jedes eingeschalteten Collectors ist gelungen | `degraded`: die Zeile nennt jeden fehlgeschlagenen Collector mit Meldung und Abhilfe |
 | `state` | `cursors.json`, `manifest.json` und `owned.json` in `~/.local/state/seldon` sind lesbar | `error`: die Datei ist beschädigt oder nicht lesbar; die Zeile sagt, was das kaputt macht; die Abhilfe verschiebt eine beschädigte Datei oder macht eine unlesbare lesbar. `degraded`: das nächste Capture wird einen Zustands-Reset festhalten, siehe [doctor sagt, das nächste Capture hält einen Zustands-Reset fest](#doctor-sagt-das-nächste-capture-hält-einen-zustands-reset-fest); oder das letzte Capture hat einen festgehalten, siehe [Ein Zustands-Reset wurde festgehalten](#ein-zustands-reset-wurde-festgehalten); oder ein Collector wartet seit einem Zustands-Reset auf seine Baseline (degraded oder nicht gelaufen): `seldon capture --source <name>` ausführen, sobald er laufen kann |
 | `omarchy` | `omarchy-version` hat geantwortet | der Omarchy-Collector kann die Version nicht lesen |
@@ -41,13 +42,13 @@ Knopf, der es behebt.
 
 | Banner | Ursache | Abhilfe |
 |---|---|---|
-| Seldon engine not installed | das Plugin kann `seldon` nicht starten | *Install in terminal* startet den GitHub-Installer in einem Terminal, das du siehst; oder du installierst selbst ([Erste Schritte](01-getting-started.md#schritt-1-die-engine-installieren)), dann *Check again* |
-| Logbook not initialised | es gibt noch kein Logbuch | *Run in terminal* startet `seldon init` |
+| Install the engine (ein Einrichtungsschritt); Seldon engine missing, in Rot, wenn die Engine vorher da war | das Plugin kann `seldon` nicht starten | *Install* öffnet ein Terminal, das sagt, was es tut, und den GitHub-Installer startet; oder du installierst selbst ([Erste Schritte](01-getting-started.md#schritt-1-die-engine-installieren)); dann *Check again* |
+| Create your logbook | es gibt noch kein Logbuch | *Create* öffnet ein Terminal, das `seldon init` startet; das Panel aktualisiert sich von selbst, sobald das Logbuch da ist |
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` fehlt oder ist kaputt | *Build index* startet `seldon status` |
 | Index is stale | der Index ist älter als zwei Stunden | *Capture now* |
-| Index format mismatch | Plugin und Engine sprechen verschiedene Versionen des Index | das ältere aktualisieren. Plugin: `omarchy plugin update jax.seldon`, danach `omarchy-restart-shell`. Engine: *Update in terminal* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)) |
-| Engine too old | die Engine ist älter, als dieses Plugin sie braucht (das `engineMin` in seinem Manifest) | *Update in terminal* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)), dann *Check again* |
-| Snapshots not readable | Snapper weist deinen Benutzer ab, und `/.snapshots` ist nicht lesbar | *Run in terminal* startet die einmalige Lesefreigabe; dort tippst du dein Passwort |
+| Index format mismatch | Plugin und Engine sprechen verschiedene Versionen des Index | das ältere aktualisieren. Plugin: `omarchy plugin update jax.seldon`, danach `omarchy-restart-shell`. Engine: *Update* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)) |
+| Engine too old | die Engine ist älter, als dieses Plugin sie braucht (das `engineMin` in seinem Manifest) | *Update* führt den Installer in einem Terminal noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)), dann *Check again* |
+| Read snapshots (optional) | Snapper weist deinen Benutzer ab, und `/.snapshots` ist nicht lesbar | *Grant* öffnet ein Terminal, das sagt, was die Freigabe erlaubt, die einmalige Lesefreigabe startet (dort tippst du dein Passwort) und die Snapshots aufzeichnet; danach verschwindet das Banner von selbst. Seldon funktioniert auch ohne Snapshots |
 | Restart the shell to finish the update | das Plugin wurde aktualisiert, aber die Shell führt noch den vorher geladenen Code aus (neuen Plugin-Code lädt sie erst beim Neustart) | *Restart shell* startet `omarchy-restart-shell`; Leiste und Panels sind nach wenigen Sekunden wieder da. Siehe [Das Plugin aktualisieren](11-update-and-uninstall.md#das-plugin-aktualisieren) |
 | Capture warned | ein Capture, das das Plugin gestartet hat, endete mit einer Warnung, etwa [einem Zustands-Reset](#ein-zustands-reset-wurde-festgehalten); der Hinweis zeigt die erste Zeile jeder Warnung, der Mauszeiger darüber zeigt sie ganz | kein Knopf: tu, was die Warnung sagt. Der Hinweis verschwindet nach dem nächsten Capture ohne Warnungen |
 

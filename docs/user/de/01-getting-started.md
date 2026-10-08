@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ 989f051 -->
+<!-- source: en/01-getting-started.md @ 9daa7a3 -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem fertigen
 Logbuch. Du installierst die Engine, legst dein Logbuch an, fügst das
@@ -46,6 +46,10 @@ less install.sh
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
 ```
 
+Das Skript sagt zuerst, was es wohin installiert, und endet mit den
+Schritten, die noch fehlen: `seldon init` und das Plugin, außer du hast
+sie schon.
+
 Prüfe, ob deine Shell die Engine findet:
 
 ```sh
@@ -84,34 +88,41 @@ die Leertaste ein Häkchen, Enter bestätigt.
 | Collectors | alle sechs behalten |
 | Watched config paths | die Vorgaben behalten |
 | More paths | leer lassen |
-| Agent harnesses | „Claude Code hooks“ mit der Leertaste anhaken, wenn du Claude Code nutzt; sonst nichts |
-| Record theme switches the moment they happen? | nein (lässt sich später nachholen) |
-| Make the logbook a git repository with a first commit? | ja |
-| Backfill since | leer lassen |
+| Agent setup | „Claude Code hooks“ mit der Leertaste anhaken, wenn du Claude Code nutzt; sonst nichts |
+| Record theme switches instantly? | nein (die nächste Erfassung zeichnet sie ohnehin auf) |
+| Keep the logbook in git, with a first commit? | ja |
+| Backfill since | ein Datum etwa drei Monate zurück, oder leer, um ab jetzt aufzuzeichnen |
+| Mark them as the pre-Seldon baseline? | ja (kommt nur nach einer Nacherfassung, die etwas gefunden hat) |
 
-Bei der Nacherfassung (Backfill) heißt leer: Seldon zeichnet ab jetzt
-auf. Ein Datum lässt die erste Erfassung auch ältere Änderungen
-aufzeichnen. Keine davon gehört zu einem Case, also erscheint jede als
-Drift. Der Assistent bietet dann an, sie als Baseline vor Seldon zu
-markieren. Lass die Nacherfassung fürs Erste weg;
+Eine Nacherfassung (Backfill) zeichnet auch ältere Änderungen auf: das
+Paket-Log und die Snapshots. Die meisten davon sind Routine und landen
+in der Historie. Der Rest erscheint als Drift, Änderungen ohne Case; der
+Assistent bietet dann an, sie als Baseline vor Seldon zu markieren. Das
+weist sie ab und behält die Ereignisse.
 [Konzepte](02-concepts.md#baseline) erklärt sie.
 
-Am Ende fasst der Assistent zusammen, etwa so (gekürzt):
+Am Ende zeigt der Assistent, was er eingerichtet hat, zum Beispiel (deine Zahlen weichen ab):
 
 ```text
-Logbook created at ~/Seldon (machine <machine>, language de, 31 files).
-Config: ~/.config/seldon/config.toml
-Git: repository initialised, first commit "seldon: init logbook"
-Snapper: degraded — No permissions. Snapshots are not recorded until you grant your user read access to the snapshot directory once (ADR-0026). The fix grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion.
-First capture: 0 event(s); degraded: snapper (see seldon doctor); 0 open drift item(s), 0 crisis
-Dossier: Wrote system/hardware.md, system/omarchy.md, system/packages.md, system/plugins.md, system/services.md (7 fence(s) changed)
-Next steps:
-  seldon doctor
+Logbook     ~/Seldon (Deutsch, git repository)
+Config      ~/.config/seldon/config.toml; list noisy or secret files in its [redaction] skipPaths
+Recording   snapshots, packages, Omarchy updates, plugins, themes, config files
+Agents      Claude Code hooks (user-wide)
+History     1500 event(s) since 2026-07-01; 40 drift item(s) marked as the pre-Seldon baseline
+Snapshots   not readable yet; optional, Seldon works without them
+
+Seldon is recording. Nothing else to do.
+
+Optional, snapshots in the timeline: read access to the snapshot list
+and info files, nothing else. Asks for your password once:
+  sudo setfacl -m u:$USER:rx /.snapshots
 ```
 
-`Snapper: degraded` ist auf Omarchy normal. Dein Benutzer darf
-Snapshots anfangs eventuell nicht auflisten. Seldon funktioniert auch
-ohne sie; Schritt 3 zeigt die Abhilfe.
+Bleibt etwas zu tun, etwa ein Collector, der seine Quelle nicht lesen
+konnte, stehen statt „Nothing else to do“ die Befehle unter „Next
+steps:“. Nicht lesbare Snapshots sind auf Omarchy normal: Dein Benutzer
+darf sie anfangs eventuell nicht auflisten. Seldon funktioniert auch ohne
+sie; Schritt 3 zeigt die Freigabe.
 
 Ganz ohne Fragen geht es mit `seldon init --non-interactive`. Das nimmt
 `~/Seldon`, die Sprache deiner Locale, alle Collectors und git und

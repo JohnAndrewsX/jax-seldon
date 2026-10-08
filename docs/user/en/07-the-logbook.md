@@ -120,12 +120,20 @@ tags: []
 - Goal:
 - Steps:
 - Affected paths:
+- Persists: <!-- survives reboot and update | reboot only | lost at reboot -->
 - Rollback:
 - Verification:
+- Stop if:
 ## Log
 - 2026-10-01 10:12 · created (zone red, risk R2) · human
 ## Result
 ```
+
+*Persists* says how long the change holds: `survives reboot and update`,
+`reboot only` (an update overwrites it) or `lost at reboot`. *Stop if*
+names what makes the agent stop and ask you. In *Result*, each claim is
+marked `measured`, `documented` or `inferred`; its first line goes into
+the commit that closes the case.
 
 The *Log* is append-only. The engine adds a line for each step; you and
 your agents add dated lines below. Keep the frontmatter flat: one value

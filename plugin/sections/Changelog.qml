@@ -53,8 +53,25 @@ Section {
   readonly property var captureResult: root.service ? root.service.captureResult : null
   readonly property color foreground: Color.popups.text
   readonly property color dim: Util.alpha(root.foreground, 0.65)
+  // Bulk triage (WP-124b): the button, the last ask, the proposal.
+  readonly property var triageButton: root.service ? root.service.triageButton : null
+  readonly property var askResult: root.service && root.service.askResult && root.service.askResult.what === "triage"
+    ? root.service.askResult : null
+  readonly property var triageView: root.service ? root.service.triageView : null
+  // The detail shows the proposal instead of an event (its row in the list
+  // head selected); a row click, a selection or a gone proposal ends it.
+  property bool triageShown: false
+  // The proposal the user opened (its row, or Review in its bar): Apply
+  // and Discard are bound to it, never to whatever the index names by the
+  // time of the click (WP-124b round 2).
+  property string seenProposalId: ""
+  // What the list head's slot shows (from the data: a child's `visible`
+  // reads false while its parent is hidden).
+  readonly property bool triageAskShown: !!root.triageButton && root.triageButton.visible
+  readonly property bool askLineShown: !!root.askResult && !root.askResult.pending
+  readonly property bool proposalRowShown: !!root.triageView
 
-  editing: detail.editing
+  editing: !root.triageShown && detail.editing
 
   function rowIndex(id) {
     var rows = root.rows || []
@@ -68,6 +85,7 @@ Section {
     var at = Math.max(0, Math.min(rows.length - 1, i))
     root.cursorRow = at
     root.selectedId = rows[at].id
+    root.triageShown = false
   }
 
   function move(dy) {
@@ -82,7 +100,14 @@ Section {
       if (root.desk) root.desk.showDetail()
       return true
     }
-    return detail.activate()
+    return root.triageShown ? triage.activate() : detail.activate()
+  }
+
+  function showTriage() {
+    if (!root.triageView) return
+    root.seenProposalId = root.triageView.id
+    root.triageShown = true
+    if (root.desk) root.desk.showDetail()
   }
 
   function setChip(id) {
@@ -114,6 +139,7 @@ Section {
       root.chip = "all"
     }
     root.selectedId = target
+    root.triageShown = false
     var i = root.rowIndex(target)
     if (i >= 0) root.cursorRow = i
     if (root.desk) root.desk.showDetail()
@@ -121,7 +147,7 @@ Section {
   }
 
   function back() {
-    return detail.back()
+    return root.triageShown ? triage.back() : detail.back()
   }
 
   // { filter }: a chip id, or (the 0.1 source filter) a source name, which
@@ -155,6 +181,14 @@ Section {
       capturing: root.capturing,
       captureResult: root.captureResult ? root.captureResult.text : "",
       triageSlot: triageSlot.visible,
+      triage: {
+        button: root.triageAskShown ? triageAsk.text + (triageAsk.enabled ? "" : " (off)") : "",
+        ask: root.askLineShown ? askLine.text : "",
+        askOk: root.askResult ? root.askResult.ok : true,
+        row: root.proposalRowShown ? proposalText.text : "",
+        shown: root.triageShown,
+        detail: triage.view()
+      },
       detail: detail.view()
     }
   }
@@ -205,13 +239,80 @@ Section {
       : root.chip === "open" ? "Nothing open: every change is in a case or routine."
       : "No events in " + Model.EVENT_CLASS_LABELS[root.chip === "case" ? "case" : root.chip] + "."
 
-    // "Agent sorts N open changes" (ADR-0034 §6): WP-124b fills the slot.
-    Item {
+    // "Agent sorts N open changes" (ADR-0034 §6, WP-124b): the button
+    // (`agent ask triage --json`, fixed argv), the ask's answer or the
+    // engine's refusal, and the proposal's row, which opens it in the
+    // detail.
+    Column {
       id: triageSlot
       objectName: "triageSlot"
       width: parent.width
-      visible: children.length > 0
-      implicitHeight: childrenRect.height
+      spacing: Style.spacing.sm
+      visible: root.triageAskShown || root.askLineShown || root.proposalRowShown
+
+      Button {
+        id: triageAsk
+        objectName: "triageAsk"
+        visible: root.triageAskShown
+        text: root.askResult && root.askResult.pending ? "Starting an agent…" : root.triageButton ? root.triageButton.text : ""
+        iconText: root.askResult && root.askResult.pending ? "󰦖" : ""
+        iconSpinning: !!root.askResult && root.askResult.pending
+        iconSize: Style.font.caption
+        tooltipText: "The default agent reads the open changes and proposes links and explanations with evidence; nothing is written until you apply"
+        bordered: true
+        selected: true
+        enabled: !(root.askResult && root.askResult.pending)
+        foreground: root.foreground
+        fontFamily: Style.font.family
+        fontSize: Style.font.caption
+        horizontalPadding: Style.spacing.md
+        verticalPadding: Style.spacing.xs
+        onClicked: if (root.service) root.service.askAgent("triage", "")
+      }
+
+      Text {
+        id: askLine
+        objectName: "triageAskResult"
+        width: parent.width
+        visible: root.askLineShown
+        textFormat: Text.PlainText
+        text: root.askResult ? root.askResult.text : ""
+        color: root.askResult && !root.askResult.ok ? Color.urgent : root.dim
+        wrapMode: Text.Wrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Rectangle {
+        id: proposalRow
+        objectName: "proposalRow"
+        width: parent.width
+        visible: root.proposalRowShown
+        implicitHeight: proposalText.implicitHeight + Style.spacing.md * 2
+        radius: Style.cornerRadius
+        color: root.triageShown ? Util.alpha(Color.accent, 0.15) : "transparent"
+        border.width: Math.max(1, Style.space(1))
+        border.color: Util.alpha(Color.accent, 0.6)
+
+        Text {
+          id: proposalText
+          x: Style.spacing.md
+          y: Style.spacing.md
+          width: parent.width - Style.spacing.md * 2
+          textFormat: Text.PlainText
+          text: root.triageView ? "Proposal · " + root.triageView.head : ""
+          color: root.foreground
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.showTriage()
+        }
+      }
     }
 
     Flow {
@@ -374,9 +475,23 @@ Section {
       onClicked: {
         root.selectedId = modelData.id
         root.cursorRow = index
+        root.triageShown = false
         if (root.desk) root.desk.showDetail()
       }
     }
+  }
+
+  TriageDetail {
+    id: triage
+    x: root.stacked ? 0 : list.width
+    width: root.width - x
+    height: root.height
+    visible: root.triageShown && (!root.stacked || root.detailShown)
+    shown: visible
+    backVisible: root.stacked
+    section: root
+    seenId: root.seenProposalId
+    onBackRequested: if (root.desk) root.desk.back()
   }
 
   EventDetail {
@@ -384,7 +499,7 @@ Section {
     x: root.stacked ? 0 : list.width
     width: root.width - x
     height: root.height
-    visible: !root.stacked || root.detailShown
+    visible: !root.triageShown && (!root.stacked || root.detailShown)
     backVisible: root.stacked
     section: root
     eventId: root.selectedId

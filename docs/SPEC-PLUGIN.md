@@ -83,12 +83,13 @@ plugin/
   banner's fix is the constant GitHub one-liner `curl -fsSL
   https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`
   (run only on the user's click, in the floating terminal; the script
-  checks the engine against `SHA256SUMS`), and its text says "AUR
-  package: coming soon; until then install from GitHub". Both are
+  checks the engine against `SHA256SUMS`), and its text says what the
+  button does: download from the Seldon release on GitHub into
+  `~/.local/bin`, checked, as the user, no password (WP-117). Both are
   constants in `Model.js`, `INSTALL_ENGINE_COMMAND` and
   `ENGINE_MISSING_DETAIL`; they flip back to `omarchy pkg aur add
   jax-seldon` and an AUR text together when the package is live
-  (WP-044).
+  (WP-044), with the texts of `INSTALL_ENGINE_SCRIPT` (§5).
 - Exposes `function run(args)` for other files; **only fixed argument
   arrays**, never strings assembled from index content except as single
   arguments (case ids, event ids validated by regex before use).
@@ -373,8 +374,16 @@ resolved here, it leaves NEEDS YOU and stays shown with the engine's answer.
 
 #### Changelog (2)
 
-The list: the slot of "Agent sorts N open changes" (`triageSlot`, empty
-until WP-124b), the chips **open · crisis · attention · routine · in
+The list: the triage slot (`triageSlot`, WP-124b; ADR-0034 §6,
+ADR-0036) — **Agent sorts N open changes** (N = the open changes, a group
+once) while something is open and the engine can write
+(`Service.triageButton`; whether a default agent exists only the engine
+knows, so a refusal names the fix under the button): `agent ask triage
+--json`, "Starting an agent…" with a spinner while it runs, then the
+engine's answer or refusal; and, while the index names a proposal
+(`index.triage`), its row "Proposal · N items proposed by <actor> at <at>,
+C crises held back — apply each below", which shows the proposal in the
+detail (below). Then the chips **open · crisis · attention · routine · in
 case · all** with their counts (`f` / `F` the next / previous; default
 open). A row's class: open drift with `crisis` → crisis; other open drift,
 group members included → attention; else with a case → in case; else
@@ -400,9 +409,58 @@ it was. The shim's `filter <source>` and a payload `filter` that is a
 source name show "all" with the source in the sidebar search; a chip id
 selects that chip.
 
+The proposal (`TriageDetail.qml`, WP-124b): the file `index.triage.path`
+names, next to `index.json` (CONTRACT.md rule 1; exactly
+`proposals/<id>.json`, `Model.triagePath`), read by a FileView and checked
+against `proposal.schema.json` (`Model.parseProposal`: only its
+properties, `logbook` present, `at` and `applied` date-times, the length
+limits, a link without title or intent and an explanation without a case,
+at most 4 MiB of text; a file off in any part is not shown: "could not be
+read as the engine writes it"). **Bound to the proposal the user opened**
+(round 2): its row (or *Review the new proposal*) stores that id
+(`Changelog.seenProposalId`), and Apply and Discard name it. When the
+index names another proposal by then, the bar says "Replaced by a newer
+proposal by <actor> at <at> — review it", offers *Review the new
+proposal* and has Apply and Discard off, the items are not shown, and the
+service refuses the old id even when asked directly
+(`Model.triageSeen`, `Service.triageCall`); a proposal that is gone
+("Proposal <id> is not there any more …") keeps the last answer about it
+shown. Only the answer about the opened id is shown. The sticky bar:
+*Apply proposals (N)* (N the items Apply takes that are still open; one
+click, `drift apply <id> --json`; enabled also with nothing open, so a
+second run says what it skipped) and *Discard* (it removes the agent's
+unapplied work, so it arms: "Confirm discard", hint "Discard proposal
+<id>? Click Confirm discard. The logbook does not change.", then `drift
+discard <id> --json`); **under its buttons, as the bar's hint, the line
+"N items proposed by <actor> at <at>, C crises held back — apply each
+below"** (plain text, wraps). Below the bar: the state ("<actor> ·
+proposal, nothing written yet", or "Applied <at>. That marks the run, not
+every item: what is still open shows below."), the last run's answer
+("Applied N · skipped S · refused R"; a gone proposal: "… The proposal is
+gone; the list shows what is open now" — refresh, never retry), the line
+"Apply re-reads the file and every reference. If the file was changed
+since you opened it, what Apply writes can differ from what is shown
+here."; then **CRISES — EACH ON ITS OWN**: every
+item that is a crisis by the file's flag or the index's class, with
+*Apply this crisis* (`drift apply <id> --item <eventId> --json`, one per
+run); then **WHAT APPLY TAKES**. The items are built only while the pane
+is shown, by an asynchronous Loader (a 200 × 10 proposal: the click
+returns at once, the list builds in slices). Each item: the change's
+subject (from `index.events`), "Link to C-…" or "Explain: <title>" with
+the intent, the outcome of the last run (Done, Skipped: <reason>,
+Refused: <reason>, the engine's words) or "No longer open: nothing to
+apply.", and every evidence ref — its kind and ref, then the engine's text
+with "by <authors> ·" first (every author, ADR-0036 §2), wrapped (also
+inside a long path), never clipped; an item with evidence that names an
+agent or `unknown` among its authors (a Plan "worked by agent:…" too) is
+marked "Read twice: some evidence names an agent or an unknown author."
+and that text drawn in the accent colour. Every text is plain text
+(CONTRACT.md rule 6; `model.test.js` checks every `Text` of the file).
+
 The detail (`EventDetail.qml`; prototype `eventDetail`): the sticky bar
-(`Model.eventActions`) — open drift: *Ask agent* first once the engine has
-`agent ask` (WP-124b; `Service.askAgentAvailable`, false until then),
+(`Model.eventActions`) — open drift: *Ask agent* first while the engine can
+write (WP-124b; `agent ask drift <id> --json`, one click; the engine's
+answer or refusal under the title),
 *Link to case…* (*Link to C-… …* when the engine proposes one), *Explain…*,
 *Dismiss…*, and for attention *Hide* / *Show*; an event with a case: *Open
 case* (Work with the case selected; for a case the index no longer lists
@@ -428,8 +486,11 @@ ask for the rule. Then, from `proposedCase`, "C-… plans it (its plan names
 this change); nothing has linked it yet." or "No open case plans it, and no
 case is linked." — the Case row ("proposed: C-…") and the Rule row
 ("crisis · rule … · planned by C-…, not linked" or "· no case") say the
-same. The key/values When · Who · What · Case · Rule · Source · Zone ·
-Resolved · Event (values wrap at word boundaries; a longer token breaks
+same. The key/values When · Who · What (· Commits) · Case · Rule · Source · Zone ·
+Resolved · Event (Commits, WP-136: a plugin update's `meta.commits` as
+plain text, one subject per line, keyed "Rolled back" when `meta.git` is
+`rollback`; absent when the event has no such string;
+values wrap at word boundaries; a longer token breaks
 anywhere; a detail the index clipped — the event's `meta.truncated` or the
 drift item's `truncated`, contract 2 — reads "(clipped in the index; the
 ledger has it in full)"), a
@@ -473,7 +534,10 @@ The detail: the sticky bar by status (`Model.caseDeskActions`) — queued:
 *Start*, *Drop*; active: *Hand to agent* (`agent start <id> --json`), *To
 verification*, *Drop*; verification: *Complete*, *Drop*; completed:
 *Reopen* (`plan reopen <id> --json`); every case *Open in editor* (`e`,
-`open <id> --editor --json`), last; id · risk at the right. Every writing
+`open <id> --editor --json`), then *Ask agent* while the engine can write
+(WP-124b; `agent ask case <id> --json`, one click, any status; the agent
+gets no case to work; the answer or refusal under the title); id · risk at
+the right. Every writing
 action but Reopen arms on the first press or click and runs on the second
 (`Arm.qml`; the button reads "Confirm …", the bar's hint names the key:
 "Hand to agent C-2026-003? Press a again or click Confirm.", "To
@@ -739,31 +803,34 @@ what their update did, the capture warnings. Each is `Banner.qml` on the
 service's object; a fix goes to `Service.fix(action, banner)`. Their
 texts and fixes:
 
-Banner states (under the header): engine missing → "Install the engine:"
-the GitHub one-liner while the AUR package does not exist (§3,
-ADR-0024), afterwards `omarchy pkg aur add jax-seldon` (ADR-0016;
-`omarchy pkg add` reaches the official repositories only), with *Install in
-terminal*, *Copy* and *Check again*; contract
+Banner states (under the header), each detail one sentence (WP-117):
+engine missing → the GitHub one-liner while the AUR package does not
+exist (§3, ADR-0024), afterwards `omarchy pkg aur add jax-seldon`
+(ADR-0016; `omarchy pkg add` reaches the official repositories only),
+with *Install*, *Copy* and *Check again*; without an index it is the
+first setup step, "Install the engine" in the accent tone, with an index
+(the engine was there and is gone) "Seldon engine missing" in the urgent
+tone; contract
 mismatch → `omarchy plugin update jax.seldon` when the plugin is older
 than the index, the GitHub installer one-liner when the engine is older (until the
-AUR package is live, ADR-0024); engine older than the manifest's
+AUR package is live, ADR-0024), with *Update* and *Copy*; engine older than the manifest's
 `engineMin` (§3; in place of every status banner but engine missing and
-contract mismatch) → "Engine too old", "Update the engine to at least
-X", the same installer one-liner with *Update in terminal*, *Copy* and
+contract mismatch) → "Engine too old", "This plugin needs engine X or
+newer and seldon reports Y.", the same installer one-liner with *Update*, *Copy* and
 *Check again* (WP-068); snapshots
-not readable (ADR-0026) → the one-line read grant
-`sudo setfacl -m u:$USER:rx /.snapshots` with *Run in terminal*, *Copy*
-and *Check again*; the detail is the engine's message, then on its own
-line what the fix grants (read access to the snapshot directory listing
-and the snapshot info files, no snapshot creation, change or deletion)
-(WP-054, issue #2); *Check again*
+not readable (ADR-0026) → "Read snapshots (optional)", "A one-time read
+grant on /.snapshots; it asks for your password once, and Seldon works
+without it.", the one-line read grant
+`sudo setfacl -m u:$USER:rx /.snapshots` with *Grant*, *Copy*
+and *Check again*; the engine's message and, on its own line, what the
+grant gives (read access to the snapshot directory listing and the
+snapshot info files, no snapshot creation, change or deletion) are the
+banner's hover text; *Check again*
 runs a capture, the same call as *Capture now* (`capture --all --json
 --quiet`, then `status --json`), because only a capture rewrites the
-collector state this banner reads (reloading the index would not); after
-*Run in terminal* the banner shows "When the command has finished, press
-Check again" under its buttons until the index next changes; not
-initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
-*Check again*; index stale →
+collector state this banner reads (reloading the index would not; WP-054);
+not initialised → "Create your logbook", `seldon init`, with *Create*,
+*Copy* and *Check again*; index stale →
 *Capture now*; outdated agent rules (WP-101, ADR-0027 migration) → "The
 logbook's agent rules are outdated (v1)" from the `rules` row of `seldon
 doctor --only rules --json`, which the service runs when the desk opens (and when the
@@ -782,6 +849,41 @@ crisis strip ("N changes that can affect boot, login or the shell have no
 case", ADR-0028 §4b) has no successor in the desk: the header's crises
 figure (urgent while `summary.crisis` > 0) and Today's "Needs you"
 (WP-122) carry it.
+
+Terminal scripts (WP-117). *Copy* puts the banner's plain command on the
+clipboard; *Install*, *Create*, *Grant* and *Update* open Omarchy's
+presentation terminal (`omarchy-launch-floating-terminal-with-presentation`:
+logo, the script, "Done!", the theme's gum colours) with the banner's
+script, one of five constants in `Model.js` (`INSTALL_ENGINE_SCRIPT`,
+`UPDATE_ENGINE_SCRIPT`, `UPDATE_PLUGIN_SCRIPT`, `INIT_SCRIPT`,
+`SNAPPER_FIX_SCRIPT`); the service launches nothing else
+(`Model.terminalArgv`). Each follows Omarchy's own scripts: a bold `gum
+style` line "Seldon: <what>", one paragraph (why; whether it asks for a
+password), the command indented as *Copy* copies it, the command run in
+`(set -o pipefail; …)`, then one line of what changed, green (palette 2)
+on success, red (palette 1) on failure. A result line never claims more
+than happened: after a failed install or engine update it says "The
+install (update) did not finish. Run it again; your logbook is
+untouched." (install.sh can stop after it replaced the binary). The
+script then ends with status 0, so the wrapper's "Done!" follows. Ctrl+C
+(or TERM) is trapped: the script skips a command that has not started,
+prints a "Cancelled. …" line (palette 3) and ends with 130, Omarchy's
+"cancelled" status, on which the wrapper prints no "Done!" and the window
+closes, as with Omarchy's own scripts. After a successful snapshot grant
+the script runs `seldon capture` (once more if the lock is held), which
+rewrites the index, so the banner goes without a click; only when a
+capture succeeded does it say "Snapshots are now recorded. The panel
+updates by itself.", else "Read access granted. Seldon records snapshots
+at its next capture." After an engine update it runs `seldon status`, so
+the new engine rewrites the index. `seldon init` writes the index itself.
+After an install or update the engine is probed only on *Check again*,
+and the result line says so. The scripts are built once from string
+literals: nothing from the index, the logbook or the environment is in
+them (AGENTS.md §8); `$USER` stays literal in the shown command and is
+expanded only where it runs, there as `${USER:?}` in the grant, which
+stops before `sudo` when USER is empty (a grant `u::rx` would change the
+owner bits). ADR-0026 holds: the engine never runs the grant, the user's
+click runs it in the user's terminal.
 
 Header mark (WP-051): the A5 lockup — the mark, then "SELDON" in the heading
 font (`Style.font.heading`, bold), baseline-aligned. Metrics from
@@ -802,7 +904,7 @@ tone — engine missing → `engine-missing`, not initialised →
 `logbook-not-initialised`, index missing (or unreadable) →
 `index-missing`, index stale → `index-stale`; the contract mismatch and
 the snapper banner have none. The Today tab shows the day's state left of
-the date and the counts (events today, in 7 days, active, queued, and
+the date and the counts (events today — "1 event today" — in 7 days, active, queued, and
 "without a case", the attention count `openDrift − crisis`, the number the
 tooltip and the Changelog line show), `Style.space(48)`: crisis (urgent) when any
 crisis, else case active (accent) when active cases, else all clear
@@ -1109,8 +1211,9 @@ No network. No bundled binaries, units or installers. Reads one JSON file,
 and its own images under `plugin/assets/` (SVG and PNG artwork, no
 scripts; WP-051).
 Runs the `seldon` engine with fixed arguments (the forms in CONTRACT.md).
-Besides the engine it starts only `wl-copy` and Omarchy's floating-terminal
-launcher, each with one constant command, only on a banner click, and
+Besides the engine it starts only `wl-copy` with one constant command and
+Omarchy's floating-terminal launcher with one constant script (§5), only
+on a banner click, and
 `omarchy-restart-shell` without arguments on the restart notice's click
 (WP-090). Never a
 shell string built from logbook content. Writes no file itself; the one

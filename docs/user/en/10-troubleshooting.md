@@ -10,7 +10,7 @@ exit codes and the most common problems.
 seldon doctor
 ```
 
-It checks eleven things and prints a fix for each one that is not `ok`.
+It checks twelve things and prints a fix for each one that is not `ok`.
 It only reads: it changes no file, takes no lock and runs nothing with
 `sudo`.
 
@@ -22,6 +22,7 @@ It only reads: it changes no file, takes no lock and runs nothing with
 | `cases` | every case id has one file | `error`: a case exists twice (a stale copy); keep the file in the folder of its status |
 | `ledger` | every line of `ledger/*.jsonl` is an event | `degraded`: lines that are not events (a torn write, a hand edit) are skipped; the row names month, count and lines |
 | `fences` | the generated parts of `STATUS.md` and `DECISIONS.md` have their marker lines | `degraded`: a marker line is missing, so `seldon status` leaves the file alone; or an end marker closes no fence. `error`: the file cannot be read |
+| `workpieces` | always ok, information only: how many `work/<case-id>/` folders no case owns (orphaned) or a closed case left over 10 MiB (oversized), their size, the oldest | (never; move or delete such a folder yourself when you no longer need it — git keeps its history) |
 | `collectors` | the last capture of every enabled collector succeeded | `degraded`: the row lists each failing collector with its message and fix |
 | `state` | `cursors.json`, `manifest.json` and `owned.json` in `~/.local/state/seldon` can be read | `error`: the file is corrupt or unreadable; the row says what that breaks; the fix moves a corrupt file away or makes an unreadable one readable. `degraded`: the next capture will record a state reset, see [doctor says the next capture will record a state reset](#doctor-says-the-next-capture-will-record-a-state-reset); or the last capture recorded one, see [A state reset was recorded](#a-state-reset-was-recorded); or a collector waits for its baseline since a state reset (degraded or not run): run `seldon capture --source <name>` once it can run |
 | `omarchy` | `omarchy-version` answered | the Omarchy collector cannot read the version |
@@ -39,13 +40,13 @@ button that fixes it.
 
 | Banner | Cause | Fix |
 |---|---|---|
-| Seldon engine not installed | the plugin cannot run `seldon` | *Install in terminal* runs the GitHub installer in a terminal you see; or install it yourself ([Getting started](01-getting-started.md#step-1-install-the-engine)), then *Check again* |
-| Logbook not initialised | there is no logbook yet | *Run in terminal* runs `seldon init` |
+| Install the engine (a setup step); Seldon engine missing, in red, when the engine was there before | the plugin cannot run `seldon` | *Install* opens a terminal that says what it does and runs the GitHub installer; or install it yourself ([Getting started](01-getting-started.md#step-1-install-the-engine)); then *Check again* |
+| Create your logbook | there is no logbook yet | *Create* opens a terminal that runs `seldon init`; the panel updates by itself when the logbook is there |
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` is missing or broken | *Build index* runs `seldon status` |
 | Index is stale | the index is more than two hours old | *Capture now* |
-| Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`, then `omarchy-restart-shell`. Engine: *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
-| Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest) | *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
-| Snapshots not readable | snapper refuses your user and `/.snapshots` is not readable | *Run in terminal* runs the one-time read grant; you type your password there |
+| Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`, then `omarchy-restart-shell`. Engine: *Update* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
+| Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest) | *Update* runs the installer again in a terminal (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
+| Read snapshots (optional) | snapper refuses your user and `/.snapshots` is not readable | *Grant* opens a terminal that says what the grant allows, runs the one-time read grant (you type your password there) and records the snapshots; the banner then goes by itself. Seldon works without snapshots |
 | Restart the shell to finish the update | the plugin was updated, but the shell still runs the code it loaded before (it loads new plugin code only when it restarts) | *Restart shell* runs `omarchy-restart-shell`; the bar and panels come back within seconds. See [Update the plugin](11-update-and-uninstall.md#update-the-plugin) |
 | Capture warned | a capture the plugin ran finished with a warning, such as [a state reset](#a-state-reset-was-recorded); the notice shows the first line of each warning, the pointer over it shows all of it | no button: do what the warning says. The notice goes away after the next capture without warnings |
 
