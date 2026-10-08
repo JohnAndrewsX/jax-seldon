@@ -25,18 +25,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
-- **No secret hides behind an invisible character (WP-159).** Every
-  redaction now reads the text without its invisible characters, so
-  `to<U+200B>ken=…`, `Authorization: Bearer<U+3164> …` or a GitHub token
-  split by a variation selector is masked in a note, an imported task,
-  a closing commit and every event, as its plain form is. A text with
-  no secret is written as it was, its joiners and emoji selectors
-  included. The invisible set grows by the fillers (U+034F, U+115F,
+- **No secret hides behind an invisible or control character
+  (WP-159, ADR-0048).** Every redaction now reads the text twice: without
+  its invisible characters and lone control characters (so
+  `to<U+200B>ken=…`, `Authorization: Bearer<U+3164> …`, `to<BS>ken=…` or
+  a GitHub token split by a variation selector is masked), and as given
+  (so `x<U+200B>sk-…` is masked too), in a note, an imported task, a
+  closing commit, `plan show` and every event, as its plain form is. A
+  text with no secret is written as it was, its joiners and emoji
+  selectors included. The invisible set grows by the fillers (U+034F, U+115F,
   U+1160, U+17B4, U+17B5, U+3164, U+FFA0), the variation selectors
   (U+180B–U+180D, U+180F, U+FE00–U+FE0F, U+E0100–U+E01EF) and U+2065:
   a task file's path may not hold them, the desk's texts drop them, and
   `plan show --json` marks them. A `[redaction] patterns` entry that
-  names one of them matches nothing now.
+  names one of them matches only the text as given now.
+- **Start stays off for a hand-edited emoji (WP-159).** An imported case
+  whose Intent you edited by hand with an emoji and its U+FE0F (or that
+  was imported before this release with one) now counts the selector as
+  a hidden character: the desk keeps Start off and points to the
+  terminal. It fails safe; start such a case with `seldon plan start`.
 - **Files pacman left (WP-141).** A `.pacnew` (the package's new default
   was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
   that pacman reports in `/var/log/pacman.log` is now recorded: a pacman

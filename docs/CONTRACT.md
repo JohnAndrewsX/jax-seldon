@@ -115,11 +115,11 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
        (the set of SPEC-ENGINE §6, ADR-0038 as amended by WP-140: also
        U+00AD, U+0600–U+0605, U+061C, U+180E, U+2061–U+2064,
        U+206A–U+206F, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3, U+1D173–U+1D17A
-       and the tags U+E0000–U+E007F; and by WP-159: the fillers U+034F,
+       and the tags U+E0000–U+E007F; and by ADR-0048: the fillers U+034F,
        U+115F, U+1160, U+17B4, U+17B5, U+3164, U+FFA0, the variation
        selectors U+180B–U+180D, U+180F, U+FE00–U+FE0F, U+E0100–U+E01EF,
-       and U+2065),
-       then redacted by the logbook's redaction on every build,
+       and U+2065; dropped after the redaction, ADR-0048),
+       redacted by the logbook's redaction on every build,
        then clipped as rule 5 says; absent without text, all withheld
        while `[redaction] patterns` do not compile;
      - `cases[].source`: an imported case's task, `~/…/file.md#line` (or

@@ -1226,9 +1226,9 @@ the case (WP-143): `plan done` commits `seldon: <ID> completed — <title>:
 (HTML comments and headings skipped, a list marker dropped), and `plan
 drop` `seldon: <ID> dropped — <title>: <reason>`; without a line or a
 reason, `— <title>` alone. The text after the dash is one line —
-invisible characters (§6's set, `redact::without_invisible`)
-dropped, control characters and
-U+2028/U+2029 turned into spaces —, redacted (§7) and then clipped to
+control characters and U+2028/U+2029 turned into spaces —, redacted (§7),
+its invisible characters (§6's set) dropped after the redaction
+(`Redactor::redact_dropping_invisible`, ADR-0048), and then clipped to
 100 characters with `…`, so a cut never hides a secret from the patterns.
 Every other step keeps `<ID> <status>`. Every git command runs in
 the logbook with the variables that point git at another repository
@@ -1541,8 +1541,8 @@ git itself is killed, with the same bounded pipe wait. Rules:
   (another history) the ones that came in, `rollback` (the new HEAD is an
   ancestor) the ones that left — as `meta.git`, `meta.commits` (at most
   20 subjects, newest first, one per line; control characters and
-  U+2028/U+2029 → spaces, invisible characters
-  (§6's set, `redact::without_invisible`) dropped, redacted (§7), then clipped to 100 characters with `…`; an
+  U+2028/U+2029 → spaces, redacted (§7), then invisible characters
+  (§6's set) dropped (`Redactor::redact_dropping_invisible`, ADR-0048), then clipped to 100 characters with `…`; an
   empty one `(no subject)`) and the detail `<from> → <to>, pulled N
   commits: <newest> …` (`rolled back N commits: …`, `reset: N commits
   in, M out: …`; no `…` for one commit).
@@ -2255,8 +2255,10 @@ section without HTML comments, blank and heading lines before it skipped,
 the lines up to the next blank one, each trimmed at the end. An imported
 case (tag `imported`) whose first paragraph is exactly its `Imported from
 … — read before you start this case.` line takes the next paragraph. Each
-text: control characters other than `\n` and `\t` become spaces and
-invisible characters (`redact::is_invisible`:
+text: control characters other than `\n` and `\t` become spaces, then the
+logbook's redaction (§7; before the clip, so a secret at the cut is masked
+whole; `[redaction] patterns` included; patterns that do not compile
+withhold all four fields), then invisible characters (`redact::is_invisible`:
 U+00AD, U+034F, U+0600–U+0605, U+061C, U+115F, U+1160, U+17B4, U+17B5,
 U+180B–U+180F, U+200B–U+200F, U+202A–U+202E, U+2060–U+206F, U+3164,
 U+FE00–U+FE0F, U+FEFF, U+FFA0, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
@@ -2267,10 +2269,9 @@ fillers U+034F, U+115F, U+1160, U+17B4, U+17B5, U+3164, U+FFA0, the
 variation selectors U+180B–U+180D, U+180F, U+FE00–U+FE0F,
 U+E0100–U+E01EF, and U+2065, so the set holds every assigned
 default-ignorable code point; `scripts/validate-fixtures.py`
-holds the same set, tested) are dropped, so none splits a secret from its rule, then the
-logbook's redaction (before
-the clip, so a secret at the cut is masked whole) (`[redaction] patterns` included; patterns that do not
-compile withhold all four fields), then the clip of rule 5 with `… (N more
+holds the same set, tested; ADR-0048) are dropped (after the redaction,
+so the rules read the boundary one makes, WP-159 round 2), then the clip
+of rule 5 with `… (N more
 characters in the file)`; no text, no field. The section is read only up
 to the paragraphs needed (one; two for an imported Intent). `cases[].source` is the
 frontmatter's `source` (a non-string counts as none) after the redaction,
@@ -2282,7 +2283,7 @@ Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. `cargo bench --bench index` (`just bench`, CI) asserts the index
 build in-process on the fixture logbook scaled ×10 and prints ×150 (13 050
 ledger lines, 1 200 cases); `just check-perf` (opt-in, quiet host) asserts
-×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 788 ledger
+×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 11 656 ledger
 lines, 304 cases and 365 journal files, median wall time of 11 runs,
 process start included. A median over budget is measured once more before
 a check fails (release, 2026-10-04 on the dev host: ×150 build 80 ms,
@@ -2594,23 +2595,35 @@ The `…=` assignment rules have no boundary, so a name that starts with
 build and `doctor` still run and withhold every collector message
 (above). `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
-before a rule existed are not rewritten. **Invisible characters** (the
-set of §6, `redact::is_invisible`) hide no secret anywhere (WP-159): every
-redaction (the built-in rules and `[redaction] patterns`) reads the text
-without them, so `to<U+200B>ken=…`, `Authorization: Bearer<U+3164> …` and
-`ghp_0123<U+FE0F>4567…` are masked like their plain forms, in a note, a
-case or decision text, an imported task, a commit subject and every
-event. A text in which nothing is masked is written as it was, its
-invisible characters included (a zero-width joiner or non-joiner belongs
-to its words, WP-140). Where something is masked, the masked span is the
-original one: the invisible characters inside a masked match and at its
-edges go with it, the others stay where they were. A user pattern that
-names an invisible character therefore matches nothing. Besides, they are
-dropped before the redaction from a hook's command line (round 3: a shell
-line has no use for them), from the index's case and decision texts and
-`source` (§6), from the closing commit's summary (§4) and from plugin
-commit subjects (§4), and from the text `import task` reads; `plan show
---json` marks each as `‹U+XXXX›`.
+before a rule existed are not rewritten. **Invisible and control
+characters** hide no secret (WP-159, ADR-0048). Every redaction (the
+built-in rules and `[redaction] patterns`) reads the text twice:
+first without the invisible characters (the set of §6,
+`redact::is_invisible`) and without every control character that is no
+white space (NUL, BS, BEL, ESC, CSI, …; tab, the line ends, VT, FF and NEL
+stay, the rules read them as white space), so `to<U+200B>ken=…`,
+`Authorization: Bearer<U+3164> …`, `ghp_0123<U+FE0F>4567…` and
+`to<BS>ken=…` are masked like their plain forms; then as given, where an
+invisible character is a boundary, so `x<U+200B>sk-…` or
+`a<U+200B>mysql … -p…`, which the first copy glues to the word before it,
+is masked too (round 2). This holds in a note, a case or decision text, an
+imported task, a commit subject and every event. A text in which nothing
+is masked is written as it was, its invisible and control characters
+included (a zero-width joiner or non-joiner belongs to its words,
+WP-140). Where something is masked, the masked span is the original one:
+the characters the first copy left out go with a match when they stand
+inside it or at its edges, and stay where they were elsewhere. A user
+pattern that names such a character matches only in the second reading.
+Besides, invisible characters are dropped, after the redaction, from a
+hook's command line (WP-140 round 3: a shell line has no use for them),
+from the index's case and decision texts and `source` (§6), from the
+closing commit's summary (§4), from plugin commit subjects (§4) and from
+the text `import task` reads (before its home paths are rewritten);
+`plan show --json` marks each as `‹U+XXXX›`, after the redaction, and
+counts every one the text holds in `hidden`. Not yet handled (WP-169):
+ANSI escape sequences as whole units (dropping ESC alone leaves
+`pass[0mword=`), raw ESC kept in a note's journal entry, tag characters
+that spell a whole hidden text.
 
 `[redaction] skipPaths` (config collector and the hook, ADR-0014 §4): a
 pattern with `/` matches the full path (`~/` = home), as a file or as a
