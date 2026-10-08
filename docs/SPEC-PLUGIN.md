@@ -585,7 +585,7 @@ home `~/…` or absolute; `Model.importPathError` refuses, before any call,
 an empty path, one with a character of `BAD_PATH_CHARS` — the engine's
 `bad_path_char` set: control, direction and format characters (WP-140's
 set, the tags included), U+2028, U+2029; both sides are tested against
-`fixtures/bad-path-chars.json` —, a relative one, one longer than 4096 characters and one that does
+`fixtures/bad-path-chars.txt` —, a relative one, one longer than 4096 characters and one that does
 not end in `.md` — the engine checks the rest: under the home, outside the
 logbook, a regular file, its size and encoding) and an optional area slug.
 *Dry run* (Enter in a field) sends `seldon import task --json --dry-run

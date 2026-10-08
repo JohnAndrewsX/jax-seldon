@@ -494,7 +494,7 @@ list mark, its Start without Enter and without a key (and no Drop on Enter
 in its place), armed by click, `intentReviewed` only for this case's
 finished, successful `plan show`; ImportForm and Work show engine text as
 Text.PlainText only. Round 2: `BAD_PATH_CHARS` is exactly
-`fixtures/bad-path-chars.json` (every code point; the engine's
+`fixtures/bad-path-chars.txt` (every code point; the engine's
 `import::tests::bad_path_char_is_the_shared_list` checks the same file);
 `intentReviewed` false for a cut Intent or one with `hidden` characters,
 and `reviewHint`'s words for each; `caseShowResult` `hidden`;

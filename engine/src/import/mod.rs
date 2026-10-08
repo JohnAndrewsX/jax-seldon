@@ -38,7 +38,7 @@ pub fn marker_path(source: &str) -> String {
 /// separator (U+2028, U+2029, which Qt draws as a line break): a path is
 /// shown in the Log, the report and the desk (WP-102, ADR-0038 §3; the
 /// separators WP-102b round 2). The plugin's `BAD_PATH_CHARS` is the same
-/// set; `fixtures/bad-path-chars.json` holds it, and both sides are tested
+/// set; `fixtures/bad-path-chars.txt` holds it, and both sides are tested
 /// against it.
 pub fn bad_path_char(c: char) -> bool {
     c.is_control() || is_direction_or_format(c) || matches!(c, '\u{2028}' | '\u{2029}')
@@ -452,22 +452,21 @@ pub fn cell(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    /// `bad_path_char` is exactly `fixtures/bad-path-chars.json`, the list
+    /// `bad_path_char` is exactly `fixtures/bad-path-chars.txt`, the list
     /// the plugin's `Model.BAD_PATH_CHARS` is tested against too (WP-102b
     /// round 2, N3): one set on both sides.
     #[test]
     fn bad_path_char_is_the_shared_list() {
-        let fixture: serde_json::Value =
-            serde_json::from_str(include_str!("../../../fixtures/bad-path-chars.json")).unwrap();
-        let ranges: Vec<(u32, u32)> = fixture["ranges"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|r| {
-                let n = |i: usize| u32::from_str_radix(r[i].as_str().unwrap(), 16).unwrap();
-                (n(0), n(1))
+        let ranges: Vec<(u32, u32)> = include_str!("../../../fixtures/bad-path-chars.txt")
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+            .map(|l| {
+                let (a, b) = l.split_once(' ').unwrap();
+                let n = |h: &str| u32::from_str_radix(h.trim(), 16).unwrap();
+                (n(a), n(b))
             })
             .collect();
+        assert!(ranges.len() > 10);
         for c in (0..=0x10FFFF).filter_map(char::from_u32) {
             let listed = ranges.iter().any(|&(a, b)| (a..=b).contains(&(c as u32)));
             assert_eq!(super::bad_path_char(c), listed, "U+{:04X}", c as u32);

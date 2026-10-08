@@ -3260,9 +3260,10 @@ test("an imported case: marked in the list; its Start never by Enter, armed by c
   same([d.imported, d.source], [true, "~/Notizen/aufgaben.md#4"])
 })
 
-test("BAD_PATH_CHARS is exactly fixtures/bad-path-chars.json, the engine's bad_path_char (round 2, N3)", () => {
-  const fixture = JSON.parse(fs.readFileSync(path.join(root, "fixtures/bad-path-chars.json"), "utf8"))
-  const ranges = fixture.ranges.map(r => [parseInt(r[0], 16), parseInt(r[1], 16)])
+test("BAD_PATH_CHARS is exactly fixtures/bad-path-chars.txt, the engine's bad_path_char (round 2, N3)", () => {
+  const ranges = fs.readFileSync(path.join(root, "fixtures/bad-path-chars.txt"), "utf8").split("\n")
+    .filter(l => l.trim() !== "" && !l.startsWith("#")).map(l => l.trim().split(" ").map(h => parseInt(h, 16)))
+  assert.ok(ranges.length > 10)
   for (let cp = 0; cp <= 0x10ffff; cp++) {
     if (cp >= 0xd800 && cp <= 0xdfff) continue
     const listed = ranges.some(r => cp >= r[0] && cp <= r[1])

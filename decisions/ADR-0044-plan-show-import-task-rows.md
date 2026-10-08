@@ -78,7 +78,7 @@ title and `plan show` for an agent kept them.
    characters a task file may not hold are one set on both sides — the
    engine's `bad_path_char` (control, direction and format characters,
    U+2028, U+2029) and the plugin's `BAD_PATH_CHARS` — both tested
-   against `fixtures/bad-path-chars.json`.
+   against `fixtures/bad-path-chars.txt`.
 
 **Open (N6).** `plan start` is not bound to the text the user was shown:
 if the case file changes between the last `plan show` and the click, the
