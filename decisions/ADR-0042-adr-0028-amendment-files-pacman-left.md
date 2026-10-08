@@ -1,6 +1,6 @@
 # ADR-0042 — ADR-0028 amended: a file pacman left is attention, a crisis beside the boot and login files
 
-**Status:** proposed (WP-141 round 2); accepting it is the operator's decision.
+**Status:** accepted 2026-10-08 (operator, E20; a .pacnew under /etc/pam.d stays a crisis)
 **Date:** 2026-10-08
 
 > Amends [ADR-0028](ADR-0028-attention-by-consequence.md) §2 by two rows
