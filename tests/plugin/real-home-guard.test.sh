@@ -19,6 +19,15 @@ total_fail=0
 # real_home_check: its first line is the home's verdict, the rest the
 # runtime dirs' (all ok unless the runtime want says FAIL). The inherited
 # XDG_RUNTIME_DIR is $HOME/xdg when the mutation names it, else unset.
+case_script='
+  set -euo pipefail
+  pass=0; fail=0
+  real_runtime_session=$HOME/run
+  source "$1/tests/plugin/real-home-guard.sh"
+  sleep 0.05
+  cd "$HOME"; eval "$2"
+  real_home_check guard'
+
 guard_case() {
   local name=$1 want=$2 logbook=$3 mutation=$4 rt_want=${5:-ok} home="$work/$1" out got rt_got xdg=()
   logbook=${logbook//@/$home}
@@ -29,14 +38,7 @@ guard_case() {
     >"$home/.local/state/seldon/index.json"
   echo '{}' >"$home/.local/state/seldon/cursors.json"
   : >"$home/.local/state/seldon/lock"
-  out=$(env -u XDG_RUNTIME_DIR HOME="$home" "${xdg[@]}" bash -c '
-    set -euo pipefail
-    pass=0; fail=0
-    real_runtime_session=$HOME/run
-    source "$1/tests/plugin/real-home-guard.sh"
-    sleep 0.05
-    cd "$HOME"; eval "$2"
-    real_home_check guard' _ "$root" "$mutation" || true)
+  out=$(env -u XDG_RUNTIME_DIR HOME="$home" "${xdg[@]}" bash -c "$case_script" _ "$root" "$mutation" || true) # live runtime dir: unset; a case names its own
   rt_got=ok
   grep -q '^FAIL guard: new entries no process holds in ' <<<"$out" && rt_got=FAIL
   if [[ $rt_got != "$rt_want" ]]; then
