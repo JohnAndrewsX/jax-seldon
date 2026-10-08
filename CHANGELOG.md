@@ -25,6 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Rules for every git call (WP-154).** Every program the engine runs
+  keeps at most a cap of its output, named at each call (1 MiB for git
+  and short answers; a 100 MB flood of stderr from git costs 1 MiB), and
+  a stdout over the cap is no answer. The logbook's read-only git queries
+  (`status`, `rev-parse`, `doctor`'s checks) never reach the network:
+  in a logbook that is a partial clone a missing object is not fetched,
+  whatever transport the repository's own config allows. `init`, `add`
+  and `commit` keep the user's git as it is: hooks, signing, filters,
+  transport. A plugin clone's HEAD and the logbook's `.git` file are
+  read only in the bytes git writes; anything else (a CR, a byte order
+  mark, a `packed-refs` git would refuse, a SHA-256 clone) is left to
+  git.
 - **More secrets are redacted (WP-140).** A PEM private key
   (`-----BEGIN … PRIVATE KEY-----`, OpenSSH, RSA, EC, encrypted, PGP) is
   masked whole between its BEGIN and END lines, also when a clip cut one

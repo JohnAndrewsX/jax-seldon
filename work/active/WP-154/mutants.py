@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """WP-154 manual mutants: each change must make a test fail
-(`--lib` and `--test git`, `--test collectors_user plugin`)."""
+(`--lib`, `--test git`, `--test status`, `--test collectors_user plugin`)."""
 import os, subprocess, sys
 from pathlib import Path
 # the checkout this script lives in: work/active/WP-154/mutants.py
@@ -41,6 +41,27 @@ MUTANTS = [
     ("R2 refusal not remembered", [("        NO_LAZY_FETCH_REFUSED.store(true, Ordering::Relaxed);\n", "")], GIT),
     ("R2 any 129 is the refusal", [("if stderr.contains(NO_LAZY_FETCH))", "if !stderr.is_empty())")], GIT),
     ("R2 any exit code is the refusal", [("Run::Exited { code: Some(129), stderr, .. }", "Run::Exited { stderr, .. }")], GIT),
+    # rule 3: byte for byte as git reads it
+    ("R3 packed-refs by lines", [("let mut lines = text.strip_suffix('\\n')?.split('\\n').peekable();",
+                                  "let mut lines = text.lines().peekable();")], PLUGINS),
+    ("R3 packed-refs order not checked", [("|| last.is_some_and(|l| l >= r)", "|| last.is_some_and(|_| false)")], PLUGINS),
+    ("R3 peeled line anywhere", [("if !std::mem::take(&mut peelable) || !sha1(peeled) {", "if !sha1(peeled) {")], PLUGINS),
+    ("R3 any ref name in packed-refs", [("if !sha1(hash) || !named ||", "if !sha1(hash) || !(named || true) ||")], PLUGINS),
+    ("R3 64 digits in a SHA-1 clone", [("    s.len() == 40 && s.bytes()", "    matches!(s.len(), 40 | 64) && s.bytes()")], PLUGINS),
+    ("R3 upper case digits", [("s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))", "s.bytes().all(|b| b.is_ascii_hexdigit())")], PLUGINS),
+    ("R3 object format not checked", [('Ok(Some(text)) if !text.to_ascii_lowercase().contains("objectformat") => {}', "Ok(Some(_)) => {}")], PLUGINS),
+    ("R3 HEAD with more LFs or a CR", [("    let head = head.strip_suffix('\\n')?;\n", "    let head = head.trim_end_matches(['\\n', '\\r']);\n")], PLUGINS),
+    ("R3 refused loose ref falls to packed", [("        Err(_) => None,\n    }\n}\n\n/// A SHA-1 object name",
+                                                "        Err(_) => packed_ref(&read(\"packed-refs\", PACKED_REFS_MAX).ok()??, name),\n    }\n}\n\n/// A SHA-1 object name")], PLUGINS),
+    ("R3 .lock component", [("                && !part.ends_with(\".lock\")\n", "")], PLUGINS),
+    ("R3 final dot", [("        && !name.ends_with('.')\n", "")], PLUGINS),
+    ("R3 config limit", [("const GIT_CONFIG_MAX: u64 = 1024 * 1024;", "const GIT_CONFIG_MAX: u64 = 2 * 1024 * 1024;")], PLUGINS),
+    ("R3 gitdir: trimmed", [('root.join(git_path(text.strip_prefix("gitdir: ")?))',
+                             'root.join(text.trim().strip_prefix("gitdir:")?.trim())')], INDEX),
+    ("R3 git paths trimmed", [("    Path::new(text.trim_end_matches(['\\n', '\\r']))", "    Path::new(text.trim())")], INDEX),
+    ("R3 unreadable commondir ignored", [("        Err(_) => return None,\n    };", "        Err(_) => gitdir.clone(),\n    };")], INDEX),
+    ("R3 worktree back link trimmed", [(".is_ok_and(|back| absolute(Path::new(back.trim_end_matches(['\\n', '\\r']))) == dot_git)",
+                                        ".is_ok_and(|back| absolute(Path::new(back.trim())) == dot_git)")], GIT),
 ]
 env = dict(os.environ, CARGO_TARGET_DIR=TARGET)
 results = []
@@ -59,7 +80,7 @@ for name, pairs, rel in MUTANTS:
         mutated = mutated.replace(a, b)
     try:
         open(path, "w").write(mutated)
-        runs = [["--lib", "--test", "git"], ["--test", "collectors_user", "plugin"]]
+        runs = [["--lib", "--test", "git", "--test", "status"], ["--test", "collectors_user", "plugin"]]
         out, code = "", 0
         for args in runs:
             r = subprocess.run(["cargo", "test", "--manifest-path", "engine/Cargo.toml",

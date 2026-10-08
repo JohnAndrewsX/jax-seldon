@@ -1126,12 +1126,28 @@ parent, so a `seldon` started from a git hook or with an exported
 writes, the autocommit checks that `git rev-parse --show-toplevel` is the
 logbook and that its git directory (`--absolute-git-dir`) is
 `<logbook>/.git`, or a `worktrees/<name>` entry whose `gitdir` file names
-`<logbook>/.git` (a linked work tree); a `.git` file that points at
+`<logbook>/.git` (a linked work tree; the `gitdir` back link read as git
+reads it, only CRs and LFs dropped at its end); a `.git` file that points at
 another repository's git directory is not committed to. `index`'s `logbook.git` reads
 git with the same environment. The
-user's git configuration applies (hooks, `commit.gpgsign`, a passphrase
+user's git configuration applies to `init`, `add` and `commit` (hooks,
+`commit.gpgsign` and `gpg.program`, filters, transport, a passphrase
 prompt on the terminal; git runs in the engine's process group, other
-programs in their own, WP-064). A detached HEAD (`git symbolic-ref -q HEAD`
+programs in their own, WP-064). Every other git call is a read-only query
+(`rev-parse`, `status`, `symbolic-ref`, `show-ref`, `for-each-ref`, `var`,
+`config --get`, `diff --cached --quiet`, `--version`) and never reaches
+the network (WP-154): `GIT_ALLOW_PROTOCOL=none` (every transport refused,
+overriding the repository's own `protocol.<name>.allow`),
+`GIT_NO_LAZY_FETCH=1` and `--no-lazy-fetch` first in argv (a partial
+clone's missing object is not fetched; the promisor's URL may be an
+`ext::` command). git before 2.44 refuses the option (exit 129, the
+option named in stderr): the engine asks that query once more without it
+and leaves it out for the rest of the process; the protocol rule still
+refuses the fetch. A query that cannot answer without the object fails as
+any failing query does (`index` leaves `logbook.git` out; the
+`diff --cached --quiet` before a commit counts as "changes", and the
+commit runs with transport). Each output pipe of a git call keeps at most
+1 MiB; a `status --porcelain` over it counts as changes. A detached HEAD (`git symbolic-ref -q HEAD`
 fails) is not committed and nothing is staged. A commit that is not made
 (detached HEAD, a stale `.git/index.lock`, a refusing hook) is one line on
 stderr, `seldon: warning: git: not committed: <reason>`, and
@@ -1167,7 +1183,17 @@ with stdin closed and its output captured; the timeout covers the output
 pipes too: at the deadline the whole group is killed, including a helper
 the program started that still holds a pipe, and the pipes get up to
 200 ms more before the call counts as timed out (WP-064); a terminal
-Ctrl-C stops the engine, not the program. git on the logbook (autocommit,
+Ctrl-C stops the engine, not the program. Each output pipe keeps at most
+a cap named at the call, the rest read and dropped, so a program that
+floods its output costs time up to its deadline, never memory; a stdout
+over the cap is no answer (`Run::Cut`), a stderr over it is kept cut
+(WP-154). The cap is 1 MiB (`sys::OUTPUT_MAX`) for every git call and
+every short answer (`omarchy-version`, `pacman -Q omarchy`, `snapper
+get-config`, `omarchy hook install`); none (`sys::WHOLE_OUTPUT`) where a
+whole list of a trusted system program is parsed and a cut one would read
+as entries removed (the dossier's package and unit queries, `snapper
+list`, `omarchy plugin list` and `catalog`); 64 KiB for the plugins
+collector's queries of a clone. git on the logbook (autocommit,
 the git state in the index) stays in the engine's process group, because git,
 its hooks or a signing prompt may read the terminal: at the deadline only
 git itself is killed, with the same bounded pipe wait. Rules:
@@ -1380,11 +1406,24 @@ git itself is killed, with the same bounded pipe wait. Rules:
   refresh lock; the repository variables (`GIT_DIR` …) removed and the
   clone's parent as `GIT_CEILING_DIRECTORIES` another repository. Own
   process group, killed whole at 2 s per call; at most 64 KiB kept of
-  each output pipe, the rest read and dropped (`sys::run_command_capped`),
+  each output pipe, the rest read and dropped (`sys::run_command`),
   and a cut stdout is no answer. The HEAD is read from the clone's files without a
-  process (`.git/HEAD`, a plain `refs/heads/…` loose or in `packed-refs`;
-  reftable or any other ref name: git's `rev-parse HEAD --short HEAD`,
-  which also gives the short version fallback); per moved update a
+  process (`.git/HEAD`, a plain `refs/heads/…` loose or in `packed-refs`),
+  only in the bytes git itself writes (WP-154): `ref: <name>` or a
+  40-digit lower-case object name followed by one LF; a `packed-refs`
+  with an optional `# pack-refs with:` first line, `<object name> <ref>`
+  lines in ascending ref order, each followed by at most one
+  `^<object name>`, every line ended by LF; a plain name is below
+  `refs/heads/`, of ASCII letters, digits and `-_.+@`, with no component
+  that starts with `.` or ends in `.lock`, no `..` and no final `.`.
+  Anything else — a byte order mark (git refuses it), a CR or more white
+  space (git reads them), a missing final LF or a `#` line further down
+  in `packed-refs` (git refuses the file), a loose ref that is there but
+  refused (git reads it, never the packed one), a config or
+  `config.worktree` that names an object format (SHA-256: git reads a
+  40-digit name as broken there and a 64-digit one in SHA-1), reftable
+  or any other ref name — is git's to answer: `rev-parse HEAD --short
+  HEAD`, which also gives the short version fallback; per moved update a
   `rev-list --left-right --count` and a `log --max-count=20`. A HEAD in
   the cursor that is not an object name never reaches git. git missing,
   failing or timing out: the same event without `meta.git`/`meta.commits`.
