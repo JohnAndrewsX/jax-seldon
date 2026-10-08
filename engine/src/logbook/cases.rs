@@ -695,18 +695,35 @@ pub fn new_body(logbook: &Logbook, id: &str, title: &str) -> Result<String> {
     Ok(fill(&template, &[("id", id), ("title", title)]))
 }
 
-/// `.seldon/templates/<name>` of the logbook, else the built-in one.
+/// sha256 of every body template an earlier engine shipped into
+/// `.seldon/templates/` (`seldon init` copies them): a logbook copy that
+/// is still one of them, byte for byte, holds nothing of the user's and
+/// counts as the built-in template, so an existing logbook gets the
+/// current one without a write (WP-143). The case template of WP-006, en
+/// and de.
+const SHIPPED_TEMPLATES: [&str; 2] = [
+    "9e8d70708793925822b12806394e3d0dc991d16f71b1b0d91d2d49c6aaf59f06",
+    "a0561f366ad32a90f903b1f079cd7934b71224b71769e5244c2f56c63c56cf4c",
+];
+
+/// `.seldon/templates/<name>` of the logbook, else the built-in one; a
+/// copy an earlier engine shipped unchanged is the built-in one too
+/// ([`SHIPPED_TEMPLATES`]).
 pub fn logbook_template(logbook: &Logbook, name: &str) -> Result<String> {
     let rel = format!(".seldon/templates/{name}");
     let path = logbook.path(&rel);
+    let built_in = || -> Result<String> {
+        let language: Language = logbook.meta.language;
+        templates::find(&rel)
+            .map(|t| t.text(language).to_string())
+            .ok_or_else(|| anyhow::anyhow!("no built-in template {rel}").into())
+    };
     match std::fs::read_to_string(&path) {
-        Ok(text) => Ok(text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let language: Language = logbook.meta.language;
-            templates::find(&rel)
-                .map(|t| t.text(language).to_string())
-                .ok_or_else(|| anyhow::anyhow!("no built-in template {rel}").into())
+        Ok(text) if SHIPPED_TEMPLATES.contains(&sys::sha256_hex(text.as_bytes()).as_str()) => {
+            built_in()
         }
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => built_in(),
         Err(e) => Err(anyhow::Error::new(e)
             .context(format!("cannot read {}", path.display()))
             .into()),
