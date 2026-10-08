@@ -182,6 +182,7 @@ impl Bench {
             plugins_dir: Some(tmp.path().join("plugins")),
             theme_file: Some(tmp.path().join("theme.name")),
             omarchy_path: tmp.path().join("omarchy"),
+            etc_dir: tmp.path().join("etc"),
         };
         Bench {
             lock: lock::acquire(&tmp.path().join("lock")).unwrap(),
