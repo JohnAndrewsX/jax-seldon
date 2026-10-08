@@ -33,7 +33,7 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-15 | `omarchy update` 4.0.5 → 4.0.6 without a case → two drift items → *explained* | snapshot by `omarchy update`, release marker |
 | 09-20/21 | theme `kanagawa` tried → *dismissed* | `dismissed` |
 | 09-22 (WP-113) | the human edits `weather-plus`'s forecast panel in place (no version change) → one `plugin-update` `files changed (sha256 … → …)` with the tree hashes → *explained* | plugin tree hashing (ADR-0028 WP-E): an in-place edit of a third-party plugin, attention until explained |
-| 09-24 | plugin update → *explained* | plugin-update |
+| 09-24 | plugin update (a pull of three commits) → *explained* | plugin-update with `meta.git` and `meta.commits` (WP-136) |
 | 09-26…30 | cases 003–006 created; snapshot 111; snapshots 108/109 deleted | snapshot-delete |
 | 09-25 | theme `catppuccin` tried and back to `kanagawa` | two **routine** theme switches (ADR-0028): history, no drift |
 | 09-27 | human downgrades `mesa`, `vulkan-radeon`, `lib32-mesa` from the cache (`pacman -U …`) | **one attention group** (`members: 3`, `txId`): a named downgrade |

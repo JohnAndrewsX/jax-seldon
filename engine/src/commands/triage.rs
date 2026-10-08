@@ -205,7 +205,7 @@ const UNKNOWN_AUTHOR: &str = "unknown";
 pub const PROPOSED_BY: &str = "proposed-by:";
 
 /// What a ref resolved to: every author (the proposer among them refuses
-/// it), the author shown in its text, and the words.
+/// it), the authors shown in its text (all of them), and the words.
 struct Found {
     authors: Vec<String>,
     label: String,
@@ -214,11 +214,14 @@ struct Found {
 
 impl Found {
     /// Authors and words; the first author is the one shown.
+    /// Authors and words; every author is shown, the first first (WP-124b
+    /// round 2: `by human, agent:codex · …`).
     fn by((authors, words): (Vec<String>, String)) -> Found {
-        let label = authors
-            .first()
-            .cloned()
-            .unwrap_or_else(|| UNKNOWN_AUTHOR.to_string());
+        let label = if authors.is_empty() {
+            UNKNOWN_AUTHOR.to_string()
+        } else {
+            authors.join(", ")
+        };
         Found {
             authors,
             label,
@@ -418,7 +421,7 @@ impl Evidencer<'_> {
             .map(str::to_string)
             .ok_or_else(|| format!("the Plan of {r} names none of the change's subjects"))?;
         let mut authors = self.case_authors(r, Some(&file));
-        let mut label = authors[0].clone();
+        let mut label = authors.join(", ");
         let workers = &file.case.agents;
         if !workers.is_empty() {
             label = format!("{label} (worked by {})", workers.join(", "));

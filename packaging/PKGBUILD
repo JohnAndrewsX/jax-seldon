@@ -15,7 +15,7 @@ pkgdesc='Flight recorder and planning desk for an Omarchy system (engine)'
 arch=('x86_64')
 url='https://github.com/JohnAndrewsX/jax-seldon'
 license=('MIT')
-depends=('gcc-libs' 'git' 'glibc')
+depends=('gcc-libs' 'git>=2.44' 'glibc')
 makedepends=('cargo')
 optdepends=('snapper: snapshot events (needs read access to /.snapshots)')
 # Cargo's release profile strips the binary; a debug package would be empty

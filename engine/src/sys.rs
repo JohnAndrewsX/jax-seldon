@@ -254,6 +254,9 @@ pub enum Run {
         stdout: String,
         stderr: String,
     },
+    /// The program wrote more than the caller's cap to stdout: what it
+    /// wrote is no answer, so it is not kept (WP-154).
+    Cut,
     /// The program is not on `PATH`.
     NotFound,
     /// The program did not finish in time and was killed.
@@ -271,10 +274,22 @@ impl Run {
 /// `ETXTBSY` on Linux ("Text file busy").
 const ETXTBSY: i32 = 26;
 
-/// Runs `program args…` with stdin closed and a timeout, capturing output,
-/// in its own process group ([`run_command`]).
-pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) -> Run {
-    run_with(command(program, args, cwd), timeout, Group::Own)
+/// The cap of a run's output pipes for a caller that reads a line, a
+/// message or a short answer: every `git` call, `omarchy-version`. More
+/// than any such answer, far less than a program that floods its output
+/// (git on a hostile repository) could make the engine hold.
+pub const OUTPUT_MAX: usize = 1024 * 1024;
+
+/// No cap: for a caller that parses the whole answer of a trusted system
+/// program, where a cut list would read as entries removed (a package
+/// list, a dossier query, the snapper list). Named at every such call.
+pub const WHOLE_OUTPUT: usize = usize::MAX;
+
+/// Runs `program args…` with stdin closed and a timeout, capturing at most
+/// `cap` bytes of each output pipe, in its own process group
+/// ([`run_command`]).
+pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration, cap: usize) -> Run {
+    run_with(command(program, args, cwd), timeout, Group::Own, cap)
 }
 
 /// [`run`] in the engine's own process group, for `git`: git and what it
@@ -287,8 +302,9 @@ pub fn run_in_engine_group(
     args: &[&str],
     cwd: Option<&Path>,
     timeout: Duration,
+    cap: usize,
 ) -> Run {
-    run_with(command(program, args, cwd), timeout, Group::Engine)
+    run_with(command(program, args, cwd), timeout, Group::Engine, cap)
 }
 
 /// Omarchy's install root when `OMARCHY_PATH` is unset or empty: the
@@ -360,19 +376,27 @@ const DRAIN_GRACE: Duration = Duration::from_millis(200);
 /// captured, in its own process group. The timeout covers the program and
 /// its output pipes: at the deadline the whole group is killed, also when
 /// the program has exited and something it started still holds a pipe.
-pub fn run_command(cmd: Command, timeout: Duration) -> Run {
-    run_with(cmd, timeout, Group::Own)
+///
+/// At most `cap` bytes of each output pipe are kept; the rest is read and
+/// dropped, so a program that floods its output costs time up to the
+/// deadline, never memory (WP-136, WP-154). A stdout over the cap is
+/// [`Run::Cut`], never a cut answer; a stderr over it is kept cut (only
+/// messages are read from it). [`OUTPUT_MAX`] is the usual cap,
+/// [`WHOLE_OUTPUT`] none.
+pub fn run_command(cmd: Command, timeout: Duration, cap: usize) -> Run {
+    run_with(cmd, timeout, Group::Own, cap)
 }
 
 /// [`run_command`] in the engine's own process group, for a `git` command
 /// the caller built (its environment controlled, `logbook::git`): git and
 /// what it runs (hooks, a signing prompt) may use the terminal, as with
 /// [`run_in_engine_group`]. At the deadline only the program is killed.
-pub fn run_command_in_engine_group(cmd: Command, timeout: Duration) -> Run {
-    run_with(cmd, timeout, Group::Engine)
+pub fn run_command_in_engine_group(cmd: Command, timeout: Duration, cap: usize) -> Run {
+    run_with(cmd, timeout, Group::Engine, cap)
 }
 
-fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
+/// Runs `cmd`, keeping at most `cap` bytes of each pipe.
+fn run_with(mut cmd: Command, timeout: Duration, group: Group, cap: usize) -> Run {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -396,8 +420,8 @@ fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Run::NotFound,
         Err(e) => return Run::Failed(e.to_string()),
     };
-    let mut out = Drain::start(child.stdout.take().map(|p| Box::new(p) as _));
-    let mut err = Drain::start(child.stderr.take().map(|p| Box::new(p) as _));
+    let mut out = Drain::start(child.stdout.take().map(|p| Box::new(p) as _), cap);
+    let mut err = Drain::start(child.stderr.take().map(|p| Box::new(p) as _), cap);
     let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
@@ -422,6 +446,9 @@ fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
             return Run::TimedOut;
         }
     }
+    if out.cut {
+        return Run::Cut;
+    }
     Run::Exited {
         code: status.code(),
         stdout: out.text(),
@@ -429,23 +456,47 @@ fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
     }
 }
 
-/// One output pipe read to its end by a thread.
+/// One output pipe read to its end by a thread, keeping at most `cap`
+/// bytes (the rest is read and dropped, so the writer never blocks).
 struct Drain {
-    rx: Receiver<Vec<u8>>,
+    rx: Receiver<(Vec<u8>, bool)>,
     bytes: Option<Vec<u8>>,
+    /// More than `cap` bytes came.
+    cut: bool,
 }
 
 impl Drain {
-    fn start(pipe: Option<Box<dyn Read + Send>>) -> Drain {
+    fn start(pipe: Option<Box<dyn Read + Send>>, cap: usize) -> Drain {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut buf = Vec::new();
+            let mut cut = false;
             if let Some(mut p) = pipe {
-                let _ = p.read_to_end(&mut buf);
+                if cap == usize::MAX {
+                    let _ = p.read_to_end(&mut buf);
+                } else {
+                    let mut chunk = [0u8; 8192];
+                    loop {
+                        match p.read(&mut chunk) {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                let keep = n.min(cap - buf.len());
+                                buf.extend_from_slice(&chunk[..keep]);
+                                cut |= keep < n;
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                            Err(_) => break,
+                        }
+                    }
+                }
             }
-            let _ = tx.send(buf);
+            let _ = tx.send((buf, cut));
         });
-        Drain { rx, bytes: None }
+        Drain {
+            rx,
+            bytes: None,
+            cut: false,
+        }
     }
 
     /// Whether the pipe reached its end by `deadline`. A thread still
@@ -453,7 +504,10 @@ impl Drain {
     fn wait_until(&mut self, deadline: Instant) -> bool {
         if self.bytes.is_none() {
             let left = deadline.saturating_duration_since(Instant::now());
-            self.bytes = self.rx.recv_timeout(left).ok();
+            if let Ok((bytes, cut)) = self.rx.recv_timeout(left) {
+                self.bytes = Some(bytes);
+                self.cut = cut;
+            }
         }
         self.bytes.is_some()
     }
@@ -735,12 +789,74 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_capped_run_keeps_the_head_of_a_flood_and_reads_the_rest() {
+        let cap = 64 * 1024;
+        let flood = |script: &str| {
+            let mut cmd = Command::new("sh");
+            cmd.args(["-c", script]);
+            run_command(cmd, Duration::from_secs(10), cap)
+        };
+        // 16 MiB to stderr, a short stdout: the writer is never blocked,
+        // the run ends, stderr keeps its first `cap` bytes
+        let r = flood("head -c 16777216 /dev/zero >&2; echo out; echo done >&2");
+        let Run::Exited {
+            code: Some(0),
+            stdout,
+            stderr,
+        } = r
+        else {
+            panic!("{r:?}");
+        };
+        assert_eq!((stdout.as_str(), stderr.len()), ("out\n", cap));
+        // a stdout over the cap is no answer, whatever the exit code
+        assert_eq!(flood("head -c 1048576 /dev/zero"), Run::Cut);
+        assert_eq!(flood("head -c 65537 /dev/zero; exit 3"), Run::Cut);
+        // exactly the cap is whole
+        let r = flood("head -c 65536 /dev/zero");
+        assert!(matches!(&r, Run::Exited { stdout, .. } if stdout.len() == cap));
+        // a small output is whole
+        assert_eq!(
+            flood("echo out; echo err >&2"),
+            Run::Exited {
+                code: Some(0),
+                stdout: "out\n".into(),
+                stderr: "err\n".into()
+            }
+        );
+    }
+
+    /// WP-154: 100 MB to stderr in the engine's process group (the group
+    /// every `logbook::git` call runs in) costs [`OUTPUT_MAX`] bytes, and
+    /// the answer on stdout stays whole.
+    #[test]
+    fn a_hundred_megabytes_of_stderr_keep_one_mebibyte() {
+        let r = run_in_engine_group(
+            "sh",
+            &["-c", "head -c 100000000 /dev/zero >&2; echo answer"],
+            None,
+            Duration::from_secs(30),
+            OUTPUT_MAX,
+        );
+        let Run::Exited {
+            code: Some(0),
+            stdout,
+            stderr,
+        } = r
+        else {
+            panic!("{r:?}");
+        };
+        assert_eq!((stdout.as_str(), stderr.len()), ("answer\n", OUTPUT_MAX));
+        assert_eq!(OUTPUT_MAX, 1024 * 1024);
+    }
+
+    #[test]
     fn run_captures_and_reports() {
         let r = run(
             "sh",
             &["-c", "echo out; echo err >&2; exit 3"],
             None,
             Duration::from_secs(5),
+            OUTPUT_MAX,
         );
         assert_eq!(
             r,
@@ -751,13 +867,53 @@ mod tests {
             }
         );
         assert_eq!(
-            run("seldon-no-such-program", &[], None, Duration::from_secs(1)),
+            run(
+                "seldon-no-such-program",
+                &[],
+                None,
+                Duration::from_secs(1),
+                OUTPUT_MAX
+            ),
             Run::NotFound
         );
         assert_eq!(
-            run("sleep", &["5"], None, Duration::from_millis(100)),
+            run(
+                "sleep",
+                &["5"],
+                None,
+                Duration::from_millis(100),
+                OUTPUT_MAX
+            ),
             Run::TimedOut
         );
+        // OUTPUT_MAX: a stdout over it is no answer, a stderr over it keeps
+        // exactly OUTPUT_MAX (WP-154 round 2)
+        let flood = |script: &str| {
+            run(
+                "sh",
+                &["-c", script],
+                None,
+                Duration::from_secs(10),
+                OUTPUT_MAX,
+            )
+        };
+        assert_eq!(flood("head -c 1048577 /dev/zero"), Run::Cut);
+        let r = flood("head -c 2097152 /dev/zero >&2; echo out");
+        assert!(
+            matches!(&r, Run::Exited { code: Some(0), stdout, stderr }
+                if stdout == "out\n" && stderr.len() == OUTPUT_MAX),
+            "{:?}",
+            matches!(&r, Run::Exited { .. })
+        );
+        // the whole output, however long
+        let r = run(
+            "sh",
+            &["-c", "head -c 2097152 /dev/zero"],
+            None,
+            Duration::from_secs(10),
+            WHOLE_OUTPUT,
+        );
+        assert!(matches!(&r, Run::Exited { stdout, .. } if stdout.len() == 2 * 1024 * 1024));
     }
 
     #[test]

@@ -392,6 +392,14 @@ pub fn omarchy_route(argv: &[String]) -> Option<Vec<&str>> {
 /// Packages `omarchy update` names besides the full upgrade.
 pub const OMARCHY_UPDATE_NAMES: [&str; 2] = ["archlinux-keyring", "omarchy-keyring"];
 
+/// Shell reserved words a command can follow in one simple command as the
+/// parser splits it (`for p in a; do sudo lpadmin …; done`, `if ! sudo …`):
+/// read past like an assignment, so the command after them is the one
+/// classified.
+const RESERVED_BEFORE_COMMAND: [&str; 9] = [
+    "if", "then", "elif", "else", "do", "while", "until", "!", "{",
+];
+
 fn is_assignment(word: &str) -> bool {
     word.split_once('=').is_some_and(|(k, _)| {
         !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
@@ -410,12 +418,23 @@ pub struct Segment {
     pub words: Vec<String>,
     /// Targets of `>`, `>>`, `>|`, `&>`.
     pub writes: Vec<String>,
+    /// The privilege wrapper of the `sh -c '…'` or `eval` this command was
+    /// opened from (`pkexec sh -c 'lpadmin …'`), if any
+    /// ([`simple_commands`]).
+    pub privileged_by: Option<&'static str>,
 }
 
 impl Segment {
     /// [`command_argv`] of the words.
     pub fn argv(&self) -> &[String] {
         command_argv(&self.words)
+    }
+
+    /// The privilege wrapper the command runs under: the one of the shell
+    /// it was opened from, else its own ([`Unwrapped::privilege`]).
+    pub fn privilege(&self) -> Option<&'static str> {
+        self.privileged_by
+            .or_else(|| unwrap_command(&self.words).privilege)
     }
 }
 
@@ -955,6 +974,10 @@ const WRAPPERS: [Wrapper; 11] = [
     },
 ];
 
+/// The wrappers that run their command as another user, root by default
+/// (SPEC-ENGINE §8, ADR-0039).
+pub const PRIVILEGE_WRAPPERS: [&str; 4] = ["sudo", "doas", "pkexec", "run0"];
+
 /// A simple command's words after its wrappers.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Unwrapped<'a> {
@@ -963,15 +986,36 @@ pub struct Unwrapped<'a> {
     /// The directories wrappers move to before the command runs, in order:
     /// `env -C DIR`, `sudo -D DIR`, `run0 --chdir=DIR`.
     pub chdirs: Vec<&'a str>,
+    /// The first of [`PRIVILEGE_WRAPPERS`] read past (`env sudo lpadmin`:
+    /// `sudo`); none for a probe, which runs nothing.
+    pub privilege: Option<&'static str>,
+    /// A wrapper reads the password from stdin ([`STDIN_PASSWORD`]: `echo
+    /// PW | sudo -S …`), also when it only probes (`sudo -S -v`): the
+    /// password is then on the command line.
+    pub password_on_stdin: bool,
+}
+
+/// The wrapper option that reads the password from stdin: sudo's `-S`,
+/// `--stdin` (getopt also takes `--st`, `--std`, `--stdi`). `doas`,
+/// `pkexec` and `run0` have none: doas asks on the terminal, pkexec and
+/// run0 through the polkit agent.
+const STDIN_PASSWORD: (&str, char, &str) = ("sudo", 'S', "--stdin");
+
+/// Whether the long option `option` of `wrapper` is [`STDIN_PASSWORD`]'s,
+/// written whole or as an unambiguous prefix.
+fn is_stdin_password_long(wrapper: &str, option: &str) -> bool {
+    let (name, _, long) = STDIN_PASSWORD;
+    wrapper == name && option.len() >= "--st".len() && long.starts_with(option)
 }
 
 /// [`command_argv`], with the directories the wrappers move to.
 pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
-    let probe = Unwrapped::default();
     let mut chdirs = Vec::new();
+    let mut privilege = None;
+    let mut password_on_stdin = false;
     let mut i = 0;
     while let Some(w) = words.get(i) {
-        if is_assignment(w) {
+        if is_assignment(w) || RESERVED_BEFORE_COMMAND.contains(&w.as_str()) {
             i += 1;
             continue;
         }
@@ -979,7 +1023,13 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
         let Some(wrapper) = WRAPPERS.iter().find(|x| x.name == name) else {
             break;
         };
+        if PRIVILEGE_WRAPPERS.contains(&wrapper.name) {
+            privilege = privilege.or(Some(wrapper.name));
+        }
         i += 1;
+        // a probe runs nothing; its other options are still read, for a
+        // password on stdin (`sudo -vS`)
+        let mut probing = false;
         while let Some(o) = words.get(i).filter(|o| o.starts_with('-')) {
             i += 1;
             if o == "--" {
@@ -995,8 +1045,10 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
                     Some((n, v)) => (n, Some(v)),
                     None => (o.as_str(), None),
                 };
+                password_on_stdin |= is_stdin_password_long(wrapper.name, option);
                 if wrapper.probe_long.contains(&option) {
-                    return probe;
+                    probing = true;
+                    continue;
                 }
                 if wrapper.long_value.contains(&option) {
                     let value = inline.or_else(next_word);
@@ -1008,8 +1060,10 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
             }
             // a cluster: `-E`, `-Eu root`, `-uroot`
             for (k, letter) in o.char_indices().skip(1) {
+                password_on_stdin |= (wrapper.name, letter) == (STDIN_PASSWORD.0, STDIN_PASSWORD.1);
                 if wrapper.probe_short.contains(letter) {
-                    return probe;
+                    probing = true;
+                    continue;
                 }
                 if wrapper.short_value.contains(letter) {
                     let rest = &o[k + letter.len_utf8()..];
@@ -1025,11 +1079,19 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
                 }
             }
         }
+        if probing {
+            return Unwrapped {
+                password_on_stdin,
+                ..Unwrapped::default()
+            };
+        }
         i += wrapper.operands;
     }
     Unwrapped {
         argv: &words[i.min(words.len())..],
         chdirs,
+        privilege,
+        password_on_stdin,
     }
 }
 
@@ -1062,18 +1124,27 @@ pub fn line_vars(line: &ShellLine) -> Vars {
     Vars::of(&opened_commands(line))
 }
 
-/// [`simple_commands`] before the variables are put in.
+/// [`simple_commands`] before the variables are put in. A command opened
+/// from `sudo sh -c '…'` keeps the shell's privilege wrapper
+/// ([`Segment::privileged_by`]); the outer command's redirection is the
+/// calling shell's own.
 fn opened_commands(line: &ShellLine) -> Vec<Segment> {
     fn open(segment: &Segment, depth: usize, out: &mut Vec<Segment>) {
         match nested_script(segment.argv()).filter(|_| depth < NESTING_MAX) {
             Some(script) => {
-                for inner in &parse_shell(&script).segments {
-                    open(inner, depth + 1, out);
+                let privilege = segment.privilege();
+                for inner in parse_shell(&script).segments {
+                    let inner = Segment {
+                        privileged_by: privilege,
+                        ..inner
+                    };
+                    open(&inner, depth + 1, out);
                 }
                 if !segment.writes.is_empty() {
                     out.push(Segment {
                         words: Vec::new(),
                         writes: segment.writes.clone(),
+                        privileged_by: None,
                     });
                 }
             }
@@ -2164,5 +2235,103 @@ mod tests {
         // nesting is bounded
         let deep = "sh -c \"sh -c 'sh -c \\\"sh -c yay\\\"'\"";
         assert_eq!(words(deep)[0][0], "sh");
+    }
+
+    /// ADR-0039: which privilege wrapper a command runs under, also inside
+    /// the shell a wrapper started; a probe runs nothing and has none.
+    #[test]
+    fn the_privilege_wrapper_is_named() {
+        let privileges = |line: &str| -> Vec<(String, Option<&'static str>)> {
+            simple_commands(&parse_shell(line))
+                .into_iter()
+                .map(|s| (s.argv().join(" "), s.privilege()))
+                .collect()
+        };
+        let one = |line: &str| privileges(line).remove(0);
+        let cmd = |argv: &str, w: Option<&'static str>| (argv.to_string(), w);
+        assert_eq!(
+            one("pkexec lpadmin -p X -E"),
+            cmd("lpadmin -p X -E", Some("pkexec"))
+        );
+        assert_eq!(one("sudo -u root nmcli c up x").1, Some("sudo"));
+        assert_eq!(one("doas -n lpadmin -x X").1, Some("doas"));
+        assert_eq!(one("run0 --user=root lpadmin -x X").1, Some("run0"));
+        assert_eq!(one("/usr/bin/pkexec lpadmin -x X").1, Some("pkexec"));
+        // behind other wrappers, after assignments; the first one counts
+        assert_eq!(one("FOO=1 env -i nice sudo lpadmin").1, Some("sudo"));
+        assert_eq!(one("sudo -E pkexec lpadmin").1, Some("sudo"));
+        assert_eq!(one("lpadmin -p X"), cmd("lpadmin -p X", None));
+        assert_eq!(one("env nice lpadmin").1, None);
+        // inside a shell a wrapper started, after `&&`, in `eval`
+        assert_eq!(
+            privileges("pkexec sh -c 'lpadmin -p X && cupsenable X'"),
+            [
+                cmd("lpadmin -p X", Some("pkexec")),
+                cmd("cupsenable X", Some("pkexec"))
+            ]
+        );
+        assert_eq!(
+            privileges("bash -lc 'true && sudo lpadmin -x X'"),
+            [cmd("true", None), cmd("lpadmin -x X", Some("sudo"))]
+        );
+        assert_eq!(one("eval sudo lpadmin -x X").1, Some("sudo"));
+        // the outer shell writes the redirection, not the wrapper
+        let line = simple_commands(&parse_shell("sudo sh -c 'lpadmin -x X' > out"));
+        assert_eq!(line[1].writes, ["out"]);
+        assert_eq!(line[1].privilege(), None);
+        // a variable the line sets
+        assert_eq!(one("S=sudo; $S lpadmin -x X").1, None, "the assignment");
+        assert_eq!(privileges("S=sudo; $S lpadmin -x X")[1].1, Some("sudo"));
+        // probes run nothing
+        for probe in [
+            "sudo -l",
+            "sudo -v",
+            "sudo -K",
+            "pkexec --version",
+            "pkexec --help",
+            "run0 --help",
+            "doas -C /etc/doas.conf lpadmin",
+            "command -v sudo",
+        ] {
+            assert_eq!(one(probe), cmd("", None), "{probe}");
+        }
+    }
+
+    /// ADR-0039 round 2: sudo's `-S`/`--stdin` puts the password on the
+    /// command line; a probe that takes it still runs nothing.
+    #[test]
+    fn a_password_on_stdin_is_seen() {
+        let stdin = |line: &str| {
+            let words = &parse_shell(line).segments[0].words;
+            let u = unwrap_command(words);
+            (u.password_on_stdin, u.argv.join(" "))
+        };
+        for (line, argv) in [
+            ("sudo -S lpadmin -x X", "lpadmin -x X"),
+            ("sudo -Su root lpadmin", "lpadmin"),
+            ("sudo -u root -kS lpadmin", "lpadmin"),
+            ("sudo --stdin lpadmin", "lpadmin"),
+            ("sudo --st lpadmin", "lpadmin"),
+            ("sudo --stdi lpadmin", "lpadmin"),
+            ("env LANG=C sudo -S lpadmin", "lpadmin"),
+            ("sudo -S -v", ""),
+            ("sudo -vS", ""),
+            ("sudo -l -S", ""),
+        ] {
+            assert_eq!(stdin(line), (true, argv.to_string()), "{line}");
+        }
+        for line in [
+            "sudo lpadmin -S x",
+            "sudo -uS lpadmin",
+            "sudo -s lpadmin",
+            "sudo --set-home lpadmin",
+            "sudo --s lpadmin",
+            "doas -s lpadmin",
+            "pkexec lpadmin -S",
+            "run0 lpadmin -S",
+            "lpadmin -S",
+        ] {
+            assert!(!stdin(line).0, "{line}");
+        }
     }
 }

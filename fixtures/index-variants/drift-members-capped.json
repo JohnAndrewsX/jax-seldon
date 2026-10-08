@@ -832,14 +832,16 @@
       "source": "plugins",
       "kind": "plugin-update",
       "subject": "io.github.example.weather-plus",
-      "detail": "1.2.0 → 1.3.0",
+      "detail": "1.2.0 → 1.3.0, pulled 3 commits: Release 1.3.0 …",
       "actor": "system",
       "zone": "yellow",
       "resolution": "explained",
       "resolutionDetail": "omarchy plugin update, nur das Widget.",
       "meta": {
         "from": "1.2.0",
-        "to": "1.3.0"
+        "to": "1.3.0",
+        "commits": "Release 1.3.0\nAdd a wind gust row\nFix the unit toggle in the panel",
+        "git": "pull"
       }
     },
     {

@@ -37,6 +37,9 @@
 #
 # Runs as your user: no root, no package manager, no system files. A re-run
 # with the same version changes nothing; a newer version updates in place.
+# It says what it installs first and ends with only the steps left: no
+# `seldon init` when Seldon's config.toml exists, no plugin line when the
+# plugin's folder exists (two read-only tests under your home).
 #
 # Exit codes: 0 ok; 1 usage error, or a refusal you can fix (a foreign
 # file in the way, a seldon not installed by this script, the unit still
@@ -294,6 +297,8 @@ do_install() {
   WORK=$(mktemp -d)
   trap 'rm -rf -- "$WORK"' EXIT
 
+  say "Installing the Seldon engine into $(shown "$PREFIX/bin") as your user, no password;"
+  say "the download is checked against the release checksums before anything is written."
   say "Seldon $version from $DOWNLOAD_URL/$tag"
   fetch "$DOWNLOAD_URL/$tag/$asset" "$WORK/$asset" \
     || fail "could not download $asset (does release $tag exist?)"
@@ -430,20 +435,51 @@ do_install() {
     *":$bin_dir:"*) ;;
     *) say "Note: $bin_dir is not on your PATH; add it, or the plugin cannot find seldon." ;;
   esac
-  say ""
-  say "Next steps:"
-  say "  seldon init        create your logbook (once; skip it when you update)"
-  say "  omarchy plugin add $PLUGIN_URL --enable"
-  say "                     the bar pill, panel and Prime Radiant"
+  # What is left depends on what is there already: a logbook config means
+  # `seldon init` ran (an update), the plugin folder that the plugin is
+  # installed. Read-only tests under your home.
+  local steps=()
+  if [[ ! -f $SELDON_CONFIG_FILE ]]; then
+    if [[ -d $PLUGIN_DIR ]]; then
+      steps+=("seldon init        create your logbook (or press Create in the Seldon panel)")
+    else
+      steps+=("seldon init        create your logbook")
+    fi
+  fi
+  if [[ ! -d $PLUGIN_DIR ]]; then
+    steps+=("omarchy plugin add $PLUGIN_URL --enable")
+    steps+=("                   the bar pill, panel and Prime Radiant")
+  fi
   if [[ -n $unit_src ]]; then
-    say "  systemctl --user daemon-reload && systemctl --user enable --now seldon-watch"
-    say "                     only if you want the optional watcher (it is not enabled)"
+    steps+=("systemctl --user daemon-reload && systemctl --user enable --now seldon-watch")
+    steps+=("                   only if you want the optional watcher (it is not enabled)")
   fi
   if one_of zsh "${shells[@]}"; then
-    say "  fpath=($PREFIX/share/zsh/site-functions \$fpath)"
-    say "                     in ~/.zshrc before compinit, for the zsh completions"
+    steps+=("fpath=($PREFIX/share/zsh/site-functions \$fpath)")
+    steps+=("                   in ~/.zshrc before compinit, for the zsh completions")
   fi
+  say ""
+  if [[ -f $SELDON_CONFIG_FILE && ${#steps[@]} -eq 0 ]]; then
+    say "Your logbook is already set up; nothing else to do."
+  else
+    [[ ! -f $SELDON_CONFIG_FILE ]] || say "Your logbook is already set up."
+    say "Next steps:"
+    local step
+    for step in "${steps[@]}"; do
+      say "  $step"
+    done
+  fi
+  say ""
   say "Update: run install.sh again. Remove: install.sh --uninstall${PREFIX_ARG}"
+}
+
+# A path under $HOME as ~/…, for the lines a person reads.
+shown() { # path
+  case "$1" in
+    "$HOME") printf '%s\n' '~' ;;
+    "$HOME"/*) printf '%s/%s\n' '~' "${1#"$HOME"/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
 }
 
 do_uninstall() {
@@ -543,6 +579,13 @@ main() {
   if [[ $(id -u) -eq 0 ]]; then
     warn "running as root: this installs for root only; run it as your user instead"
   fi
+  # Where `seldon init` keeps its config (SELDON_CONFIG, else an absolute
+  # XDG_CONFIG_HOME, else ~/.config, as the engine resolves it) and where
+  # Omarchy keeps the plugin (always under ~/.config, omarchy-plugin-add).
+  local config_home=${XDG_CONFIG_HOME:-}
+  [[ $config_home == /* ]] || config_home="$HOME/.config"
+  SELDON_CONFIG_FILE=${SELDON_CONFIG:-$config_home/seldon/config.toml}
+  PLUGIN_DIR="$HOME/.config/omarchy/plugins/jax.seldon"
 
   if [[ $uninstall == 1 ]]; then
     [[ -z $VERSION && $UNIT == 0 && $FORCE == 0 && $REQUIRE_VERIFIED == 0 && $SKIP_PROVENANCE == 0 ]] || usage_error "--uninstall takes only --prefix"

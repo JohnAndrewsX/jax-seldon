@@ -69,9 +69,10 @@ jobs:
       # Arch's `rust` ships cargo, clippy and rustfmt; `rust-musl` adds the
       # musl target for the static release asset (AGENTS.md §7); shellcheck
       # makes `just check-packaging` lint the PKGBUILD and its scripts;
-      # cargo-audit runs the release gate below.
+      # cargo-audit runs the release gate below; rsync is what
+      # `just check-deploy` needs (as in ci.yml).
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq shellcheck cargo-audit
+        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq shellcheck cargo-audit rsync
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

@@ -73,9 +73,9 @@ pub const THEME_HOOK_NAME: &str = "seldon-theme-set.sh";
 pub const THEME_HOOK_SCRIPT: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/hooks/theme-set.sh"));
 
-/// The line `init` prints under the config file: how to keep a file that
+/// The end of `init`'s Config row: how to keep a file that
 /// changes all the time, or holds secrets, out of the config collector.
-pub const SKIP_PATHS_HINT: &str = "Watched files that change all the time or hold secrets: list them in [redaction] skipPaths there.";
+pub const SKIP_PATHS_HINT: &str = "list noisy or secret files in its [redaction] skipPaths";
 
 /// How long `omarchy hook install` may take.
 const OMARCHY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -593,6 +593,7 @@ pub fn install_theme_hook(_lock: &Lock, dirs: &Dirs, omarchy: &str) -> ThemeHook
         &["hook", "install", "theme-set", arg],
         None,
         OMARCHY_TIMEOUT,
+        sys::OUTPUT_MAX,
     ) {
         Run::Exited { code: Some(0), .. } => ThemeHook::Installed { script, hook },
         Run::Exited {
@@ -611,6 +612,7 @@ pub fn install_theme_hook(_lock: &Lock, dirs: &Dirs, omarchy: &str) -> ThemeHook
         }
         Run::NotFound => failed(format!("`{omarchy}` is not installed")),
         Run::TimedOut => failed("`omarchy hook install` timed out".into()),
+        Run::Cut => failed("`omarchy hook install`: output over the limit".into()),
         Run::Failed(e) => failed(format!("cannot run `{omarchy}`: {e}")),
     }
 }

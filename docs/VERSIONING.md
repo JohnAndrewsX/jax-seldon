@@ -84,6 +84,11 @@ plugin, or the other way round.
   `### Packaging and docs`, as in `0.1.0`).
 - Breaking changes go first, in a `### Breaking` part; security fixes
   name their advisory id.
+- Until the AUR package `jax-seldon` exists, every release body starts
+  with the standing paragraph for plugin 0.1.0 users, whose panel offers
+  `omarchy pkg aur add jax-seldon`: update the plugin first, then restart
+  the shell (WP-118). When a release is cut, it stays at the top of
+  `## [Unreleased]` for the next one.
 
 **Before a tag**, the CHANGELOG must contain:
 

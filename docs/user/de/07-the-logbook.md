@@ -1,6 +1,6 @@
 # Das Logbuch
 
-<!-- source: en/07-the-logbook.md @ 4e03e44 -->
+<!-- source: en/07-the-logbook.md @ 391f7a7 -->
 
 Diese Seite geht durch den Ordner des Logbuchs: was jeder Ordner und
 jede Datei enthält, welche Teile der Engine gehören und welche dir, wie
@@ -124,12 +124,20 @@ tags: []
 - Goal:
 - Steps:
 - Affected paths:
+- Persists: <!-- survives reboot and update | reboot only | lost at reboot -->
 - Rollback:
 - Verification:
+- Stop if:
 ## Log
 - 2026-10-01 10:12 · created (zone red, risk R2) · human
 ## Result
 ```
+
+*Persists* sagt, wie lange die Änderung hält: `survives reboot and
+update`, `reboot only` (ein Update überschreibt sie) oder `lost at
+reboot`. *Stop if* nennt, was den Agenten anhalten und dich fragen lässt.
+Im *Result* trägt jede Aussage `measured`, `documented` oder `inferred`;
+seine erste Zeile kommt in den Commit, der den Case abschließt.
 
 Das *Log* wird nur ergänzt. Die Engine fügt für jeden Schritt eine Zeile
 hinzu; du und deine Agenten ergänzt darunter datierte Zeilen. Halte die

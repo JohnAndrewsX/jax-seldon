@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ d79db7a -->
+<!-- source: en/06-configuration.md @ 391f7a7 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -116,6 +116,15 @@ Sprache des nächsten Logbuchs fest, das `seldon init` anlegt.
 
 Jeder Collector liest nur. Mit `false` schaltest du einen aus;
 `seldon capture --source <name>` startet ihn trotzdem bei Bedarf.
+
+Ein Shell-Plugin, das du mit `omarchy plugin add` hinzugefügt hast, ist
+ein git-Klon. Seine Aktualisierung nennt die Commits: wie viele ein Pull
+gebracht oder ein Zurücksetzen entfernt hat, und bis zu 20 ihrer
+Betreffzeilen, die der Desk mit der Änderung zeigt. Seldon liest den Klon
+mit `git` nur; es holt nie etwas aus dem Netz. Einen Klon, dessen
+Repository aus dem Plugin-Ordner hinausweist (ein verlinktes `.git`,
+geteilte Objekte, eine eingebundene Konfiguration), liest Seldon nicht,
+und die Änderung sagt das.
 
 Ein Collector, der seine Quelle nicht lesen kann, ist `degraded`: Die
 Erfassung läuft weiter, und `seldon doctor` nennt die Abhilfe. Zwei Fälle
@@ -255,11 +264,14 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   Kleinbuchstaben, Großbuchstaben, Ziffern und anderen Zeichen mischen
   (`sort --key=2` und `hotkey=Super` bleiben also, wie sie sind);
 - `Authorization:`, `X-Api-Key:`, `Private-Token:` und andere Header,
-  deren Name auf Key, Token, Secret oder Auth endet, sowie die Cookies
+  deren Name auf Key, Token, Secret oder Auth endet, auch ein Wert in
+  Anführungszeichen (`Authorization: "Bearer …"`, `"Authorization": "…"`
+  in JSON), sowie die Cookies
   nach `Cookie:` und `Set-Cookie:` (ein `name=value`; `cookie: banner
   fixed` bleibt);
 - der Wert eines JSON-Schlüssels wie `"password"`, `"passwd"`,
-  `"client_secret"`, `"access_token"`, `"api_key"` oder `"apiKey"` in
+  `"client_secret"`, `"access_token"`, `"api_key"`, `"x-api-key"` oder
+  `"apiKey"` in
   eingebettetem JSON (`curl -d '{"password": "…"}'`); `"password_hint"`
   bleibt;
 - AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
@@ -276,6 +288,12 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
 - Proxy-Zugangsdaten: nach `curl -U`, `--proxy-user` und
   `--proxy-password` sowie `user:pass@` im Proxy nach `curl -x`,
   `--proxy` oder in `https_proxy=`;
+- ein privater PEM-Schlüssel (`-----BEGIN OPENSSH PRIVATE KEY-----` und
+  die anderen `… PRIVATE KEY`-Blöcke): alles zwischen seiner BEGIN- und
+  END-Zeile wird ein einziges `‹redacted›`;
+- Passwörter und Schlüssel von nmcli: der Wert nach `password`,
+  `wifi-sec.psk`, `802-1x.password`, `vpn.secrets` und den anderen
+  geheimen Eigenschaften;
 - Benutzer und Passwort in einer URL (`https://user:secret@host`), auch
   wenn das Passwort `/`, `?`, `#` oder `:` enthält.
 - der Teil vor dem `@` einer E-Mail-Adresse: `me@example.com` lautet
@@ -444,8 +462,10 @@ Seine Fehlerausgabe landet in `~/.local/state/seldon/agent-launch.log`.
 ## Git
 
 Mit `autocommit = true` committet jeder schreibende Befehl das Logbuch,
-mit einer Nachricht wie `seldon: C-2026-004 active`. Der Commit nimmt den
-ganzen Ordner, also gehen Änderungen, die du seit dem letzten Befehl im
+mit einer Nachricht wie `seldon: C-2026-004 active`. Der Abschluss eines
+Case nennt ihn: `seldon: C-2026-004 completed — Zed installieren: SUPER+E
+öffnet Zed`, Titel und erste Zeile seines *Result* (beim Verwerfen der
+Grund). Der Commit nimmt den ganzen Ordner, also gehen Änderungen, die du seit dem letzten Befehl im
 Editor gemacht hast, mit. Die Geschichte ist dein Backup und dein
 Rückgängig.
 
