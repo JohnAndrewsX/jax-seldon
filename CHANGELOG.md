@@ -137,8 +137,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path goes to the engine as one argument. Imported cases are marked
   "imported"; their detail shows the whole Intent as plain text, with its
   source and line count, and Start is enabled only after that, by click,
-  never by Enter. `seldon plan show --json` gives the whole Intent for it
-  (WP-102b).
+  never by Enter. `seldon plan show --json` gives the whole Intent for it,
+  invisible characters marked `‹U+…›`; such an Intent, or one longer than
+  64 KiB, keeps Start off. `seldon import task` removes invisible
+  characters and skips a task too long to review (WP-102b, ADR-0044
+  proposed).
 
 - **Agent sorts N open changes.** The Changelog's head asks your
   agent to sort the open changes; its proposal shows as a row and a
