@@ -1710,10 +1710,16 @@ fn doctor_reports_leftover_workpiece_folders() {
         row()["message"],
         "1 workpiece folder(s), none orphaned or oversized"
     );
-    folder("C-2026-001-big", 11 << 20);
-    folder("C-2026-003-open", 20 << 20);
+    // the oldest by id, not by name
     folder("C-2026-1000", 10);
     folder("C-2026-999-old", 5);
+    assert_eq!(
+        row()["message"],
+        "2 of 3 workpiece folder(s) left behind: 2 orphaned (no case), 0 oversized (a closed \
+         case, over 10.0 MiB), 15 B in all; the oldest: work/C-2026-999-old/"
+    );
+    folder("C-2026-001-big", 11 << 20);
+    folder("C-2026-003-open", 20 << 20);
     std::os::unix::fs::symlink(work.join("notes"), work.join("C-2024-001")).unwrap();
     let r = row();
     assert_eq!(r["status"], "ok", "{r}");
@@ -1721,7 +1727,7 @@ fn doctor_reports_leftover_workpiece_folders() {
     assert_eq!(
         r["message"],
         "3 of 5 workpiece folder(s) left behind: 2 orphaned (no case), 1 oversized (a closed \
-         case, over 10.0 MiB), 11.0 MiB in all; the oldest: work/C-2026-999-old/"
+         case, over 10.0 MiB), 11.0 MiB in all; the oldest: work/C-2026-001-big/"
     );
     // a name is shown without its control characters
     folder("C-2025-001-\u{1b}[2J", 5);
