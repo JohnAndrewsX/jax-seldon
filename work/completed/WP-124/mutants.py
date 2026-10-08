@@ -163,6 +163,11 @@ M = [
      "            \"markedApplied\": first,",
      "            \"markedApplied\": !done.is_empty(),",
      TRIAGE, "applied_marks_the_run_not_the_items"),
+    # 124b round 2
+    ("M35 the label names the first author only", T,
+     "        } else {\n            authors.join(\", \")\n        };",
+     "        } else {\n            authors[0].clone()\n        };",
+     TRIAGE, "an_applied_explanation_keeps_its_proposer_s_name"),
 ]
 
 

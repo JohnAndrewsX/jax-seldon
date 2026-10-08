@@ -163,7 +163,13 @@ mod run {
         let script = format!("sleep 5 & echo $! > '{}'; echo done", pid_file.display());
         let started = Instant::now();
 
-        let r = sys::run("sh", &["-c", &script], None, Duration::from_secs(1));
+        let r = sys::run(
+            "sh",
+            &["-c", &script],
+            None,
+            Duration::from_secs(1),
+            sys::OUTPUT_MAX,
+        );
 
         let took = started.elapsed();
         assert!(took < Duration::from_millis(1800), "took {took:?}");
@@ -186,7 +192,13 @@ mod run {
         let script = format!("sleep 5 & echo $! > '{}'; sleep 5", pid_file.display());
         let started = Instant::now();
 
-        let r = sys::run("sh", &["-c", &script], None, Duration::from_millis(500));
+        let r = sys::run(
+            "sh",
+            &["-c", &script],
+            None,
+            Duration::from_millis(500),
+            sys::OUTPUT_MAX,
+        );
 
         let took = started.elapsed();
         assert_eq!(r, Run::TimedOut);
@@ -202,6 +214,7 @@ mod run {
             &["-c", "printf 'a\\nb\\n'; echo e >&2"],
             None,
             Duration::from_secs(5),
+            sys::OUTPUT_MAX,
         );
         assert_eq!(
             r,

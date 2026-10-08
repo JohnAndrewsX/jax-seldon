@@ -50,6 +50,10 @@ import qs.Ui
 //                       shim:<method>[:<arg>]  the pill's jax.seldon.panel
 //                                        IPC method (tab, resolve, view, …)
 //                       call:<method>:<arg>  `shell call jax.seldon …`
+//                       service:<method>:<arg>  a Service method, called
+//                                        directly (its result in `call`)
+//                       timedClickName:<objectName>  a click; `call` holds
+//                                        the milliseconds its handlers took
 //                       section:<id>     Desk.section(id)
 //                       select:<id>      Desk.select(id)
 //                       width:<pct>      Omarchy's bar settings set deskWidth
@@ -430,6 +434,24 @@ ShellRoot {
       var h = root.shimHandler()
       var r0 = !h ? "no handler" : a0 === undefined ? h[m0]() : h[m0](a0)
       root.lastCall = r0 === undefined || r0 === null ? "ok" : String(r0)
+    } else if (verb === "service") {
+      // service:<method>:<arg> — a Service method called directly (the
+      // guards behind a disabled button; WP-124b)
+      var ssep = arg.indexOf(":")
+      var smethod = ssep === -1 ? arg : arg.slice(0, ssep)
+      var sarg = ssep === -1 ? "" : arg.slice(ssep + 1)
+      var sres = root.service && typeof root.service[smethod] === "function" ? root.service[smethod](sarg) : "unknown"
+      root.lastCall = sres === undefined || sres === null ? "ok" : String(sres)
+    } else if (verb === "timedClickName") {
+      // a click and the milliseconds its handlers took (WP-124b, R2)
+      var timed = root.findName(arg)
+      if (timed) {
+        var t0 = Date.now()
+        driver.mouseClick(timed)
+        root.lastCall = String(Date.now() - t0)
+      } else {
+        console.log("HARNESS nothing to click: " + arg)
+      }
     } else if (verb === "call") {
       var sep = arg.indexOf(":")
       var method = sep === -1 ? arg : arg.slice(0, sep)

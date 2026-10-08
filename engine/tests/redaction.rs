@@ -1392,6 +1392,181 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeOs31",
         "-passin ‹redacted›&&echo done",
     ),
+    // WP-140: a PEM private key, any label, the BEGIN and END lines kept
+    (
+        "private-key",
+        "key:\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEfakePk01\n-----END OPENSSH PRIVATE KEY-----\ndone",
+        "fakePk01",
+        "key:\n-----BEGIN OPENSSH PRIVATE KEY-----‹redacted›-----END OPENSSH PRIVATE KEY-----\ndone",
+    ),
+    (
+        "private-key",
+        "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,0A1B\n\nMIIEfakePk02\n-----END RSA PRIVATE KEY-----",
+        "fakePk02",
+        "-----BEGIN RSA PRIVATE KEY-----‹redacted›-----END RSA PRIVATE KEY-----",
+    ),
+    (
+        "private-key",
+        "echo '-----BEGIN EC PRIVATE KEY-----\\nMHcfakePk03\\n-----END EC PRIVATE KEY-----' > k",
+        "fakePk03",
+        "'-----BEGIN EC PRIVATE KEY-----‹redacted›-----END EC PRIVATE KEY-----' > k",
+    ),
+    (
+        "private-key",
+        "-----BEGIN PRIVATE KEY-----\r\nMIIEvfakePk04\r\n-----END PRIVATE KEY-----\r\n",
+        "fakePk04",
+        "-----BEGIN PRIVATE KEY-----‹redacted›-----END PRIVATE KEY-----\r\n",
+    ),
+    (
+        "private-key",
+        "-----BEGIN ENCRYPTED PRIVATE KEY-----\nMIIFfakePk05\n-----END ENCRYPTED PRIVATE KEY-----",
+        "fakePk05",
+        "-----BEGIN ENCRYPTED PRIVATE KEY-----‹redacted›-----END ENCRYPTED PRIVATE KEY-----",
+    ),
+    (
+        "private-key",
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYfakePk06\n=AbCd\n-----END PGP PRIVATE KEY BLOCK-----",
+        "fakePk06",
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----‹redacted›-----END PGP PRIVATE KEY BLOCK-----",
+    ),
+    // cut by a clip: no END, then no BEGIN
+    (
+        "private-key",
+        "a -----BEGIN DSA PRIVATE KEY-----\nMIIBfakePk07\nAoGB",
+        "fakePk07",
+        "a -----BEGIN DSA PRIVATE KEY-----‹redacted›",
+    ),
+    (
+        "private-key",
+        "kPk08fake+/x==\nAAAAfakePk08\n-----END OPENSSH PRIVATE KEY-----\nok",
+        "fakePk08",
+        "‹redacted›-----END OPENSSH PRIVATE KEY-----\nok",
+    ),
+    // WP-140: a quoted header value, also after a quoted name
+    (
+        "authorization-header",
+        "Authorization: \"Bearer fakeHq01\"",
+        "fakeHq01",
+        "Authorization: ‹redacted›",
+    ),
+    (
+        "authorization-header",
+        "curl -H \"Authorization: \\\"Bearer fakeHq02\\\"\" https://h.example",
+        "fakeHq02",
+        "\"Authorization: ‹redacted›\" https://h.example",
+    ),
+    (
+        "authorization-header",
+        "curl -H 'Authorization: \"Bearer fakeHq03\"' https://h.example",
+        "fakeHq03",
+        "'Authorization: ‹redacted›' https://h.example",
+    ),
+    (
+        "authorization-header",
+        "{\"Authorization\": \"Bearer fakeHq04\", \"Accept\": \"*/*\"}",
+        "fakeHq04",
+        "{\"Authorization\": ‹redacted›, \"Accept\": \"*/*\"}",
+    ),
+    (
+        "authorization-header",
+        "headers={'authorization':'token fakeHq05'}",
+        "fakeHq05",
+        "{'authorization':‹redacted›}",
+    ),
+    (
+        "authorization-header",
+        "-d \"{\\\"Authorization\\\": \\\"Bearer fakeHq06\\\"}\"",
+        "fakeHq06",
+        "{\\\"Authorization\\\": ‹redacted›}\"",
+    ),
+    // round 3: HTTPie and xh take a header with its quoted value glued to
+    // the colon
+    (
+        "authorization-header",
+        "http POST https://h.example/x Authorization:'Bearer tokABC123' a=1",
+        "tokABC123",
+        "Authorization:‹redacted› a=1",
+    ),
+    (
+        "authorization-header",
+        "https -A bearer h.example Authorization:\"Bearer tokDEF456\" -v",
+        "tokDEF456",
+        "Authorization:‹redacted› -v",
+    ),
+    (
+        "secret-header",
+        "xh GET h.example/y X-Api-Key:'keyABC123xyz' Accept:json",
+        "keyABC123xyz",
+        "X-Api-Key:‹redacted› Accept:json",
+    ),
+    // round 2 (N4): text glued after the closing quote, a Python f-string
+    (
+        "authorization-header",
+        "Authorization: \"Bearer \"fakeHq11 next",
+        "fakeHq11",
+        "Authorization: ‹redacted› next",
+    ),
+    (
+        "authorization-header",
+        "{'Authorization': f'Bearer {fakeHq12}', 'Accept': 'x'}",
+        "fakeHq12",
+        "{'Authorization': ‹redacted›, 'Accept': 'x'}",
+    ),
+    (
+        "secret-header",
+        "x-api-key: rb'fakeHq13'; next",
+        "fakeHq13",
+        "x-api-key: ‹redacted›; next",
+    ),
+    (
+        "secret-header",
+        "x-api-key: \"fakeHq07 with \\\"quotes\\\"\"",
+        "fakeHq07",
+        "x-api-key: ‹redacted›",
+    ),
+    (
+        "secret-header",
+        "curl -H 'X-Auth-Token: \"fakeHq08\"' -H \"Private-Token: 'fakeHq09'\" h",
+        "fakeHq0",
+        "'X-Auth-Token: ‹redacted›' -H \"Private-Token: ‹redacted›\" h",
+    ),
+    (
+        "json-secret",
+        "{\"x-api-key\": \"fakeHq10\"}",
+        "fakeHq10",
+        "{\"x-api-key\": ‹redacted›}",
+    ),
+    // WP-140: nmcli's secrets given as arguments
+    (
+        "nmcli-secret",
+        "nmcli dev wifi connect Home password fakeNm01 ifname wlan0",
+        "fakeNm01",
+        "connect Home password ‹redacted› ifname wlan0",
+    ),
+    (
+        "nmcli-secret",
+        "nmcli con add type wifi ssid Home wifi-sec.key-mgmt wpa-psk wifi-sec.psk 'fake Nm02'",
+        "fake Nm02",
+        "wifi-sec.key-mgmt wpa-psk wifi-sec.psk ‹redacted›",
+    ),
+    (
+        "nmcli-secret",
+        "nmcli c m Eap 802-1x.password fakeNm03 +802-1x.private-key-password fakeNm04 ipv4.dns 9.9.9.9",
+        "fakeNm0",
+        "802-1x.password ‹redacted› +802-1x.private-key-password ‹redacted› ipv4.dns 9.9.9.9",
+    ),
+    (
+        "nmcli-secret",
+        "nmcli con mod Vpn vpn.secrets fakeNm05 && nmcli con mod Lte gsm.pin 1234 && nmcli con mod Wg wireguard.private-key fakeNm06=",
+        "fakeNm0",
+        "vpn.secrets ‹redacted› && nmcli con mod Lte gsm.pin ‹redacted› && nmcli con mod Wg wireguard.private-key ‹redacted›",
+    ),
+    (
+        "nmcli-secret",
+        "nmcli con mod Old wifi-sec.wep-key0 fakeNm07 wifi-sec.psk-flags 0",
+        "fakeNm07",
+        "wifi-sec.wep-key0 ‹redacted› wifi-sec.psk-flags 0",
+    ),
 ];
 
 /// Text that looks close to a rule and must come out unchanged.
@@ -1501,6 +1676,175 @@ const CLEAR: &[&str] = &[
     "monitor = DP-2, 2560x1440@144, 2560x0, 1",
     "docker pull alpine@sha256:abc123",
     "Bild icon@2x",
+    // no private key (WP-140): a public key, a certificate, a mention
+    "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQ==\n-----END PUBLIC KEY-----",
+    "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIU\n-----END CERTIFICATE-----",
+    "the private key stays in ~/.ssh/id_ed25519, see -----BEGIN-----",
+    // round 2 (R1): a public block in a text that says "private key"
+    "keep the private key; the public one:\n-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\n-----END PUBLIC KEY-----\nok",
+    "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA\n-----END RSA PUBLIC KEY-----, not a private key",
+    // no header value: a search for the name
+    "grep -ri 'authorization:' /var/log/app.log",
+    "rg -n \"X-Api-Key:\" src",
+    "curl -H 'Authorization:' -H 'X-Trace: on' https://h.example",
+    "curl -H 'Authorization:' -H 'X: y' https://h.example",
+    "grep -i 'authorization:' f 'x'",
+    "grep -i \"x-api-key:\" f \"y\"",
+    // no nmcli secret: the key management, a flag, a listing
+    "nmcli con mod Home wifi-sec.key-mgmt wpa-psk wifi-sec.psk-flags 1",
+    "nmcli dev wifi list --rescan yes && nmcli -f NAME,UUID con show",
+    "nmcli con up Home passwd-file ./pw",
+];
+
+/// (rule, text with `\n` line ends, secrets): one row for each place where
+/// a rule reads a line end, the `\` continuations first. Each row is also
+/// checked with `\r\n` line ends, which must give the same text with
+/// `\r\n` (WP-128).
+const CONTINUED: &[(&str, &str, &[&str])] = &[
+    // `\` between an option and its value (`GAP`)
+    (
+        "password-option",
+        "tool --password \\\n  fakeCr01 --verbose",
+        &["fakeCr01"],
+    ),
+    ("curl-user", "curl -u \\\n  a:fakeCr02", &["fakeCr02"]),
+    (
+        "sshpass-password",
+        "sshpass -p \\\n  fakeCr03 ssh me@host",
+        &["fakeCr03"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin \\\n  pass:fakeCr04",
+        &["fakeCr04"],
+    ),
+    // `\` inside an option value (`WORD`): bare, in `"…"`, in `$'…'`
+    (
+        "curl-user",
+        "curl -u admin:fake\\\nCr05 https://h.example",
+        &["Cr05"],
+    ),
+    (
+        "password-option",
+        "tool --password \"ab\\\nfakeCr06\" --verbose",
+        &["fakeCr06"],
+    ),
+    (
+        "password-option",
+        "tool --password $'ab\\\nfakeCr07' --verbose",
+        &["fakeCr07"],
+    ),
+    // … and inside a `pass:` value (`PASS_ARG`), each of its forms
+    (
+        "openssl-pass",
+        "openssl rsa -passin \"pass:ab\\\nfakeCr08\" -in k.pem",
+        &["fakeCr08"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin $'pass:ab\\\nfakeCr09' -in k.pem",
+        &["fakeCr09"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:\"ab\\\nfakeCr10\" -in k.pem",
+        &["fakeCr10"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:$'ab\\\nfakeCr11' -in k.pem",
+        &["fakeCr11"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:ab\\\nfakeCr12 -in k.pem",
+        &["fakeCr12"],
+    ),
+    // `\` between the command word and the option (`COMMAND_REST`)
+    (
+        "curl-user",
+        "curl -sS \\\n  -H 'Accept: a;b' \\\n  -u admin:fakeCr13 https://h.example",
+        &["fakeCr13"],
+    ),
+    (
+        "registry-login-password",
+        "docker login \\\n  -p fakeCr14 r.example",
+        &["fakeCr14"],
+    ),
+    (
+        "sshpass-password",
+        "sshpass \\\n  -p fakeCr15 ssh me@host",
+        &["fakeCr15"],
+    ),
+    // HTTPie's gap after the command word (`HTTPIE_GAP`)
+    ("httpie-auth", "http \\\n  -a a:fakeCr16", &["fakeCr16"]),
+    ("httpie-auth", "http\\\n  -a a:fakeCr17", &["fakeCr17"]),
+    ("httpie-auth", "xh\n-a a:fakeCr18", &["fakeCr18"]),
+    // `mysql … \`: before `-p` and after its value
+    (
+        "db-client-password",
+        "mysql -u root \\\n  -pfakeCr19 shop",
+        &["fakeCr19"],
+    ),
+    (
+        "db-client-password",
+        "mysql -u root -pfakeCr20a \\\n  shop --init-command=fakeCr20b\nnext",
+        &["fakeCr20a", "fakeCr20b"],
+    ),
+    // line ends inside quotes and around a JSON `:`, and rules that take
+    // the rest of a line, whose `\r` stays
+    (
+        "proxy-option",
+        "curl -X POST -d '{\n  \"a\": 1\n}' -U bob:fakeCr21 https://h.example",
+        &["fakeCr21"],
+    ),
+    (
+        "cookie-option",
+        "curl -d \"line 1\nline 2\" -b 'sid=fakeCr22' https://h.example",
+        &["fakeCr22"],
+    ),
+    (
+        "json-secret",
+        "{\"password\":\n  \"fakeCr23\"}\nnext",
+        &["fakeCr23"],
+    ),
+    (
+        "authorization-header",
+        "Authorization: Bearer fakeCr24\nnext",
+        &["fakeCr24"],
+    ),
+    (
+        "password-option",
+        "tool --password 'fakeCr25\nnext",
+        &["fakeCr25"],
+    ),
+    // a header value ends before the `\r` of a CRLF line end (round 2;
+    // an empty one is no value since WP-140:
+    // `an_empty_header_value_is_no_value`)
+    ("secret-header", "X-Api-Key: fakeCr26\nnext", &["fakeCr26"]),
+    // a PEM private key over lines: whole, cut before its END, cut
+    // before its BEGIN (WP-140)
+    (
+        "private-key",
+        "-----BEGIN RSA PRIVATE KEY-----\nMIIEfakeCr27\nAAAAfakeCr28==\n-----END RSA PRIVATE KEY-----\nnext",
+        &["fakeCr27", "fakeCr28"],
+    ),
+    (
+        "private-key",
+        "x\n-----BEGIN EC PRIVATE KEY-----\nMHcfakeCr29\nAoGfakeCr30",
+        &["fakeCr29", "fakeCr30"],
+    ),
+    (
+        "private-key",
+        "AAAAfakeCr31\nBBBBfakeCr32==\n-----END PRIVATE KEY-----\nnext",
+        &["fakeCr31", "fakeCr32"],
+    ),
+    // a nmcli value after a continued line
+    (
+        "nmcli-secret",
+        "nmcli con mod Home \\\n  wifi-sec.psk \\\n  fakeCr33",
+        &["fakeCr33"],
+    ),
 ];
 
 mod redaction {
@@ -1713,6 +2057,80 @@ mod redaction {
         assert!(r.matching_rules("hotkey=Super").is_empty());
     }
 
+    /// WP-140 (WP-128 decision 5): a built-in match whose masked part is
+    /// only markers is left as it is, so a second pass after a user
+    /// pattern that masks a gap next to a built-in marker merges nothing;
+    /// and no rule counts on text that holds only its own markers (the
+    /// task import counts rules on redacted text).
+    #[test]
+    fn a_match_of_markers_only_is_left_as_it_is() {
+        for (pattern, text) in [
+            ("\r", "Authorization: Bearer fakeMm01\r\nnext"),
+            ("\r", "X-Api-Key: fakeMm02\r\n"),
+            ("\r", "tool --password fakeMm03\r\nnext"),
+            (";", "tool --password fakeMm04;"),
+            (";", "curl -u a:fakeMm05; true"),
+            ("&", "TOKEN=fakeMm06&x"),
+            (r"\s", "mysql -u root -p fakeMm07 db"),
+            (
+                "-----END RSA PRIVATE KEY-----",
+                "-----BEGIN RSA PRIVATE KEY-----\nfakeMm08\n-----END RSA PRIVATE KEY-----",
+            ),
+        ] {
+            let r = Redactor::with_patterns(&[pattern.into()]).unwrap();
+            for f in [
+                Redactor::redact as fn(&Redactor, &str) -> String,
+                Redactor::redact_keeping_lines,
+            ] {
+                let once = f(&r, text);
+                assert!(!once.contains("fakeMm"), "{text:?} → {once:?}");
+                assert_eq!(f(&r, &once), once, "{pattern:?}: {text:?}");
+            }
+        }
+        // two markers glued, with white space between them, after a name
+        let r = Redactor::builtin();
+        for text in [
+            "Authorization: ‹redacted›‹redacted›",
+            "x-api-key: ‹redacted› ‹redacted›",
+            "tool --password ‹redacted›‹redacted› --next",
+            "https://‹redacted›@h.example/",
+            "-----BEGIN RSA PRIVATE KEY-----‹redacted›",
+        ] {
+            assert_eq!(r.redact(text), text);
+            assert!(r.matching_rules(text).is_empty(), "{text}");
+        }
+        // round 2 (N3): where it does not hold. Text glued after the gap
+        // a user pattern masked joins the value on the second pass, which
+        // masks it too (more, never less)
+        let semi = Redactor::with_patterns(&[";".into()]).unwrap();
+        let once = semi.redact("tool --password fakeMm10;tail");
+        assert_eq!(once, "tool --password ‹redacted›‹redacted›tail");
+        assert_eq!(semi.redact(&once), "tool --password ‹redacted›");
+        // a marker with anything else is masked again
+        assert_eq!(
+            r.redact("tool --password ‹redacted›fakeMm09"),
+            "tool --password ‹redacted›"
+        );
+        assert_eq!(
+            r.matching_rules("tool --password ‹redacted›fakeMm09"),
+            ["password-option"]
+        );
+        // every row, redacted, holds no further match of any rule
+        let rows = TABLE
+            .iter()
+            .map(|(_, input, ..)| *input)
+            .chain(CONTINUED.iter().map(|(_, lf, _)| *lf));
+        for input in rows {
+            for once in [r.redact(input), r.redact_keeping_lines(input)] {
+                assert!(
+                    r.matching_rules(&once).is_empty(),
+                    "{input:?} → {once:?}: {:?}",
+                    r.matching_rules(&once)
+                );
+            }
+        }
+    }
+
     #[test]
     fn masking_twice_changes_nothing() {
         // a user pattern that also matches inside the marker itself, also
@@ -1859,14 +2277,97 @@ mod redaction {
             assert_eq!(r.redact(&out), out, "`{input}`");
         }
         // each HTTPie command word with each gap its triggers name
-        // (WP-097 round 2)
+        // (WP-097 round 2), the CRLF line ends too (WP-128)
         for word in ["http", "https", "xh", "xhs"] {
-            for gap in [" ", "\t", "\n", "\\\n"] {
+            for gap in [" ", "\t", "\n", "\\\n", "\r\n", "\\\r\n"] {
                 let input = format!("{word}{gap}-a a:fakeGap2");
                 let out = r.redact(&input);
                 assert_eq!(out, format!("{word}{gap}-a {REDACTED}"), "`{input}`");
                 assert_eq!(r.matching_rules(&input), vec!["httpie-auth"]);
             }
+        }
+    }
+
+    /// WP-128: a rule that reads a line end reads `\r\n` as it reads `\n`.
+    /// Each row of [`CONTINUED`] with CRLF line ends loses its secrets,
+    /// matches the same rules and gives the text of the LF row with CRLF
+    /// line ends, through `redact` and `redact_keeping_lines`; the latter
+    /// keeps the number of lines, and a second pass changes nothing.
+    #[test]
+    fn crlf_line_ends_continue_as_lf_line_ends_do() {
+        let r = Redactor::builtin();
+        for (rule, lf, secrets) in CONTINUED {
+            let crlf = lf.replace('\n', "\r\n");
+            assert!(r.matching_rules(lf).contains(rule), "{rule}: `{lf}`");
+            assert_eq!(r.matching_rules(&crlf), r.matching_rules(lf), "`{lf}`");
+            for (how, f) in [
+                ("redact", Redactor::redact as fn(&Redactor, &str) -> String),
+                ("redact_keeping_lines", Redactor::redact_keeping_lines),
+            ] {
+                let from_lf = f(&r, lf);
+                let from_crlf = f(&r, &crlf);
+                for text in [&from_lf, &from_crlf] {
+                    for secret in *secrets {
+                        assert!(!text.contains(secret), "{rule} {how}: `{text:?}`");
+                    }
+                }
+                assert_eq!(
+                    from_crlf,
+                    from_lf.replace('\n', "\r\n"),
+                    "{rule} {how}: `{lf}`"
+                );
+                assert_eq!(f(&r, &from_crlf), from_crlf, "{rule} {how}: `{lf}`");
+            }
+            let kept = r.redact_keeping_lines(&crlf);
+            assert_eq!(kept.matches("\r\n").count(), crlf.matches("\r\n").count());
+            assert_eq!(kept.matches('\n').count(), crlf.matches('\n').count());
+        }
+    }
+
+    /// WP-140: a header whose value is empty (white space up to the line
+    /// end, LF or CRLF) masks nothing; WP-128 masked the white space.
+    #[test]
+    fn an_empty_header_value_is_no_value() {
+        let r = Redactor::builtin();
+        for lf in [
+            "a\nAuthorization: \n",
+            "x-api-key: \t\n\n",
+            "Authorization:",
+        ] {
+            let crlf = lf.replace('\n', "\r\n");
+            for text in [lf, crlf.as_str()] {
+                assert_eq!(r.redact(text), text, "{text:?}");
+                assert_eq!(r.redact_keeping_lines(text), text, "{text:?}");
+                assert!(r.matching_rules(text).is_empty(), "{text:?}");
+            }
+        }
+    }
+
+    /// WP-128 round 2: a user pattern's match is replaced whole, a `\r` in
+    /// it too, so a pattern that matches a bare `\r` gives the same text
+    /// on a second pass (`seldon log` redacts a note, then the ledger
+    /// does).
+    #[test]
+    fn a_user_pattern_that_matches_a_cr_is_stable() {
+        for pattern in ["\r", "[ \t\r]+"] {
+            let r = Redactor::with_patterns(&[pattern.into()]).unwrap();
+            for text in ["a token: abc\r\nb \r\n", "x\r\n\r\ny\r"] {
+                let once = r.redact(text);
+                assert!(!once.contains('\r'), "{pattern}: {once:?}");
+                assert_eq!(r.redact(&once), once, "{pattern}: {text:?}");
+            }
+        }
+    }
+
+    /// WP-128 round 2: a lone `\r` (classic Mac line ends) is no line end:
+    /// HTTPie's gap after the command word is not one.
+    #[test]
+    fn a_lone_cr_is_no_line_end() {
+        let r = Redactor::builtin();
+        for word in ["http", "https", "xh", "xhs"] {
+            let input = format!("{word}\r-a a:b");
+            assert_eq!(r.redact(&input), input);
+            assert!(r.matching_rules(&input).is_empty(), "{input:?}");
         }
     }
 
@@ -1999,6 +2500,25 @@ mod redaction {
                 "openssl rsa -passin pass:fakeT1 ",
                 "-passin env:A -passout file:b -twopass -k pass:c ",
             ),
+            // a private key's label without a block, and a run of base64
+            // with no END after it: `private-key` scans the whole text;
+            // nmcli lines with properties that name no secret, every
+            // header with a quote after it (WP-140)
+            (
+                "private key mentions",
+                "the private key -----BEGIN-----\n",
+                "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC private key\n",
+            ),
+            (
+                "nmcli properties",
+                "nmcli con mod Home ",
+                "wifi-sec.key-mgmt wpa-psk ipv4.dns 'a;b' wifi-sec.psk-flags 1 pin ",
+            ),
+            (
+                "quoted headers",
+                "curl ",
+                "-H 'Authorization:' \"X-Api-Key:\" ",
+            ),
         ] {
             for (kb, budget) in [(16, 1), (64, 2)] {
                 let line = filled(head, word, kb * 1024);
@@ -2071,6 +2591,31 @@ mod redaction {
                 "openssl options",
                 "openssl pkcs12 ",
                 "-passin pass:a -passout 'pass:b' -twopass ",
+                Some(20),
+            ),
+            // private keys, nmcli secrets and quoted header values (WP-140)
+            (
+                "private keys",
+                "keys ",
+                "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n",
+                Some(20),
+            ),
+            (
+                "nmcli secrets",
+                "nmcli con mod Home ",
+                "wifi-sec.psk a 802-1x.password 'b c' ",
+                Some(20),
+            ),
+            (
+                "glued header values",
+                "http POST h.example ",
+                "Authorization:'Bearer a' X-Api-Key:\"b\" ",
+                Some(20),
+            ),
+            (
+                "quoted header values",
+                "curl ",
+                "-H 'Authorization: \"Bearer a\"' -H \"X-Api-Key: 'b'\" ",
                 Some(20),
             ),
         ] {
@@ -2490,6 +3035,79 @@ mod commands {
         }
     }
 
+    /// WP-140: every code point of the widened set is dropped before the
+    /// redaction, so none hides a `token=` from its rule (half of them in a
+    /// case's Intent, half in a decision's lead, each under the clip); a
+    /// PEM private key in a Result is masked whole.
+    #[test]
+    fn the_index_drops_every_format_character_before_the_redaction() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        run(&env, &["plan", "new", "--", "Split"]);
+        run(&env, &["decide", "--no-edit", "--", "Split"]);
+        let splitters = [
+            '\u{0600}',
+            '\u{0605}',
+            '\u{1BCA0}',
+            '\u{1BCA3}',
+            '\u{1D173}',
+            '\u{1D17A}',
+            '\u{00AD}',
+            '\u{061C}',
+            '\u{180E}',
+            '\u{2061}',
+            '\u{2064}',
+            '\u{206A}',
+            '\u{206F}',
+            '\u{FFF9}',
+            '\u{FFFB}',
+            '\u{E0001}',
+            '\u{E007F}',
+        ];
+        let tokens: Vec<String> = splitters
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("to{c}ken=fmtSecret{i:02}"))
+            .collect();
+        let (intent, lead) = tokens.split_at(9);
+        let adr = find_file(&root.join("decisions"), "ADR-0001");
+        let text = read(&adr).replacen(
+            "## Decision\n",
+            &format!("## Decision\n{}\n", lead.join(" ")),
+            1,
+        );
+        std::fs::write(&adr, text).unwrap();
+        let path = find_file(&root.join("work/queued"), "C-2026-001");
+        let text = read(&path)
+            .replacen("## Intent\n", &format!("## Intent\n{}\n", intent.join(" ")), 1)
+            .replacen(
+                "## Result\n",
+                "## Result\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAAPemBody1\nPemBody2AAAA==\n-----END OPENSSH PRIVATE KEY-----\n",
+                1,
+            );
+        std::fs::write(&path, text).unwrap();
+
+        run(&env, &["status"]);
+        let text = read(&env.home.join(".local/state/seldon/index.json"));
+        let index: Value = serde_json::from_str(&text).unwrap();
+        let case = &index["cases"]["queued"][0];
+        let intent = case["intent"].as_str().unwrap();
+        assert_eq!(intent.matches("token=‹redacted›").count(), 9, "{intent}");
+        let lead = index["decisions"][0]["lead"].as_str().unwrap();
+        assert_eq!(lead.matches("token=‹redacted›").count(), 8, "{lead}");
+        let result = case["result"].as_str().unwrap();
+        assert!(
+            result.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----‹redacted›"),
+            "{result}"
+        );
+        for secret in ["fmtSecret", "PemBody"] {
+            assert!(!text.contains(secret), "{secret} in the index");
+        }
+        for c in splitters {
+            assert!(!text.contains(c), "U+{:04X} in the index", c as u32);
+        }
+    }
+
     fn last_ledger_line(logbook: &Path) -> Value {
         let text = read(&logbook.join("ledger/2026-10.jsonl"));
         serde_json::from_str(text.lines().last().unwrap()).unwrap()
@@ -2513,6 +3131,31 @@ mod commands {
         let day = read(&root.join("journal/2026/2026-10-03.md"));
         assert!(day.contains(&masked), "{day}");
         assert_nowhere(&env, &root, &[&secret]);
+    }
+
+    /// WP-128: a person's note over several lines, with `\n` and with
+    /// `\r\n` line ends, loses the secrets of every row of `CONTINUED`;
+    /// the ledger holds the note as the redaction gives it.
+    #[test]
+    fn log_masks_continued_lines_with_lf_and_crlf_line_ends() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let r = super::Redactor::builtin();
+        let mut all = Vec::new();
+        for (rule, lf, secrets) in super::CONTINUED {
+            for text in [lf.to_string(), lf.replace('\n', "\r\n")] {
+                let v = run(&env, &["log", "--", &text]);
+                // `log` trims the note first
+                assert_eq!(
+                    v["event"]["detail"],
+                    r.redact(text.trim()).as_str(),
+                    "{rule}"
+                );
+                assert_eq!(last_ledger_line(&root)["detail"], v["event"]["detail"]);
+            }
+            all.extend_from_slice(secrets);
+        }
+        assert_nowhere(&env, &root, &all);
     }
 
     #[test]

@@ -110,6 +110,14 @@ of the next logbook `seldon init` creates.
 Each collector only reads. Turn one off with `false`;
 `seldon capture --source <name>` still runs it on demand.
 
+A shell plugin you added with `omarchy plugin add` is a git clone. Its
+update names the commits: how many a pull brought in or a rollback took
+out, and up to 20 of their subjects, which the desk shows with the
+change. Seldon only reads the clone with `git`; it never fetches. A
+clone whose repository points outside the plugin folder (a linked
+`.git`, shared objects, an included config) is not read, and the
+change says so.
+
 A collector that cannot read its source is `degraded`: the capture goes
 on, and `seldon doctor` names the fix. Two cases are normal:
 
@@ -237,11 +245,14 @@ redacted value reads `‹redacted›`. The built-in rules cover:
   digits and other characters (so `sort --key=2` and `hotkey=Super` stay
   as they are);
 - `Authorization:`, `X-Api-Key:`, `Private-Token:` and other headers
-  whose name ends in Key, Token, Secret or Auth, and the cookies after
+  whose name ends in Key, Token, Secret or Auth, also a value in quotes
+  (`Authorization: "Bearer …"`, `"Authorization": "…"` in JSON), and the
+  cookies after
   `Cookie:` and `Set-Cookie:` (a `name=value`; `cookie: banner fixed`
   stays);
 - the value of a JSON key such as `"password"`, `"passwd"`,
-  `"client_secret"`, `"access_token"`, `"api_key"` or `"apiKey"` in
+  `"client_secret"`, `"access_token"`, `"api_key"`, `"x-api-key"` or
+  `"apiKey"` in
   inline JSON (`curl -d '{"password": "…"}'`); `"password_hint"` stays;
 - AWS access keys (`AKIA…`, `ASIA…`), GitHub tokens (`ghp_…`, `gho_…`,
   `github_pat_…` and the other `gh…_` forms), GitLab tokens (`glpat-…`),
@@ -257,6 +268,11 @@ redacted value reads `‹redacted›`. The built-in rules cover:
 - proxy credentials: after `curl -U`, `--proxy-user` and
   `--proxy-password`, and `user:pass@` in the proxy after `curl -x`,
   `--proxy` or in `https_proxy=`;
+- a PEM private key (`-----BEGIN OPENSSH PRIVATE KEY-----` and the
+  other `… PRIVATE KEY` blocks): everything between its BEGIN and END
+  lines becomes one `‹redacted›`;
+- nmcli's passwords and keys: the value after `password`, `wifi-sec.psk`,
+  `802-1x.password`, `vpn.secrets` and the other secret properties;
 - the user and password in a URL (`https://user:secret@host`), also
   when the password contains `/`, `?`, `#` or `:`.
 - the part before the `@` of an e-mail address: `me@example.com` reads
@@ -415,8 +431,10 @@ Its error output goes to `~/.local/state/seldon/agent-launch.log`.
 ## Git
 
 With `autocommit = true` every command that writes commits the logbook
-with a message such as `seldon: C-2026-004 active`. The commit takes the
-whole folder, so edits you made in your editor since the last command go
+with a message such as `seldon: C-2026-004 active`. Closing a case names
+it: `seldon: C-2026-004 completed — Install Zed: SUPER+E opens Zed`, the
+title and the first line of its *Result* (for a drop, the reason). The
+commit takes the whole folder, so edits you made in your editor since the last command go
 along with it. The history is your backup and your undo.
 
 With `false`, or with `--no-commit` on one command, the engine writes the

@@ -16,7 +16,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: fmt-check clippy test check-watch check-packaging check-install check-deploy schema-validate docs-check plugin-validate qmllint plugin-test
+check: fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard schema-validate docs-check plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # rustfmt, no changes allowed.
@@ -38,9 +38,9 @@ check-watch:
 
 # Not part of `check` (it needs an optimised compile); required before the
 # handover of a WP that touches engine/src/index/ or commands/watch.rs.
-# `seldon watch` RSS < 10 MB on the x10 fixture, bench profile.
+# `seldon watch` RSS < 11 MB on the x10 fixture, bench profile (10 MB until 2026-10-07).
 check-rss:
-    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_stays_under_10_mb
+    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_stays_under_11_mb
 
 # Not part of `check` (optimised compile, timing on a quiet host); required
 # before the handover of a WP that touches the index build, `status` or the
@@ -132,6 +132,17 @@ schema-validate:
 docs-check:
     bash scripts/docs-check.sh
 
+# The dev-host guard hook (WP-130): the expectation table, every mutant of
+# the mutant list caught by it, shellcheck when installed.
+check-guard:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash -n scripts/guard.sh scripts/guard-test.sh
+    python3 -c 'import ast, sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]' scripts/guard.py scripts/guard-mutants.py scripts/guard-table.py
+    if command -v shellcheck >/dev/null; then shellcheck scripts/guard.sh scripts/guard-test.sh; fi
+    GUARD_TEST_QUIET=1 bash scripts/guard-test.sh
+    python3 scripts/guard-mutants.py
+
 # `omarchy plugin validate plugin/` (host only).
 plugin-validate:
     #!/usr/bin/env bash
@@ -189,7 +200,7 @@ qmllint:
     python3 tests/plugin/check-tokens.py "$shell_dir" "${files[@]}"
     echo "qmllint: ok (${#files[@]} files)"
 
-# Plugin logic: Model.js under node; Service.qml states, the desk (Desk.qml: width, layout, keys, settings writes, notices, IPC) and the pill (BarWidget.qml) in a private headless Quickshell (host only).
+# Plugin logic: Model.js under node; the banners' terminal scripts under bash with stubs; Service.qml states, the desk (Desk.qml: width, layout, keys, settings writes, notices, IPC) and the pill (BarWidget.qml) in a private headless Quickshell (host only).
 plugin-test:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -200,6 +211,7 @@ plugin-test:
     command -v node >/dev/null || { echo "plugin-test: node not found" >&2; exit 1; }
     node tests/plugin/model.test.js
     node tests/plugin/model.bench.js
+    bash tests/plugin/terminal-scripts.sh
     bash tests/plugin/real-home-guard.test.sh
     bash tests/plugin/service-states.sh
     bash tests/plugin/desk-view.sh

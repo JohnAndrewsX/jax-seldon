@@ -105,18 +105,29 @@ mod init {
         assert_eq!(config["language"].as_str(), Some("en"));
         assert_eq!(config["git"]["autocommit"].as_bool(), Some(true));
 
-        // the read grant is printed, never run (ADR-0026)
+        // the read grant is printed, never run (ADR-0026), as an optional
+        // step after what is left to do, with what it grants (WP-118)
         let text = stdout(&out);
         assert!(
-            text.contains(
-                "  sudo setfacl -m u:$USER:rx /.snapshots   # optional: snapshots in the timeline (ADR-0026)\n"
-            ),
+            text.contains("Snapshots   not readable yet; optional, Seldon works without them\n"),
             "{text}"
         );
-        // with what it grants
         assert!(
-            text.contains(seldon::commands::doctor::SNAPPER_FIX_GRANTS),
+            text.ends_with(&format!(
+                "\n\n{}\n  sudo setfacl -m u:$USER:rx /.snapshots\n",
+                seldon::commands::init::SNAPPER_OPTIONAL
+            )),
             "{text}"
+        );
+        let grants = seldon::commands::init::SNAPPER_OPTIONAL.replace('\n', " ");
+        assert!(
+            grants.contains("read access to the snapshot list and info files, nothing else"),
+            "{grants}"
+        );
+        let v = json(&init_at(&env, &env.tmp.path().join("again"), &["--json"]));
+        assert_eq!(
+            v["optionalSteps"],
+            serde_json::json!(["sudo setfacl -m u:$USER:rx /.snapshots"])
         );
     }
 
@@ -152,16 +163,18 @@ mod init {
         };
         let text = run("alice", "listed");
         assert!(
-            text.contains(
-                "  sudo snapper -c root set-config ALLOW_USERS=\"\" SYNC_ACL=no && sudo setfacl -m u:$USER:rx /.snapshots   # recommended: a read grant instead of the snapper opt-in (ADR-0026)\n"
-            ),
+            text.ends_with(&format!(
+                "\n\n{}\n  sudo snapper -c root set-config ALLOW_USERS=\"\" SYNC_ACL=no && sudo setfacl -m u:$USER:rx /.snapshots\n",
+                seldon::commands::init::SNAPPER_RECOMMENDED
+            )),
             "{text}"
         );
         assert!(
-            text.contains("Snapper: ok — 1 snapshots (config root)."),
+            text.contains("Snapshots   recorded, through snapper's ALLOW_USERS opt-in\n"),
             "{text}"
         );
         let text = run("carol", "other");
+        assert!(text.contains("Snapshots   recorded\n"), "{text}");
         assert!(!text.contains("snapper -c root"), "{text}");
         assert!(!text.contains("setfacl"), "{text}");
     }
@@ -180,13 +193,13 @@ mod init {
         assert_eq!(v["git"]["repository"], false);
         assert_eq!(v["snapper"]["status"], "degraded");
         assert!(v["files"].as_u64().unwrap() >= 30);
-        assert!(
-            v["nextSteps"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|s| s == "seldon doctor")
+        // only what is left to do; `seldon doctor` is no step of its own
+        // (WP-118)
+        assert_eq!(
+            v["nextSteps"],
+            serde_json::json!(["seldon capture --all", "seldon dossier"])
         );
+        assert!(v["optionalSteps"].is_array());
     }
 
     #[test]
@@ -270,7 +283,14 @@ mod init {
         // installed by the wizard (WP-024), no longer a next step
         let text = stdout(&out);
         assert!(
-            text.contains("Harness claude-code: ~/.claude/settings.json: 3 hook(s) added"),
+            text.contains("\nAgents      Claude Code hooks (user-wide)\n"),
+            "{text}"
+        );
+        assert!(
+            text.starts_with(&format!(
+                "Logbook     {} (Deutsch, no git; open it in Obsidian as a vault)\n",
+                root.display()
+            )),
             "{text}"
         );
         assert!(
@@ -792,6 +812,15 @@ mod setup {
         assert_eq!(dossier["sections"]["hardware.summary"], "written");
         assert_eq!(dossier["sections"]["packages.summary"], "skipped");
         assert!(!next.iter().any(|s| s == "seldon dossier"), "{next:?}");
+        // its warnings leave one step, with their count (WP-118)
+        let warnings = dossier["warnings"].as_array().unwrap().len();
+        assert!(warnings > 0, "{dossier}");
+        assert!(
+            next.iter().any(
+                |s| s == &format!("seldon dossier   # the first run had {warnings} warning(s)")
+            ),
+            "{next:?}"
+        );
         let hardware = common::read(&env.tmp.path().join("logbook/system/hardware.md"));
         assert!(
             hardware.contains("- cpu: Intel(R) Core(TM) i7-14700K\n"),
@@ -820,9 +849,18 @@ mod setup {
             &[("SELDON_OMARCHY", &no_omarchy(&env))],
         );
         let text = stdout(&human);
-        assert!(text.contains("First capture: 0 event(s)"), "{text}");
-        assert!(text.contains("\nDossier: Wrote system/"), "{text}");
-        assert!(!text.contains("First capture: skipped"), "{text}");
+        // the plugins and theme sources are not stubbed here
+        assert!(
+            text.contains(
+                "\nHistory     from now on; the first capture recorded 0 event(s); plugins, theme degraded\n"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("\nNext steps:\n  seldon doctor   # degraded: plugins, theme\n"),
+            "{text}"
+        );
+        assert!(!text.contains("seldon capture --all"), "{text}");
 
         // with git: the index is rebuilt after the capture's commit, so it
         // names the new head and a clean tree, not the state before it
@@ -931,6 +969,30 @@ mod setup {
                 .unwrap()
                 .iter()
                 .any(|s| s.as_str().unwrap().starts_with("seldon drift"))
+        );
+        // the History row says what the baseline did (WP-118)
+        let human_env = Env::new(Snapper::NoPermissions);
+        let human = init_with(
+            &human_env,
+            &log,
+            &["--since", "2026-08-01", "--baseline"],
+            &[("SELDON_OMARCHY", &omarchy(&human_env))],
+        );
+        assert_eq!(human.status.code(), Some(0), "{}", stderr(&human));
+        let text = stdout(&human);
+        let row = text
+            .lines()
+            .find(|l| l.starts_with("History     "))
+            .unwrap_or_default();
+        assert!(
+            row.starts_with(&format!("History     {written} event(s) since 2026-08-01")),
+            "{text}"
+        );
+        assert!(
+            row.ends_with(&format!(
+                "; {open} drift item(s) marked as the pre-Seldon baseline"
+            )),
+            "{text}"
         );
 
         let drift = env.seldon(&["--json", "drift"]);
@@ -1536,7 +1598,7 @@ command changes system state.";
             "## The engine is the only writer",
             "## Work in cases",
             "## When to ask first",
-            "## R3: the one stop",
+            "## R3: always the user's go",
             "## Privileged steps and snapshots",
             "## Zones and risk",
             "## Installing software",
@@ -1592,7 +1654,7 @@ command changes system state.";
                 &["PKGBUILD", "curl … | sh", "**R3**"],
             ),
             (
-                "## R3: the one stop",
+                "## R3: always the user's go",
                 &[
                     "[drift] alwaysRed",
                     "-Sp --print-format %n",

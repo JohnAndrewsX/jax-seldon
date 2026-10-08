@@ -303,9 +303,10 @@ pub struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
-    /// Runs `program args…` (fixed argv, no shell) with [`RUN_TIMEOUT`].
+    /// Runs `program args…` (fixed argv, no shell) with [`RUN_TIMEOUT`]
+    /// and [`sys::OUTPUT_MAX`].
     pub fn run(&self, program: &str, args: &[&str]) -> sys::Run {
-        sys::run(program, args, None, RUN_TIMEOUT)
+        sys::run(program, args, None, RUN_TIMEOUT, sys::OUTPUT_MAX)
     }
 }
 

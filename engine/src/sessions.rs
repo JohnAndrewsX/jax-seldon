@@ -77,7 +77,14 @@ pub struct Workspace {
 /// The windows Hyprland has (`hyprctl clients -j`). `Err` says why not:
 /// then nothing is tracked.
 pub fn windows() -> Result<Vec<Window>, String> {
-    match sys::run("hyprctl", &["clients", "-j"], None, HYPRCTL_TIMEOUT) {
+    // a window list is far below the cap; a cut one is no answer (WP-154)
+    match sys::run(
+        "hyprctl",
+        &["clients", "-j"],
+        None,
+        HYPRCTL_TIMEOUT,
+        sys::OUTPUT_MAX,
+    ) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -226,7 +233,7 @@ pub fn focus(address: &str) -> Result<(), String> {
         &["dispatch", lua.as_str()][..],
         &["dispatch", "focuswindow", legacy.as_str()][..],
     ] {
-        match sys::run("hyprctl", args, None, HYPRCTL_TIMEOUT) {
+        match sys::run("hyprctl", args, None, HYPRCTL_TIMEOUT, sys::OUTPUT_MAX) {
             Run::Exited {
                 code: Some(0),
                 stdout,
@@ -261,6 +268,7 @@ fn failure(run: &Run) -> String {
                 }
             )
         }
+        Run::Cut => "answered more than 1 MiB".into(),
         Run::NotFound => "not found".into(),
         Run::TimedOut => "did not return".into(),
         Run::Failed(e) => e.clone(),

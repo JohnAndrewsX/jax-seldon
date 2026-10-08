@@ -584,36 +584,73 @@ fn verification_filled(body: &str) -> bool {
     let Some(range) = section(body, "Plan") else {
         return false;
     };
-    let indent = |l: &str| l.len() - l.trim_start().len();
     let lines: Vec<&str> = body[range].lines().collect();
     for (i, line) in lines.iter().enumerate() {
-        let item = line.trim_start();
-        let item = ["- ", "* ", "+ "]
-            .iter()
-            .find_map(|m| item.strip_prefix(m))
-            .unwrap_or(item)
-            .trim_start()
-            .trim_start_matches(['*', '_']);
-        let Some(head) = item.get(..12) else {
+        let Some(rest) = item_text(line, "verification") else {
             continue;
         };
-        if !head.eq_ignore_ascii_case("verification") {
-            continue;
-        }
-        let Some(rest) = item[12..].trim_start_matches(['*', '_']).strip_prefix(':') else {
-            continue;
-        };
-        let mut text = rest.trim_start_matches(['*', '_']).to_string();
-        for next in &lines[i + 1..] {
-            if !next.trim().is_empty() && indent(next) <= indent(line) {
-                break;
-            }
+        let mut text = rest.to_string();
+        for next in continuation(&lines[i + 1..], line) {
             text.push('\n');
             text.push_str(next);
         }
         return has_text(&text);
     }
     false
+}
+
+/// The text after `<label>:` when `line` is that Plan item
+/// (case-insensitive, a list item or a plain line, the label bold or
+/// not: `**Verification:**`, `**Verification**:`).
+fn item_text<'a>(line: &'a str, label: &str) -> Option<&'a str> {
+    let item = line.trim_start();
+    let item = ["- ", "* ", "+ "]
+        .iter()
+        .find_map(|m| item.strip_prefix(m))
+        .unwrap_or(item)
+        .trim_start()
+        .trim_start_matches(['*', '_']);
+    let head = item.get(..label.len())?;
+    if !head.eq_ignore_ascii_case(label) {
+        return None;
+    }
+    let rest = item[label.len()..]
+        .trim_start_matches(['*', '_'])
+        .strip_prefix(':')?;
+    Some(rest.trim_start_matches(['*', '_']))
+}
+
+/// The lines after an item's `line` that belong to it: up to the next
+/// non-blank line indented no deeper than the item.
+fn continuation<'a, 'b>(rest: &'b [&'a str], line: &str) -> impl Iterator<Item = &'b &'a str> {
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let own = indent(line);
+    rest.iter()
+        .take_while(move |next| next.trim().is_empty() || indent(next) > own)
+}
+
+/// `plan` (the text of a Plan section) without its `Stop if:` item and
+/// the lines indented below it (WP-143): what makes an agent stop is no
+/// subject the case plans, so rule 9 does not link by it.
+pub fn without_stop_if(plan: &str) -> String {
+    let lines: Vec<&str> = plan.split_inclusive('\n').collect();
+    let mut out = String::with_capacity(plan.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        i += 1;
+        if item_text(line.trim_end_matches(['\n', '\r']), "stop if").is_some() {
+            // its lines, without the blank ones after them
+            let mut n = continuation(&lines[i..], line).count();
+            while n > 0 && lines[i + n - 1].trim().is_empty() {
+                n -= 1;
+            }
+            i += n;
+            continue;
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 /// The `## Plan` checkboxes (`- [ ]`, `- [x]`): (total, done).
@@ -695,18 +732,46 @@ pub fn new_body(logbook: &Logbook, id: &str, title: &str) -> Result<String> {
     Ok(fill(&template, &[("id", id), ("title", title)]))
 }
 
-/// `.seldon/templates/<name>` of the logbook, else the built-in one.
+/// sha256 of every body template an earlier engine shipped into
+/// `.seldon/templates/` (`seldon init` copies them): a logbook copy that
+/// is still one of them, byte for byte, holds nothing of the user's and
+/// counts as the built-in template, so an existing logbook gets the
+/// current one without a write (WP-143). By template name: the case
+/// template of WP-006, en and de.
+const SHIPPED_TEMPLATES: [(&str, &str); 2] = [
+    (
+        "case.md",
+        "9e8d70708793925822b12806394e3d0dc991d16f71b1b0d91d2d49c6aaf59f06",
+    ),
+    (
+        "case.md",
+        "a0561f366ad32a90f903b1f079cd7934b71224b71769e5244c2f56c63c56cf4c",
+    ),
+];
+
+/// Whether `text` is a `.seldon/templates/<name>` an earlier engine
+/// shipped ([`SHIPPED_TEMPLATES`]).
+fn shipped_template(name: &str, text: &str) -> bool {
+    let hash = sys::sha256_hex(text.as_bytes());
+    SHIPPED_TEMPLATES.contains(&(name, hash.as_str()))
+}
+
+/// `.seldon/templates/<name>` of the logbook, else the built-in one; a
+/// copy an earlier engine shipped unchanged is the built-in one too
+/// ([`SHIPPED_TEMPLATES`]).
 pub fn logbook_template(logbook: &Logbook, name: &str) -> Result<String> {
     let rel = format!(".seldon/templates/{name}");
     let path = logbook.path(&rel);
+    let built_in = || -> Result<String> {
+        let language: Language = logbook.meta.language;
+        templates::find(&rel)
+            .map(|t| t.text(language).to_string())
+            .ok_or_else(|| anyhow::anyhow!("no built-in template {rel}").into())
+    };
     match std::fs::read_to_string(&path) {
+        Ok(text) if shipped_template(name, &text) => built_in(),
         Ok(text) => Ok(text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let language: Language = logbook.meta.language;
-            templates::find(&rel)
-                .map(|t| t.text(language).to_string())
-                .ok_or_else(|| anyhow::anyhow!("no built-in template {rel}").into())
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => built_in(),
         Err(e) => Err(anyhow::Error::new(e)
             .context(format!("cannot read {}", path.display()))
             .into()),
@@ -1023,6 +1088,39 @@ mod tests {
             "# C-1 — {{id}} {{other}}"
         );
         assert_eq!(fill("{{unclosed", &[("unclosed", "x")]), "{{unclosed");
+    }
+
+    /// WP-143: WP-006's case template, en and de, is known by name and
+    /// hash; this engine's is not, nor a copy under another name.
+    #[test]
+    fn the_shipped_case_templates_are_known() {
+        for language in Language::ALL {
+            let now = templates::find(".seldon/templates/case.md")
+                .unwrap()
+                .text(language);
+            let old = now
+                .replace(
+                    "- Persists: <!-- survives reboot and update | reboot only | lost at reboot -->\n",
+                    "",
+                )
+                .replace("- Stop if:\n", "");
+            assert_ne!(old, now, "{language}");
+            assert!(shipped_template("case.md", &old), "{language}");
+            assert!(!shipped_template("decision.md", &old), "{language}");
+            assert!(!shipped_template("case.md", now), "{language}");
+            assert!(!shipped_template("case.md", &format!("{old}\n")));
+        }
+    }
+
+    /// WP-143: rule 9 reads the Plan without its `Stop if:` item.
+    #[test]
+    fn without_stop_if_drops_the_item_and_its_lines() {
+        let plan = "- Goal: zed\n- **Stop if:** `linux` is upgraded\n  - or `glibc`\n\n  - or `pam`\n\n- Verification: x\nstop if: `sddm`\n";
+        assert_eq!(without_stop_if(plan), "- Goal: zed\n\n- Verification: x\n");
+        let plan = "- Stop ifs: `a`\n- Stopif: `b`\n- Stop if\n";
+        assert_eq!(without_stop_if(plan), plan, "not the item");
+        assert_eq!(without_stop_if("- Stop if:"), "");
+        assert_eq!(without_stop_if("x\r\n- Stop if: y\r\nz\r\n"), "x\r\nz\r\n");
     }
 
     #[test]

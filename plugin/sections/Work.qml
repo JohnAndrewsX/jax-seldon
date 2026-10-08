@@ -99,6 +99,7 @@ Section {
   // once, Reopen too; the other writing actions arm, then run.
   function press(actionId) {
     var c = root.current
+    if (actionId === "ask") return !!c && !!root.service && root.service.askAgent("case", c.id)
     var action = Model.caseDeskAction(c, actionId)
     if (!action) return false
     if (!action.write) {
@@ -213,7 +214,7 @@ Section {
     if (root.sheetOpen) return []
     var id = root.current ? root.current.id : ""
     var inFlight = root.pending && root.result.caseId === id ? root.result.action : ""
-    return root.caseActions.map(function(a) {
+    var out = root.caseActions.map(function(a) {
       var busy = a.id === "open" ? root.opening : inFlight === a.id
       return {
         id: a.id,
@@ -224,7 +225,18 @@ Section {
           : a.write || a.id === "focus" ? root.canWrite && !root.pending : true
       }
     })
+    // Ask agent (WP-124b, ADR-0036 §1): about this case, any status; the
+    // agent gets no case to work (`agent ask case <id> --json`).
+    if (root.current && root.service && root.service.askAgentAvailable)
+      out.push({ id: "ask", label: "Ask agent", primary: false,
+        enabled: !(root.service.askResult && root.service.askResult.pending) })
+    return out
   }
+
+  // The last ask about this case, or null.
+  readonly property var askResult: root.service && root.current && root.service.askResult
+    && root.service.askResult.what === "case" && root.service.askResult.target === root.current.id
+    ? root.service.askResult : null
 
   function view() {
     return {
@@ -252,6 +264,8 @@ Section {
         working: root.detailData.working === true,
         actions: detail.actions.map(function(a) { return a.label }),
         enabled: detail.actions.map(function(a) { return a.enabled !== false }),
+        ask: root.askResult ? root.askResult.text : "",
+        askOk: root.askResult ? root.askResult.ok : true,
         armed: root.armed,
         hint: detail.hint,
         kv: root.detailData.kv.map(function(r) { return r[0] + ": " + r[1] }),
@@ -513,6 +527,19 @@ Section {
           font.family: Style.font.family
           font.pixelSize: Style.font.title
           font.bold: true
+        }
+
+        // The last Ask agent about this case: the engine's answer or refusal.
+        Text {
+          objectName: "caseAskResult"
+          width: parent.width
+          visible: !!root.askResult
+          textFormat: Text.PlainText
+          text: root.askResult ? root.askResult.text : ""
+          color: root.askResult && !root.askResult.ok ? Color.urgent : root.dim
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
         }
 
         // An agent closed it (ADR-0027 §5); a reopen names its case.

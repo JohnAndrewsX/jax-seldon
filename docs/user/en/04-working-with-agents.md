@@ -278,6 +278,25 @@ with the agent's name. Green commands are not recorded at all.
 | yellow | writes into watched paths: `cp`, `mv`, `tee`, `sed -i`, `rm`, redirections, and Claude Code's Edit and Write tools |
 | green | every other changing command (`npm install`, `git push`, files elsewhere), only while a case is active |
 
+Every command an agent asks to run with `sudo`, `doas`, `pkexec` or
+`run0` is recorded too, red and with or without a case, even when Seldon
+does not know the program. When an agent adds a printer with `pkexec
+lpadmin -p Office … -E`, the record shows `lpadmin` as the subject, the
+command line (known secret forms removed) as its text, and `pkexec` as
+the wrapper. A command the table above already records (`pkexec pacman
+-S cups`) is recorded once, as before. Checks that change nothing (`sudo
+-l`, `sudo -n true`, `pkexec --version`, `command -v sudo`) record
+nothing. The hook runs before the command, so the record says "asked to
+run": it is there even if you cancel the password prompt. A line that
+pipes a password into `sudo -S` is recorded only as the program and
+`‹redacted›`, and so is a line that gives a password as a plain argument
+or pipes it into the program (`htpasswd -b`, `echo user:pw | chpasswd`,
+`usermod -p`, `smbpasswd -s`, `passwd` fed from the line, `openssl
+passwd`, a key piped into `cryptsetup` or written to a file on the same
+line). Such a record is on the case and in the Changelog; it is
+not listed as drift (the change it makes is, by the collector that sees
+it).
+
 A hook records the command line and the path. It never records a
 command's output or a file's content. Before writing, the engine removes
 passwords and tokens it recognises (see [Configuration](06-configuration.md#redaction)).

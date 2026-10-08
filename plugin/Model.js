@@ -14,7 +14,7 @@ var CONTRACT_VERSION = 2
 // manifest from disk on every rescan but keeps running the plugin code it
 // compiled first (WP-090), so a manifest that says otherwise means the
 // plugin was updated under a running shell (restartShellNotice).
-var PLUGIN_VERSION = "0.1.3"
+var PLUGIN_VERSION = "0.1.4"
 
 // SPEC-PLUGIN §3: an index older than two hours is stale.
 var STALE_AFTER_MS = 2 * 60 * 60 * 1000
@@ -37,6 +37,8 @@ var STATUSES = ["ok", "engineMissing", "notInitialised", "indexMissing", "indexS
 // Patterns from schema/event.schema.json $defs.
 var CASE_ID = /^C-[0-9]{4}-[0-9]{3,}$/
 var EVENT_ID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/
+// A triage proposal's id (a ULID, like an event's; ADR-0035 §6).
+var PROPOSAL_ID = EVENT_ID
 var ZONES = ["green", "yellow", "red"]
 var RISKS = ["R0", "R1", "R2", "R3"]
 // `seldon open` targets the panel uses; `logbook` (the logbook folder) stands
@@ -57,7 +59,8 @@ var PLAN_STEPS = ["start", "verify", "done", "drop"]
 // this project's release, and the script checks the engine against
 // SHA256SUMS. Flip back to "omarchy pkg aur add jax-seldon" (ADR-0004,
 // ADR-0016: `omarchy pkg add` only reaches the official repositories) when
-// the AUR package is live, together with ENGINE_MISSING_DETAIL below.
+// the AUR package is live, together with ENGINE_MISSING_DETAIL and the
+// texts of INSTALL_ENGINE_SCRIPT below.
 var INSTALL_ENGINE_COMMAND = "curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash"
 // While the AUR package does not exist, updating the engine is the same
 // installer (ADR-0024); flip back together with INSTALL_ENGINE_COMMAND.
@@ -69,12 +72,143 @@ var INIT_COMMAND = "seldon init"
 // shell the user pastes it into (or by the terminal launcher's bash -c);
 // nothing else in it varies.
 var SNAPPER_FIX_COMMAND = "sudo setfacl -m u:$USER:rx /.snapshots"
-// What SNAPPER_FIX_COMMAND grants; the banner shows it under the engine's
-// message, like `seldon doctor` (SNAPPER_FIX_GRANTS there).
+// What SNAPPER_FIX_COMMAND grants; the snapper banner's hover text has it
+// under the engine's message, like `seldon doctor` (SNAPPER_FIX_GRANTS there).
 var SNAPPER_FIX_GRANTS = "The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
-// The engineMissing banner's text. The AUR package does not exist yet
-// (operator, 2026-10-02); flip this with INSTALL_ENGINE_COMMAND (WP-044).
-var ENGINE_MISSING_DETAIL = "The plugin needs the seldon command. AUR package: coming soon; until then install from GitHub: the command below downloads install.sh from the release, which checks the engine against SHA256SUMS. Then check again."
+// The engineMissing banner's text: what *Install* does, in one sentence.
+// Flip it with INSTALL_ENGINE_COMMAND when the AUR package is live (WP-044).
+var ENGINE_MISSING_DETAIL = "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it; runs as your user, no password."
+
+// ---- Terminal scripts (WP-117) ---------------------------------------------
+
+// A banner's *Install*, *Create*, *Grant* or *Update* opens Omarchy's
+// presentation terminal (logo, the script, "Done!"; it exports the theme's
+// gum colours) with one of the scripts below, never with anything else
+// (terminalArgv). Omarchy's own pattern (omarchy-system-factory-reset,
+// omarchy-update-confirm, omarchy-snapshot): a bold line says what
+// happens, one plain paragraph why and whether a password is asked, the
+// command is shown, then run, then one line says what changed, in the
+// terminal palette's green (2) or red (1). A result line never claims
+// more than happened (WP-117 round 2).
+//
+// Every script is built once, here, from the string literals below: nothing
+// from the index, the logbook or the environment goes in (AGENTS.md §8).
+// The texts are single-quoted, so `$USER` in the shown command stays as
+// the user would copy it; the run line (`run`, else the command) is
+// unquoted, so its `$USER` and pipe work. It runs with pipefail in a
+// subshell: a failed download in `curl … | bash` is a failure, not bash's
+// exit 0 on empty input.
+//
+// Ctrl+C (or TERM) is trapped: the trap only notes it, the script skips a
+// command that has not started, prints the `cancelled` line (palette 3)
+// and ends with 130, Omarchy's "cancelled" status, on which the wrapper
+// closes the window without "Done!". Every other ending is status 0 after
+// the result line, so "Done!" follows and the user closes the window.
+//
+// `after` runs only on success. With `partial`, its exit status picks the
+// line: `ok` when it succeeded, `partial` when not; without, it is a
+// best-effort step and `ok` follows either way.
+function shellQuoted(text) {
+  return "'" + String(text).split("'").join("'\\''") + "'"
+}
+
+function terminalScript(s) {
+  var line = function(colour, text) {
+    return "gum style --padding '1 0 0 0' --foreground " + colour + " " + shellQuoted(text)
+  }
+  var success = !s.after ? line(2, s.ok)
+    : s.partial ? "if " + s.after + "; then " + line(2, s.ok) + "; else " + line(2, s.partial) + "; fi"
+    : s.after + "; " + line(2, s.ok)
+  return [
+    "seldon_cancelled=",
+    "trap 'seldon_cancelled=1' INT TERM",
+    "gum style --bold " + shellQuoted(s.title),
+    "gum style --width 72 " + shellQuoted(s.what),
+    "gum style --padding '1 0 1 2' " + shellQuoted(s.command),
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; " + (s.run || s.command) + "); then "
+      + success + "; trap - INT TERM"
+      + "; elif [ -n \"$seldon_cancelled\" ]; then " + line(3, s.cancelled) + "; trap - INT TERM; (exit 130)"
+      + "; else " + line(1, s.failed) + "; trap - INT TERM; fi"
+  ].join("; ")
+}
+
+// install.sh can stop after it replaced the binary (unit, completions,
+// manifest), so a failure does not claim that nothing changed.
+var INSTALL_ENGINE_SCRIPT = terminalScript({
+  title: "Seldon: install the engine",
+  what: "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.",
+  command: INSTALL_ENGINE_COMMAND,
+  ok: "The engine is installed. In the Seldon panel, press Check again.",
+  failed: "The install did not finish. Run it again; your logbook is untouched.",
+  cancelled: "Cancelled. The install did not finish. Run it again; your logbook is untouched."
+})
+// After the update the new engine rewrites the index once, so an index in
+// an old contract version goes without waiting for the next capture; if
+// that fails, the next capture does it, and the line asks for Check again
+// anyway.
+var UPDATE_ENGINE_SCRIPT = terminalScript({
+  title: "Seldon: update the engine",
+  what: "Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.",
+  command: UPDATE_ENGINE_COMMAND,
+  after: "seldon status >/dev/null 2>&1 || true",
+  ok: "The engine is updated. In the Seldon panel, press Check again.",
+  failed: "The update did not finish. Run it again; your logbook is untouched.",
+  cancelled: "Cancelled. The update did not finish. Run it again; your logbook is untouched."
+})
+// Omarchy's update shows the diff and asks before it changes anything; a
+// "no" also exits 0, so the line does not claim an update.
+var UPDATE_PLUGIN_SCRIPT = terminalScript({
+  title: "Seldon: update the plugin",
+  what: "Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.",
+  command: UPDATE_PLUGIN_COMMAND,
+  ok: "If the plugin was updated, the Seldon panel offers Restart shell to load it.",
+  failed: "Nothing changed. The plugin stays at its version.",
+  cancelled: "Cancelled. The plugin update did not finish."
+})
+// `seldon init` writes the index; the service's FileView picks it up and
+// the banner goes (Service.ingest).
+var INIT_SCRIPT = terminalScript({
+  title: "Seldon: create your logbook",
+  what: "Sets up the logbook folder and starts recording. Asks a few questions; Enter takes the suggested answer. No password.",
+  command: INIT_COMMAND,
+  ok: "Your logbook is ready. The panel updates by itself.",
+  failed: "No logbook was created; the message above says why. Press Create in the panel to try again.",
+  cancelled: "Cancelled. Press Create in the panel to start again."
+})
+// After the grant a capture records the snapshots and rewrites the index,
+// so the banner goes without a click. Exit 4 (the plugin's own timed
+// capture holds the lock) gets one more try; only a capture that succeeded
+// says the snapshots are recorded, else the next timed capture does it.
+// The run line has `${USER:?}`: with an empty USER it stops before sudo
+// instead of granting `u::rx` (the owner bits); the shown command stays the
+// one Copy copies (ADR-0026: the engine never runs the grant itself; the
+// user's click runs it, in the user's terminal).
+var SNAPPER_FIX_SCRIPT = terminalScript({
+  title: "Seldon: let your user read the snapshot list",
+  what: "Grants read access to /.snapshots: the listing and the snapshot info files, nothing else. No snapshot is created, changed or deleted. Asks for your password once.",
+  command: SNAPPER_FIX_COMMAND,
+  run: "sudo setfacl -m u:${USER:?}:rx /.snapshots",
+  after: "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }",
+  ok: "Snapshots are now recorded. The panel updates by itself.",
+  partial: "Read access granted. Seldon records snapshots at its next capture.",
+  failed: "Nothing changed. Snapshots stay off; Seldon works without them.",
+  cancelled: "Cancelled. Nothing changed."
+})
+
+var TERMINAL_SCRIPTS = [INSTALL_ENGINE_SCRIPT, UPDATE_ENGINE_SCRIPT, UPDATE_PLUGIN_SCRIPT, INIT_SCRIPT, SNAPPER_FIX_SCRIPT]
+
+function isTerminalScript(script) {
+  return typeof script === "string" && TERMINAL_SCRIPTS.indexOf(script) !== -1
+}
+
+// The argv Service.fix starts for a banner's terminal action: the launcher
+// with the banner's script, only when that is one of TERMINAL_SCRIPTS;
+// null for anything else, so a banner object can never hand the launcher
+// another string.
+function terminalArgv(banner) {
+  var script = isObject(banner) ? banner.script : undefined
+  return isTerminalScript(script) ? ["omarchy-launch-floating-terminal-with-presentation", script] : null
+}
 
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -382,21 +516,28 @@ function tooltipText(status, c, lastCaptureText, nowMs) {
 
 // ---- Banners ----------------------------------------------------------------
 
-// One banner per non-ok status, each with its one-click fix (AGENTS.md §7).
-// Action ids are dispatched by Service.fix(): copy, terminal, recheck,
-// build, capture. `command` is always one of the constants above.
-// ctx: { indexContractVersion, parseError, generatedAt, nowMs }
+// One banner per non-ok status, each with its one-click fix (AGENTS.md §7),
+// its detail one sentence (WP-117). Action ids are dispatched by
+// Service.fix(): copy, terminal, recheck, build, capture. `command` (shown
+// and copied) is always one of the constants above, `script` (what the
+// terminal action runs) the matching terminal script.
+// ctx: { indexContractVersion, parseError, generatedAt, nowMs, indexExists }
+// indexExists: an index file is there, so the engine wrote one before and
+// is gone now (urgent); without one the user has not installed it yet, a
+// setup step (accent).
 function bannerFor(status, ctx) {
   ctx = ctx || {}
   if (status === "engineMissing") {
+    var gone = ctx.indexExists === true
     return {
       status: status,
-      tone: "urgent",
-      title: "Seldon engine not installed",
+      tone: gone ? "urgent" : "accent",
+      title: gone ? "Seldon engine missing" : "Install the engine",
       detail: ENGINE_MISSING_DETAIL,
       command: INSTALL_ENGINE_COMMAND,
+      script: INSTALL_ENGINE_SCRIPT,
       actions: [
-        { id: "terminal", label: "Install in terminal" },
+        { id: "terminal", label: "Install" },
         { id: "copy", label: "Copy" },
         { id: "recheck", label: "Check again" }
       ]
@@ -406,11 +547,12 @@ function bannerFor(status, ctx) {
     return {
       status: status,
       tone: "accent",
-      title: "Logbook not initialised",
-      detail: "Create your logbook once with seldon init.",
+      title: "Create your logbook",
+      detail: "Sets up your logbook and starts recording; the terminal asks a few questions, no password.",
       command: INIT_COMMAND,
+      script: INIT_SCRIPT,
       actions: [
-        { id: "terminal", label: "Run in terminal" },
+        { id: "terminal", label: "Create" },
         { id: "copy", label: "Copy" },
         { id: "recheck", label: "Check again" }
       ]
@@ -446,11 +588,12 @@ function bannerFor(status, ctx) {
       status: status,
       tone: "urgent",
       title: "Index format mismatch",
-      detail: "The index uses contract v" + found + ", this plugin reads v" + CONTRACT_VERSION
-        + ". Update the " + (pluginOlder ? "plugin" : "engine") + ".",
+      detail: "The index uses contract v" + found + " and this plugin reads v" + CONTRACT_VERSION
+        + ": update the " + (pluginOlder ? "plugin" : "engine") + ".",
       command: pluginOlder ? UPDATE_PLUGIN_COMMAND : UPDATE_ENGINE_COMMAND,
+      script: pluginOlder ? UPDATE_PLUGIN_SCRIPT : UPDATE_ENGINE_SCRIPT,
       actions: [
-        { id: "terminal", label: "Update in terminal" },
+        { id: "terminal", label: "Update" },
         { id: "copy", label: "Copy" }
       ]
     }
@@ -542,6 +685,11 @@ function validateArgs(args) {
     return "plan must be: plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] -- <title>"
       + " | plan start|verify|done|drop <caseId> | plan reopen <caseId> --json"
   case "drift":
+    // WP-124 (ADR-0036): apply or discard the proposal index.triage names;
+    // a crisis one --item per run. Never `propose` (the agent's command).
+    if (!withText && json && n === 3 && (a[1] === "apply" || a[1] === "discard") && PROPOSAL_ID.test(a[2])) return ""
+    if (!withText && json && n === 5 && a[1] === "apply" && PROPOSAL_ID.test(a[2]) && a[3] === "--item"
+        && EVENT_ID.test(a[4])) return ""
     var id = n >= 3 && EVENT_ID.test(a[2])
     if (id && !withText && a[1] === "link" && n >= 4 && CASE_ID.test(a[3]) && (n === 4 || only(4))) return ""
     // dismiss takes its reason like explain its text, after `--` (WP-011
@@ -560,15 +708,21 @@ function validateArgs(args) {
     if (id && !withText && a[1] === "show" && n === 3 && json) return ""
     return "drift must be: drift link <eventId> <caseId> [--only] | explain <eventId> [--only] [--zone <z>]"
       + " [--risk <r>] [--area <a>] -- <text> | dismiss <eventId> [--only] -- <text> | show <eventId> --json"
+      + " | apply <proposalId> [--item <eventId>] --json | discard <proposalId> --json"
   case "agent":
     // WP-022: the engine reads the launcher from its config; nothing else.
     if (!withText && n === 3 && a[1] === "start" && CASE_ID.test(a[2]) && json) return ""
     // WP-101: one sentence creates, starts and hands a case to the agent
     if (withText && n === 3 && a[1] === "start" && a[2] === "--new" && json) return ""
-    // WP-156: the window of the agent working on a case; the live sessions
+    // WP-124 (ADR-0036 §1): ids only; the engine builds the prompt
+    if (!withText && json && n === 3 && a[1] === "ask" && a[2] === "triage") return ""
+    if (!withText && json && n === 4 && a[1] === "ask"
+        && ((a[2] === "drift" && EVENT_ID.test(a[3])) || (a[2] === "case" && CASE_ID.test(a[3])))) return ""
+    // WP-156 (ADR-0041): the window of the agent working on a case; the open sessions
     if (!withText && n === 3 && a[1] === "focus" && CASE_ID.test(a[2]) && json) return ""
     if (!withText && n === 2 && a[1] === "sessions" && json) return ""
     return "agent must be: agent start <caseId> --json | agent start --new --json -- <intent>"
+      + " | agent ask triage --json | agent ask drift <eventId> --json | agent ask case <caseId> --json"
       + " | agent focus <caseId> --json | agent sessions --json"
   case "doctor":
     // WP-101: read-only, the rules row only (Service.checkRules); no probe
@@ -737,18 +891,16 @@ function collectors(index) {
   return index && isObject(index.state) && Array.isArray(index.state.collectors) ? index.state.collectors : []
 }
 
-// The snapper banner's hint after *Run in terminal* (WP-054, issue #2).
-var SNAPPER_HINT = "When the command has finished, press Check again"
-
 // ADR-0026: snapper runs degraded until the user grants read access. The
-// banner shows the engine's message as plain text, then what the fix grants
-// (SNAPPER_FIX_GRANTS), and offers the constant fix. Action ids are
-// dispatched by Service.fix(actionId, "snapper"). *Check again* is a capture
-// (the same call as *Capture now*): only a capture rewrites the collector
-// state this banner reads; reloading the index would not (WP-054).
-// `hinted`: Run in terminal was clicked and the index has not changed since;
-// the banner then carries SNAPPER_HINT in `hint`.
-function snapperBanner(index, hinted) {
+// banner says in one sentence what *Grant* does (WP-117); the engine's
+// message and what the grant grants (SNAPPER_FIX_GRANTS) are its hover text
+// (`full`). *Grant* runs SNAPPER_FIX_SCRIPT, which captures after the grant,
+// so the banner goes by itself. Action ids are dispatched by
+// Service.fix(actionId, "snapper"). *Check again* is a capture (the same
+// call as *Capture now*), for a grant run outside the panel: only a capture
+// rewrites the collector state this banner reads; reloading the index
+// would not (WP-054).
+function snapperBanner(index) {
   var list = collectors(index)
   for (var i = 0; i < list.length; i++) {
     var c = list[i]
@@ -756,17 +908,18 @@ function snapperBanner(index, hinted) {
     return {
       status: "snapperDegraded",
       tone: "accent",
-      title: "Snapshots not readable",
-      detail: (typeof c.message === "string" && c.message !== ""
+      title: "Read snapshots (optional)",
+      detail: "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it.",
+      full: (typeof c.message === "string" && c.message !== ""
         ? c.message
         : "The snapper collector has no permission to list snapshots.") + "\n" + SNAPPER_FIX_GRANTS,
       command: SNAPPER_FIX_COMMAND,
+      script: SNAPPER_FIX_SCRIPT,
       actions: [
-        { id: "terminal", label: "Run in terminal" },
+        { id: "terminal", label: "Grant" },
         { id: "copy", label: "Copy" },
         { id: "capture", label: "Check again" }
-      ],
-      hint: hinted === true ? SNAPPER_HINT : ""
+      ]
     }
   }
   return null
@@ -1063,7 +1216,7 @@ function todayView(index) {
     entries: journalEntries(today.entries),
     yesterday: journalEntries(today.yesterday),
     stats: [
-      { label: "events today", value: count(summary.eventsToday) },
+      { label: count(summary.eventsToday) === 1 ? "event today" : "events today", value: count(summary.eventsToday) },
       { label: "in 7 days", value: count(summary.events7d) },
       { label: "active", value: count(summary.activeCases) },
       { label: "queued", value: count(summary.queuedCases) },
@@ -3094,11 +3247,11 @@ function engineOutdatedBanner(status, engineVersion, engineMin) {
     status: "engineOutdated",
     tone: "urgent",
     title: "Engine too old",
-    detail: "This plugin needs engine " + engineMin + " or newer; seldon reports " + engineVersion
-      + ". Update the engine to at least " + engineMin + ", then check again.",
+    detail: "This plugin needs engine " + engineMin + " or newer and seldon reports " + engineVersion + ".",
     command: UPDATE_ENGINE_COMMAND,
+    script: UPDATE_ENGINE_SCRIPT,
     actions: [
-      { id: "terminal", label: "Update in terminal" },
+      { id: "terminal", label: "Update" },
       { id: "copy", label: "Copy" },
       { id: "recheck", label: "Check again" }
     ]
@@ -3666,8 +3819,8 @@ function whyLoud(row, proposedCase, info) {
 
 // One event as the detail shows it (prototype `eventDetail`): heading
 // "source · kind", the full subject, the class, the callout, and the
-// key/value rows When · Who · What · Case · Rule · Source (· Zone ·
-// Resolved · Event). `info`: the engine's rule (driftRuleInfo). null when
+// key/value rows When · Who · What (· Commits) · Case · Rule · Source (·
+// Zone · Resolved · Event). `info`: the engine's rule (driftRuleInfo). null when
 // the index has no such event.
 function eventDetail(index, prepared, id, info) {
   var row = changelogRow(prepared, id)
@@ -3700,6 +3853,11 @@ function eventDetail(index, prepared, id, info) {
     ["Rule", rule],
     ["Source", SOURCE_TEXTS[row.source] !== undefined ? SOURCE_TEXTS[row.source] : row.source]
   ]
+  // WP-136: the commits of a plugin clone's update as the engine named
+  // them (meta.commits, one subject per line, newest first; meta.git
+  // pull | rollback | reset), plain text after What
+  var commits = isObject(e.meta) ? str(e.meta.commits) : ""
+  if (commits !== "") kv.splice(3, 0, [e.meta.git === "rollback" ? "Rolled back" : "Commits", commits])
   if (row.zone !== "") kv.push(["Zone", row.zone])
   if (row.resolution !== "") kv.push(["Resolved", rowStatus(row)])
   kv.push(["Event", row.id])
@@ -3737,6 +3895,294 @@ function eventActions(detail, opts) {
   }
   for (var i = 0; i < out.length; i++) out[i].primary = i === 0
   return out
+}
+
+// ---- Triage (WP-124b; ADR-0034 §6, ADR-0036) --------------------------------
+//
+// "Agent sorts N open changes" asks the default agent for a proposal
+// (`agent ask triage --json`); the agent stores it with `drift propose`
+// (never the plugin's call), the index points at it (`index.triage`), and
+// the desk shows it from the file next to the index (CONTRACT.md rule 1:
+// the files the index points to). Apply is bound to the id the user saw
+// (`drift apply <index.triage.id> --json`); a crisis has its own button,
+// one per run (`--item <eventId>`). Every text of the file is data:
+// shown as plain text, never evaluated (CONTRACT.md rule 6).
+
+var PROPOSAL_PATH = /^proposals\/[0-7][0-9A-HJKMNP-TV-Z]{25}\.json$/
+var AGENT_ACTOR = /^agent:[a-z0-9-]+$/
+var EVIDENCE_KINDS = ["journal", "event", "snapshot", "case", "plan"]
+var EVIDENCE_KIND_LABELS = { journal: "Journal", event: "Event", snapshot: "Snapshot", "case": "Case", plan: "Plan of" }
+var TRIAGE_ITEMS_MAX = 200
+var TRIAGE_REFS_MAX = 10
+
+// The open changes the button names (attention + crises, a group once),
+// and whether it shows: something open and an engine that can run.
+function triageButton(index, canWrite) {
+  var c = counts(index)
+  var n = c ? c.drift : 0
+  return { visible: canWrite === true && n > 0, count: n, text: "Agent sorts " + plural(n, "open change", "open changes") }
+}
+
+// Where the proposal index.triage names lies: `path` is relative to the
+// directory of index.json (ADR-0035 §6), exactly `proposals/<id>.json`.
+// "" when the index names none, or names it in any other form.
+function triagePath(indexPath, index) {
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (!t || typeof t.id !== "string" || !PROPOSAL_ID.test(t.id) || t.path !== "proposals/" + t.id + ".json"
+      || !PROPOSAL_PATH.test(t.path)) return ""
+  var p = String(indexPath || "")
+  var cut = p.lastIndexOf("/")
+  return cut < 0 ? "" : p.slice(0, cut + 1) + t.path
+}
+
+// The proposal file as the desk needs it, checked against
+// proposal.schema.json: only its properties, `logbook` present, `at` and
+// `applied` date-times, the length limits, a link without title or intent
+// and an explanation without a case. null when it is not the proposal
+// `triage` names, larger than the engine reads (4 MiB), or off in any part
+// — the engine wrote it, so a deviation is an edit the desk does not show.
+var PROPOSAL_TEXT_MAX = 4 * 1024 * 1024
+var DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
+
+function onlyKeys(obj, keys) {
+  for (var k in obj) if (keys.indexOf(k) === -1) return false
+  return true
+}
+
+// A string of `min`..`max` characters counted as the engine and JSON
+// Schema count them: code points, not UTF-16 units (an emoji is one).
+function textUpTo(value, max, min) {
+  if (typeof value !== "string") return false
+  var n = Array.from(value).length
+  return n >= (min || 0) && n <= max
+}
+
+function parseProposal(text, triage) {
+  if (!isObject(triage)) return null
+  var raw = String(text || "")
+  if (raw.length > PROPOSAL_TEXT_MAX) return null
+  var data = parseJson(raw)
+  if (!data || !onlyKeys(data, ["id", "at", "actor", "logbook", "applied", "items"])) return null
+  if (data.id !== triage.id || typeof data.actor !== "string" || !AGENT_ACTOR.test(data.actor)
+      || !textUpTo(data.logbook, 4096, 1) || typeof data.at !== "string" || !DATE_TIME.test(data.at)
+      || !(data.applied === null || (typeof data.applied === "string" && DATE_TIME.test(data.applied)))
+      || !Array.isArray(data.items) || data.items.length > TRIAGE_ITEMS_MAX) return null
+  var items = []
+  for (var i = 0; i < data.items.length; i++) {
+    var it = data.items[i]
+    if (!isObject(it) || !onlyKeys(it, ["eventId", "action", "caseId", "title", "intent", "crisis", "evidence"])
+        || typeof it.eventId !== "string" || !EVENT_ID.test(it.eventId)
+        || (it.action !== "link" && it.action !== "explain") || typeof it.crisis !== "boolean"
+        || !Array.isArray(it.evidence) || it.evidence.length < 1 || it.evidence.length > TRIAGE_REFS_MAX) return null
+    if (it.action === "link" && (typeof it.caseId !== "string" || !CASE_ID.test(it.caseId)
+        || it.title !== undefined || it.intent !== undefined)) return null
+    if (it.action === "explain" && (it.caseId !== undefined || !textUpTo(it.title, 256, 1)
+        || !textUpTo(it.intent, 4096, 1))) return null
+    var evidence = []
+    for (var j = 0; j < it.evidence.length; j++) {
+      var e = it.evidence[j]
+      if (!isObject(e) || !onlyKeys(e, ["kind", "ref", "text"]) || EVIDENCE_KINDS.indexOf(e.kind) === -1
+          || !textUpTo(e.ref, 64, 1) || (e.text !== undefined && !textUpTo(e.text, 256))) return null
+      evidence.push({ kind: e.kind, ref: e.ref, text: typeof e.text === "string" ? e.text : "" })
+    }
+    items.push({
+      eventId: it.eventId,
+      action: it.action,
+      caseId: it.action === "link" ? it.caseId : "",
+      title: it.action === "explain" ? it.title : "",
+      intent: it.action === "explain" ? it.intent : "",
+      crisis: it.crisis,
+      evidence: evidence
+    })
+  }
+  return { id: data.id, at: data.at, actor: data.actor, applied: data.applied === null ? "" : data.applied, items: items }
+}
+
+// The proposal the user opened (`seenId`, WP-124b round 2) against the
+// one the index names now: { state: none|current|replaced|gone, text }.
+// Apply and Discard act only on the current one: a replaced or gone
+// proposal is never applied unseen.
+function triageSeen(index, seenId) {
+  var id = String(seenId || "")
+  if (id === "") return { state: "none", text: "" }
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (t && t.id === id) return { state: "current", text: "" }
+  if (t && typeof t.id === "string")
+    return { state: "replaced", text: "Replaced by a newer proposal by " + str(t.actor) + " at " + stamp(t.at) + " — review it" }
+  return { state: "gone", text: "Proposal " + id + " is not there any more: applied and replaced, or discarded." }
+}
+
+// The author the engine wrote in front of an evidence text (`by <author> ·
+// …`, ADR-0036 §2); "" when there is none.
+function evidenceAuthor(text) {
+  var m = /^by (.+?) · /.exec(String(text || ""))
+  return m ? m[1] : ""
+}
+
+// Evidence the user should read twice: any author is an agent or unknown
+// (the engine names every author, WP-124b round 2), a Plan an agent worked
+// on, or a text without its authors.
+function evidenceFlagged(author) {
+  return author === "" || author.indexOf("agent:") !== -1 || /(^|, )unknown(,|$| )/.test(author)
+}
+
+// What the last apply did with an item: { state: done|skipped|refused,
+// reason } or null (not in that run).
+function itemOutcome(result, eventId) {
+  if (!isObject(result)) return null
+  var lists = [["done", result.done], ["skipped", result.skipped], ["refused", result.refused]]
+  for (var i = 0; i < lists.length; i++) {
+    var list = Array.isArray(lists[i][1]) ? lists[i][1] : []
+    for (var j = 0; j < list.length; j++)
+      if (isObject(list[j]) && list[j].eventId === eventId)
+        return { state: lists[i][0], reason: typeof list[j].reason === "string" ? list[j].reason
+          : typeof list[j].warning === "string" ? list[j].warning : "" }
+  }
+  return null
+}
+
+// The proposal as the detail shows it: the sticky bar's line (Fable's
+// wording: "N items proposed by <actor> at <at>, C crises held back —
+// apply each below"), the state line, the items Apply takes and the
+// crises, each with its subject (index.events), its action, every evidence
+// text with its author first, a mark when any evidence needs a second
+// look, whether it is still open, and the last apply's outcome. `result`:
+// Service.triageResult of this proposal. null without index.triage.
+function triageView(index, proposal, prepared, result) {
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (!t || typeof t.id !== "string") return null
+  var n = isObject(t.counts) ? count(t.counts.items) : 0
+  var c = isObject(t.counts) ? count(t.counts.crises) : 0
+  var actor = typeof t.actor === "string" ? t.actor : ""
+  var at = stamp(t.at)
+  var view = {
+    id: t.id,
+    actor: actor,
+    at: at,
+    applied: typeof t.applied === "string" ? stamp(t.applied) : "",
+    readable: !!proposal,
+    head: plural(n, "item", "items") + " proposed by " + actor + " at " + at + ", "
+      + plural(c, "crisis", "crises") + " held back — apply each below",
+    state: typeof t.applied === "string"
+      ? "Applied " + stamp(t.applied) + ". That marks the run, not every item: what is still open shows below."
+      : actor + " · proposal, nothing written yet",
+    items: [],
+    regular: [],
+    crises: [],
+    applyCount: 0
+  }
+  if (!proposal) return view
+  var mine = isObject(result) && result.proposalId === t.id ? result : null
+  for (var i = 0; i < proposal.items.length; i++) {
+    var it = proposal.items[i]
+    var row = changelogRow(prepared, it.eventId)
+    var e = row ? null : findEvent(index, it.eventId)
+    var subject = row ? row.subject : e && typeof e.subject === "string" ? e.subject : it.eventId
+    var crisis = it.crisis || (!!row && row.cls === "crisis")
+    var evidence = it.evidence.map(function(ev) {
+      var author = evidenceAuthor(ev.text)
+      return {
+        label: EVIDENCE_KIND_LABELS[ev.kind] + " " + ev.ref,
+        text: ev.text !== "" ? ev.text : "(the engine wrote no text for this ref)",
+        author: author,
+        flagged: evidenceFlagged(author)
+      }
+    })
+    var item = {
+      eventId: it.eventId,
+      subject: subject,
+      kind: row ? row.source + " · " + row.kind : "",
+      action: it.action,
+      actionText: it.action === "link" ? "Link to " + it.caseId : "Explain: " + it.title,
+      intent: it.intent,
+      crisis: crisis,
+      open: !!row && row.drift === true,
+      evidence: evidence,
+      flagged: evidence.some(function(ev) { return ev.flagged }),
+      outcome: mine ? itemOutcome(mine, it.eventId) : null
+    }
+    view.items.push(item)
+    if (crisis) view.crises.push(item)
+    else {
+      view.regular.push(item)
+      if (item.open) view.applyCount++
+    }
+  }
+  return view
+}
+
+// `seldon agent ask triage|drift <eventId>|case <caseId> --json` (ADR-0036
+// §1): ids only. { args } or { error }.
+function askArgs(what, id) {
+  var target = String(id || "")
+  if (what === "triage") return { args: ["agent", "ask", "triage", "--json"] }
+  if (what === "drift" && EVENT_ID.test(target)) return { args: ["agent", "ask", "drift", target, "--json"] }
+  if (what === "case" && CASE_ID.test(target)) return { args: ["agent", "ask", "case", target, "--json"] }
+  return { error: "Not something an agent can be asked about: " + what + " " + target }
+}
+
+// `seldon drift apply <proposalId> [--item <eventId>] --json`: one --item
+// at most (a crisis one per run, ADR-0036 §3).
+function applyArgs(proposalId, eventId) {
+  var id = String(proposalId || "")
+  if (!PROPOSAL_ID.test(id)) return { error: "Not a proposal id: " + id }
+  if (eventId === undefined || eventId === null || eventId === "") return { args: ["drift", "apply", id, "--json"] }
+  var item = String(eventId)
+  if (!EVENT_ID.test(item)) return { error: "Not an event id: " + item }
+  return { args: ["drift", "apply", id, "--item", item, "--json"] }
+}
+
+function discardArgs(proposalId) {
+  var id = String(proposalId || "")
+  if (!PROPOSAL_ID.test(id)) return { error: "Not a proposal id: " + id }
+  return { args: ["drift", "discard", id, "--json"] }
+}
+
+// `agent ask --json` → { launched, ask, target, open, launcher, program, … }.
+function askResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
+  var data = parseJson(stdoutText) || {}
+  var launcher = typeof data.launcher === "string" ? data.launcher : ""
+  var program = typeof data.program === "string" ? data.program : ""
+  var via = launcher === "" ? program : program === "" || program === launcher ? launcher : launcher + " (" + program + ")"
+  var target = typeof data.target === "string" ? data.target : ""
+  var head = data.ask === "triage"
+    ? "Agent started to sort " + plural(count(data.open), "open change", "open changes") + "; its proposal shows here"
+    : "Agent asked about " + (target !== "" ? target : "it") + "; it answers in its window"
+  return { ok: true, text: head + (via !== "" ? " · launcher " + via : "") }
+}
+
+// `drift apply --json` → { proposal, applied, markedApplied, done, skipped,
+// refused, git } (SPEC-ENGINE §3). `gone`: the proposal is not there any
+// more (exit 1 "no proposal …"): refresh, never retry.
+function applyResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) {
+    var text = engineError(stdoutText, stderrText, exitCode)
+    return { ok: false, text: text, gone: exitCode === 1 && /^no proposal /.test(text), done: [], skipped: [], refused: [] }
+  }
+  var data = parseJson(stdoutText) || {}
+  var list = function(v) { return Array.isArray(v) ? v.filter(isObject) : [] }
+  var done = list(data.done)
+  var skipped = list(data.skipped)
+  var refused = list(data.refused)
+  return {
+    ok: true,
+    gone: false,
+    text: "Applied " + done.length + " · skipped " + skipped.length + " · refused " + refused.length,
+    applied: typeof data.applied === "string" ? data.applied : "",
+    markedApplied: data.markedApplied === true,
+    done: done,
+    skipped: skipped,
+    refused: refused
+  }
+}
+
+function discardResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) {
+    var text = engineError(stdoutText, stderrText, exitCode)
+    return { ok: false, text: text, gone: exitCode === 1 && /^no proposal /.test(text) }
+  }
+  return { ok: true, gone: false, text: "Proposal discarded; nothing in the logbook changed" }
 }
 
 // ---- Today
@@ -3777,7 +4223,7 @@ function deskToday(index, prepared) {
     title: v.title,
     state: todayState(c0),
     tiles: index ? [
-      { label: "events today", value: count(summary.eventsToday) },
+      { label: count(summary.eventsToday) === 1 ? "event today" : "events today", value: count(summary.eventsToday) },
       { label: "7 days", value: count(summary.events7d) }
     ] : [],
     needs: needs,

@@ -266,6 +266,8 @@ fn outcome(program: &str, run: Run) -> Result<String, String> {
         )),
         Run::NotFound => Err(format!("{program} not found (check $VISUAL / $EDITOR)")),
         Run::TimedOut => Err(format!("{program} did not return")),
+        // an editor on the terminal: no output is captured
+        Run::Cut => Err(format!("{program}: output over the limit")),
         Run::Failed(e) => Err(format!("cannot start {program}: {e}")),
     }
 }
