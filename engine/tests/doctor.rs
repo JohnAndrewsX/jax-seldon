@@ -1671,7 +1671,8 @@ fn doctor_says_where_the_hooks_are() {
 
 /// WP-143: the `workpieces` row names the `work/<case-id>/` folders that
 /// no case owns or that a closed case left large: count, size, the
-/// oldest by case id. Information only: always ok, no fix.
+/// oldest by case id (999 before 1000). Information only: always ok, no
+/// fix.
 #[test]
 fn doctor_reports_leftover_workpiece_folders() {
     let env = Env::new(Snapper::Allowed);
@@ -1712,7 +1713,7 @@ fn doctor_reports_leftover_workpiece_folders() {
     folder("C-2026-001-big", 11 << 20);
     folder("C-2026-003-open", 20 << 20);
     folder("C-2026-1000", 10);
-    folder("C-2025-900-old", 5);
+    folder("C-2026-999-old", 5);
     std::os::unix::fs::symlink(work.join("notes"), work.join("C-2024-001")).unwrap();
     let r = row();
     assert_eq!(r["status"], "ok", "{r}");
@@ -1720,7 +1721,7 @@ fn doctor_reports_leftover_workpiece_folders() {
     assert_eq!(
         r["message"],
         "3 of 5 workpiece folder(s) left behind: 2 orphaned (no case), 1 oversized (a closed \
-         case, over 10.0 MiB), 11.0 MiB in all; the oldest: work/C-2025-900-old/"
+         case, over 10.0 MiB), 11.0 MiB in all; the oldest: work/C-2026-999-old/"
     );
     // a name is shown without its control characters
     folder("C-2025-001-\u{1b}[2J", 5);
