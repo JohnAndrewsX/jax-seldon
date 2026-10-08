@@ -24,8 +24,10 @@ engine.
    - The file `inbox/<YYYY-MM-DD>-<slug>.md` (`cases::slug`, `note`
      without letters): frontmatter `type: inbox`, `created`, `actor`,
      `tags`, then `# <title>`, a blank line, the text. Created with
-     `O_EXCL` (mode 0600; never overwrites, never writes through a link);
-     `inbox/` made when missing.
+     `O_EXCL` (mode 0600; never overwrites, never writes through a link
+     at the file's name); `inbox/` made when missing. *Corrected in round
+     2:* round 1 did write through an `inbox/` that is itself a link to a
+     folder outside the logbook (review N1); round 2 refuses it.
    - **Idempotent title clash:** an `inbox/*.md` whose body after its
      frontmatter equals this one is "already filed" — nothing written,
      exit 0, `filed: false`, its path named (also on another day, by
@@ -126,3 +128,65 @@ No schema, fixture, contract or plugin change.
 
 - `git diff aa9c5902..HEAD`: no home path but the `/home/alice` and
   `/home/<user>` placeholders, no user or host name.
+
+## Round 2
+
+Brief: the orchestrator's round-2 brief from the Opus stage-1 review
+(APPROVE with notes N1–N5). `next` had not moved (aa9c5902), so nothing
+was merged.
+
+### Fixed
+
+- **N1 — a linked `inbox/`.** `checked_inbox` (under the lock, before
+  the already-filed scan and the write): `symlink_metadata` of
+  `inbox`; a directory or missing is fine, a symbolic link or anything
+  else is exit 1, "… is a symbolic link / is no directory, not the
+  logbook's inbox folder", nothing written (as `triage::checked_dir`).
+  Also covers N5: an `inbox` that is a regular file is now exit 1, not 2.
+  The round-1 claim "never writes through a link" is corrected above (it
+  held for the file's name only). `seldon decide` has the same hole for a
+  linked `decisions/` (review N1); not touched here.
+- **N3 — the three missing tests** (`engine/tests/inbox.rs`, 13 tests
+  now): a title-only drop count (`droppedCharacters` 4 with a plain text);
+  a link at an inbox name to a file holding the very filing is not
+  "already filed"; the terminal refusal with a real pseudo-terminal
+  (util-linux `script -qec … /dev/null`; skipped without `script`, ran
+  here).
+- **N4 — procfs views are refused** (my call): a file `stat` reports as
+  size 0 that returns data (`/proc/self/status`, `/proc/self/environ`, a
+  sysfs file) is exit 1, "a file of size 0 that holds data (a /proc or
+  /sys view); copy what the report needs into a file". Live process
+  state is never a report, and the environment is exactly what the skill
+  forbids filing. An empty regular file stays "the text must not be
+  empty".
+- **Title and human output:** after `one_line` (which still refuses line
+  breaks), every control character (C0, DEL, C1 — `char::is_control`) is
+  dropped from the title and counted in `droppedCharacters`; a title of
+  controls only is "must not be empty". The title is the only free text
+  in the human line, so no ESC reaches the terminal there.
+- **N2** stays with WP-159: the text keeps its C0/C1 characters. The
+  switch point is one function, `drop_format` (its comment says so): the
+  text and the title's format characters both go through it; WP-159
+  replaces its body with the shared helper.
+- Docs: SPEC-ENGINE §3 (the link refusal, the size-0 views, the title's
+  controls, the text's C0/C1 left to WP-159); TESTING.md row.
+- No change to the logbook's `AGENTS.md` rules block (orchestrator).
+
+### How it was verified
+
+- **`flock /tmp/seldon-check.lock just check` on 315bf38c: exit 0**
+  (`check: ok`; log `engine/target/check-wp166-r3.log`), private
+  `XDG_RUNTIME_DIR` (removed afterwards), `SELDON_FULL_CHECK=1`: 96 test
+  binaries, 2436 tests passed, 0 failed; desk-view 1780/0, bar-view
+  196/0, ipc-restart 44/0; the real-home guards ok (desk-view notes the
+  operator's live engine changed the real state dir during the run, "not
+  a leak"); `/run/user/<uid>` 2 % before and after; docs-check only the
+  known `de/01` warning from main. The commit after it adds only this
+  section.
+- **Mutants:** `mutants.py` with ten round-2 mutants (the inbox check
+  removed, a link taken as the inbox, the filed scan through links,
+  title controls kept or not counted, the title's drops not counted, a
+  title of controls filed, a proc view filed, an empty file taken as a
+  view, the terminal check off), run from a `git archive` copy of
+  315bf38c with its own target: **44/45 killed**, every round-2 mutant
+  among them; the survivor is round 1's equivalent `CRLF kept`.
