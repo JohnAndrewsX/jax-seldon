@@ -1770,7 +1770,7 @@ mod tests {
         for (bytes, read) in [
             (format!("{a}\n"), true),
             (format!("{a}\r\n"), false),       // git: reads it
-            (format!("{a}"), false),           // git: reads it
+            (a.clone(), false),                // git: reads it
             (format!("{a}\n\n"), false),       // git: reads it
             (format!("\u{FEFF}{a}\n"), false), // git: not a repository
             (format!(" {a}\n"), false),
