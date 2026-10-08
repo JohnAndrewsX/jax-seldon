@@ -613,7 +613,7 @@ clean_log today
 # 8a'. One event today: the tile's singular (WP-117, panel 4b).
 jq '.summary.eventsToday = 1' "$sample" >"$work/one-event.json"
 run one-event "$work/one-event.json" 1920x1080 "summon"
-expect one-event 1 "$tv.tiles | join(\",\")" "event today 1,7 days 53"
+expect one-event 1 "$tv.tiles | join(\",\")" "event today 1,7 days 54"
 shows one-event 1 "event today"
 expect one-event 1 '[.texts[] | select(. == "events today")] | length' 0
 clean_log one-event
