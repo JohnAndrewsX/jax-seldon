@@ -219,3 +219,78 @@ just check`.
   the counts from the failing assertions; the byte offset 13254 grows by
   WP-141's lines. Once WP-141 lands, its notes light up the hook (the
   *Transaction* row and "left N files") with no further change.
+
+## Round 2
+
+From the Opus stage-1 review (`WP-137-review-1.md`, SEND BACK) and the
+orchestrator's brief. `next` merged first (WP-143, clean merge). ADR
+number kept at 0043; ADR-0043 stays *proposed* — WP-137 merges only after
+the operator accepts it (ADR-0035 §6).
+
+### Fixed
+
+- **B1 — the advice for an incomplete transaction.** The callout no
+  longer says a rerun finishes the update and to reboot after it:
+  post-transaction hooks run only after a completed transaction and only
+  for its targets (alpm-hooks(5), CAVEATS; Omarchy's
+  `90-mkinitcpio-install` and `99-omarchy-limine` hooks on the host), so
+  a rerun skips the boot image and boot menu of packages already
+  upgraded. All three statuses now end in one shared text: "pacman's
+  after-update steps (boot image, boot menu, Omarchy's resume hooks) did
+  not run for this transaction; if it updated omarchy-settings,
+  Hyprland's auto-reload may stay paused until those steps run. Before
+  you reboot, reinstall the packages listed here (`pacman -S` with their
+  names) or ask your agent in a case; a plain rerun does not run those
+  steps for packages already upgraded." The Hyprland clause is
+  conditional because Omarchy's `10-omarchy-hyprland-reload-pause` /
+  `90-omarchy-hyprland-reload-resume` hooks (read in
+  `/usr/share/libalpm/hooks/`, also in the fixture's 10-01 log) trigger
+  only on an `omarchy-settings` target. Text only; the plugin runs
+  nothing (AGENTS.md §8). SPEC-PLUGIN and `model.test.js` follow.
+- **B2 — prototype keys.** `transactionIndex`, `driftLookup` (`byId`,
+  `byTx`), `txSummary`'s counts and `deskChangelog`'s `byId` use
+  `Object.create(null)`. A model test with the txIds `constructor`,
+  `__proto__`, `toString`, `hasOwnProperty`, `valueOf` (one a WP-141
+  note's `meta.transaction`, one a drift group's `txId`): `deskChangelog`,
+  `deskToday` and every event detail return normal data, and no row
+  becomes drift or a group member by such a name.
+- **N1:** a test for Today's NEEDS YOU alert (a pacman crisis with
+  `txStatus`); the reviewer's mutant P9 is killed.
+- **N3:** a transaction still open at the end of the rotated
+  `pacman.log.1` stays `unfinished`. Passing the real lock state there is
+  not the small fix it looks like: the cursor moves to the new file, so a
+  held-back transaction of the old file would never be read again — it
+  would be lost rather than marked. Documented in SPEC-ENGINE §4,
+  ADR-0043 §1 and at the call; pinned by
+  `collectors::pacman_rotation_marks_an_open_old_transaction_unfinished`
+  (the new file's open transaction is still held back).
+- **N5:** the `failed` text says "could not be installed, upgraded or
+  removed".
+
+### Not changed
+
+- **N2** (a stale `db.lck` after a crash holds the transaction back until
+  the lock goes): existing behaviour; the orchestrator queued WP-160.
+- **N4, N6:** no change, as briefed.
+
+### Verification
+
+- `flock /tmp/seldon-check.lock just check` on `e020b65a` (the code
+  head; this commit adds only the handover) with a private runtime dir
+  (`XDG_RUNTIME_DIR=/tmp/r137b`, made with `mkdir -m 700`, deleted by
+  explicit path afterwards) and `JUST_TEMPDIR` in my scratch dir; the
+  real `/run/user/1000` was not used: **exit 0, `check: ok`**, no
+  ENOSPC line. fmt, clippy (twice), every engine test, check-watch,
+  packaging, install, deploy, guard, `validate-fixtures: ok`, docs-check,
+  plugin-validate, qmllint (47 files), `model.test.js` 165, model.bench,
+  terminal-scripts 65/0, real-home-guard 11/0, **service-states 342/0,
+  desk-view 1586/0, bar-view 194/0**. This round-2 run finished green
+  before the machine crashed; the crash was later traced to
+  desk-view.sh writing into the real `/run/user/1000` (fixed in a
+  separate WP). My round-1 desk-view runs still used the real runtime
+  dir; from round 2 on every check uses a private one.
+- Mutants (plugin, under node): the null-prototype `transactionIndex`
+  and `driftLookup.byTx` (the latter survived first; the "no drift row by
+  a prototype name" assertion was added), Today's `alert` (P9) and the
+  N5 wording: 4 of 4 killed. The N3 behaviour is pinned by the new
+  collector test; no engine mutant was run for it this round.
