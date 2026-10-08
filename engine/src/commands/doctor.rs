@@ -1722,6 +1722,28 @@ fn describe(run: &Run) -> String {
 mod tests {
     use super::*;
 
+    /// WP-143: a workpiece folder's name is a case id, alone or followed
+    /// by `-…`.
+    #[test]
+    fn a_workpiece_folder_is_named_by_its_case() {
+        for (name, id) in [
+            ("C-2026-001", Some("C-2026-001")),
+            ("C-2026-001-zed", Some("C-2026-001")),
+            ("C-2026-1000", Some("C-2026-1000")),
+            ("C-2026-001x", None),
+            ("C-2026-0042x", None),
+            ("C-2026-01", None),
+            ("C-2026-01-x", None),
+            ("C-26-001", None),
+            ("C-2026_001", None),
+            ("C-ä026-001", None),
+            ("C-", None),
+            ("queued", None),
+        ] {
+            assert_eq!(workpiece_id(name), id, "{name}");
+        }
+    }
+
     /// WP-091: one reason for all, or each collector with its own; the
     /// fix names every collector for `--source`.
     #[test]
