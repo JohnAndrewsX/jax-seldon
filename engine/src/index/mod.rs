@@ -161,7 +161,8 @@ pub fn collector_state(
 /// `logbook.git`: the short HEAD and whether the work tree has changes;
 /// `None` when the logbook is not a repository or git is missing. git runs
 /// with the logbook's own environment (`git::query`: no inherited
-/// `GIT_DIR`, no walking up into a repository around the logbook).
+/// `GIT_DIR`, no walking up into a repository around the logbook, no
+/// network).
 pub fn git_info(root: &Path) -> Option<model::GitInfo> {
     if !git::is_repo(root) {
         return None;
@@ -176,14 +177,8 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
         Run::Exited { .. } => None,
         _ => return None,
     };
-    let dirty = match git::query(root, &["status", "--porcelain"], timeout) {
-        Run::Exited {
-            code: Some(0),
-            stdout,
-            ..
-        } => !stdout.trim().is_empty(),
-        _ => return None,
-    };
+    let dirty =
+        !git::status_is_empty(git::query(root, &["status", "--porcelain"], timeout)).ok()?;
     Some(model::GitInfo {
         head,
         dirty: Some(dirty),

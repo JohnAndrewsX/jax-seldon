@@ -110,8 +110,8 @@ const COMMIT_SUBJECT_COLUMNS: usize = 200;
 const GIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Most bytes kept of each output pipe of a git query; the rest is read
-/// and dropped ([`sys::run_command_capped`]), and a cut stdout is no
-/// answer. A query's real output is a few KiB.
+/// and dropped ([`sys::run_command`]), and a cut stdout is no answer
+/// ([`Run::Cut`]). A query's real output is a few KiB.
 const GIT_OUTPUT_MAX: usize = 64 * 1024;
 
 /// Options before every git query: no pager; no lazy fetch of a missing
@@ -695,7 +695,8 @@ fn unrecorded(
 pub fn list(omarchy: &str) -> Result<Vec<Listed>, String> {
     const WHAT: &str = "omarchy plugin list --json";
     let cmd = sys::omarchy_command(omarchy, &["plugin", "list", "--json"]);
-    match sys::run_command(cmd, RUN_TIMEOUT) {
+    // the whole list: a cut one would read as plugins removed
+    match sys::run_command(cmd, RUN_TIMEOUT, sys::WHOLE_OUTPUT) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -719,6 +720,7 @@ pub fn list(omarchy: &str) -> Result<Vec<Listed>, String> {
                 "{WHAT}: {reason} (it needs the running Omarchy shell)"
             ))
         }
+        Run::Cut => Err(format!("{WHAT}: output over the limit")),
         Run::NotFound => Err(format!("{WHAT}: `{omarchy}` not found")),
         Run::TimedOut => Err(format!("{WHAT}: timed out")),
         Run::Failed(e) => Err(format!("{WHAT}: {e}")),
@@ -736,6 +738,7 @@ fn catalog(omarchy: &str) -> BTreeMap<String, PathBuf> {
     } = sys::run_command(
         sys::omarchy_command(omarchy, &["plugin", "catalog"]),
         RUN_TIMEOUT,
+        sys::WHOLE_OUTPUT,
     )
     else {
         return BTreeMap::new();
@@ -952,14 +955,12 @@ impl Git<'_> {
     /// The output of a query that exited 0 with stdout under
     /// [`GIT_OUTPUT_MAX`] (invalid UTF-8 read lossily).
     fn stdout(&self, dir: &Path, args: &[&str]) -> Option<String> {
-        let (run, cut) =
-            sys::run_command_capped(self.command(dir, args), self.timeout, GIT_OUTPUT_MAX);
-        match run {
+        match sys::run_command(self.command(dir, args), self.timeout, GIT_OUTPUT_MAX) {
             Run::Exited {
                 code: Some(0),
                 stdout,
                 ..
-            } if !cut => Some(stdout),
+            } => Some(stdout),
             _ => None,
         }
     }

@@ -300,7 +300,9 @@ pub fn hardware(root: &Path) -> Hardware {
 /// all is an empty answer (`-Qqm` on a system without foreign packages).
 fn query(program: &str, args: &[&str]) -> Result<String, String> {
     let what = format!("`{program} {}`", args.join(" "));
-    match sys::run(program, args, None, RUN_TIMEOUT) {
+    // the whole answer: a package list may be long, and a cut one would
+    // read as packages removed
+    match sys::run(program, args, None, RUN_TIMEOUT, sys::WHOLE_OUTPUT) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -329,6 +331,7 @@ fn query(program: &str, args: &[&str]) -> Result<String, String> {
         }
         Run::NotFound => Err(format!("{what}: `{program}` not found")),
         Run::TimedOut => Err(format!("{what}: timed out")),
+        Run::Cut => Err(format!("{what}: output over the limit")),
         Run::Failed(e) => Err(format!("{what}: {e}")),
     }
 }
