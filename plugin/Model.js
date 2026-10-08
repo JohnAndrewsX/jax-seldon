@@ -682,8 +682,10 @@ function validateArgs(args) {
     if (!withText && n === 3 && matches(PLAN_STEPS, a[1]) && CASE_ID.test(a[2])) return ""
     // WP-101: reopen a completed case (a new case; nothing is destroyed)
     if (!withText && n === 3 && a[1] === "reopen" && CASE_ID.test(a[2]) && json) return ""
+    // WP-102b: read-only, the whole Intent of an imported case before its Start
+    if (!withText && n === 3 && a[1] === "show" && CASE_ID.test(a[2]) && json) return ""
     return "plan must be: plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] -- <title>"
-      + " | plan start|verify|done|drop <caseId> | plan reopen <caseId> --json"
+      + " | plan start|verify|done|drop <caseId> | plan reopen <caseId> --json | plan show <caseId> --json"
   case "drift":
     // WP-124 (ADR-0036): apply or discard the proposal index.triage names;
     // a crisis one --item per run. Never `propose` (the agent's command).
@@ -720,6 +722,16 @@ function validateArgs(args) {
         && ((a[2] === "drift" && EVENT_ID.test(a[3])) || (a[2] === "case" && CASE_ID.test(a[3])))) return ""
     return "agent must be: agent start <caseId> --json | agent start --new --json -- <intent>"
       + " | agent ask triage --json | agent ask drift <eventId> --json | agent ask case <caseId> --json"
+  case "import": {
+    // WP-102b: `import task --json [--dry-run] [--area <slug>] -- <path>`,
+    // the path one argument after `--`, checked as importPathError does
+    var pre = sep === -1 ? args.slice() : args.slice(0, sep)
+    var k = 3
+    if (pre[k] === "--dry-run") k += 1
+    if (pre[k] === "--area" && k + 1 < pre.length && AREA.test(pre[k + 1])) k += 2
+    return withText && pre[1] === "task" && pre[2] === "--json" && k === pre.length && importPathError(free[0]) === ""
+      ? "" : "import must be: import task --json [--dry-run] [--area <slug>] -- <path to a .md file>"
+  }
   case "doctor":
     // WP-101: read-only, the rules row only (Service.checkRules); no probe
     return !withText && n === 3 && a[1] === "--only" && a[2] === "rules" && json
@@ -1378,6 +1390,7 @@ function workCase(c, group, column) {
     agents: Array.isArray(c.agents) ? c.agents.filter(function(a) { return typeof a === "string" && a !== "" }) : [],
     closedByAgent: caseTags(c).indexOf(TAG_CLOSED_BY_AGENT) !== -1,
     reopens: reopensOf(c),
+    imported: caseTags(c).indexOf(TAG_IMPORTED) !== -1,
     actionable: CASE_ID.test(id)
   }
 }
@@ -1386,6 +1399,9 @@ function workCase(c, group, column) {
 // case; the case reopens another (`reopens:<caseId>`).
 var TAG_CLOSED_BY_AGENT = "closed-by-agent"
 var TAG_REOPENS = "reopens:"
+// `seldon import task` made the case (WP-102): its Intent is text from a
+// file, and only the user starts it (ADR-0027 §2(a)).
+var TAG_IMPORTED = "imported"
 
 // A case's tags, strings only.
 function caseTags(c) {
@@ -1603,6 +1619,123 @@ function agentNewArgs(intent) {
   if (!hasText(intent)) return { error: "Say what the agent should do" }
   if (String(intent).indexOf("\u0000") !== -1) return { error: "The text contains a NUL character" }
   return { args: ["agent", "start", "--new", "--json", "--", String(intent)] }
+}
+
+// ---- Import tasks (WP-102b; SPEC-ENGINE §3 `import task`) --------------------
+//
+// The desk's *Import tasks…* form: a path to the user's own Markdown task
+// file, an optional area, a dry run first, then one click imports. The path
+// is one argument after `--`, never interpolated (CONTRACT.md); the engine
+// checks it for real (under the home, outside the logbook, a regular `.md`
+// file, its size and encoding); this check only spares the call for what
+// cannot be right.
+
+var IMPORT_PATH_MAX = 4096
+// The engine's `bad_path_char`, one set (WP-102b round 2): control
+// characters, direction and format characters (the engine's
+// `is_direction_or_format`, WP-140's set with the tags) and the line and
+// paragraph separators. Both sides are tested against
+// fixtures/bad-path-chars.txt.
+var BAD_PATH_CHARS = /[\u0000-\u001f\u007f-\u009f\u00ad\u0600-\u0605\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e007f}]/u
+
+// "" when `path` may go to the engine, else why not (plain text).
+function importPathError(path) {
+  var p = typeof path === "string" ? path : ""
+  if (p.trim() === "") return "Name a Markdown task file, e.g. ~/projects/TODO.md"
+  if (BAD_PATH_CHARS.test(p)) return "The path holds a control, text-direction or invisible character"
+  if (p.length > IMPORT_PATH_MAX) return "The path is too long"
+  if (p.indexOf("~/") !== 0 && p.charAt(0) !== "/") return "Give the path from your home (~/…) or from / (absolute)"
+  if (!/\.md$/i.test(p)) return "A task file ends in .md"
+  return ""
+}
+
+// `seldon import task --json [--dry-run] [--area <slug>] -- <path>`:
+// { args } or { error }.
+function importArgs(path, area, dryRun) {
+  var why = importPathError(path)
+  if (why !== "") return { error: why }
+  var a = typeof area === "string" ? area : ""
+  if (a !== "" && !AREA.test(a)) return { error: "Area must be a lowercase slug: letters, digits and -" }
+  var args = ["import", "task", "--json"]
+  if (dryRun) args.push("--dry-run")
+  if (a !== "") args.push("--area", a)
+  return { args: args.concat(["--", path]) }
+}
+
+// The engine's reasons a task was not imported, as the desk says them.
+var IMPORT_SKIP_REASONS = {
+  done: "done (- [x])",
+  empty: "no text",
+  "already-imported": "already imported",
+  duplicate: "the same text again",
+  "too-long": "too long to review in the desk (over 64 KiB)"
+}
+
+// `seldon import task --json` → { ok, text, dryRun, created: [{ id, title,
+// status, source, replaces }], skipped: [{ source, reason, caseId }],
+// redactedLines, caseIds }. Every text is user content (rule 6); an id
+// that is no case id is shown as "" and never passed on.
+function importResult(exitCode, stdoutText, stderrText) {
+  var empty = { created: [], skipped: [], redactedLines: 0, caseIds: [], dryRun: false }
+  if (exitCode !== 0) {
+    empty.ok = false
+    empty.text = engineError(stdoutText, stderrText, exitCode)
+    return empty
+  }
+  var data = parseJson(stdoutText)
+  if (!data) {
+    empty.ok = false
+    empty.text = "The engine's answer was not JSON"
+    return empty
+  }
+  var dryRun = data.mode === "dry-run"
+  var caseId = function(v) { return typeof v === "string" && CASE_ID.test(v) ? v : "" }
+  var created = (Array.isArray(data.created) ? data.created : []).filter(isObject).map(function(c) {
+    return { id: caseId(c.id), title: str(c.title), status: str(c.status), source: str(c.source), replaces: caseId(c.replaces) }
+  })
+  var skipped = (Array.isArray(data.skipped) ? data.skipped : []).filter(isObject).map(function(k) {
+    var reason = str(k.reason)
+    return { source: str(k.source), reason: IMPORT_SKIP_REASONS[reason] !== undefined ? IMPORT_SKIP_REASONS[reason] : reason,
+      caseId: caseId(k.case) }
+  })
+  var ids = created.map(function(c) { return c.id }).filter(function(id) { return id !== "" })
+  var n = created.length
+  var head = dryRun
+    ? (n > 0 ? "Would create " + plural(n, "case", "cases") : "Nothing new to import")
+    : (n > 0 ? "Imported " + plural(n, "case", "cases") + (ids.length > 0 ? ": " + ids.join(", ") : "") : "Nothing new imported")
+  var tail = [skipped.length > 0 ? plural(skipped.length, "task", "tasks") + " skipped" : "",
+    count(data.redactedLines) > 0 ? plural(count(data.redactedLines), "line", "lines") + " redacted" : "",
+    count(data.droppedCharacters) > 0
+      ? plural(count(data.droppedCharacters), "invisible character", "invisible characters") + " dropped" : ""]
+    .filter(function(p) { return p !== "" })
+  return { ok: true, text: [head].concat(tail).join(" · "), dryRun: dryRun, created: created, skipped: skipped,
+    redactedLines: count(data.redactedLines), droppedCharacters: count(data.droppedCharacters), caseIds: ids }
+}
+
+// `seldon plan show <caseId> --json` (WP-102b): the whole Intent the desk
+// shows before an imported case's Start. { args } or { error }.
+function caseShowArgs(caseId) {
+  var id = String(caseId || "")
+  if (!CASE_ID.test(id)) return { error: "Not a case id: " + id }
+  return { args: ["plan", "show", id, "--json"] }
+}
+
+// → { ok, text, caseId, intent, lines, truncated, hidden }; `intent` is
+// the engine's display text (control characters as spaces, every direction
+// or format character marked ‹U+XXXX› and counted in `hidden`, redacted),
+// shown as plain text.
+function caseShowResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "", intent: "", lines: 0,
+    truncated: false, hidden: 0 }
+  var data = parseJson(stdoutText)
+  var c = data && isObject(data.case) ? data.case : null
+  var id = c && typeof c.id === "string" && CASE_ID.test(c.id) ? c.id : ""
+  var it = data && isObject(data.intent) ? data.intent : null
+  if (!it || typeof it.text !== "string")
+    return { ok: false, text: "The engine withholds the Intent while the redaction patterns do not compile", caseId: id,
+      intent: "", lines: 0, truncated: false, hidden: 0 }
+  return { ok: true, text: "", caseId: id, intent: it.text, lines: count(it.lines), truncated: it.truncated === true,
+    hidden: count(it.hidden) }
 }
 
 function agentResult(exitCode, stdoutText, stderrText) {
@@ -4330,11 +4463,11 @@ function deskWork(index) {
       var total = steps ? count(steps.total) : 0
       c.group = group
       c.progress = total > 0 ? Math.min(count(steps.done), total) / total : 0
-      c.listMeta = [c.id, c.risk, c.area, c.status === "dropped" ? "dropped" : "",
+      c.listMeta = [c.id, c.imported ? "imported" : "", c.risk, c.area, c.status === "dropped" ? "dropped" : "",
         c.closedByAgent ? "closed by agent" : "", c.reopens !== "" ? "reopens " + c.reopens : "",
         c.proposed > 0 ? c.proposed + " proposed" : ""].filter(function(p) { return p !== "" }).join(" · ")
       c.stripe = group === "active" ? "attention" : ""
-      c.search = [c.id, c.title, c.area, c.status, c.risk].join(" ").toLowerCase()
+      c.search = [c.id, c.title, c.area, c.status, c.risk, c.imported ? "imported" : ""].join(" ").toLowerCase()
       rows.push(c)
     }
   }
@@ -4404,18 +4537,58 @@ var CASE_DESK_BY_STATUS = {
   dropped: ["open"]
 }
 
+//
+// An imported case's Start (WP-102b, ADR-0027 §2(a)): never from a key or
+// the list; `review` — the bar enables it only while the detail shows the
+// whole Intent the engine gave (`plan show`), and it arms by click only.
+// Such a case has no Enter action at all.
 function caseDeskActions(c) {
   if (!c || !c.actionable || CASE_DESK_BY_STATUS[c.status] === undefined) return []
   var ids = CASE_DESK_BY_STATUS[c.status]
+  var review = function(id) { return id === "start" && c.imported === true }
   var enter = ""
   for (var k = 0; k < ids.length && enter === ""; k++) if (CASE_DESK_ACTIONS[ids[k]].launches !== true) enter = ids[k]
+  // an imported case's Enter would be its Start: none (never Drop instead)
+  if (review(enter)) enter = ""
   return ids.map(function(id, i) {
     var a = CASE_DESK_ACTIONS[id]
     var isEnter = id === enter && a.arm
     return { id: a.id, label: a.label, write: a.write, arm: a.arm, final: a.final === true, primary: i === 0,
-      enter: id === enter, launches: a.launches === true,
-      key: isEnter ? (a.key !== "" && a.key !== "Enter" ? a.key + " or Enter" : "Enter") : a.key }
+      enter: id === enter, launches: a.launches === true, review: review(id),
+      key: review(id) ? "" : isEnter ? (a.key !== "" && a.key !== "Enter" ? a.key + " or Enter" : "Enter") : a.key }
   })
+}
+
+// Whether the detail shows the whole Intent of case `c` as the engine gave
+// it (Service.caseShown), so an imported case's Start may be pressed: this
+// case's finished, successful `plan show`, not cut at 64 KiB and without a
+// hidden character (WP-102b round 2: the box would not show it all).
+function intentReviewed(c, shown) {
+  return !!c && isObject(shown) && !shown.pending && shown.ok === true && shown.caseId === c.id
+    && shown.truncated !== true && !(count(shown.hidden) > 0)
+}
+
+// Whether a `plan show` answer must be asked again at once (WP-102b stage 2):
+// a new index came while it was in flight (Service.showCase set
+// `reaskWanted`), so the answer may already be stale and must not enable
+// Start. Only a successful answer for the same case; a failure is shown,
+// and the next index asks anyway.
+function reaskAfter(last, result) {
+  return isObject(last) && last.reaskWanted === true && isObject(result) && result.ok === true
+    && last.caseId === result.caseId
+}
+
+// The bar's hint while an imported case's Start is off ("" when it is on
+// or the case has no such Start).
+function reviewHint(c, shown) {
+  var start = caseDeskAction(c, "start")
+  if (!start || !start.review || intentReviewed(c, shown)) return ""
+  var mine = isObject(shown) && shown.caseId === c.id && !shown.pending && shown.ok === true
+  if (!mine) return "Start waits until the whole Intent below is shown; only you start an imported case"
+  var why = []
+  if (count(shown.hidden) > 0) why.push(plural(count(shown.hidden), "hidden character is", "hidden characters are") + " marked")
+  if (shown.truncated === true) why.push("the Intent is longer than the desk shows")
+  return why.join(" and ") + ": read the whole Intent in the editor; start this case from the terminal."
 }
 
 // The action Enter takes on a case: the first that launches nothing.
@@ -4514,6 +4687,8 @@ function caseDetail(index, prepared, id) {
     actionable: wc.actionable,
     closedByAgent: wc.closedByAgent,
     reopens: wc.reopens,
+    imported: wc.imported,
+    source: str(raw.source),
     path: wc.path,
     kv: kv,
     plan: { done: done, total: total, progress: total > 0 ? done / total : 0,

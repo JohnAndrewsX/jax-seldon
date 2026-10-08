@@ -29,11 +29,11 @@ use serde_json::{Value, json};
 
 use crate::commands::agent::title_of;
 use crate::commands::event::{ACTOR_ENV, actor_or_env, env_actor, parse_person};
-use crate::commands::plan::{Spec, case_json, create};
+use crate::commands::plan::{SHOW_INTENT_MAX, Spec, case_json, create};
 use crate::commands::{Commit, Context, Output, autocommit};
 use crate::error::{Error, Result};
 use crate::import::task::{Tasks, parse};
-use crate::import::{Scrubber, bad_path_char, case_source, marker_path};
+use crate::import::{Scrubber, bad_path_char, case_source, is_direction_or_format, marker_path};
 use crate::logbook::Logbook;
 use crate::logbook::cases;
 use crate::model::event::ACTOR_HUMAN;
@@ -164,6 +164,8 @@ struct Source {
     stem: String,
     /// Lines the redaction changed.
     redacted: usize,
+    /// Direction and format characters dropped (WP-102b round 2, B2).
+    dropped: usize,
 }
 
 /// A task found in a file.
@@ -178,6 +180,16 @@ struct Task {
 }
 
 impl Task {
+    /// The case's *Intent* as written: the provenance line, then the
+    /// task's text escaped.
+    fn full_intent(&self) -> String {
+        format!(
+            "{}\n\n{}",
+            provenance(&self.source()),
+            cases::escape_lines(&self.intent)
+        )
+    }
+
     fn source(&self) -> String {
         match self.line {
             Some(n) => format!("{}#{n}", self.file),
@@ -249,6 +261,7 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
         write_marker(&logbook.path(&marker_rel), &marker)?;
     }
     let redacted: usize = sources.iter().map(|s| s.redacted).sum();
+    let dropped: usize = sources.iter().map(|s| s.dropped).sum();
     let fates = decide(&tasks, &marker, args.include_done);
     let planned = fates
         .iter()
@@ -295,6 +308,7 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
                 "created": created,
                 "skipped": skipped,
                 "redactedLines": redacted,
+                "droppedCharacters": dropped,
                 "areaCreated": null,
                 "files": [],
                 "marker": null,
@@ -315,11 +329,7 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
         if let Some(earlier) = replaces {
             note.push_str(&format!(", changed since {earlier}"));
         }
-        let intent = format!(
-            "{}\n\n{}",
-            provenance(&task.source()),
-            cases::escape_lines(&task.intent)
-        );
+        let intent = task.full_intent();
         // the entry first, pending: a crash or a failed write after the
         // case never makes it again (the next run settles it)
         let next = match cases::next_id(&logbook, ctx.now.year()) {
@@ -431,6 +441,7 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
             "created": created,
             "skipped": skipped,
             "redactedLines": redacted,
+            "droppedCharacters": dropped,
             "areaCreated": area_created,
             "files": files,
             "marker": (!created.is_empty() || settled).then_some(marker_rel),
@@ -581,30 +592,26 @@ fn read_source(
     }
     let text =
         String::from_utf8(bytes).map_err(|_| Error::user(format!("{shown} is not UTF-8 text")))?;
-    // the whole text, as a note's (the rules that span lines need it), its
-    // line breaks kept so every line number still points into the file;
-    // then line by line with the home paths (the vault import's scrubber)
     // CRLF as LF first (round 3): the rules read `\r\n` as `\n` since
     // WP-128, but the parser and the marker's task hashes take LF text, so
     // a CRLF file already imported is not imported again; the line count
     // does not change
     let text = text.replace("\r\n", "\n");
-    let whole = redactor.redact_keeping_lines(&text);
-    if whole.matches('\n').count() != text.matches('\n').count() {
-        return Err(Error::from(anyhow::anyhow!(
-            "{shown}: the redaction changed the number of lines"
-        )));
-    }
-    let mut changed: BTreeSet<usize> = text
-        .split('\n')
-        .zip(whole.split('\n'))
-        .enumerate()
-        .filter(|(_, (a, b))| a != b)
-        .map(|(i, _)| i + 1)
+    // direction and format characters out (WP-102b round 2, B2): an
+    // invisible instruction would reach the case, its title and an agent
+    // while the desk's review drops it; out before the redaction, so a
+    // zero-width space cannot split a secret from its rule here either
+    let before = text.chars().count();
+    let text: String = text
+        .chars()
+        .filter(|c| !is_direction_or_format(*c))
         .collect();
+    let dropped = before - text.chars().count();
+    // the scrubber redacts the whole text, as a note's, keeping its line
+    // breaks (WP-140), then rewrites home paths line by line
     let first_hit = scrubber.hits.len();
-    let text = scrubber.text(&shown, &whole);
-    changed.extend(scrubber.hits[first_hit..].iter().map(|h| h.line));
+    let text = scrubber.text(&shown, &text);
+    let changed: BTreeSet<usize> = scrubber.hits[first_hit..].iter().map(|h| h.line).collect();
     let stem = path
         .file_stem()
         .map(|s| redactor.redact(&s.to_string_lossy()))
@@ -614,6 +621,7 @@ fn read_source(
         tasks: parse(&text),
         stem,
         redacted: changed.len(),
+        dropped,
     })
 }
 
@@ -671,6 +679,13 @@ fn decide(tasks: &[Task], marker: &Marker, include_done: bool) -> Vec<Fate> {
             if !t.title.chars().any(char::is_alphanumeric) {
                 return Fate::Skip {
                     reason: "empty",
+                    case: None,
+                };
+            }
+            // what the desk shows whole before a Start (round 2, B1)
+            if t.full_intent().len() > SHOW_INTENT_MAX {
+                return Fate::Skip {
+                    reason: "too-long",
                     case: None,
                 };
             }

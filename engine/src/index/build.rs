@@ -751,7 +751,15 @@ fn cap_drift(drift: Vec<DriftItem>) -> Vec<DriftItem> {
 /// file marker: redaction first, so a cut never leaves a secret's prefix.
 /// `None` without a redactor (withheld) or without text.
 pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
-    let redactor = redactor?;
+    let redacted = plain_text(redactor?, text);
+    let shown = clip_with(&redacted, IN_THE_FILE).into_owned();
+    (!shown.trim().is_empty()).then_some(shown)
+}
+
+/// [`shown_text`] without the clip: control characters other than line
+/// breaks and tabs as spaces, direction and format characters dropped,
+/// then redacted.
+pub fn plain_text(redactor: &Redactor, text: &str) -> String {
     let plain: String = text
         .chars()
         .filter(|c| !is_direction_or_format(*c))
@@ -763,9 +771,27 @@ pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
             }
         })
         .collect();
-    let redacted = redactor.redact(&plain);
-    let shown = clip_with(&redacted, IN_THE_FILE).into_owned();
-    (!shown.trim().is_empty()).then_some(shown)
+    redactor.redact(&plain)
+}
+
+/// [`plain_text`] for a text a person reviews before an agent may act on
+/// it (`plan show --json` `intent`, WP-102b round 2): every direction or
+/// format character is not dropped but shown as `‹U+XXXX›`, so nothing is
+/// hidden from the review; the count of them comes back too.
+pub fn marked_text(redactor: &Redactor, text: &str) -> (String, usize) {
+    let mut hidden = 0;
+    let mut marked = String::with_capacity(text.len());
+    for c in text.chars() {
+        if is_direction_or_format(c) {
+            hidden += 1;
+            marked.push_str(&format!("‹U+{:04X}›", c as u32));
+        } else if c.is_control() && c != '\n' && c != '\t' {
+            marked.push(' ');
+        } else {
+            marked.push(c);
+        }
+    }
+    (redactor.redact(&marked), hidden)
 }
 
 /// An imported case's `source` as the index carries it (ADR-0038 §3):

@@ -184,6 +184,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the command that started it. A transaction that failed, was
   interrupted or never finished is marked in the urgent colour in its
   rows and explained in the detail.
+- **Import tasks…** in the desk's Work list: name your Markdown task file
+  (and an area), see the dry run's list, then import with one click; the
+  path goes to the engine as one argument. Imported cases are marked
+  "imported"; their detail shows the whole Intent as plain text, with its
+  source and line count, and Start is enabled only after that, by click,
+  never by Enter. `seldon plan show --json` gives the whole Intent for it,
+  invisible characters marked `‹U+…›`; such an Intent, or one longer than
+  64 KiB, keeps Start off. `seldon import task` removes invisible
+  characters and skips a task too long to review (WP-102b, ADR-0044).
 
 - **Agent sorts N open changes.** The Changelog's head asks your
   agent to sort the open changes; its proposal shows as a row and a

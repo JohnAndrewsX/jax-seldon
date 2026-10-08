@@ -1066,6 +1066,166 @@ expect work-agent 15 "[$tv.result, $tv.resultOk, .view.lastError] | map(tostring
 argv_check work-agent "$work/home-agent" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" "$(q agent start C-2026-004 --json)")"
 clean_log work-agent
 
+# WP-102b, Import tasks…: the form in the detail, a dry run first (the list
+# of what would be created and what is skipped), then one click imports;
+# the cases arrive with the index, the first is selected, its detail asks
+# the engine for the whole Intent (`plan show`, read-only) and shows it as
+# plain text, and only then enables Start, which arms by click; Enter
+# neither starts nor drops it. A second dry run reports the tasks as
+# already imported. The path is one argument after `--` (argv compared).
+mkdir -p "$work/home-import/projects"
+printf '%s\n' "# Desk" "- [ ] Fix the bar flicker" "  Only after resume." "  ## Result" "- [x] Install zed" \
+  "- [ ] Try a lighter theme" >"$work/home-import/projects/TODO.md"
+run import-live "" 1920x1080 \
+  "summon:$wk;view;click:Import tasks…;type:~/projects/TODO.md;key:Return;settle;click:Import 2 cases;settle;wait:sectionView.case.reviewed=true;key:Return;key:Return;click:Start;click:Confirm start;settle;wait:sectionView.case.status=active;click:Import tasks…;type:~/projects/TODO.md;key:Return;settle" \
+  HOME="$work/home-import" FAKE_SELDON_FIXTURE="$sample"
+ti="$tv.import"
+shows import-live 2 "Import tasks…"
+shows import-live 2 "C-2026-007 · imported · R1 · dev-env"
+expect import-live 3 "[$ti.open, $ti.editing, .view.sectionView.case.id] | map(tostring) | join(\",\")" "true,true,C-2026-003"
+shows import-live 3 "IMPORT TASKS"
+expect import-live 3 "$tc.actions | join(\",\")" ""
+expect import-live 6 "[$ti.result, $ti.canImport, ($ti.rows | join(\"+\")), ($ti.skipped | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "Would create 2 cases · 1 task skipped,true,|Fix the bar flicker|~/projects/TODO.md#2+|Try a lighter theme|~/projects/TODO.md#6,~/projects/TODO.md#5|done (- [x])|"
+for text in "Import 2 cases" "Would create 2 cases · 1 task skipped" "Fix the bar flicker" "queued · ~/projects/TODO.md#2" \
+  "Skipped ~/projects/TODO.md#5: done (- [x])"; do
+  shows import-live 6 "$text"
+done
+expect import-live 9 "[$ti.open, $tv.selected, $tv.importLine, $tc.imported, $tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" \
+  "false,C-2026-009,Imported 2 cases: C-2026-009, C-2026-010 · 1 task skipped,true,true,true"
+expect import-live 9 "[$tc.review.lines, $tc.review.intent] | map(tostring) | join(\"|\")" \
+  "5|Imported from ~/projects/TODO.md#2 — read before you start this case.
+
+Fix the bar flicker
+Only after resume.
+## Result"
+expect import-live 9 "[$tc.kv[] | select(startswith(\"Imported from\"))] | join(\",\")" "Imported from: ~/projects/TODO.md#2"
+for text in "C-2026-009 · imported · R1" "IMPORTED TASK · 5 lines" \
+  "From ~/projects/TODO.md#2. Read the whole Intent before you start the case: once started, an agent acts on it without asking. Only you start it."; do
+  shows import-live 9 "$text"
+done
+# shown whole: no first-paragraph INTENT block beside it
+expect import-live 9 '[.texts[] | select(. == "INTENT")] | length' 0
+# Enter neither starts nor drops an imported case; Start arms by click
+expect import-live 11 "[$tc.armed, $tc.status] | join(\",\")" ",queued"
+expect import-live 12 "[$tc.armed, $tc.hint] | join(\",\")" "start,Start C-2026-009? Click Confirm."
+expect import-live 15 "[$tc.status, $tv.result] | join(\",\")" "active,C-2026-009: queued → active"
+expect import-live 19 "[$ti.open, $ti.result, $ti.canImport, ($ti.skipped | join(\"+\"))] | map(tostring) | join(\",\")" \
+  "true,Nothing new to import · 3 tasks skipped,false,~/projects/TODO.md#2|already imported|C-2026-009+~/projects/TODO.md#5|done (- [x])|+~/projects/TODO.md#6|already imported|C-2026-010"
+shows import-live 19 "Skipped ~/projects/TODO.md#6: already imported (C-2026-010)"
+for i in 6 9 19; do expect import-live $i '.overflow | join(" | ")' ""; done
+# the path one argument after `--`; `plan show` (read-only) only for the
+# imported case, at least once before its Start (more when the index moves)
+check "import-live: engine argv without plan show" "$(grep -v '^plan show ' "$work/home-import/argv.log" | tr '\n' '|')" \
+  "$(printf '%s\n' "$startup" "$(q import task --json --dry-run -- '~/projects/TODO.md')" \
+    "$(q import task --json -- '~/projects/TODO.md')" "$(q plan start C-2026-009 --json)" \
+    "$(q import task --json --dry-run -- '~/projects/TODO.md')" | tr '\n' '|')"
+check "import-live: plan show names only the imported case" \
+  "$(grep '^plan show ' "$work/home-import/argv.log" | sort -u | tr '\n' '|')" "$(q plan show C-2026-009 --json)|"
+check "import-live: plan show before Start" "$(grep -m 1 -e '^plan show ' -e '^plan start ' "$work/home-import/argv.log")" \
+  "$(q plan show C-2026-009 --json)"
+clean_log import-live
+
+# The form's own check, the engine's refusal (shown in the form, fields
+# kept after Esc), and a whole Intent the engine withholds: Start stays off.
+mkdir -p "$work/home-import-refused"
+run import-refused "" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;click:Import tasks…;type:notes.txt;key:Backspace*9;type:~/missing.md;key:Return;settle;key:Escape;click:Import tasks…;key:Escape;click:Start;click:Start;trigger:workDetail:start;trigger:workDetail:start" \
+  HOME="$work/home-import-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_WITHHELD=1
+expect import-refused 2 "[$tc.imported, $tc.startEnabled, $tc.hint, $tc.review.text] | map(tostring) | join(\",\")" \
+  "true,false,Start waits until the whole Intent below is shown; only you start an imported case,The engine withholds the Intent while the redaction patterns do not compile"
+shows import-refused 2 "The engine withholds the Intent while the redaction patterns do not compile"
+# withheld: the index's first paragraph stays
+shows import-refused 2 "INTENT"
+expect import-refused 4 "[$ti.pathError, $ti.canImport] | map(tostring) | join(\",\")" "Give the path from your home (~/…) or from / (absolute),false"
+shows import-refused 4 "Give the path from your home (~/…) or from / (absolute)"
+expect import-refused 8 "$ti.result" "~/missing.md: cannot read the task file: No such file or directory (os error 2)"
+shows import-refused 8 "~/missing.md: cannot read the task file: No such file or directory (os error 2)"
+expect import-refused 9 "[$ti.open, .view.keys] | map(tostring) | join(\",\")" "false,true"
+expect import-refused 10 "[$ti.open, $ti.path] | map(tostring) | join(\",\")" "true,~/missing.md"
+# the disabled Start: two clicks arm and run nothing (the argv below); two
+# stray triggers behind the bar neither (press() holds on its own)
+expect import-refused 13 "[$ti.open, $tc.armed, $tc.status, $tc.startEnabled] | map(tostring) | join(\",\")" "false,,queued,false"
+expect import-refused 15 "[$tc.armed, $tc.status] | join(\",\")" ",queued"
+argv_check import-refused "$work/home-import-refused" "$(printf '%s\n' "$startup" "$(q plan show C-2026-007 --json)" \
+  "$(q import task --json --dry-run -- '~/missing.md')")"
+clean_log import-refused 'import exit 1: ~/missing\.md: cannot read the task file'
+
+# Round 2 (WP-102b): the dry run is for a path *and* an area — a new area
+# turns Import off until its own dry run (P4), and the import carries it.
+mkdir -p "$work/home-import-area/projects"
+printf '%s\n' "- [ ] One" "- [ ] Two" >"$work/home-import-area/projects/TODO.md"
+run import-area "" 1920x1080 \
+  "summon:$wk;click:Import tasks…;type:~/projects/TODO.md;key:Return;settle;key:Tab;type:dev;key:Return;settle;click:Import 2 cases;settle" \
+  HOME="$work/home-import-area" FAKE_SELDON_FIXTURE="$sample"
+expect import-area 5 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" ",true"
+expect import-area 7 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,false"
+expect import-area 9 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,true"
+# `plan show` once or twice (the import's index may come while it runs)
+check "import-area: engine argv without plan show" "$(grep -v '^plan show ' "$work/home-import-area/argv.log" | tr '\n' '|')" \
+  "$(printf '%s\n' "$startup" "$(q import task --json --dry-run -- '~/projects/TODO.md')" \
+    "$(q import task --json --dry-run --area dev -- '~/projects/TODO.md')" \
+    "$(q import task --json --area dev -- '~/projects/TODO.md')" | tr '\n' '|')"
+check "import-area: plan show names only the new case" \
+  "$(grep '^plan show ' "$work/home-import-area/argv.log" | sort -u | tr '\n' '|')" "$(q plan show C-2026-009 --json)|"
+clean_log import-area
+
+# A new index asks the engine again (P2); meanwhile the last text stays on
+# screen and Start is off (P5, N2); the answer brings Start back. Stage 2:
+# the first `plan show` sees the index rewritten while it runs
+# (FAKE_SELDON_SHOW_TOUCH): its answer enables nothing and is asked again
+# once.
+mkdir -p "$work/home-import-reask"
+run import-reask "" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;wait:sectionView.case.reviewed=true;text:c;wait:sectionView.case.review.pending=true;wait:sectionView.case.reviewed=true" \
+  HOME="$work/home-import-reask" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_TOUCH=1
+first=$(sed -n 3p "$work/import-reask.steps" | jq -r "$tc.review.intent")
+check "import-reask: the review's text" "$first" \
+  "Imported from ~/Notizen/aufgaben.md#4 — read before you start this case.
+
+Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben."
+expect import-reask 3 "[$tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true"
+expect import-reask 5 "[$tc.review.pending, $tc.review.ok, $tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true,false,false"
+expect import-reask 5 "$tc.review.intent == $(jq -Rs . <<<"$first" | sed 's/\\n"$/"/')" true
+shows import-reask 5 "IMPORTED TASK · 3 lines"
+expect import-reask 6 "[$tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" "true,true"
+# once on select, once more for the index that came while it ran, once for
+# the capture's index
+check "import-reask: the index rewritten during the first plan show" "$([[ -f $work/home-import-reask/show-touched ]] && echo yes)" yes
+check "import-reask: plan show again on each new index" "$(grep -c '^plan show C-2026-007 ' "$work/home-import-reask/argv.log")" 3
+clean_log import-reask
+
+# Hidden characters marked and an Intent longer than the desk shows: Start
+# stays off, the hint says why and where to read it (B1, B2).
+mkdir -p "$work/home-import-hidden"
+run import-hidden "" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;wait:sectionView.case.review.pending=false;click:Start;click:Start" \
+  HOME="$work/home-import-hidden" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_HIDDEN=21 FAKE_SELDON_SHOW_TRUNCATED=1
+expect import-hidden 3 "[$tc.review.ok, $tc.review.hidden, $tc.review.truncated, $tc.reviewed, $tc.startEnabled] | map(tostring) | join(\",\")" \
+  "true,21,true,false,false"
+expect import-hidden 3 "$tc.hint" \
+  "21 hidden characters are marked and the Intent is longer than the desk shows: read the whole Intent in the editor; start this case from the terminal."
+shows import-hidden 3 "21 hidden characters are marked ‹U+…› above: text you cannot see in the file. Read the case in the editor; start it from the terminal."
+shows import-hidden 3 "The first 64 KiB are shown; the rest is in the case file. Read the whole Intent in the editor; start this case from the terminal."
+expect import-hidden 5 "[$tc.armed, $tc.status] | join(\",\")" ",queued"
+argv_check import-hidden "$work/home-import-hidden" "$(printf '%s\n' "$startup" "$(q plan show C-2026-007 --json)")"
+clean_log import-hidden
+
+# Dev mode (read-only): an imported case shows the index's first paragraph,
+# says the whole Intent needs the engine, never enables Start; Enter does
+# nothing; Import tasks… stays shut.
+run import-dev "$sample" 1920x1080 "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};key:Return;click:Import tasks…;width:50"
+expect import-dev 1 "[$tc.imported, $tc.startEnabled, $tc.hint, $tc.review.text] | map(tostring) | join(\",\")" \
+  "true,false,Dev mode is read-only,Dev mode is read-only"
+for text in "C-2026-007 · imported · R1 · dev-env" "IMPORTED TASK" "INTENT" "Dev mode is read-only" \
+  "Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben."; do
+  shows import-dev 1 "$text"
+done
+expect import-dev 2 "$tc.armed" ""
+expect import-dev 3 "$ti.open" false
+for i in 1 4; do expect import-dev $i '.overflow | join(" | ")' ""; done
+clean_log import-dev
+
 mkdir -p "$work/home-work-locked"
 run work-locked "" 1920x1080 "summon:$wk;text:+;type:keep me;key:Return;settle;key:Escape;view;text:+" \
   HOME="$work/home-work-locked" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_LOCKED=1

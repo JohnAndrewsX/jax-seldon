@@ -3404,4 +3404,175 @@ test("TriageDetail shows logbook and agent text as plain text, never clipped (R3
   for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
 })
 
+// ---- WP-102b: Import tasks…, the whole Intent before an imported case's Start
+
+test("importPathError: what the form refuses before the engine is asked", () => {
+  assert.strictEqual(M.importPathError("~/projects/TODO.md"), "")
+  assert.strictEqual(M.importPathError("/srv/notes/Tasks.MD"), "")
+  assert.strictEqual(M.importPathError("~/-dashed.md"), "")
+  for (const bad of ["", "  ", "TODO.md", "./TODO.md", "~user/x.md", "~/notes.txt", "~/x.md\n", "~/a‮b.md",
+    "~/zero​width.md", "~/bom﻿.md", "~/nul\u0000.md", "~/" + "x".repeat(4100) + ".md"]) {
+    assert.notStrictEqual(M.importPathError(bad), "", JSON.stringify(bad.slice(0, 40)))
+  }
+  assert.notStrictEqual(M.importPathError(null), "")
+})
+
+test("importArgs: the path one argument after --, area a slug, --dry-run before it", () => {
+  same(M.importArgs("~/a.md", "", true), { args: ["import", "task", "--json", "--dry-run", "--", "~/a.md"] })
+  same(M.importArgs("~/a.md", "dev-env", false), { args: ["import", "task", "--json", "--area", "dev-env", "--", "~/a.md"] })
+  same(M.importArgs("~/a b; rm -rf ~.md", "", false), { args: ["import", "task", "--json", "--", "~/a b; rm -rf ~.md"] })
+  assert.ok(M.importArgs("~/a.md", "Dev", true).error)
+  assert.ok(M.importArgs("~/a.md", "--json", true).error)
+  assert.ok(M.importArgs("notes.txt", "", true).error)
+})
+
+test("validateArgs: import task and plan show in their contract forms only", () => {
+  for (const ok of [
+    ["import", "task", "--json", "--", "~/a.md"],
+    ["import", "task", "--json", "--dry-run", "--", "~/a.md"],
+    ["import", "task", "--json", "--dry-run", "--area", "dev", "--", "/srv/x/a.md"],
+    ["import", "task", "--json", "--area", "dev", "--", "~/a.md"],
+    ["plan", "show", "C-2026-001", "--json"]
+  ]) assert.strictEqual(M.validateArgs(ok), "", ok.join(" "))
+  for (const bad of [
+    ["import", "task", "--", "~/a.md"],
+    ["import", "task", "--json", "~/a.md"],
+    ["import", "task", "--json", "--", "~/a.txt"],
+    ["import", "task", "--json", "--", "~/a.md\nb.md"],
+    ["import", "task", "--json", "--", "relative.md"],
+    ["import", "task", "--json", "--area", "Bad", "--", "~/a.md"],
+    ["import", "task", "--json", "--area", "--", "~/a.md"],
+    ["import", "task", "--json", "--include-done", "--", "~/a.md"],
+    ["import", "task", "--json", "--", "~/a.md", "~/b.md"],
+    ["import", "task", "--dry-run", "--json", "--", "~/a.md"],
+    ["import", "omarchy-agent", "--json", "--", "~/vault.md"],
+    ["plan", "show", "C-2026-001"],
+    ["plan", "show", "../x", "--json"]
+  ]) assert.notStrictEqual(M.validateArgs(bad), "", bad.join(" "))
+})
+
+test("importResult: the dry run's list, the import's ids, the engine's refusal; ids checked", () => {
+  const dry = M.importResult(0, JSON.stringify({ mode: "dry-run", created: [
+    { id: null, title: "Fix it", status: "queued", source: "~/t.md#2", path: null, replaces: null },
+    { id: null, title: "B", status: "completed", source: "~/t.md#4", replaces: "C-2026-001" }],
+  skipped: [{ source: "~/t.md#5", reason: "already-imported", case: "C-2026-002" }, { source: "~/t.md#6", reason: "odd", case: "x" }],
+  redactedLines: 1 }), "")
+  assert.strictEqual(dry.ok, true)
+  assert.strictEqual(dry.dryRun, true)
+  assert.strictEqual(dry.text, "Would create 2 cases · 2 tasks skipped · 1 line redacted")
+  same(dry.created.map(c => [c.id, c.title, c.status, c.source, c.replaces]),
+    [["", "Fix it", "queued", "~/t.md#2", ""], ["", "B", "completed", "~/t.md#4", "C-2026-001"]])
+  same(dry.skipped, [{ source: "~/t.md#5", reason: "already imported", caseId: "C-2026-002" },
+    { source: "~/t.md#6", reason: "odd", caseId: "" }])
+  same(dry.caseIds, [])
+  const done = M.importResult(0, JSON.stringify({ mode: "apply", created: [{ id: "C-2026-009", title: "A" },
+    { id: "not-an-id", title: "B" }], skipped: [] }), "")
+  assert.strictEqual(done.text, "Imported 2 cases: C-2026-009")
+  same(done.caseIds, ["C-2026-009"])
+  assert.strictEqual(M.importResult(0, JSON.stringify({ mode: "apply", created: [], skipped: [] }), "").text, "Nothing new imported")
+  const refused = M.importResult(1, JSON.stringify({ error: { code: 1, message: "~/x.md is inside the logbook" } }), "")
+  assert.strictEqual(refused.ok, false)
+  assert.strictEqual(refused.text, "~/x.md is inside the logbook")
+  assert.strictEqual(M.importResult(0, "not json", "").ok, false)
+})
+
+test("caseShowArgs/caseShowResult: the whole Intent, or why not", () => {
+  same(M.caseShowArgs("C-2026-007"), { args: ["plan", "show", "C-2026-007", "--json"] })
+  assert.ok(M.caseShowArgs("C-2026-007 --x").error)
+  const r = M.caseShowResult(0, JSON.stringify({ case: { id: "C-2026-007" }, body: "x",
+    intent: { text: "Imported from ~/t.md#2 — read before you start this case.\n\nA", lines: 3, truncated: false } }), "")
+  same([r.ok, r.caseId, r.lines, r.truncated], [true, "C-2026-007", 3, false])
+  assert.ok(r.intent.indexOf("Imported from ~/t.md#2") === 0)
+  const withheld = M.caseShowResult(0, JSON.stringify({ case: { id: "C-2026-007" }, intent: null }), "")
+  assert.strictEqual(withheld.ok, false)
+  assert.ok(/withholds/.test(withheld.text))
+  assert.strictEqual(M.caseShowResult(1, "", "unknown case C-2026-099").text, "unknown case C-2026-099")
+})
+
+test("an imported case: marked in the list; its Start never by Enter, armed by click, after the review", () => {
+  const index = M.parseIndex(sample).index
+  const prepared = M.deskWork(index)
+  const row = M.findWorkRow(prepared, "C-2026-007")
+  assert.strictEqual(row.imported, true)
+  assert.strictEqual(row.listMeta, "C-2026-007 · imported · R1 · dev-env")
+  const actions = M.caseDeskActions(row)
+  same(actions.map(a => [a.id, a.enter, a.review, a.key]), [["start", false, true, ""], ["drop", false, false, "x"],
+    ["open", false, false, "e"]])
+  // Enter has nothing on it: neither Start nor, in its place, Drop
+  assert.strictEqual(M.caseEnterAction(row), null)
+  assert.strictEqual(M.caseArmHint(actions[0], "C-2026-007"), "Start C-2026-007? Click Confirm.")
+  // a case that is not imported keeps Start on Enter
+  assert.strictEqual(M.caseEnterAction(M.findWorkRow(prepared, "C-2026-005")).id, "start")
+  assert.strictEqual(M.intentReviewed(row, null), false)
+  assert.strictEqual(M.intentReviewed(row, { ok: true, pending: false, caseId: "C-2026-005" }), false)
+  assert.strictEqual(M.intentReviewed(row, { ok: true, pending: true, caseId: "C-2026-007" }), false)
+  assert.strictEqual(M.intentReviewed(row, { ok: false, pending: false, caseId: "C-2026-007" }), false)
+  assert.strictEqual(M.intentReviewed(row, { ok: true, pending: false, caseId: "C-2026-007" }), true)
+  const d = M.caseDetail(index, prepared, "C-2026-007")
+  same([d.imported, d.source], [true, "~/Notizen/aufgaben.md#4"])
+})
+
+test("BAD_PATH_CHARS is exactly fixtures/bad-path-chars.txt, the engine's bad_path_char (round 2, N3)", () => {
+  const ranges = fs.readFileSync(path.join(root, "fixtures/bad-path-chars.txt"), "utf8").split("\n")
+    .filter(l => l.trim() !== "" && !l.startsWith("#")).map(l => l.trim().split(" ").map(h => parseInt(h, 16)))
+  assert.ok(ranges.length > 10)
+  for (let cp = 0; cp <= 0x10ffff; cp++) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue
+    const listed = ranges.some(r => cp >= r[0] && cp <= r[1])
+    const refused = M.BAD_PATH_CHARS.test(String.fromCodePoint(cp))
+    if (listed !== refused) assert.fail("U+" + cp.toString(16).toUpperCase() + ": listed " + listed + ", refused " + refused)
+  }
+  // in a path: the separators and a tag character too
+  for (const bad of ["~/x Reviewed by you.md", "~/a b.md", "~/t\u{e0072}.md", "~/s­hy.md"])
+    assert.notStrictEqual(M.importPathError(bad), "", JSON.stringify(bad))
+})
+
+test("a truncated Intent or one with hidden characters keeps Start off, with the hint (round 2, B1, B2)", () => {
+  const index = M.parseIndex(sample).index
+  const row = M.findWorkRow(M.deskWork(index), "C-2026-007")
+  const shown = { ok: true, pending: false, caseId: "C-2026-007", truncated: false, hidden: 0 }
+  assert.strictEqual(M.intentReviewed(row, shown), true)
+  assert.strictEqual(M.reviewHint(row, shown), "")
+  const cut = Object.assign({}, shown, { truncated: true })
+  assert.strictEqual(M.intentReviewed(row, cut), false)
+  assert.strictEqual(M.reviewHint(row, cut),
+    "the Intent is longer than the desk shows: read the whole Intent in the editor; start this case from the terminal.")
+  const hid = Object.assign({}, shown, { hidden: 21 })
+  assert.strictEqual(M.intentReviewed(row, hid), false)
+  assert.strictEqual(M.reviewHint(row, hid),
+    "21 hidden characters are marked: read the whole Intent in the editor; start this case from the terminal.")
+  assert.strictEqual(M.reviewHint(row, Object.assign({}, shown, { hidden: 1, truncated: true })),
+    "1 hidden character is marked and the Intent is longer than the desk shows: read the whole Intent in the editor; start this case from the terminal.")
+  assert.strictEqual(M.reviewHint(row, null), "Start waits until the whole Intent below is shown; only you start an imported case")
+  assert.strictEqual(M.reviewHint(row, Object.assign({}, shown, { pending: true })),
+    "Start waits until the whole Intent below is shown; only you start an imported case")
+  // a case that is not imported has no such hint
+  assert.strictEqual(M.reviewHint(M.findWorkRow(M.deskWork(index), "C-2026-005"), null), "")
+  const r = M.caseShowResult(0, JSON.stringify({ case: { id: "C-2026-007" },
+    intent: { text: "a‹U+E0072›", lines: 1, truncated: false, hidden: 1 } }), "")
+  same([r.ok, r.hidden], [true, 1])
+  const imp = M.importResult(0, JSON.stringify({ mode: "dry-run", created: [], droppedCharacters: 23,
+    skipped: [{ source: "~/big.md", reason: "too-long", case: null }] }), "")
+  assert.strictEqual(imp.text, "Nothing new to import · 1 task skipped · 23 invisible characters dropped")
+  assert.strictEqual(imp.skipped[0].reason, "too long to review in the desk (over 64 KiB)")
+})
+
+test("reaskAfter: an answer that a new index overtook is asked again, never enables Start (stage 2)", () => {
+  const ok = { ok: true, caseId: "C-2026-007" }
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-007", pending: true, reaskWanted: true }, ok), true)
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-007", pending: true }, ok), false)
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-005", pending: true, reaskWanted: true }, ok), false)
+  assert.strictEqual(M.reaskAfter({ caseId: "C-2026-007", pending: true, reaskWanted: true }, { ok: false, caseId: "C-2026-007" }), false)
+  assert.strictEqual(M.reaskAfter(null, ok), false)
+})
+
+test("ImportForm and the imported review show engine text as plain text", () => {
+  for (const f of ["plugin/components/desk/ImportForm.qml", "plugin/sections/Work.qml"]) {
+    const qml = fs.readFileSync(path.join(root, f), "utf8")
+    assert.ok(!/StyledText|RichText|MarkdownText|AutoText/.test(qml), f + ": only Text.PlainText")
+    const blocks = qml.split(/\n\s*Text \{/).slice(1)
+    for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), f + ": " + b.slice(0, 120))
+  }
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

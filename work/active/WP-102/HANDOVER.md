@@ -350,3 +350,356 @@ merge commit 5ddf80b.
   Log: `engine/target/check-wp102-merge1.log` (dev host, not committed).
 
 102b is not started; it waits for WP-127 (`cases[].source`).
+
+## 102b
+
+**Merge:** `git fetch`, then a merge of the local `next` (aaf7a0a: main,
+WP-124, WP-127, WP-136, WP-140) as its own commit, 7ce404d. Local `next`
+was ahead of `origin/next` (8671446); the brief said `git merge next`, so
+I aborted a started merge of `origin/next` and merged the local one. There
+were no conflicts. Nothing I had built was disturbed, which I checked:
+WP-127 already writes the frontmatter `source` from `import task`, and
+WP-140 changed `redact.rs` beside `redact_keeping_lines`.
+
+### What was built
+
+The desk import follows the WP's 0.2.0 form and the "For 102b" rules of
+round 3.
+
+- **One engine addition: `plan show <id> --json` gives `intent: {text,
+  lines, truncated}`.** The desk must show the *whole* Intent, but the
+  index carries only its first paragraph (clipped to 256 bytes), and the
+  plugin never reads Markdown. So:
+  - the engine extracts the section and cleans it as the index cleans text
+    (`index::build::plain_text`: control characters as spaces, direction and
+    format characters dropped, redacted), without the clip;
+  - the text is capped at 64 KiB, cut at a character boundary;
+  - the line count is taken before the cut;
+  - `intent` is `null` while the redaction patterns do not compile.
+
+  Test `plan_show_gives_the_whole_intent_for_the_desk` (also: a long file
+  gives `truncated`). Documented in SPEC-ENGINE §3 and in CONTRACT.md's
+  argv list.
+- **Import tasks…** is a button in the Work list head, beside *By agent*
+  and *New case*. It opens `components/desk/ImportForm.qml` in the detail:
+  - an explanation line, the path field and an optional area;
+  - **Dry run** (Enter in a field) sends `seldon import task --json
+    --dry-run [--area <a>] -- <path>` and shows the list: title, status ·
+    source · changed since; the skips with their reason in words; and
+    "Would create N cases · M tasks skipped";
+  - **Import N cases** is enabled only for the path and area that the
+    shown dry run was for. One click sends the same command without
+    `--dry-run`;
+  - the engine's refusal shows in the form. Esc closes the form and keeps
+    the fields;
+  - after an import the form closes and empties, the first new case is
+    selected, and the list's result line says "Imported N cases: …".
+
+  `Model.importPathError` refuses, before any call: an empty path, a
+  control, bidi or format character, a relative path, a path over 4096
+  characters, and anything that is not `.md`. `validateArgs` accepts
+  exactly `import task --json [--dry-run] [--area <slug>] -- <path>` (with
+  the path check) and `plan show <id> --json`. The path is always one
+  argument after `--`; a path that looks like shell text stays one
+  argument (unit test).
+- **Imported cases:**
+  - The list meta reads "id · imported · risk · …".
+  - The detail asks `plan show` (read-only), again on every new index,
+    and shows **IMPORTED TASK · N lines**. Under it is the accent line
+    "From <source>. Read the whole Intent before you start the case: once
+    started, an agent acts on it without asking. Only you start it." Then
+    the engine's text in a bordered box, `Text.PlainText`,
+    `Style.font.family` (Omarchy's monospace alias), `WrapAnywhere`, never
+    Markdown. Its first line is the provenance line. A note follows when
+    the text is truncated.
+  - The key/values show "Imported from: <source>" (WP-127).
+  - While the Intent is loading, withheld or unavailable (dev mode), the
+    block says so and the index's first paragraph stays.
+- **Start of an imported case:**
+  - It never fires from the list or a key: such a case has **no Enter
+    action**. Without this, Enter would have fallen to *Drop*; I found
+    that and closed it.
+  - The bar's Start is enabled only while `Model.intentReviewed` is true
+    (this case's finished, successful `plan show`).
+  - It arms by click only: "Start C-…? Click Confirm."
+  - Until then the hint reads "Start waits until the whole Intent below is
+    shown; only you start an imported case".
+  - `press()` refuses as well, as a second guard.
+- **Service:** `importTasks(path, area, dryRun)` (one at a time, through
+  the queue) and `showCase(id, again)`. The new state is in `importResult`
+  and `caseShown`; both are in the IPC `status` (without the Intent text).
+- **Rules followed:** Style tokens only, `Text.PlainText` everywhere (a
+  unit test reads both QML files), fixed argv, everything through the
+  async queue, `qmllint` and `omarchy plugin validate` before each plugin
+  commit, and no absolute home path.
+
+### Tests
+
+- **Model** (`model.test.js`, +7 tests, 165 pass): `importPathError`,
+  `importArgs`, `validateArgs` (5 accepted and 13 refused forms),
+  `importResult`, `caseShowArgs`/`caseShowResult`, the imported case's
+  actions (no Enter, no key, Start armed by click), `intentReviewed`, and
+  plain text only.
+- **Harness** (`desk-view.sh` against `fake-seldon`, which now speaks
+  `import task` and `plan show`):
+  - **import-live:** the form; the dry run's list; one click imports; the
+    selected case shows its whole Intent (5 lines, the provenance line, the
+    source); no first-paragraph INTENT beside it; Enter twice does nothing;
+    Start is armed by click and runs; a second dry run is all "already
+    imported". The argv has the path as one argument after `--`, and
+    `plan show` only for the imported case and before its Start (the
+    number of `plan show` calls depends on index timing, so that part is
+    checked separately).
+  - **import-refused:** the form's own path check; the engine's refusal in
+    the form; the fields kept after Esc; a withheld Intent leaves Start off;
+    two clicks on the disabled Start run nothing.
+  - **import-dev:** the index's first paragraph; "needs the engine"; no
+    Start; the form stays shut; nothing overflows at 50 %.
+- **Plugin mutants** (`work/active/WP-102/plugin-mutants.py` against the
+  trimmed harness from `mk-desk-import.py`): four of five are killed —
+  `intentReviewed` always true, the bar enabling Start without the review,
+  Enter falling to Drop, and `validateArgs` skipping the path check.
+  **"press() ignores the review" survives**: no path reaches `press("start")`
+  except the disabled bar button (checked: two clicks do nothing) and
+  Enter (which has no action), so that guard is defence in depth only.
+- **Engine:** `import_task` now has 23 tests.
+
+### Not done here / for the orchestrator
+
+- **The live check on the test host** with a ten-item file that holds one
+  `## Result` line and one CRLF secret is not run yet. It needs the
+  installed build on the test host (packaging), after merge. The engine
+  side of it is covered by the tests (escaping, CRLF, redaction); the desk
+  side by the harness.
+- **The desk has no key for Import tasks…**, so `docs/KEYBINDINGS.md` is
+  unchanged.
+- **`plan show` runs through the one engine queue**, as `drift show`
+  does. On a busy queue the review waits its turn, and Start stays off
+  until then.
+
+### Check (102b)
+
+`flock /tmp/seldon-check.lock just check` on 42ace2d (the last code and
+docs commit; this handover adds only this file): **exit 0, `check: ok`**.
+It covers:
+- fmt, clippy `-D warnings`, and all engine tests (default and `watch`);
+- packaging, install, deploy and schema-validate;
+- docs-check (467 links, 14 translated pages, 53 commands);
+- `omarchy plugin validate` and qmllint (48 files);
+- the plugin tests: model.test.js 165, service-states 342/0, desk-view
+  1609/0, bar-view 194/0.
+
+The branch diff since the merge holds no private path. Log:
+`engine/target/check-wp102b-r1.log` (dev host, not committed).
+
+## Round 2 (102b)
+
+Brief: `WP-102b-round-2-brief.md`; packet `WP-102b-review-1.md` (SEND BACK
+on 0c8e2e98: B1, B2, B3, N1–N4).
+
+**Merge:** `git merge next` (e6dc86f) as its own commit, 5f68c69. Two
+files auto-merged (`docs/TESTING.md`, `tests/plugin/desk-view.sh`), with no
+conflicts.
+
+### Fixed
+
+- **B1, Start for a truncated Intent. Both halves done.**
+  - `import task` skips a task whose Intent, as it would be written
+    (provenance line plus escaped text), is over 64 KiB. Reason `too-long`.
+    Test `a_task_longer_than_the_desk_shows_is_skipped` uses the reviewer's
+    file: 2400 lines, then the `curl … | sh` line.
+  - `Model.intentReviewed` also needs `truncated` false. `Model.reviewHint`
+    says "…: read the whole Intent in the editor; start this case from the
+    terminal." The box adds "The first 64 KiB are shown; …".
+- **B2, invisible characters. Both halves done.**
+  - `import task` drops `is_direction_or_format` characters (WP-140's set,
+    tags included) from the text before redacting, so they also leave the
+    title. `--json` gains `droppedCharacters`.
+  - Test `invisible_characters_never_reach_an_imported_case`: 21 tag
+    characters, U+202E and U+200B are all dropped (23 in total). The case
+    file, the title, human `plan show` and JSON `plan show` hold none.
+  - `plan show` `intent` now marks each such character as `‹U+XXXX›`
+    (`index::build::marked_text`) and counts them in `hidden`. Test: a
+    hand-made case with the 21 tags gives `hidden: 21` and the markers.
+  - The desk keeps Start off while `hidden > 0` and says "N hidden
+    characters are marked …".
+  - Because the characters are dropped **before** redaction, a zero-width
+    space can no longer split a secret from its rule *for `import task`*.
+    This is a side effect of the order; N5 itself (engine-wide, `seldon
+    log`) is not touched.
+- **B3:** `decisions/ADR-0044-plan-show-import-task-rows.md`, **proposed**
+  (accepting it is the operator's decision), with a `DECISIONS.md` row. It
+  covers:
+  - the two CONTRACT.md rows (both now name ADR-0044);
+  - the `intent {text, lines, truncated, hidden}` shape, the 64 KiB cap at
+    a character boundary, and `null` when the patterns fail;
+  - B1 and B2;
+  - N6 as open (`--intent-sha`);
+  - the reference to ADR-0040.
+- **N1, every survivor now has a killing test:**
+  - E1 (not redacted): a hand-written token in a hand-made case's Intent.
+  - E3 (character boundary): `x`×65 535 then `é`, so the text ends exactly
+    at 65 535 bytes.
+  - E4 (patterns fail): `patterns = ["("]` gives `intent: null`.
+  - P2 (no re-ask): `import-reask`, where a capture's new index triggers a
+    second `plan show`.
+  - P4 (area ignored): `import-area`, where a new area turns Import off and
+    the import carries `--area dev`.
+  - P5 (stays reviewed while re-asking): `import-reask` step 5, which needs
+    pending, Start off and the same text.
+  - "press() ignores the review": a new harness verb
+    `trigger:<objectName>:<id>` emits the detail's `actionTriggered`
+    directly, behind a disabled bar. In `import-refused` two stray
+    triggers run nothing (argv compared).
+- **N2:**
+  - `Service.showCase(id, true)` keeps the last text on screen while it
+    asks again, marked pending, so Start is off.
+  - An answer with the same text leaves the box's string as it was. An
+    equal `text` does not re-lay out, so the scroll position holds.
+  - `import-reask` checks that the text at the pending step is identical.
+  - I did not shrink the cap or switch to a ListView. A 64 KiB layout now
+    happens once per change of text, not once per index.
+- **N3, one set:**
+  - `fixtures/bad-path-chars.txt` holds the code-point ranges: control
+    characters, WP-140's direction and format set, and U+2028/U+2029.
+  - The engine's `bad_path_char` gained U+2028/U+2029, and
+    `import::tests::bad_path_char_is_the_shared_list` checks every code
+    point against the file.
+  - The plugin's `BAD_PATH_CHARS` (now a `u` regex) is checked the same way
+    in model.test.js.
+  - A folder `x<U+2028>…` is now refused on both sides.
+- **N4:** `just check-rss` and `just check-perf` were run under the flock:
+  - check-rss: `rss_stays_under_11_mb_on_the_x10_fixture` ok.
+  - check-perf: index build ×10 median 5.5 ms, ×150 median 69.4 ms
+    (budget 100 ms); `status` at 10 000 lines median 51 ms (budget
+    100 ms); hooks 0.7–3.2 ms (budget 5 ms / 1 ms); every redaction case
+    within budget.
+  - Logs: `engine/target/{rss,perf}-wp102b-r2.log`.
+- **N5:** untouched, as briefed (apart from the side effect noted under
+  B2).
+
+### Also
+
+- **WP-140 made the import Scrubber redact the whole text itself.** My
+  outer whole-text pass in `read_source` was therefore a duplicate; I
+  removed it, and the Scrubber does the work. Its mutant, "whole-text
+  redaction off", now aims at `import::Scrubber::text` and is killed.
+- **"CRLF normalisation off" now survives as an equivalent mutant.** Since
+  WP-128 the rules read `\r\n`, and the parser strips `\r` at line ends, so
+  dropping the `\r\n` → `\n` step changes no output. I kept the step
+  (round 3 asked for it) and did not count this survivor as a gap.
+- **Engine mutants** (`work/active/WP-102/mutants.py`; a fifth tuple
+  element picks the cargo test target; own target dir): **33, of which 32
+  are killed and 1 is the equivalent CRLF mutant.** The new ones are E1,
+  E3, E4, "keeps invisible", "drops instead of marking", "too-long off"
+  and "separators allowed", plus the corrected stale patterns.
+- **Plugin mutants** (`plugin-mutants.py` with the trimmed harness from
+  `mk-desk-import.py`): **12 of 12 killed**, including the earlier
+  survivor `press()`. The new ones are P2, P4, P5, "re-ask clears the
+  text", B1 and B2 in `intentReviewed`, and "separators allowed".
+- **Environment:** `/run/user/1000` is full (as the brief says), and
+  `just` itself could not write its shebang scripts there. I deleted
+  nothing there. Instead I ran every `just` and harness command with
+  `XDG_RUNTIME_DIR=/tmp/wp102-xdg`, a short private directory of my own
+  (mode 700). A path on the disk was too long for quickshell's IPC socket.
+  The run leaves quickshell instance folders in that directory, which is
+  the operator's or orchestrator's to remove by its path; I did not
+  delete it.
+
+### Check (102b round 2)
+
+`flock /tmp/seldon-check.lock just check` (with
+`XDG_RUNTIME_DIR=/tmp/wp102-xdg`, see Environment) on 4217b61 (the last
+code commit; this handover adds only this file): **exit 0, `check: ok`**.
+- The engine: fmt, clippy, and all engine tests (default and `watch`;
+  `import_task` has 26).
+- packaging, install and deploy.
+- validate-fixtures: 133 instances.
+- docs-check: 467 links.
+- `omarchy plugin validate` and qmllint (48 files).
+- The plugin: model.test.js 167, service-states 342/0, desk-view 1630/0
+  and bar-view 194/0.
+
+**No ENOSPC failures:** the private runtime directory avoided them.
+
+An earlier run (log `check-wp102b-r2.log`) failed in schema-validate,
+because every JSON fixture needs a schema mapping. Moving the
+character list to `fixtures/bad-path-chars.txt` fixed it.
+
+**The branch diff since the merge holds no private path.** Logs:
+`engine/target/check-wp102b-r2b.log`,
+`engine/target/{rss,perf}-wp102b-r2.log` (dev host, not committed).
+
+## Stage 2 edits (102b)
+
+Fable stage 2 approved WP-102b. These are the edits from
+`WP-102b-stage2-edits.md`:
+
+1. **A re-ask while an answer is pending** (`plugin/Service.qml`):
+   - When a new index arrives while `plan show` is in flight,
+     `showCase(id, true)` now sets `reaskWanted` instead of dropping the
+     re-ask.
+   - When that answer arrives, `Model.reaskAfter` routes it: it is stored as
+     pending (so it enables nothing), and `askCase` asks once more.
+   - Tests: a model test for `reaskAfter`. In the harness, `import-reask`
+     runs with `FAKE_SELDON_SHOW_TOUCH`, which makes the fake engine rewrite
+     the state index while the first `plan show` runs; the harness then
+     checks for three `plan show` calls.
+   - `import-area` now checks `plan show` apart from the rest of the argv,
+     because one or two calls are both correct there.
+   - Mutant "re-ask while pending dropped" is killed (plugin mutants: 13 of
+     13).
+2. **ADR-0044 wording** (no decision changed):
+   - the lead-in on ADR-0040 as a precedent;
+   - §1 reads `intent` and `case.id`, and the dry run is the arm (the
+     two-press rule of SPEC-PLUGIN §5.7);
+   - §2 states that marking happens before redaction, so a secret split by
+     an invisible character in a hand-made case can show unmasked in the
+     review box, while `hidden > 0` keeps Start off and the index masks it;
+   - §5 states that *Ask agent* is not gated, and how the re-ask works
+     while an answer is in flight;
+   - N6 adds the in-flight re-ask.
+3. **SPEC-PLUGIN:** "normally is not [truncated] (a later pattern change can
+   cut it; Start then stays off)", plus the in-flight re-ask.
+4. **ADR-0044 accepted:** the operator accepted it on 2026-10-08 (E22). The
+   status line, the `DECISIONS.md` row, and the "(proposed)" notes in
+   CONTRACT.md, SPEC-ENGINE §3 and CHANGELOG were updated in the final
+   commit.
+
+Variation selectors were left alone, as briefed (WP-159).
+
+**Check:** run after the crash and reboot, on b85def3b:
+`flock /tmp/seldon-check.lock env XDG_RUNTIME_DIR=/tmp/r102
+JUST_TEMPDIR=<scratch> just check` gave **exit 0, `check: ok`**.
+- Results: validate-fixtures 133, docs-check 467 links, plugin-validate,
+  qmllint (48 files), model.test.js 168, service-states 342/0, desk-view
+  1632/0, bar-view 194/0, and the whole engine suite.
+- `df -h /run/user/1000` read 1 % before and after the run.
+- The final commit adds only the ADR status and its notes in docs (text,
+  no code).
+- Log: `engine/target/check-wp102b-final.log`.
+- `/tmp/r102` was deleted afterwards by its path. The earlier
+  `/tmp/wp102-xdg` was already gone after the reboot.
+
+## Merge of next (102b, before the merge into next)
+
+I merged `next` (35b1b3d) into the branch as its own commit, 6baed09.
+- One conflict, in `docs/TESTING.md`, two table rows. I kept both sides'
+  content: the `import_task.rs` row from this branch (its round-2
+  sentence) and the `collectors_user.rs` row from `next` (its WP-154
+  sentence).
+- `CHANGELOG.md`, `docs/SPEC-ENGINE.md` and `engine/src/commands/plan.rs`
+  merged automatically. `next` lost no CHANGELOG line, and there was no
+  DECISIONS.md conflict (ADR-0044 is the only 004x row on the branch).
+
+**Check:** `flock /tmp/seldon-check.lock env XDG_RUNTIME_DIR=/tmp/r102m
+JUST_TEMPDIR=<scratch> just check` on 6baed09 gave **exit 0, `check: ok`**.
+- Results: validate-fixtures 133, docs-check 467 links, plugin-validate,
+  qmllint (48 files), model.test.js 168, service-states 342/0, desk-view
+  1632/0, bar-view 194/0, and the whole engine suite.
+- Log: `engine/target/check-wp102b-merged.log`.
+- `df -h /run/user/1000` read 1 % (1.3 MB) before and 2 % (49 MB) after.
+  My run left its 189 quickshell instance folders in `/tmp/r102m`, which
+  is now deleted by its path. The folders in `/run/user/1000` came from
+  another harness run (`/tmp/tmp.*` configs, 08:10–10:28) and were not
+  touched.

@@ -109,6 +109,24 @@
 # --item sets `applied` once. `drift discard <id>` moves the file aside and
 # drops `triage` from the state index.
 #
+# `import task --json [--dry-run] [--area A] -- <path>` (WP-102b) reads a
+# task file under $HOME: every top-level `- [ ] text` line is a task, the
+# lines after it indented by two spaces belong to it, `- [x]` lines are
+# skipped as done. A path that is not `.md`, outside $HOME or missing is
+# refused with the engine's words. Without --dry-run each new task becomes
+# a queued case in the state index (tag `imported`, `source` ~/…#line,
+# `intent` its first line), its whole Intent kept in $HOME/intents/<id> for
+# `plan show`; $HOME/imported ("<source> <id>") makes a second run skip it
+# as already imported. `plan show <id> --json` (read-only, never locked)
+# answers {case, body, activeCase, intent: {text, lines, truncated}} — the
+# kept Intent, else the index's provenance line and intent;
+# FAKE_SELDON_SHOW_WITHHELD gives `intent: null`; FAKE_SELDON_SHOW_HIDDEN=N
+# appends N markers `‹U+E0072›` and reports `hidden: N`;
+# FAKE_SELDON_SHOW_TRUNCATED reports `truncated: true` (WP-102b round 2);
+# FAKE_SELDON_SHOW_TOUCH: the first `plan show` rewrites the state index
+# (a new generatedAt, a second later) while it is still running, as another
+# writer would (WP-102b stage 2).
+#
 # `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
 # harness puts a recorder there.
@@ -497,6 +515,97 @@ agent_new() { # agent_new [--zone Z] [--risk R] [--area A] [--json] -- <intent>
     created: {case: {id: $id, title: $title, status: "active"}, events: [], areaCreated: null, git: {committed: true}}}'
 }
 
+import_task() { # import_task --json [--dry-run] [--area A] -- <path>
+  local dry="" area="" path file shown n=0 line mark text src id open="" created='[]' skipped='[]' found
+  while (($# > 0)) && [[ $1 != -- ]]; do
+    case $1 in
+      --dry-run) dry=1 ;;
+      --area) area=$2; shift ;;
+    esac
+    shift
+  done
+  path=${2:-}
+  file=$path
+  [[ $file == "~/"* ]] && file="$HOME/${file#\~/}"
+  [[ $file == "$HOME"/* ]] || user_error "$path is outside your home directory; import reads task files under ~ only"
+  [[ $file == *.md ]] || user_error "$path is not a Markdown file (.md)"
+  [[ -f $file ]] || user_error "$path: cannot read the task file: No such file or directory (os error 2)"
+  shown="~/${file#"$HOME"/}"
+  mkdir -p "$HOME/intents"
+: >>"$HOME/imported"
+  while IFS= read -r line || [[ -n $line ]]; do
+    n=$((n + 1))
+    if [[ -n $open && $line == "  "* ]]; then
+      printf '%s\n' "${line:2}" >>"$HOME/intents/$open"
+      continue
+    fi
+    open=""
+    [[ $line =~ ^-\ \[([\ xX])\]\ (.*)$ ]] || continue
+    mark=${BASH_REMATCH[1]}
+    text=${BASH_REMATCH[2]}
+    src="$shown#$n"
+    if [[ $mark != " " ]]; then
+      skipped=$(jq -c --arg s "$src" '. + [{source: $s, reason: "done", case: null}]' <<<"$skipped")
+      continue
+    fi
+    found=""
+    while read -r k v; do [[ $k == "$src" ]] && { found=$v; break; }; done <"$HOME/imported"
+    if [[ -n $found ]]; then
+      skipped=$(jq -c --arg s "$src" --arg c "$found" '. + [{source: $s, reason: "already-imported", case: $c}]' <<<"$skipped")
+      continue
+    fi
+    if [[ -n $dry ]]; then
+      created=$(jq -c --arg s "$src" --arg t "$text" '. + [{id: null, title: $t, status: "queued", source: $s, path: null,
+        replaces: null}]' <<<"$created")
+      continue
+    fi
+    id=$(next_id)
+    set_status "$id" queued
+    new_case "$id" queued "$text" yellow R1 "$area" normal '["imported"]'
+    rewrite_index '.cases.queued |= map(if .id == $id then . + {source: $s, intent: $t} else . end)' \
+      --arg id "$id" --arg s "$src" --arg t "$text"
+    printf '%s %s\n' "$src" "$id" >>"$HOME/imported"
+    printf 'Imported from %s — read before you start this case.\n\n%s\n' "$src" "$text" >"$HOME/intents/$id"
+    open=$id
+    created=$(jq -c --arg id "$id" --arg s "$src" --arg t "$text" '. + [{id: $id, title: $t, status: "queued", source: $s,
+      path: ("work/queued/" + $id + "-case.md"), replaces: null}]' <<<"$created")
+  done <"$file"
+  jq -cn --arg mode "$([[ -n $dry ]] && echo dry-run || echo apply)" --argjson created "$created" --argjson skipped "$skipped" \
+    '{mode: $mode, created: $created, skipped: $skipped, redactedLines: 0, areaCreated: null, files: [],
+      marker: (if $mode == "apply" and ($created | length) > 0 then ".seldon/imports/tasks.json" else null end),
+      git: {committed: ($mode == "apply" and ($created | length) > 0)}}'
+}
+
+plan_show() { # plan_show <id>
+  local id=$1 index c text
+  [[ $id == "$unknown" ]] && user_error "unknown case $id"
+  index=$(state_index)
+  c=$(jq -c --arg id "$id" '[.cases[][] | select(.id == $id)][0]' "$index")
+  [[ $c != null ]] || user_error "unknown case $id"
+  if [[ -n ${FAKE_SELDON_SHOW_TOUCH:-} && ! -f $HOME/show-touched ]]; then
+    : >"$HOME/show-touched"
+    sleep 1
+    rewrite_index '.'
+    sleep 0.5
+  fi
+  if [[ -n ${FAKE_SELDON_SHOW_WITHHELD:-} ]]; then
+    jq -cn --argjson c "$c" '{case: $c, body: "", activeCase: false, intent: null}'
+    return
+  fi
+  if [[ -f $HOME/intents/$id ]]; then
+    text=$(<"$HOME/intents/$id")
+  else
+    text=$(jq -r 'if .source then "Imported from " + .source + " — read before you start this case.\n\n" else "" end
+      + (.intent // "")' <<<"$c")
+  fi
+  local hidden=${FAKE_SELDON_SHOW_HIDDEN:-0} i
+  for ((i = 0; i < hidden; i++)); do text+="‹U+E0072›"; done
+  jq -cn --argjson c "$c" --arg text "$text" --argjson hidden "$hidden" --arg cut "${FAKE_SELDON_SHOW_TRUNCATED:-}" \
+    '{case: $c, body: "", activeCase: false,
+      intent: {text: $text, lines: (if $text == "" then 0 else ($text | split("\n") | length) end), truncated: ($cut != ""),
+        hidden: $hidden}}'
+}
+
 plan_reopen() { # plan_reopen <id>
   local id=$1 from index old new earlier
   [[ $id == "$unknown" ]] && user_error "unknown case $id"
@@ -708,6 +817,11 @@ case "$cmd" in
   plan)
     sleep 0.2
     [[ $mode == uninit ]] && uninit
+    # read-only, as the engine's: no lock
+    if [[ ${2:-} == show ]]; then
+      plan_show "${3:-}"
+      exit 0
+    fi
     if [[ -n ${FAKE_SELDON_LOCKED:-} ]]; then
       echo '{"error":{"code":4,"message":"the logbook is locked by another seldon (pid 4242)"}}'
       exit 4
@@ -771,6 +885,13 @@ case "$cmd" in
       ask) agent_ask "${3:-}" "${4:-}" ;;
       *) user_error "unrecognized subcommand '${2:-}'" ;;
     esac
+    ;;
+  import)
+    sleep 0.2
+    [[ $mode == uninit ]] && uninit
+    [[ ${2:-} == task ]] || user_error "unrecognized subcommand '${2:-}'"
+    shift 2
+    import_task "$@"
     ;;
   rules)
     sleep 0.2

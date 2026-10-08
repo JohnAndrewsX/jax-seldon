@@ -1,6 +1,6 @@
 # Import aus omarchy-agent
 
-<!-- source: en/09-import-from-omarchy-agent.md @ f919feb -->
+<!-- source: en/09-import-from-omarchy-agent.md @ 448ae92c -->
 
 Diese Seite ist für dich, wenn du vor Seldon ein Logbuch mit dem
 omarchy-agent-Kit geführt hast: einen Obsidian-Vault mit `pipeline/`,
@@ -155,6 +155,18 @@ Der Probelauf listet, was entstehen würde, und schreibt nichts. Ohne
 `--dry-run` wird sofort importiert und als `seldon: import task`
 committet.
 
+Im Desk macht **Import tasks…** in der Work-Liste dasselbe: Pfad eintippen
+(und, wenn du willst, einen Bereich), die Liste des Probelaufs ansehen,
+dann **Import N cases** klicken. Importierte Cases zeigen „imported“ in
+der Liste. Ihr Detail zeigt den ganzen Intent als reinen Text, mit der
+Datei, aus der er kommt, und seiner Zeilenzahl; **Start** wird erst
+klickbar, wenn dieser Text angezeigt ist, und Enter startet nie einen
+importierten Case. Enthält der Intent eines Case unsichtbare Zeichen
+(jemand hat die Datei von Hand bearbeitet), markiert der Desk jedes als
+`‹U+…›` und lässt Start aus; ebenso bei einem Intent, der länger ist, als
+er anzeigt. Dann lies den Case im Editor und starte ihn im Terminal
+(`seldon plan start <id>`).
+
 - Jeder offene Punkt (`- [ ] …`) wird ein Case in **queued**. Sein Titel
   ist der erste Satz des Punkts (höchstens 72 Zeichen); sein *Intent*
   ist der Punkt mit den darunter eingerückten Zeilen (auch verschachtelte
@@ -168,6 +180,12 @@ committet.
   `--area` setzen für alle andere Werte.
 - Jeder Case bekommt das Tag `imported` und eine Log-Zeile `imported
   from ~/projects/desk/TODO.md#12` (die Datei und die Zeile des Punkts).
+- Eine Aufgabe, deren Text länger ist, als der Desk anzeigen kann
+  (64 KiB), wird übersprungen („too long“): teile sie auf oder lege den
+  Case von Hand an.
+- Unsichtbare Zeichen (Nullbreiten-Leerzeichen, Richtungsmarken, die
+  Unicode-„Tag“-Zeichen, die versteckte Wörter bilden können) werden vor
+  dem Schreiben aus dem Text entfernt; der Bericht zählt sie.
 
 Deine Aufgabendatei wird nur gelesen: nie geändert, verschoben oder
 ausgeführt. Ihr Text läuft durch dieselbe Schwärzung wie eine Notiz,
