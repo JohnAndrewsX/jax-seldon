@@ -58,21 +58,21 @@ Plan: `work/active/WP-164/PLAN.md`.
   `omarchy-settings` 4.0.0, 08-17): the reason the leftovers are left out
   (WP-141's note already lists it).
 
-## Crisis: does it apply?
+## Crisis: does it apply? (open question)
 
-The harm test holds for an unasked change (a wrong `HOOKS` line stops
-the next boot). I did **not** add a crisis row: ADR-0042 says widening
-its list is a new ADR, and an `omarchy-settings` upgrade inside a plain
-`omarchy update` rewrites its drop-ins (09-23 on the test host), so a
-crisis row first needs an exception for a package's own extraction (no
-evidence mechanism exists for that today: the config event has no
-`txId`, and the extraction's mtime is the package's build time).
-Recommendation: attention now; if the operator wants red, an ADR that
-makes a boot-file change a crisis **unless** a pacman transaction of the
-file's owning package ran in the same capture window (owner known from
-ADR-0042's evidence: `omarchy-settings`, `mkinitcpio`,
-`limine-mkinitcpio-hook`). Until then a user opts in with `[drift]
-alwaysRedPaths` (absolute patterns work; tested).
+Left out of this WP (orchestrator, 2026-10-09). ADR-0042 already makes a
+`.pacnew` beside a boot file a crisis; a change of the boot file itself
+stays attention here. The harm test holds for an unasked change (a wrong
+`HOOKS` line stops the next boot), but an `omarchy-settings` upgrade
+inside a plain `omarchy update` rewrites its drop-ins (09-23 on the test
+host), so a crisis row would first need an exception for a package's
+own extraction (the config event has no `txId`; the extraction's mtime
+is the package's build time). Open question for the operator / a later
+ADR: a boot-file change as crisis **unless** a transaction of the file's
+owning package (`omarchy-settings`, `mkinitcpio`,
+`limine-mkinitcpio-hook`, per ADR-0042's evidence) ran in the same
+capture window. Until then a user opts in with `[drift] alwaysRedPaths`
+(absolute patterns work; tested).
 
 ## Verification
 
@@ -90,35 +90,67 @@ alwaysRedPaths` (absolute patterns work; tested).
   files in a root directory); leftover check outside boot directories;
   leftover suffix by `contains`.
 - Release build (static musl) of this branch: built, copied to the test
-  host (below), build dir deleted afterwards.
+  host (below), build dir deleted afterwards. The build dir was in the
+  session scratchpad under `/tmp` (a RAM tmpfs): a mistake, cargo
+  targets belong in the worktree's `engine/target` or a private gates
+  target.
 
-## Not done — decisions needed
+## Live measurement on the test host (passive, 2026-10-09)
 
-1. **Live acceptance on the test host** ("an edit of a drop-in gives one
-   event at the next capture and nothing else changes it"): not run.
-   - The guard hook blocked `sudo -n true` on the test host (a probe
-     whether I could edit `/etc` there). Reported, not routed around.
-     Editing a drop-in needs root, so that step is the operator's.
-   - The guard hook then blocked the scratch run itself (`fail closed …
-     the command name is computed`: I called the binary through a shell
-     variable). Per the guard rule I stopped and did not redo it in
-     another wording. Nothing ran on the test host; only the binary was
-     copied to `/tmp/seldon-wp164` there (delete it by that path when
-     done).
-   - Proposed run (scratch `HOME`, state and logbook under `/tmp/s164`,
-     private runtime dir `/tmp/r164`, `SELDON_ETC_DIR=/etc`, `capture
-     --source config` only; the engine reads hashes of the listed files
-     and nothing else): baseline, a second capture (0 events), then the
-     operator runs e.g. `echo '# seldon live test' | sudo tee
-     /etc/mkinitcpio.conf.d/zz-seldon-test.conf`, capture (expect one
-     `config-add`), `sudo rm` the file, capture (one `config-remove`),
-     then captures over a while (0 events), `rm -r /tmp/s164 /tmp/r164`.
-     Needs: the orchestrator's go for the run written with the literal
-     binary path (or a guard rule for it), and the operator's two `sudo`
-     steps. The test-host case C-2026-005 is not touched (scratch
-     logbook).
-2. **Crisis row** (above): operator decision / ADR.
-3. **ADR-0042's detail text** ("Seldon does not read /etc, so it cannot
-   tell whether that happened since") stays true for the content, but for
-   the boot files a merge now shows as a `config-change`. The text is the
-   ADR's; I left it and the WP-141 CHANGELOG line as they are.
+The release build of this branch (`/tmp/seldon-wp164`, literal path),
+`env -i` with scratch `HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
+`XDG_DATA_HOME` under `/tmp/s164`, `SELDON_TEST_GUARD=/tmp/s164`, a
+private runtime dir `/tmp/r164` (0700), `SELDON_ETC_DIR=/etc`. Scratch
+logbook `/tmp/s164/lb` (`init --non-interactive --no-capture`); only
+`capture --source config` ran. C-2026-005 and the host's own logbook were
+not touched; `/run/user/1000` was 10 % full before.
+
+- 00:30 baseline: `ok`, 0 events. The manifest holds exactly the ten
+  boot files the host has: `/etc/default/limine`,
+  `/etc/limine-entry-tool.conf`, `limine-entry-tool.d/` (4 files),
+  `/etc/mkinitcpio.conf`, `mkinitcpio.conf.d/` (3 files); the existing
+  `omarchy_hooks.conf.pacnew` is left out; `skipped` empty (every file
+  readable, content hashes); `mkinitcpio.d/` empty.
+- 00:50 second capture: `ok`, 0 events, the ledger still empty; the
+  ctimes of all ten files are as at 00:30.
+- No pacman transaction in the window (the last one 2026-10-06), so the
+  "after an update" capture is **pending**: there was no update to
+  measure. The earlier passive evidence (97 transactions, ctimes; see
+  Measurement) stands for it.
+- Cleanup: `/tmp/seldon-wp164`, `/tmp/s164`, `/tmp/r164` deleted on the
+  test host by their paths.
+
+## Operator steps, pending
+
+Agents cannot type the `sudo` password (orchestrator, 2026-10-09). With
+a build of this branch (or the release that carries it) capturing on the
+test host, the operator runs:
+
+1. `echo '# seldon live test' | sudo tee /etc/mkinitcpio.conf.d/zz-seldon-test.conf`
+   → the next `seldon capture` writes exactly one event: `config-add`,
+   subject `/etc/mkinitcpio.conf.d/zz-seldon-test.conf`, `meta.hashTo` a
+   SHA-256, no `hashBasis` (the file is 0644, readable), class attention
+   (`config`); a further capture writes nothing.
+2. `sudo rm /etc/mkinitcpio.conf.d/zz-seldon-test.conf`
+   → the next capture writes exactly one `config-remove` of that subject,
+   `meta.hashFrom` equal to step 1's `hashTo`, class attention
+   (`config-remove`); a further capture writes nothing.
+
+Neither file is read by `mkinitcpio` until the next initramfs build, and
+step 2 removes it before one runs.
+
+## Open
+
+1. Crisis for boot-file changes (above): operator / later ADR.
+2. ADR-0042's detail text ("Seldon does not read /etc, so it cannot tell
+   whether that happened since") stays as it is (orchestrator,
+   2026-10-09); so does the WP-141 CHANGELOG line. For the boot files a
+   `pacdiff` merge now shows as a `config-change`.
+3. The post-update capture of the live measurement (no update came).
+
+## Guard blocks (reported, not routed around)
+
+- `sudo -n true` on the test host (a probe whether I could edit `/etc`).
+- The first scratch run (`fail closed … the command name is computed`:
+  the binary was called through a shell variable). Rerun with the
+  literal path on the orchestrator's go.
