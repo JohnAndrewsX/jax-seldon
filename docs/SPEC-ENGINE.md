@@ -451,9 +451,11 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # resolved path may hold a control character or a text-direction character
                                                # (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible
                                                # format character (U+00AD, U+0600–U+0605, U+180E, U+200B–U+200D,
-                                               # U+2060–U+2064, U+206A–U+206F, U+FEFF, U+FFF9–U+FFFB,
-                                               # U+1BCA0–U+1BCA3, U+1D173–U+1D17A, U+E0000–U+E007F; WP-140)
-                                               # (`import::is_direction_or_format`; a linked folder cannot bring
+                                               # U+2060–U+2065, U+206A–U+206F, U+FEFF, U+FFF9–U+FFFB,
+                                               # U+1BCA0–U+1BCA3, U+1D173–U+1D17A, U+E0000–U+E007F; WP-140), filler
+                                               # (U+034F, U+115F, U+1160, U+17B4, U+17B5, U+3164, U+FFA0) or variation
+                                               # selector (U+180B–U+180D, U+180F, U+FE00–U+FE0F, U+E0100–U+E01EF; WP-159)
+                                               # (`redact::is_invisible`; a linked folder cannot bring
                                                # one in); a directory is refused ("name the Markdown files in it"). The same
                                                # file named twice is read once. Each file is redacted before it is parsed:
                                                # the whole text through §7 with the config's patterns, as a note's (the rules
@@ -1224,8 +1226,8 @@ the case (WP-143): `plan done` commits `seldon: <ID> completed — <title>:
 (HTML comments and headings skipped, a list marker dropped), and `plan
 drop` `seldon: <ID> dropped — <title>: <reason>`; without a line or a
 reason, `— <title>` alone. The text after the dash is one line —
-direction and invisible format characters (`import::is_direction_or_format`)
-dropped, so none splits a token from its pattern, control characters and
+invisible characters (§6's set, `redact::without_invisible`)
+dropped, control characters and
 U+2028/U+2029 turned into spaces —, redacted (§7) and then clipped to
 100 characters with `…`, so a cut never hides a secret from the patterns.
 Every other step keeps `<ID> <status>`. Every git command runs in
@@ -1539,8 +1541,8 @@ git itself is killed, with the same bounded pipe wait. Rules:
   (another history) the ones that came in, `rollback` (the new HEAD is an
   ancestor) the ones that left — as `meta.git`, `meta.commits` (at most
   20 subjects, newest first, one per line; control characters and
-  U+2028/U+2029 → spaces, direction and invisible format characters
-  (§6's set, `import::is_direction_or_format`) dropped, redacted (§7), then clipped to 100 characters with `…`; an
+  U+2028/U+2029 → spaces, invisible characters
+  (§6's set, `redact::without_invisible`) dropped, redacted (§7), then clipped to 100 characters with `…`; an
   empty one `(no subject)`) and the detail `<from> → <to>, pulled N
   commits: <newest> …` (`rolled back N commits: …`, `reset: N commits
   in, M out: …`; no `…` for one commit).
@@ -2254,12 +2256,17 @@ the lines up to the next blank one, each trimmed at the end. An imported
 case (tag `imported`) whose first paragraph is exactly its `Imported from
 … — read before you start this case.` line takes the next paragraph. Each
 text: control characters other than `\n` and `\t` become spaces and
-direction and format characters (`import::is_direction_or_format`:
-U+00AD, U+0600–U+0605, U+061C, U+180E, U+200B–U+200F, U+202A–U+202E,
-U+2060–U+2064, U+2066–U+206F, U+FEFF, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
-U+1D173–U+1D17A, U+E0000–U+E007F; WP-140 added U+00AD, U+0600–U+0605,
-U+061C, U+180E, U+2061–U+2064, U+206A–U+206F, U+FFF9–U+FFFB,
-U+1BCA0–U+1BCA3, U+1D173–U+1D17A and the tags; `scripts/validate-fixtures.py`
+invisible characters (`redact::is_invisible`:
+U+00AD, U+034F, U+0600–U+0605, U+061C, U+115F, U+1160, U+17B4, U+17B5,
+U+180B–U+180F, U+200B–U+200F, U+202A–U+202E, U+2060–U+206F, U+3164,
+U+FE00–U+FE0F, U+FEFF, U+FFA0, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
+U+1D173–U+1D17A, U+E0000–U+E007F, U+E0100–U+E01EF; WP-140 added U+00AD,
+U+0600–U+0605, U+061C, U+180E, U+2061–U+2064, U+206A–U+206F,
+U+FFF9–U+FFFB, U+1BCA0–U+1BCA3, U+1D173–U+1D17A and the tags; WP-159 the
+fillers U+034F, U+115F, U+1160, U+17B4, U+17B5, U+3164, U+FFA0, the
+variation selectors U+180B–U+180D, U+180F, U+FE00–U+FE0F,
+U+E0100–U+E01EF, and U+2065, so the set holds every assigned
+default-ignorable code point; `scripts/validate-fixtures.py`
 holds the same set, tested) are dropped, so none splits a secret from its rule, then the
 logbook's redaction (before
 the clip, so a secret at the cut is masked whole) (`[redaction] patterns` included; patterns that do not
@@ -2587,14 +2594,23 @@ The `…=` assignment rules have no boundary, so a name that starts with
 build and `doctor` still run and withhold every collector message
 (above). `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
-before a rule existed are not rewritten. Direction and format characters
-(the set of §6, `import::is_direction_or_format`) are dropped before the
-redaction from a hook's command line (round 3: a shell line has no use
-for them, and `tok<U+200B>en=` would hide its value), from the index's
-case and decision texts and `source` (§6) and from plugin commit subjects
-(§4); they stay in a note, a case or decision file, the journal and an
-event's other texts, where a zero-width joiner or non-joiner belongs to
-its words, so a secret split by one there is not masked.
+before a rule existed are not rewritten. **Invisible characters** (the
+set of §6, `redact::is_invisible`) hide no secret anywhere (WP-159): every
+redaction (the built-in rules and `[redaction] patterns`) reads the text
+without them, so `to<U+200B>ken=…`, `Authorization: Bearer<U+3164> …` and
+`ghp_0123<U+FE0F>4567…` are masked like their plain forms, in a note, a
+case or decision text, an imported task, a commit subject and every
+event. A text in which nothing is masked is written as it was, its
+invisible characters included (a zero-width joiner or non-joiner belongs
+to its words, WP-140). Where something is masked, the masked span is the
+original one: the invisible characters inside a masked match and at its
+edges go with it, the others stay where they were. A user pattern that
+names an invisible character therefore matches nothing. Besides, they are
+dropped before the redaction from a hook's command line (round 3: a shell
+line has no use for them), from the index's case and decision texts and
+`source` (§6), from the closing commit's summary (§4) and from plugin
+commit subjects (§4), and from the text `import task` reads; `plan show
+--json` marks each as `‹U+XXXX›`.
 
 `[redaction] skipPaths` (config collector and the hook, ADR-0014 §4): a
 pattern with `/` matches the full path (`~/` = home), as a file or as a

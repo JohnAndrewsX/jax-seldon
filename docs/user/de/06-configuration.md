@@ -316,6 +316,11 @@ Die Domain einer Adresse bleibt sichtbar. Nennt deine dich, trag ein
 Muster für sie ein: `"@smith\\.example\\b"` macht aus
 `jo@smith.example` den Text `‹redacted›‹redacted›`.
 
+Ein unsichtbares Zeichen in einem Geheimnis (ein Nullbreiten-Leerzeichen,
+ein Variantenselektor) versteckt es nicht: Die Regeln, auch deine, lesen
+den Text ohne solche Zeichen. Ein Text, in dem nichts zu schwärzen ist,
+behält sie.
+
 Ein ungültiges Muster ist ein Fehler (Exit 1): Seldon schreibt lieber gar
 nicht, als etwas preiszugeben.
 
