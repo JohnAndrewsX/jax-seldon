@@ -506,9 +506,9 @@ pub const DEFAULT_SKIP_PATHS: [&str; 5] = [
 /// The text of `config.toml` with `added` appended to its `watchPaths`
 /// array and every other byte as it was (ADR-0028 §4d, WP-109 round 2:
 /// the upgrade keeps comments and order). `None` when that cannot be done
-/// safely: no single top-level `watchPaths = [ … ]` with at least one
-/// string, a nested array, or a result that does not read back as the
-/// same file with exactly these paths added.
+/// safely: no single top-level `watchPaths = [ … ]`, a nested array, or a
+/// result that does not read back as the same file with exactly these
+/// paths added. An empty array takes them right after its `[`.
 pub fn with_added_watch_paths(text: &str, added: &[String]) -> Option<String> {
     // the key, once, before the first table header
     let mut key_at = None;
@@ -576,10 +576,13 @@ pub fn with_added_watch_paths(text: &str, added: &[String]) -> Option<String> {
         }
     }
     close?;
-    let at = last_end?;
+    // an empty array takes the paths right after its `[` (WP-139)
+    let at = last_end.unwrap_or(open + 1);
     let mut insert = String::new();
     for p in added {
-        insert.push_str(", ");
+        if last_end.is_some() || !insert.is_empty() {
+            insert.push_str(", ");
+        }
         insert.push_str(&toml::Value::String(p.clone()).to_string());
     }
     let new = format!("{}{insert}{}", &text[..at], &text[at..]);
@@ -1182,14 +1185,23 @@ mod tests {
             add(text).unwrap(),
             "watchPaths = [\n  \"~/.config/hypr\", # one\n  \"~/.zshrc\", \"~/.profile\", '~/a\"b', # two ] [\n] # done\n"
         );
-        // refused: no key, the key only in a table, twice, quoted, empty,
+        // an empty array (WP-139: `config watch` on a list the user
+        // emptied), also one with a comment in it
+        assert_eq!(
+            add("watchPaths = []\n").unwrap(),
+            "watchPaths = [\"~/.profile\", '~/a\"b']\n"
+        );
+        assert_eq!(
+            add("watchPaths = [ # none\n]\n").unwrap(),
+            "watchPaths = [\"~/.profile\", '~/a\"b' # none\n]\n"
+        );
+        // refused: no key, the key only in a table, twice, quoted,
         // nested, unclosed
         for text in [
             "logbook = \"/x\"\n",
             "[x]\nwatchPaths = [\"a\"]\n",
             "watchPaths = [\"a\"]\nwatchPaths = [\"b\"]\n",
             "\"watchPaths\" = [\"a\"]\n",
-            "watchPaths = []\n",
             "watchPaths = [[\"a\"]]\n",
             "watchPaths = [\"a\"\n",
             "watchPaths = \"a\"\n",

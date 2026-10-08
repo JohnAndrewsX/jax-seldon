@@ -142,6 +142,9 @@ enum Command {
     /// The agent rules in the logbook's AGENTS.md: update
     Rules(commands::rules::RulesArgs),
 
+    /// Edit config.toml: watch one more path (the desk's Watch on a recently edited file)
+    Config(commands::config_cmd::ConfigArgs),
+
     /// Print a shell completion script for bash, zsh or fish
     #[command(after_help = "Examples:
   seldon completions bash > ~/.local/share/bash-completion/completions/seldon
@@ -379,6 +382,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Dossier(a) => commands::dossier::run(&ctx, a),
         Command::Import(a) => commands::import::run(&ctx, a),
         Command::Rules(a) => commands::rules::run(&ctx, a),
+        Command::Config(a) => commands::config_cmd::run(&ctx, a),
     }
 }
 

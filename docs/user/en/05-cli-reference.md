@@ -44,6 +44,7 @@ Commands:
   dossier           Refresh the generated fences of system/*.md from read-only queries
   import            Import an earlier logbook (dry run unless --apply) or your Markdown task files as cases
   rules             The agent rules in the logbook's AGENTS.md: update
+  config            Edit config.toml: watch one more path (the desk's Watch on a recently edited file)
   completions       Print a shell completion script for bash, zsh or fish
   mangen            Print the man page seldon(1), generated from this help
   help              Print this message or the help of the given subcommand(s)
@@ -208,6 +209,55 @@ Print the engine/plugin contract version
 Usage: seldon contract-version [OPTIONS]
 
 Options:
+```
+<!-- /help -->
+
+### seldon config
+
+Your `config.toml`.
+
+<!-- help: seldon config -->
+```text
+Edit config.toml: watch one more path (the desk's Watch on a recently edited file)
+
+Usage: seldon config [OPTIONS] <COMMAND>
+
+Commands:
+  watch  Add a path under your home directory to watchPaths; the rest of config.toml stays as it is
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+```
+<!-- /help -->
+
+### seldon config watch
+
+Adds one path below your home directory to `watchPaths` in
+`config.toml`: the desk's *Watch* on a recently edited file (System ›
+Recently edited). Only the `watchPaths` list changes; your comments and
+the order of the file stay. The next capture takes the files under the
+path as they are, without an event; a later edit is a config change like
+any other. A path already watched changes nothing (exit 0). Refused,
+exit 1 and nothing written: a path outside your home directory, one in
+or around Seldon's own files (the logbook, `~/.local/state/seldon`,
+`~/.config/seldon`), one under `[redaction] skipPaths`, and a
+`config.toml` whose list cannot be extended without rewriting the file
+(the message names the line to add by hand).
+
+<!-- help: seldon config watch -->
+```text
+Add a path under your home directory to watchPaths; the rest of config.toml stays as it is
+
+Usage: seldon config watch [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>  The file or folder (`~/…`; a relative path lies under the home directory)
+
+Options:
+
+Examples:
+  seldon config watch ~/.config/alacritty/alacritty.toml
+  seldon config watch --json -- ~/.config/starship.toml
 ```
 <!-- /help -->
 
