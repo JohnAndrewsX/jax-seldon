@@ -71,10 +71,11 @@ const V1_TEXTS: [&str; 10] = [
 /// `templates/rules-v<N>/`: the v2 blocks of WP-100 (rounds 1, 2 and the
 /// merged one) and of WP-101 (on `main` and the test host, in no release);
 /// the v3 blocks of WP-111 (stage 1, round 2 and its follow-up, the merged
-/// one; reachable from `main`, in no release); the v4 block of WP-116,
-/// released in 0.1.4 (WP-143 changed the text within v4: the block's
-/// version says what an agent must do, not which wording).
-const RELEASED_BLOCKS: [&str; 17] = [
+/// one; reachable from `main`, in no release); the v4 blocks of WP-116
+/// (round 1, reachable from `main`; as merged, which ships in 0.1.4).
+/// WP-143 changed the text within v4: the block's version says what an
+/// agent must do, not which wording.
+const RELEASED_BLOCKS: [&str; 19] = [
     // WP-100 round 1 (6625cf9), en, de
     "8246c602f96980427956697d995bec2500aa8f66cc5b8b502ca12a86b4dc5d23",
     "7831a764354213f6b847bc329f8f9a5830d7f04ac0b1421067cd1b29ca57919a",
@@ -98,7 +99,10 @@ const RELEASED_BLOCKS: [&str; 17] = [
     // WP-111 as merged (070ff1f, dd41fe2), the last v3
     "25ea43fb9358d3ab3e566ab07dd87f1d434ddd52153de49e6668d3776ee42eb4",
     "20ec344f024ae13642d296fd1f5fa248fc86fa37497584ad8fbedc5cbaa61875",
-    // WP-116 as merged (868c5da), released in 0.1.4, the first v4
+    // WP-116 round 1 (7e7a459), the first v4
+    "03d1fb35e5fe70e3c44c786aad4cac401d51fa902e7cadc24b392ecd6c654f51",
+    "c1bd885f85a6255798f613302428cd893af1032022f65b18b5a0550ad98f96a2",
+    // WP-116 as merged (868c5da), ships in 0.1.4
     "5d2c4839131378943e7c29afd149d940709e2724f22a6e0961369a63c5938056",
     "f84f7a803fe42b16b58d6bde822964aca3d26e57694ff6715edde8ec7613d5b5",
 ];
@@ -606,8 +610,9 @@ mod tests {
         ("wp111", "de"),
     ];
 
-    /// Every v4 rendering reachable from `main` (WP-116 as merged, 0.1.4).
-    const V4_FILES: [&str; 1] = ["wp116"];
+    /// Every v4 rendering reachable from `main` (WP-116 round 1, WP-116
+    /// as merged, which ships in 0.1.4).
+    const V4_FILES: [&str; 2] = ["wp116r1", "wp116"];
 
     fn rendering(version: u32, name: &str, language: &str) -> String {
         let path = format!(
