@@ -1,6 +1,6 @@
 # ADR-0044 — The desk reads a case's whole Intent (`plan show --json` `intent`) and imports task files (`import task`): two plugin-command rows
 
-**Status:** proposed (WP-102b round 2; accepting it is the operator's decision)
+**Status:** accepted 2026-10-08 (operator, E22)
 **Date:** 2026-10-08
 
 > Adds two rows to CONTRACT.md's "Commands the plugin may run" and fixes the

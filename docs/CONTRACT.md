@@ -146,8 +146,8 @@ seldon plan start|verify|done|drop <id> --json   # id validated by the schema re
 seldon agent start <caseId> --json              # active case only; the engine launches the configured agent launcher detached (WP-022)
 seldon agent start --new --json -- <intent>     # WP-101: creates and starts a case from the sentence, then launches as above
 seldon plan reopen <caseId> --json              # WP-101: a completed case only; a new active case, nothing destroyed
-seldon plan show <caseId> --json                # WP-102b, ADR-0044 (proposed): read-only; `intent` {text, lines, truncated, hidden}, the whole Intent the desk shows before an imported case's Start
-seldon import task --json [--dry-run] [--area <slug>] -- <path>   # WP-102b, ADR-0044 (proposed): the path one argument after `--`, never interpolated; the dry run first, then the import
+seldon plan show <caseId> --json                # WP-102b, ADR-0044: read-only; `intent` {text, lines, truncated, hidden}, the whole Intent the desk shows before an imported case's Start
+seldon import task --json [--dry-run] [--area <slug>] -- <path>   # WP-102b, ADR-0044: the path one argument after `--`, never interpolated; the dry run first, then the import
 seldon drift link <eventId> <caseId> [--only] --json
 seldon drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <slug>] --json -- <text>
 seldon drift dismiss <eventId> [--only] --json -- <reason>   # same rule as explain: text after `--`

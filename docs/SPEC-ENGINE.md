@@ -191,7 +191,7 @@ seldon plan show <ID>                            # the case file's path and text
                                                  # (`index::build::marked_text`) — `{text, lines, truncated,
                                                  # hidden}`, `text` at most 64 KiB cut at a character, `lines`
                                                  # counted before the cut; `null` while `[redaction] patterns` do
-                                                 # not compile (ADR-0044, proposed). The desk shows it before an
+                                                 # not compile (ADR-0044). The desk shows it before an
                                                  # imported case's Start and keeps Start off while `truncated` or
                                                  # `hidden` > 0
 seldon drift [--crisis-only] [--all] [--json]    # read-only: index items, crises first; totals count all; --all:

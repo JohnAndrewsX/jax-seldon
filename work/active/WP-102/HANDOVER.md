@@ -629,3 +629,54 @@ character list to `fixtures/bad-path-chars.txt` fixed it.
 **The branch diff since the merge holds no private path.** Logs:
 `engine/target/check-wp102b-r2b.log`,
 `engine/target/{rss,perf}-wp102b-r2.log` (dev host, not committed).
+
+## Stage 2 edits (102b)
+
+Fable stage 2 approved WP-102b. These are the edits from
+`WP-102b-stage2-edits.md`:
+
+1. **A re-ask while an answer is pending** (`plugin/Service.qml`):
+   - When a new index arrives while `plan show` is in flight,
+     `showCase(id, true)` now sets `reaskWanted` instead of dropping the
+     re-ask.
+   - When that answer arrives, `Model.reaskAfter` routes it: it is stored as
+     pending (so it enables nothing), and `askCase` asks once more.
+   - Tests: a model test for `reaskAfter`. In the harness, `import-reask`
+     runs with `FAKE_SELDON_SHOW_TOUCH`, which makes the fake engine rewrite
+     the state index while the first `plan show` runs; the harness then
+     checks for three `plan show` calls.
+   - `import-area` now checks `plan show` apart from the rest of the argv,
+     because one or two calls are both correct there.
+   - Mutant "re-ask while pending dropped" is killed (plugin mutants: 13 of
+     13).
+2. **ADR-0044 wording** (no decision changed):
+   - the lead-in on ADR-0040 as a precedent;
+   - §1 reads `intent` and `case.id`, and the dry run is the arm (the
+     two-press rule of SPEC-PLUGIN §5.7);
+   - §2 states that marking happens before redaction, so a secret split by
+     an invisible character in a hand-made case can show unmasked in the
+     review box, while `hidden > 0` keeps Start off and the index masks it;
+   - §5 states that *Ask agent* is not gated, and how the re-ask works
+     while an answer is in flight;
+   - N6 adds the in-flight re-ask.
+3. **SPEC-PLUGIN:** "normally is not [truncated] (a later pattern change can
+   cut it; Start then stays off)", plus the in-flight re-ask.
+4. **ADR-0044 accepted:** the operator accepted it on 2026-10-08 (E22). The
+   status line, the `DECISIONS.md` row, and the "(proposed)" notes in
+   CONTRACT.md, SPEC-ENGINE §3 and CHANGELOG were updated in the final
+   commit.
+
+Variation selectors were left alone, as briefed (WP-159).
+
+**Check:** run after the crash and reboot, on b85def3b:
+`flock /tmp/seldon-check.lock env XDG_RUNTIME_DIR=/tmp/r102
+JUST_TEMPDIR=<scratch> just check` gave **exit 0, `check: ok`**.
+- Results: validate-fixtures 133, docs-check 467 links, plugin-validate,
+  qmllint (48 files), model.test.js 168, service-states 342/0, desk-view
+  1632/0, bar-view 194/0, and the whole engine suite.
+- `df -h /run/user/1000` read 1 % before and after the run.
+- The final commit adds only the ADR status and its notes in docs (text,
+  no code).
+- Log: `engine/target/check-wp102b-final.log`.
+- `/tmp/r102` was deleted afterwards by its path. The earlier
+  `/tmp/wp102-xdg` was already gone after the reboot.
