@@ -111,3 +111,88 @@ ended the quote (`shell: command not found`). Fixed in `d6d0b076` (also in
 - Guard hook blocks reported, not routed around: `git push -u` and a
   `source <(…)` ad-hoc check (replaced by reason checks in the mutant
   test itself).
+
+## Round 2
+
+Review 1 (stage 1, SEND BACK). `main` (1afb1aef) merged first, no conflict.
+
+- **B1** (CI red, shellcheck): `sed 's/^/     /' <<<"$out"` instead of
+  `echo | sed` (SC2001, both places), `got="unset"` / `got="session"` /
+  `got="trap"` (SC2209). shellcheck is still not installed on the dev
+  host; one more spot that could have tripped it (`"\$""{qs_bin}"`) is now
+  a single-quoted variable. CI is the first shellcheck run.
+- **B2** (no silent skip on main): the harnesses also run when the merge
+  base is `HEAD` (on `main`, a detached `main`, a branch without its own
+  commit). `deploy-test-host.sh` refuses a check log containing
+  `Quickshell harnesses skipped` (new case in `deploy-test-host.test.sh`,
+  191/0); the skip notice says so. The condition, copied out of the
+  justfile into a scratch clone whose `main` is this branch (it only
+  prints RUN or SKIP, starts nothing):
+
+  | Case | Result |
+  |---|---|
+  | main clean | RUN |
+  | detached main | RUN |
+  | fresh branch, no commit | RUN |
+  | branch with a docs-only commit | SKIP |
+  | + unstaged `justfile` change | RUN |
+  | + untracked file under `fixtures/` | RUN |
+  | docs-only with `SELDON_FULL_CHECK=1` | RUN |
+
+- **N1** (wider static rules): a start is `"$qs_bin"`, `${qs_bin}`,
+  `$qs_bin`, `quickshell` or `qs` with `-p`, `--path` or `--path=`. Any
+  mention of the name `XDG_RUNTIME_DIR` that is not an assignment
+  `NAME=…` needs the marker: catches `"$(printenv XDG_RUNTIME_DIR)"`,
+  `v=XDG_RUNTIME_DIR` for `${!v}`, `${XDG_RUNTIME_DIR:=…}`. (A `${!v}`
+  whose name is assembled from pieces stays out of reach; the per-run
+  guard covers it.) `real-home-guard.test.sh` names it in `env -u`; that
+  line now carries the marker (its inner script moved into a variable so
+  the marker sits on a shell line, not inside the quoted script).
+- **N2**: a file that makes `rt=$(mktemp …)` must remove `"$rt"` in an
+  `EXIT` trap; mutants: bar-view, panel-view, e2e trap without `"$rt"`.
+- **N3**: `justfile` is a skip path.
+- **N5**: TESTING says exactly when `check-runtime-space` runs (once per
+  `just` invocation: at the start of `check`; first in `just plugin-test`
+  alone).
+- **AGENTS.md §6**: wording kept. TESTING: engine and cargo tests inherit
+  `XDG_RUNTIME_DIR` but the engine never reads it; `runtime-dir.test.sh`
+  proves it (no `*.rs` under `engine/` names the variable, outside
+  `target/`) and fails if one ever does.
+- `runtime-dir.test.sh` now 36 cases (24 → 35 mutants, plus the engine
+  check).
+
+### Verification
+
+Full check at `81ccc950`, `SELDON_FULL_CHECK=1`, `flock
+/tmp/seldon-check.lock`, `XDG_RUNTIME_DIR=/tmp/r161` (0700),
+`JUST_TEMPDIR` in the scratch dir; by-id listed inside the lock.
+
+```
+lock taken 13:54:04
+tmpfs 3.2G 50M 3.1G 2% /run/user/<uid>
+by-id before: 327
+install.test: 229 passed, 0 failed
+deploy-test-host.test: 191 passed, 0 failed
+runtime-dir.test: 36 passed, 0 failed
+terminal-scripts: 65 passed, 0 failed
+real-home-guard.test: 40 passed, 0 failed
+ok   service-states: no leftover in /run/user/<uid>/quickshell/by-id (327 before, 327 after)
+service-states: 332 passed, 0 failed
+panel-view: 925 passed, 0 failed     (327 before, 327 after)
+overlay-view: 328 passed, 0 failed   (327 before, 327 after)
+bar-view: 196 passed, 0 failed       (327 before, 327 after)
+plugin-test: ok
+check: ok
+by-id after: 327
+by-id lists identical
+exit 0
+```
+
+No `/tmp/seldon-rt.*` left; `/tmp/r161` empty. The session's by-id went
+from 324 (round 1) to 327 between the two checks, outside any run of this
+branch. Not pushed (the orchestrator pushes and watches CI).
+
+Still open from round 1: the `next` follow-up (`desk-view.sh`,
+`graph-live.sh`), and `deploy-test-host` still accepts a log with
+`plugin-test: skipped (SELDON_SKIP_HOST_CHECKS set …)` (not asked; one
+line if wanted).
