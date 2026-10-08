@@ -177,11 +177,13 @@ plugin_hash() {
 
 # Every remote script starts with this: OMARCHY_PATH, its bin dir and the
 # Wayland session, which non-interactive ssh has none of (memory/pitfalls.md).
+# The session's runtime dir is meant here, unlike in the test harnesses
+# (WP-161): the deploy restarts and probes the test host's live shell.
 prelude='set -uo pipefail
 export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 export PATH="$OMARCHY_PATH/bin:$HOME/.local/bin:$PATH"
-export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
-export WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-$(ls "$XDG_RUNTIME_DIR" 2>/dev/null | grep -m 1 -E "^wayland-[0-9]+$" || echo wayland-1)}
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)} # live runtime dir: the test host's shell
+export WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-$(ls "$XDG_RUNTIME_DIR" 2>/dev/null | grep -m 1 -E "^wayland-[0-9]+$" || echo wayland-1)} # live runtime dir: the test host's shell
 cd "$HOME" || exit 2
 plugin_dir=.config/omarchy/plugins/jax.seldon
 dev_dir=.local/state/seldon-dev

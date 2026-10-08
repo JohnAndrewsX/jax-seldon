@@ -89,12 +89,13 @@ remote=""
 [[ $mode == full ]] && remote=1
 
 # The remote side runs bash with OMARCHY_PATH, its bin dir and the Wayland
-# session on PATH/env; non-interactive ssh has none of them.
+# session on PATH/env; non-interactive ssh has none of them. The session's
+# runtime dir is meant here: the steps drive the test host's live shell.
 remote_env='set -uo pipefail
 export OMARCHY_PATH=/usr/share/omarchy
 export PATH="$OMARCHY_PATH/bin:$HOME/.local/bin:$PATH"
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
-export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR" 2>/dev/null | grep -m 1 -E "^wayland-[0-9]+$" || echo wayland-1)
+export XDG_RUNTIME_DIR=/run/user/$(id -u) # live runtime dir: the test host's shell
+export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR" 2>/dev/null | grep -m 1 -E "^wayland-[0-9]+$" || echo wayland-1) # live runtime dir: the test host's shell
 cd "$HOME"'
 
 # rsh <script> — run a bash script on the test host. The script travels as
@@ -360,9 +361,13 @@ if [[ -n $remote ]]; then
 else
   step "dev host: scratch dirs"
   work=$(mktemp -d "${TMPDIR:-/tmp}/seldon-e2e.XXXXXX")
+  # The headless Quickshell's runtime dir: private, never the session's,
+  # short for the IPC socket path (WP-161).
+  rt=$(mktemp -d /tmp/seldon-rt.XXXXXX)
+  chmod 700 "$rt"
   mkdir -p "$work/home" "$work/bin"
   ln -s "$bin" "$work/bin/seldon"
-  trap 'rm -rf "$work"' EXIT
+  trap 'rm -rf "$work" "$rt"' EXIT
   source "$root/tests/plugin/real-home-guard.sh"
   logbook_arg="$work/home/Seldon-e2e"
   logbook=$logbook_arg
@@ -429,7 +434,7 @@ if [[ -z $remote ]]; then
   else
     # Dev mode: renders the file, probes `seldon --version`, never runs a
     # writing command (CONTRACT rule 1); the clock is pinned to generatedAt.
-    env -u SELDON_NOW -u SELDON_CONFIG -u SELDON_LOGBOOK QT_QPA_PLATFORM=offscreen \
+    env -u SELDON_NOW -u SELDON_CONFIG -u SELDON_LOGBOOK QT_QPA_PLATFORM=offscreen XDG_RUNTIME_DIR="$rt" \
       HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" XDG_STATE_HOME="$work/home/.local/state" \
       PATH="$work/bin:$PATH" HARNESS_PLUGIN_DIR="$root/plugin" HARNESS_UNTIL="status=ok" \
       SELDON_INDEX="$work/home/.local/state/seldon/index.json" \
