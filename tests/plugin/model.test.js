@@ -1381,6 +1381,19 @@ test("systemTiles: Recently edited (WP-139, ADR-0046)", () => {
   assert.strictEqual(none.meta, "0 files")
   assert.strictEqual(none.lead, "Nothing under ~/.config was edited outside the watched paths in the last 7 days")
   assert.strictEqual(none.empty, false)
+  // a scan that stopped early: an empty list proves nothing (ADR-0046 §2)
+  one.system.recentConfig.partial = true
+  assert.strictEqual(M.systemTiles(one, now)[5].lead, "The scan stopped early; the list may be incomplete.")
+  const part = JSON.parse(sample)
+  part.system.recentConfig.partial = true
+  assert.strictEqual(M.systemTiles(part, now)[5].lead,
+    "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed. The scan stopped early; the list may be incomplete.")
+  part.system.recentConfig.partial = "yes"
+  assert.strictEqual(M.systemTiles(part, now)[5].lead,
+    "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed")
+  const variant = JSON.parse(fs.readFileSync(path.join(root, "fixtures/index-variants/recent-partial.json"), "utf8"))
+  assert.strictEqual(M.systemTiles(variant, now)[5].meta, "0 files")
+  assert.strictEqual(M.systemTiles(variant, now)[5].lead, "The scan stopped early; the list may be incomplete.")
   // an index without the field (an earlier contract-2 build): no list
   delete one.system.recentConfig
   same(M.recentFiles(one, now), null)

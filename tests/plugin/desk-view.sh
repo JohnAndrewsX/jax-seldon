@@ -2272,6 +2272,23 @@ expect system-watch-locked 5 '[.view.sectionView.watchResult, (.view.sectionView
 argv_check system-watch-locked "$work/home-system-watch-locked" "$(printf '%s\n' "$startup" \
   "$(q config watch --json -- "~/.config/zed/settings.json")")"
 clean_log system-watch-locked "seldon config exit 4: the logbook is locked by another seldon"
+# 10e''. The last row watched (WP-139 round 2, N3): the answer stays while
+#        the tile is current, beside "Nothing … was edited". A scan that
+#        stopped early (ADR-0046 §2, `partial`) says the list may be
+#        incomplete instead.
+jq '.system.recentConfig.files |= .[:1]' "$sample" >"$work/system-one.json"
+mkdir -p "$work/home-system-watch-last"
+run system-watch-last "" 1920x1080 "summon;text:5;key:Down*5;click:Watch;settle" \
+  HOME="$work/home-system-watch-last" FAKE_SELDON_FIXTURE="$work/system-one.json"
+expect system-watch-last 5 '[(.view.sectionView.files | length), .view.sectionView.big] | map(tostring) | join("|")' "0|0"
+shows system-watch-last 5 "Watching ~/.config/zed/settings.json from the next capture on; it is taken as it is, without an event"
+shows system-watch-last 5 "Nothing under ~/.config was edited outside the watched paths in the last 7 days"
+clean_log system-watch-last
+run system-partial "$fx/index-variants/recent-partial.json" 1920x1080 "summon;text:5;key:Down*5"
+expect system-partial 3 '[.view.sectionView.cursor, .view.sectionView.big, (.view.sectionView.files | length)] | map(tostring) | join("|")' "recent|0|0"
+shows system-partial 3 "The scan stopped early; the list may be incomplete."
+expect system-partial 3 '[.texts[] | select(startswith("Nothing under"))] | length' 0
+clean_log system-partial
 jq '.system = {} | del(.state.collectors)' "$sample" >"$work/system-empty.json"
 run system-empty "$work/system-empty.json" 1920x1080 "summon;text:5;key:Down*4"
 expect system-empty 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations —,collectors —,recent —"

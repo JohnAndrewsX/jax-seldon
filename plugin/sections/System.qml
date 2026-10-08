@@ -136,7 +136,8 @@ ReadingSection {
       width: parent.width
       visible: text !== ""
       textFormat: Text.PlainText
-      text: root.files.length > 0 && root.watchResult ? root.watchResult.text : ""
+      // also after the last row went (N3)
+      text: root.current && root.current.id === "recent" && root.watchResult ? root.watchResult.text : ""
       color: root.watchResult && !root.watchResult.ok ? Color.urgent : Color.muted
       wrapMode: Text.WrapAnywhere
       font.family: Style.font.family

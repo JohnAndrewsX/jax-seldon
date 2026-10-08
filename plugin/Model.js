@@ -2186,6 +2186,8 @@ function acceptArmHint(decisionId) {
 // ---- System: recently edited, not watched (WP-139, ADR-0046) ---------------
 
 var RECENT_ROOT = "~/.config/"
+// The desk's line for a scan that stopped early (index.system.recentConfig.partial).
+var RECENT_PARTIAL_TEXT = "The scan stopped early; the list may be incomplete."
 var RECENT_PATH_MAX = 512
 
 // "" when `path` may go to `seldon config watch`, else why not: a path the
@@ -2410,11 +2412,15 @@ function systemTiles(index, nowMs) {
   var files = recentFiles(index, nowMs)
   var rc = files === null ? null : sys.recentConfig
   var scanned = rc !== null ? timeMs(rc.scannedAt) : NaN
+  // ADR-0046 §2: the scan stopped early; an empty list proves nothing
+  var partial = rc !== null && rc.partial === true
+  var listed = "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed"
   tiles.push({ id: "recent", title: "Recently edited", big: files === null ? "—" : String(files.length),
     unit: files === null ? "" : files.length === 1 ? "file" : "files",
     lead: files === null ? ""
-      : files.length === 0 ? "Nothing under ~/.config was edited outside the watched paths in the last 7 days"
-      : "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed",
+      : files.length === 0 ? (partial ? RECENT_PARTIAL_TEXT
+        : "Nothing under ~/.config was edited outside the watched paths in the last 7 days")
+      : partial ? listed + ". " + RECENT_PARTIAL_TEXT : listed,
     rows: isFinite(scanned) ? [["Scanned", relativeAge(scanned, nowMs)]] : [],
     files: files === null ? [] : files })
 
