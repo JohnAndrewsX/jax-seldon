@@ -1091,7 +1091,7 @@ clean_log import-live
 # kept after Esc), and a whole Intent the engine withholds: Start stays off.
 mkdir -p "$work/home-import-refused"
 run import-refused "" 1920x1080 \
-  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;click:Import tasks…;type:notes.txt;key:Backspace*9;type:~/missing.md;key:Return;settle;key:Escape;click:Import tasks…" \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};settle;click:Import tasks…;type:notes.txt;key:Backspace*9;type:~/missing.md;key:Return;settle;key:Escape;click:Import tasks…;key:Escape;click:Start;click:Start" \
   HOME="$work/home-import-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SHOW_WITHHELD=1
 expect import-refused 2 "[$tc.imported, $tc.startEnabled, $tc.hint, $tc.review.text] | map(tostring) | join(\",\")" \
   "true,false,Start waits until the whole Intent below is shown; only you start an imported case,The engine withholds the Intent while the redaction patterns do not compile"
@@ -1104,6 +1104,8 @@ expect import-refused 8 "$ti.result" "~/missing.md: cannot read the task file: N
 shows import-refused 8 "~/missing.md: cannot read the task file: No such file or directory (os error 2)"
 expect import-refused 9 "[$ti.open, .view.keys] | map(tostring) | join(\",\")" "false,true"
 expect import-refused 10 "[$ti.open, $ti.path] | map(tostring) | join(\",\")" "true,~/missing.md"
+# the disabled Start: two clicks arm and run nothing (the argv below)
+expect import-refused 13 "[$ti.open, $tc.armed, $tc.status, $tc.startEnabled] | map(tostring) | join(\",\")" "false,,queued,false"
 argv_check import-refused "$work/home-import-refused" "$(printf '%s\n' "$startup" "$(q plan show C-2026-007 --json)" \
   "$(q import task --json --dry-run -- '~/missing.md')")"
 clean_log import-refused 'import exit 1: ~/missing\.md: cannot read the task file'
