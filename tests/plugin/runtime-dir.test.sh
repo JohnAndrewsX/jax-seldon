@@ -35,6 +35,12 @@ trap 'rm -rf "$work"' EXIT
 pass=0
 fail=0
 
+# indent <text> — each line of <text> indented under a FAIL line.
+indent() {
+  local l
+  while IFS= read -r l; do printf '     %s\n' "$l"; done <<<"$1"
+}
+
 # scan <base> <dir>... — every finding as "<path>:<line>: <why>", paths
 # relative to <base>; exit 1 when there is one. This file is left out (its
 # mutants spell the old pattern).
@@ -94,7 +100,7 @@ if out=$(scan "$root" "$root/tests" "$root/scripts"); then
 else
   fail=$((fail + 1))
   echo "FAIL tests/ and scripts/ reach the session's runtime dir:"
-  sed 's/^/     /' <<<"$out"
+  indent "$out"
 fi
 
 # The engine and the cargo tests inherit the session's XDG_RUNTIME_DIR;
@@ -102,7 +108,7 @@ fi
 if engine=$(grep -rln --include='*.rs' --exclude-dir=target XDG_RUNTIME_DIR "$root/engine"); then
   fail=$((fail + 1))
   echo "FAIL the engine reads XDG_RUNTIME_DIR (its tests inherit the session's):"
-  sed 's/^/     /' <<<"$engine"
+  indent "$engine"
 else
   pass=$((pass + 1))
   echo "ok   the engine never reads XDG_RUNTIME_DIR"
@@ -136,7 +142,7 @@ mutant() {
   else
     fail=$((fail + 1))
     echo "FAIL mutant $name: $got (want $want)"
-    sed 's/^/     /' <<<"$out"
+    indent "$out"
   fi
 }
 

@@ -196,3 +196,13 @@ Still open from round 1: the `next` follow-up (`desk-view.sh`,
 `graph-live.sh`), and `deploy-test-host` still accepts a log with
 `plugin-test: skipped (SELDON_SKIP_HOST_CHECKS set …)` (not asked; one
 line if wanted).
+
+## Round 3
+
+CI on PR #9 still red on shellcheck SC2001 only (`sed 's/^/     /' <<<"$out"`
+at `runtime-dir.test.sh` 97, 105, 139). The three indents are now one
+helper `indent`, a plain `while IFS= read -r` loop with `printf`; no sed
+on a variable is left in the file (the one `sed` left reads the mutant's
+file). Verified locally: `bash -n` ok, `runtime-dir.test: 36 passed,
+0 failed`, the helper's output checked by hand. shellcheck still only in
+CI. No full check rerun (one test file, failure-path output only).
