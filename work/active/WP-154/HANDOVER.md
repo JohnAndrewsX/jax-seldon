@@ -328,3 +328,12 @@ killed.
     explicit path. `/run/user/1000` is full of old quickshell instance
     folders; nothing there was touched.
 - The added lines of `git diff next...HEAD`, grepped for `/home/`: none.
+
+### Stage 2
+
+Fable stage 2: APPROVED. SPEC-ENGINE §3 now says that the logbook's own
+and the user's git configuration apply to queries too (`core.fsmonitor`,
+`post-index-change`, clean filters), trusted as `~/.gitconfig` is, and
+that only a plugin's clone is treated as third-party. **Question for the
+operator:** is this trust assumption (the logbook's `.git/config` is as
+trusted as `~/.gitconfig`) accepted?

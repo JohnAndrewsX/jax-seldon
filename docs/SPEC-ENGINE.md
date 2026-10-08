@@ -1140,7 +1140,11 @@ the network (WP-154): `GIT_ALLOW_PROTOCOL=none` (every transport refused,
 overriding the repository's own `protocol.<name>.allow`),
 `GIT_NO_LAZY_FETCH=1` and `--no-lazy-fetch` first in argv (a partial
 clone's missing object is not fetched; the promisor's URL may be an
-`ext::` command). git before 2.44 refuses the option (exit 129 and a
+`ext::` command). The logbook's own and the user's git configuration
+otherwise apply to queries too (`core.fsmonitor`, `post-index-change`,
+clean filters): the logbook is the user's repository and its config is
+trusted as `~/.gitconfig` is; only a plugin's clone is treated as
+third-party (`plugins::GIT_OPTIONS`). git before 2.44 refuses the option (exit 129 and a
 stderr line that ends in the option; a current git's usage text lists
 `[--no-lazy-fetch]`, which does not count): the engine asks that query once more without it
 and leaves it out for the rest of the process; the protocol rule still
