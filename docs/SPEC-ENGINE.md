@@ -23,7 +23,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 | `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` — the last two, sshd's default `AuthorizedKeysFile` entries, only once the user adds them to `watchPaths`, WP-113, ADR-0037 §3); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[agent] workdir` (`"inherit"`, default, not written: the launcher starts where `agent start` was called, by `omarchy-agent`'s rule; `"logbook"`: in the logbook, the folder before ADR-0030; §3 `agent start`; WP-116); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve besides the ones `agent start` launched, §8; WP-063, ADR-0030; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions + the HEADs of third-party clones (WP-136); config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
-| `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
+| `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files and the boot files (§4 config; those under `/etc` by their absolute path, WP-164); written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/autocommit.json` | `{logbook, ok, at, message}`: the last autocommit the engine attempted (a commit or a git failure; a skip is no attempt), written by every writing command after its autocommit, bound to the canonical logbook path; `index.logbook.git.autocommit` (§6, ADR-0035 §2). Best effort: a record that cannot be written leaves the previous one. Read only when it is a regular file (no symbolic link, FIFO or device; checked before it is opened) of at most 4 MiB; anything else, an unreadable file or one that is not a record leaves the field out with a build warning (WP-120 round 3) |
 | `~/.local/state/seldon/proposals/<id>.json` | triage proposals (`schema/proposal.schema.json`, ADR-0034 §6, ADR-0035 §6, ADR-0036), written by `drift propose` (mode 0600, checked against the schema first; it removes this logbook's earlier proposal, so there is at most one per logbook), marked by `drift apply` and removed by `drift discard` (WP-124); the index points at the newest of this logbook (`index.triage`, §6). Read only when it is a regular file of at most 4 MiB (no symbolic link, FIFO or device; checked before it is opened); anything else is skipped with a build warning, and `drift apply|discard` refuse it. Nothing in a proposal is in the logbook until it is applied |
@@ -1608,7 +1608,70 @@ git itself is killed, with the same bounded pipe wait. Rules:
   writes all thirteen into a new config; user list).
   `~/.ssh/authorized_keys` and `~/.ssh/authorized_keys2` are no default:
   the user opts in by adding both (they are in the default
-  `alwaysRedPaths`). **Upgrade (ADR-0028 §4d):** a `config.toml` whose
+  `alwaysRedPaths`). **Boot configuration (WP-164; AGENTS.md §6,
+  operator decision 2026-10-08, S8: hashes only):** besides `watchPaths`,
+  for every user whatever the list says, the collector hashes, under the
+  system configuration directory (`SELDON_ETC_DIR`, default `/etc`; under
+  `SELDON_TEST_GUARD` without the variable `<guard>/etc`, so no test
+  reads the host's), `mkinitcpio.conf`, the files directly in
+  `mkinitcpio.conf.d/` and `mkinitcpio.d/` (the presets; empty on
+  Omarchy 4), `default/limine` (Omarchy writes it; it overrides every
+  drop-in), `limine-entry-tool.conf` and the files directly in
+  `limine-entry-tool.d/`. A directory among them is read one level deep,
+  its files only, never a directory below. The files pacman leaves there
+  (`*.pacnew`, `*.pacsave`, `*.pacorig`) are not hashed: the tools read
+  only `*.conf` and the presets, and the pacman collector records each as
+  a note (§4 pacman, ADR-0042); a merge (`pacdiff`) shows as the
+  `config-change` of the file itself. Nothing else under `/etc` is opened
+  or stat'ed, unless the user's own `watchPaths` reach it; a boot file a
+  watch path covers is walked there, once. The content goes into SHA-256
+  and nowhere else (a kernel command line can name devices and keys):
+  never into an event, the manifest, a message or a log. A boot file is
+  hashed whole whatever its content and size; one that cannot be read or
+  is over 64 MiB is hashed by its size, mtime (ns), ctime and inode (the
+  stat hash below; the event carries `meta.hashBasis = "stat"`, no
+  collector note). The stat hash sees *that* a file was written, not
+  *what* changed; a `chmod`, `chown` or `touch` changes it too, and a
+  file that turns readable or unreadable changes its basis and so its
+  hash (one `config-change`). On Omarchy 4 every one of these files is
+  `0644 root:root`: content hashes. **`/boot/limine*.conf` is not
+  hashed** (measured on the test host, 2026-10-08): `/boot` is the ESP,
+  `vfat` mounted `fmask=0077,dmask=0077`, so the user can neither list it
+  nor `stat` a file in it; and `limine-snapper-sync` and
+  `limine-entry-tool` regenerate the Limine config from the files above
+  on every snapshot and every kernel or initramfs build, a rewrite on
+  routine transactions that is no configuration change (WP-131's
+  lesson). **No rewrite without a change** (the same measurement):
+  through 97 pacman transactions with four kernel and three Limine
+  upgrades, the files under `/etc` were written only by the upgrade of
+  the package that owns them (`omarchy-settings`'s drop-ins,
+  `limine-mkinitcpio-hook`'s `limine-entry-tool.conf`) and by an Omarchy
+  migration (`default/limine`); Omarchy's `bin/` writes none of them, its
+  install scripts and user-run tools (`omarchy-hibernation-setup`,
+  `omarchy-provision-owner`) do. A package that extracts the same bytes
+  again gives the same content hash: no event. The subjects are the
+  absolute paths (`/etc/mkinitcpio.conf.d/omarchy_hooks.conf`). Class (§5
+  rule 4, ADR-0028 §2's total row, no rule of their own): attention
+  `config`, a removal attention `config-remove`; zone yellow. They are no
+  crisis by default, although the harm test holds for an unasked change
+  (a wrong `HOOKS` line stops the next boot): a crisis row is an ADR of
+  its own (ADR-0042: "widening the list is a new ADR"), and an
+  `omarchy-settings` upgrade inside a plain `omarchy update` rewrites
+  its drop-ins, so such a row needs an exception for a package's own
+  extraction first. A user who wants the crisis lists the paths in
+  `[drift] alwaysRedPaths` (absolute patterns match: `/etc/mkinitcpio*`,
+  `/etc/limine*`, `/etc/default/limine`). **An open case explains them
+  only by evidence:** rule 1, an agent `command` that writes the path
+  (`sudo tee /etc/mkinitcpio.conf.d/x.conf`, `sudo sed -i … <path>`, a
+  `cp` into the directory; `mkinitcpio -P` writes none of them), or
+  rule 9, a case active at the time whose Plan names the path as a
+  token; otherwise `seldon drift link <EVENT> <CASE>`, `explain` or
+  `dismiss`. Opt-out: `[redaction] skipPaths` (`/etc/mkinitcpio*`,
+  `/etc/limine*`, `/etc/default/limine`), as for any file. The first
+  capture after the upgrade takes the files in as a widened scope
+  (below): no events, the message says `watch scope changed: 0 file(s)
+  left it, N entered it` (a manifest from before WP-069, which has no
+  scope, sees them as added instead). **Upgrade (ADR-0028 §4d):** a `config.toml` whose
   `watchPaths` equals the default list of an earlier engine, in any order
   (0.1.0–0.1.3: the first five; WP-089: the first six; 0.1.4: the first
   twelve), gains the current
@@ -1652,7 +1715,8 @@ git itself is killed, with the same bounded pipe wait. Rules:
   Under `SELDON_TEST_GUARD` the guard directory's owner stands in for
   root. `system-link` and `theme-repo` do not read `$OMARCHY_PATH`. Changed/added/
   removed → `config-add|config-change|config-remove` with the path written
-  with `~` and both hashes (`detail` `sha256 <8> → <8>`). Binary files (a
+  with `~` (absolute outside the home directory: the boot files under
+  `/etc`) and both hashes (`detail` `sha256 <8> → <8>`). Binary files (a
   NUL in the first 8000 bytes) and files over 1 MiB are listed as
   `skipped` without a hash, so growing past the limit is not a removal —
   except under `[drift] alwaysRedPaths` (as configured, at capture),
@@ -1873,7 +1937,8 @@ After every capture:
    `vscode.json`) routine `theme-assets`; `~/.config/omarchy/backgrounds/
    **` routine `theme-assets`; everything else (Hyprland Lua, waybar,
    `~/.config/omarchy/**`, `themed/*.tpl`, the menu extensions, shell rc,
-   desktop entries) attention `config`. Any other event: attention
+   desktop entries, the boot files under `/etc` of §4, WP-164) attention
+   `config`. Any other event: attention
    `other`. Rules 1–3 come first: a linked event is no drift, and a
    routine event an open case's Plan names (rule 3) is shown as
    attention with its `proposedCase`.
