@@ -129,6 +129,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   masked as with LF, in notes, cases, hooks and imports. A CRLF note
   keeps its line ends; the task import reads CRLF as LF first, as
   before (WP-128).
+- **Cases say when to stop and how long a change holds (WP-143).** A new
+  case's *Plan* has `Persists:` (`survives reboot and update`, `reboot
+  only`, `lost at reboot`) and `Stop if:`, both empty; a logbook whose
+  case template is still the one `init` copied gets them too. The agent
+  rules (v4, upgraded silently from 0.1.4's) and the skill tell agents to
+  fill both and stop when *Stop if* holds, to verify the effect rather
+  than the setting (press the key binding, not only write it), and to
+  label each claim in *Result* and `memory/` `measured`, `documented` or
+  `inferred`.
+- **A closing commit names the case (WP-143):** `seldon: C-2026-012
+  completed — <title>: <first line of Result>`, and for a drop the
+  reason; redacted, then clipped to 100 characters.
+- **`seldon doctor` reports left-behind workpiece folders (WP-143):** a
+  `workpieces` row, information only, counts the `work/<case-id>/`
+  folders no case owns or that a closed case left over 10 MiB, with
+  their size and the oldest.
 
 ### Plugin
 

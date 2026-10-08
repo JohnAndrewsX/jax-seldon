@@ -115,7 +115,13 @@ more, and `.seldon/active-case` names the one started last.
    the affected paths, the rollback and the verification as you go. Name
    packages and paths exactly as they will appear: Seldon proposes
    linking an unexplained change to an open case whose *Plan* names its
-   subject. The *Plan* never widens the *Intent*.
+   subject. The *Plan* never widens the *Intent*. Before the first change
+   fill two of its lines (WP-143): `Persists:` — how long the change
+   holds: `survives reboot and update`, `reboot only` (an update
+   overwrites it) or `lost at reboot`; and `Stop if:` — what makes you
+   stop, e.g. `the transaction also upgrades linux`. When *Stop if*
+   holds, stop: say so in the *Log* and to the user, and go on only
+   after the user's go.
 4. **Preview line.** Before the first privileged step print one line, in
    the terminal and in the case's *Log*, and go on without waiting:
 
@@ -436,7 +442,13 @@ is left for the user afterwards:
 1. Fill *Result* with the evidence: what you ran and what it showed.
    Include one check that is not your own artefact — the real use case's
    exit status, `pacman -Q <package>`, `systemctl is-active <unit>` — not
-   only a file you wrote yourself.
+   only a file you wrote yourself. Verify the effect, not the setting: a
+   key binding is proven when you press it and the app opens, not when
+   the line is in `~/.config/hypr/bindings.lua`. Label each claim
+   `measured` (you ran it and saw it), `documented` (a named source says
+   so) or `inferred` (you concluded it). The first line of *Result* goes
+   into the closing commit, `seldon: <ID> completed — <title>: <first
+   line>`: make it the outcome.
 2. `seldon plan verify <ID> --actor agent:<name>`, then
    `seldon plan done <ID> --actor agent:<name>`, in one go.
 
@@ -464,7 +476,8 @@ to the user.
 Then end the session:
 
 1. Write what you learned into `memory/` — `memory/lessons.md`, one `## `
-   heading per lesson: what happened, what to do next time. Not into the
+   heading per lesson: what happened, what to do next time, each claim
+   labelled `measured`, `documented` or `inferred`. Not into the
    chat.
 2. A last journal note: `seldon log --case <ID> --actor agent:<name> --
    "<summary>"`.

@@ -10,7 +10,7 @@ exit codes and the most common problems.
 seldon doctor
 ```
 
-It checks eleven things and prints a fix for each one that is not `ok`.
+It checks twelve things and prints a fix for each one that is not `ok`.
 It only reads: it changes no file, takes no lock and runs nothing with
 `sudo`.
 
@@ -22,6 +22,7 @@ It only reads: it changes no file, takes no lock and runs nothing with
 | `cases` | every case id has one file | `error`: a case exists twice (a stale copy); keep the file in the folder of its status |
 | `ledger` | every line of `ledger/*.jsonl` is an event | `degraded`: lines that are not events (a torn write, a hand edit) are skipped; the row names month, count and lines |
 | `fences` | the generated parts of `STATUS.md` and `DECISIONS.md` have their marker lines | `degraded`: a marker line is missing, so `seldon status` leaves the file alone; or an end marker closes no fence. `error`: the file cannot be read |
+| `workpieces` | always ok, information only: how many `work/<case-id>/` folders no case owns (orphaned) or a closed case left over 10 MiB (oversized), their size, the oldest | (never; move or delete such a folder yourself when you no longer need it — git keeps its history) |
 | `collectors` | the last capture of every enabled collector succeeded | `degraded`: the row lists each failing collector with its message and fix |
 | `state` | `cursors.json`, `manifest.json` and `owned.json` in `~/.local/state/seldon` can be read | `error`: the file is corrupt or unreadable; the row says what that breaks; the fix moves a corrupt file away or makes an unreadable one readable. `degraded`: the next capture will record a state reset, see [doctor says the next capture will record a state reset](#doctor-says-the-next-capture-will-record-a-state-reset); or the last capture recorded one, see [A state reset was recorded](#a-state-reset-was-recorded); or a collector waits for its baseline since a state reset (degraded or not run): run `seldon capture --source <name>` once it can run |
 | `omarchy` | `omarchy-version` answered | the Omarchy collector cannot read the version |

@@ -26,7 +26,9 @@ Seldon/
 ├── ledger/YYYY-MM.md         GENERATED human view of the month
 ├── decisions/ADR-NNNN-slug.md
 ├── work/queued/ work/active/ work/completed/   cases C-YYYY-NNN-slug.md
-├── work/<case-id>/           optional workpieces (scripts, diffs) for a case
+├── work/<case-id>/           optional workpieces (scripts, diffs) for a case;
+│                             `C-YYYY-NNN` or `C-YYYY-NNN-<slug>` (doctor's
+│                             `workpieces` row: left behind by closed cases)
 ├── areas/<area>/README.md    long-lived sections: hyprland, themes, packages, dev-env, plugins, …
 ├── areas/<area>/AGENTS.md    optional local rules for that area
 ├── system/                   dossier: hardware.md packages.md deviations.md services.md omarchy.md plugins.md
@@ -93,13 +95,28 @@ tags: []
 - Goal:
 - Steps:
 - Affected paths:
+- Persists: <!-- survives reboot and update | reboot only | lost at reboot -->
 - Rollback:
 - Verification:
+- Stop if:
 ## Log
 <!-- append-only; engine and agents add dated lines -->
 - 2026-10-01 10:12 · created (zone red, risk R2) · human
 ## Result
 ```
+
+Two Plan lines are habits, not checks (WP-143; the engine reads neither):
+`Persists:` says how long the change holds — `survives reboot and
+update`, `reboot only` (an update overwrites it) or `lost at reboot`; `Stop
+if:` names what makes the agent stop and ask (the rules block, *Work in
+cases*). Each claim in *Result* and in `memory/` carries a label:
+`measured` (run and seen), `documented` (a named source says so) or
+`inferred`. The engine writes both lines empty into every new case (`plan
+new`, `plan reopen`, `agent start --new`, `import task`); a logbook's
+`.seldon/templates/case.md` that is still byte for byte the one an earlier
+`init` copied counts as the built-in template, an edited one is used as it
+is. The closing commit carries the case's title and the first line of
+*Result* (SPEC-ENGINE §3, the autocommit).
 
 Risk levels (ADR-0023, normative; the engine records them and never
 blocks): `R0` reversible in seconds, nothing depends on it, undo by hand,
