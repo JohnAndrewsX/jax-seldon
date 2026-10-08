@@ -108,8 +108,9 @@ tags: []
 Two Plan lines are habits, not checks (WP-143; the engine reads neither):
 `Persists:` says how long the change holds — `survives reboot and
 update`, `reboot only` (an update overwrites it) or `lost at reboot`; `Stop
-if:` names what makes the agent stop and ask (the rules block, *Work in
-cases*). Each claim in *Result* and in `memory/` carries a label:
+if:` names what makes the agent stop and ask (the rules block, *When to
+ask first*); a subject named only there is no planned subject for the
+planned-and-active link (SPEC-ENGINE §5 rule 9). Each claim in *Result* and in `memory/` carries a label:
 `measured` (run and seen), `documented` (a named source says so) or
 `inferred`. The engine writes both lines empty into every new case (`plan
 new`, `plan reopen`, `agent start --new`, `import task`); a logbook's
