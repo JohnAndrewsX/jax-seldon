@@ -2258,3 +2258,40 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   the repository and work tree. An unknown program with a shell name or
   an Omarchy script among its arguments fails closed; `shellcheck -s bash`
   passes (data sink). `tmux send-keys` keys are joined without spaces.
+
+## 2026-10-08 · WP-162 (Plugin Dev, IPC restart crash)
+
+- **Correction of the WP-013 entry "Restarting the shell right after an
+  rsync … can crash it".** Its attribution ("not jax.seldon: the trace has
+  no QML frame", `work/completed/WP-013/FINDINGS.md` §4 item 1) was wrong
+  as reasoning: an unsymbolised trace without a QML frame does not clear
+  the plugin. That crash stays unexplained. Waiting after an rsync does
+  not protect against the 0.1.3 crash, which hit every IPC restart.
+- **Symbolise a crash before you attribute it.** Core in a `mktemp` file,
+  `DEBUGINFOD_URLS=https://debuginfod.archlinux.org gdb -q -iex 'set
+  debuginfod enabled on' /usr/bin/quickshell "$core" -batch -ex 'bt 45'`;
+  the setting must come with `-iex` (before loading), `-ex` gets an
+  automatic "N" in batch mode. The guard blocks `gdb -ex` (fail closed),
+  so an agent asks the operator to run it. `p *this` in the IpcHandler
+  frame names the target.
+- **Never change an IpcHandler's `enabled` from `Component.onDestruction`.**
+  During a shell exit the generation's IPC registry is already gone; a
+  handler that was not registered looks it up again and Quickshell 0.3.1
+  crashes. A registered one only lets go through its own cached registry
+  pointer (`ipchandler.cpp` 304–334; in the harness runs it logged no
+  "Deregistered", the pointer was already null) and did not crash. Hand
+  over later, through a sibling's method with `Qt.callLater`.
+- **The headless harness does not reach that SIGSEGV.** The sibling's
+  handler there does turn `enabled` on during the teardown, but nothing is
+  registered and nothing logged (seemingly the dying generation is no
+  longer found); `MALLOC_PERTURB_=165` does not change that.
+  Test the mechanism instead (no widget becomes the owner once "Exiting
+  due to IPC request" is logged; `tests/plugin/ipc-restart.sh`) and keep
+  the live two-monitor restart as the end-to-end proof.
+- **Qt tears dynamically created siblings down newest first.** A harness
+  whose owner was created first never runs the owner's teardown while its
+  sibling is still alive; create the owner last to get the shell's order.
+- **Not every new entry in `/run/user/$UID/quickshell/by-id` is a test
+  leak.** Other Quickshell programs on the host add their own (read the
+  entry's `log.log`, "Launching config"). Compare counts around your own
+  run only.
