@@ -107,3 +107,51 @@ the decisions the WP left open: [PLAN.md](PLAN.md).
 ## Open questions
 
 - None on the contract.
+
+## Round 2
+
+Stage-1 review approved bf36eaa; round 2 on the orchestrator's list.
+
+- **F2 — narrower crisis list.** `PACNEW_RED` (`class.rs`) and the
+  fixture script's copy are now mkinitcpio (`.conf`, `.conf.d/`, `.d/`),
+  Limine (`/etc/default/limine`, `/etc/limine*`, `/boot/limine*`) and
+  `/etc/pam.d/`. `/etc/systemd/` (Omarchy uses drop-ins) and
+  `/etc/security/` (Omarchy overrides `pam`'s files there) are attention,
+  as are `fstab`, `crypttab` and `sudoers` (new rows in the table test).
+  Round 1's text above that names systemd as crisis is superseded here.
+- **Q1 — ADR-0042** (proposed; the operator accepts): the two §2 rows,
+  the list, and the ownership evidence from the installed Omarchy tree
+  (4.0.4-1, read-only: which `install/` scripts and migrations write
+  under `/etc/mkinitcpio.conf.d/`, `/etc/default/limine`,
+  `/etc/limine-entry-tool.d/`, `/etc/pam.d/`, `/etc/security/`,
+  `/etc/systemd/*.d/`, `/etc/sudoers.d/`) and the reviewer's
+  fstab/crypttab/sudoers finding. `DECISIONS.md` lists it; ADR-0028's
+  index row names it.
+- **Q2 — schema descriptions only** (`event.schema.json`): `txId` is
+  "shared by the package lines of one transaction; a file pacman left …
+  carries it as meta.transaction instead"; `transaction` is among the
+  conventional `meta` keys. `contractVersion` unchanged.
+- **F1 — Python self-checks** (`validate-fixtures.py`): a caseless note
+  under `/etc/pam.d/` derives a single crisis item `pacnew-red`, one under
+  `/etc/security/` a single attention item `pacnew`, neither with `txId`
+  or `members` (56 self-checks). Both checks were seen failing against a
+  list with `/etc/security` added and with `/etc/pam.d` broken, then the
+  script was restored.
+- **F4 — `.pacsave` wording.** SPEC-ENGINE §4: a `.pacsave` follows a
+  removal or an upgrade that no longer ships the file, the user's file
+  moved aside and nothing left in its place; the log always names
+  `.pacsave`. §5 says "a merge or a restore". The plugin's `pacnew-red`
+  text no longer says "until the two are merged" (wrong for a `.pacsave`):
+  "… (mkinitcpio, Limine, PAM); check it with pacdiff before the next
+  reboot." (SPEC-PLUGIN, CHANGELOG follow.)
+- **F5 — mutant target.** `mutants.py` builds in
+  `$SELDON_MUTANTS_TARGET`, else `target-mutants-wp141` in the gates dir
+  (`$SELDON_GATES_DIR`, else `gates/` in the main checkout's
+  `<repo>-private/` sibling, found through `git rev-parse
+  --git-common-dir`; no absolute path in the file); without one it
+  stops. The old `~/.cache/seldon-target-wp141-mutants` was deleted by
+  explicit path. Mutants on the round-2 code: **13 of 13 killed**.
+- **Q5** — the `.pacsave` stays its own item (unchanged).
+- **Check:** `flock /tmp/seldon-check.lock just check` on the committed
+  HEAD `cc95b69`, clean tree: **check: ok**, exit 0 (log
+  `check-wp141-r6.log`).
