@@ -22,14 +22,19 @@
 //!   started>`). The latest `[PACMAN] Running '…'` line before the start is
 //!   the transaction's `meta.command`. A transaction is emitted after
 //!   `transaction completed`, after the next `transaction started`, or at
-//!   the end of the log when pacman's `db.lck` is absent. While pacman still
-//!   runs, the cursor stays at the start of the transaction's block, so
-//!   the next capture reads it whole (ADR-0013 §5).
+//!   the end of the log when pacman's `db.lck` is absent or stale. While
+//!   pacman still runs, the cursor stays at the start of the transaction's
+//!   block, so the next capture reads it whole (ADR-0013 §5).
+//! - **Stale lock** (WP-160). A `db.lck` older than the current boot
+//!   (`/proc/stat` `btime`) was left by a pacman that was killed or lost
+//!   its power: it counts as absent ([`lock_state`]). Without a boot time,
+//!   or a lock time, the lock counts as held. The lock is only looked at,
+//!   never removed or touched.
 //! - **Status** (ADR-0043). A transaction that ended with `transaction
 //!   failed` or `transaction interrupted` writes that word as
 //!   `meta.txStatus` on each of its events; one closed by the next
-//!   `transaction started` or by the end of the log without `db.lck` writes
-//!   `unfinished`. A completed one writes none.
+//!   `transaction started` or by the end of the log without a held
+//!   `db.lck` writes `unfinished`. A completed one writes none.
 //! - **Explicit or dependency.** `meta.command` is parsed as argv ([`parse_command`],
 //!   pacman logs it unquoted, so it is split on whitespace). Packages the
 //!   command names are `explicit: true`; the others in the transaction are
@@ -59,6 +64,7 @@ use std::io::{Read as _, Seek as _, SeekFrom};
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use regex::Regex;
@@ -108,7 +114,7 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
     let path = &ctx.sources.pacman_log;
     let meta = std::fs::metadata(path)
         .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
-    let lock_present = ctx.sources.pacman_db_lock.exists();
+    let lock_present = lock_state(&ctx.sources.pacman_db_lock, &ctx.sources.proc_stat).is_held();
     let mut txs = Vec::new();
 
     let start = match cursor {
@@ -150,6 +156,60 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
             offset: parsed.resume,
         },
     ))
+}
+
+/// What pacman's `db.lck` says about pacman (WP-160).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockState {
+    /// No lock: pacman is not running.
+    Absent,
+    /// A lock from this boot, or one whose age cannot be told: pacman
+    /// runs, its open transaction is held back (ADR-0013 §5).
+    Held {
+        /// The boot time, when `/proc/stat` gave one.
+        boot: Option<SystemTime>,
+    },
+    /// A lock older than the current boot: left by a pacman that was
+    /// killed or lost its power. Counts as absent (ADR-0043 `unfinished`).
+    Stale {
+        modified: SystemTime,
+        boot: SystemTime,
+    },
+}
+
+impl LockState {
+    /// Whether an open transaction at the end of the log is held back.
+    pub fn is_held(self) -> bool {
+        matches!(self, LockState::Held { .. })
+    }
+}
+
+/// The state of the lock at `lock`, with the boot time from `proc_stat`.
+/// Reads the lock's metadata and `proc_stat`, nothing else.
+pub fn lock_state(lock: &Path, proc_stat: &Path) -> LockState {
+    let Ok(meta) = std::fs::symlink_metadata(lock) else {
+        return LockState::Absent;
+    };
+    let boot = std::fs::read_to_string(proc_stat)
+        .ok()
+        .and_then(|text| boot_time(&text));
+    match (meta.modified(), boot) {
+        (Ok(modified), Some(boot)) if modified < boot => LockState::Stale { modified, boot },
+        _ => LockState::Held { boot },
+    }
+}
+
+/// The `btime` line of `/proc/stat`: the boot time in whole seconds since
+/// the epoch (rounded down, so a lock made after the boot is never older).
+pub fn boot_time(proc_stat: &str) -> Option<SystemTime> {
+    let secs = proc_stat
+        .lines()
+        .find_map(|l| l.strip_prefix("btime "))?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|&s| s > 0)?;
+    UNIX_EPOCH.checked_add(Duration::from_secs(secs))
 }
 
 /// `pacman.log` → `pacman.log.1`.
@@ -659,6 +719,93 @@ mod tests {
 
     fn argv(s: &str) -> PacmanCommand {
         parse_command(&split_logged(s)).unwrap()
+    }
+
+    /// WP-160: the `btime` line, and nothing that only looks like one.
+    #[test]
+    fn boot_time_from_proc_stat() {
+        let at = |s: u64| Some(UNIX_EPOCH + Duration::from_secs(s));
+        assert_eq!(
+            boot_time("cpu  1 2 3\nintr 5\nctxt 9\nbtime 1759900000\nprocesses 4\n"),
+            at(1_759_900_000)
+        );
+        assert_eq!(boot_time("btime 42"), at(42), "no newline at the end");
+        for bad in [
+            "",
+            "cpu 1 2 3\n",
+            "btime\n",
+            "btime \n",
+            "btime -5\n",
+            "btime 0\n",
+            "btime 12x\n",
+            "xbtime 12\n",
+            "btimes 12\n",
+        ] {
+            assert_eq!(boot_time(bad), None, "{bad:?}");
+        }
+    }
+
+    /// WP-160: absent, held (this boot, or no boot time) and stale (older
+    /// than the boot). The lock is never changed.
+    #[test]
+    fn lock_states() {
+        let dir = std::env::temp_dir().join(format!("seldon-dblck-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let lock = dir.join("db.lck");
+        let stat = dir.join("stat");
+        let boot = UNIX_EPOCH + Duration::from_secs(1_759_900_000);
+        std::fs::write(&stat, "cpu 1\nbtime 1759900000\n").unwrap();
+        assert_eq!(lock_state(&lock, &stat), LockState::Absent);
+        assert!(!LockState::Absent.is_held());
+
+        std::fs::write(&lock, "").unwrap();
+        let set = |t: SystemTime| {
+            File::options()
+                .write(true)
+                .open(&lock)
+                .unwrap()
+                .set_modified(t)
+                .unwrap();
+        };
+        // made after the boot, in the boot second, and a second before it
+        set(boot + Duration::from_secs(60));
+        assert_eq!(
+            lock_state(&lock, &stat),
+            LockState::Held { boot: Some(boot) }
+        );
+        set(boot);
+        assert!(
+            lock_state(&lock, &stat).is_held(),
+            "the boot second is this boot"
+        );
+        let before = boot - Duration::from_secs(1);
+        set(before);
+        let state = lock_state(&lock, &stat);
+        assert_eq!(
+            state,
+            LockState::Stale {
+                modified: before,
+                boot
+            }
+        );
+        assert!(!state.is_held());
+
+        // no boot time: today's rule, held
+        assert_eq!(
+            lock_state(&lock, &dir.join("no-stat")),
+            LockState::Held { boot: None }
+        );
+        std::fs::write(&stat, "cpu 1\n").unwrap();
+        assert_eq!(lock_state(&lock, &stat), LockState::Held { boot: None });
+
+        // looked at, never touched
+        assert_eq!(
+            std::fs::metadata(&lock).unwrap().modified().unwrap(),
+            before
+        );
+        assert_eq!(std::fs::read(&lock).unwrap(), b"");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

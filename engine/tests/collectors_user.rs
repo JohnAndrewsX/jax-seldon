@@ -174,6 +174,7 @@ impl Bench {
         let sources = Sources {
             pacman_log: tmp.path().join("pacman.log"),
             pacman_db_lock: tmp.path().join("db.lck"),
+            proc_stat: tmp.path().join("proc-stat"),
             snapper: missing.clone(),
             snapshots: tmp.path().join("no-snapshots"),
             omarchy_version: missing.clone(),

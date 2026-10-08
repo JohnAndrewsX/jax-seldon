@@ -92,7 +92,7 @@ Append-only. One bullet per finding, newest section last.
   failed write never moves a cursor. A collector without a cursor takes a
   baseline at `Ctx::baseline`: the logbook's `created`, or `--since`.
 - **Host paths and programs are in `collectors::Sources`.** They are read once
-  from `SELDON_PACMAN_LOG`, `SELDON_PACMAN_DB_LOCK`, `SELDON_SNAPPER`,
+  from `SELDON_PACMAN_LOG`, `SELDON_PACMAN_DB_LOCK`, `SELDON_PROC_STAT`, `SELDON_SNAPPER`,
   `SELDON_OMARCHY_VERSION` and `SELDON_PACMAN`. Tests and acceptance runs
   point them at fixtures.
 - **Time zones are injected.** Naive local times (snapper `date`, old log

@@ -185,8 +185,16 @@ pub struct Sources {
     /// `SELDON_PACMAN_LOG`, default `/var/log/pacman.log`.
     pub pacman_log: PathBuf,
     /// `SELDON_PACMAN_DB_LOCK`, default `/var/lib/pacman/db.lck`: present
-    /// while pacman runs (ADR-0013 §5).
+    /// while pacman runs (ADR-0013 §5), or left by one that died before
+    /// the current boot (WP-160). Under `SELDON_TEST_GUARD` without the
+    /// variable it is `<guard>/db.lck`, so a guarded run never reads the
+    /// host's lock.
     pub pacman_db_lock: PathBuf,
+    /// `SELDON_PROC_STAT`, default `/proc/stat`: its `btime` line is the
+    /// boot time that tells a stale `db.lck` from a running pacman
+    /// (WP-160). Under `SELDON_TEST_GUARD` without the variable it is
+    /// `<guard>/proc-stat` (missing: no boot time, the lock counts as held).
+    pub proc_stat: PathBuf,
     /// `SELDON_SNAPPER`, default `snapper`.
     pub snapper: String,
     /// `SELDON_SNAPSHOTS_DIR`, default `/.snapshots`: the `root` config's
@@ -220,6 +228,7 @@ impl Default for Sources {
         Sources {
             pacman_log: PathBuf::from("/var/log/pacman.log"),
             pacman_db_lock: PathBuf::from("/var/lib/pacman/db.lck"),
+            proc_stat: PathBuf::from("/proc/stat"),
             snapper: "snapper".into(),
             snapshots: PathBuf::from("/.snapshots"),
             omarchy_version: "omarchy-version".into(),
@@ -238,7 +247,18 @@ impl Sources {
         let d = Sources::default();
         Sources {
             pacman_log: var("SELDON_PACMAN_LOG").map_or(d.pacman_log, PathBuf::from),
-            pacman_db_lock: var("SELDON_PACMAN_DB_LOCK").map_or(d.pacman_db_lock, PathBuf::from),
+            pacman_db_lock: var("SELDON_PACMAN_DB_LOCK")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("db.lck"))
+                })
+                .unwrap_or(d.pacman_db_lock),
+            proc_stat: var("SELDON_PROC_STAT")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("proc-stat"))
+                })
+                .unwrap_or(d.proc_stat),
             snapper: var("SELDON_SNAPPER").unwrap_or(d.snapper),
             snapshots: var("SELDON_SNAPSHOTS_DIR")
                 .map(PathBuf::from)
