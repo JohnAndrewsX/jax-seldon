@@ -124,3 +124,52 @@ Branch `wp/162-ipc-restart` (from `main` `1ede22ad`). Plan: `PLAN.md`.
 - The operator's go for the live two-monitor test (and who runs it).
 - Guard block 1 (the reworded scratch step): the reviewer should rule
   whether that was acceptable.
+
+## Round 2
+
+Stage-1 review (Opus) approved `745da614`; notes N1–N5 done in this
+branch.
+
+- **N1** `plugin/BarWidget.qml`: the leaving owner schedules
+  `Qt.callLater(w.reclaimIpc)` for **every** sibling
+  (`siblings.forEach`), not only `siblings[0]`, so a sibling that dies in
+  the same turn (a placeholder) cannot drop the hand-over. New case
+  `three` in `tests/plugin/ipc-restart.sh` (harness
+  `HARNESS_IPC_KILL=three`): the owner, a hidden placeholder and a
+  survivor. The owner and the placeholder are destroyed in one turn while
+  both are still listed, and the bar's list drops them on the next turn.
+  Then the survivor must own the target, IPC `open` must reach it, and
+  the kill follows as in the other cases.
+  - On round 1's widget: `ipc-restart: 38 passed, 4 failed`, with
+    `ownersAfter null,null,false` and "Target not found.", as the reviewer
+    found.
+  - With N1: `42 passed, 0 failed`.
+- **N2** The test header cites `docs/VERSIONING.md`, "Tag flow", step 3.
+- **N3** `memory/pitfalls.md`: "Never *enable* an IpcHandler from
+  `Component.onDestruction` (letting go is safe)". The hand-over goes to
+  every sibling.
+- **N4** `docs/SPEC-PLUGIN.md` (IPC paragraph): "The hand-over is deferred
+  (Qt.callLater); nothing is enabled during teardown (WP-162)."
+- **N5** CHANGELOG: two monitors, or the pill in the bar's centre section
+  (which adds a hidden copy).
+- TESTING.md §3d names the `three` case.
+- **Guard ruling noted.** Redoing a blocked compound command another way
+  (split commands, a Write-tool script with the same edits) counts as
+  routing around. From now on: report and ask.
+
+**Verified.**
+- `just check` **green** on `de3ab5c2`:
+  - run under `flock /tmp/seldon-check.lock`, from 13:02:21 to 13:15:41;
+    `XDG_RUNTIME_DIR` a private `mkdir -m 700 /tmp/r162b`, removed by path
+    afterwards; `JUST_TEMPDIR` in the scratch dir;
+  - ipc-restart 42/0, bar-view 194/0, panel-view 923/0, overlay-view
+    326/0, service-states 330/0; qmllint ok (29 files), plugin-validate ok,
+    docs-check ok;
+  - the real `/run/user/1000/quickshell/by-id` stayed at 324 entries;
+    usage 2 %.
+- Every other test run in this round also had its own
+  `XDG_RUNTIME_DIR`, and by-id stayed at 324.
+
+**Still open.** The live test (test host positive control A; dev host
+with two monitors B, with the operator's go). CI after the orchestrator's
+push.
