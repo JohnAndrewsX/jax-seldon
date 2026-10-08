@@ -232,9 +232,10 @@ qmllint:
     echo "qmllint: ok (${#files[@]} files)"
 
 # Plugin logic: Model.js under node; the banners' terminal scripts under bash with stubs; Service.qml states, Panel.qml tabs, keys and banners, Overlay.qml and the pill (BarWidget.qml) in a private headless Quickshell (host only).
-# The Quickshell harnesses run only when plugin/, tests/plugin/, schema/ or
-# fixtures/ changed against the merge base with main, or with
-# SELDON_FULL_CHECK=1 (gates set it); see docs/TESTING.md.
+# The Quickshell harnesses run only when plugin/, tests/plugin/, schema/,
+# fixtures/ or this justfile changed against the merge base with main, and
+# always on main itself (HEAD is the merge base) or with SELDON_FULL_CHECK=1
+# (gates set it); see docs/TESTING.md.
 plugin-test: check-runtime-space
     #!/usr/bin/env bash
     set -euo pipefail
@@ -248,14 +249,17 @@ plugin-test: check-runtime-space
     bash tests/plugin/terminal-scripts.sh
     bash tests/plugin/real-home-guard.test.sh
     # Operator decision E29 (WP-161): less load on the dev host. Without git
-    # or a merge base the harnesses run.
-    paths=(plugin tests/plugin schema fixtures)
+    # or a merge base the harnesses run; at the merge base itself (main, a
+    # detached main, a fresh branch with no commit yet) they run too, so
+    # the main check never skips them.
+    paths=(plugin tests/plugin schema fixtures justfile)
     if [[ ${SELDON_FULL_CHECK:-} != 1 ]] \
       && base=$(git merge-base HEAD main 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null) \
+      && [[ $base != "$(git rev-parse HEAD)" ]] \
       && changed=$(git diff --name-only "$base" -- "${paths[@]}") \
       && untracked=$(git ls-files --others --exclude-standard -- "${paths[@]}") \
       && [[ -z $changed$untracked ]]; then
-      echo "plugin-test: Quickshell harnesses skipped (nothing under ${paths[*]} changed against ${base:0:12}, the merge base with main; SELDON_FULL_CHECK=1 runs them)"
+      echo "plugin-test: Quickshell harnesses skipped (nothing under ${paths[*]} changed against ${base:0:12}, the merge base with main; SELDON_FULL_CHECK=1 runs them; deploy-test-host refuses this log)"
     else
       bash tests/plugin/service-states.sh
       bash tests/plugin/panel-view.sh

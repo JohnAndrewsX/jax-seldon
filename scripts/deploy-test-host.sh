@@ -19,7 +19,8 @@
 # check log — starts with `head <full sha>`, ends in `exit 0`, its sha is
 # HEAD or an ancestor, and nothing under engine/, plugin/, schema/ (the
 # engine compiles the schemas in) or this script changed between that sha
-# and HEAD (bookkeeping commits after the check pass). Before the first change the host must have the tools the install
+# and HEAD (bookkeeping commits after the check pass), and the log does not
+# say the Quickshell harnesses were skipped (WP-161). Before the first change the host must have the tools the install
 # step uses. Then it builds the static engine as a release does
 # (`--features watch`) with SELDON_BUILD=main.<short sha> (version
 # 0.1.3+main.<sha>), and on the host:
@@ -145,6 +146,10 @@ if [[ -z $release ]]; then
   ! grep -q $'\r' "$check_log" || refuse "the check log has Windows line endings (CRLF); use the log the check wrote"
   last=$(awk 'NF { l = $0 } END { print l }' "$check_log")
   [[ $last == "exit 0" ]] || refuse "the check log does not end in 'exit 0' (last line: '$last')"
+  # WP-161: a check that skipped the plugin harnesses (E29) proves nothing
+  # about the plugin; main's check runs them
+  ! grep -q 'Quickshell harnesses skipped' "$check_log" \
+    || refuse "the check log skipped the Quickshell harnesses; run SELDON_FULL_CHECK=1 just check on main"
   # the commit the check ran on: the log's first line `head <full sha>`
   checked=$(sed -n '1s/^head \([0-9a-f]\{40\}\)$/\1/p' "$check_log")
   [[ -n $checked ]] || refuse "the check log does not start with 'head <full sha>'; which tree it checked is unknown"
