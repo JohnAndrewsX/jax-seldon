@@ -618,6 +618,15 @@ submission). (see `work/queued/`)
   schema or fixture files changed (gates run everything); check the
   runtime dir before long runs.
 - No online artifacts any more; reports are local files.
+- E18 ADR-0040 accepted (`seldon decide accept`; a new plugin command row
+  needs an ADR) → WP-135. E19 ADR-0041 accepted (sessions are windows; the
+  bounded /proc environ read as worded) → WP-156. E20 ADR-0042 accepted
+  (files pacman left; a `.pacnew` under `/etc/pam.d` stays a crisis) →
+  WP-141. E21 ADR-0043 accepted (`meta.txStatus`) → WP-137. E22 ADR-0044
+  accepted (`plan show` / `import task` rows, the review gate before Start)
+  → WP-102b. E23 the logbook's git config stays trusted like `~/.gitconfig`
+  (only plugin clones are third-party). E24 the runtime dir was cleared by
+  the reboot; the harness fix is WP-161.
 
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
