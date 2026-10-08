@@ -189,7 +189,9 @@ and what the boot menu starts. A change to one of them shows up at the
 next capture, also when no agent made it: a hand edit, `omarchy
 hibernation setup`, a migration, an `omarchy-settings` update that
 changed a file. Only hashes are recorded, never the content (a kernel
-command line names your disks). Nothing else under `/etc` is read. The
+command line names your disks). A symlink in one of these folders is
+followed to its file, and only that file's hash is recorded. Nothing
+else under `/etc` is read. The
 `.pacnew` files pacman leaves there are not hashed: the pacman collector
 already lists each one, and when you merge it with `pacdiff`, the change
 of the file itself is recorded.
