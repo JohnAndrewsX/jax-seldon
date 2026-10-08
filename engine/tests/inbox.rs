@@ -836,3 +836,26 @@ fn a_terminal_on_stdin_is_refused() {
     assert!(shown.contains("pipe the text on stdin"), "{shown}");
     assert_eq!(tree(&root), snapshot);
 }
+
+#[test]
+fn the_text_s_controls_are_dropped_but_tab_and_newline() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    // a backspace splits a secret from its rule, an ESC colours a line, a
+    // lone CR and a BEL ride along; tab and newline are text
+    let text = "env: to\u{8}ken=hunter2abc\n\u{1b}[31mred\u{1b}[0m\tcol\r\u{7}end\n";
+    let v = add(&env, T0, "Controls", text, &[]);
+    let filed = read(&root.join(v["path"].as_str().unwrap()));
+    assert!(!filed.contains("hunter2abc"), "{filed}");
+    assert!(filed.contains("env: token=‹redacted›\n"), "{filed}");
+    assert!(filed.ends_with("\n[31mred[0m\tcolend\n"), "{filed:?}");
+    assert!(
+        !filed
+            .chars()
+            .any(|c| c.is_control() && c != '\n' && c != '\t'),
+        "{filed:?}"
+    );
+    // backspace, two ESC, CR, BEL
+    assert_eq!(v["droppedCharacters"], 5, "{v}");
+    assert_eq!(v["redactedLines"], 1, "{v}");
+}

@@ -79,10 +79,11 @@ No schema, fixture, contract or plugin change.
 
 ## Not done / open
 
-- WP-159 (secrets split by a zero-width character) will introduce one
-  shared helper for every free-text writer; `inbox add` already drops the
-  characters before the redaction, as `import task` does, and should be
-  moved onto that helper there.
+- WP-159 (secrets split by a zero-width character) introduces one shared
+  helper and removes `import::is_direction_or_format`, which `inbox.rs`
+  imports: **WP-166 merges after WP-159**, with `drop_format` switched to
+  `redact::without_invisible` (round 3b). The helper does not take control
+  characters; `inbox add` drops those itself since round 3.
 - No live run on the test host: the command and the skill's recipe are
   covered end to end in temp homes (the recipe is run through bash
   verbatim from `SKILL.md`).
@@ -153,9 +154,11 @@ was merged.
   (util-linux `script -qec … /dev/null`; skipped without `script`, ran
   here).
 - **N4 — procfs views are refused** (my call): a file `stat` reports as
-  size 0 that returns data (`/proc/self/status`, `/proc/self/environ`, a
-  sysfs file) is exit 1, "a file of size 0 that holds data (a /proc or
-  /sys view); copy what the report needs into a file". Live process
+  size 0 that returns data (`/proc/self/status`, `/proc/self/environ`) is
+  exit 1, "a file of size 0 that holds data (a /proc view); copy what the
+  report needs into a file". *Corrected in round 3:* sysfs attributes
+  report size 4096, so they are not caught; the check is a guard against
+  a mistake, not against an adversary (an agent can pipe anything). Live process
   state is never a report, and the environment is exactly what the skill
   forbids filing. An empty regular file stays "the text must not be
   empty".
@@ -164,10 +167,10 @@ was merged.
   dropped from the title and counted in `droppedCharacters`; a title of
   controls only is "must not be empty". The title is the only free text
   in the human line, so no ESC reaches the terminal there.
-- **N2** stays with WP-159: the text keeps its C0/C1 characters. The
-  switch point is one function, `drop_format` (its comment says so): the
-  text and the title's format characters both go through it; WP-159
-  replaces its body with the shared helper.
+- **N2** stays with WP-159: the text keeps its C0/C1 characters.
+  *Corrected in round 3:* the premise was wrong — WP-159's helper takes
+  no control characters; round 3 drops them here. The switch point for
+  the format characters stays one function, `drop_format`.
 - Docs: SPEC-ENGINE §3 (the link refusal, the size-0 views, the title's
   controls, the text's C0/C1 left to WP-159); TESTING.md row.
 - No change to the logbook's `AGENTS.md` rules block (orchestrator).

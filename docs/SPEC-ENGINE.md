@@ -539,10 +539,11 @@ seldon inbox add --title T --file FILE|- [--tag T]… [--actor A] [--json]
                                                # is refused, exit 1), else a regular file (no symbolic link, FIFO,
                                                # device or directory; checked before it is opened; any path, never
                                                # recorded) of at most 1 MiB; UTF-8 either way (exit 1 otherwise). A file
-                                               # the kernel sizes 0 that holds data (a /proc or /sys view such as
+                                               # the kernel sizes 0 that holds data (a /proc view such as
                                                # `/proc/self/environ`) is refused, exit 1 (round 2). The
                                                # text as `import task` treats a task file: CRLF as LF, direction and
-                                               # format characters (`import::is_direction_or_format`) dropped and
+                                               # format characters (`import::is_direction_or_format`) dropped, and
+                                               # every control character but tab and newline (round 3), both
                                                # counted, then the import's scrubber: the whole text through §7 with
                                                # the config's patterns keeping its lines (`redact_keeping_lines`, so a
                                                # PEM key's line breaks follow its marker), then `/home/<user>` → `~`;
@@ -550,8 +551,7 @@ seldon inbox add --title T --file FILE|- [--tag T]… [--actor A] [--json]
                                                # Title: format characters dropped, one line (`one_line`), then every
                                                # control character (C0, DEL, C1) dropped too, so no ESC reaches the
                                                # human line (round 2), scrubbed the same way, at most 120 characters
-                                               # (exit 1); both drops counted. The text keeps its C0/C1 characters
-                                               # (WP-159's shared helper takes them). Tags: `log`'s `--tag`,
+                                               # (exit 1); both drops counted. Tags: `log`'s `--tag`,
                                                # redacted. Actor: --actor, else $SELDON_ACTOR, else human. The file
                                                # `inbox/<YYYY-MM-DD>-<slug>.md` (local date, `cases::slug` of the
                                                # title, `note` without letters), frontmatter `type: inbox`, `created`,

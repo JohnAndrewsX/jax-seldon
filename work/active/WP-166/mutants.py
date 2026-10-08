@@ -76,6 +76,10 @@ MUTANTS = [
     ("r2: a proc view filed", INBOX, plain("&& std::fs::symlink_metadata(file).is_ok_and(|m| m.len() == 0) =>", "&& false =>")),
     ("r2: an empty file is a view", INBOX, plain("if !text.is_empty() && std::fs::symlink_metadata", "if true && std::fs::symlink_metadata")),
     ("r2: a terminal is read", INBOX, plain("        if stdin.is_terminal() {", "        if false && stdin.is_terminal() {")),
+    # round 3
+    ("r3: text controls kept", INBOX, plain("let (text, controls_dropped) = drop_chars(&text, is_text_control);", "let (text, controls_dropped) = (text.clone(), 0);")),
+    ("r3: text controls not counted", INBOX, plain("let text_dropped = format_dropped + controls_dropped;", "let text_dropped = format_dropped;")),
+    ("r3: a tab dropped", INBOX, plain("c.is_control() && c != '\\n' && c != '\\t'", "c.is_control() && c != '\\n'")),
 ]
 
 check = "--check" in sys.argv

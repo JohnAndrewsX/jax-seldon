@@ -243,7 +243,8 @@ SELDON_REPORT
 The quoted heredoc expands nothing; if a line of the report is
 `SELDON_REPORT`, use another word in both places. Seldon redacts the report
 and files it once, as `inbox/<date>-<slug>.md`. Never put the core, memory
-contents or the process environment into it. Filing changes nothing on the
+contents or the process environment into it, nor a backtrace with variable
+values (`bt`, not `bt full`). Filing changes nothing on the
 machine and needs no case; when the user says yes, open one
 ([`case.md`](case.md)) and name the inbox file in its *Intent*.
 

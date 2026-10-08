@@ -89,10 +89,16 @@ pub fn run(ctx: &Context, args: InboxArgs) -> Result<Output> {
 }
 
 /// `text` without direction and format characters, and how many there were.
-/// The one place the text's invisible characters go: WP-159's shared
-/// helper (which also takes C0/C1 controls) replaces its body.
+/// The one place they go, for the title and the text: WP-159's shared
+/// helper replaces its body. Control characters are dropped apart from it
+/// ([`is_text_control`], `char::is_control` for the title).
 fn drop_format(text: &str) -> (String, usize) {
     drop_chars(text, is_direction_or_format)
+}
+
+/// A control character the text drops: every one but tab and newline.
+fn is_text_control(c: char) -> bool {
+    c.is_control() && c != '\n' && c != '\t'
 }
 
 /// `text` without the characters `drop` names, and how many there were.
@@ -116,7 +122,11 @@ fn add(ctx: &Context, args: AddArgs) -> Result<Output> {
     let mut scrubber = Scrubber::new(redactor.clone());
 
     let raw = read_text(&args.file)?;
-    let (text, text_dropped) = drop_format(&raw.replace("\r\n", "\n"));
+    let (text, format_dropped) = drop_format(&raw.replace("\r\n", "\n"));
+    // and every control character but tab and newline (an ESC colour
+    // sequence, a backspace inside `to\x08ken=`), as `hook` and `plan` do
+    let (text, controls_dropped) = drop_chars(&text, is_text_control);
+    let text_dropped = format_dropped + controls_dropped;
     let text = trim_blank_lines(&scrubber.text("text", &text));
     if text.is_empty() {
         return Err(Error::user("the text must not be empty"));
@@ -211,13 +221,13 @@ fn read_text(file: &Path) -> Result<String> {
     }
     let shown = file.display();
     match sys::read_small_file(file, MAX_TEXT_BYTES) {
-        // a file the kernel sizes 0 that holds data is a procfs or sysfs
-        // view (`/proc/self/environ`): live process state, never a report
+        // a file the kernel sizes 0 that holds data is a /proc view
+        // (`/proc/self/environ`): live process state, never a report
         Ok(Some(text))
             if !text.is_empty() && std::fs::symlink_metadata(file).is_ok_and(|m| m.len() == 0) =>
         {
             Err(Error::user(format!(
-                "{shown}: cannot file it: a file of size 0 that holds data (a /proc or /sys view); copy what the report needs into a file"
+                "{shown}: cannot file it: a file of size 0 that holds data (a /proc view); copy what the report needs into a file"
             )))
         }
         Ok(Some(text)) => Ok(text),
