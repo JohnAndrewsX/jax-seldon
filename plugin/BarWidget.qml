@@ -134,10 +134,12 @@ BarWidget {
   // engine generation down within one event; a handler enabled in the middle
   // of it looks up the generation's IPC registry, which is already gone, and
   // Quickshell 0.3.1 crashes (SIGSEGV in IpcHandler::updateRegistration). So
-  // the hand-over runs later, through a sibling's own method (Qt.callLater):
-  // after a teardown the sibling is destroyed too and Qt drops the call; when
-  // one instance goes at run time (a monitor unplugged, the widget removed
-  // from the bar) the sibling lives on and takes the target over.
+  // the hand-over runs later, through each sibling's own method
+  // (Qt.callLater): after a teardown the siblings are destroyed too and Qt
+  // drops the calls; when one instance goes at run time (a monitor
+  // unplugged, the widget removed from the bar) the survivors live on and
+  // take the target over. Every sibling gets the call, so one that dies in
+  // the same turn (a placeholder) cannot drop the hand-over.
   property bool ipcOwner: false
   readonly property bool drawn: Model.isDrawnWidget(root)
 
@@ -166,7 +168,7 @@ BarWidget {
     if (!root.ipcOwner) return
     root.ipcOwner = false
     var siblings = root.liveWidgets().filter(function(w) { return !!w && w !== root && typeof w.reclaimIpc === "function" })
-    if (siblings.length > 0) Qt.callLater(siblings[0].reclaimIpc)
+    siblings.forEach(function(w) { Qt.callLater(w.reclaimIpc) })
   }
 
   implicitWidth: button.implicitWidth
