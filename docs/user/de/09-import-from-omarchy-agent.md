@@ -1,6 +1,6 @@
 # Import aus omarchy-agent
 
-<!-- source: en/09-import-from-omarchy-agent.md @ f919feb -->
+<!-- source: en/09-import-from-omarchy-agent.md @ 98a16251 -->
 
 Diese Seite ist für dich, wenn du vor Seldon ein Logbuch mit dem
 omarchy-agent-Kit geführt hast: einen Obsidian-Vault mit `pipeline/`,
@@ -154,6 +154,14 @@ seldon import task ~/projects/desk/TODO.md
 Der Probelauf listet, was entstehen würde, und schreibt nichts. Ohne
 `--dry-run` wird sofort importiert und als `seldon: import task`
 committet.
+
+Im Desk macht **Import tasks…** in der Work-Liste dasselbe: Pfad eintippen
+(und, wenn du willst, einen Bereich), die Liste des Probelaufs ansehen,
+dann **Import N cases** klicken. Importierte Cases zeigen „imported“ in
+der Liste. Ihr Detail zeigt den ganzen Intent als reinen Text, mit der
+Datei, aus der er kommt, und seiner Zeilenzahl; **Start** wird erst
+klickbar, wenn dieser Text angezeigt ist, und Enter startet nie einen
+importierten Case.
 
 - Jeder offene Punkt (`- [ ] …`) wird ein Case in **queued**. Sein Titel
   ist der erste Satz des Punkts (höchstens 72 Zeichen); sein *Intent*
