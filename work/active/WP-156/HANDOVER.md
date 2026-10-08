@@ -389,3 +389,40 @@ DECISIONS.md lists it as proposed. CONTRACT.md cites it.
 ok`; docs-check ok, qmllint ok 46 files, model.test.js 149,
 real-home-guard 11, service-states 328, desk-view 1555, bar-view 194).
 Only this handover changed after that commit.
+
+## Merge of next (2026-10-08)
+
+`next` 35b1b3de merged into the branch as 94d8d26b. Conflicts kept both
+sides:
+- DECISIONS.md: ADR-0039, then ADR-0041 (accepted, E19).
+- CHANGELOG:
+  - both engine entries are in Unreleased;
+  - the WP-156 plugin entry moved to Unreleased › Plugin after the 0.1.4
+    cut;
+  - WP-127's entry appears once.
+- `validateArgs`: `agent ask` and `agent focus`/`agent sessions`.
+- Service:
+  - the triage and sessions properties;
+  - an index change reloads the proposal and asks for sessions;
+  - the ask and focus results;
+  - WP-117's terminal fix (*Grant*) steps aside.
+- Work's bar: the busy labels and *Ask agent*.
+- The fake engine and the tests.
+
+Follow-ups from `next`:
+- `sessions.rs` uses WP-154's output cap (`OUTPUT_MAX`); a cut window
+  list counts as no answer, so nothing is tracked.
+- *Ask agent* and "Agent sorts N open changes" now step the desk aside,
+  as goal 1 of this WP names `agent ask`. The harness cases `triage` and
+  `triage-ask` open the desk again after each ask.
+- The snapper case follows WP-117's *Grant*.
+- SPEC-PLUGIN §5 and TESTING name *Ask agent* and *Grant*.
+
+`flock /tmp/seldon-check.lock just check` on **94d8d26b: exit 0**, run
+with `XDG_RUNTIME_DIR` set to a private 0700 directory (removed after the
+run) (`check: ok`; docs-check ok, qmllint ok 47 files, model.test.js 164,
+real-home-guard 11, service-states 342, desk-view 1633, bar-view 194).
+Two standalone desk-view runs made before the gate used the session's
+runtime directory. They left instance folders in `/run/user/<uid>`, as the
+orchestrator reported; I did not remove them. Only this handover changed
+after 94d8d26b.
