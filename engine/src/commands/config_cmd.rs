@@ -42,7 +42,6 @@ pub fn run(ctx: &Context, args: ConfigArgs) -> Result<Output> {
 
 fn watch(ctx: &Context, value: &str) -> Result<Output> {
     let dirs = &ctx.dirs;
-    let config = ctx.load_config()?.unwrap_or_default();
     let shown_value = value.escape_debug();
     let Some(path) = dirs.expand_config(value) else {
         return Err(Error::user("config watch: the path is empty"));
@@ -63,6 +62,16 @@ fn watch(ctx: &Context, value: &str) -> Result<Output> {
             "config watch: `{key}` is not below your home directory; Seldon watches only files there"
         )));
     }
+    // a path that is not there is a typo or a name the list showed wrong
+    // (B1); the walk lists only what exists
+    if std::fs::symlink_metadata(&path).is_err() {
+        return Err(Error::user(format!(
+            "config watch: `{key}` does not exist; nothing to watch"
+        )));
+    }
+    // the config as it is under the lock: a concurrent edit is seen (N2)
+    let lock = ctx.lock()?;
+    let config = ctx.load_config()?.unwrap_or_default();
     // Seldon's own files change with every capture: never watched, nor a
     // folder that holds them
     let (logbook, _) = ctx.resolve_logbook(None, Some(&config));
@@ -103,7 +112,6 @@ fn watch(ctx: &Context, value: &str) -> Result<Output> {
         ));
     }
 
-    let lock = ctx.lock()?;
     match std::fs::read_to_string(&ctx.config_file) {
         Ok(text) => {
             let edited = crate::config::with_added_watch_paths(&text, std::slice::from_ref(&key))

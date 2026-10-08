@@ -23,17 +23,19 @@
 //!   (a browser or Electron profile);
 //! - links to directories (never followed) and anything that is no
 //!   regular file; a link to a file counts by its target's time;
-//! - a `~`-path with a control, direction or format character, longer than
-//!   [`SUBJECT_MAX`] characters, or one the logbook's redaction would
-//!   change (it is never shown masked: *Watch* needs the real path).
+//! - a name that is not UTF-8, and a `~`-path with a control, direction or
+//!   format character, longer than [`SUBJECT_MAX`] characters, or one the
+//!   logbook's redaction would change (it is never shown masked: *Watch*
+//!   needs the real path).
 //!
-//! Bounded: at most [`MAX_ENTRIES`] directory entries read and
-//! [`MAX_DEPTH`] levels below `~/.config`; a walk that reaches the entry
-//! budget stops there and says so (`cut`) in the state file.
+//! Bounded: at most [`MAX_ENTRIES`] directory entries read, [`MAX_DEPTH`]
+//! levels below `~/.config` and [`DEADLINE`] of wall time; a walk that
+//! reaches one of them stops (or does not go deeper) and says so
+//! (`partial`), in the state file and in the index.
 
 use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use chrono::{DateTime, FixedOffset, Timelike as _, Utc};
 use serde::{Deserialize, Serialize};
@@ -59,6 +61,9 @@ pub const MAX_ENTRIES: usize = 20_000;
 
 /// Directory levels below `~/.config` walked at most.
 pub const MAX_DEPTH: usize = 12;
+
+/// Wall time one walk may take; it stops there, `partial`.
+pub const DEADLINE: Duration = Duration::from_millis(500);
 
 /// The folder walked, under the home directory.
 pub const ROOT: &str = ".config";
@@ -156,8 +161,9 @@ pub fn ignored_file(name: &str) -> bool {
 pub struct Scan {
     /// Newest first, at most [`MAX_FILES`].
     pub files: Vec<(String, DateTime<FixedOffset>)>,
-    /// The walk stopped at [`MAX_ENTRIES`].
-    pub cut: bool,
+    /// The walk stopped early ([`MAX_ENTRIES`], [`DEADLINE`]) or left
+    /// folders below [`MAX_DEPTH`] out: files it did not reach are missing.
+    pub partial: bool,
     /// Directory entries read.
     pub entries: usize,
 }
@@ -177,7 +183,9 @@ struct Walk<'a> {
     entries: usize,
     /// [`MAX_ENTRIES`], smaller in tests.
     max_entries: usize,
-    cut: bool,
+    /// When the walk stops ([`DEADLINE`] after its start).
+    deadline: Instant,
+    partial: bool,
 }
 
 /// Walks `~/.config` at `now` (SPEC-ENGINE §4). `excluded` are folders
@@ -190,10 +198,11 @@ pub fn scan(
     excluded: &[PathBuf],
     now: DateTime<FixedOffset>,
 ) -> Scan {
-    scan_bounded(dirs, config, redactor, excluded, now, MAX_ENTRIES)
+    let deadline = Instant::now() + DEADLINE;
+    scan_bounded(dirs, config, redactor, excluded, now, MAX_ENTRIES, deadline)
 }
 
-/// [`scan`] with its entry budget.
+/// [`scan`] with its entry budget and deadline.
 fn scan_bounded(
     dirs: &Dirs,
     config: &Config,
@@ -201,6 +210,7 @@ fn scan_bounded(
     excluded: &[PathBuf],
     now: DateTime<FixedOffset>,
     max_entries: usize,
+    deadline: Instant,
 ) -> Scan {
     let root = dirs.home.join(ROOT);
     let since = SystemTime::from(now - chrono::Duration::days(DAYS));
@@ -218,7 +228,8 @@ fn scan_bounded(
         found: Vec::new(),
         entries: 0,
         max_entries,
-        cut: false,
+        deadline,
+        partial: false,
     };
     // `~/.config` itself may be a link (dotfile managers)
     if std::fs::metadata(&root).is_ok_and(|m| m.is_dir()) && !walk.left_out(&root) {
@@ -232,7 +243,7 @@ fn scan_bounded(
             .into_iter()
             .map(|(t, path)| (path, at(t, now)))
             .collect(),
-        cut: walk.cut,
+        partial: walk.partial,
         entries: walk.entries,
     }
 }
@@ -279,8 +290,8 @@ impl Walk<'_> {
         };
         let mut entries = Vec::new();
         for entry in read {
-            if self.entries >= self.max_entries {
-                self.cut = true;
+            if self.entries >= self.max_entries || Instant::now() >= self.deadline {
+                self.partial = true;
                 return;
             }
             self.entries += 1;
@@ -298,17 +309,20 @@ impl Walk<'_> {
         let mut subdirs = Vec::new();
         for entry in entries {
             let name = entry.file_name();
-            let name = name.to_string_lossy();
+            // a name that is not UTF-8 cannot be shown as it is (B1)
+            let Some(name) = name.to_str() else {
+                continue;
+            };
             let path = entry.path();
             let Ok(kind) = entry.file_type() else {
                 continue;
             };
             if kind.is_dir() {
-                if !ignored_dir(&name) && !self.left_out(&path) {
+                if !ignored_dir(name) && !self.left_out(&path) {
                     subdirs.push(path);
                 }
             } else if (kind.is_file() || kind.is_symlink())
-                && !ignored_file(&name)
+                && !ignored_file(name)
                 && !self.left_out(&path)
             {
                 // a link counts by its target, and only a link to a file
@@ -323,11 +337,13 @@ impl Walk<'_> {
             }
         }
         if depth >= MAX_DEPTH {
+            // folders left unread: the list may miss their files
+            self.partial |= !subdirs.is_empty();
             return;
         }
         subdirs.sort();
         for sub in subdirs {
-            if self.cut {
+            if self.partial {
                 return;
             }
             self.dir(&sub, depth + 1);
@@ -335,11 +351,13 @@ impl Walk<'_> {
     }
 }
 
-/// `path` as a `~`-path the list may show: under `~/.config/`, no `.` or
-/// `..` folder and no empty one, no control, direction or format
+/// `path` as a `~`-path the list may show: UTF-8, under `~/.config/`, no
+/// `.` or `..` folder and no empty one, no control, direction or format
 /// character, at most [`SUBJECT_MAX`] characters, and unchanged by the
 /// logbook's redaction. `None` otherwise.
 pub fn shown_path(dirs: &Dirs, redactor: &Redactor, path: &Path) -> Option<String> {
+    // `display` would replace what is not UTF-8 with U+FFFD (B1)
+    path.to_str()?;
     let key = dirs.display(path);
     let ok = key.starts_with("~/.config/")
         && key[2..]
@@ -359,9 +377,9 @@ pub fn shown_path(dirs: &Dirs, redactor: &Redactor, path: &Path) -> Option<Strin
 pub struct Saved {
     pub scanned_at: String,
     pub files: Vec<RecentFile>,
-    /// The walk stopped at [`MAX_ENTRIES`]: older files may be missing.
+    /// The walk stopped early or left deep folders out ([`Scan::partial`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub cut: bool,
+    pub partial: bool,
 }
 
 impl Saved {
@@ -380,7 +398,7 @@ impl Saved {
                     mtime: format_ts(t),
                 })
                 .collect(),
-            cut: scan.cut,
+            partial: scan.partial,
         }
     }
 
@@ -390,15 +408,18 @@ impl Saved {
     }
 
     /// The saved scan; `Ok(None)` when there is none, `Err` with the reason
-    /// when the file cannot be read or parsed.
+    /// when the file cannot be read or parsed. Read only when it is a
+    /// regular file of at most [`sys::STATE_FILE_MAX`] (no link, FIFO or
+    /// device: B2, as `autocommit.json` and the proposals).
     pub fn load(dirs: &Dirs) -> Result<Option<Self>, String> {
         let path = Self::file(dirs);
-        match std::fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes)
+        let shown = dirs.display(&path);
+        match sys::read_small_file(&path, sys::STATE_FILE_MAX) {
+            Ok(Some(text)) => serde_json::from_str(&text)
                 .map(Some)
-                .map_err(|e| format!("{}: unreadable ({e})", dirs.display(&path))),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(format!("{}: {e}", dirs.display(&path))),
+                .map_err(|e| format!("{shown}: unreadable ({e})")),
+            Ok(None) => Ok(None),
+            Err(why) => Err(format!("{shown}: not read ({why})")),
         }
     }
 }
@@ -442,6 +463,7 @@ pub fn shown(
     Some(RecentConfig {
         scanned_at: saved.scanned_at,
         files,
+        partial: saved.partial,
     })
 }
 
@@ -638,7 +660,7 @@ mod tests {
             "2026-10-08T11:00:00+02:00",
             "in the capture's offset"
         );
-        assert!(!scan.cut);
+        assert!(!scan.partial);
     }
 
     #[test]
@@ -707,29 +729,73 @@ mod tests {
     }
 
     #[test]
-    fn the_entry_budget_and_the_depth() {
+    fn the_entry_budget_the_deadline_and_the_depth() {
         let h = Home::new("budget");
         h.file(".config/a/one.conf", HOUR);
         h.file(".config/b/two.conf", HOUR);
-        let scan = scan_bounded(
-            &h.dirs,
-            &Config::default(),
-            &Redactor::builtin(),
-            &[],
-            h.now,
-            3,
-        );
+        let bounded = |max: usize, deadline: Instant| {
+            scan_bounded(
+                &h.dirs,
+                &Config::default(),
+                &Redactor::builtin(),
+                &[],
+                h.now,
+                max,
+                deadline,
+            )
+        };
+        let later = Instant::now() + Duration::from_secs(60);
+        assert!(!bounded(MAX_ENTRIES, later).partial);
         // `a`, `b`, then `a/one.conf`: the budget is spent before `b`
-        assert!(scan.cut);
+        let scan = bounded(3, later);
+        assert!(scan.partial);
         assert_eq!(scan.entries, 3);
         assert_eq!(scan.files.len(), 1);
-        let deep: String = (0..=MAX_DEPTH).map(|i| format!("d{i}/")).collect();
-        h.file(&format!(".config/{deep}deep.conf"), HOUR);
+        // the state file says so, and the index after it
+        assert!(Saved::of(&scan, h.now).partial);
+        assert!(!Saved::of(&bounded(MAX_ENTRIES, later), h.now).partial);
+        // a deadline already past: nothing read
+        let scan = bounded(MAX_ENTRIES, Instant::now());
+        assert!(scan.partial);
+        assert_eq!((scan.entries, scan.files.len()), (0, 0));
+        // folders below the depth are not read, and the scan says so
         let shallow: String = (0..MAX_DEPTH).map(|i| format!("d{i}/")).collect();
         h.file(&format!(".config/{shallow}level.conf"), HOUR);
-        let paths = h.paths(&Config::default());
-        assert!(paths.iter().any(|p| p.ends_with("level.conf")), "{paths:?}");
-        assert!(!paths.iter().any(|p| p.ends_with("deep.conf")), "{paths:?}");
+        let scan = h.scan(&Config::default());
+        assert!(!scan.partial, "a file at the last level is read");
+        assert!(scan.files.iter().any(|(p, _)| p.ends_with("level.conf")));
+        let deep: String = (0..=MAX_DEPTH).map(|i| format!("d{i}/")).collect();
+        h.file(&format!(".config/{deep}deep.conf"), HOUR);
+        let scan = h.scan(&Config::default());
+        assert!(scan.partial);
+        assert!(!scan.files.iter().any(|(p, _)| p.ends_with("deep.conf")));
+    }
+
+    #[test]
+    fn a_name_that_is_not_utf8_is_left_out() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let h = Home::new("latin1");
+        let app = h.dirs.home.join(".config/app");
+        h.file(".config/app/fine.conf", HOUR);
+        // `é` and `è` in Latin-1: two files that a lossy name would merge
+        for byte in [0xe9u8, 0xe8] {
+            let name = [b"latin1-".as_slice(), &[byte], b".conf"].concat();
+            std::fs::write(app.join(std::ffi::OsStr::from_bytes(&name)), "x\n").unwrap();
+        }
+        // and a folder whose name is not UTF-8
+        let folder = app.join(std::ffi::OsStr::from_bytes(b"dir-\xe9"));
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("inside.conf"), "x\n").unwrap();
+        let scan = h.scan(&Config::default());
+        let paths: Vec<_> = scan.files.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(paths, ["~/.config/app/fine.conf"]);
+        // `app` at the top, then its four entries: the folder is not entered
+        assert_eq!(scan.entries, 5);
+        let redactor = Redactor::builtin();
+        assert_eq!(
+            shown_path(&h.dirs, &redactor, &folder.join("inside.conf")),
+            None
+        );
     }
 
     #[test]
@@ -830,6 +896,27 @@ mod tests {
             paths(shown_at(&config, h.now, &mut warnings)),
             ["~/.config/a/one.conf"]
         );
+        // a FIFO or a link to /dev/zero is never opened or read (B2)
+        std::fs::remove_file(Saved::file(&h.dirs)).unwrap();
+        let fifo = std::process::Command::new("mkfifo")
+            .arg(Saved::file(&h.dirs))
+            .status()
+            .is_ok_and(|s| s.success());
+        if fifo {
+            assert_eq!(shown_at(&config, h.now, &mut warnings), None);
+            assert_eq!(
+                warnings.pop().as_deref(),
+                Some("~/.local/state/seldon/recent-config.json: not read (not a regular file)")
+            );
+            std::fs::remove_file(Saved::file(&h.dirs)).unwrap();
+        }
+        std::os::unix::fs::symlink("/dev/zero", Saved::file(&h.dirs)).unwrap();
+        assert_eq!(shown_at(&config, h.now, &mut warnings), None);
+        assert_eq!(
+            warnings.pop().as_deref(),
+            Some("~/.local/state/seldon/recent-config.json: not read (a symbolic link)")
+        );
+        std::fs::remove_file(Saved::file(&h.dirs)).unwrap();
         // an unreadable file is a warning, never a failure
         std::fs::write(Saved::file(&h.dirs), "{").unwrap();
         assert_eq!(shown_at(&config, h.now, &mut warnings), None);

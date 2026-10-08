@@ -381,6 +381,8 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         let excluded = [
             collectors::plugins::Plugins::dir(&sources, &ctx.dirs.home),
             ctx.config_file.clone(),
+            // its rows could be shown, but `config watch` refuses them (N4)
+            logbook.root.clone(),
         ];
         let scan = recent::scan(&ctx.dirs, &config, ledger.redactor(), &excluded, now);
         if let Err(e) = recent::Saved::of(&scan, now).save(&ctx.dirs) {

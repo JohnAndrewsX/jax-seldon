@@ -15,7 +15,9 @@
 //! The scan of recently edited files under `~/.config` (ADR-0046, WP-139)
 //! is the capture-cost delta of that WP: the same home plus 40 programs'
 //! config folders, a browser profile, an Electron app and a cache, every
-//! file modified within the last 7 days (the list's worst case).
+//! file modified within the last 7 days (the list's worst case); and, at
+//! its entry budget, a `~/.config` of 20 000 recent files in one folder
+//! (WP-139 round 2, N1).
 
 mod common;
 
@@ -341,7 +343,7 @@ fn capture_cost_of_the_recent_config_scan() {
     let excluded = [home.plugins_dir.clone()];
     let scan = recent::scan(&home.dirs, &home.config, &redactor, &excluded, now);
     assert_eq!(scan.files.len(), recent::MAX_FILES);
-    assert!(!scan.cut);
+    assert!(!scan.partial);
     eprintln!("recent-config scan: {} entries read", scan.entries);
     common::assert_within_budget(
         "recent-config scan and save (the capture-cost delta)",
@@ -367,6 +369,53 @@ fn capture_cost_of_the_recent_config_scan() {
                 &mut warnings,
             );
             assert_eq!(shown.unwrap().files.len(), recent::MAX_FILES);
+        },
+    );
+}
+
+/// N1 (WP-139 round 2): the scan at its entry budget — 200 folders of 100
+/// recent files each under one program's folder, so the walk stops at
+/// [`recent::MAX_ENTRIES`] (or [`recent::DEADLINE`] on a slow host) and
+/// says `partial`. The budget is the deadline plus the state file.
+#[test]
+#[ignore = "release timing: `just check-perf`"]
+fn capture_cost_of_the_recent_config_scan_at_its_entry_budget() {
+    common::assert_optimised();
+    let tmp = TempDir::new("recent-budget");
+    let home = tmp.path().join("home");
+    let dirs = Dirs {
+        xdg_config_home: home.join(".config"),
+        state_dir: home.join(".local/state/seldon"),
+        home: home.clone(),
+    };
+    for d in 0..200 {
+        for f in 0..100 {
+            write(
+                &home.join(format!(".config/heavy/d{d:03}/f{f:03}.json")),
+                b"{}",
+            );
+        }
+    }
+    let recent = std::time::SystemTime::now() - Duration::from_secs(3600);
+    set_mtimes(&home.join(".config"), recent);
+    let now = DateTime::parse_from_rfc3339(&chrono::Local::now().to_rfc3339()).unwrap();
+    let redactor = Redactor::builtin();
+    let config = Config::default();
+    let scan = recent::scan(&dirs, &config, &redactor, &[], now);
+    assert!(scan.partial);
+    assert_eq!(scan.files.len(), recent::MAX_FILES);
+    eprintln!(
+        "recent-config scan at the budget: {} entries read",
+        scan.entries
+    );
+    common::assert_within_budget(
+        "recent-config scan and save at the 20 000-entry budget",
+        recent::DEADLINE + Duration::from_millis(100),
+        RUNS,
+        || {
+            let scan = recent::scan(&dirs, &config, &redactor, &[], now);
+            assert!(scan.partial);
+            recent::Saved::of(&scan, now).save(&dirs).unwrap();
         },
     );
 }

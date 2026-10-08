@@ -128,6 +128,17 @@ fn a_config_file_elsewhere_under_dot_config_is_not_listed() {
 }
 
 #[test]
+fn a_logbook_under_dot_config_is_not_listed() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook_at("home/.config/logbook", "en");
+    ok(&env.seldon(&["capture", "--json"]));
+    ok(&env.seldon(&["log", "--json", "--", "a note in the journal"]));
+    file(&env, ".config/git/config", HOUR);
+    ok(&env.seldon(&["capture", "--json"]));
+    assert_eq!(recent_paths(&index(&env)), ["~/.config/git/config"]);
+}
+
+#[test]
 fn only_a_capture_that_runs_the_config_collector_scans() {
     let (env, _) = setup();
     let state = env.home.join(".local/state/seldon/recent-config.json");
@@ -169,6 +180,8 @@ fn watch_adds_the_path_by_a_minimal_edit_and_the_row_goes() {
     let alacritty = ".config/alacritty/alacritty.toml";
     file(&env, alacritty, HOUR);
     file(&env, ".config/git/config", HOUR);
+    // watched by a default path from the start
+    file(&env, ".config/hypr/x.lua", HOUR);
     ok(&env.seldon(&["capture", "--json"]));
     // a comment the edit keeps
     let text = format!("# mine\n{}", read(&env.config_file()));
@@ -231,6 +244,7 @@ fn watch_adds_the_path_by_a_minimal_edit_and_the_row_goes() {
 #[test]
 fn watch_without_a_config_file_writes_the_defaults_and_the_path() {
     let env = Env::new(Snapper::Missing);
+    file(&env, ".config/git/config", HOUR);
     assert!(!env.config_file().exists());
     let out = ok(&env.seldon(&["config", "watch", "--json", "--", "~/.config/git/config"]));
     assert_eq!(out["added"], json!(true));
@@ -245,6 +259,7 @@ fn watch_appends_to_an_empty_list() {
     let env = Env::new(Snapper::Missing);
     std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
     std::fs::write(env.config_file(), "watchPaths = [] # none\n").unwrap();
+    file(&env, "starship.toml", HOUR);
     ok(&env.seldon(&["config", "watch", "--json", "--", "starship.toml"]));
     assert_eq!(
         read(&env.config_file()),
@@ -260,12 +275,15 @@ fn watch_refuses_and_writes_nothing() {
     edit_config(&env, |c| {
         c.redaction.skip_paths = vec!["~/.config/secret/".into(), "private".into()];
     });
+    file(&env, ".config/secret/token.conf", HOUR);
+    file(&env, ".config/app/private/a.conf", HOUR);
     let text = read(&env.config_file());
     let control = "~/.config/a\u{1b}b";
     let bidi = "~/.config/a\u{202e}b";
     let long = format!("~/.config/{}", "x".repeat(510));
-    let cases: [(&str, &str); 12] = [
+    let cases: [(&str, &str); 13] = [
         ("/etc/pacman.conf", "is not below your home directory"),
+        ("~/.config/nope.conf", "does not exist"),
         ("~", "is not below your home directory"),
         (
             "~/.config/secret/token.conf",
@@ -306,6 +324,7 @@ fn watch_refuses_and_writes_nothing() {
 #[test]
 fn watch_leaves_a_file_it_cannot_edit_minimally() {
     let env = Env::new(Snapper::Missing);
+    file(&env, ".config/git/config", HOUR);
     std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
     let text = "\"watchPaths\" = [\"~/.config/hypr\"]\n";
     std::fs::write(env.config_file(), text).unwrap();
@@ -322,6 +341,7 @@ fn watch_leaves_a_file_it_cannot_edit_minimally() {
 #[test]
 fn watch_without_a_watch_paths_key_names_the_defaults() {
     let env = Env::new(Snapper::Missing);
+    file(&env, ".config/git/config", HOUR);
     std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
     let text = "logbook = \"~/Seldon\"\n";
     std::fs::write(env.config_file(), text).unwrap();
@@ -338,6 +358,7 @@ fn watch_without_a_watch_paths_key_names_the_defaults() {
 #[test]
 fn watch_waits_for_no_one_a_held_lock_is_exit_4() {
     let env = Env::new(Snapper::Missing);
+    file(&env, ".config/git/config", HOUR);
     std::fs::create_dir_all(env.lock_file().parent().unwrap()).unwrap();
     let _lock = seldon::logbook::lock::acquire(&env.lock_file()).unwrap();
     let out = env.seldon(&["config", "watch", "--json", "--", "~/.config/git/config"]);
@@ -353,6 +374,6 @@ fn the_fixture_scan_is_a_scan_the_engine_writes() {
     let fixture =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/state/recent-config.json");
     let saved: seldon::collectors::recent::Saved = serde_json::from_str(&read(&fixture)).unwrap();
-    assert!(!saved.cut);
+    assert!(!saved.partial);
     assert!(saved.files.len() <= seldon::collectors::recent::MAX_FILES);
 }
