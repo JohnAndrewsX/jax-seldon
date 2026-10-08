@@ -485,15 +485,39 @@ ask for the rule. Then, from `proposedCase`, "C-… plans it (its plan names
 this change); nothing has linked it yet." or "No open case plans it, and no
 case is linked." — the Case row ("proposed: C-…") and the Rule row
 ("crisis · rule … · planned by C-…, not linked" or "· no case") say the
-same. The key/values When · Who · What (· Commits) · Case · Rule · Source · Zone ·
-Resolved · Event (Commits, WP-136: a plugin update's `meta.commits` as
+same. The key/values When · Who · What (· Command · Transaction) (· Commits) · Case · Rule · Source · Zone ·
+Resolved · Event (Command and Transaction, WP-137: a pacman event's
+`meta.command` and its transaction — "4 packages: 1 removed, 1 installed,
+2 upgraded", then the status when it did not complete and "left N files"
+for the files pacman left in it, WP-141's notes, which show the same row
+by their `meta.transaction`; Commits, WP-136: a plugin update's `meta.commits` as
 plain text, one subject per line, keyed "Rolled back" when `meta.git` is
 `rollback`; absent when the event has no such string;
 values wrap at word boundaries; a longer token breaks
 anywhere; a detail the index clipped — the event's `meta.truncated` or the
 drift item's `truncated`, contract 2 — reads "(clipped in the index; the
-ledger has it in full)"), a
-group's members (`seldon drift show` for those the index no longer lists),
+ledger has it in full)"), **the transaction** (WP-137): for a
+pacman event whose transaction did not complete (`meta.txStatus`,
+ADR-0043) an urgent callout above the key/values — *Transaction failed*,
+*Transaction interrupted* or *Transaction did not finish*, with what
+that means (the packages listed may be all it changed; pacman runs its
+post-transaction hooks only after a completed transaction) — whatever
+the event's class; then, below the key/values, "N packages: … in this
+transaction" and every package of the transaction the index lists, the
+unusual first (↓ downgraded, − removed, + installed, ↑ upgraded, ↻
+reinstalled; by name within a kind), "name  old → new" or "name
+version", the selected event's line in bold; shown for two or more
+packages, a status or files left (one completed package says no more
+than the rows); a transaction whose oldest line is the index's oldest
+event at its 500-event cap (CONTRACT.md rule 4) says older lines are in
+the ledger. Without `meta.txStatus` nothing is marked and nothing claims
+the transaction completed (an index of an earlier build, or a line
+written before ADR-0043). The Changelog row (and Today's NEEDS YOU row)
+of such an event shows the status as one word in the urgent colour
+before its meta line (`ListRow.alert`), and the sidebar search finds the
+word; the class, the stripe and the counts are unchanged. Then a
+group's members (`seldon drift show` for those the index no longer lists;
+hidden when the transaction above lists every open member),
 "proposed for C-…", and "None of this is required. An agent explains only
 what it can prove." The bar's Link, Explain and Dismiss only open the
 inline form (`DriftForm.qml`, the 0.1 drift sheet's logic and API): Link
