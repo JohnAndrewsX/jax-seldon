@@ -1019,8 +1019,10 @@ const CLOSING_TAIL_MAX: usize = 100;
 /// <title>: <line>`, `line` the first line of the case's *Result* (`plan
 /// done`) or the reason (`plan drop`), left out when there is none, a
 /// list marker before it dropped. The text after the dash is one line
-/// (control characters become spaces), redacted and then clipped: the
-/// patterns see the whole text, so a cut cannot hide a secret from them.
+/// (direction and invisible format characters dropped, so none splits a
+/// token; control characters and line or paragraph separators become
+/// spaces), redacted and then clipped: the patterns see the whole text,
+/// so a cut cannot hide a secret from them.
 fn closing_summary(
     id: &str,
     to: CaseStatus,
@@ -1043,7 +1045,14 @@ fn closing_summary(
     };
     let tail: String = tail
         .chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
+        .filter(|c| !crate::import::is_direction_or_format(*c))
+        .map(|c| {
+            if c.is_control() || super::is_line_breaking(c) {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect();
     let tail = clip(redactor.redact(&tail).trim(), CLOSING_TAIL_MAX);
     if tail.is_empty() {
@@ -1216,6 +1225,19 @@ mod tests {
         let tail = s.strip_prefix("C-2026-012 completed — ").unwrap();
         assert_eq!(tail.chars().count(), CLOSING_TAIL_MAX);
         assert!(tail.ends_with('…'));
+        // a zero-width space inside a token does not hide it, and no
+        // direction or line-breaking character reaches the subject
+        let s = summary(
+            "T\u{202E}x",
+            Some("token ghp_0123\u{200B}456789abcdefghijABCDEFGHIJ012345\u{2028}y\u{2029}z"),
+        );
+        assert!(!s.contains("ghp_0123"), "{s}");
+        assert!(
+            !s.contains(['\u{202E}', '\u{2028}', '\u{2029}', '\u{200B}']),
+            "{s}"
+        );
+        assert!(s.starts_with("C-2026-012 completed — Tx: token "), "{s}");
+        assert!(s.ends_with(" y z"), "{s}");
         // a secret that a clip would have cut is redacted first
         let secret = "ghp_0123456789abcdefghijABCDEFGHIJ012345";
         let title = format!("{}token {secret}", "y".repeat(80));
