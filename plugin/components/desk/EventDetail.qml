@@ -45,6 +45,10 @@ DetailPane {
   readonly property alias form: form
   readonly property bool editing: form.editing
   readonly property color foregroundColor: Color.popups.text
+  // The last Ask agent about this event, or null.
+  readonly property var askResult: root.service && root.detail && root.service.askResult
+    && root.service.askResult.what === "drift" && root.service.askResult.target === root.detail.id
+    ? root.service.askResult : null
 
   // The keys left the form (Esc, Cancel, resolved).
   signal leaveRequested()
@@ -78,7 +82,10 @@ DetailPane {
   }
 
   function trigger(id) {
-    if (id === "link" || id === "explain" || id === "dismiss") {
+    if (id === "ask") {
+      // Ask agent (WP-124b, ADR-0036 §1): `agent ask drift <id> --json`
+      if (root.service && root.detail) root.service.askAgent("drift", root.detail.id)
+    } else if (id === "link" || id === "explain" || id === "dismiss") {
       form.showForm(id)
     } else if (id === "hide") {
       if (!root.service || !root.detail) return
@@ -111,6 +118,8 @@ DetailPane {
       rule: root.ruleInfo.state + (root.ruleInfo.rule !== "" ? " " + root.ruleInfo.rule : ""),
       kv: root.detail ? root.detail.kv.map(function(r) { return r[0] + ": " + r[1] }) : [],
       actions: root.actions.map(function(a) { return a.label }),
+      ask: root.askResult ? root.askResult.text : "",
+      askOk: root.askResult ? root.askResult.ok : true,
       hidden: root.hidden,
       caseMissing: missingLine.visible ? missingText.text : "",
       bar: { y: Math.round(root.actionBar.mapToItem(root, 0, 0).y), sceneY: Math.round(root.actionBar.mapToItem(null, 0, 0).y),
@@ -190,6 +199,19 @@ DetailPane {
       font.family: root.fontFamily
       font.pixelSize: Style.font.title
       font.bold: true
+    }
+
+    // The last Ask agent about this event: the engine's answer or refusal.
+    Text {
+      objectName: "eventAskResult"
+      width: parent.width
+      visible: !!root.askResult
+      textFormat: Text.PlainText
+      text: root.askResult ? root.askResult.text : ""
+      color: root.askResult && !root.askResult.ok ? Color.urgent : Color.muted
+      wrapMode: Text.Wrap
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
     }
 
     Text {

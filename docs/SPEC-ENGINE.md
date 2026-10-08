@@ -1864,11 +1864,11 @@ whoever completed or dropped it; `plan` `<ID>` —
 the first non-blank line of the case's `## Plan` that names a member's
 subject as a whole word (ADR-0015 §4), by the case's authors and every
 agent in its `agents` (a Plan line carries no author of its own; shown as
-`by <first case author> (worked by <agents>)`). A ref
+`by <case authors> (worked by <agents>)`). A ref
 one of whose authors is the proposing agent does not resolve ("<agent>
 wrote it; an agent's own text is no evidence for its proposal"). Refs
 longer than 64 characters, malformed refs and an empty result do not
-resolve. The text is `by <first author> · <words>`, the words redacted
+resolve. The text is `by <authors> · <words>` (every author, the first first, joined by `, `; WP-124b round 2), the words redacted
 (§7) and made one line (control characters spaces, white space runs one
 space), the whole clipped to 256 characters. `crisis` is the item's class
 at propose time. `drift apply` takes the items in file order (with

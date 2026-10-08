@@ -373,8 +373,16 @@ resolved here, it leaves NEEDS YOU and stays shown with the engine's answer.
 
 #### Changelog (2)
 
-The list: the slot of "Agent sorts N open changes" (`triageSlot`, empty
-until WP-124b), the chips **open · crisis · attention · routine · in
+The list: the triage slot (`triageSlot`, WP-124b; ADR-0034 §6,
+ADR-0036) — **Agent sorts N open changes** (N = the open changes, a group
+once) while something is open and the engine can write
+(`Service.triageButton`; whether a default agent exists only the engine
+knows, so a refusal names the fix under the button): `agent ask triage
+--json`, "Starting an agent…" with a spinner while it runs, then the
+engine's answer or refusal; and, while the index names a proposal
+(`index.triage`), its row "Proposal · N items proposed by <actor> at <at>,
+C crises held back — apply each below", which shows the proposal in the
+detail (below). Then the chips **open · crisis · attention · routine · in
 case · all** with their counts (`f` / `F` the next / previous; default
 open). A row's class: open drift with `crisis` → crisis; other open drift,
 group members included → attention; else with a case → in case; else
@@ -400,9 +408,58 @@ it was. The shim's `filter <source>` and a payload `filter` that is a
 source name show "all" with the source in the sidebar search; a chip id
 selects that chip.
 
+The proposal (`TriageDetail.qml`, WP-124b): the file `index.triage.path`
+names, next to `index.json` (CONTRACT.md rule 1; exactly
+`proposals/<id>.json`, `Model.triagePath`), read by a FileView and checked
+against `proposal.schema.json` (`Model.parseProposal`: only its
+properties, `logbook` present, `at` and `applied` date-times, the length
+limits, a link without title or intent and an explanation without a case,
+at most 4 MiB of text; a file off in any part is not shown: "could not be
+read as the engine writes it"). **Bound to the proposal the user opened**
+(round 2): its row (or *Review the new proposal*) stores that id
+(`Changelog.seenProposalId`), and Apply and Discard name it. When the
+index names another proposal by then, the bar says "Replaced by a newer
+proposal by <actor> at <at> — review it", offers *Review the new
+proposal* and has Apply and Discard off, the items are not shown, and the
+service refuses the old id even when asked directly
+(`Model.triageSeen`, `Service.triageCall`); a proposal that is gone
+("Proposal <id> is not there any more …") keeps the last answer about it
+shown. Only the answer about the opened id is shown. The sticky bar:
+*Apply proposals (N)* (N the items Apply takes that are still open; one
+click, `drift apply <id> --json`; enabled also with nothing open, so a
+second run says what it skipped) and *Discard* (it removes the agent's
+unapplied work, so it arms: "Confirm discard", hint "Discard proposal
+<id>? Click Confirm discard. The logbook does not change.", then `drift
+discard <id> --json`); **under its buttons, as the bar's hint, the line
+"N items proposed by <actor> at <at>, C crises held back — apply each
+below"** (plain text, wraps). Below the bar: the state ("<actor> ·
+proposal, nothing written yet", or "Applied <at>. That marks the run, not
+every item: what is still open shows below."), the last run's answer
+("Applied N · skipped S · refused R"; a gone proposal: "… The proposal is
+gone; the list shows what is open now" — refresh, never retry), the line
+"Apply re-reads the file and every reference. If the file was changed
+since you opened it, what Apply writes can differ from what is shown
+here."; then **CRISES — EACH ON ITS OWN**: every
+item that is a crisis by the file's flag or the index's class, with
+*Apply this crisis* (`drift apply <id> --item <eventId> --json`, one per
+run); then **WHAT APPLY TAKES**. The items are built only while the pane
+is shown, by an asynchronous Loader (a 200 × 10 proposal: the click
+returns at once, the list builds in slices). Each item: the change's
+subject (from `index.events`), "Link to C-…" or "Explain: <title>" with
+the intent, the outcome of the last run (Done, Skipped: <reason>,
+Refused: <reason>, the engine's words) or "No longer open: nothing to
+apply.", and every evidence ref — its kind and ref, then the engine's text
+with "by <authors> ·" first (every author, ADR-0036 §2), wrapped (also
+inside a long path), never clipped; an item with evidence that names an
+agent or `unknown` among its authors (a Plan "worked by agent:…" too) is
+marked "Read twice: some evidence names an agent or an unknown author."
+and that text drawn in the accent colour. Every text is plain text
+(CONTRACT.md rule 6; `model.test.js` checks every `Text` of the file).
+
 The detail (`EventDetail.qml`; prototype `eventDetail`): the sticky bar
-(`Model.eventActions`) — open drift: *Ask agent* first once the engine has
-`agent ask` (WP-124b; `Service.askAgentAvailable`, false until then),
+(`Model.eventActions`) — open drift: *Ask agent* first while the engine can
+write (WP-124b; `agent ask drift <id> --json`, one click; the engine's
+answer or refusal under the title),
 *Link to case…* (*Link to C-… …* when the engine proposes one), *Explain…*,
 *Dismiss…*, and for attention *Hide* / *Show*; an event with a case: *Open
 case* (Work with the case selected; for a case the index no longer lists
@@ -476,7 +533,10 @@ The detail: the sticky bar by status (`Model.caseDeskActions`) — queued:
 *Start*, *Drop*; active: *Hand to agent* (`agent start <id> --json`), *To
 verification*, *Drop*; verification: *Complete*, *Drop*; completed:
 *Reopen* (`plan reopen <id> --json`); every case *Open in editor* (`e`,
-`open <id> --editor --json`), last; id · risk at the right. Every writing
+`open <id> --editor --json`), then *Ask agent* while the engine can write
+(WP-124b; `agent ask case <id> --json`, one click, any status; the agent
+gets no case to work; the answer or refusal under the title); id · risk at
+the right. Every writing
 action but Reopen arms on the first press or click and runs on the second
 (`Arm.qml`; the button reads "Confirm …", the bar's hint names the key:
 "Hand to agent C-2026-003? Press a again or click Confirm.", "To

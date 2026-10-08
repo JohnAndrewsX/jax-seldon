@@ -37,6 +37,8 @@ var STATUSES = ["ok", "engineMissing", "notInitialised", "indexMissing", "indexS
 // Patterns from schema/event.schema.json $defs.
 var CASE_ID = /^C-[0-9]{4}-[0-9]{3,}$/
 var EVENT_ID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/
+// A triage proposal's id (a ULID, like an event's; ADR-0035 §6).
+var PROPOSAL_ID = EVENT_ID
 var ZONES = ["green", "yellow", "red"]
 var RISKS = ["R0", "R1", "R2", "R3"]
 // `seldon open` targets the panel uses; `logbook` (the logbook folder) stands
@@ -683,6 +685,11 @@ function validateArgs(args) {
     return "plan must be: plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] -- <title>"
       + " | plan start|verify|done|drop <caseId> | plan reopen <caseId> --json"
   case "drift":
+    // WP-124 (ADR-0036): apply or discard the proposal index.triage names;
+    // a crisis one --item per run. Never `propose` (the agent's command).
+    if (!withText && json && n === 3 && (a[1] === "apply" || a[1] === "discard") && PROPOSAL_ID.test(a[2])) return ""
+    if (!withText && json && n === 5 && a[1] === "apply" && PROPOSAL_ID.test(a[2]) && a[3] === "--item"
+        && EVENT_ID.test(a[4])) return ""
     var id = n >= 3 && EVENT_ID.test(a[2])
     if (id && !withText && a[1] === "link" && n >= 4 && CASE_ID.test(a[3]) && (n === 4 || only(4))) return ""
     // dismiss takes its reason like explain its text, after `--` (WP-011
@@ -701,12 +708,18 @@ function validateArgs(args) {
     if (id && !withText && a[1] === "show" && n === 3 && json) return ""
     return "drift must be: drift link <eventId> <caseId> [--only] | explain <eventId> [--only] [--zone <z>]"
       + " [--risk <r>] [--area <a>] -- <text> | dismiss <eventId> [--only] -- <text> | show <eventId> --json"
+      + " | apply <proposalId> [--item <eventId>] --json | discard <proposalId> --json"
   case "agent":
     // WP-022: the engine reads the launcher from its config; nothing else.
     if (!withText && n === 3 && a[1] === "start" && CASE_ID.test(a[2]) && json) return ""
     // WP-101: one sentence creates, starts and hands a case to the agent
     if (withText && n === 3 && a[1] === "start" && a[2] === "--new" && json) return ""
+    // WP-124 (ADR-0036 §1): ids only; the engine builds the prompt
+    if (!withText && json && n === 3 && a[1] === "ask" && a[2] === "triage") return ""
+    if (!withText && json && n === 4 && a[1] === "ask"
+        && ((a[2] === "drift" && EVENT_ID.test(a[3])) || (a[2] === "case" && CASE_ID.test(a[3])))) return ""
     return "agent must be: agent start <caseId> --json | agent start --new --json -- <intent>"
+      + " | agent ask triage --json | agent ask drift <eventId> --json | agent ask case <caseId> --json"
   case "doctor":
     // WP-101: read-only, the rules row only (Service.checkRules); no probe
     return !withText && n === 3 && a[1] === "--only" && a[2] === "rules" && json
@@ -3873,6 +3886,294 @@ function eventActions(detail, opts) {
   }
   for (var i = 0; i < out.length; i++) out[i].primary = i === 0
   return out
+}
+
+// ---- Triage (WP-124b; ADR-0034 §6, ADR-0036) --------------------------------
+//
+// "Agent sorts N open changes" asks the default agent for a proposal
+// (`agent ask triage --json`); the agent stores it with `drift propose`
+// (never the plugin's call), the index points at it (`index.triage`), and
+// the desk shows it from the file next to the index (CONTRACT.md rule 1:
+// the files the index points to). Apply is bound to the id the user saw
+// (`drift apply <index.triage.id> --json`); a crisis has its own button,
+// one per run (`--item <eventId>`). Every text of the file is data:
+// shown as plain text, never evaluated (CONTRACT.md rule 6).
+
+var PROPOSAL_PATH = /^proposals\/[0-7][0-9A-HJKMNP-TV-Z]{25}\.json$/
+var AGENT_ACTOR = /^agent:[a-z0-9-]+$/
+var EVIDENCE_KINDS = ["journal", "event", "snapshot", "case", "plan"]
+var EVIDENCE_KIND_LABELS = { journal: "Journal", event: "Event", snapshot: "Snapshot", "case": "Case", plan: "Plan of" }
+var TRIAGE_ITEMS_MAX = 200
+var TRIAGE_REFS_MAX = 10
+
+// The open changes the button names (attention + crises, a group once),
+// and whether it shows: something open and an engine that can run.
+function triageButton(index, canWrite) {
+  var c = counts(index)
+  var n = c ? c.drift : 0
+  return { visible: canWrite === true && n > 0, count: n, text: "Agent sorts " + plural(n, "open change", "open changes") }
+}
+
+// Where the proposal index.triage names lies: `path` is relative to the
+// directory of index.json (ADR-0035 §6), exactly `proposals/<id>.json`.
+// "" when the index names none, or names it in any other form.
+function triagePath(indexPath, index) {
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (!t || typeof t.id !== "string" || !PROPOSAL_ID.test(t.id) || t.path !== "proposals/" + t.id + ".json"
+      || !PROPOSAL_PATH.test(t.path)) return ""
+  var p = String(indexPath || "")
+  var cut = p.lastIndexOf("/")
+  return cut < 0 ? "" : p.slice(0, cut + 1) + t.path
+}
+
+// The proposal file as the desk needs it, checked against
+// proposal.schema.json: only its properties, `logbook` present, `at` and
+// `applied` date-times, the length limits, a link without title or intent
+// and an explanation without a case. null when it is not the proposal
+// `triage` names, larger than the engine reads (4 MiB), or off in any part
+// — the engine wrote it, so a deviation is an edit the desk does not show.
+var PROPOSAL_TEXT_MAX = 4 * 1024 * 1024
+var DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
+
+function onlyKeys(obj, keys) {
+  for (var k in obj) if (keys.indexOf(k) === -1) return false
+  return true
+}
+
+// A string of `min`..`max` characters counted as the engine and JSON
+// Schema count them: code points, not UTF-16 units (an emoji is one).
+function textUpTo(value, max, min) {
+  if (typeof value !== "string") return false
+  var n = Array.from(value).length
+  return n >= (min || 0) && n <= max
+}
+
+function parseProposal(text, triage) {
+  if (!isObject(triage)) return null
+  var raw = String(text || "")
+  if (raw.length > PROPOSAL_TEXT_MAX) return null
+  var data = parseJson(raw)
+  if (!data || !onlyKeys(data, ["id", "at", "actor", "logbook", "applied", "items"])) return null
+  if (data.id !== triage.id || typeof data.actor !== "string" || !AGENT_ACTOR.test(data.actor)
+      || !textUpTo(data.logbook, 4096, 1) || typeof data.at !== "string" || !DATE_TIME.test(data.at)
+      || !(data.applied === null || (typeof data.applied === "string" && DATE_TIME.test(data.applied)))
+      || !Array.isArray(data.items) || data.items.length > TRIAGE_ITEMS_MAX) return null
+  var items = []
+  for (var i = 0; i < data.items.length; i++) {
+    var it = data.items[i]
+    if (!isObject(it) || !onlyKeys(it, ["eventId", "action", "caseId", "title", "intent", "crisis", "evidence"])
+        || typeof it.eventId !== "string" || !EVENT_ID.test(it.eventId)
+        || (it.action !== "link" && it.action !== "explain") || typeof it.crisis !== "boolean"
+        || !Array.isArray(it.evidence) || it.evidence.length < 1 || it.evidence.length > TRIAGE_REFS_MAX) return null
+    if (it.action === "link" && (typeof it.caseId !== "string" || !CASE_ID.test(it.caseId)
+        || it.title !== undefined || it.intent !== undefined)) return null
+    if (it.action === "explain" && (it.caseId !== undefined || !textUpTo(it.title, 256, 1)
+        || !textUpTo(it.intent, 4096, 1))) return null
+    var evidence = []
+    for (var j = 0; j < it.evidence.length; j++) {
+      var e = it.evidence[j]
+      if (!isObject(e) || !onlyKeys(e, ["kind", "ref", "text"]) || EVIDENCE_KINDS.indexOf(e.kind) === -1
+          || !textUpTo(e.ref, 64, 1) || (e.text !== undefined && !textUpTo(e.text, 256))) return null
+      evidence.push({ kind: e.kind, ref: e.ref, text: typeof e.text === "string" ? e.text : "" })
+    }
+    items.push({
+      eventId: it.eventId,
+      action: it.action,
+      caseId: it.action === "link" ? it.caseId : "",
+      title: it.action === "explain" ? it.title : "",
+      intent: it.action === "explain" ? it.intent : "",
+      crisis: it.crisis,
+      evidence: evidence
+    })
+  }
+  return { id: data.id, at: data.at, actor: data.actor, applied: data.applied === null ? "" : data.applied, items: items }
+}
+
+// The proposal the user opened (`seenId`, WP-124b round 2) against the
+// one the index names now: { state: none|current|replaced|gone, text }.
+// Apply and Discard act only on the current one: a replaced or gone
+// proposal is never applied unseen.
+function triageSeen(index, seenId) {
+  var id = String(seenId || "")
+  if (id === "") return { state: "none", text: "" }
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (t && t.id === id) return { state: "current", text: "" }
+  if (t && typeof t.id === "string")
+    return { state: "replaced", text: "Replaced by a newer proposal by " + str(t.actor) + " at " + stamp(t.at) + " — review it" }
+  return { state: "gone", text: "Proposal " + id + " is not there any more: applied and replaced, or discarded." }
+}
+
+// The author the engine wrote in front of an evidence text (`by <author> ·
+// …`, ADR-0036 §2); "" when there is none.
+function evidenceAuthor(text) {
+  var m = /^by (.+?) · /.exec(String(text || ""))
+  return m ? m[1] : ""
+}
+
+// Evidence the user should read twice: any author is an agent or unknown
+// (the engine names every author, WP-124b round 2), a Plan an agent worked
+// on, or a text without its authors.
+function evidenceFlagged(author) {
+  return author === "" || author.indexOf("agent:") !== -1 || /(^|, )unknown(,|$| )/.test(author)
+}
+
+// What the last apply did with an item: { state: done|skipped|refused,
+// reason } or null (not in that run).
+function itemOutcome(result, eventId) {
+  if (!isObject(result)) return null
+  var lists = [["done", result.done], ["skipped", result.skipped], ["refused", result.refused]]
+  for (var i = 0; i < lists.length; i++) {
+    var list = Array.isArray(lists[i][1]) ? lists[i][1] : []
+    for (var j = 0; j < list.length; j++)
+      if (isObject(list[j]) && list[j].eventId === eventId)
+        return { state: lists[i][0], reason: typeof list[j].reason === "string" ? list[j].reason
+          : typeof list[j].warning === "string" ? list[j].warning : "" }
+  }
+  return null
+}
+
+// The proposal as the detail shows it: the sticky bar's line (Fable's
+// wording: "N items proposed by <actor> at <at>, C crises held back —
+// apply each below"), the state line, the items Apply takes and the
+// crises, each with its subject (index.events), its action, every evidence
+// text with its author first, a mark when any evidence needs a second
+// look, whether it is still open, and the last apply's outcome. `result`:
+// Service.triageResult of this proposal. null without index.triage.
+function triageView(index, proposal, prepared, result) {
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (!t || typeof t.id !== "string") return null
+  var n = isObject(t.counts) ? count(t.counts.items) : 0
+  var c = isObject(t.counts) ? count(t.counts.crises) : 0
+  var actor = typeof t.actor === "string" ? t.actor : ""
+  var at = stamp(t.at)
+  var view = {
+    id: t.id,
+    actor: actor,
+    at: at,
+    applied: typeof t.applied === "string" ? stamp(t.applied) : "",
+    readable: !!proposal,
+    head: plural(n, "item", "items") + " proposed by " + actor + " at " + at + ", "
+      + plural(c, "crisis", "crises") + " held back — apply each below",
+    state: typeof t.applied === "string"
+      ? "Applied " + stamp(t.applied) + ". That marks the run, not every item: what is still open shows below."
+      : actor + " · proposal, nothing written yet",
+    items: [],
+    regular: [],
+    crises: [],
+    applyCount: 0
+  }
+  if (!proposal) return view
+  var mine = isObject(result) && result.proposalId === t.id ? result : null
+  for (var i = 0; i < proposal.items.length; i++) {
+    var it = proposal.items[i]
+    var row = changelogRow(prepared, it.eventId)
+    var e = row ? null : findEvent(index, it.eventId)
+    var subject = row ? row.subject : e && typeof e.subject === "string" ? e.subject : it.eventId
+    var crisis = it.crisis || (!!row && row.cls === "crisis")
+    var evidence = it.evidence.map(function(ev) {
+      var author = evidenceAuthor(ev.text)
+      return {
+        label: EVIDENCE_KIND_LABELS[ev.kind] + " " + ev.ref,
+        text: ev.text !== "" ? ev.text : "(the engine wrote no text for this ref)",
+        author: author,
+        flagged: evidenceFlagged(author)
+      }
+    })
+    var item = {
+      eventId: it.eventId,
+      subject: subject,
+      kind: row ? row.source + " · " + row.kind : "",
+      action: it.action,
+      actionText: it.action === "link" ? "Link to " + it.caseId : "Explain: " + it.title,
+      intent: it.intent,
+      crisis: crisis,
+      open: !!row && row.drift === true,
+      evidence: evidence,
+      flagged: evidence.some(function(ev) { return ev.flagged }),
+      outcome: mine ? itemOutcome(mine, it.eventId) : null
+    }
+    view.items.push(item)
+    if (crisis) view.crises.push(item)
+    else {
+      view.regular.push(item)
+      if (item.open) view.applyCount++
+    }
+  }
+  return view
+}
+
+// `seldon agent ask triage|drift <eventId>|case <caseId> --json` (ADR-0036
+// §1): ids only. { args } or { error }.
+function askArgs(what, id) {
+  var target = String(id || "")
+  if (what === "triage") return { args: ["agent", "ask", "triage", "--json"] }
+  if (what === "drift" && EVENT_ID.test(target)) return { args: ["agent", "ask", "drift", target, "--json"] }
+  if (what === "case" && CASE_ID.test(target)) return { args: ["agent", "ask", "case", target, "--json"] }
+  return { error: "Not something an agent can be asked about: " + what + " " + target }
+}
+
+// `seldon drift apply <proposalId> [--item <eventId>] --json`: one --item
+// at most (a crisis one per run, ADR-0036 §3).
+function applyArgs(proposalId, eventId) {
+  var id = String(proposalId || "")
+  if (!PROPOSAL_ID.test(id)) return { error: "Not a proposal id: " + id }
+  if (eventId === undefined || eventId === null || eventId === "") return { args: ["drift", "apply", id, "--json"] }
+  var item = String(eventId)
+  if (!EVENT_ID.test(item)) return { error: "Not an event id: " + item }
+  return { args: ["drift", "apply", id, "--item", item, "--json"] }
+}
+
+function discardArgs(proposalId) {
+  var id = String(proposalId || "")
+  if (!PROPOSAL_ID.test(id)) return { error: "Not a proposal id: " + id }
+  return { args: ["drift", "discard", id, "--json"] }
+}
+
+// `agent ask --json` → { launched, ask, target, open, launcher, program, … }.
+function askResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
+  var data = parseJson(stdoutText) || {}
+  var launcher = typeof data.launcher === "string" ? data.launcher : ""
+  var program = typeof data.program === "string" ? data.program : ""
+  var via = launcher === "" ? program : program === "" || program === launcher ? launcher : launcher + " (" + program + ")"
+  var target = typeof data.target === "string" ? data.target : ""
+  var head = data.ask === "triage"
+    ? "Agent started to sort " + plural(count(data.open), "open change", "open changes") + "; its proposal shows here"
+    : "Agent asked about " + (target !== "" ? target : "it") + "; it answers in its window"
+  return { ok: true, text: head + (via !== "" ? " · launcher " + via : "") }
+}
+
+// `drift apply --json` → { proposal, applied, markedApplied, done, skipped,
+// refused, git } (SPEC-ENGINE §3). `gone`: the proposal is not there any
+// more (exit 1 "no proposal …"): refresh, never retry.
+function applyResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) {
+    var text = engineError(stdoutText, stderrText, exitCode)
+    return { ok: false, text: text, gone: exitCode === 1 && /^no proposal /.test(text), done: [], skipped: [], refused: [] }
+  }
+  var data = parseJson(stdoutText) || {}
+  var list = function(v) { return Array.isArray(v) ? v.filter(isObject) : [] }
+  var done = list(data.done)
+  var skipped = list(data.skipped)
+  var refused = list(data.refused)
+  return {
+    ok: true,
+    gone: false,
+    text: "Applied " + done.length + " · skipped " + skipped.length + " · refused " + refused.length,
+    applied: typeof data.applied === "string" ? data.applied : "",
+    markedApplied: data.markedApplied === true,
+    done: done,
+    skipped: skipped,
+    refused: refused
+  }
+}
+
+function discardResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) {
+    var text = engineError(stdoutText, stderrText, exitCode)
+    return { ok: false, text: text, gone: exitCode === 1 && /^no proposal /.test(text) }
+  }
+  return { ok: true, gone: false, text: "Proposal discarded; nothing in the logbook changed" }
 }
 
 // ---- Today

@@ -2930,4 +2930,226 @@ test("graphShape: disc, square, spindle; legend kinds", () => {
   assert.ok(M.graphMinRadius("area") > M.graphMinRadius("change"))
 })
 
+// ---- Triage (WP-124b, ADR-0036)
+
+const proposalFile = fs.readFileSync(path.join(root, "fixtures/proposals/01M3VZS4J0NDXZFC2F7RBBD3FJ.json"), "utf8")
+const PID = "01M3VZS4J0NDXZFC2F7RBBD3FJ"
+
+test("triage argv: ids only, one --item, never propose (ADR-0036)", () => {
+  const good = [
+    ["agent", "ask", "triage", "--json"],
+    ["agent", "ask", "drift", UNIT, "--json"],
+    ["agent", "ask", "case", "C-2026-004", "--json"],
+    ["drift", "apply", PID, "--json"],
+    ["drift", "apply", PID, "--item", UNIT, "--json"],
+    ["drift", "discard", PID, "--json"],
+  ]
+  for (const a of good) assert.strictEqual(M.validateArgs(a), "", JSON.stringify(a))
+  const bad = [
+    ["agent", "ask", "triage"],
+    ["agent", "ask", "triage", "--json", "--", "sort them"],
+    ["agent", "ask", "drift", "C-2026-004", "--json"],
+    ["agent", "ask", "case", UNIT, "--json"],
+    ["agent", "ask", "everything", "--json"],
+    ["agent", "ask", "drift", UNIT, "--launcher", "x", "--json"],
+    ["drift", "propose", "--json"],
+    ["drift", "propose", "--file", "/tmp/x", "--json"],
+    ["drift", "apply", PID],
+    ["drift", "apply", "../x", "--json"],
+    ["drift", "apply", PID, "--item", UNIT, "--item", THEME, "--json"],
+    ["drift", "apply", PID, "--item", "C-2026-004", "--json"],
+    ["drift", "apply", PID, "--actor", "human", "--json"],
+    ["drift", "discard", PID, "--item", UNIT, "--json"],
+  ]
+  for (const a of bad) assert.notStrictEqual(M.validateArgs(a), "", JSON.stringify(a))
+  same(M.askArgs("triage").args, ["agent", "ask", "triage", "--json"])
+  same(M.askArgs("drift", UNIT).args, ["agent", "ask", "drift", UNIT, "--json"])
+  same(M.askArgs("case", "C-2026-004").args, ["agent", "ask", "case", "C-2026-004", "--json"])
+  assert.ok(M.askArgs("drift", "x; rm -rf ~").error)
+  same(M.applyArgs(PID).args, ["drift", "apply", PID, "--json"])
+  same(M.applyArgs(PID, UNIT).args, ["drift", "apply", PID, "--item", UNIT, "--json"])
+  assert.ok(M.applyArgs("x").error && M.applyArgs(PID, "x").error && M.discardArgs("").error)
+  for (const built of [M.askArgs("triage"), M.applyArgs(PID, UNIT), M.discardArgs(PID)])
+    assert.strictEqual(M.validateArgs(built.args), "")
+})
+
+test("triage button: open changes and an engine that can write", () => {
+  const ix = M.parseIndex(sample).index
+  same(M.triageButton(ix, true), { visible: true, count: 6, text: "Agent sorts 6 open changes" })
+  assert.strictEqual(M.triageButton(ix, false).visible, false)
+  const none = JSON.parse(sample)
+  none.summary.openDrift = 0
+  none.summary.crisis = 0
+  assert.strictEqual(M.triageButton(none, true).visible, false)
+  assert.strictEqual(M.triageButton(null, true).visible, false)
+})
+
+test("triagePath: next to the index, only proposals/<id>.json", () => {
+  const ix = M.parseIndex(sample).index
+  assert.strictEqual(M.triagePath("/home/u/.local/state/seldon/index.json", ix),
+    "/home/u/.local/state/seldon/proposals/" + PID + ".json")
+  for (const p of ["../proposals/" + PID + ".json", "/etc/passwd", "proposals/" + PID + ".json/..",
+      "proposals/01M3VZS4J0NDXZFC2F7RBBD3FK.json", "proposals/x.json"]) {
+    const t = Object.assign({}, ix.triage, { path: p })
+    assert.strictEqual(M.triagePath("/s/index.json", Object.assign({}, ix, { triage: t })), "", p)
+  }
+  assert.strictEqual(M.triagePath("/s/index.json", Object.assign({}, ix, { triage: undefined })), "")
+})
+
+test("parseProposal: the file the index names, checked like its schema", () => {
+  const ix = M.parseIndex(sample).index
+  const p = M.parseProposal(proposalFile, ix.triage)
+  assert.strictEqual(p.id, PID)
+  assert.strictEqual(p.items.length, 3)
+  assert.strictEqual(p.items[0].evidence[0].text.indexOf("by human · "), 0)
+  const bad = (change) => {
+    const d = JSON.parse(proposalFile)
+    change(d)
+    return M.parseProposal(JSON.stringify(d), ix.triage)
+  }
+  assert.strictEqual(bad((d) => { d.id = "01M3VZS4J0NDXZFC2F7RBBD3FK" }), null)
+  assert.strictEqual(bad((d) => { d.actor = "human" }), null)
+  assert.strictEqual(bad((d) => { d.items[0].eventId = "x" }), null)
+  assert.strictEqual(bad((d) => { d.items[0].caseId = "../x" }), null)
+  assert.strictEqual(bad((d) => { d.items[1].intent = "" }), null)
+  assert.strictEqual(bad((d) => { d.items[0].crisis = "no" }), null)
+  assert.strictEqual(bad((d) => { d.items[0].evidence = [] }), null)
+  assert.strictEqual(bad((d) => { d.items[0].evidence[0].kind = "diary" }), null)
+  assert.strictEqual(M.parseProposal("not json", ix.triage), null)
+  assert.strictEqual(M.parseProposal(proposalFile, null), null)
+})
+
+test("triageView: the bar's line, authors first, flags, crises apart, applied ≠ done", () => {
+  const ix = M.parseIndex(sample).index
+  const prepared = M.deskChangelog(ix)
+  const v = M.triageView(ix, M.parseProposal(proposalFile, ix.triage), prepared, null)
+  assert.strictEqual(v.head, "3 items proposed by agent:claude-code at 2026-10-01 17:02, 1 crisis held back — apply each below")
+  assert.strictEqual(v.state, "agent:claude-code · proposal, nothing written yet")
+  same(v.regular.map((i) => i.eventId), [THEME, "01M3KVWFR06078ZQTPRZCFYHK0"])
+  same(v.crises.map((i) => i.eventId), [UNIT])
+  assert.strictEqual(v.applyCount, 2)
+  const theme = v.regular[0]
+  assert.strictEqual(theme.subject, "tokyo-night")
+  assert.strictEqual(theme.actionText, "Link to C-2026-005")
+  same(theme.evidence.map((e) => e.label), ["Plan of C-2026-005", "Journal 2026-10-01 17:00"])
+  same(theme.evidence.map((e) => e.author), ["human", "human"])
+  assert.strictEqual(theme.flagged, false)
+  assert.strictEqual(v.regular[1].evidence[0].author, "system")
+  assert.strictEqual(v.crises[0].actionText, "Explain: Ollama-User-Service von Codex")
+  // an agent's or an unknown author's evidence is marked
+  for (const t of ["by agent:codex · x", "by unknown · x", "by human (worked by agent:claude-code) · x", "no author"])
+    assert.strictEqual(M.evidenceFlagged(M.evidenceAuthor(t)), true, t)
+  assert.strictEqual(M.evidenceFlagged(M.evidenceAuthor("by human · x")), false)
+  // the engine's crisis counts too, whatever the file says
+  const p = M.parseProposal(proposalFile, ix.triage)
+  p.items[2].crisis = false
+  same(M.triageView(ix, p, prepared, null).crises.map((i) => i.eventId), [UNIT])
+  // applied marks the run, not the items
+  const applied = Object.assign({}, ix, { triage: Object.assign({}, ix.triage, { applied: "2026-10-01T17:10:00+02:00" }) })
+  const a = M.triageView(applied, M.parseProposal(proposalFile, applied.triage), prepared, {
+    proposalId: PID, done: [{ eventId: THEME }], skipped: [{ eventId: UNIT, reason: "crisis: …" }], refused: []
+  })
+  assert.strictEqual(a.state, "Applied 2026-10-01 17:10. That marks the run, not every item: what is still open shows below.")
+  same(a.regular[0].outcome, { state: "done", reason: "" })
+  same(a.crises[0].outcome, { state: "skipped", reason: "crisis: …" })
+  assert.strictEqual(a.regular[1].outcome, null)
+  // an unreadable file: the line, no items
+  const u = M.triageView(ix, null, prepared, null)
+  assert.strictEqual(u.readable, false)
+  assert.strictEqual(u.items.length, 0)
+  assert.strictEqual(M.triageView(Object.assign({}, ix, { triage: undefined }), null, prepared, null), null)
+})
+
+test("triage results: ask, apply (done/skipped/refused, gone), discard", () => {
+  const ask = M.askResult(0, JSON.stringify({ launched: true, ask: "triage", target: null, open: 6, launcher: "default", program: "omarchy" }), "")
+  assert.strictEqual(ask.text, "Agent started to sort 6 open changes; its proposal shows here · launcher default (omarchy)")
+  assert.strictEqual(M.askResult(0, JSON.stringify({ ask: "case", target: "C-2026-004", launcher: "claude" }), "").text,
+    "Agent asked about C-2026-004; it answers in its window · launcher claude")
+  const refusal = M.askResult(1, JSON.stringify({ error: { code: 1, message: "no default agent: …" } }), "")
+  same([refusal.ok, refusal.text], [false, "no default agent: …"])
+  const r = M.applyResult(0, JSON.stringify({ proposal: PID, applied: "x", markedApplied: true,
+    done: [{ eventId: THEME }], skipped: [{ eventId: UNIT, reason: "crisis" }], refused: [] }), "")
+  same([r.ok, r.text, r.markedApplied, r.gone], [true, "Applied 1 · skipped 1 · refused 0", true, false])
+  const gone = M.applyResult(1, JSON.stringify({ error: { code: 1, message: "no proposal " + PID } }), "")
+  same([gone.ok, gone.gone], [false, true])
+  assert.strictEqual(M.applyResult(1, JSON.stringify({ error: { code: 1, message: "--item names 2 crises" } }), "").gone, false)
+  same([M.discardResult(0, "{}", "").ok, M.discardResult(1, JSON.stringify({ error: { message: "no proposal x" } }), "").gone], [true, true])
+})
+
+test("parseProposal follows proposal.schema.json (WP-124b round 2, R1)", () => {
+  const ix = M.parseIndex(sample).index
+  const bad = (change) => {
+    const d = JSON.parse(proposalFile)
+    change(d)
+    return M.parseProposal(JSON.stringify(d), ix.triage)
+  }
+  for (const [why, change] of [
+    ["unknown top key", (d) => { d.note = "x" }],
+    ["unknown item key", (d) => { d.items[0].note = "x" }],
+    ["unknown evidence key", (d) => { d.items[0].evidence[0].by = "human" }],
+    ["no logbook", (d) => { delete d.logbook }],
+    ["empty logbook", (d) => { d.logbook = "" }],
+    ["at not a date-time", (d) => { d.at = "yesterday" }],
+    ["applied not a date-time", (d) => { d.applied = "soon" }],
+    ["applied missing", (d) => { delete d.applied }],
+    ["title too long", (d) => { d.items[1].title = "x".repeat(257) }],
+    ["intent too long", (d) => { d.items[1].intent = "x".repeat(4097) }],
+    ["text too long", (d) => { d.items[0].evidence[0].text = "x".repeat(257) }],
+    ["ref too long", (d) => { d.items[0].evidence[0].ref = "x".repeat(65) }],
+    ["link with a title", (d) => { d.items[0].title = "t" }],
+    ["link with an intent", (d) => { d.items[0].intent = "i" }],
+    ["explain with a case", (d) => { d.items[1].caseId = "C-2026-005" }],
+    ["too many refs", (d) => { d.items[0].evidence = Array(11).fill(d.items[0].evidence[0]) }],
+    ["too many items", (d) => { d.items = Array(201).fill(d.items[0]) }],
+  ]) assert.strictEqual(bad(change), null, why)
+  assert.ok(bad((d) => { d.applied = "2026-10-01T17:10:00+02:00" }))
+  assert.ok(bad((d) => { d.items[0].evidence[0].text = "x".repeat(256) }))
+  // lengths count code points, as the engine and JSON Schema do: one astral
+  // character (two UTF-16 units) in a 256-character text still parses
+  const astral = "by human · " + "\u{1F600}" + "x".repeat(256 - 12)
+  assert.strictEqual(Array.from(astral).length, 256)
+  assert.strictEqual(astral.length, 257)
+  assert.ok(bad((d) => { d.items[0].evidence[0].text = astral }), "256 code points with one emoji")
+  assert.strictEqual(bad((d) => { d.items[0].evidence[0].text = astral + "x" }), null, "257 code points")
+  // larger than the engine reads: not even parsed
+  assert.strictEqual(M.parseProposal(proposalFile + " ".repeat(4 * 1024 * 1024), ix.triage), null)
+})
+
+test("triageSeen: the proposal the user opened against the index's (B1)", () => {
+  const ix = M.parseIndex(sample).index
+  same(M.triageSeen(ix, ""), { state: "none", text: "" })
+  same(M.triageSeen(ix, PID), { state: "current", text: "" })
+  const newer = Object.assign({}, ix, { triage: Object.assign({}, ix.triage,
+    { id: "01M3W1000000000000000000AA", actor: "agent:codex", at: "2026-10-01T17:30:00+02:00" }) })
+  same(M.triageSeen(newer, PID), { state: "replaced",
+    text: "Replaced by a newer proposal by agent:codex at 2026-10-01 17:30 — review it" })
+  same(M.triageSeen(Object.assign({}, ix, { triage: undefined }), PID), { state: "gone",
+    text: "Proposal " + PID + " is not there any more: applied and replaced, or discarded." })
+})
+
+test("evidence authors: anchored, every author, refused outcomes", () => {
+  assert.strictEqual(M.evidenceAuthor("by human · x"), "human")
+  assert.strictEqual(M.evidenceAuthor("by human, agent:codex · x"), "human, agent:codex")
+  assert.strictEqual(M.evidenceAuthor("the note says by agent:codex · x"), "")
+  assert.strictEqual(M.evidenceAuthor(" by human · x"), "")
+  for (const a of ["human, agent:codex", "agent:codex, human", "human, unknown", "unknown",
+      "human (worked by agent:claude-code)", ""])
+    assert.strictEqual(M.evidenceFlagged(a), true, a)
+  for (const a of ["human", "system", "human, system", "unknownish"]) assert.strictEqual(M.evidenceFlagged(a), false, a)
+  const r = { done: [{ eventId: "A" }], skipped: [{ eventId: "B", reason: "s" }], refused: [{ eventId: "C", reason: "r" }] }
+  same(M.itemOutcome(r, "C"), { state: "refused", reason: "r" })
+  same(M.itemOutcome(r, "B"), { state: "skipped", reason: "s" })
+  assert.strictEqual(M.itemOutcome(r, "D"), null)
+})
+
+test("TriageDetail shows logbook and agent text as plain text, never clipped (R3)", () => {
+  const qml = fs.readFileSync(path.join(root, "plugin/components/desk/TriageDetail.qml"), "utf8")
+  assert.ok(!/StyledText|RichText|MarkdownText|AutoText/.test(qml), "only Text.PlainText")
+  assert.ok(!/\belide\s*:/.test(qml), "no elide anywhere: evidence is never clipped")
+  // every Text block (the Line component included) states PlainText
+  const blocks = qml.split(/\n\s*(?:component \w+: )?Text \{/).slice(1)
+  assert.ok(blocks.length >= 2, String(blocks.length))
+  for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))
