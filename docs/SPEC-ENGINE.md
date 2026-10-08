@@ -97,7 +97,7 @@ seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
 # `case-completed` and `case-dropped` carry none. Lines written before contract
 # 2 are never rewritten. `seldon event` refuses the kinds `case-*`,
 # `state-loss` and `resolution`/`correction` (engine-only) and the `--meta`
-# keys `txId`, `risk` (engine-only) and `truncated` (index-only).
+# keys `txId`, `risk`, `txStatus` (engine-only) and `truncated` (index-only).
 seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A] [--no-capture]
 # ADR-0029 §2 (WP-115): `plan verify` and `plan done` run a default `seldon
 # capture` first — a complete capture under its own lock hold (waiting for a
@@ -1183,7 +1183,14 @@ git itself is killed, with the same bounded pipe wait. Rules:
   completed`, the next `transaction started`, or when
   `/var/lib/pacman/db.lck` is absent at capture time; until then the
   cursor stays at the transaction's `[PACMAN] Running` line, else
-  `transaction started` (ADR-0013 §5). `meta.command` is parsed as argv,
+  `transaction started` (ADR-0013 §5). **Status** (ADR-0043): a
+  transaction that ends with `transaction failed` or `transaction
+  interrupted` writes that word as `meta.txStatus` on each of its package
+  events; one closed by the next `transaction started`, or still open at
+  the end of the log while `db.lck` is absent, writes `unfinished`; a
+  completed one writes none, nor does a package line outside any
+  transaction. Lines written before ADR-0043 have none (append-only); the
+  index keeps the key only on pacman events with a `txId`. `meta.command` is parsed as argv,
   never matched as a substring; the parser (`command_intent`,
   `parse_command`, `is_plain_full_upgrade`) is shared with the hook (§8)
   and the drift routine rule (§5): the intent of a hook `command` event is
