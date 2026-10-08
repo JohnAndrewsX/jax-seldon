@@ -94,9 +94,14 @@ dev agents in parallel on independent WPs.
   install of the plugin), no systemd changes. Collectors only *read*
   `/var/log/pacman.log`, snapper, `omarchy` CLI output, and (hashes only,
   operator decision 2026-10-06, WP-114) `/etc/pacman.conf` and
-  `/etc/pacman.d/*.conf`, and (hashes only, operator decision
-  2026-10-07, WP-131) `/etc/cups/printers.conf`, `/etc/cups/classes.conf`,
-  `/etc/cups/ppd/*` and `~/.cups/lpoptions`.
+  `/etc/pacman.d/*.conf`, and (metadata only, operator
+  decision 2026-10-08, E27) the systemd journal: the user's own
+  systemd-coredump entries (`COREDUMP_*` fields, never the core itself)
+  and boot errors and failed units as summaries.
+- **Test harnesses never write into the user's live session:** every
+  process a test starts gets its own `HOME` and its own private
+  `XDG_RUNTIME_DIR` (0700, removed afterwards), never the real
+  `/run/user/$UID` (incident 2026-10-08, WP-161).
 
 ## 7. Engineering rules
 
