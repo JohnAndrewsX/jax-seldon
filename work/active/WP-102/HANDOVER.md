@@ -680,3 +680,26 @@ JUST_TEMPDIR=<scratch> just check` gave **exit 0, `check: ok`**.
 - Log: `engine/target/check-wp102b-final.log`.
 - `/tmp/r102` was deleted afterwards by its path. The earlier
   `/tmp/wp102-xdg` was already gone after the reboot.
+
+## Merge of next (102b, before the merge into next)
+
+I merged `next` (35b1b3d) into the branch as its own commit, 6baed09.
+- One conflict, in `docs/TESTING.md`, two table rows. I kept both sides'
+  content: the `import_task.rs` row from this branch (its round-2
+  sentence) and the `collectors_user.rs` row from `next` (its WP-154
+  sentence).
+- `CHANGELOG.md`, `docs/SPEC-ENGINE.md` and `engine/src/commands/plan.rs`
+  merged automatically. `next` lost no CHANGELOG line, and there was no
+  DECISIONS.md conflict (ADR-0044 is the only 004x row on the branch).
+
+**Check:** `flock /tmp/seldon-check.lock env XDG_RUNTIME_DIR=/tmp/r102m
+JUST_TEMPDIR=<scratch> just check` on 6baed09 gave **exit 0, `check: ok`**.
+- Results: validate-fixtures 133, docs-check 467 links, plugin-validate,
+  qmllint (48 files), model.test.js 168, service-states 342/0, desk-view
+  1632/0, bar-view 194/0, and the whole engine suite.
+- Log: `engine/target/check-wp102b-merged.log`.
+- `df -h /run/user/1000` read 1 % (1.3 MB) before and 2 % (49 MB) after.
+  My run left its 189 quickshell instance folders in `/tmp/r102m`, which
+  is now deleted by its path. The folders in `/run/user/1000` came from
+  another harness run (`/tmp/tmp.*` configs, 08:10–10:28) and were not
+  touched.
