@@ -385,7 +385,7 @@ shares; the field keeps its text until the engine has made the case). A
 selected crisis shows the event (`EventDetail.qml`, as in the Changelog);
 resolved here, it leaves NEEDS YOU and stays shown with the engine's answer.
 
-Before the logbook exists (status `notInitialised`, WP-138, ADR-0045) the
+Before the logbook exists (status `notInitialised`, WP-138, ADR-0047) the
 list shows what the machine remembers on its own, from `seldon preview
 --json` (read-only, its own process beside the queue; asked when the
 status becomes `notInitialised`, when the engine probe answers, and when

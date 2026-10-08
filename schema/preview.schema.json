@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/preview.schema.json",
   "title": "Seldon preview",
-  "description": "The output of `seldon preview --json` (WP-138, ADR-0045): before the logbook exists, the last days' pacman transactions and the files edited under ~/.config, read from the machine without memory (no who, no why). Read-only; the plugin runs the command with a fixed argv while the logbook is not initialised and shows this. Every name and path is user content: shown escaped, never evaluated, never an argument of a command.",
+  "description": "The output of `seldon preview --json` (WP-138, ADR-0047): before the logbook exists, the last days' pacman transactions and the files edited under ~/.config, read from the machine without memory (no who, no why). Read-only; the plugin runs the command with a fixed argv while the logbook is not initialised and shows this. Every name and path is user content: shown escaped, never evaluated, never an argument of a command.",
   "type": "object",
   "required": ["contractVersion", "generatedAt", "since", "days", "pacman", "files", "truncated", "elapsedMs"],
   "additionalProperties": false,

@@ -1,4 +1,4 @@
-# ADR-0045 — Before the logbook exists, the desk shows what the machine remembers on its own (`seldon preview --json`): one plugin-command row and its output schema
+# ADR-0047 — Before the logbook exists, the desk shows what the machine remembers on its own (`seldon preview --json`): one plugin-command row and its output schema
 
 **Status:** proposed (WP-138; the orchestrator or the operator accepts)
 **Date:** 2026-10-08

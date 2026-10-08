@@ -1,4 +1,4 @@
-//! `seldon preview` (WP-138, ADR-0045): before the logbook exists, what
+//! `seldon preview` (WP-138, ADR-0047): before the logbook exists, what
 //! the machine already remembers on its own — the last days' pacman
 //! transactions and the files recently edited under `~/.config`.
 //!

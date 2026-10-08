@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
-- **`seldon preview` (WP-138, ADR-0045).** Before you set up Seldon:
+- **`seldon preview` (WP-138, ADR-0047).** Before you set up Seldon:
   what your machine remembers of the last 7 days on its own — pacman's
   transactions and the files edited under `~/.config`, by modification
   time only (no content; caches, browser profiles, databases, logs and

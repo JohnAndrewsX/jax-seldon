@@ -1,4 +1,4 @@
-//! `seldon preview` (WP-138, ADR-0045): read-only, no logbook, nothing
+//! `seldon preview` (WP-138, ADR-0047): read-only, no logbook, nothing
 //! written; its JSON follows `schema/preview.schema.json`, and
 //! `fixtures/preview.sample.json` is what it prints for the fixture home
 //! below (`SELDON_WRITE_PREVIEW_SAMPLE=1` rewrites the sample).

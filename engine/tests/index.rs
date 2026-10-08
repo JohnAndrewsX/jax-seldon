@@ -331,7 +331,7 @@ fn the_engine_checker_agrees_with_jsonschema() {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let schema = format!("{}.schema.json", name.split('.').next().unwrap());
         let x = json_file(&path);
-        // `seldon preview`'s output (ADR-0045) is no file the engine
+        // `seldon preview`'s output (ADR-0047) is no file the engine
         // checks: jsonschema alone (engine/tests/preview.rs)
         if schema == "preview.schema.json" {
             let text = std::fs::read_to_string(repo("schema/preview.schema.json")).unwrap();

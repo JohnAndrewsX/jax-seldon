@@ -657,7 +657,7 @@ function validateArgs(args) {
   var only = function(i) { return n === i + 1 && a[i] === "--only" }
   switch (a[0]) {
   case "preview":
-    // WP-138, ADR-0045: read-only, before the logbook exists; nothing else
+    // WP-138, ADR-0047: read-only, before the logbook exists; nothing else
     return n === 1 && json && !withText ? "" : "preview must be: preview --json"
   case "--version":
   case "status":
@@ -5918,7 +5918,7 @@ function withSession(detail, sessions) {
   return out
 }
 
-// ---- Before init: the preview (WP-138, ADR-0045) -------------------------
+// ---- Before init: the preview (WP-138, ADR-0047) -------------------------
 
 // `seldon preview --json`: read-only, its own process beside the queue (as
 // `doctor` and `agent sessions`), run while the logbook is not initialised:

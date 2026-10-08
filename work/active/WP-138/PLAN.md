@@ -28,7 +28,7 @@ from `next`, worktree `wt/WP-138`.
 The index does not change. New: one command the plugin may run
 (`seldon preview --json`) and the shape of its output,
 `schema/preview.schema.json`. ADR-0035 §6 does not cover a new schema
-file or a command row, so a short **ADR-0045** (proposed; the orchestrator
+file or a command row, so a short **ADR-0047** (proposed; the orchestrator
 or operator accepts) records both, following ADR-0044's precedent:
 `contractVersion` stays 2, the plugin reads the command's stdout like
 `plan show --json`, never a file.
@@ -107,7 +107,7 @@ or operator accepts) records both, following ADR-0044's precedent:
 
 SPEC-ENGINE §3 (the command), CONTRACT.md (the row and the output),
 SPEC-PLUGIN §5.4 (Today before init), docs/user CLI reference (en, de via
-`docs-check.sh --write`), CHANGELOG, DECISIONS.md (ADR-0045).
+`docs-check.sh --write`), CHANGELOG, DECISIONS.md (ADR-0047).
 
 ## Not in scope
 

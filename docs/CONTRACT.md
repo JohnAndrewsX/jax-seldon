@@ -4,7 +4,7 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
 `case.schema.json`), `schema/proposal.schema.json` for the file
 `index.triage` points at, and `schema/preview.schema.json` for the output
 of `seldon preview --json`, which the plugin reads before the logbook
-exists (ADR-0045). This file explains it; the schema decides.
+exists (ADR-0047). This file explains it; the schema decides.
 `contractVersion` is **2** since 0.2.0 (ADR-0035); 0.1.x spoke 1.
 
 ## Rules
@@ -158,7 +158,7 @@ seldon agent start --new --json -- <intent>     # WP-101: creates and starts a c
 seldon agent focus <caseId> --json              # WP-156, ADR-0041: Focus, in place of a second Hand to agent; brings the agent's window to the front
 seldon agent sessions --json                    # WP-156, ADR-0041: read-only, own process beside the queue; the cases whose agent window is open
 seldon plan reopen <caseId> --json              # WP-101: a completed case only; a new active case, nothing destroyed
-seldon preview --json                           # WP-138, ADR-0045: read-only, own process beside the queue, only while notInitialised, never in dev mode; output `preview.schema.json` (pacman transactions and files edited under ~/.config of the last 7 days, all user content)
+seldon preview --json                           # WP-138, ADR-0047: read-only, own process beside the queue, only while notInitialised, never in dev mode; output `preview.schema.json` (pacman transactions and files edited under ~/.config of the last 7 days, all user content)
 seldon plan show <caseId> --json                # WP-102b, ADR-0044: read-only; `intent` {text, lines, truncated, hidden}, the whole Intent the desk shows before an imported case's Start
 seldon import task --json [--dry-run] [--area <slug>] -- <path>   # WP-102b, ADR-0044: the path one argument after `--`, never interpolated; the dry run first, then the import
 seldon drift link <eventId> <caseId> [--only] --json

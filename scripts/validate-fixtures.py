@@ -48,7 +48,7 @@ ID = "https://github.com/JohnAndrewsX/jax-seldon/schema/"
 
 EVENT, CASE, INDEX = ID + "event.schema.json", ID + "case.schema.json", ID + "index.schema.json"
 PROPOSAL = ID + "proposal.schema.json"
-# ADR-0045 (WP-138): what `seldon preview --json` prints for the fixture home of engine/tests/preview.rs
+# ADR-0047 (WP-138): what `seldon preview --json` prints for the fixture home of engine/tests/preview.rs
 PREVIEW = ID + "preview.schema.json"
 # ADR-0035 §6: the triage proposals the sample's `triage` points at (the engine's state dir)
 PROPOSALS = os.path.join(FIX, "proposals")

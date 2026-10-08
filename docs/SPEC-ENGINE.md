@@ -658,7 +658,7 @@ seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--jso
 # `hyprctl` (not a Hyprland session) or a failed focus: it launches as before.
 # The terminal path is unchanged. `decide`'s editor follows the same rule.
 seldon preview [--days N] [--json]
-# WP-138, ADR-0045: before the logbook exists, what the machine remembers on
+# WP-138, ADR-0047: before the logbook exists, what the machine remembers on
 # its own. Read-only: no logbook needed (one that exists is not read), no lock,
 # nothing written (no state directory, no config); exit 0 for a finished
 # preview, 1 for --days outside 1–7 (default 7). pacman: the package lines of
