@@ -94,8 +94,8 @@ remote=""
 remote_env='set -uo pipefail
 export OMARCHY_PATH=/usr/share/omarchy
 export PATH="$OMARCHY_PATH/bin:$HOME/.local/bin:$PATH"
-export XDG_RUNTIME_DIR=/run/user/$(id -u) # live runtime dir: the test host's shell
-export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR" 2>/dev/null | grep -m 1 -E "^wayland-[0-9]+$" || echo wayland-1) # live runtime dir: the test host's shell
+export XDG_RUNTIME_DIR=/run/user/$(id -u) # live runtime dir: the shell on the test host
+export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR" 2>/dev/null | grep -m 1 -E "^wayland-[0-9]+$" || echo wayland-1) # live runtime dir: the shell on the test host
 cd "$HOME"'
 
 # rsh <script> — run a bash script on the test host. The script travels as
