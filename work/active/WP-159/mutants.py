@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """WP-159 manual mutants: each one undoes one piece of the WP in the
-engine (the invisible set, the shared helper, the redaction of the visible
-copy and the putting back of invisible characters, the places that drop
-them); the tests named for it must fail. Run from a copy of the tree: the
+engine (the invisible set, the shared helper, the two readings of the
+redaction (round 2), the putting back of the characters the first one
+leaves out, and the places that redact, then drop or mark them); the
+tests named for it must fail. Run from a copy of the tree: the
 script edits the checkout it lives in and puts each file back. Names given
 as arguments run only the mutants whose name contains one of them;
 `--check` only applies each mutant."""
@@ -24,6 +25,11 @@ def plain(a, b, count=1):
         assert src.count(a) == count, (a, src.count(a))
         return src.replace(a, b)
     return apply
+
+
+def both(first, second):
+    """Apply two mutations as one."""
+    return lambda src: second(first(src))
 
 
 def nth(a, b, n):
@@ -64,29 +70,46 @@ MUTANTS = [
     # 2. the helper
     ("helper: never drops", REDACT, plain("    if text.is_ascii() || !text.chars().any(is_invisible) {", "    if true {"), CORE),
     ("helper: drops nothing when the text is not ASCII", REDACT, plain("    if text.is_ascii() || !text.chars().any(is_invisible) {", "    if !text.is_ascii() || !text.chars().any(is_invisible) {"), CORE),
-    # 3. the redaction reads the visible copy
-    ("redact: reads the text as given", REDACT, plain("        let Cow::Owned(visible) = without_invisible(text) else {", "        let Cow::Owned(visible) = Cow::<str>::Borrowed(text) else {"), CORE + [REDACTION]),
-    ("matching_rules: reads the text as given", REDACT, nth("        let visible = without_invisible(text);\n", "        let visible = Cow::<str>::Borrowed(text);\n", 0), [LIB]),
-    ("matching_rules_by_line: reads the text as given", REDACT, nth("        let visible = without_invisible(text);\n", "        let visible = Cow::<str>::Borrowed(text);\n", 1), [LIB, cargo + ["--test", "import", "--", "--test-threads=4"]]),
-    # 4. the origin map
+    # 3. the first reading: the copy without invisible and control characters
+    ("redact: reads only the text as given", REDACT, plain("        let Cow::Owned(copy) = reading_copy(text) else {", "        let Cow::Owned(copy) = Cow::<str>::Borrowed(text) else {"), CORE + [REDACTION]),
+    ("copy: keeps control characters", REDACT, plain("    is_invisible(c) || (c.is_control() && !c.is_whitespace())", "    is_invisible(c)"), [LIB, LOG]),
+    ("copy: drops white-space controls too", REDACT, plain("    is_invisible(c) || (c.is_control() && !c.is_whitespace())", "    is_invisible(c) || c.is_control()"), [LIB]),
+    ("copy: ASCII text keeps its controls", REDACT, plain("        text.bytes().any(|b| hides_from_rules(char::from(b)))", "        false"), [LIB, LOG]),
+    ("matching_rules: only the text as given", REDACT, nth("        let copy = reading_copy(text);\n", "        let copy = Cow::<str>::Borrowed(text);\n", 0), [LIB]),
+    ("matching_rules_by_line: only the text as given", REDACT, nth("        let copy = reading_copy(text);\n", "        let copy = Cow::<str>::Borrowed(text);\n", 1), [LIB, cargo + ["--test", "import", "--", "--test-threads=4"]]),
+    # 4. the second reading: the text as given (round 2, B1)
+    ("redact: no second reading", REDACT, plain("        self.passes(&restored, keep_lines, None)\n", "        restored\n"), CORE + [REDACTION]),
+    ("matching_rules: no union", REDACT, nth("        if let Cow::Owned(_) = copy {\n", "        if false {\n", 0), [LIB]),
+    ("matching_rules_by_line: no union", REDACT, nth("        if let Cow::Owned(_) = copy {\n", "        if false {\n", 1), [LIB]),
+    # 5. the origin map
     ("map: a replacement adds no entries", REDACT, plain("                    map.resize(out.len(), NO_ORIGIN);\n", ""), CORE),
+    ("map: a replacement's entries point at the start", REDACT, plain("                    map.resize(out.len(), NO_ORIGIN);\n", "                    map.resize(out.len(), 0);\n"), [LIB]),
     ("map: a copy adds no entries", REDACT, plain("                map.extend_from_slice(&origin[from..to]);\n", ""), CORE),
     ("map: not handed back", REDACT, plain("            *origin = map;\n", ""), CORE),
     ("map: not carried through the rules", REDACT, plain("out = rule.replace_with(&out, keep_lines, origin.as_deref_mut());", "out = rule.replace_with(&out, keep_lines, None);"), CORE),
-    # 5. putting the runs back
+    # 6. putting the runs back
     ("restore: every run back, at a match's edge too", REDACT, plain("        if next == Some(from)\n", "        if from != NO_ORIGIN\n"), CORE),
     ("restore: no run back inside the text", REDACT, plain("        if next == Some(from)\n", "        if next == Some(from) && false\n"), CORE),
     ("restore: the start counts as a replacement", REDACT, plain("    let mut next = Some(0);\n", "    let mut next = None;\n"), CORE),
-    ("restore: no run back at the end", REDACT, plain("    if next == Some(visible)\n", "    if next == Some(visible) && false\n"), CORE),
+    ("restore: no run back at the end", REDACT, plain("    if next == Some(copied)\n", "    if next == Some(copied) && false\n"), CORE),
     ("restore: off by one after a character", REDACT, plain("        next = (last != NO_ORIGIN).then(|| last + 1);\n", "        next = (last != NO_ORIGIN).then_some(last);\n"), CORE),
-    ("restore: visible offsets count characters", REDACT, plain("            visible += c.len_utf8();\n", "            visible += 1;\n"), CORE),
-    # 6. the places that drop the set
+    ("restore: copy offsets count characters", REDACT, plain("            copied += c.len_utf8();\n", "            copied += 1;\n"), CORE),
+    ("restore: the walk skips the run it looks for", REDACT, plain("        while runs.next_if(|&(v, _)| v < at).is_some() {}\n", "        while runs.next_if(|&(v, _)| v <= at).is_some() {}\n"), CORE),
+    # 7. redact, then drop (round 2, B1b) and mark (B2)
+    ("helper: drops nothing after the redaction", REDACT, plain("        without_invisible(&self.redact(text)).into_owned()\n", "        self.redact(text)\n"), [LIB, HOOKS]),
     ("path: invisible characters allowed", IMPORT, plain("    c.is_control() || is_invisible(c) || matches!", "    c.is_control() || matches!"), [LIB, IMPORT_TASK]),
-    ("hook: keeps invisible characters", "engine/src/commands/hook.rs", plain("    let command = crate::redact::without_invisible(command);\n", "    let command = std::borrow::Cow::<str>::Borrowed(command);\n"), [HOOKS]),
-    ("closing summary: keeps invisible characters", "engine/src/commands/plan.rs", plain("    let tail: String = crate::redact::without_invisible(&tail)\n", "    let tail: String = std::borrow::Cow::<str>::Borrowed(tail.as_str())\n"), [LIB, PLAN]),
-    ("plugin subject: keeps invisible characters", "engine/src/collectors/plugins.rs", plain("    let clean: String = without_invisible(raw)\n", "    let clean: String = std::borrow::Cow::<str>::Borrowed(raw)\n"), [LIB]),
-    ("index text: keeps invisible characters", "engine/src/index/build.rs", plain("    let plain: String = without_invisible(text)\n", "    let plain: String = std::borrow::Cow::<str>::Borrowed(text)\n"), [INDEX]),
-    ("import task: keeps invisible characters", "engine/src/commands/import/task.rs", plain("    let text = crate::redact::without_invisible(&text).into_owned();\n", "    let text = text.clone();\n"), [IMPORT_TASK]),
+    ("hook: drops before the redaction", "engine/src/commands/hook.rs", plain(".redact_dropping_invisible(command),", ".redact_dropping_invisible(&crate::redact::without_invisible(command)),"), [HOOKS]),
+    ("hook: keeps invisible characters", "engine/src/commands/hook.rs", plain("    let command = match crate::redact::without_invisible(command) {", "    let command = match std::borrow::Cow::<str>::Borrowed(command) {"), [HOOKS]),
+    ("closing summary: drops before the redaction", "engine/src/commands/plan.rs", plain("        redactor.redact_dropping_invisible(&tail).trim(),", "        redactor\n            .redact_dropping_invisible(&crate::redact::without_invisible(&tail))\n            .trim(),"), [LIB, PLAN]),
+    ("closing summary: bidi controls as spaces", "engine/src/commands/plan.rs", plain("            if c.is_control() || matches!(c, '\\u{2028}' | '\\u{2029}') {", "            if c.is_control() || super::is_line_breaking(c) {"), [LIB]),
+    ("plugin subject: drops before the redaction", "engine/src/collectors/plugins.rs", plain("    let redacted = redactor.redact_dropping_invisible(&clean);", "    let redacted = redactor.redact_dropping_invisible(&crate::redact::without_invisible(&clean));"), [LIB]),
+    ("index text: drops before the redaction", "engine/src/index/build.rs", plain("    redactor.redact_dropping_invisible(&spaced(text))", "    redactor.redact_dropping_invisible(&crate::redact::without_invisible(&spaced(text)))"), [LIB, INDEX]),
+    ("plan show: marks before the redaction", "engine/src/index/build.rs", both(
+        plain("    let redacted = redactor.redact(&spaced(text));", "    let redacted = spaced(text);"),
+        plain("    (marked, hidden)\n", "    (redactor.redact(&marked), hidden)\n")), [LIB, IMPORT_TASK]),
+    ("plan show: counts only what the redaction left", "engine/src/index/build.rs", plain("    let hidden = text.chars().filter(|c| is_invisible(*c)).count();", "    let hidden = redactor.redact(text).chars().filter(|c| is_invisible(*c)).count();"), [LIB, IMPORT_TASK]),
+    ("import task: keeps invisible characters", "engine/src/commands/import/task.rs", plain("    let text = scrubber.text_dropping_invisible(&shown, &text);", "    let text = scrubber.text(&shown, &text);"), [IMPORT_TASK]),
+    ("import task: drops after the home paths", IMPORT, plain("            out.push_str(&self.home_paths(&content));\n", "            out.push_str(&if drop_invisible {\n                without_invisible(&self.home_paths(done.trim_end_matches('\\r'))).into_owned()\n            } else {\n                self.home_paths(&content)\n            });\n"), [IMPORT_TASK]),
 ]
 
 check = "--check" in sys.argv
