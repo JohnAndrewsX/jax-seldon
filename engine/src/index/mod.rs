@@ -194,19 +194,20 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
 /// order mark, one space, lower case) and only the CRs and LFs at the end
 /// of a path are dropped (white space is part of it); a relative path is
 /// relative to the file's directory. A `commondir` that is there but
-/// cannot be read is no repository either (git stops there).
+/// cannot be read, and an empty path in either file, is no repository
+/// either (git stops there).
 pub fn git_head_fast(root: &Path) -> Option<model::GitInfo> {
     let dot = root.join(".git");
     let gitdir = if dot.is_file() {
         let text = std::fs::read_to_string(&dot).ok()?;
-        root.join(git_path(text.strip_prefix("gitdir: ")?))
+        root.join(git_path(text.strip_prefix("gitdir: ")?)?)
     } else if dot.is_dir() {
         dot
     } else {
         return None;
     };
     let common = match std::fs::read_to_string(gitdir.join("commondir")) {
-        Ok(c) => gitdir.join(git_path(&c)),
+        Ok(c) => gitdir.join(git_path(&c)?),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => gitdir.clone(),
         Err(_) => return None,
     };
@@ -237,9 +238,12 @@ pub fn git_head_fast(root: &Path) -> Option<model::GitInfo> {
 }
 
 /// A path in a git file (`.git`, `commondir`): the text without the CRs
-/// and LFs at its end, as git reads it.
-fn git_path(text: &str) -> &Path {
-    Path::new(text.trim_end_matches(['\n', '\r']))
+/// and LFs at its end, as git reads it; `None` when nothing is left (git
+/// 2.55: an empty `commondir` "failed to read", one of only a newline
+/// "not a git repository").
+fn git_path(text: &str) -> Option<&Path> {
+    let path = text.trim_end_matches(['\n', '\r']);
+    (!path.is_empty()).then(|| Path::new(path))
 }
 
 /// The index of a logbook that does not exist yet: `state.status

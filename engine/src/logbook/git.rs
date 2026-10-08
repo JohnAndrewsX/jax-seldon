@@ -156,8 +156,11 @@ fn ask(root: Option<&Path>, args: &[&str], timeout: Duration) -> Run {
 /// Whether git refused [`NO_LAZY_FETCH`] as an unknown option: git before
 /// 2.44 prints `unknown option: --no-lazy-fetch` (translated in other
 /// languages, the option itself is not) and its usage, and exits 129.
+/// Only a line that ends in the option counts: a current git's usage text
+/// (any usage error at git's level) lists `[--no-lazy-fetch]`.
 fn refuses_no_lazy_fetch(run: &Run) -> bool {
-    matches!(run, Run::Exited { code: Some(129), stderr, .. } if stderr.contains(NO_LAZY_FETCH))
+    matches!(run, Run::Exited { code: Some(129), stderr, .. }
+        if stderr.lines().any(|l| l.trim_end().ends_with(NO_LAZY_FETCH)))
 }
 
 /// [`ask`] in the logbook with [`TIMEOUT`].
@@ -560,7 +563,19 @@ mod tests {
             stdout: String::new(),
             stderr: stderr.to_string(),
         };
+        // git 2.43's usage names no --no-lazy-fetch; 2.55's does
         let usage = "usage: git [-v | --version] [-h | --help] [-C <path>]\n";
+        let usage_2_55 = "usage: git [-v | --version] [-h | --help] [-C <path>] [-c <name>=<value>]
+           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
+           [-p | --paginate | -P | --no-pager] [--no-replace-objects] [--no-lazy-fetch]
+           [--no-optional-locks] [--no-advice] [--bare] [--git-dir=<path>]
+           [--work-tree=<path>] [--namespace=<name>] [--config-env=<name>=<envvar>]
+           <command> [<args>]
+";
+        assert!(refuses_no_lazy_fetch(&exited(
+            129,
+            &format!("option inconnue\u{a0}: --no-lazy-fetch\r\n{usage}")
+        )));
         assert!(refuses_no_lazy_fetch(&exited(
             129,
             &format!("unknown option: --no-lazy-fetch\n{usage}")
@@ -569,10 +584,15 @@ mod tests {
             129,
             &format!("Unbekannte Option: --no-lazy-fetch\n{usage}")
         )));
-        // another usage error, another exit code, another outcome
+        // another usage error, another exit code, another outcome; git
+        // 2.55's real `git --bogus` (exit 129) names the option in its usage
         assert!(!refuses_no_lazy_fetch(&exited(
             129,
             &format!("unknown option: --bogus\n{usage}")
+        )));
+        assert!(!refuses_no_lazy_fetch(&exited(
+            129,
+            &format!("unknown option: --bogus\n{usage_2_55}")
         )));
         assert!(!refuses_no_lazy_fetch(&exited(
             128,

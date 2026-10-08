@@ -313,6 +313,9 @@ fn the_fast_rebuild_reads_git_files_as_git_does() {
         (format!("gitdir:  {abs}\n"), false), // not a git repository
         (format!("gitdir: {abs} \n"), false), // not a git repository
         (format!("gitdir: {abs}\t\n"), false),
+        // nothing after `gitdir: ` (round 2, N2)
+        ("gitdir: \n".to_string(), false),
+        ("gitdir: ".to_string(), false),
     ] {
         std::fs::write(work.join(".git"), &text).unwrap();
         let want = read.then(|| a[..7].to_string());
@@ -340,6 +343,13 @@ fn the_fast_rebuild_reads_git_files_as_git_does() {
     std::fs::remove_file(repo.join("commondir")).unwrap();
     std::fs::create_dir(repo.join("commondir")).unwrap();
     assert_eq!(head(), None, "commondir is a directory");
+    // empty, or only a newline (round 2, N2): git refuses both, so not
+    // even the git directory's own ref
+    std::fs::remove_dir(repo.join("commondir")).unwrap();
+    for text in ["", "\n", "\r\n"] {
+        std::fs::write(repo.join("commondir"), text).unwrap();
+        assert_eq!(head(), None, "commondir {text:?}");
+    }
 }
 
 #[test]

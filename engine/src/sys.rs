@@ -886,6 +886,25 @@ mod tests {
             ),
             Run::TimedOut
         );
+        // OUTPUT_MAX: a stdout over it is no answer, a stderr over it keeps
+        // exactly OUTPUT_MAX (WP-154 round 2)
+        let flood = |script: &str| {
+            run(
+                "sh",
+                &["-c", script],
+                None,
+                Duration::from_secs(10),
+                OUTPUT_MAX,
+            )
+        };
+        assert_eq!(flood("head -c 1048577 /dev/zero"), Run::Cut);
+        let r = flood("head -c 2097152 /dev/zero >&2; echo out");
+        assert!(
+            matches!(&r, Run::Exited { code: Some(0), stdout, stderr }
+                if stdout == "out\n" && stderr.len() == OUTPUT_MAX),
+            "{:?}",
+            matches!(&r, Run::Exited { .. })
+        );
         // the whole output, however long
         let r = run(
             "sh",

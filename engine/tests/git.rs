@@ -710,3 +710,116 @@ fn commits_still_sign_and_run_hooks_as_configured() {
         "pre-commit unset unset\npost-commit unset unset\n"
     );
 }
+
+/// WP-154 round 2 (B1): rule 2 for each caller. A wrapper `git` logs
+/// every call the engine makes with both query variables: through `log`,
+/// `status`, a `capture` that upgrades the agent rules (`is_clean_path`,
+/// then a commit of `AGENTS.md` alone), `doctor`, and `doctor` on a
+/// detached HEAD (`branches`). Every call but `add` and `commit` is a
+/// query: `--no-lazy-fetch` first, `GIT_ALLOW_PROTOCOL=none`,
+/// `GIT_NO_LAZY_FETCH=1`; `add` and `commit` see neither.
+#[test]
+fn every_git_call_but_add_and_commit_is_a_query_without_network() {
+    let env = Env::new(Snapper::Allowed);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    // no maintenance child of a commit (it would be git's call, not ours)
+    std::fs::write(
+        env.home.join(".gitconfig"),
+        "[user]\n\tname = Logbook Owner\n\temail = owner@example.invalid\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n",
+    )
+    .unwrap();
+    // the agent rules as 0.1.3 shipped them: the capture upgrades them
+    let rules = root.join("AGENTS.md");
+    std::fs::write(
+        &rules,
+        common::read(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/rules-v3/AGENTS-wp111-en.md"),
+        ),
+    )
+    .unwrap();
+    let out = env.git(&root, &["commit", "-qam", "rules v3"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let calls = env.tmp.path().join("git-calls.log");
+    env.wrap_git(&format!(
+        "printf '%s %s | %s\\n' \"${{GIT_ALLOW_PROTOCOL-unset}}\" \"${{GIT_NO_LAZY_FETCH-unset}}\" \"$*\" >> '{}'\nexec \"$REAL_GIT\" \"$@\"",
+        calls.display()
+    ));
+
+    let now = "2026-10-08T09:00:00+02:00";
+    let out = env.at(now, &["--json", "log", "--", "a note"]);
+    assert_eq!(json(&out)["git"]["committed"], true, "{}", stdout(&out));
+    let out = env.at(now, &["--json", "status"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let out = env
+        .command(&["--json", "capture", "--all"])
+        .env("SELDON_NOW", now)
+        .env("SELDON_PACMAN_LOG", env.tmp.path().join("pacman.log"))
+        .env("SELDON_PACMAN_DB_LOCK", env.tmp.path().join("no-db.lck"))
+        .env("SELDON_OMARCHY_PLUGINS_DIR", env.tmp.path().join("plugins"))
+        .env("SELDON_THEME_FILE", env.tmp.path().join("theme.name"))
+        .env("SELDON_HARDWARE_ROOT", common::hardware_root())
+        .output()
+        .unwrap();
+    let v = json(&out);
+    assert_eq!(v["rulesUpdated"]["git"]["committed"], true, "{v}");
+    assert_eq!(git_check(&env, &root)["status"], "ok");
+    let out = env.git(&root, &["checkout", "-q", "--detach"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(git_check(&env, &root)["status"], "degraded");
+
+    let log = std::fs::read_to_string(&calls).unwrap();
+    let mut verbs = std::collections::BTreeSet::new();
+    for line in log.lines() {
+        let (vars, argv) = line.split_once(" | ").unwrap();
+        let args: Vec<&str> = argv.split(' ').collect();
+        // the test's own `checkout --detach` went through the wrapper too
+        if args[0] == "checkout" {
+            continue;
+        }
+        let verb = args
+            .iter()
+            .copied()
+            .find(|a| !a.starts_with('-') && !a.contains('='));
+        if verb.is_some_and(|v| ["add", "commit"].contains(&v)) {
+            assert_eq!(vars, "unset unset", "{line}");
+            assert_ne!(args[0], "--no-lazy-fetch", "{line}");
+            verbs.insert(verb.unwrap().to_string());
+        } else {
+            assert_eq!(vars, "none 1", "{line}");
+            assert_eq!(args[0], "--no-lazy-fetch", "{line}");
+            verbs.insert(args[1].to_string());
+        }
+    }
+    // the queries the WP names, the five more the handover names (but
+    // `show-ref`, asked on an unborn branch only), and the two writes
+    for verb in [
+        "--version",
+        "rev-parse",
+        "status",
+        "symbolic-ref",
+        "for-each-ref",
+        "var",
+        "config",
+        "diff",
+        "add",
+        "commit",
+    ] {
+        assert!(verbs.contains(verb), "no {verb} in\n{log}");
+    }
+    for query in [
+        "rev-parse --show-toplevel --absolute-git-dir",
+        "rev-parse --verify -q HEAD",
+        "rev-parse --short HEAD",
+        "status --porcelain -- AGENTS.md",
+        "status --porcelain\n",
+        "for-each-ref --format=%(refname:short) refs/heads/",
+    ] {
+        assert!(
+            log.contains(&format!("--no-lazy-fetch {query}")),
+            "no {query:?} in\n{log}"
+        );
+    }
+}
