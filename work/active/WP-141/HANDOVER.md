@@ -155,3 +155,27 @@ Stage-1 review approved bf36eaa; round 2 on the orchestrator's list.
 - **Check:** `flock /tmp/seldon-check.lock just check` on the committed
   HEAD `cc95b69`, clean tree: **check: ok**, exit 0 (log
   `check-wp141-r6.log`).
+
+## Stage 2 (Fable): ADR-0042 text edits
+
+Fable approved the code (44f1a60) and asked for seven text-only edits to
+ADR-0042 before the operator accepts it; applied as listed: the status
+line (accepting is the operator's decision), the mkinitcpio and Limine
+ownership evidence (`omarchy-settings` 4.0.4-4 backup files,
+`limine-mkinitcpio-hook`'s `/etc/limine-entry-tool.conf`, what no package
+owns, migrations 1786605598, 1784917531, 1789325478),
+`/etc/limine-entry-tool.conf` named in the crisis row (already matched
+by `/etc/limine*`, no code change), the systemd drop-ins as
+`omarchy-settings` backup files, the Consequences' rarity argument
+(`pambase`, `sddm`, `sudo`, and every Omarchy machine's edited
+`system-auth`/`sddm-autologin`), and the mirror in `class.rs`'s
+`PACNEW_RED` comment.
+
+- **Follow-up (Fable):** a *Transaction* row in the note's event detail
+  (its `meta.transaction`), and "left N files" in the detail of the
+  transaction's group, so the package change and the files it left are
+  seen together. Plugin only; no contract change.
+- **Operator question (E20, besides accepting ADR-0042):** Soll ein
+  `.pacnew` unter `/etc/pam.d/`, das nach jedem pambase-/sddm-Update auf
+  jedem Omarchy-Rechner einmal auftritt, die Leiste rot machen (Krise),
+  oder nur still gelistet werden?
