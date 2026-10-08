@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 4d58d386 -->
+<!-- source: en/04-working-with-agents.md @ 1ed0a0b7 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
