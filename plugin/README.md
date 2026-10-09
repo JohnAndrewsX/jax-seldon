@@ -77,11 +77,11 @@ The checksum line checks that `install.sh` matches the release's
 `SHA256SUMS`; it does not show who built either. With the GitHub CLI
 (`gh`) logged in, the optional `gh attestation verify` line does: it
 passes only for a file that this project's release workflow built.
-`install.sh` then checks the engine it downloads. The
-panel's *Install* button (see [States](#states)) runs the same script
-without that first check: it downloads `install.sh` with `curl` and
-pipes it to `bash`, in a terminal you see; `install.sh` still checks the
-engine.
+If it fails, do not run `install.sh`. `install.sh` then checks the
+engine it downloads. The panel's *Install* button (see
+[States](#states)) runs the same script without that first check: it
+downloads `install.sh` with `curl` and pipes it to `bash`, in a terminal
+you see; `install.sh` still checks the engine.
 
 Run it again to update. Its options (`--version`, `--prefix`, `--unit`
 for the optional watcher, `--force` over a self-built `seldon`,
@@ -331,7 +331,7 @@ When something is wrong the panel shows one banner with a one-click fix:
 
 | State | Banner | One-click fix |
 |---|---|---|
-| Engine missing | Install the engine, in the accent tone (a setup step); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the download against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; *Copy* puts the one-liner on the clipboard; *Check again* looks for the engine again |
+| Engine missing | Install the engine, in the accent tone (a setup step); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the engine it downloads against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; *Copy* puts the one-liner on the clipboard; *Check again* looks for the engine again |
 | Logbook not initialised | Create your logbook | *Create* opens a terminal that says what happens, shows and runs `seldon init` (it asks where to put the logbook), then says whether the logbook was created; the panel then updates by itself; *Copy*; *Check again* |
 | Index missing | No index yet / Index unreadable | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
