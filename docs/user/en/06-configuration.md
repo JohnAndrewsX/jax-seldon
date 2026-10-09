@@ -190,7 +190,8 @@ next capture, also when no agent made it: a hand edit, `omarchy
 hibernation setup`, a migration, an `omarchy-settings` update that
 changed a file. Only hashes are recorded, never the content (a kernel
 command line names your disks). A symlink in one of these folders is
-followed to its file, and only that file's hash is recorded. Nothing
+followed to its file, and only that file's hash is recorded; a link to
+a file a package ships counts like any other change there. Nothing
 else under `/etc` is read. The
 `.pacnew` files pacman leaves there are not hashed: the pacman collector
 already lists each one, and when you merge it with `pacdiff`, the change
