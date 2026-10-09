@@ -422,7 +422,7 @@ Shell brechen kann, ist eine Krise.
 |---|---|---|
 | `alwaysRed` | `linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`, `quickshell` | Pakete, die Boot, Anmeldung oder die Shell brechen können: außerhalb eines Case mit Namen installiert oder entfernt eine Krise; mit dem System aktualisiert Routine |
 | `attention` | `"normal"` | `"all"`: jede Änderung ohne Case ist Drift, eine Krise, wenn ihre Zone rot ist (das Verhalten bis 0.1.3) |
-| `routine` | alle Regeln | die Routine-Regeln, die gelten: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag` |
+| `routine` | alle Regeln | die Routine-Regeln, die gelten: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `seldon-self`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag` |
 | `routinePaths` | `~/.config/omarchy/shell.json`, `**/*.bak.*` | Konfigurationsdateien, deren Änderungen Routine sind |
 | `routinePackages` | `archlinux-keyring`, `omarchy-keyring` | Pakete, deren eigene Transaktionen Routine sind |
 | `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` | Persistenzpfade: eine Änderung dort ohne Case ist eine Krise (die `authorized_keys`-Dateien erst, wenn du sie beobachtest) |
@@ -432,7 +432,7 @@ Willst du mehr? Ein paar Beispiele:
 ```toml
 [drift]
 # theme switches are drift again
-routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
+routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "seldon-self", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
 # a kernel from NVIDIA counts too
 alwaysRed = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell", "nvidia*"]
 ```

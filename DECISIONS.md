@@ -51,5 +51,6 @@
 | ADR-0047 | Before the logbook exists, the desk shows what the machine remembers on its own: `seldon preview --json` (pacman transactions, files edited under `~/.config`, 7 days, read-only), one plugin-command row and `preview.schema.json` (§3 amended by ADR-0046, proposed) | accepted |
 | ADR-0048 | ADR-0038 amended: the invisible set is every default-ignorable code point; redaction reads the text without invisible and control characters and as given | accepted |
 | ADR-0049 | A file of the logbook is never written through a symbolic link: a linked or non-regular file is refused like a linked folder (WP-168), the logbook's write primitives never follow a link, `doctor` gets a `layout` row; records the lstat-then-create residual | proposed |
+| ADR-0050 | ADR-0028 amended: adding or enabling Seldon's own plugin `jax.seldon` is routine `seldon-self` (no resolution; rule 8 unchanged); records the no-provenance residual | proposed |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
