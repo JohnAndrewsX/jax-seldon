@@ -59,6 +59,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **No reader hangs on a FIFO or a device in the logbook (WP-174).**
+  A FIFO at `ledger/<month>.jsonl`, `AGENTS.md`, `STATUS.md` or
+  `DECISIONS.md` made `status`, `doctor` and `capture` wait forever, and
+  a link to `/dev/zero` there read until memory ran out, so `doctor`
+  could hang before its `layout` row named the file. Every file of the
+  logbook is now read only when it is a regular file (through a link
+  too, as before), at most 256 MiB for a ledger month and 16 MiB for
+  any other file; anything else is "not read" with the reason: `status`
+  stops with exit 2, doctor's rows name it and the `layout` row is
+  reached.
 - **No secret hides behind an invisible or control character
   (WP-159, ADR-0048).** Every redaction now reads the text twice: without
   its invisible characters and lone control characters (so
