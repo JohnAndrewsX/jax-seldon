@@ -1,4 +1,4 @@
-<!-- seldon:begin rules v5 -->
+<!-- seldon:begin rules v4 -->
 # AGENTS.md
 
 Rules for every agent on this machine.
@@ -92,8 +92,9 @@ Everything else is Markdown for people and agents: the *Intent*, *Plan*,
    two of its lines:
    - `Persists:` how long the change holds: `survives reboot and update`,
      `reboot only` (an update overwrites it) or `lost at reboot`.
-   - `Stop if:` what makes you stop, e.g. `the binding is taken by
-     another app`. When it holds, stop and ask (next section).
+   - `Stop if:` what makes you stop, e.g. `the transaction also upgrades
+     linux`. When it holds, stop: say so in the *Log* and to the user, and
+     go on only after the user's go.
 3. Before the first privileged step print one preview line, in the
    terminal and in the case's *Log*, and go on without waiting:
    `About to: install X (+deps a, b); snapshot first; rollback: pacman -Rns X`.
@@ -104,8 +105,8 @@ Everything else is Markdown for people and agents: the *Intent*, *Plan*,
 
 ## When to ask first
 
-Ask in the terminal before the step, and wait for the answer, only in
-these four cases:
+Ask in the terminal before the step, and wait for the answer, only when
+the step is:
 
 - **outside the Intent**: another package or area, a change the user did
   not ask for. Dependencies the named software documents are inside.
@@ -116,12 +117,10 @@ these four cases:
   others depend on, overwriting a config that no snapshot and no git
   holds.
 - **R3**: it can break boot, login or the shell (next section).
-- **your own *Stop if***: the condition you wrote in the *Plan* holds.
-  Say so in the *Log* too.
 
 Everything else: do it, and say in the *Log* what you did.
 
-## R3: always the user's go
+## R3: the one stop
 
 R3 subjects: kernels, the boot loader, the initramfs, `systemd`, `glibc`,
 `pam`, `sddm`, `uwsm`, `hyprland`, `quickshell`, `omarchy` itself, `/etc`
@@ -279,7 +278,7 @@ say what is left; to give up, `seldon plan drop <ID> --reason "<why>"`.
   `seldon drift show <EVENT> --json`, `seldon open <what>` (prints a
   path), `seldon hook session-start`.
 - Writing: the `seldon plan` steps above, `seldon log`, `seldon event`,
-  `seldon decide`, `seldon drift link|explain|dismiss`, `seldon inbox add`,
+  `seldon decide`, `seldon drift link|explain|dismiss`,
   `seldon capture --all`, `seldon status`, `seldon hook session-stop`.
 - Only when the user asks for exactly that: `seldon init`,
   `seldon hook install`, `seldon import … --apply`, `seldon agent start`,
@@ -295,13 +294,6 @@ say what is left; to give up, `seldon plan drop <ID> --reason "<why>"`.
   *Result*: `measured`, `documented` or `inferred`.
 - A decision that shapes the machine:
   `seldon decide --no-edit --case <ID> -- "<title>"`, then fill in the ADR.
-- A crash you diagnosed (Omarchy's `diagnose-crash`): file the report in
-  the inbox, the report on stdin:
-  `seldon inbox add --title "<title>" --tag crash --actor agent:<name> --file -`.
-  Seldon redacts it into `inbox/`; never put in the core, memory
-  contents, the environment or `bt full`. Filing changes nothing and
-  needs no case; then ask the user in one line whether it becomes a case
-  (unattended: file it and ask nothing).
 
 ## Drift
 

@@ -1,4 +1,4 @@
-<!-- seldon:begin rules v5 -->
+<!-- seldon:begin rules v4 -->
 # AGENTS.md
 
 Rules for every agent on this machine.
@@ -279,7 +279,7 @@ say what is left; to give up, `seldon plan drop <ID> --reason "<why>"`.
   `seldon drift show <EVENT> --json`, `seldon open <what>` (prints a
   path), `seldon hook session-start`.
 - Writing: the `seldon plan` steps above, `seldon log`, `seldon event`,
-  `seldon decide`, `seldon drift link|explain|dismiss`, `seldon inbox add`,
+  `seldon decide`, `seldon drift link|explain|dismiss`,
   `seldon capture --all`, `seldon status`, `seldon hook session-stop`.
 - Only when the user asks for exactly that: `seldon init`,
   `seldon hook install`, `seldon import … --apply`, `seldon agent start`,
@@ -295,13 +295,6 @@ say what is left; to give up, `seldon plan drop <ID> --reason "<why>"`.
   *Result*: `measured`, `documented` or `inferred`.
 - A decision that shapes the machine:
   `seldon decide --no-edit --case <ID> -- "<title>"`, then fill in the ADR.
-- A crash you diagnosed (Omarchy's `diagnose-crash`): file the report in
-  the inbox, the report on stdin:
-  `seldon inbox add --title "<title>" --tag crash --actor agent:<name> --file -`.
-  Seldon redacts it into `inbox/`; never put in the core, memory
-  contents, the environment or `bt full`. Filing changes nothing and
-  needs no case; then ask the user in one line whether it becomes a case
-  (unattended: file it and ask nothing).
 
 ## Drift
 

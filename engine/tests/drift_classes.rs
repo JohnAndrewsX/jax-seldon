@@ -547,6 +547,14 @@ fn doctor_shows_the_drift_rules() {
         r["message"].as_str().unwrap().contains("; all defaults; "),
         "{r}"
     );
+    // Seldon's own plugin is listed like the others (ADR-0050)
+    assert!(
+        r["message"]
+            .as_str()
+            .unwrap()
+            .contains("routine: sysupgrade, upgrade, keyring, omarchy-update, plugin-toggle, seldon-self, theme, "),
+        "{r}"
+    );
     assert!(
         r["message"].as_str().unwrap().ends_with(
             "omarchy does not exist (it must be root's and neither group- nor world-writable)"

@@ -22,7 +22,7 @@ snapshot or the R3 stop.
 
 | File | What it is |
 |---|---|
-| `AGENTS.md` (logbook root) | The rules, short form, in the logbook's language. Seldon's part sits in a block between the marker lines `<!-- seldon:begin rules v3 -->` and `<!-- seldon:end -->`, which `seldon rules update` rewrites (and every capture, while nobody edited it); the user's own rules follow it under `## Your rules`. **It wins** over this guide. |
+| `AGENTS.md` (logbook root) | The rules, short form, in the logbook's language. Seldon's part sits in a block between the marker lines `<!-- seldon:begin rules v5 -->` and `<!-- seldon:end -->`, which `seldon rules update` rewrites (and every capture, while nobody edited it); the user's own rules follow it under `## Your rules`. **It wins** over this guide. |
 | `areas/<area>/AGENTS.md` | Extra rules for one area, where the user wrote some. |
 | `memory/lessons.md` | What earlier sessions learned on this machine. One `## ` heading per lesson. |
 | `PROJECT.md` | What the machine is for, what must not happen on it, who works here. |

@@ -68,7 +68,9 @@ pub const OWN_PACKAGE: &str = "jax-seldon";
 /// is matched, nothing checks where the code came from: an add or install
 /// while a logbook exists is somebody (re)installing Seldon, a downgrade
 /// somebody choosing an older one, a removal somebody taking it off. These
-/// stay drift.
+/// get no resolution; the plugin's add (and enable) is routine
+/// `seldon-self` at index time instead (`index::class`, ADR-0050), the
+/// rest stays drift.
 pub fn own_change(e: &Event) -> Option<&'static str> {
     match (e.source, e.kind) {
         (Source::Plugins, Kind::PluginUpdate | Kind::PluginEnable | Kind::PluginDisable)

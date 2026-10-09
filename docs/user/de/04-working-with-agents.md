@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 1ed0a0b7 -->
+<!-- source: en/04-working-with-agents.md @ 12f706be -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -67,7 +67,7 @@ Logbuchs. Die Datei sagt jedem Agenten, wie er dort arbeitet:
 - er ändert nie das Ledger, erzeugte Dateien oder Felder der Engine.
 
 Seldons Regeln stehen in einem Block oben in der Datei, zwischen den
-Zeilen `<!-- seldon:begin rules v4 -->` und `<!-- seldon:end -->`. Deine
+Zeilen `<!-- seldon:begin rules v5 -->` und `<!-- seldon:end -->`. Deine
 eigenen Regeln gehören darunter, unter `## Your rules`, und Regeln für
 einen Bereich nach `areas/<bereich>/AGENTS.md`; Agenten folgen ihnen.
 Deine Regeln können nur Grenzen hinzufügen: Nichts darin oder in einem

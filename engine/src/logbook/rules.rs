@@ -22,7 +22,7 @@ use std::borrow::Cow;
 use crate::index::load::{FENCE_BEGIN, FENCE_END};
 
 /// The rules version this engine writes.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 
 /// The rules file, relative to the logbook root.
 pub const FILE: &str = "AGENTS.md";
@@ -74,8 +74,9 @@ const V1_TEXTS: [&str; 10] = [
 /// one; reachable from `main`, in no release); the v4 blocks of WP-116
 /// (round 1, reachable from `main`; as merged, which ships in 0.1.4).
 /// WP-143 changed the text within v4: the block's version says what an
-/// agent must do, not which wording.
-const RELEASED_BLOCKS: [&str; 19] = [
+/// agent must do, not which wording; its round 1 and its merged text are
+/// on `next`, in no release. v5: the crash inbox (WP-172).
+const RELEASED_BLOCKS: [&str; 23] = [
     // WP-100 round 1 (6625cf9), en, de
     "8246c602f96980427956697d995bec2500aa8f66cc5b8b502ca12a86b4dc5d23",
     "7831a764354213f6b847bc329f8f9a5830d7f04ac0b1421067cd1b29ca57919a",
@@ -105,6 +106,12 @@ const RELEASED_BLOCKS: [&str; 19] = [
     // WP-116 as merged (868c5da), ships in 0.1.4
     "5d2c4839131378943e7c29afd149d940709e2724f22a6e0961369a63c5938056",
     "f84f7a803fe42b16b58d6bde822964aca3d26e57694ff6715edde8ec7613d5b5",
+    // WP-143 round 1 (7e206bd), on `next`
+    "7777a7dd4175c0d383c139ef6a5f0c78fc0b62afdf5b0989278b77b65e520792",
+    "f8f28eedde0009d87b0827b30a6976050fdb49ccd58f55be8060eccdc11f2e1d",
+    // WP-143 as merged (73c0943), the last v4, on `next`
+    "e8bb40a1114c09ae523cdde20cff5675920d7dcdfe1e1aaddfa3cae37d72f637",
+    "6221088871a223cb6bbaa398921e54f33b419ba7cfaa007457b9b7c2f8b02718",
 ];
 
 /// Where the rules block of a text is.
@@ -611,8 +618,9 @@ mod tests {
     ];
 
     /// Every v4 rendering reachable from `main` (WP-116 round 1, WP-116
-    /// as merged, which ships in 0.1.4).
-    const V4_FILES: [&str; 2] = ["wp116r1", "wp116"];
+    /// as merged, which ships in 0.1.4) or `next` (WP-143 round 1, WP-143
+    /// as merged).
+    const V4_FILES: [&str; 4] = ["wp116r1", "wp116", "wp143r1", "wp143"];
 
     fn rendering(version: u32, name: &str, language: &str) -> String {
         let path = format!(
@@ -823,8 +831,8 @@ mod tests {
         assert_eq!(state(Some(&golden("v0.1.1-en")), &t), State::Unedited(1));
         let v1 = "<!-- seldon:begin rules v1 -->\nold\n<!-- seldon:end -->\n";
         assert_eq!(state(Some(v1), &t), State::Outdated(1));
-        let v5 = "<!-- seldon:begin rules v5 -->\nnew\n<!-- seldon:end -->\n";
-        assert_eq!(state(Some(v5), &t), State::Newer(5));
+        let v6 = "<!-- seldon:begin rules v6 -->\nnew\n<!-- seldon:end -->\n";
+        assert_eq!(state(Some(v6), &t), State::Newer(6));
         let edited = t.replacen("Rules for every agent", "Rules for any agent", 1);
         assert_eq!(state(Some(&edited), &t), State::Changed);
         // the user's part may change freely
@@ -1055,9 +1063,9 @@ mod tests {
             e.contains("has no end marker line") && e.contains("--replace"),
             "{e}"
         );
-        let newer = "<!-- seldon:begin rules v5 -->\nx\n<!-- seldon:end -->\n";
+        let newer = "<!-- seldon:begin rules v6 -->\nx\n<!-- seldon:end -->\n";
         let e = update(Some(newer), &t, false).unwrap_err();
-        assert!(e.contains("v5") && e.contains("update seldon"), "{e}");
+        assert!(e.contains("v6") && e.contains("update seldon"), "{e}");
         for old in [damaged, newer, "mine\n"] {
             let u = update(Some(old), &t, true).unwrap();
             assert_eq!((u.action, u.text.as_str()), (Action::Replaced, t.as_str()));

@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ d49a679 -->
+<!-- source: en/03-daily-use.md @ d6953a36 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar, das Panel mit seinen sechs Tabs, die Tasten und das
@@ -31,8 +31,10 @@ Die Pill sitzt rechts in der Bar.
 - Das Seldon-Zeichen, dann `A · D`: A ist die Zahl der aktiven Cases, D
   die Zahl der Krisen. Teile, die null sind, fallen weg: das Zeichen
   allein, `2`, `· 1`. Das Zeichen nimmt die Farbe der Pill. Änderungen
-  ohne Case, die keine Krise sind, zählt sie nicht; die Einstellung
-  `driftInBar` ändert das (siehe [Konfiguration](06-configuration.md#drift)).
+  ohne Case, die keine Krise sind, zählt sie nicht: Der Tab Today des
+  Panels und der Tooltip zählen sie (*without a case*). Die Einstellung
+  `driftInBar` auf `all` zählt sie auch in der Bar (siehe
+  [Konfiguration](06-configuration.md#einstellungen-des-plugins)).
 - Sie nimmt die Akzentfarbe deines Themes, solange Cases aktiv sind, die
   Warnfarbe des Themes bei einer Krise und wird blasser, solange etwas
   repariert werden muss.

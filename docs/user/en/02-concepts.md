@@ -156,7 +156,7 @@ who made it:
 
 | Class | Examples | What happens |
 |---|---|---|
-| routine | a theme switch, a plugin toggle, a plain full upgrade (`pacman -Syu`, `omarchy update`, kernels included), Omarchy's own copy of a file, `shell.json` | history in the Changelog, not drift; nobody is asked |
+| routine | a theme switch, a plugin toggle, adding Seldon's own plugin, a plain full upgrade (`pacman -Syu`, `omarchy update`, kernels included), Omarchy's own copy of a file, `shell.json` | history in the Changelog, not drift; nobody is asked |
 | attention | a package installed or removed by name, a third-party plugin added or updated, an override under a watched path, a removed file | open drift, quietly: the panel lists it, the bar does not count it |
 | crisis | an `alwaysRed` package installed or removed by name, a new file in a persistence path such as `~/.config/systemd/user` or Omarchy's hooks | see [Crisis](#crisis) |
 

@@ -391,7 +391,7 @@ only what can break boot, login or the shell is a crisis.
 |---|---|---|
 | `alwaysRed` | `linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`, `quickshell` | packages that can break boot, login or the shell: installed or removed by name outside a case, a crisis; upgraded with the system, routine |
 | `attention` | `"normal"` | `"all"`: every change without a case is drift, a crisis when its zone is red (the behaviour up to 0.1.3) |
-| `routine` | all rules | the routine rules that apply: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag` |
+| `routine` | all rules | the routine rules that apply: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `seldon-self`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag` |
 | `routinePaths` | `~/.config/omarchy/shell.json`, `**/*.bak.*` | config files whose changes are routine |
 | `routinePackages` | `archlinux-keyring`, `omarchy-keyring` | packages whose own transactions are routine |
 | `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` | persistence paths: a change there without a case is a crisis (the `authorized_keys` files only once you watch them) |
@@ -401,7 +401,7 @@ Want more? A few examples:
 ```toml
 [drift]
 # theme switches are drift again
-routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
+routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "seldon-self", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
 # a kernel from NVIDIA counts too
 alwaysRed = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell", "nvidia*"]
 ```

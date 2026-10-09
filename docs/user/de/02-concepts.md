@@ -1,6 +1,6 @@
 # Konzepte
 
-<!-- source: en/02-concepts.md @ 04088da1 -->
+<!-- source: en/02-concepts.md @ b5e6bac9 -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
 Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory. Lies sie
@@ -170,7 +170,7 @@ würde, nicht danach, wer sie gemacht hat:
 
 | Klasse | Beispiele | Was passiert |
 |---|---|---|
-| Routine | ein Theme-Wechsel, ein Plugin-Schalter, ein einfaches System-Upgrade (`pacman -Syu`, `omarchy update`, Kernel eingeschlossen), Omarchys eigene Kopie einer Datei, `shell.json` | Geschichte im Changelog, keine Drift; niemand wird gefragt |
+| Routine | ein Theme-Wechsel, ein Plugin-Schalter, das Hinzufügen von Seldons eigenem Plugin, ein einfaches System-Upgrade (`pacman -Syu`, `omarchy update`, Kernel eingeschlossen), Omarchys eigene Kopie einer Datei, `shell.json` | Geschichte im Changelog, keine Drift; niemand wird gefragt |
 | zur Kenntnis | ein Paket, mit Namen installiert oder entfernt, ein Plugin eines Dritten, hinzugefügt oder aktualisiert, eine Überschreibung unter einem beobachteten Pfad, eine entfernte Datei | offene Drift, leise: das Panel listet sie, die Pill zählt sie nicht |
 | Krise | ein Paket aus `alwaysRed`, mit Namen installiert oder entfernt, eine neue Datei in einem Persistenzpfad wie `~/.config/systemd/user` oder Omarchys Hooks | siehe [Krise](#krise) |
 
