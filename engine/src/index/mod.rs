@@ -260,6 +260,7 @@ fn git_path(text: &str) -> Option<&Path> {
 pub fn not_initialised(path: &Path, now: DateTime<FixedOffset>) -> Index {
     Index {
         contract_version: crate::CONTRACT_VERSION,
+        contract_readable_from: crate::CONTRACT_READABLE_FROM,
         generated_at: crate::model::event::format_ts(&now),
         engine_version: crate::VERSION.to_string(),
         logbook: model::LogbookInfo {

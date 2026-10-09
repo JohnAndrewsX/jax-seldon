@@ -15,6 +15,8 @@ use crate::model::event::{Event, format_ts};
 #[serde(rename_all = "camelCase")]
 pub struct Index {
     pub contract_version: u32,
+    /// ADR-0051: the oldest plugin contract that can read this index.
+    pub contract_readable_from: u32,
     pub generated_at: String,
     pub engine_version: String,
     pub logbook: LogbookInfo,

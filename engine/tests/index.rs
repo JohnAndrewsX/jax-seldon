@@ -2345,6 +2345,51 @@ fn the_new_fields_are_optional_and_checked() {
     }
 }
 
+/// ADR-0051: every index says which plugin contract can read it, 2 for
+/// this engine (the banner index too); absent is an earlier contract-2
+/// build and valid; the value is an integer in 1 ..= contractVersion. The
+/// forward fixture (a later contract a v2 plugin may read) is no v2 index.
+#[test]
+fn the_index_says_which_plugin_contract_reads_it() {
+    assert_eq!(seldon::CONTRACT_READABLE_FROM, 2);
+    assert!(seldon::CONTRACT_READABLE_FROM <= seldon::CONTRACT_VERSION);
+    for ix in [
+        derive(|_| {}),
+        index::not_initialised(Path::new("/x"), now()),
+    ] {
+        let text = index::to_text(&ix);
+        assert!(
+            text.starts_with(r#"{"contractVersion":2,"contractReadableFrom":2,"#),
+            "{}",
+            &text[..80]
+        );
+    }
+    let v = check::Validator::new();
+    let sample = json_file(&repo("fixtures/index.sample.json"));
+    assert_eq!(sample["contractReadableFrom"], json!(2));
+    let mut bare = sample.clone();
+    bare.as_object_mut().unwrap().remove("contractReadableFrom");
+    for x in [bare, {
+        let mut one = sample.clone();
+        one["contractReadableFrom"] = json!(1);
+        one
+    }] {
+        assert_eq!(v.validate(&x, "index.schema.json"), Vec::<String>::new());
+        assert!(common::index_errors(&x).is_empty());
+    }
+    for value in [json!(0), json!(3), json!(1.5), json!("2"), json!(null)] {
+        let mut x = sample.clone();
+        x["contractReadableFrom"] = value.clone();
+        assert!(!v.validate(&x, "index.schema.json").is_empty(), "{value}");
+        assert!(!common::index_errors(&x).is_empty(), "{value}");
+    }
+    let forward = json_file(&repo("fixtures/forward/index.contract-v3-readable.json"));
+    assert_eq!(forward["contractVersion"], json!(3));
+    assert_eq!(forward["contractReadableFrom"], json!(2));
+    assert!(!v.validate(&forward, "index.schema.json").is_empty());
+    assert!(!common::index_errors(&forward).is_empty());
+}
+
 /// WP-127 round 2 (N5): reading an Intent's first paragraphs stops after
 /// them. A whole task file imported as an Intent (up to 1 MiB) costs the
 /// index build no more than its first paragraphs, whatever follows.
