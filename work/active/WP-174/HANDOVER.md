@@ -168,3 +168,92 @@ DECISIONS.md that is no regular file as `degraded`, with "not checked
    file and to the logbook's `.git` `packed-refs`. Both are far below it
    in practice. A `packed-refs` over the cap only makes `git.head`
    unknown in the index.
+
+## Round 2 (review 1: APPROVE with items; orchestrator decisions)
+
+- **F1, a next step on every refusal.**
+  - The reader's `InvalidInput` text ends "…; not read: make it a regular
+    file and run the command again".
+  - Doctor's `ledger` row has a fix for a refused month (`error`), and
+    for a large one (below).
+- **Q4, exit 1.** A ledger month the reader refuses (no regular file, or
+  over the cap) now exits **1**, like WP-171's refusals.
+  - How: `ledger::month_read_error` wraps it in the new
+    `error::Refused`.
+  - `impl From<anyhow::Error> for Error` replaces the old `#[from]`: an
+    error chain that contains `Refused` becomes `Error::User`, anything
+    else stays `Engine`. Only `read_month` and the hook's `read_end`
+    produce `Refused`, so no other exit code changes.
+  - Over the cap, the message adds "keep a copy of it, remove lines you
+    can do without by hand (… plain JSON Lines …) and run the command
+    again".
+  - Other logbook files keep their earlier behaviour (the rules row
+    degraded, views skipped).
+- **F2.**
+  - The 256 MiB read cap is kept. No append refusal.
+  - Doctor's `ledger` row is `degraded` for a month of 128 MiB or more
+    (`sys::LEDGER_MONTH_WARN`): "ledger/<m>.jsonl is N MiB: Seldon reads a
+    ledger month of at most 256 MiB and refuses a larger one (status,
+    doctor and the index stop on it)". The fix: keep a copy and trim by
+    hand before it reaches the limit.
+  - It combines with the bad-lines message.
+  - Documented in SPEC-ENGINE §3 (bounded reads and the `ledger` row)
+    and in the CHANGELOG.
+- **F3.** `open_checked` clears `O_NONBLOCK` with `fcntl(F_GETFL/F_SETFL)`
+  (an extern, like `mkfifo`; constants 3/4) once the fd is known to be
+  regular. The unit test asserts the flag is off.
+- **F4.** `read_small_file` opens with `open_checked` after its `lstat`.
+  That closes the swap race for every caller: triage's journal day, the
+  proposals, `autocommit.json`, the git config files of the plugins
+  collector. The SPEC sentence about the grep test is now true: `sys.rs`
+  is listed as "the checked opens".
+- **F5.** The unit test's FIFO, `/dev/zero` and directory assertions run
+  in a thread with a 10 s `recv_timeout`. `read_small_file` is checked
+  there too.
+- **F6.** The grep test now:
+  - also counts `File::options(`, `.read(true)` and an import
+    `use std::fs::{…read…}` (for a bare `read_to_string(`)
+  - skips each `#[cfg(test)]` module from its attribute to its closing
+    `}` at column 0, so production code after a test module counts
+  - still counts per file, not per call site; changing that would need
+    line anchors that move with every edit.
+- **Tests added:**
+  - `a_ledger_month_past_the_cap_is_refused_and_one_near_it_is_named`,
+    with sparse files:
+    - 129 MiB: doctor `degraded` with the size, the cap and the fix,
+      exit 0
+    - 256 MiB + 1: `status` exit 1 with the remedy; doctor `ledger`
+      error with a fix, exit 1
+  - The FIFO and `/dev/zero` test now expects exit 1, the remedy, and
+    the doctor fix.
+
+**Round 2 verification.**
+- `SELDON_FULL_CHECK=1 just check`: `check: ok`, exit 0. 2674 engine
+  tests passed, 0 failed. desk-view 1808/0, bar-view 196/0,
+  ipc-restart 44/0, service-states 344/0. Log:
+  `gates/engine174-check-r2.log`.
+- The first round-2 run (`engine174-check-r2-run1.log`) failed 4 desk-view
+  checks (`aside-openfail`, `aside-focused`). Both run on the fake engine,
+  as in round 1. Run alone they passed 1808/0
+  (`engine174-deskview-r2.log`), and the second full run is green: a
+  timing flake under load. Worth a look by whoever owns desk-view.
+- Same environment as round 1: target, `TMPDIR` and a private 0700
+  `XDG_RUNTIME_DIR`, all on disk under `gates/`. The real `~/Seldon`,
+  `~/.local/state/seldon` and `~/.config` were not touched.
+- `check-perf` was not re-run. Round 2 adds one `fcntl` per open and
+  one `metadata` per month in doctor only.
+
+## Follow-up (not this WP)
+
+- **F7: a FIFO at the logbook's `.git/HEAD`.** The engine's own
+  `git_head_fast` no longer blocks. The `git` children (`rev-parse`,
+  `status`, the autocommit) still block on it until the engine's 10 s
+  git timeouts: the reviewer measured `status` 40 s, `doctor` 30 s,
+  `log` > 20 s, `capture`/`index` 10 s. The `layout` row does not name
+  `.git/HEAD`. Candidates:
+  - check `.git/HEAD` (and `.git` itself) for a regular file before any
+    git call, and skip git with a warning otherwise;
+  - name `.git/HEAD` in the `layout` row.
+- Handover round 1, items 2 and 3 are still open: a capture with an
+  unreadable `AGENTS.md` gets no warning, and the `logbook` row says
+  "missing: AGENTS.md" for a FIFO there.
