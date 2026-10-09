@@ -236,3 +236,18 @@ unset (the worktree's `engine/target`, on disk), `flock
 /tmp/seldon-check.lock just check`: **`check: ok`, exit 0**, 2430 passed,
 0 failed, model tests 185 passed; `/run/user/1000` 2 % before. docs-check's
 one warning (`de/01-getting-started.md`) is still `next`'s.
+
+## Live result (orchestrator, 2026-10-09, fresh test host, 0.1.4+next.4dfb9bdf)
+
+The operator ran both steps on the freshly installed test host.
+
+1. `tee` of `/etc/mkinitcpio.conf.d/zz-seldon-test.conf` (0644, 19 bytes)
+   → exactly one `config-add`, zone yellow (open drift, attention),
+   `meta.hashTo` 18bc6aaa…ef431b, equal to `sha256sum` of the file; no
+   `hashBasis`; the next capture wrote 0 events. PASS.
+2. `rm` of the file → exactly one `config-remove`, zone yellow,
+   `meta.hashFrom` equal to step 1's `hashTo`; two further captures wrote
+   0 events. PASS.
+
+The first captures after the deploy seeded the boot-file baseline
+silently (0 events). Both items were then explained in one completed case.
