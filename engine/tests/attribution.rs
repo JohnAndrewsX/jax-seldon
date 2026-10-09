@@ -163,6 +163,45 @@ mod rules {
         }
     }
 
+    /// WP-164: a boot file outside the home directory is proven by an
+    /// agent's command that writes its absolute path (with `sudo`).
+    #[test]
+    fn a_boot_file_is_proven_by_its_absolute_path() {
+        const HOOKS: &str = "/etc/mkinitcpio.conf.d/omarchy_hooks.conf";
+        for (command, proves) in [
+            ("sudo tee /etc/mkinitcpio.conf.d/omarchy_hooks.conf", true),
+            (
+                "sudo sed -i 's/ plymouth//' /etc/mkinitcpio.conf.d/omarchy_hooks.conf",
+                true,
+            ),
+            ("sudo cp /tmp/hooks.conf /etc/mkinitcpio.conf.d/", true),
+            ("sudo rm -rf /etc/mkinitcpio.conf.d", true),
+            ("cat /etc/mkinitcpio.conf.d/omarchy_hooks.conf", false),
+            ("sudo tee /etc/mkinitcpio.conf.d/other.conf", false),
+            ("sudo mkinitcpio -P", false),
+        ] {
+            let known = [hook(
+                "2026-10-01T10:39:15+02:00",
+                "agent:claude-code",
+                Some("C-2026-004"),
+                command,
+            )];
+            let want = if proves {
+                agent(HOOKS, "agent:claude-code", Some("C-2026-004"))
+            } else {
+                system(HOOKS)
+            };
+            assert_eq!(
+                run(
+                    vec![config_change("2026-10-01T10:40:02+02:00", HOOKS)],
+                    &known
+                ),
+                [want],
+                "{command}"
+            );
+        }
+    }
+
     #[test]
     fn the_window_is_ten_minutes_after_the_start() {
         let sed = |at: &str| {

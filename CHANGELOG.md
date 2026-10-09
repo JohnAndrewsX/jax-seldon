@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Boot configuration (WP-164).** The config collector now hashes the
+  boot configuration, whatever `watchPaths` says:
+  `/etc/mkinitcpio.conf`, the files in `/etc/mkinitcpio.conf.d/` and
+  `/etc/mkinitcpio.d/`, `/etc/default/limine`,
+  `/etc/limine-entry-tool.conf` and the files in
+  `/etc/limine-entry-tool.d/`. A change shows up at the next capture,
+  also when no agent made it; only hashes are recorded, never the
+  content. It is quiet attention, not a crisis (add the paths to
+  `[drift] alwaysRedPaths` for one). A file that cannot be read is
+  hashed from its size, times and inode (`meta.hashBasis = "stat"`).
+  `/boot/limine*.conf` is left out: only root can open `/boot` on
+  Omarchy, and the Limine tools rewrite it on every snapshot and kernel
+  update. The `.pacnew` files pacman leaves there are not hashed (the
+  pacman note covers them). The first capture after the update takes the
+  files in without events. Opt out with `[redaction] skipPaths`.
 - **Files pacman left (WP-141).** A `.pacnew` (the package's new default
   was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
   that pacman reports in `/var/log/pacman.log` is now recorded: a pacman

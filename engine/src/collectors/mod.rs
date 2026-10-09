@@ -223,6 +223,12 @@ pub struct Sources {
     /// (`meta.matches = "omarchy-default"`, ADR-0028 §2). Under
     /// `SELDON_TEST_GUARD` without the variable it is `<guard>/omarchy`.
     pub omarchy_path: PathBuf,
+    /// `SELDON_ETC_DIR`, default `/etc`: the system configuration, of
+    /// which the config collector hashes the boot files
+    /// ([`config::boot_roots`]) and never reads anything else (AGENTS.md
+    /// §6, WP-164). Under `SELDON_TEST_GUARD` without the variable it is
+    /// `<guard>/etc`, so no test reads the host's.
+    pub etc_dir: PathBuf,
 }
 
 impl Default for Sources {
@@ -239,6 +245,7 @@ impl Default for Sources {
             plugins_dir: None,
             theme_file: None,
             omarchy_path: PathBuf::from("/usr/share/omarchy"),
+            etc_dir: PathBuf::from("/etc"),
         }
     }
 }
@@ -284,6 +291,10 @@ impl Sources {
                     var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("omarchy"))
                 })
                 .unwrap_or(d.omarchy_path),
+            etc_dir: var("SELDON_ETC_DIR")
+                .map(PathBuf::from)
+                .or_else(|| var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("etc")))
+                .unwrap_or(d.etc_dir),
         }
     }
 }

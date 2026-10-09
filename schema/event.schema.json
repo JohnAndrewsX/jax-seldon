@@ -17,7 +17,7 @@
                           "command", "note", "resolution", "correction",
                           "case-created", "case-started", "case-verified", "case-completed", "case-dropped",
                           "case-updated", "state-loss"] },
-    "subject": { "type": "string", "minLength": 1, "maxLength": 512, "description": "package name, path (~-relative), theme slug, plugin id, snapshot number, case id (case-*), program name (command), 'journal' (note without case), 'state-reset' (state-loss), or the target's subject (resolution, correction)" },
+    "subject": { "type": "string", "minLength": 1, "maxLength": 512, "description": "package name, path (~-relative; absolute for the boot files under /etc, WP-164), theme slug, plugin id, snapshot number, case id (case-*), program name (command), 'journal' (note without case), 'state-reset' (state-loss), or the target's subject (resolution, correction)" },
     "detail":  { "type": "string", "maxLength": 4096, "description": "human-readable, redacted (SPEC-ENGINE §7)" },
     "actor":   { "$ref": "#/$defs/actor" },
     "case":    { "$ref": "#/$defs/caseId" },

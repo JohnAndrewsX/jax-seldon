@@ -130,6 +130,7 @@ impl Bench {
             plugins_dir: Some(scratch.path("plugins")),
             theme_file: Some(scratch.path("theme.name")),
             omarchy_path: scratch.path("omarchy"),
+            etc_dir: scratch.path("etc"),
         };
         Bench {
             ledger: Ledger::at(scratch.path("logbook/ledger"), Redactor::builtin()),

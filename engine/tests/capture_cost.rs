@@ -150,6 +150,7 @@ impl Home {
             plugins_dir: Some(plugins_dir.clone()),
             theme_file: Some(tmp.path().join("theme.name")),
             omarchy_path: tmp.path().join("omarchy"),
+            etc_dir: tmp.path().join("etc"),
         };
         // the files must be older than the stat cache's racy window
         let old = std::time::SystemTime::now() - Duration::from_secs(3600);
