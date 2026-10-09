@@ -137,7 +137,8 @@ seldon doctor · ~/Seldon
   ok        rules    current (v5)
   ok        rollbacks no case has a rollback snapshot
   ok        workpieces no workpiece folders
-  ok        collectors the last capture of every enabled collector succeeded
+  degraded  collectors last capture failed: snapper: snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; `seldon doctor` prints the read grant.
+                     fix: sudo setfacl -m u:$USER:rx /.snapshots
   ok        layout   no linked folders or files where Seldon writes
   ok        state    ~/.local/state/seldon: cursors.json, manifest.json readable
   ok        skills   no agent skill folder (~/.agents/skills, ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills, ~/.hermes/skills); nothing to install
@@ -152,7 +153,9 @@ seldon doctor · ~/Seldon
 doctor: ok
 ```
 
-All lines should say `ok`, except `snapper`, which may say `degraded`.
+All lines should say `ok`, except `snapper` and `collectors`, which say
+`degraded` until you run the grant: the first capture could not read the
+snapshots.
 If you want snapshots on the timeline, run the fix that `doctor` prints.
 It lets your user read the snapshot directory `/.snapshots`, so Seldon can
 read the snapshot list and the info files; it cannot create, change or
@@ -192,7 +195,7 @@ Seldon counts it as routine, and routine changes are history, not drift.)
 1. Add the alias:
 
    ```sh
-   echo "alias ll='ls -lh'" >> ~/.bashrc
+   echo "alias gs='git status'" >> ~/.bashrc
    ```
 
 2. Let Seldon look for changes:
@@ -203,7 +206,8 @@ Seldon counts it as routine, and routine changes are history, not drift.)
 
    ```text
    Captured 1 new event(s).
-     snapper     0  snapper list is not permitted; 6 snapshots read from the info files in /.snapshots
+     snapper     0  degraded  snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; `seldon doctor` prints the read grant.
+              fix: sudo setfacl -m u:$USER:rx /.snapshots
      pacman      0
      omarchy     0
      plugins     0
@@ -212,9 +216,9 @@ Seldon counts it as routine, and routine changes are history, not drift.)
    ```
 
    The plugin also captures by itself every 15 minutes. Here you run it by
-   hand so you do not have to wait. The `snapper` line says how Seldon
-   read the snapshots after the grant of step 3; without it, why it read
-   none.
+   hand so you do not have to wait. Until you run the grant of step 3,
+   the `snapper` line says why it read no snapshots and repeats the fix;
+   after it, the line says how many it read.
 
 3. Ask Seldon what is unexplained:
 
@@ -223,7 +227,7 @@ Seldon counts it as routine, and routine changes are history, not drift.)
    ```
 
    ```text
-   yellow     2026-10-09 18:42  config/config-change  ~/.bashrc  01M4GRPJGB94F8TP8M6WEBK6GT
+   yellow     2026-10-09 19:22  config/config-change  ~/.bashrc  01M4GV0KZY6ZYF5BBTFT5DXZ48
    1 open drift item(s), 0 crisis
    ```
 
@@ -244,14 +248,14 @@ Seldon counts it as routine, and routine changes are history, not drift.)
    with your text as its title:
 
    ```sh
-   seldon drift explain <EVENT> -- "A shorter ls"
+   seldon drift explain <EVENT> -- "A short git status"
    ```
 
    Replace `<EVENT>` with the id from your `seldon drift` output.
 
    ```text
    Explained 1 event(s) with the new completed case C-2026-001
-   Case: work/completed/C-2026-001-a-shorter-ls.md
+   Case: work/completed/C-2026-001-a-short-git-status.md
    ```
 
 Your case ids carry the current year. `seldon drift` now says
@@ -263,13 +267,13 @@ Now do it the planned way. Create a case for removing the alias again,
 then start it:
 
 ```sh
-seldon plan new --area shell -- "Remove the ll alias again"
+seldon plan new --area shell -- "Remove the gs alias again"
 seldon plan start C-2026-002
 ```
 
 ```text
-Created C-2026-002 "Remove the ll alias again" in work/queued/C-2026-002-remove-the-ll-alias-again.md
-C-2026-002 queued → active (now work/active/C-2026-002-remove-the-ll-alias-again.md)
+Created C-2026-002 "Remove the gs alias again" in work/queued/C-2026-002-remove-the-gs-alias-again.md
+C-2026-002 queued → active (now work/active/C-2026-002-remove-the-gs-alias-again.md)
 ```
 
 `--area shell` files the case under the area `shell`, one of six
@@ -277,15 +281,15 @@ topics a new logbook has (`areas/shell/`). Use the id that `plan new`
 printed. The case is now active. Write a note into today's journal:
 
 ```sh
-seldon log --case C-2026-002 -- "Removing the ll alias again"
+seldon log --case C-2026-002 -- "Removing the gs alias again"
 ```
 
 ```text
-Noted in journal/2026/2026-10-09.md (C-2026-002): Removing the ll alias again
+Noted in journal/2026/2026-10-09.md (C-2026-002): Removing the gs alias again
 ```
 
-Delete the line `alias ll='ls -lh'` from `~/.bashrc` (in your editor, or
-with `sed -i "/^alias ll=/d" ~/.bashrc`), then capture again and look at
+Delete the line `alias gs='git status'` from `~/.bashrc` (in your editor, or
+with `sed -i "/^alias gs=/d" ~/.bashrc`), then capture again and look at
 the drift:
 
 ```sh
@@ -294,7 +298,7 @@ seldon drift
 ```
 
 ```text
-yellow     2026-10-09 18:42  config/config-change  ~/.bashrc  01M4GRQE0DEXR3CSEH2GJ35WYP
+yellow     2026-10-09 19:22  config/config-change  ~/.bashrc  01M4GV10EJ1Z4JDABAQH5DXQ4S
 1 open drift item(s), 0 crisis
 ```
 
@@ -328,7 +332,7 @@ seldon plan done C-2026-002
 
 ```text
 C-2026-002 active → verification
-C-2026-002 verification → completed (now work/completed/C-2026-002-remove-the-ll-alias-again.md)
+C-2026-002 verification → completed (now work/completed/C-2026-002-remove-the-gs-alias-again.md)
 Journal: journal/2026/2026-10-09.md
 ```
 
@@ -343,9 +347,13 @@ Status of <machine> (2026-10-09)
   cases   0 active · 0 in verification · 0 queued
   drift   0 open · 0 crisis
   events  11 today · 11 in 7 days
+  snapper degraded: snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; `seldon doctor` prints the read grant.
 Wrote ledger/2026-10.md, STATUS.md
 Index: ~/.local/state/seldon/index.json
 ```
+
+The `snapper degraded` line is there until you run the grant of step 3.
+Your counts differ.
 
 Open the plugin's panel and press `2` for the Changelog. You see both
 changes to `~/.bashrc`, the plugin's installation, the note and the case
@@ -358,16 +366,16 @@ git -C ~/Seldon log --oneline
 ```
 
 ```text
-e5bbbf7 seldon: status
-3aff947 seldon: C-2026-002 completed — Remove the ll alias again
-e4cf2e0 seldon: C-2026-002 verification
-7e2a78d seldon: drift linked: 1 event(s), C-2026-002
-8960845 seldon: note C-2026-002
-aa1f909 seldon: C-2026-002 active
-a27c753 seldon: C-2026-002 created
-c0ac6f6 seldon: drift explained: 1 event(s), C-2026-001
-f0055b8 seldon: dossier
-a9b718e seldon: init logbook
+b930a5c seldon: status
+2dca14b seldon: C-2026-002 completed — Remove the gs alias again
+657d138 seldon: C-2026-002 verification
+2523819 seldon: drift linked: 1 event(s), C-2026-002
+867d2ad seldon: note C-2026-002
+5a52e79 seldon: C-2026-002 active
+67476e6 seldon: C-2026-002 created
+0923622 seldon: drift explained: 1 event(s), C-2026-001
+4f92d76 seldon: dossier
+be3ccc5 seldon: init logbook
 ```
 
 ## Step 8: Write the rebuild guide

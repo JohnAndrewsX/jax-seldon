@@ -146,13 +146,13 @@ a place for your own aliases; one line there is quick and easy to undo.
 Then ask Seldon what it saw:
 
 ```sh
-echo "alias ll='ls -lh'" >> ~/.bashrc
+echo "alias gs='git status'" >> ~/.bashrc
 seldon capture
 seldon drift
 ```
 
 ```text
-yellow     2026-10-09 18:42  config/config-change  ~/.bashrc  01M4GRPJGB94F8TP8M6WEBK6GT
+yellow     2026-10-09 19:22  config/config-change  ~/.bashrc  01M4GV0KZY6ZYF5BBTFT5DXZ48
 1 open drift item(s), 0 crisis
 ```
 
@@ -164,7 +164,7 @@ captures by itself every 15 minutes; `seldon capture` just saves you the
 wait. Explain the change with the event id from the last column:
 
 ```sh
-seldon drift explain <EVENT> -- "A shorter ls"
+seldon drift explain <EVENT> -- "A short git status"
 ```
 
 Seldon records your reason as a completed case and the drift is gone.
@@ -173,9 +173,9 @@ system upgrade and adding Seldon's own plugin are routine history.
 The next change you plan first:
 
 ```sh
-seldon plan new --area shell -- "Remove the ll alias again"
+seldon plan new --area shell -- "Remove the gs alias again"
 seldon plan start <ID>
-seldon log --case <ID> -- "Removing the ll alias again"
+seldon log --case <ID> -- "Removing the gs alias again"
 ```
 
 `plan new` prints the case id. Delete the alias line from `~/.bashrc`,

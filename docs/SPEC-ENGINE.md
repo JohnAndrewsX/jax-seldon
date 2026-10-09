@@ -677,7 +677,7 @@ seldon doctor --only rules                     # WP-101 round 3: the engine and 
                                                # panel's call (SPEC-PLUGIN §3)
 seldon rules update [--replace] [--json]       # WP-100, ADR-0027: the rules block of the logbook's AGENTS.md
                                                # (`<!-- seldon:begin rules vN -->` … `<!-- seldon:end -->`,
-                                               # marker lines as whole lines) becomes this engine's v3 block.
+                                               # marker lines as whole lines) becomes this engine's v5 block.
                                                # Fenced file: the block is rewritten, every byte outside it
                                                # kept (a CRLF block keeps CRLF); a block that is no block
                                                # Seldon wrote (this engine's in any language, or a released
@@ -695,7 +695,7 @@ seldon rules update [--replace] [--json]       # WP-100, ADR-0027: the rules blo
                                                # taken; never overwritten); a blank file is not archived.
                                                # Refused, file untouched (exit 1): a damaged block
                                                # (no end marker line, a marker inside it, a begin marker
-                                               # without a version), a block newer than v3, a file that is not
+                                               # without a version), a block newer than v5, a file that is not
                                                # UTF-8 (all three: --replace takes them). Prints a `-U0` diff;
                                                # autocommit `seldon: rules update`; a current file is "nothing
                                                # changed" (exit 0, no write, no commit). Never runs on its own.
@@ -1043,8 +1043,8 @@ lines by hand before it reaches the limit), and a month the reader
 refuses (error, with the fix to make it a regular file again or, past
 the cap, to trim it; WP-174, "Bounded reads" above); `rules` (WP-100), the
 rules block of `AGENTS.md` against this engine's in the logbook's
-language: `current (v3)` ok; `vN as Seldon wrote it; the next capture
-updates it to v3` ok (a shipped block or a released v1 file nobody
+language: `current (v5)` ok; `vN as Seldon wrote it; the next capture
+updates it to v5` ok (a shipped block or a released v1 file nobody
 edited, WP-111: no panel banner); `outdated (v1)` (no block and not a
 released file), `outdated (vN)` (an edited older block) and `outdated
 (v3, its text differs …)`, degraded with the fix `seldon rules update
@@ -3427,7 +3427,7 @@ instructions and data, engine is the only writer, work in cases, when to
 ask first, R3, privileged steps and snapshots, zones and risk,
 installing software, Omarchy first, closing, commands, journal and
 memory, drift, hooks, ending a session, never; all inside the block
-`<!-- seldon:begin rules v3 -->` … `<!-- seldon:end -->`, which holds no
+`<!-- seldon:begin rules v5 -->` … `<!-- seldon:end -->`, which holds no
 marker text of its own, then `## Your rules` for the user; no
 `CLAUDE.md`, WP-047, WP-100; an existing logbook gets the block with
 `seldon rules update`, §3), `PROJECT.md`, `STATUS.md`,
