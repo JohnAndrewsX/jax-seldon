@@ -494,6 +494,18 @@ mod primitives {
     use seldon::error::Error;
     use seldon::logbook::{Logbook, cases, journal};
 
+    /// `f`'s result; one that has not come after a minute (a FIFO
+    /// opened in this process) fails the test, its thread left blocked
+    /// until the test binary exits.
+    fn in_time<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(Duration::from_secs(60))
+            .expect("still running after a minute (a FIFO opened?)")
+    }
+
     fn refused<T: std::fmt::Debug>(r: Result<T, Error>, rel: &str, what: &str) {
         match r {
             Err(Error::User(m)) => assert_eq!(
@@ -516,14 +528,20 @@ mod primitives {
             let inside = snapshot(&root);
             let beside = snapshot(&env.tmp.path().join("outside"));
             let now = chrono::DateTime::parse_from_rfc3339(T1).unwrap();
+            let book = logbook.clone();
             refused(
-                journal::append(&logbook, &now, "human", None, "x"),
+                in_time(move || journal::append(&book, &now, "human", None, "x")),
                 DAY,
                 how.what(),
             );
             if how != Swap::Link {
                 // a link to a file: the day counts as there, nothing made
-                refused(journal::ensure_day(&logbook, &now), DAY, how.what());
+                let book = logbook.clone();
+                refused(
+                    in_time(move || journal::ensure_day(&book, &now)),
+                    DAY,
+                    how.what(),
+                );
             }
             assert!(snapshot(&root) == inside, "{how:?}");
             assert!(
