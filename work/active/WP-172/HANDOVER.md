@@ -145,3 +145,43 @@ form.
 4. Should the AGENT-GUIDE and the skill's `drift.md` routine lists name
    Seldon's own plugin as well? Left unchanged (the rules block's v5 is
    only the crash inbox, as the WP says).
+
+## Round 2 (review 1: SEND BACK, B1; N1, N2, N3 folded in)
+
+- **B1.** The tour was run again on two fresh temp homes (en, de) **without
+  the snapshot grant**: `SELDON_SNAPSHOTS_DIR` pointed at a mode-000
+  directory on disk, with the real `snapper` (which refuses `list` for
+  this user), so `init`'s first capture fails on snapper as on a fresh
+  Omarchy. `doctor` then shows both `degraded collectors last capture
+  failed: snapper: … No permissions …` and `degraded snapper …`, each
+  with `fix: sudo setfacl -m u:$USER:rx /.snapshots`. Step 3 (en, de)
+  shows that real `collectors` row and fix line; the sentence below says
+  `snapper` and `collectors` say `degraded` until the grant. The wizard's
+  non-interactive summary in that run also said `Snapshots   not readable
+  yet …`, as the guide's step-2 example does.
+- **N1.** Every block of the tour is now from the no-grant run: the
+  step-5 capture shows the degraded `snapper` line with its fix (the text
+  says the line changes after the grant), and the step-7 `status` block
+  shows the extra `snapper degraded: …` line, with one sentence below it
+  ("there until you run the grant of step 3. Your counts differ.").
+- **N2.** The example is `alias gs='git status'` (not in Omarchy's
+  `default/bash/aliases`, whose git aliases are `g`, `gcm`, `gcam`,
+  `gcad`); explanation "A short git status" / "Ein kurzes git status",
+  case "Remove the gs alias again" / "Den gs-Alias wieder entfernen".
+  README, en and de: every id, slug, journal line and `git log` subject
+  is from these runs. The rule-9 claim was checked again with `gs`
+  (`note: 1 event(s) linked to the one case that planned them while it
+  was open`, `No open drift.`).
+- **N3.** `docs/SPEC-ENGINE.md` (doctor `rules` row `current (v5)` and
+  `updates it to v5`; the init template marker `rules v5`; and two more
+  of the same kind in the `rules update` synopsis: "this engine's v5
+  block", "a block newer than v5") and `docs/AGENT-GUIDE.md` (marker
+  `rules v5`). The historical "Rules v3 (WP-111) quote …" stays.
+- Q4: no change to the AGENT-GUIDE or skill routine lists.
+- Verified: `python3 scripts/docs-check.py --seldon <branch engine>` →
+  `docs-check: ok (472 links, 14 translated pages, 61 commands, 630
+  command lines)`. No code changed, so no full check (per brief). German
+  marker of page 01 → `8ffcf717`.
+- Same form as round 1: `env -i` per command, private 0700 runtime dir
+  and temp homes on disk, stub `omarchy` for `plugin list` only, the
+  plugin folder copied from `plugin/` (no network); temp homes deleted.
