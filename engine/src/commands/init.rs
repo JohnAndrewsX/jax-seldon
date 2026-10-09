@@ -136,6 +136,14 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     let root = choices.root.clone();
     let lock = lock::acquire(&ctx.dirs.lock_file())?;
     if Logbook::is_initialised(&root) {
+        let meta = root.join(crate::logbook::META_FILE);
+        if !meta.is_file() {
+            // a FIFO there: init would wait on it (WP-175)
+            return Err(Error::user(format!(
+                "{}: not a regular file; init does not write over it: remove it, or make it a regular file if this is a logbook",
+                meta.display()
+            )));
+        }
         return Err(Error::user(format!(
             "{} is already a logbook",
             root.display()

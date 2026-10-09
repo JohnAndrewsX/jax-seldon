@@ -26,6 +26,10 @@
 //!   repository's config may name (`ext::` runs a program). `init`, `add`
 //!   and `commit` keep the user's git whole: hooks, signing, filters and
 //!   transport.
+//! - No git runs in a logbook whose `.git` or `HEAD` is no regular file
+//!   or directory ([`check_files`], WP-175): git opens `HEAD` for every
+//!   command, and a FIFO there holds each call until its timeout. The
+//!   call is refused at once ([`Run::Failed`]) and says what to do.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -53,6 +57,9 @@ pub const NO_LAZY_FETCH: &str = "--no-lazy-fetch";
 
 /// The git on `PATH` refused [`NO_LAZY_FETCH`] once in this process.
 static NO_LAZY_FETCH_REFUSED: AtomicBool = AtomicBool::new(false);
+
+/// A refusal of [`check_files`] was said in this process ([`say_refusal`]).
+static REFUSAL_SAID: AtomicBool = AtomicBool::new(false);
 
 /// Identity used when the user has none configured, so the first commit
 /// does not fail on a fresh machine.
@@ -118,7 +125,76 @@ fn absolute(path: &Path) -> PathBuf {
 /// `init`, `add` or `commit`: the user's git as it is, transport
 /// included.
 fn run(root: Option<&Path>, args: &[&str]) -> Run {
+    if let Some(refused) = refused(root) {
+        return refused;
+    }
     sys::run_command_in_engine_group(command(root, args), TIMEOUT, sys::OUTPUT_MAX)
+}
+
+/// [`check_files`] of `root` as the answer of a git call that is not
+/// made; `None` when git may run.
+fn refused(root: Option<&Path>) -> Option<Run> {
+    check_files(root?).err().map(Run::Failed)
+}
+
+/// Whether git can run in `root` without waiting on a file (WP-175):
+/// `.git` is a directory or a regular file (`gitdir: …`, a linked work
+/// tree), and the `HEAD` of the git directory it leads to is a regular
+/// file. git opens `HEAD` for every command; a FIFO there holds each call
+/// until its timeout, a device or a link to one reads forever. Links are
+/// followed, as git follows them. A file that is not there is no
+/// refusal: git says what is missing, at once. The error names the file,
+/// what it is and what to do. Only file metadata and, for a `.git` file,
+/// its first bounded read; nothing is opened that could block.
+pub fn check_files(root: &Path) -> Result<(), String> {
+    let refusal = |path: &Path, what: &str, be: &str| {
+        Err(format!(
+            "{}: {what}, not a regular file; git is not run in the logbook: make it {be} and run the command again",
+            path.display()
+        ))
+    };
+    let dot = root.join(".git");
+    let Ok(meta) = std::fs::metadata(&dot) else {
+        return Ok(());
+    };
+    let git_dir = if meta.is_dir() {
+        dot
+    } else if let Some(what) = sys::irregular(&meta) {
+        return refusal(&dot, what, "a directory or a `gitdir:` file");
+    } else {
+        // `gitdir: <path>`, relative to the logbook (git's reading:
+        // index::git_head_fast)
+        let Some(dir) = sys::read_regular_string(&dot, sys::LOGBOOK_FILE_MAX)
+            .ok()
+            .and_then(|text| {
+                let path = text
+                    .strip_prefix("gitdir: ")?
+                    .trim_end_matches(['\n', '\r']);
+                (!path.is_empty()).then(|| root.join(path))
+            })
+        else {
+            return Ok(());
+        };
+        dir
+    };
+    let head = git_dir.join("HEAD");
+    match std::fs::metadata(&head) {
+        // a directory blocks no read: git answers at once that this is
+        // no repository
+        Ok(meta) if !meta.is_dir() => match sys::irregular(&meta) {
+            Some(what) => refusal(&head, what, "a regular file"),
+            None => Ok(()),
+        },
+        _ => Ok(()),
+    }
+}
+
+/// Whether a [`check_files`] refusal is still to be said in this process:
+/// `true` the first time only. A command says it once, wherever it meets
+/// it first (its autocommit, its index rebuild), and skips the rest of
+/// its git calls quietly.
+pub fn say_refusal() -> bool {
+    !REFUSAL_SAID.swap(true, Ordering::Relaxed)
 }
 
 /// [`command`] for a read-only query: [`NO_LAZY_FETCH`] first when
@@ -137,6 +213,9 @@ fn query_command(root: Option<&Path>, args: &[&str], option: bool) -> Command {
 /// A read-only query that never reaches the network (module doc), in
 /// `root` or anywhere.
 fn ask(root: Option<&Path>, args: &[&str], timeout: Duration) -> Run {
+    if let Some(refused) = refused(root) {
+        return refused;
+    }
     let option = !NO_LAZY_FETCH_REFUSED.load(Ordering::Relaxed);
     let run = |option| {
         sys::run_command_in_engine_group(
@@ -667,5 +746,104 @@ mod tests {
         std::fs::write(other.join("gitdir"), format!("{path}\n")).unwrap();
         assert!(!is_linked_work_tree_of(&absolute(&other), &own));
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// A `.git` or `HEAD` that is no regular file stops every git call
+    /// before git runs (WP-175): a FIFO and a link to `/dev/zero`, for a
+    /// `.git` directory and for a `.git` file, and `.git` a FIFO; a
+    /// regular, a linked, a missing `HEAD` and one that is a directory let
+    /// git run. In a thread
+    /// with a time limit: a regression that spawns git waits for its
+    /// timeout.
+    #[test]
+    fn a_git_file_that_is_no_regular_file_runs_no_git() {
+        unsafe extern "C" {
+            fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32;
+        }
+        let fifo = |path: &Path| {
+            let _ = std::fs::remove_file(path);
+            let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+            assert_eq!(unsafe { mkfifo(c.as_ptr(), 0o600) }, 0);
+        };
+        let zero = |path: &Path| {
+            let _ = std::fs::remove_file(path);
+            std::os::unix::fs::symlink("/dev/zero", path).unwrap();
+        };
+        let tmp = crate::logbook::scratch::scratch("seldon-git-files");
+        let root = tmp.join("logbook");
+        let head = root.join(".git/HEAD");
+        std::fs::create_dir_all(head.parent().unwrap()).unwrap();
+        let base = tmp.to_path_buf();
+        let (done, finished) = std::sync::mpsc::channel();
+        let checks = std::thread::spawn(move || {
+            let stops = |root: &Path, path: &Path, what: &str| {
+                let e = check_files(root).unwrap_err();
+                let be = if path.ends_with("HEAD") {
+                    "a regular file"
+                } else {
+                    "a directory or a `gitdir:` file"
+                };
+                assert_eq!(
+                    e,
+                    format!(
+                        "{}: {what}, not a regular file; git is not run in the logbook: make it {be} and run the command again",
+                        path.display()
+                    )
+                );
+                assert!(matches!(refused(Some(root)), Some(Run::Failed(f)) if f == e));
+                // the gate answers for every call, before git is spawned
+                assert!(matches!(query(root, &["status"], TIMEOUT), Run::Failed(f) if f == e));
+                assert_eq!(
+                    commit_all(root, "x").unwrap_err(),
+                    format!("cannot run git: {e}")
+                );
+            };
+            // nothing there, a missing HEAD, a regular one, a linked one
+            assert_eq!(check_files(&base.join("none")), Ok(()));
+            assert_eq!(check_files(&root), Ok(()));
+            std::fs::write(&head, "ref: refs/heads/main\n").unwrap();
+            assert_eq!(check_files(&root), Ok(()));
+            std::fs::rename(&head, base.join("HEAD.real")).unwrap();
+            std::os::unix::fs::symlink(base.join("HEAD.real"), &head).unwrap();
+            assert_eq!(check_files(&root), Ok(()));
+            // a directory: no refusal, git says at once what is wrong
+            std::fs::remove_file(&head).unwrap();
+            std::fs::create_dir(&head).unwrap();
+            assert_eq!(check_files(&root), Ok(()));
+            std::fs::remove_dir(&head).unwrap();
+            fifo(&head);
+            stops(&root, &head, "a FIFO");
+            zero(&head);
+            stops(&root, &head, "a device");
+            std::fs::remove_file(&head).unwrap();
+            // a `.git` file: the HEAD of the git directory it names
+            let linked = base.join("linked");
+            let git_dir = base.join("repo/.git/worktrees/linked");
+            std::fs::create_dir_all(&linked).unwrap();
+            std::fs::create_dir_all(&git_dir).unwrap();
+            std::fs::write(
+                linked.join(".git"),
+                "gitdir: ../repo/.git/worktrees/linked\n",
+            )
+            .unwrap();
+            assert_eq!(check_files(&linked), Ok(()));
+            fifo(&git_dir.join("HEAD"));
+            stops(
+                &linked,
+                &linked.join("../repo/.git/worktrees/linked/HEAD"),
+                "a FIFO",
+            );
+            // `.git` itself
+            std::fs::remove_dir_all(root.join(".git")).unwrap();
+            fifo(&root.join(".git"));
+            stops(&root, &root.join(".git"), "a FIFO");
+            done.send(()).unwrap();
+        });
+        match finished.recv_timeout(std::time::Duration::from_secs(20)) {
+            Ok(()) => {}
+            // the thread panicked: its message
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => checks.join().unwrap(),
+            Err(e) => panic!("a git call waited on a FIFO: {e}"),
+        }
     }
 }

@@ -193,6 +193,15 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
     })
 }
 
+/// The load warning of a logbook git refuses to run in
+/// ([`git::check_files`]: `.git` or `HEAD` no regular file), where
+/// [`git_info`] leaves `logbook.git` out; said once per command, also
+/// when its autocommit met the refusal first (WP-175).
+pub fn git_refused(root: &Path) -> Option<String> {
+    let e = git::check_files(root).err()?;
+    git::say_refusal().then(|| format!("git: {e}"))
+}
+
 /// `logbook.git` without running git: the 7-character HEAD from
 /// `.git/HEAD`, a loose ref or `packed-refs` (`head` absent on an unborn
 /// branch), `dirty` unknown and left out. `None` when the logbook is not a
@@ -327,7 +336,11 @@ pub const FAST_REBUILD_MAX_LINES: usize = 1000;
 
 /// Whether the `*.jsonl` files in `dir` hold more than `max` lines. Reads
 /// at most until the count passes `max`; an unreadable directory or file
-/// counts as nothing (the rebuild reports it).
+/// counts as nothing (the rebuild reports it). A month over
+/// [`sys::LEDGER_MONTH_MAX`] (or of a size that cannot be read) counts as
+/// too many without a read (WP-175): one without a newline (a sparse
+/// file) would be read to its end, and the full rebuild refuses it
+/// anyway, saying why.
 fn ledger_lines_exceed(dir: &Path, max: usize) -> bool {
     use std::io::Read as _;
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -343,6 +356,12 @@ fn ledger_lines_exceed(dir: &Path, max: usize) -> bool {
         let Ok(mut file) = sys::open_regular(&path) else {
             continue;
         };
+        if !file
+            .metadata()
+            .is_ok_and(|m| m.len() <= sys::LEDGER_MONTH_MAX)
+        {
+            return true;
+        }
         while let Ok(n) = file.read(&mut buf) {
             if n == 0 {
                 break;
@@ -386,7 +405,10 @@ fn try_rebuild(ctx: &Context, probe: GitProbe) -> Result<Vec<String>> {
     let logbook = Logbook::open(&root)?;
     let mut built = derive(ctx, &config, &logbook)?;
     built.index.logbook.git = match probe {
-        GitProbe::Full => git_info(&logbook.root),
+        GitProbe::Full => {
+            built.warnings.extend(git_refused(&logbook.root));
+            git_info(&logbook.root)
+        }
         GitProbe::HeadOnly => git_head_fast(&logbook.root),
     };
     built.warnings.extend(autocommit::attach(
@@ -397,4 +419,36 @@ fn try_rebuild(ctx: &Context, probe: GitProbe) -> Result<Vec<String>> {
     ));
     write(&ctx.dirs.index_file(), &built.index)?;
     Ok(built.warnings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A sparse month far over the read cap and without a newline is not
+    /// read by the fast rebuild's count (WP-175): it counts as too many
+    /// at once. Without the bound the count reads 1 TiB of zeros; in a
+    /// thread with a time limit, so that fails instead of hanging. Months
+    /// under the cap are counted as before.
+    #[test]
+    fn a_month_over_the_cap_is_not_counted() {
+        let tmp = crate::logbook::scratch::scratch("seldon-ledger-count");
+        let dir = tmp.join("ledger");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("2026-09.jsonl"), "{}\n{}\n").unwrap();
+        assert!(!ledger_lines_exceed(&dir, 2));
+        assert!(ledger_lines_exceed(&dir, 1));
+        let month = std::fs::File::create(dir.join("2026-10.jsonl")).unwrap();
+        month.set_len(sys::LEDGER_MONTH_MAX).unwrap();
+        // at the cap: read and counted (no newline in it)
+        assert!(!ledger_lines_exceed(&dir, 2));
+        month.set_len(1 << 40).unwrap();
+        let (done, finished) = std::sync::mpsc::channel();
+        let count = std::thread::spawn(move || done.send(ledger_lines_exceed(&dir, 2)).unwrap());
+        match finished.recv_timeout(std::time::Duration::from_secs(10)) {
+            Ok(exceeds) => assert!(exceeds),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => count.join().unwrap(),
+            Err(e) => panic!("the count read the sparse month: {e}"),
+        }
+    }
 }

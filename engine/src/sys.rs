@@ -193,11 +193,26 @@ fn open_checked(path: &Path) -> std::io::Result<File> {
 /// `Ok` for a regular file, else the `InvalidInput` error saying what
 /// the file is.
 fn not_regular(meta: &std::fs::Metadata) -> std::io::Result<()> {
+    let Some(what) = irregular(meta) else {
+        return Ok(());
+    };
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        format!(
+            "{what}, not a regular file; not read: make it a regular file and run the command again"
+        ),
+    ))
+}
+
+/// What a file that is no regular file is (`a FIFO`, `a device`, ...),
+/// from its metadata (links followed); `None` for a regular file.
+pub fn irregular(meta: &std::fs::Metadata) -> Option<&'static str> {
     use std::os::unix::fs::FileTypeExt as _;
     let kind = meta.file_type();
-    let what = if kind.is_file() {
-        return Ok(());
-    } else if kind.is_dir() {
+    if kind.is_file() {
+        return None;
+    }
+    Some(if kind.is_dir() {
         "a directory"
     } else if kind.is_fifo() {
         "a FIFO"
@@ -207,13 +222,7 @@ fn not_regular(meta: &std::fs::Metadata) -> std::io::Result<()> {
         "a socket"
     } else {
         "no regular file"
-    };
-    Err(std::io::Error::new(
-        std::io::ErrorKind::InvalidInput,
-        format!(
-            "{what}, not a regular file; not read: make it a regular file and run the command again"
-        ),
-    ))
+    })
 }
 
 /// The bytes of the regular file at `path` ([`open_regular`]), at most

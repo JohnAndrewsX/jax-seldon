@@ -1759,6 +1759,12 @@ fn check_git(config: &Config, logbook: Option<&Logbook>) -> Check {
     };
     let autocommit = if config.git.autocommit { "on" } else { "off" };
     if git::is_repo(&logbook.root) {
+        // before the first git call: a FIFO `HEAD` holds every one of them
+        // until its timeout (WP-175)
+        if let Err(e) = git::check_files(&logbook.root) {
+            return Check::new("git", Status::Degraded, format!("{version}; {e}"))
+                .fix(GIT_FILE_FIX);
+        }
         if let Err(e) = git::check_toplevel(&logbook.root) {
             let check = Check::new("git", Status::Degraded, format!("{version}; {e}"));
             return if e.contains("not a usable repository") {
@@ -1794,6 +1800,9 @@ fn check_git(config: &Config, logbook: Option<&Logbook>) -> Check {
         )
     }
 }
+
+/// The fix of a `.git` or `HEAD` that is no regular file (WP-175).
+const GIT_FILE_FIX: &str = "replace the file the git row names: HEAD is a regular file of one line naming the checked-out branch, e.g. \"ref: refs/heads/main\" (the branches are the files under refs/heads and the lines of packed-refs in the repository's git directory: .git, or for a linked work tree the .git of the main work tree); .git is a directory or a \"gitdir: <path>\" file; then run seldon doctor again";
 
 /// What keeps every autocommit from committing (WP-061), first match: a
 /// `.git/index.lock` (a git process killed half way leaves it behind), a
