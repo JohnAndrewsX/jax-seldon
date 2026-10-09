@@ -1784,7 +1784,7 @@ command changes system state.";
                 assert!(!agents.contains(dropped), "{language}: {dropped}");
             }
             assert!(
-                agents.starts_with("<!-- seldon:begin rules v4 -->\n"),
+                agents.starts_with("<!-- seldon:begin rules v5 -->\n"),
                 "{language}"
             );
             // Omarchy's privilege wording, word for word (WP-111)

@@ -1,4 +1,4 @@
-<!-- seldon:begin rules v5 -->
+<!-- seldon:begin rules v4 -->
 # AGENTS.md
 
 Regeln für jeden Agenten auf dieser Maschine.
@@ -310,8 +310,7 @@ ausführen, lass den Case offen und sag, was noch fehlt; zum Aufgeben
   Pfad aus), `seldon hook session-start`.
 - Schreibend: die `seldon plan`-Schritte oben, `seldon log`,
   `seldon event`, `seldon decide`, `seldon drift link|explain|dismiss`,
-  `seldon inbox add`, `seldon capture --all`, `seldon status`,
-  `seldon hook session-stop`.
+  `seldon capture --all`, `seldon status`, `seldon hook session-stop`.
 - Nur, wenn der Nutzer genau das verlangt: `seldon init`,
   `seldon hook install`, `seldon import … --apply`, `seldon agent start`,
   `seldon rules update`.
@@ -326,14 +325,6 @@ ausführen, lass den Case offen und sag, was noch fehlt; zum Aufgeben
   Aussage dort wie in *Result*: `measured`, `documented` oder `inferred`.
 - Eine Entscheidung, die die Maschine prägt:
   `seldon decide --no-edit --case <ID> -- "<Titel>"`, danach das ADR ausfüllen.
-- Ein Absturz, den du untersucht hast (Omarchys `diagnose-crash`): leg
-  den Bericht in die Inbox, den Bericht über stdin:
-  `seldon inbox add --title "<Titel>" --tag crash --actor agent:<name> --file -`.
-  Seldon schwärzt ihn und legt ihn in `inbox/`; nie den Core,
-  Speicherinhalte, die Umgebung oder `bt full` hineinschreiben. Das
-  Ablegen ändert nichts und braucht keinen Case; frag danach den Nutzer
-  in einer Zeile, ob daraus ein Case wird (unbetreut: ablegen, nichts
-  fragen).
 
 ## Drift
 

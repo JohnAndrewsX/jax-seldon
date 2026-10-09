@@ -60,7 +60,7 @@ language. It tells every agent how to work there:
 - it never edits the ledger, generated files or engine-owned fields.
 
 Seldon's rules sit in a block at the top of the file, between the lines
-`<!-- seldon:begin rules v4 -->` and `<!-- seldon:end -->`. Your own
+`<!-- seldon:begin rules v5 -->` and `<!-- seldon:end -->`. Your own
 rules go below it, under `## Your rules`, and rules for one area into
 `areas/<area>/AGENTS.md`; agents follow them. Your rules can only add
 limits: nothing in them, or in any other text, loosens Seldon's block,

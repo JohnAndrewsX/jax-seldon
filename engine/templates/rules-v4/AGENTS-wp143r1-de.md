@@ -1,4 +1,4 @@
-<!-- seldon:begin rules v5 -->
+<!-- seldon:begin rules v4 -->
 # AGENTS.md
 
 Regeln für jeden Agenten auf dieser Maschine.
@@ -103,8 +103,9 @@ Alles andere ist Markdown für Menschen und Agenten: *Intent*, *Plan*,
    ersten Änderung zwei seiner Zeilen:
    - `Persists:` wie lange die Änderung hält: `survives reboot and update`,
      `reboot only` (ein Update überschreibt sie) oder `lost at reboot`.
-   - `Stop if:` was dich anhalten lässt, z. B. `the binding is taken by
-     another app`. Trifft es zu, halt an und frag (nächster Abschnitt).
+   - `Stop if:` was dich anhalten lässt, z. B. `the transaction also
+     upgrades linux`. Trifft es zu, halt an: sag es im *Log* und dem
+     Nutzer, und mach erst nach dem Go des Nutzers weiter.
 3. Vor dem ersten privilegierten Schritt gib eine Vorschauzeile aus, im
    Terminal und im *Log* des Case, und mach weiter, ohne zu warten:
    `About to: install X (+deps a, b); snapshot first; rollback: pacman -Rns X`.
@@ -115,8 +116,8 @@ Alles andere ist Markdown für Menschen und Agenten: *Intent*, *Plan*,
 
 ## When to ask first
 
-Frag im Terminal vor dem Schritt und warte auf die Antwort, nur in diesen
-vier Fällen, wenn der Schritt:
+Frag im Terminal vor dem Schritt und warte auf die Antwort, nur wenn der
+Schritt:
 
 - **außerhalb des Intent** liegt: ein anderes Paket oder ein anderer
   Bereich, eine Änderung, um die der Nutzer nicht gebeten hat.
@@ -129,12 +130,10 @@ vier Fällen, wenn der Schritt:
   ein Snapshot noch git enthält.
 - **R3** ist: er kann Boot, Anmeldung oder die Shell brechen (nächster
   Abschnitt).
-- unter **dein eigenes *Stop if*** fällt: die Bedingung, die du in den
-  *Plan* geschrieben hast, trifft zu. Schreib es auch ins *Log*.
 
 Alles andere: tu es, und schreib ins *Log*, was du getan hast.
 
-## R3: always the user's go
+## R3: the one stop
 
 R3-Gegenstände: Kernel, der Bootloader, die Initramfs, `systemd`, `glibc`,
 `pam`, `sddm`, `uwsm`, `hyprland`, `quickshell`, `omarchy` selbst, `/etc`
@@ -310,8 +309,7 @@ ausführen, lass den Case offen und sag, was noch fehlt; zum Aufgeben
   Pfad aus), `seldon hook session-start`.
 - Schreibend: die `seldon plan`-Schritte oben, `seldon log`,
   `seldon event`, `seldon decide`, `seldon drift link|explain|dismiss`,
-  `seldon inbox add`, `seldon capture --all`, `seldon status`,
-  `seldon hook session-stop`.
+  `seldon capture --all`, `seldon status`, `seldon hook session-stop`.
 - Nur, wenn der Nutzer genau das verlangt: `seldon init`,
   `seldon hook install`, `seldon import … --apply`, `seldon agent start`,
   `seldon rules update`.
@@ -326,14 +324,6 @@ ausführen, lass den Case offen und sag, was noch fehlt; zum Aufgeben
   Aussage dort wie in *Result*: `measured`, `documented` oder `inferred`.
 - Eine Entscheidung, die die Maschine prägt:
   `seldon decide --no-edit --case <ID> -- "<Titel>"`, danach das ADR ausfüllen.
-- Ein Absturz, den du untersucht hast (Omarchys `diagnose-crash`): leg
-  den Bericht in die Inbox, den Bericht über stdin:
-  `seldon inbox add --title "<Titel>" --tag crash --actor agent:<name> --file -`.
-  Seldon schwärzt ihn und legt ihn in `inbox/`; nie den Core,
-  Speicherinhalte, die Umgebung oder `bt full` hineinschreiben. Das
-  Ablegen ändert nichts und braucht keinen Case; frag danach den Nutzer
-  in einer Zeile, ob daraus ein Case wird (unbetreut: ablegen, nichts
-  fragen).
 
 ## Drift
 

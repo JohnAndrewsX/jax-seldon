@@ -1,5 +1,5 @@
 == AGENTS.md
-fence rules v4
+fence rules v5
 # AGENTS.md
 ## Session start
 ## Attended or not
