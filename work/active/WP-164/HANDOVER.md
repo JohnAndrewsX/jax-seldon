@@ -188,3 +188,51 @@ Stage 1 (Opus) approved with notes N1–N3
 unset (the worktree's `engine/target`, on disk), `flock
 /tmp/seldon-check.lock just check`: **`check: ok`, exit 0**, 2428 passed,
 0 failed; no Quickshell harness skipped; `/run/user/1000` 2 % before.
+
+## Round 3
+
+Stage 2 (Fable) sent back finding 1
+(`review-0.1.1/handovers/WP-164-stage2-fable.md`); `next` merged first
+(13c992cc, brings WP-170's queue file).
+
+- **Finding 1 (blocking), fixed:** `evidence()` grants `system-link` only
+  to a subject under the home directory (`key` starts with `~/`). A boot
+  file linked into `/usr/` is a `config-add`/`config-change` without
+  `meta.matches`, attention `config`, like any other boot change (ADR-0037
+  §2 gives the mark to two home paths only). Test
+  `boot_hashes.rs` `a_boot_symlink_into_usr_is_no_system_link` (a drop-in
+  linked to the first readable of `/usr/share/zoneinfo/UTC`,
+  `/usr/lib/os-release`, `/usr/share/licenses/glibc/LICENSE`; skipped
+  without one): one `config-add`, hash only, no `matches`, class
+  attention `config`, quiet afterwards. With the `~/` check taken out the
+  test fails; restored. SPEC §4: the boot paragraph says a link there
+  carries no evidence mark, and the evidence-marks sentence limits
+  `system-link` to the home directory; guide 06 en/de say a link to a
+  shipped file counts like any other change; the de source line is at
+  `51759fb3`.
+- **Finding 2, done:** `schema/event.schema.json` `subject` description:
+  "path (~-relative; absolute for the boot files under /etc, WP-164)".
+  Description only, no contract bump.
+- **Finding 4, done — as an index variant, not in the sample logbook:**
+  `fixtures/index-variants/boot-config.json` (overlay in
+  `scripts/validate-fixtures.py`, README table row): a `config-change` of
+  `/etc/mkinitcpio.conf.d/omarchy_hooks.conf` and a `config-add` of
+  `/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf` with
+  `meta.hashBasis: "stat"`, inserted by time on 09-23, both open
+  attention drift items, `summary.openDrift: 8`. I first added them to
+  the sample logbook: that moved every count and list the plugin tests
+  and harnesses walk (7 model tests failed at once: counts, 83 events,
+  periods, "+244 more"), so I reverted it and followed the existing
+  index-only pattern (`case-reopened`, `drift-explained-case`). New model
+  test `WP-164: boot-file events with absolute subjects under /etc`
+  (parse, counts, the two rows by absolute subject, `lastSegment`); the
+  desk harness renders the variant in every chart (`radiant-variant-
+  boot-config`). `validate-fixtures`: ok, 10 variants.
+- Finding 3 (`PACNEW_HINT` wording) is WP-170's, not done here.
+
+**Check:** `XDG_RUNTIME_DIR=/tmp/r164c` (0700, removed afterwards),
+`SELDON_FULL_CHECK=1`, `JUST_TEMPDIR=<scratch>`, `CARGO_TARGET_DIR`
+unset (the worktree's `engine/target`, on disk), `flock
+/tmp/seldon-check.lock just check`: **`check: ok`, exit 0**, 2430 passed,
+0 failed, model tests 185 passed; `/run/user/1000` 2 % before. docs-check's
+one warning (`de/01-getting-started.md`) is still `next`'s.
