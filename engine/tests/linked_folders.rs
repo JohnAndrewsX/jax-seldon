@@ -358,6 +358,23 @@ fn memory_and_the_import_folders() {
             &["import", "omarchy-agent", "~/vault", "--apply"],
         );
     }
+    // a day of the vault in an existing year: a link there is found among
+    // the planned paths (a file there fails the plan's read of the day)
+    refused_with(
+        Start::Fresh,
+        &[Swap::Link],
+        "journal/2026",
+        "journal/2026",
+        vault,
+        &["import", "omarchy-agent", "~/vault", "--apply"],
+    );
+    // a dry run writes its report only
+    refused(
+        "outputs",
+        "outputs",
+        vault,
+        &["import", "omarchy-agent", "~/vault"],
+    );
 }
 
 fn omarchy_agent_vault() -> PathBuf {

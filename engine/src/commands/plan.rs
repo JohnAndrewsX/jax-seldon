@@ -563,10 +563,8 @@ fn step(
         })
     });
 
-    // the folders the step writes into, before the ledger (WP-168): the
-    // case's from and to, `.seldon/` for the active case
-    logbook.checked_file(&file.path)?;
-    logbook.checked_dir(format!("work/{}", to.folder()))?;
+    // `.seldon/` for the active case, before the ledger (WP-168); the case
+    // folders were checked under the lock
     if transition != Transition::Verify {
         logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
     }

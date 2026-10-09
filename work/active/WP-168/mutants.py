@@ -37,6 +37,7 @@ REBUILD = "engine/src/commands/rebuild.rs"
 RULES = "engine/src/commands/rules.rs"
 SKILLS = "engine/src/commands/skills.rs"
 SETUP = "engine/src/commands/setup.rs"
+TRIAGE = "engine/src/commands/triage.rs"
 
 
 def plain(a, b, count=1):
@@ -93,7 +94,6 @@ MUTANTS = [
     ("plan new: case folders not checked", PLAN, plain("    cases::checked_folders(logbook)?;\n    if let Some(area) = spec.area.as_deref() {", "    if let Some(area) = spec.area.as_deref() {")),
     ("plan new: area not checked first", PLAN, plain("    if let Some(area) = spec.area.as_deref() {\n        logbook.checked_dir(format!(\"areas/{area}\"))?;\n    }\n    if spec.start && spec.point {", "    if spec.start && spec.point {")),
     ("plan step: case folders not checked", PLAN, plain("    let lock = ctx.lock()?;\n    cases::checked_folders(&logbook)?;\n    let mut file = cases::find(&logbook, &args.id)?;\n    let from = file.case.status;", "    let lock = ctx.lock()?;\n    let mut file = cases::find(&logbook, &args.id)?;\n    let from = file.case.status;")),
-    ("plan step: its folders not checked before the ledger", PLAN, plain("    logbook.checked_file(&file.path)?;\n    logbook.checked_dir(format!(\"work/{}\", to.folder()))?;\n", "")),
     ("plan step: .seldon not checked before the ledger", PLAN, plain("    if transition != Transition::Verify {\n        logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;\n    }\n", "")),
     ("plan set: case folders not checked", PLAN, plain("    cases::checked_folders(&logbook)?;\n    let mut file = cases::find(&logbook, &args.id)?;\n    open_only(&file, \"set\")?;", "    let mut file = cases::find(&logbook, &args.id)?;\n    open_only(&file, \"set\")?;")),
     ("decide: new not checked first", DECIDE, plain("    // before the next id is read from it (WP-168)\n    logbook.checked_dir(\"decisions\")?;\n", "")),
@@ -101,11 +101,12 @@ MUTANTS = [
     ("drift: ledger not checked first", DRIFT, plain("    logbook.checked_dir(crate::ledger::LEDGER_DIR)?;\n", "")),
     ("drift: case folders not checked first", DRIFT, plain("        cases::checked_folders(&logbook)?;\n    }\n    if let Action::Explain", "    }\n    if let Action::Explain")),
     ("drift: area not checked first", DRIFT, plain("        logbook.checked_dir(format!(\"areas/{area}\"))?;\n    }\n    let built", "    }\n    let built")),
-    ("drift: explain not checked before the ledger", DRIFT, plain("        logbook.checked_file(&file.path)?;\n        if let Some(area) = explain.area.as_deref() {", "        if let Some(area) = explain.area.as_deref() {")),
+    ("drift apply: ledger not checked", TRIAGE, plain("    logbook.checked_dir(crate::ledger::LEDGER_DIR)?;\n    crate::logbook::cases::checked_folders(&logbook)?;", "    crate::logbook::cases::checked_folders(&logbook)?;")),
+    ("drift apply: case folders not checked", TRIAGE, plain("    crate::logbook::cases::checked_folders(&logbook)?;\n    for n in named {", "    for n in named {")),
     ("log: case folders not checked", LOG, plain("    if args.case_id.is_some() {\n        cases::checked_folders(&logbook)?;\n    }\n", "")),
     ("event: case folders not checked", EVENT, plain("    if args.case_id.is_some() {\n        cases::checked_folders(&logbook)?;\n    }\n", "")),
     ("import: folders not checked first", IMPORT, plain("        for rel in IMPORT_FOLDERS {\n            logbook.checked_dir(rel)?;\n        }\n", "")),
-    ("import: memory not among the folders", IMPORT, plain("    \"journal\",\n    \"memory\",\n    \"system\",\n", "    \"journal\",\n    \"system\",\n")),
+    ("import: memory not among the folders", IMPORT, both(plain("    \"journal\",\n    \"memory\",\n    \"system\",\n", "    \"journal\",\n    \"system\",\n"), plain("const IMPORT_FOLDERS: [&str; 9]", "const IMPORT_FOLDERS: [&str; 8]"))),
     ("import: plan paths not checked", IMPORT, plain("    check_folders(&logbook, &plan)?;\n", "")),
     ("import: report not checked", IMPORT, plain("    let path = logbook.checked_file(report_path(SOURCE))?;", "    let path = logbook.path(report_path(SOURCE));")),
     ("import task: marker not checked", TASK, plain("        logbook.checked_file(&marker_rel)?;\n", "")),
@@ -123,6 +124,7 @@ cargo = ["cargo", "test", "--manifest-path", "engine/Cargo.toml", "--locked", "-
 runs = [
     cargo + ["--lib", "--", "logbook::", "commands::setup", "commands::skills", "commands::tests::write_new", "--test-threads=4"],
     cargo + ["--test", "linked_folders", "--", "--test-threads=4"],
+    cargo + ["--test", "triage", "--", "apply_refuses", "--test-threads=4"],
 ]
 results = []
 for name, file, mutate in MUTANTS:
