@@ -81,6 +81,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `layout` row is reached. Doctor warns (`degraded`) from 128 MiB on:
   the append has no cap, so a month that grows past 256 MiB has to be
   trimmed by hand before it can be read again.
+- **No git waits on a FIFO in `.git` either (WP-175).** A FIFO at
+  `.git/HEAD` (or at `.git`) held every git call of a command until its
+  timeout: `status` took 40 s, `doctor` 30 s. The engine now checks
+  `.git` and `HEAD` before it runs git in the logbook; if one is no
+  regular file, no git runs, the command says once which file it is and
+  what to do, and doctor's `git` row names it with a fix. A FIFO at
+  `.seldon/logbook.toml` is named the same way (exit 1) instead of
+  "not initialised; run `seldon init`", and the hook's fast index
+  rebuild no longer reads a huge ledger month without a newline before
+  giving up on it.
 - **No secret hides behind an invisible or control character
   (WP-159, ADR-0048).** Every redaction now reads the text twice: without
   its invisible characters and lone control characters (so

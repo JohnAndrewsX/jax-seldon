@@ -1020,6 +1020,36 @@ the `#[cfg(test)]` modules: each reads a file outside the logbook, or is
 one of the checked opens in `sys.rs` (`open_checked`, the ledger's
 append).
 
+A `.seldon/logbook.toml` that is there but no regular file (a FIFO, a
+device, a directory) is a logbook the engine refuses, not one that is
+not initialised (WP-175): every command that opens the logbook stops
+with exit 1, "`<path>`: a FIFO, not a regular file; not read: make it a
+regular file and run the command again" (or "more than 16 MiB; not
+read"), not exit 3 "run `seldon init`"; `init` refuses to write over it
+(exit 1, "`<path>`: not a regular file; init does not write over it:
+remove it, or make it a regular file if this is a logbook"); doctor's
+`logbook` row is that error.
+
+No git in a logbook whose git files would block it (WP-175): git opens
+`HEAD` for every command, so a FIFO at `.git/HEAD` held each git call
+until its timeout (`status` 40 s, `doctor` 30 s). Before every git call
+in the logbook the engine checks, with file metadata only (links
+followed, as git follows them), that `.git` is a directory or a regular
+file and that the `HEAD` of the git directory it leads to (`.git/HEAD`,
+or for a `.git` file `<gitdir>/HEAD`) is a regular file
+(`logbook::git::check_files`). If not, no git runs: the call is
+answered at once with "`<path>`: a FIFO | a device | a socket, not a
+regular file; git is not run in the logbook: make it a regular file and
+run the command again". A command says it once, where it meets it
+first: its autocommit's warning ("git: not committed: cannot run git:
+…"; `--json` `git.error`) or its index rebuild's warning ("git: …";
+`logbook.git` is left out); the rest of its git calls are skipped
+quietly. Doctor's `git` row is `degraded` with that message and a fix
+(what `HEAD` holds, where the branch names are). A missing `HEAD`, or
+one that is a directory, is no refusal: git says at once that this is
+no repository. Other files git opens (`.git/config`, a loose ref) are
+not checked.
+
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
 where one exists (an `ok` row has a fix only for the old snapper opt-in,
 §4). `config`: `config.toml` can be read, parses and its
@@ -3147,7 +3177,10 @@ rebuilds the index the cheap way (no git spawn, `.git/HEAD` read
 directly), after releasing the lock and without waiting for it again
 (another writer that holds it rebuilds after its own write), and only
 while the ledger has at most 1000 lines; above that the next `capture`
-or `status` brings the index up to date. Budget (§1, WP-057's
+or `status` brings the index up to date. A month file over the read cap
+(256 MiB, §3 "Bounded reads") counts as above the threshold without
+being read (WP-175): one without a newline would otherwise be read to
+its end, and the full rebuild refuses it anyway. Budget (§1, WP-057's
 threshold): < 5 ms per call, median wall time of an optimised build
 with the state on tmpfs, for a call it does not record and for a
 recorded command, just below the threshold (with the rebuild) and at
