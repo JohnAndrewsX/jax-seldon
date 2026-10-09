@@ -223,7 +223,7 @@ pub fn read_regular_string(path: &Path, max: u64) -> std::io::Result<String> {
 /// The error of a file of more than `max` bytes (in MiB when whole).
 pub fn too_large(max: u64) -> std::io::Error {
     const MIB: u64 = 1024 * 1024;
-    let size = if max >= MIB && max % MIB == 0 {
+    let size = if max >= MIB && max.is_multiple_of(MIB) {
         format!("{} MiB", max / MIB)
     } else {
         format!("{max} bytes")
