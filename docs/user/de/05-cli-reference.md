@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ ee341011 -->
+<!-- source: en/05-cli-reference.md @ 8bd7f5ff -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -160,7 +160,8 @@ beides (`ok`, mit optionalem Aufräumen) oder nirgends (`ok`, außer du
 hast den Claude-Code-Harness gewählt). Die Zeile `layout` nennt jeden
 Ordner und jede Datei, in die Seldon schreibt und die ein symbolischer
 Link ist (oder eine Datei, wo ein Ordner hingehört, oder umgekehrt):
-Befehle, die dort schreiben, verweigern das (`error`). Jede Zeile sagt
+`error`, wenn Befehle, die dort schreiben, das verweigern, `degraded` für
+eine verlinkte Ansicht, die `status` überspringt. Jede Zeile sagt
 `ok`, `degraded` oder `error`, und eine fehlerhafte Prüfung nennt den
 Befehl, der sie behebt. Exit 0, wenn nichts ein Fehler ist, 1, wenn eine
 Prüfung ein Fehler ist (auch, wenn `config.toml` nicht gelesen oder
