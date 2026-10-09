@@ -242,3 +242,85 @@ The first deploy takes a backup (the host runs main) and prints
 - A host without an engine (or whose engine cannot tell the logbook) is
   backed up without its logbook, said in the dry run but not refused.
   Refuse instead?
+
+## Round 3
+
+Stage-1 review (`review-0.1.1/handovers/WP-155-review-1.md`): SEND BACK
+on B1 (CI red: the backup-failure rows used `chmod 000`, and CI runs the
+test as root). The orchestrator's round-3 list: B1, N1, Q3, Q4, N4, N5,
+N6, N3, Q5. Commits 231d0031 (script, test) and 3ab7f3f2 (docs).
+
+- **B1.** The fake host's `cp` wrapper takes a switch: `$R/cp_fail`
+  names a substring, and a `cp` whose *source* argument contains it fails
+  (the destination is not matched, so `seldon-dev/…` does not trip it).
+  The backup-failure scenario uses `.local/state/seldon` instead of
+  `chmod 000` and now also checks that only the state dir failed (the
+  config copied before it is in the partial backup). No row of the test
+  depends on file permissions any more (grep for `chmod`, `-r`, `-w`,
+  `id -u`: none left but `chmod 755` of stubs). I could not run the test
+  as root here (no sudo); the switch does not depend on the user.
+  Mutants `copy-fail-ignored` and `backup-fail-continues` (the review's
+  M12, M25) are killed by these rows.
+- **N1.** `$R/du_empty` makes the fake `du` print nothing: refused with
+  "cannot tell how large the backup on <host> would be", no build, the
+  host unchanged. Mutant `size-unknown` (M17) killed.
+- **Q3.** A host whose engine does not name a logbook — no engine, or
+  `seldon doctor --json` without `.logbook` — is refused before anything
+  changes: "<host>'s engine does not name a logbook (seldon doctor
+  --json, .logbook), so the backup would miss it; install or fix the
+  engine there (a main deploy, or install.sh) until `seldon doctor
+  --json` names the logbook, then deploy next again". A logbook the
+  engine names that does not exist yet has nothing to copy; the dry run
+  says "<path>, absent" (the release-host row).
+- **Q4.** `RESTORE.txt` and the summary: first stop the watcher and put
+  back the logbook, `~/.config/seldon`, the state dir and `shell.json`
+  (next's copies move aside as `<path>.next`), then right away deploy
+  main (or `--release`), whose smoke then writes into the restored
+  logbook; then start the watcher again. A test row checks the order
+  (stop < logbook < state < deploy < start). Note: between the restore
+  and the main deploy the next engine and plugin still run on the
+  restored state; "right away" says so, the watcher is stopped, but the
+  shell's plugin can still call the next engine in that window.
+- **N4.** A `--release` deploy onto a host that runs next warns like the
+  main deploy and points to `RESTORE.txt` (before the deploy); it
+  replaces the generic "move ~/.local/state/seldon aside" warning there.
+  Row: a release dry run on the next host.
+- **N5.** The unused `home=` probe output is gone.
+- **N6.** The header's over-long line is wrapped; the versions read
+  `X.Y.Z+main.<sha>` and `X.Y.Z+next.<sha>` (X.Y.Z from
+  engine/Cargo.toml).
+- **N3.** If a first next deploy fails after the engine swap but before
+  the marker is written, the retry takes a second backup whose
+  `seldon.engine` is already next's, and "the newest RESTORE.txt" then
+  means that one; its logbook, config and state copies are still from
+  before next unless the failed attempt wrote to them, so for a restore
+  after such a failure take the oldest `backup-before-next-*` of that
+  switch.
+- **Q5.** Noted: the CHANGELOG line for `next` comes with the merge into
+  `next` (suggested text in round 1; add the logbook and
+  `~/.config/seldon`).
+- **N2** (`mkdir` vs `mkdir -p` of the stamp dir, equivalent mutant): no
+  change.
+
+### Verification
+
+- `bash tests/deploy/deploy-test-host.test.sh`: 310 passed, 0 failed.
+  Temp dir under `target/` (disk), fake `cp`/`du` refuse paths outside
+  it; `/tmp` at 2 % before and after.
+- Hand mutants for the new and changed code
+  (`gates/mutants-wp155-r3.sh`, log `gates/mutants-wp155-r3.log`; copies
+  under the worktree's `target/mutants`, one runner under `flock`,
+  `timeout 300` each): 12 mutants, 12 killed. No mutant of
+  `logbook_safe` or the install-step recheck this round (unchanged code;
+  killed in round 2 under the same wrappers).
+- Full gate `gates/check-wp155-r4.log` at 3ab7f3f2 (private runtime dir
+  `/tmp/r155`, 0700, removed afterwards; `SELDON_FULL_CHECK=1`): `check:
+  ok`, exit 0 (deploy-test-host.test 310/0, docs-check ok, no harness
+  skipped).
+- shellcheck: not installed here; CI (the orchestrator pushes).
+
+### Live on the test host
+
+Not run, nothing changed there; same reason as in rounds 1 and 2 (the
+script refuses anything but a `next` checkout at `origin/next`). No ssh
+to the test host this round.
