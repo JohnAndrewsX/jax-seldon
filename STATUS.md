@@ -682,6 +682,23 @@ submission). (see `work/queued/`)
   `omarchy-ux` skill when it lands (Q13). E61 the crash inbox guards
   against mistakes, not an adversary (residual → WP-169). E62 no plugin
   origin URL recorded. E63 the test host stays on Omarchy's rc channel.
+- Study of Tom Ballard's Omarchy work (`jax-seldon-private/study-tcballard/`),
+  all as recommended: E64 prepare the store submission (WP-042: the
+  plugin README loses both `curl … | bash` blocks, honest sudo/systemctl
+  wording) for 0.2.0; filing after 0.2.0 on a separate go. E65 protect
+  `main` and `v*` tags in both GitHub repos (no deletion, no force push,
+  no PR requirement; the operator sets it). E66 plugin tests in CI: stage 1
+  (node tests, Omarchy's validator) before 0.2.0, stage 2 (Quickshell) in
+  0.2.y with a small ADR. E67 a recorded live test per release from 0.2.0;
+  from 0.3 the workflow refuses a tag with code changed after it. E68 short
+  release highlights (≤ 10 points) from 0.2.0. E69 an offline check of the
+  Omarchy files Seldon builds on (0.2.x). E70 supply chain: Dependabot, a
+  no-network-crate test, the AUR package tested in a container once it
+  exists. E71 shorten Seldon's agent skill to a ~120-line core (0.2.x). E72
+  store review rules as a short block and tests (after T. Ballard, MIT) in
+  WP-183a/WP-126. E73 AGENTS.md §5 evidence words. E74 behaviour tests for
+  the agent skill planned for 0.3. E75 a store scan of similar plugins only
+  after Seldon's own submission.
 
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
