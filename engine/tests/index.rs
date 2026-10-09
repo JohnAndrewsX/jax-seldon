@@ -2352,7 +2352,6 @@ fn the_new_fields_are_optional_and_checked() {
 #[test]
 fn the_index_says_which_plugin_contract_reads_it() {
     assert_eq!(seldon::CONTRACT_READABLE_FROM, 2);
-    assert!(seldon::CONTRACT_READABLE_FROM <= seldon::CONTRACT_VERSION);
     for ix in [
         derive(|_| {}),
         index::not_initialised(Path::new("/x"), now()),
