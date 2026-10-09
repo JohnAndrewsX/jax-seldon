@@ -216,3 +216,76 @@ either case.
   last year makes doctor exit 1 until it is replaced. ADR-0049 §3 says
   why; the orchestrator may prefer `degraded`.
 - ADR-0049 is **proposed**; the operator accepts it.
+
+## Round 2 (review 1: SEND BACK, small)
+
+Packet: `review-0.1.1/handovers/WP-171-review-1.md`; the orchestrator's
+calls on F1–F5 and Q2–Q4.
+
+- **F1 (the row names only what the engine writes).** `layout::written(rel)`
+  is now the one list of every writer's files (`AGENTS.md`; the views
+  `STATUS.md`, `DECISIONS.md`, `ledger/<YYYY-MM>.md`;
+  `ledger/<YYYY-MM>.jsonl`; `journal/<YYYY>/<YYYY-MM-DD>.md`;
+  `work/<status>/C-*.md`; `decisions/ADR-*.md`; `areas/<area>/README.md`;
+  the dossier's fence files in `system/`; `memory/*.md`;
+  `outputs/REBUILD.md`, `outputs/IMPORT-*.md`; `.seldon/active-case`;
+  `.seldon/imports/{omarchy-agent.json, omarchy-agent.undo.json,
+  tasks.json}`). In `areas/<area>/`, `outputs/`, `journal/<YYYY>/` and
+  `.seldon/` only those are named: the reviewer's linked case template,
+  area note, `outputs` report and journal attachments now give `ok`
+  (`tests/doctor.rs::the_layout_row_names_only_what_seldon_writes`).
+  Every entry is still named in `decisions/`, the status folders,
+  `ledger/`, `system/`, `memory/`. **The tie:** every refused or skipped
+  file in `tests/linked_files.rs` (all writers, every swap) must be
+  named by `layout::misplaced` with the matching kind and refusal
+  (`named_by_doctor`); a writer whose file the list lacks fails there.
+  SPEC-ENGINE §3 and ADR-0049 §3 now say exactly that.
+- **F2.** A directory where the engine writes a file is named "no
+  regular file" (`ledger/2026-10.jsonl/`, a day, an ADR, an import
+  report).
+- **Q3.** `error` only for what a command refuses; a skipped view or
+  another link beside Seldon's files is `degraded` on its own (doctor
+  exit 0), and listed after the refused ones ("; also M where Seldon
+  writes but refuses nothing …") when both occur. `layout::Found` carries
+  `refused`.
+- **F3/Q2.** A linked or non-regular `STATUS.md`, `DECISIONS.md` or
+  `ledger/<month>.md` is skipped: `status` and `index` warn
+  "`<file>` not updated: `<file>` is a symbolic link, …" (human and
+  `--json` `warnings`), exit 0, and write `index.json`; a linked
+  `ledger/` folder is still refused (WP-168). `views::checked_view`;
+  `write_status`/`write_decisions_index`/`write_ledger_views` return the
+  skip as `Fill::Skipped`. Test: `linked_files::the_views_are_skipped`
+  (each view × link, dangling, folder, FIFO; `status` and `index`;
+  `generatedAt` is the new time). The `warnings` key of `status --json`
+  and `index --json` is not new, only the text (AGENTS.md §3 E42: no
+  contract change).
+- **F4.** `sys::open_append_nofollow`: `custom_flags(O_NOFOLLOW)` (the
+  constant written out per architecture, as `SIGKILL`; generic
+  `0o400000`, arm/aarch64/powerpc `0o100000`), `ELOOP` named as a link,
+  and the open file checked to be regular (a FIFO opens `O_RDWR` without
+  blocking and is refused). The ledger's append uses it after the check;
+  the race is closed for files. Unit test calls it directly, with no
+  check in front (link, dangling link, FIFO, regular, new). ADR-0049 §4
+  reworded: proportion, not impossibility, for the folder walk.
+- **F5.** `tests/rules.rs`: `Some(0)`.
+- **Q4.** No writer on this branch writes `inbox/` (only `init`'s
+  `.gitkeep` into an empty logbook), so `inbox` is not in the row; left
+  to WP-166.
+- **Merge of `next`** (dcc19901, 49dc118f): no conflict; it brings no
+  logbook writer.
+
+### Verification (round 2)
+
+- **`just check` at 49dc118f**: same command and dirs as round 1 (runtime
+  dir 0700, made and removed; temp dirs on disk). **exit 0, `check:
+  ok`**, 102 test binaries, 2654 passed, 0 failed; real-home-guard 40/0,
+  service-states 344/0, desk-view 1808/0, bar-view 196/0, ipc-restart
+  44/0, docs-check ok. Log: `gates/check-wp171-dev-r5.log`.
+- **Mutants** (76: the round-1 set, new ones for `written`, the walk, the
+  row's classes, the skipped views, the append open), against a copy
+  at 49dc118f, target `gates/target-wp171`: **71/76 killed**, no run hit
+  the time limit; the 5 survivors are the second layer at single call
+  sites, as in round 1. Log: `gates/mutants-wp171-dev-r3.log`.
+- Copy, target dir, temp dirs and `/tmp/r171` deleted (explicit paths,
+  looked at first). No guard-hook block; never run against a real
+  logbook.
