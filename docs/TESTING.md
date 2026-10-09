@@ -379,8 +379,10 @@ What CI runs for the plugin (WP-190):
   **`bash tests/plugin/real-home-guard.test.sh`** (stubs, scratch homes).
 - The release workflow's build job runs the same pinned validator on the
   exact plugin split (`git subtree split --prefix=plugin`, extracted with
-  `git archive`) before anything is published, and its `plugin` job pushes
-  only that split (packaging/README.md, "The Omarchy pin").
+  `git archive`) before anything is published; its `split` job recomputes
+  the split on the `plugin` job's runner and stops the release on a
+  mismatch, also in a dry run, and the `plugin` job pushes only that split
+  (packaging/README.md, "The Omarchy pin").
 
 What `SELDON_SKIP_HOST_CHECKS=1` still skips, with a notice and exit 0:
 
