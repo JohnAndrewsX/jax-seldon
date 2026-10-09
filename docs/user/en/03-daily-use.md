@@ -27,8 +27,10 @@ The pill sits on the right of the bar.
 - The Seldon mark, then `A · D`: A is the number of active cases, D the
   number of crises. Parts that are zero are hidden: the mark alone, `2`,
   `· 1`. The mark takes the pill's colour. Changes without a case that are
-  no crisis are not counted here; the setting `driftInBar` changes that
-  (see [Configuration](06-configuration.md#drift)).
+  no crisis are not counted here: the panel's Today tab and the tooltip
+  count them (*without a case*). The setting `driftInBar` set to `all`
+  counts them in the bar too (see
+  [Configuration](06-configuration.md#plugin-settings)).
 - It uses your theme's accent colour while cases are active, the theme's
   urgent colour when there is a crisis, and dims while something needs
   fixing.

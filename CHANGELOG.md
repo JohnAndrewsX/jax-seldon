@@ -59,6 +59,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Installing Seldon's plugin is no drift (WP-172, ADR-0050).** After
+  `seldon init`, `omarchy plugin add …jax-seldon-plugin… --enable` was the
+  first thing Seldon asked a new user to explain. Adding or enabling the
+  plugin `jax.seldon` is now routine under its own rule, `seldon-self`: in
+  the Changelog and `seldon drift --all`, never open drift. It is in the
+  default `[drift] routine` list and in `seldon doctor`'s `drift` line;
+  left out of your own list, the add is attention again. No reason is
+  recorded for it, and removing the plugin stays drift.
+- **The crash inbox in the logbook's `AGENTS.md` (WP-172).** The rules
+  block is v5: an agent that diagnosed a crash files the report with
+  `seldon inbox add` and asks you whether it becomes a case. An unedited
+  v4 block is updated by the next capture; `seldon doctor`'s `rules` row
+  says `current (v5)`.
 - **Crash analyses go into the logbook (WP-166, E28 step 1).** `seldon
   inbox add --title T --file F|-` files a text into the logbook's
   `inbox/` as `<date>-<title>.md`, in a commit of its own. It is redacted
@@ -389,6 +402,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shows the first paragraph of Intent and Result and where an imported
   case came from; the Decisions detail shows the first paragraph of the
   decision. *Open in editor* stays for the rest (WP-127).
+
+### Docs
+
+- **A tour that works on a fresh install (WP-172).** The README's
+  60-second tour and *Getting started* used a theme switch as the
+  example drift; since 0.1.4 a theme switch is routine and `seldon drift`
+  had nothing to show. The example is now an alias in `~/.bashrc`, drift
+  by default and undone in a second; every command was run on a fresh
+  home and the output is real. The texts also say what the pill counts by
+  default (crises) and where the other changes without a case are (the
+  panel's Today tab, the tooltip, `driftInBar = all`), and that a case
+  whose *Plan* names the file links the change by itself.
 
 ## [0.1.4] - 2026-10-08
 

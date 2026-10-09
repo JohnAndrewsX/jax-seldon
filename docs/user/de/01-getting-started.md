@@ -136,13 +136,27 @@ seldon doctor
 
 ```text
 seldon doctor · ~/Seldon
-  ok        engine   seldon 0.1.4, contract 1
+  ok        engine   seldon 0.1.4, contract 2
   ok        config   ~/.config/seldon/config.toml
-  ok        logbook  /home/you/Seldon · machine <machine> · de · 0 cases, 0 decisions, 0 journal days
+  ok        logbook  ~/Seldon · machine <machine> · de · 0 cases, 0 decisions, 0 journal days
+  ok        cases    every case id has one file
+  ok        ledger   0 months, every line an event
+  ok        fences   STATUS.md and DECISIONS.md: every generated fence has its end marker
+  ok        rules    current (v5)
+  ok        rollbacks no case has a rollback snapshot
+  ok        workpieces no workpiece folders
+  ok        collectors the last capture of every enabled collector succeeded
+  ok        layout   no linked folders or files where Seldon writes
+  ok        state    ~/.local/state/seldon: cursors.json, manifest.json readable
+  ok        skills   no agent skill folder (~/.agents/skills, ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills, ~/.hermes/skills); nothing to install
+  ok        hooks    none: no Claude Code harness is configured
   ok        omarchy  Omarchy 4.0.4-1
   degraded  snapper  No permissions. Snapshots are not recorded until you grant your user read access to the snapshot directory once (ADR-0026). The fix grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion.
                      fix: sudo setfacl -m u:$USER:rx /.snapshots
+  ok        pacman   no db.lck: pacman is not running
   ok        git      git version 2.55.0; logbook is a repository; autocommit on
+  ok        watch    watchPaths: 13 path(s), every default included
+  ok        drift    attention normal · routine: sysupgrade, upgrade, keyring, omarchy-update, plugin-toggle, seldon-self, theme, omarchy-default, system-link, routine-paths, theme-assets, theme-repo, toggle-flag · routinePaths 2 · routinePackages 2 · alwaysRedPaths 9 · alwaysRed 20; all defaults; Omarchy's copies count as evidence (/usr/share/omarchy)
 doctor: ok
 ```
 
@@ -166,6 +180,11 @@ omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enabl
 Rechts in der Bar erscheint eine kleine Pill mit dem Seldon-Zeichen. Ein
 Klick öffnet das Panel. [Alltag](03-daily-use.md) erklärt jeden Teil davon.
 
+Seldon zeichnet die Installation des Plugins und das Bar-Layout, das
+Omarchy in `~/.config/omarchy/shell.json` speichert, als Routine auf:
+Beides ist keine Drift, und `seldon drift` meldet weiter
+`No open drift.`
+
 Keine Pill? Prüf, ob `omarchy plugin list` das Plugin `jax.seldon` als
 aktiviert zeigt (sonst `omarchy plugin enable jax.seldon`), und starte
 dann die Shell mit `omarchy-restart-shell` neu. Zeigt das Panel ein
@@ -175,19 +194,19 @@ listet jedes Banner.
 
 ## Schritt 5: Eine ungeplante Änderung aufzeichnen
 
-Ändere etwas, ohne Seldon vorher Bescheid zu geben. Ein Theme-Wechsel
-eignet sich gut: Er ist sichtbar und in einer Sekunde rückgängig gemacht.
+Ändere etwas, ohne Seldon vorher Bescheid zu geben. Ein Alias in deiner
+`~/.bashrc` eignet sich gut: Omarchys `~/.bashrc` hat einen Platz für
+eigene Aliase, und du machst ihn in einer Sekunde rückgängig. (Ein
+Theme-Wechsel taugt dafür nicht: Seldon zählt ihn als Routine, und
+Routine ist Geschichte, keine Drift.)
 
-1. Merk dir dein aktuelles Theme, damit du später zurückwechseln kannst:
+1. Füg den Alias hinzu:
 
    ```sh
-   omarchy theme current
+   echo "alias ll='ls -lh'" >> ~/.bashrc
    ```
 
-2. Wechsle zu einem anderen Theme, mit Omarchys Theme-Switcher oder mit
-   `omarchy theme set <name>`. `omarchy theme list` zeigt die Namen.
-
-3. Lass Seldon nach Änderungen suchen:
+2. Lass Seldon nach Änderungen suchen:
 
    ```sh
    seldon capture
@@ -195,48 +214,55 @@ eignet sich gut: Er ist sichtbar und in einer Sekunde rückgängig gemacht.
 
    ```text
    Captured 1 new event(s).
-     snapper     0
+     snapper     0  snapper list is not permitted; 6 snapshots read from the info files in /.snapshots
      pacman      0
      omarchy     0
      plugins     0
-     theme       1
-     config      0
+     theme       0
+     config      1
    ```
 
    Das Plugin erfasst außerdem von selbst alle 15 Minuten. Hier startest
-   du die Erfassung von Hand, damit du nicht warten musst.
+   du die Erfassung von Hand, damit du nicht warten musst. Die Zeile
+   `snapper` sagt nach der Freigabe aus Schritt 3, wie Seldon die
+   Snapshots gelesen hat; ohne sie, warum er keine gelesen hat.
 
-4. Frag Seldon, was unerklärt ist:
+3. Frag Seldon, was unerklärt ist:
 
    ```sh
    seldon drift
    ```
 
    ```text
-   yellow  2026-10-02 19:54  theme/theme-set  gruvbox  01M3YW134EVKJ23C1GXVHDVVEH
+   yellow     2026-10-09 18:45  config/config-change  ~/.bashrc  01M4GRVZY218EJ231D8W1D25GH
    1 open drift item(s), 0 crisis
    ```
 
-   Der Theme-Wechsel ist **Drift**: eine Änderung, die kein Case abdeckt.
-   `yellow` ist ihre Zone: eine Konfigurations- oder Theme-Änderung, kein
-   Paket ([Konzepte](02-concepts.md#zonen) erklärt Zonen). Die letzte
-   Spalte ist die Ereignis-ID (deine sieht anders aus). Wenn du das Plugin
-   hinzugefügt hast, zeigt die Pill in der Bar jetzt `· 1` hinter dem
-   Zeichen.
+   Die Änderung ist **Drift**: eine Änderung, die kein Case abdeckt.
+   `yellow` ist ihre Zone: eine Konfigurationsänderung, kein Paket
+   ([Konzepte](02-concepts.md#zonen) erklärt Zonen). Die letzte Spalte ist
+   die Ereignis-ID (deine sieht anders aus).
 
-5. Erkläre sie. Die Änderung ist schon passiert, also hält Seldon deinen
+   Sie ist keine Krise, also bleibt die Pill in der Bar, wie sie war: Die
+   Zahl hinter dem Zeichen zählt standardmäßig nur Krisen. Der Tab Today
+   des Panels (Taste `1`) zeigt die Änderung unter *without a case*, der
+   Tooltip der Pill ebenso. Sollen alle Änderungen ohne Case auch in der
+   Bar zählen, setz die Plugin-Einstellung `driftInBar` auf `all`
+   ([Konfiguration](06-configuration.md#einstellungen-des-plugins)).
+
+4. Erkläre sie. Die Änderung ist schon passiert, also hält Seldon deinen
    Grund als nachträglichen Case fest: ein neuer Case, gleich als
    abgeschlossen angelegt, mit deinem Text als Titel:
 
    ```sh
-   seldon drift explain <EVENT> -- "Anderes Theme ausprobiert"
+   seldon drift explain <EVENT> -- "Ein kürzeres ls"
    ```
 
    Ersetze `<EVENT>` durch die ID aus deiner Ausgabe von `seldon drift`.
 
    ```text
    Explained 1 event(s) with the new completed case C-2026-001
-   Case: work/completed/C-2026-001-anderes-theme-ausprobiert.md
+   Case: work/completed/C-2026-001-ein-kuerzeres-ls.md
    ```
 
 Deine Case-IDs tragen das aktuelle Jahr. `seldon drift` meldet jetzt
@@ -244,44 +270,52 @@ Deine Case-IDs tragen das aktuelle Jahr. `seldon drift` meldet jetzt
 
 ## Schritt 6: Eine Änderung als Case planen
 
-Jetzt der geplante Weg. Leg einen Case für den Rückwechsel an und starte
-ihn:
+Jetzt der geplante Weg. Leg einen Case an, der den Alias wieder
+entfernt, und starte ihn:
 
 ```sh
-seldon plan new --area themes -- "Zurück zu meinem üblichen Theme"
+seldon plan new --area shell -- "Den ll-Alias wieder entfernen"
 seldon plan start C-2026-002
 ```
 
 ```text
-Created C-2026-002 "Zurück zu meinem üblichen Theme" in work/queued/C-2026-002-zurueck-zu-meinem-ueblichen-theme.md
-C-2026-002 queued → active (now work/active/C-2026-002-zurueck-zu-meinem-ueblichen-theme.md)
+Created C-2026-002 "Den ll-Alias wieder entfernen" in work/queued/C-2026-002-den-ll-alias-wieder-entfernen.md
+C-2026-002 queued → active (now work/active/C-2026-002-den-ll-alias-wieder-entfernen.md)
 ```
 
-`--area themes` legt den Case im Bereich `themes` ab, einem von sechs
-Themen, die ein neues Logbuch hat (`areas/themes/`). Nimm die ID, die
+`--area shell` legt den Case im Bereich `shell` ab, einem von sechs
+Themen, die ein neues Logbuch hat (`areas/shell/`). Nimm die ID, die
 `plan new` ausgegeben hat. Der Case ist jetzt aktiv. Schreib eine Notiz
 ins heutige Journal:
 
 ```sh
-seldon log --case C-2026-002 -- "Wechsle zurück zu meinem üblichen Theme"
+seldon log --case C-2026-002 -- "Entferne den ll-Alias wieder"
 ```
 
-Wechsle zurück zu dem Theme, das du dir in Schritt 5 gemerkt hast. Dann
-erfasse noch einmal und sieh dir die Drift an:
+```text
+Noted in journal/2026/2026-10-09.md (C-2026-002): Entferne den ll-Alias wieder
+```
+
+Lösch die Zeile `alias ll='ls -lh'` aus `~/.bashrc` (im Editor oder mit
+`sed -i "/^alias ll=/d" ~/.bashrc`). Dann erfasse noch einmal und sieh
+dir die Drift an:
 
 ```sh
 seldon capture
 seldon drift
 ```
 
-Der Wechsel erscheint wieder als Drift. Seldon sieht, dass sich das
-Theme geändert hat, aber ein Collector kann nicht wissen, dass du es für
+```text
+yellow     2026-10-09 18:45  config/config-change  ~/.bashrc  01M4GRWDG2NTD5AM6DWG1K30SD
+1 open drift item(s), 0 crisis
+```
+
+Die Änderung erscheint wieder als Drift. Seldon sieht, dass sich die
+Datei geändert hat, aber ein Collector kann nicht wissen, dass du es für
 diesen Case getan hast. Nur Agenten, die über Hooks arbeiten, landen von
 selbst beim aktiven Case. Der Case lohnt sich trotzdem: Er enthält deine
-Notiz und, sobald verknüpft, die Änderung selbst als seine Spur. Nennt
-der *Plan* des Case das Theme (zum Beispiel `tokyo-night`), schlägt
-Seldon diesen Case für die Änderung vor, und der Drift-Dialog des Panels
-wählt ihn vor. Deine eigene Änderung verknüpfst du mit einem Befehl:
+Notiz und, sobald verknüpft, die Änderung selbst als seine Spur. Deine
+eigene Änderung verknüpfst du mit einem Befehl:
 
 ```sh
 seldon drift link <EVENT> C-2026-002
@@ -290,6 +324,12 @@ seldon drift link <EVENT> C-2026-002
 ```text
 Linked 1 event(s) to C-2026-002
 ```
+
+Nenn die Datei beim nächsten Mal im *Plan* des Case, bevor du sie
+änderst, zum Beispiel `- Affected paths: ~/.bashrc` in der Case-Datei
+(`seldon open case` gibt ihren Pfad aus). Solange der Case aktiv ist,
+verknüpft die Erfassung die Änderung dann von selbst und meldet
+`note: 1 event(s) linked to the one case that planned them while it was open`.
 
 Schließ den Case ab. `verify` sagt, dass die Arbeit getan ist; `done`
 sagt, dass du sie geprüft hast:
@@ -301,8 +341,8 @@ seldon plan done C-2026-002
 
 ```text
 C-2026-002 active → verification
-C-2026-002 verification → completed (now work/completed/C-2026-002-zurueck-zu-meinem-ueblichen-theme.md)
-Journal: journal/2026/2026-10-02.md
+C-2026-002 verification → completed (now work/completed/C-2026-002-den-ll-alias-wieder-entfernen.md)
+Journal: journal/2026/2026-10-09.md
 ```
 
 ## Schritt 7: Das Ergebnis ansehen
@@ -312,22 +352,36 @@ seldon status
 ```
 
 ```text
-Status of <machine> (2026-10-02)
+Status of <machine> (2026-10-09)
   cases   0 active · 0 in verification · 0 queued
   drift   0 open · 0 crisis
-  events  9 today · 9 in 7 days
+  events  11 today · 11 in 7 days
 Wrote ledger/2026-10.md, STATUS.md
 Index: ~/.local/state/seldon/index.json
 ```
 
 Öffne das Panel des Plugins und drück `2` für den Changelog. Du siehst
-beide Theme-Wechsel, die Notizen und die Schritte der Cases. Drück `3`
-für Work: Beide Cases stehen in der Spalte Completed.
+beide Änderungen an `~/.bashrc`, die Installation des Plugins, die Notiz
+und die Schritte der Cases. Drück `3` für Work: Beide Cases stehen in der
+Spalte Completed.
 
 Das Logbuch ist reines Markdown, und jeder Schritt war ein git-Commit:
 
 ```sh
 git -C ~/Seldon log --oneline
+```
+
+```text
+1a755b5 seldon: status
+565036c seldon: C-2026-002 completed — Den ll-Alias wieder entfernen
+516c31d seldon: C-2026-002 verification
+fdffbd4 seldon: drift linked: 1 event(s), C-2026-002
+e0d5863 seldon: note C-2026-002
+fd7eae0 seldon: C-2026-002 active
+0ffe0af seldon: C-2026-002 created
+1f594d8 seldon: drift explained: 1 event(s), C-2026-001
+a30c9dc seldon: dossier
+46851f8 seldon: init logbook
 ```
 
 ## Schritt 8: Die Wiederaufbau-Anleitung schreiben
@@ -337,13 +391,13 @@ seldon rebuild
 ```
 
 ```text
-Wrote outputs/REBUILD.md: 0 package(s), 0 deviation(s), 1 plugin(s), 0 unit(s), 0 open
+Wrote outputs/REBUILD.md: 0 package(s), 2 deviation(s), 1 plugin(s), 0 unit(s), 0 open
 ```
 
 Deine Zahlen weichen ab. Öffne `~/Seldon/outputs/REBUILD.md`. Dort steht,
 was eine frische Omarchy-Installation braucht, um wieder diese Maschine
 zu werden: deine eigenen Pakete, geänderte Dateien, Plugins und das
-Theme aus Schritt 6. Die Anleitung wächst mit jedem Case, den du
+Theme. Die Anleitung wächst mit jedem Case, den du
 aufzeichnest.
 [Wiederaufbau, Dossier und Update-Folgen](08-rebuild-dossier-update-impact.md)
 erklärt jeden Abschnitt.
