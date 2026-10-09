@@ -1,0 +1,258 @@
+# WP-168 — Handover
+
+Branch `wp/168-linked-folders` from `next` (928e9430). Not pushed (the
+orchestrator pushes).
+
+## What was done
+
+**The helper** (`engine/src/logbook/mod.rs`): `logbook::checked_dir(root,
+relative)` and `Logbook::checked_dir(relative)`, as `triage::checked_dir`
+(WP-124) for the state folder:
+
+- every part of `relative` below the root is looked at with
+  `symlink_metadata` (never followed): a directory → the next part; a
+  symbolic link → exit 1 "`<part>` is a symbolic link, not a folder of
+  the logbook; make it a folder and run the command again"; anything else
+  (file, socket, FIFO, device) → the same with "no directory";
+- the first part that does not exist ends the check (`Ok`): the writer
+  creates it, 0700;
+- another `stat` error (e.g. a name too long) → exit 2 with the path;
+- `relative` must be plain names: `..`, `.`, an absolute path → exit 2
+  (a caller's bug), checked before the walk (the first test run caught
+  `a/../b` passing when `a` was missing);
+- the part named is the first offending one, relative to the root
+  (`work` when `work/` is the link and `work/active` was asked): no home
+  path in the message;
+- the root itself is not checked: a logbook behind a link (a synced
+  folder) stays the user's choice.
+
+`Logbook::checked_file(path)` checks the folder of a file (absolute below
+the root, or relative) and returns the absolute path; a file in the root
+(`AGENTS.md`, `STATUS.md`, `DECISIONS.md`) has nothing to check; a path
+outside the root is exit 2. `cases::checked_folders(logbook)` checks the
+three case folders.
+
+**For WP-166:** `checked_inbox(ctx, &logbook)` can become
+`logbook.checked_dir("inbox")?` — same check, same exit code, same "make
+it a folder" fix. Differences: the message names `inbox` relative to the
+logbook ("inbox is a symbolic link, not a folder of the logbook; …")
+where WP-166 shows `~/…/inbox` and says "not the logbook's inbox folder";
+WP-166's tests that match the message would change with it.
+`inbox.rs` is not touched here; the unit tests of `checked_dir` include
+`inbox` (a dangling link).
+
+**`Logbook::open`:** a `.seldon` that is a file (ENOTDIR on
+`.seldon/logbook.toml`) is now "not initialised" (exit 3) like a missing
+one, where it was an engine error (exit 2); `is_initialised` already said
+false for it.
+
+## Every writer and its check
+
+Found with `grep -rn 'create_dir\|OpenOptions::new\|write_new(\|write_atomic\|create_new_private\|write_generated\|fs::write(\|fs::rename(\|fs::copy('`
+over `engine/src` (test modules left out). The check sits in the write
+primitive that knows the logbook, and where a command writes the ledger
+before a file, or reads a folder before it writes, also before that.
+
+### Into the logbook
+
+| Site | Folder | Check |
+|---|---|---|
+| `commands/mod.rs` `write_new` (decide new, plan new, drift explain, import cases) | the file's folder | `logbook.checked_file(path)` inside (signature now takes the logbook) |
+| `logbook/cases.rs` `CaseFile::save` (`write_atomic`, `create_dir_private`, `rename`) | `work/<status>` from and to | `checked()` (shared with `prepare`, which runs before the ledger): `checked_file(&self.path)` and `checked_file(work/<to>/<name>)` |
+| `cases::set_active_case` (`write_atomic`), `clear_active_case` (`remove_file`) | `.seldon` | `checked_file(ACTIVE_CASE_FILE)` inside |
+| `cases::ensure_area` (`write_atomic`) | `areas/<area>` | `checked_file` inside, also when the area exists (one rule) |
+| `logbook/journal.rs` `prepare` → `Pending::write`, `ensure_day` | `journal/YYYY` | `checked_file` inside; `prepare` runs before the ledger |
+| `ledger.rs` `Ledger::append` (`create_dir_private`, `OpenOptions` append) | `ledger` | `checked_dir(root, "ledger")` before the month files; `Ledger::new` keeps the root (`Ledger::at`, tests only, has none) |
+| `index/views.rs` `write_if_changed` (`ledger/*.md`; `STATUS.md`, `DECISIONS.md` in the root) | `ledger` | `checked_file(rel)` inside; `write_ledger_views` now returns `crate::error::Result` so the refusal stays exit 1 |
+| `commands/decide.rs` new (`write_new`) and accept (`write_atomic`, after the ledger note) | `decisions` | `checked_dir("decisions")` right after the lock, before the next id is read / the note is written |
+| `commands/plan.rs` `create` (new, reopen, import task) | `work/*`, `areas/<area>`, `.seldon` | `checked_folders` + area + `.seldon` (when it points) before the next id and the ledger |
+| `plan` start/verify/done/drop | `work/*`, `.seldon` | `checked_folders` after the lock, before `find`; `.seldon` before the ledger |
+| `plan set`, `plan snapshot`, `plan reopen` | `work/*` | `checked_folders` after the lock; then `prepare`/`save` |
+| `commands/log.rs` with `--case`, `commands/event.rs` with `--case` | `work/*` | `checked_folders` after the lock; `prepare` before the ledger |
+| `commands/drift.rs` `run` (link, explain, dismiss) | `ledger`; `work/*` (link, explain); `areas/<area>` (explain) | after the lock, before `index::derive` reads them |
+| `commands/triage.rs` `apply` (`drift apply` → `write_resolution`) | `ledger`, `work/*` | after the lock, before `index::derive` and the first item (a proposal has no area) |
+| `commands/dossier.rs` → `dossier::Files::write` | `system` | `checked_dir("system")` before `Files::read` |
+| `commands/rebuild.rs` (`write_generated`) | `outputs` | `checked_file(REL_PATH)` before the read |
+| `commands/import.rs` apply (`write_new`, days, memory, dossier, marker, undo, report) | `ledger work/* journal memory system outputs .seldon/imports` | `IMPORT_FOLDERS` before the plan reads them (after the half-done check, whose message stays first); every planned path (`check_folders`) before the ledger |
+| `import.rs` `write_report` (dry run too) | `outputs` | `checked_file` inside |
+| `commands/import/task.rs` `write_marker` | `.seldon/imports` | `checked_file(&marker_rel)` after the lock, before the first write (not in a dry run) |
+| `commands/rules.rs` `archive` (`create_dir_private`, `create_new_private`) | `archive` | `checked_dir("archive")` inside; first write of `rules update` |
+| `commands/skills.rs` `Archive::dir`/`copy` (`--replace`) | `archive`, `archive/skill-…/<label>` | `checked_dir` inside both |
+| `commands/setup.rs` `copy_tree` (kit into `.claude/`) | `.claude/…` per file | `checked_dir(root, .claude/<sub>)` before each copy; the failure is the harness row's reason (setup reports, it does not exit) |
+| `case_notes.rs:318`, `reconcile.rs:327/1056`, `hook.rs:1458` (`file.save`) | `work/<status>` | `CaseFile::checked`; these run after the ledger and report a refused save as a warning, as before |
+| `hook.rs:1525` `journal::append`, `hook.rs:1599` views | `journal/YYYY`, `ledger` | inside `prepare`, `write_if_changed` |
+| `agent.rs:734/1282` `set_active_case` | `.seldon` | inside |
+| `logbook/layout.rs` `create` (`create_dir_private`, `write_new`) | all | none needed: `init` requires an empty or new root (`is_vacant`), where nothing can be a link |
+| `capture.rs:464`, `rules.rs:113` (`AGENTS.md`) | the root | nothing to check |
+
+### Not the logbook (out of scope)
+
+State and config: `config.rs:904`, `init.rs:1040`, `capture.rs:153`
+(config file); `collectors/mod.rs:480`, `collectors/config.rs:330/419`,
+`capture.rs:316` (cursors, baselines); `index/mod.rs:79` (`index.json`);
+`index/autocommit.rs:58`; `agent.rs:962/1327` (launches); `hook.rs:2180`
+(migration marker); `logbook/lock.rs` (lock); `triage.rs` (proposals,
+WP-124's own check). Outside the home's logbook: `hook.rs:1713/2012`
+(Claude Code settings), `skills.rs:400` (agent skill folders; foreign
+links never touched, WP-094), `setup.rs:669` (theme hook script).
+
+## Tests
+
+- Unit (`logbook::tests`, 6): real/missing folders and parts, the root;
+  link (to a folder, dangling), file, socket, a link and a file in the
+  middle, the part named; `..`, `a/../b`, `/etc`, `./a` refused; the root
+  behind a link accepted; ENOTDIR below a file, a name too long (exit 2);
+  `checked_file` relative, absolute, root file, outside the logbook.
+- Unit (`setup::tests::copy_tree_keeps_existing_files_and_modes`): a
+  linked `.claude/skills` stops the copy, nothing written through it.
+- Integration `engine/tests/linked_folders.rs` (25 tests), each folder
+  with a link to a copy outside the logbook and with a file in its place:
+  exit 1, the reason names the folder, the logbook tree (through the link
+  included) and the ledger unchanged: `decisions` (new, accept), `work`
+  (new, start), `work/queued`, `work/active` (start, `log --case`,
+  `plan set`), `work/completed` (done), `journal`, `journal/2026`,
+  `ledger` (log, plan new), `ledger` views (`index`; link only: with a
+  file there the index cannot read the ledger), `areas`, `areas/editors`
+  (new, set), `.seldon` (link: exit 1; file: exit 3), `.seldon/imports`
+  (`import task`), `system` (dossier), `outputs` (rebuild), `archive`
+  (`rules update`), `memory`, `work/completed`, `system`, `outputs`
+  (`import omarchy-agent --apply`), `drift explain` (`work`,
+  `work/completed`, `areas`, `areas/dev-env`, `ledger`), `drift link`
+  (`work/queued`, `work/active`, `ledger`), `event --case` (`work/queued`,
+  `ledger`); the import's year folder (`journal/2026`, link) and its dry
+  run (`outputs`). In `tests/triage.rs`: `drift apply` with
+  `work/completed` a link and a file. A module `primitives` calls the
+  write primitives on their own (case save and move, active case set and
+  clear, `ensure_area`, `journal::append`/`ensure_day`), as `capture`
+  and the hooks do with no command check in front. `inbox` has no writer
+  on `next` (WP-166's).
+- Unit: `commands::tests::write_new_refuses_a_linked_folder`,
+  `skills::tests::the_archive_refuses_a_linked_or_non_directory_archive_folder`.
+
+## Mutants
+
+`work/active/WP-168/mutants.py`, 53 mutants by hand (run from a copy of
+the tree, its own target dir on disk): 16 on the helper (the part filter,
+`symlink_metadata` → `metadata`, a link or a file taken as a folder, the
+two words swapped, a missing part refused, an unreadable part accepted,
+exit 2 instead of 1, the absolute path shown, the returned path,
+`checked_file`'s folder, the file instead of its folder, a path outside
+taken, `Logbook::open` on a `.seldon` file) and 37 on the wiring (every
+primitive and every command check above, one at a time).
+
+- Run 1 (at `0daed49e`): every helper mutant killed; 11
+  wiring mutants survived and one did not compile (the folder array's
+  length). The survivors were of two kinds: a check behind an earlier
+  check of the same folder (a plan step's second from/to check, the
+  explain check in `write_resolution`), removed as redundant; and a
+  primitive no test called without a command check in front (case save,
+  active case, `ensure_day`, `write_new`, the skill archive, the import's
+  planned paths and dry-run report), now tested on its own.
+- Run 2 (at `3c36347f`): 51/53; the two survivors (a case moved *out of*
+  a linked folder; `drift apply` with a file as `ledger`) got tests.
+- Run 3 (at `6592eb86`, those mutants only): 4/4 killed.
+
+All 53 are killed by `--lib` (`logbook::`, `commands::setup`,
+`commands::skills`, `commands::tests::write_new`), `--test
+linked_folders` or `--test triage apply_refuses_a_linked`.
+
+## Check
+
+`XDG_RUNTIME_DIR=<private 0700 dir> SELDON_FULL_CHECK=1
+JUST_TEMPDIR=<scratch> flock /tmp/seldon-check.lock just check`, the
+cargo target on disk (`engine/target`).
+
+- **Run 1, at `0daed49e`** (the helper, all the wiring, the integration
+  tests, the docs): `check: ok`, every recipe.
+- **Run 2, at `6592eb86`** (final code): every engine recipe green (fmt,
+  clippy, 98 test binaries with 0 failures, `check-watch`,
+  packaging, install, deploy, guard, runtime dir, schema, docs-check,
+  plugin-validate, qmllint); **`plugin-test` failed** in the live
+  service-states test (`FAIL live: .pill = <no snapshot>`,
+  `…/home-live/calls.log: No such file or directory`). At that moment
+  `/tmp` (RAM tmpfs) had filled to 81 % and the user's quota there was
+  exhausted (EDQUOT) by another session's mutant run (13 GB in
+  `/tmp/tmp.*/remote/home`, from WP-155's `run-mutants.sh`, mutant
+  `no-unsafe-check` of `deploy-test-host.sh`, started with the real
+  `XDG_RUNTIME_DIR`). Nothing of it was touched. The plugin is not
+  changed by this WP and passed in run 1; `plugin-test` should be run
+  again once `/tmp` is free. **Not verified on the final commit:
+  `plugin-test`.**
+- After the last check only `work/active/WP-168/HANDOVER.md` changed.
+
+## Not done / open questions
+
+- **Reads are unchanged.** A command that only reads goes through a
+  linked folder as before (the index, `plan show`, `open`); only writes
+  are refused. A *file* in the place of a folder still fails a command
+  that reads it before it writes anything with exit 2 ("cannot list …:
+  Not a directory"), e.g. `seldon index` with a file at `ledger`; `drift
+  apply` was not tried that way. Where a writing command reads first, the
+  check was moved in front of the read (case commands, `drift
+  link|explain|dismiss`, `import --apply`, `decide`).
+- **doctor** has no row for a linked folder yet; a user finds out at the
+  first refused write. A `layout` row naming linked folders would be a
+  small follow-up.
+- **Stricter than strictly needed, on purpose (one rule):** a command
+  that writes a case refuses when any of the three case folders is a link
+  (a case moves between them, the next id reads all three); `ensure_area`
+  refuses a linked area even when its README exists and nothing would be
+  written; `import --apply` refuses all its folders before planning.
+- The pacman/Claude Code hooks with a linked `ledger/`: the capture exits
+  1 with the reason (hooks report on stderr and record nothing), as for
+  any other refused write.
+
+## Round 2
+
+From the stage-1 review (SEND BACK small, head `43ddfa1d`).
+
+- **B1, CHANGELOG.** An entry under Unreleased › Breaking: a logbook
+  folder that is a symbolic link or a file now refuses writes (exit 1,
+  nothing written), with the reason as the engine prints it, what that
+  means for `log`, `index` and `status` with a linked `ledger/`, and the
+  fix (make it a real folder again: move the link's contents into a
+  folder of that name). Reading through a link, and a linked logbook
+  folder, are unchanged; a `.seldon` file is "not initialised" (exit 3).
+- **N2, the socket case.** `checked_dir_refuses_a_link_and_a_non_directory`
+  binds its socket only when the path is at most 107 bytes (`sun_path`
+  less its NUL); a longer `TMPDIR` skips the two socket cases with a
+  note on stderr and keeps the link and file cases. Checked both ways:
+  with a 138-byte `TMPDIR` the note shows and the test passes; with a
+  short on-disk `TMPDIR` the socket cases run. (`std::os::unix::fs::mkfifo`
+  would avoid the limit but is still unstable.)
+- **N2, cleanup.** A `#[cfg(test)]` helper `logbook::scratch` makes the
+  temp dir and removes it in `Drop`, so a failed test cleans up too. All
+  unit tests this WP wrote or extended use it: `logbook::tests` (6),
+  `commands::tests::write_new_refuses_a_linked_folder`,
+  `skills::tests::the_archive_refuses_…`,
+  `setup::tests::copy_tree_keeps_existing_files_and_modes`. The
+  integration tests already used `common::TempDir`, which cleans up in
+  `Drop`. Other WPs' unit tests that use `temp_dir()` are unchanged.
+- **N2, leftovers in /tmp.** I listed all 111 of
+  `/tmp/seldon-checked-dir-*`, `/tmp/seldon-write-new-*` and
+  `/tmp/seldon-skill-archive-*`. All were mine (my user, today, names from
+  my tests, left by the round-1 mutant runs). **39 were empty and were
+  removed**, each with `rmdir` and its explicit path. **72 are not empty**
+  and were kept, as the brief allows empty ones only. Together they hold
+  32 KB: 73 folders, 49 empty test files, 79 symbolic links (to sibling
+  `…-outside-<pid>` folders or `nowhere`) and 14 sockets. Open question:
+  may they go? Removing them would be `rm -r` by explicit path, which
+  does not follow the links.
+- **N4, SPEC.** SPEC-ENGINE §2 "Linked folders" now ends: `hook
+  install|uninstall claude-code --settings <file>` writes the file where
+  the user names it, also through a linked `.claude/` of the logbook,
+  and that path is not checked.
+- N1 (links at files) and N3 (a `doctor` row) are follow-ups, not done
+  here. WP-168 merges before WP-166; WP-166 then switches its
+  `checked_inbox` to `logbook.checked_dir("inbox")`.
+
+**Check** at `8532526b`. Command: `TMPDIR=<short dir in the private
+gates folder, on disk> XDG_RUNTIME_DIR=<private 0700 dir>
+SELDON_FULL_CHECK=1 JUST_TEMPDIR=<on disk> flock /tmp/seldon-check.lock
+just check`, with the cargo target in `engine/target`.
+
+- `check: ok`, exit 0, every recipe, `plugin-test` included.
+- 98 test binaries, 0 failed. The socket case ran (no skip note).
+- `/tmp` and `/run/user/1000` stayed at 2 %.
+- The runtime dir and the scratch dirs were removed afterwards.
+- After the check, only this file changed.

@@ -105,7 +105,7 @@ of the next logbook `seldon init` creates.
 | `omarchy` | `omarchy-version` | Omarchy version changes |
 | `plugins` | `omarchy plugin list --json` | shell plugins added, removed, enabled, disabled, updated |
 | `theme` | `~/.local/state/omarchy/current/theme.name` | theme switches |
-| `config` | the files under `watchPaths` | files added, changed, removed |
+| `config` | the files under `watchPaths`, and the boot configuration | files added, changed, removed |
 
 Each collector only reads. Turn one off with `false`;
 `seldon capture --source <name>` still runs it on demand.
@@ -179,6 +179,49 @@ recorded:
 ```toml
 watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
 ```
+
+Your boot configuration is watched whatever `watchPaths` says. The
+config collector hashes `/etc/mkinitcpio.conf`, the files in
+`/etc/mkinitcpio.conf.d/` and `/etc/mkinitcpio.d/`, `/etc/default/limine`,
+`/etc/limine-entry-tool.conf` and the files in
+`/etc/limine-entry-tool.d/`. These decide how the next initramfs is built
+and what the boot menu starts. A change to one of them shows up at the
+next capture, also when no agent made it: a hand edit, `omarchy
+hibernation setup`, a migration, an `omarchy-settings` update that
+changed a file. Only hashes are recorded, never the content (a kernel
+command line names your disks). A symlink in one of these folders is
+followed to its file, and only that file's hash is recorded; a link to
+a file a package ships counts like any other change there. Nothing
+else under `/etc` is read. The
+`.pacnew` files pacman leaves there are not hashed: the pacman collector
+already lists each one, and when you merge it with `pacdiff`, the change
+of the file itself is recorded.
+
+`/boot/limine.conf` is not watched. On Omarchy only root can open
+`/boot`, and the Limine tools rewrite that file from the files above on
+every snapshot and kernel update, so it would change on every system
+update without anyone changing a setting.
+
+A file Seldon cannot read is hashed from its size, times and inode
+instead (the event says `hashBasis: stat`). That shows *that* the file
+was written, not *what* changed. On Omarchy all of these files are
+readable.
+
+A boot file change is an attention item, not a crisis: an
+`omarchy-settings` update rewrites Omarchy's own drop-ins, and a red bar
+after a normal update would teach you to ignore red. If you want the
+crisis, add the paths to `alwaysRedPaths` (see [Drift](#drift)):
+
+```toml
+[drift]
+alwaysRedPaths = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**", "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile", "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2", "/etc/mkinitcpio*", "/etc/limine*", "/etc/default/limine"]
+```
+
+An open case takes such a change when the agent's command wrote the
+path (`sudo tee /etc/mkinitcpio.conf.d/…`), or when the case's Plan
+names the path; otherwise link it with `seldon drift link`. To leave the
+boot files out, add `/etc/mkinitcpio*`, `/etc/limine*` and
+`/etc/default/limine` to `[redaction] skipPaths`.
 
 Always left out:
 
@@ -294,6 +337,11 @@ patterns = ["MYAPP_SESSION=\\S+", "acme_[0-9A-Za-z]{24}"]
 The domain of an address stays visible. If yours names you, add a
 pattern for it: `"@smith\\.example\\b"` turns `jo@smith.example` into
 `‹redacted›‹redacted›`.
+
+An invisible character inside or before a secret (a zero-width space, a
+variation selector), or a control character inside one, does not hide
+it: the rules, yours included, read the text both without such
+characters and as it is. A text with nothing to redact keeps them.
 
 An invalid pattern is an error (exit 1): Seldon refuses to write rather
 than leak.

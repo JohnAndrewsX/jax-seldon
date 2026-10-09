@@ -3264,6 +3264,12 @@ mod privileged {
             "sudo lpadmin -p Office -v 'ipp://h.example/p?x=\u{2060}1' -o 'Autho\u{200B}rization:\u{00AD} Bearer hunter2xyz'",
             "toolu_fmt_2",
         );
+        // WP-159 round 2, B1b: before a word, a boundary its rule reads
+        bash(
+            &h,
+            "sudo lpadmin -x x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX",
+            "toolu_fmt_3",
+        );
         let events = h.commands();
         let got: Vec<&str> = events
             .iter()
@@ -3274,10 +3280,12 @@ mod privileged {
             [
                 "sudo lpadmin -x Office token=‹redacted›",
                 "sudo lpadmin -p Office -v 'ipp://h.example/p?x=1' -o 'Authorization: ‹redacted›'",
+                "sudo lpadmin -x x‹redacted›",
             ]
         );
         let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
         assert!(!ledger.contains("hunter2"), "{ledger}");
+        assert!(!ledger.contains("ABCDEFGHIJ"), "{ledger}");
         for c in ['\u{200B}', '\u{2060}', '\u{00AD}'] {
             assert!(!ledger.contains(c), "U+{:04X} in the ledger", c as u32);
         }

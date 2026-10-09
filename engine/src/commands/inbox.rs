@@ -26,10 +26,10 @@ use super::log::parse_tag;
 use super::{Commit, Context, Output, autocommit_paths, one_line};
 use crate::error::{Error, Result};
 use crate::frontmatter::{Document, FmValue, Frontmatter};
-use crate::import::{Scrubber, is_direction_or_format, trim_blank_lines};
+use crate::import::{Scrubber, trim_blank_lines};
 use crate::logbook::{Logbook, cases};
 use crate::model::event::{ACTOR_HUMAN, format_ts};
-use crate::redact::Redactor;
+use crate::redact::{Redactor, is_invisible};
 use crate::sys;
 
 /// The logbook folder the command writes into.
@@ -88,14 +88,6 @@ pub fn run(ctx: &Context, args: InboxArgs) -> Result<Output> {
     }
 }
 
-/// `text` without direction and format characters, and how many there were.
-/// The one place they go, for the title and the text: WP-159's shared
-/// helper replaces its body. Control characters are dropped apart from it
-/// ([`is_text_control`], `char::is_control` for the title).
-fn drop_format(text: &str) -> (String, usize) {
-    drop_chars(text, is_direction_or_format)
-}
-
 /// A control character the text drops: every one but tab and newline.
 fn is_text_control(c: char) -> bool {
     c.is_control() && c != '\n' && c != '\t'
@@ -109,40 +101,54 @@ fn drop_chars(text: &str, drop: fn(char) -> bool) -> (String, usize) {
 }
 
 fn add(ctx: &Context, args: AddArgs) -> Result<Output> {
-    let (title, format_dropped) = drop_format(&args.title);
-    let title = one_line("the title", &title)?;
-    // no control character in a title: an ESC would reach the terminal
-    // line that names it; `one_line` refused the line breaks first
-    let (title, controls_dropped) = drop_chars(&title, char::is_control);
-    let title = super::required_text("the title", &title)?;
-    let title_dropped = format_dropped + controls_dropped;
     let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
     let mut scrubber = Scrubber::new(redactor.clone());
 
-    let raw = read_text(&args.file)?;
-    let (text, format_dropped) = drop_format(&raw.replace("\r\n", "\n"));
-    // and every control character but tab and newline (an ESC colour
-    // sequence, a backspace inside `to\x08ken=`), as `hook` and `plan` do
-    let (text, controls_dropped) = drop_chars(&text, is_text_control);
-    let text_dropped = format_dropped + controls_dropped;
-    let text = trim_blank_lines(&scrubber.text("text", &text));
-    if text.is_empty() {
-        return Err(Error::user("the text must not be empty"));
-    }
-    let title = scrubber.text("title", &title);
+    // redaction first, then the invisible characters out (WP-159): the
+    // rules read the text as given and without them, so neither a
+    // `to<U+200B>ken=` nor the boundary an invisible one makes hides a
+    // secret; then one line, then no control character in the title (an
+    // ESC would reach the terminal line that names it)
+    let title_dropped = args
+        .title
+        .chars()
+        .filter(|c| is_invisible(*c) || c.is_control())
+        .count();
+    let title = scrubber.text_dropping_invisible("title", &args.title);
+    let title = one_line("the title", &title)?;
+    let (title, _) = drop_chars(&title, char::is_control);
+    let title = super::required_text("the title", &title)?;
     if title.chars().count() > MAX_TITLE_CHARS {
         return Err(Error::user(format!(
             "the title is longer than {MAX_TITLE_CHARS} characters; put the rest in the text"
         )));
+    }
+
+    let raw = read_text(&args.file)?;
+    let text = raw.replace("\r\n", "\n");
+    // the text the same way, keeping its lines (`Scrubber`, as `import
+    // task`), then every control character but tab and newline (an ESC
+    // colour sequence, a backspace inside `to\x08ken=`), as `hook` and
+    // `plan` drop them; the counts are of the text as given
+    let text_dropped = text
+        .chars()
+        .filter(|c| is_invisible(*c) || is_text_control(*c))
+        .count();
+    let text = scrubber.text_dropping_invisible("text", &text);
+    let (text, _) = drop_chars(&text, is_text_control);
+    let text = trim_blank_lines(&text);
+    if text.is_empty() {
+        return Err(Error::user("the text must not be empty"));
     }
     let redacted = changed_lines(&scrubber);
     let tags: Vec<String> = args.tags.iter().map(|t| redactor.redact(t)).collect();
     let body = format!("# {title}\n\n{text}");
 
     let lock = ctx.lock()?;
-    checked_inbox(ctx, &logbook)?;
+    // a linked `inbox` or one that is no folder is refused (WP-168)
+    logbook.checked_dir(INBOX)?;
     let (path, filed) = match already_filed(&logbook, &body) {
         Some(path) => (path, false),
         None => {
@@ -239,28 +245,6 @@ fn read_text(file: &Path) -> Result<String> {
     }
 }
 
-/// `inbox/` as the engine writes it: a directory, or missing (it is made);
-/// a symbolic link or anything else is refused, so nothing is written
-/// through it to a place outside the logbook (WP-166 round 2, as
-/// `triage::checked_dir`).
-fn checked_inbox(ctx: &Context, logbook: &Logbook) -> Result<()> {
-    let dir = logbook.path(INBOX);
-    match std::fs::symlink_metadata(&dir) {
-        Ok(m) if m.file_type().is_dir() => Ok(()),
-        Ok(m) => Err(Error::user(format!(
-            "{} is {}, not the logbook's inbox folder; make it a folder and run the command again",
-            ctx.dirs.display(&dir),
-            if m.file_type().is_symlink() {
-                "a symbolic link"
-            } else {
-                "no directory"
-            }
-        ))),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(anyhow::anyhow!("{}: {e}", dir.display()).into()),
-    }
-}
-
 /// The file as written: frontmatter, then `body`.
 fn render(ctx: &Context, actor: &str, tags: &[String], body: &str) -> String {
     let fm = Frontmatter::canonical(&[
@@ -350,14 +334,5 @@ mod tests {
             drop_chars("a\u{1b}[31mb\u{7}\u{9b}c\td", char::is_control),
             ("a[31mbcd".to_string(), 4)
         );
-    }
-
-    #[test]
-    fn format_characters_are_dropped_and_counted() {
-        assert_eq!(
-            drop_format("to\u{200B}ken\u{202E}=x\u{E0041}"),
-            ("token=x".to_string(), 3)
-        );
-        assert_eq!(drop_format("plain"), ("plain".to_string(), 0));
     }
 }

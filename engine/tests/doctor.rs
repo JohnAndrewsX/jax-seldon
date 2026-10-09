@@ -803,6 +803,97 @@ mod doctor {
         assert_eq!(check(&v, "collectors")["status"], "ok", "{v}");
     }
 
+    /// WP-160: the `pacman` row looks at `db.lck` against the boot time.
+    /// Under the test guard both default into the guard directory
+    /// (`<guard>/db.lck`, `<guard>/proc-stat`), never the host's. A stale
+    /// lock is degraded with the path and how to remove it (text, never
+    /// run); the lock stays as it was.
+    #[test]
+    fn the_pacman_row_names_a_stale_lock() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let env = Env::new(Snapper::NoPermissions);
+        let root = init(&env);
+        let lock = env.tmp.path().join("db.lck");
+        let stat = env.tmp.path().join("proc-stat");
+        let row = || {
+            let out = env.seldon(&["doctor", "--path", root.to_str().unwrap(), "--json"]);
+            assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+            check(&json(&out), "pacman").clone()
+        };
+
+        let c = row();
+        assert_eq!(c["status"], "ok", "{c}");
+        assert_eq!(c["message"], "no db.lck: pacman is not running");
+
+        std::fs::write(&lock, "").unwrap();
+        let c = row();
+        assert_eq!(c["status"], "ok", "no boot time: held, {c}");
+        assert!(
+            c["message"]
+                .as_str()
+                .unwrap()
+                .contains("boot time not known"),
+            "{c}"
+        );
+
+        // booted 2026-10-01T08:30:00Z
+        std::fs::write(&stat, "cpu 1\nbtime 1790843400\n").unwrap();
+        let boot = UNIX_EPOCH + Duration::from_secs(1_790_843_400);
+        let set = |t| {
+            std::fs::File::options()
+                .write(true)
+                .open(&lock)
+                .unwrap()
+                .set_modified(t)
+                .unwrap()
+        };
+        set(boot + Duration::from_secs(5));
+        let c = row();
+        assert_eq!(c["status"], "ok", "{c}");
+        assert!(
+            c["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("db.lck from this boot: taken as a running pacman"),
+            "{c}"
+        );
+        assert!(c.get("fix").is_none(), "{c}");
+
+        let made = boot - Duration::from_secs(3600);
+        set(made);
+        let c = row();
+        assert_eq!(c["status"], "degraded", "{c}");
+        let message = c["message"].as_str().unwrap();
+        assert!(
+            message.starts_with(&format!("stale {} from ", lock.display())),
+            "{c}"
+        );
+        assert!(message.contains("before this boot"), "{c}");
+        assert!(message.contains("unfinished"), "{c}");
+        assert_eq!(
+            c["fix"],
+            format!(
+                "make sure no pacman, yay or omarchy update is running, then: sudo rm {}",
+                lock.display()
+            )
+        );
+        let human = stdout(&env.seldon(&["doctor", "--path", root.to_str().unwrap()]));
+        assert!(human.contains("degraded  pacman   stale "), "{human}");
+        assert!(human.contains("fix: make sure no pacman"), "{human}");
+        let meta = std::fs::metadata(&lock).unwrap();
+        assert_eq!(meta.modified().unwrap(), made, "the lock is not touched");
+        assert_eq!(meta.len(), 0);
+
+        // the collector switched off: the lock is not looked at
+        let config = env.config_file();
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(text.contains("pacman = true"), "{text}");
+        std::fs::write(&config, text.replace("pacman = true", "pacman = false")).unwrap();
+        let c = row();
+        assert_eq!(c["status"], "ok");
+        assert_eq!(c["message"], "collector disabled in config.toml");
+    }
+
     /// Review Q3: the omarchy probe runs `SELDON_OMARCHY_VERSION` like the
     /// collector.
     #[test]

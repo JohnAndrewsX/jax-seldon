@@ -12,7 +12,9 @@ from pathlib import Path
 # the checkout this script lives in: work/active/WP-166/mutants.py
 WT = str(Path(__file__).resolve().parents[3])
 # a target dir of its own: a mutated build must never reach another run
-TARGET = f"{WT}/engine/target/mutants-wp166"
+# on disk, never under /tmp (a RAM tmpfs): the worktree's target when
+# this copy lives elsewhere, else the copy's own
+TARGET = os.environ.get("MUTANTS_TARGET", f"{WT}/engine/target/mutants-wp166")
 INBOX = "engine/src/commands/inbox.rs"
 
 
@@ -25,20 +27,20 @@ def plain(a, b, count=1):
 
 MUTANTS = [
     # the text, as `import task` treats a task file
-    ("text: format characters kept", INBOX, plain('let (text, text_dropped) = drop_format(&raw.replace("\\r\\n", "\\n"));', 'let (text, text_dropped) = (raw.replace("\\r\\n", "\\n"), 0);')),
+    ("text: format characters kept", INBOX, plain('scrubber.text_dropping_invisible("text", &text)', 'scrubber.text("text", &text)')),
     ("text: format characters not counted", INBOX, plain("text.chars().count() - kept.chars().count()", "0")),
     ("text: CRLF kept", INBOX, plain('raw.replace("\\r\\n", "\\n")', "raw.clone()")),
-    ("text: not scrubbed", INBOX, plain('trim_blank_lines(&scrubber.text("text", &text))', "trim_blank_lines(&text)")),
-    ("text: outer blank lines kept", INBOX, plain('trim_blank_lines(&scrubber.text("text", &text))', 'scrubber.text("text", &text)')),
+    ("text: not scrubbed", INBOX, plain('scrubber.text_dropping_invisible("text", &text)', 'crate::redact::without_invisible(&text).into_owned()')),
+    ("text: outer blank lines kept", INBOX, plain("    let text = trim_blank_lines(&text);\n", "")),
     ("text: blank text filed", INBOX, plain("    if text.is_empty() {\n        return Err(Error::user(\"the text must not be empty\"));\n    }\n", "")),
     ("text: stdin size not checked", INBOX, plain("if bytes.len() as u64 > MAX_TEXT_BYTES {", "if false {")),
     ("text: stdin size off by one", INBOX, plain("if bytes.len() as u64 > MAX_TEXT_BYTES {", "if bytes.len() as u64 >= MAX_TEXT_BYTES {")),
     ("text: stdin not UTF-8 accepted", INBOX, plain('return String::from_utf8(bytes).map_err(|_| Error::user("the text on stdin is not UTF-8"));', "return Ok(String::from_utf8_lossy(&bytes).into_owned());")),
     ("text: a file read through its link", INBOX, plain("match sys::read_small_file(file, MAX_TEXT_BYTES) {", "match std::fs::read_to_string(file).map(Some).map_err(|e| e.to_string()) {")),
     # the title
-    ("title: format characters kept", INBOX, plain("let (title, format_dropped) = drop_format(&args.title);", "let (title, format_dropped) = (args.title.clone(), 0);")),
+    ("title: format characters kept", INBOX, plain('scrubber.text_dropping_invisible("title", &args.title)', 'scrubber.text("title", &args.title)')),
     ("title: several lines", INBOX, plain('let title = one_line("the title", &title)?;', 'let title = super::required_text("the title", &title)?;')),
-    ("title: not scrubbed", INBOX, plain('let title = scrubber.text("title", &title);', "let title = title.clone();")),
+    ("title: not scrubbed", INBOX, plain('scrubber.text_dropping_invisible("title", &args.title)', 'crate::redact::without_invisible(&args.title).into_owned()')),
     ("title: no length limit", INBOX, plain("if title.chars().count() > MAX_TITLE_CHARS {", "if false {")),
     ("title: length off by one", INBOX, plain("if title.chars().count() > MAX_TITLE_CHARS {", "if title.chars().count() >= MAX_TITLE_CHARS {")),
     ("title: the fallback slug", INBOX, plain('const FALLBACK_SLUG: &str = "note";', 'const FALLBACK_SLUG: &str = "";')),
@@ -66,19 +68,22 @@ MUTANTS = [
     ("record: no index rebuild", INBOX, plain("        crate::index::rebuild_if_initialised(ctx);\n", "")),
     ("record: no lock", INBOX, plain("    let lock = ctx.lock()?;\n", "    let lock = ();\n")),
     # round 2
-    ("r2: a linked inbox written through", INBOX, plain("    checked_inbox(ctx, &logbook)?;\n", "")),
-    ("r2: a link counts as the inbox", INBOX, plain("        Ok(m) if m.file_type().is_dir() => Ok(()),", "        Ok(m) if m.file_type().is_dir() || m.file_type().is_symlink() => Ok(()),")),
+    ("r2: a linked inbox written through", INBOX, plain("    logbook.checked_dir(INBOX)?;\n", "")),
     ("r2: the filed scan reads through links", INBOX, plain("let text = sys::read_small_file(&path, 2 * MAX_TEXT_BYTES).ok()??;", "let text = std::fs::read_to_string(&path).ok()?;")),
-    ("r2: title controls kept", INBOX, plain("let (title, controls_dropped) = drop_chars(&title, char::is_control);", "let (title, controls_dropped) = (title.clone(), 0);")),
-    ("r2: title controls not counted", INBOX, plain("let title_dropped = format_dropped + controls_dropped;", "let title_dropped = format_dropped + controls_dropped * 0;")),
+    ("r2: title controls kept", INBOX, plain("let (title, _) = drop_chars(&title, char::is_control);", "let title = title.clone();")),
+    ("r2: title controls not counted", INBOX, plain(".filter(|c| is_invisible(*c) || c.is_control())", ".filter(|c| is_invisible(*c))")),
     ("r2: the title's drops not counted", INBOX, plain('"droppedCharacters": title_dropped + text_dropped,', '"droppedCharacters": text_dropped,')),
     ("r2: a title of controls is filed", INBOX, plain('    let title = super::required_text("the title", &title)?;\n', "")),
     ("r2: a proc view filed", INBOX, plain("&& std::fs::symlink_metadata(file).is_ok_and(|m| m.len() == 0) =>", "&& false =>")),
     ("r2: an empty file is a view", INBOX, plain("if !text.is_empty() && std::fs::symlink_metadata", "if true && std::fs::symlink_metadata")),
     ("r2: a terminal is read", INBOX, plain("        if stdin.is_terminal() {", "        if false && stdin.is_terminal() {")),
     # round 3
-    ("r3: text controls kept", INBOX, plain("let (text, controls_dropped) = drop_chars(&text, is_text_control);", "let (text, controls_dropped) = (text.clone(), 0);")),
-    ("r3: text controls not counted", INBOX, plain("let text_dropped = format_dropped + controls_dropped;", "let text_dropped = format_dropped;")),
+    ("r3: text controls kept", INBOX, plain("let (text, _) = drop_chars(&text, is_text_control);", "let text = text.clone();")),
+    ("r3: text controls not counted", INBOX, plain(".filter(|c| is_invisible(*c) || is_text_control(*c))", ".filter(|c| is_invisible(*c))")),
+    # round 3b: redaction before the invisible characters go (WP-159)
+    ("r3b: the text stripped before its redaction", INBOX, plain('scrubber.text_dropping_invisible("text", &text)', 'scrubber.text_dropping_invisible("text", &crate::redact::without_invisible(&text))')),
+    ("r3b: the title stripped before its redaction", INBOX, plain('scrubber.text_dropping_invisible("title", &args.title)', 'scrubber.text_dropping_invisible("title", &crate::redact::without_invisible(&args.title))')),
+    ("r3b: the text's invisible ones not counted", INBOX, plain(".filter(|c| is_invisible(*c) || is_text_control(*c))", ".filter(|c| is_text_control(*c))")),
     ("r3: a tab dropped", INBOX, plain("c.is_control() && c != '\\n' && c != '\\t'", "c.is_control() && c != '\\n'")),
 ]
 

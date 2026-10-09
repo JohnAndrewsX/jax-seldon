@@ -14,7 +14,7 @@
 | ADR-0010 | Default logbook path and the wizard's path options | accepted |
 | ADR-0011 | Snapper collector degrades without privileges; the user opts in | superseded by ADR-0026 |
 | ADR-0012 | Contract v1: schema clarifications and index derivation rules | accepted |
-| ADR-0013 | Drift is grouped per pacman transaction; routine upgrades are yellow | accepted; §3 superseded in part by ADR-0028 |
+| ADR-0013 | Drift is grouped per pacman transaction; routine upgrades are yellow | accepted; §3 superseded in part by ADR-0028; §5 absent read as absent or stale (WP-160; rule in SPEC-ENGINE §4 pacman, "Stale lock") |
 | ADR-0014 | Event attribution, zones, plugin version source, agent file edits | accepted; §2 superseded in part by ADR-0028 |
 | ADR-0015 | Drift-group schema rules and the proposal token rule (supersedes ADR-0012 §13) | accepted |
 | ADR-0016 | Engine install and update commands go through the AUR helper (supersedes ADR-0004 on the install command) | accepted |
@@ -39,12 +39,14 @@
 | ADR-0035 | Contract v2: the case's risk in the ledger (`case-updated`, `meta.risk`), the autocommit result, `meta.truncated`, the `state-loss` kind, `decisions[].cases`, the triage proposal | accepted |
 | ADR-0036 | Agent prompts carry identifiers, never logbook text; proposals are evidence or nothing (`agent ask`, `drift propose|apply|discard`) | accepted |
 | ADR-0037 | ADR-0028 amended: toggles are routine both ways, `system-link` narrowed, the `authorized_keys` files default persistence paths | accepted |
-| ADR-0038 | The index carries what the desk's details show: `drift[].rule`, `cases[].intent`/`result`/`source`, `decisions[].lead` (optional, contract 2) | accepted |
+| ADR-0038 | The index carries what the desk's details show: `drift[].rule`, `cases[].intent`/`result`/`source`, `decisions[].lead` (optional, contract 2) | accepted; §2/§3 amended by ADR-0048 |
 | ADR-0039 | The hook records an agent's privileged commands (`sudo`, `doas`, `pkexec`, `run0`); events, not drift, in contract 2 | accepted |
 | ADR-0040 | Accepting a decision is the user's act: `seldon decide accept`, one click in the desk | accepted |
 | ADR-0041 | One agent per case: a session is a window; `agent focus`, `agent sessions`, `--again`, `open --editor` focuses its window | accepted |
 | ADR-0042 | ADR-0028 amended: a file pacman left is attention, a crisis beside the boot and login files (mkinitcpio, Limine, PAM) | accepted |
-| ADR-0043 | A pacman transaction that did not complete says so: `meta.txStatus` `failed`/`interrupted`/`unfinished` (optional, contract 2) | accepted |
+| ADR-0043 | A pacman transaction that did not complete says so: `meta.txStatus` `failed`/`interrupted`/`unfinished` (optional, contract 2) | accepted; its Consequence on a stale lock is resolved by WP-160 (rule in SPEC-ENGINE §4 pacman, "Stale lock") |
 | ADR-0044 | The desk reads a case's whole Intent (`plan show --json` `intent {text, lines, truncated, hidden}`) and imports task files (`import task`): two plugin-command rows; an imported Intent fits the desk, nothing invisible reaches it | accepted |
+| ADR-0045 | EASY \| PRO: one desk, two views; the mode is the plugin setting `deskMode`, a fresh install starts in EASY | accepted |
+| ADR-0048 | ADR-0038 amended: the invisible set is every default-ignorable code point; redaction reads the text without invisible and control characters and as given | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

@@ -56,7 +56,8 @@ impl Pending {
 }
 
 /// Reads the day's journal and builds its text with the entry for `now`
-/// at the end. A day file without frontmatter (Obsidian's "Open today's
+/// at the end; a `journal/` or year folder that is a symbolic link or no
+/// directory is refused (exit 1, WP-168). A day file without frontmatter (Obsidian's "Open today's
 /// daily note" makes an empty one) gets the block in front of its text;
 /// broken frontmatter is the user's to fix (exit 1).
 pub fn prepare(
@@ -68,7 +69,7 @@ pub fn prepare(
 ) -> Result<Pending> {
     let date = now.date_naive();
     let rel = Journal::relative_path(date);
-    let path = logbook.path(&rel);
+    let path = logbook.checked_file(&rel)?;
     let entry = JournalEntry {
         time: now.time(),
         actor: actor.to_string(),
@@ -172,6 +173,7 @@ pub fn ensure_day(logbook: &Logbook, now: &DateTime<FixedOffset>) -> Result<Appe
             created: false,
         });
     }
+    logbook.checked_file(&rel)?;
     let record = Journal {
         date,
         cases: Vec::new(),

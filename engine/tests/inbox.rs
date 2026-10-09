@@ -651,7 +651,7 @@ fn a_linked_or_odd_inbox_is_refused_and_nothing_written_through_it() {
     );
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(
-        stderr(&out).contains("is a symbolic link"),
+        stderr(&out).contains("inbox is a symbolic link, not a folder of the logbook"),
         "{}",
         stderr(&out)
     );
@@ -666,7 +666,11 @@ fn a_linked_or_odd_inbox_is_refused_and_nothing_written_through_it() {
         Some("hello crash\n"),
     );
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("is no directory"), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("inbox is no directory, not a folder of the logbook"),
+        "{}",
+        stderr(&out)
+    );
     assert_eq!(read(&root.join("inbox")), "a file\n");
 }
 
@@ -858,4 +862,27 @@ fn the_text_s_controls_are_dropped_but_tab_and_newline() {
     // backspace, two ESC, CR, BEL
     assert_eq!(v["droppedCharacters"], 5, "{v}");
     assert_eq!(v["redactedLines"], 1, "{v}");
+}
+
+#[test]
+fn redaction_reads_the_text_before_its_invisible_characters_go() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    // the joiner both splits a key from its rule and makes the boundary
+    // that rule needs (WP-159): redacted first, then dropped
+    let v = add(
+        &env,
+        T0,
+        "Key x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX",
+        "use x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX and /ho\u{200B}me/alice/notes\n",
+        &[],
+    );
+    let filed = read(&root.join(v["path"].as_str().unwrap()));
+    assert!(!filed.contains("ABCDEFGHIJKLMNOPQRSTUVWX"), "{filed}");
+    assert!(
+        !filed.contains("alice") && !filed.contains('\u{200B}'),
+        "{filed}"
+    );
+    assert!(filed.contains("~/notes"), "{filed}");
+    assert_eq!(v["droppedCharacters"], 3, "{v}");
 }

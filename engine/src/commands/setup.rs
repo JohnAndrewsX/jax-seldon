@@ -244,7 +244,7 @@ fn omarchy_agent(dirs: &Dirs, root: &Path) -> HarnessReport {
             false,
         );
     }
-    match copy_tree(&template, &root.join(HARNESS_DIR)) {
+    match copy_tree(&template, root, Path::new(HARNESS_DIR)) {
         Ok(c) => report(
             format!(
                 "{} file(s) copied from {shown} into {HARNESS_DIR}/{}",
@@ -278,10 +278,12 @@ struct Copied {
     kept: Vec<String>,
 }
 
-/// Copies the regular files under `from` into `to` (permissions kept, so
-/// an executable guard stays executable). A file that exists in `to` is
-/// kept, never overwritten; symbolic links are not followed or copied.
-fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
+/// Copies the regular files under `from` into the folder `to` of the
+/// logbook at `root` (permissions kept, so an executable guard stays
+/// executable). A file that exists in `to` is kept, never overwritten;
+/// symbolic links are not followed or copied, and a folder on the way in
+/// the logbook that is a link or no directory stops the copy (WP-168).
+fn copy_tree(from: &Path, root: &Path, to: &Path) -> anyhow::Result<Copied> {
     let mut out = Copied::default();
     let mut stack = vec![PathBuf::new()];
     while let Some(rel) = stack.pop() {
@@ -295,7 +297,8 @@ fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
             if kind.is_dir() {
                 stack.push(rel);
             } else if kind.is_file() {
-                let target = to.join(&rel);
+                let folder = to.join(rel.parent().unwrap_or(Path::new("")));
+                let target = crate::logbook::checked_dir(root, &folder)?.join(entry.file_name());
                 let name = rel.to_string_lossy().into_owned();
                 if target.exists() {
                     out.kept.push(name);
@@ -730,8 +733,7 @@ mod tests {
     #[test]
     fn copy_tree_keeps_existing_files_and_modes() {
         use std::os::unix::fs::PermissionsExt as _;
-        let tmp = std::env::temp_dir().join(format!("seldon-copy-tree-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
+        let tmp = crate::logbook::scratch::scratch("seldon-copy-tree");
         let (from, to) = (tmp.join("kit"), tmp.join("logbook/.claude"));
         std::fs::create_dir_all(from.join("hooks")).unwrap();
         std::fs::create_dir_all(from.join("skills/zones")).unwrap();
@@ -747,7 +749,7 @@ mod tests {
         std::os::unix::fs::symlink("/etc/hostname", from.join("link")).unwrap();
         std::fs::write(to.join("settings.json"), "{}").unwrap();
 
-        let c = copy_tree(&from, &to).unwrap();
+        let c = copy_tree(&from, &tmp.join("logbook"), Path::new(".claude")).unwrap();
         assert_eq!(c.copied, ["hooks/guard.py", "skills/zones/SKILL.md"]);
         assert_eq!(c.kept, ["settings.json"]);
         assert_eq!(
@@ -761,8 +763,18 @@ mod tests {
             .mode();
         assert_eq!(mode & 0o111, 0o111);
         // a second run copies nothing
-        let again = copy_tree(&from, &to).unwrap();
+        let again = copy_tree(&from, &tmp.join("logbook"), Path::new(".claude")).unwrap();
         assert!(again.copied.is_empty());
-        std::fs::remove_dir_all(&tmp).unwrap();
+        // a linked folder in the logbook stops the copy, nothing written
+        // through it (WP-168)
+        std::fs::remove_dir_all(to.join("skills")).unwrap();
+        std::fs::create_dir(tmp.join("outside")).unwrap();
+        std::os::unix::fs::symlink(tmp.join("outside"), to.join("skills")).unwrap();
+        let e = copy_tree(&from, &tmp.join("logbook"), Path::new(".claude")).unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            ".claude/skills is a symbolic link, not a folder of the logbook; make it a folder and run the command again"
+        );
+        assert_eq!(std::fs::read_dir(tmp.join("outside")).unwrap().count(), 0);
     }
 }

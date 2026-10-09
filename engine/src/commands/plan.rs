@@ -346,7 +346,6 @@ pub(crate) fn create(
         )));
     }
     let today = ctx.now.date_naive();
-    let id = cases::next_id(logbook, ctx.now.year())?;
     let status = if spec.done.is_some() {
         CaseStatus::Completed
     } else if spec.start {
@@ -354,6 +353,16 @@ pub(crate) fn create(
     } else {
         CaseStatus::Queued
     };
+    // every folder this writes into, before the next id is read and the
+    // ledger written (WP-168)
+    cases::checked_folders(logbook)?;
+    if let Some(area) = spec.area.as_deref() {
+        logbook.checked_dir(format!("areas/{area}"))?;
+    }
+    if spec.start && spec.point {
+        logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
+    }
+    let id = cases::next_id(logbook, ctx.now.year())?;
     let case = Case {
         id: id.clone(),
         title: spec.title.clone(),
@@ -437,7 +446,7 @@ pub(crate) fn create(
         .map(|a| cases::ensure_area(logbook, a))
         .transpose()?
         .flatten();
-    write_new(&file.path, &text)?;
+    write_new(logbook, &file.path, &text)?;
     if spec.start && spec.point {
         cases::set_active_case(logbook, &id)?;
     }
@@ -491,6 +500,7 @@ fn step(
         && cases::find(&logbook, &args.id).is_ok_and(|f| transition.target(f.case.status).is_ok()))
     .then(|| capture_first(ctx));
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut file = cases::find(&logbook, &args.id)?;
     let from = file.case.status;
     let to = transition
@@ -552,6 +562,12 @@ fn step(
             Language::De => format!("Case abgeschlossen: {}", file.case.title),
         })
     });
+
+    // `.seldon/` for the active case, before the ledger (WP-168); the case
+    // folders were checked under the lock
+    if transition != Transition::Verify {
+        logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
+    }
 
     // the journal day is read before the ledger is written: a day file
     // the engine cannot read fails the step before anything changes
@@ -738,6 +754,7 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
     }
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut file = cases::find(&logbook, &args.id)?;
     open_only(&file, "set")?;
 
@@ -852,6 +869,7 @@ fn record_snapshot(ctx: &Context, args: SnapshotArgs) -> Result<Output> {
     let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut file = cases::find(&logbook, &args.id)?;
     open_only(&file, "snapshot")?;
     let n = args.number;
@@ -912,6 +930,7 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut old = cases::find(&logbook, &args.id)?;
     if old.case.status != CaseStatus::Completed {
         return Err(Error::user(format!(
@@ -1019,8 +1038,10 @@ const CLOSING_TAIL_MAX: usize = 100;
 /// <title>: <line>`, `line` the first line of the case's *Result* (`plan
 /// done`) or the reason (`plan drop`), left out when there is none, a
 /// list marker before it dropped. The text after the dash is one line
-/// (direction and invisible format characters dropped, so none splits a
-/// token; control characters and line or paragraph separators become
+/// (control characters and line or paragraph separators as spaces,
+/// redacted, then invisible characters dropped,
+/// `Redactor::redact_dropping_invisible`, so none splits a token or hides
+/// one; control characters and line or paragraph separators become
 /// spaces), redacted and then clipped: the patterns see the whole text,
 /// so a cut cannot hide a secret from them.
 fn closing_summary(
@@ -1045,16 +1066,19 @@ fn closing_summary(
     };
     let tail: String = tail
         .chars()
-        .filter(|c| !crate::import::is_direction_or_format(*c))
         .map(|c| {
-            if c.is_control() || super::is_line_breaking(c) {
+            // the bidi controls are invisible: dropped after the redaction
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
                 ' '
             } else {
                 c
             }
         })
         .collect();
-    let tail = clip(redactor.redact(&tail).trim(), CLOSING_TAIL_MAX);
+    let tail = clip(
+        redactor.redact_dropping_invisible(&tail).trim(),
+        CLOSING_TAIL_MAX,
+    );
     if tail.is_empty() {
         format!("{id} {to}")
     } else {
@@ -1139,7 +1163,7 @@ fn show(ctx: &Context, id: &str) -> Result<Output> {
 
 /// `plan show --json` `intent` (WP-102b): the whole *Intent* section as
 /// display text (`index::build::marked_text`: control characters as
-/// spaces, every direction or format character marked `‹U+XXXX›` and
+/// spaces, every invisible character marked `‹U+XXXX›` and
 /// counted in `hidden`, redacted), at most [`SHOW_INTENT_MAX`] bytes cut at
 /// a character, with its line count before the cut. `null` while the
 /// config's redaction patterns do not compile (withheld, as the index
@@ -1269,6 +1293,13 @@ mod tests {
         );
         assert!(s.starts_with("C-2026-012 completed — Tx: token "), "{s}");
         assert!(s.ends_with(" y z"), "{s}");
+        // WP-159 round 2, B1b: an invisible character before a secret is
+        // a boundary its rule reads; it is dropped after the redaction
+        let s = summary(
+            "T",
+            Some("x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX and a\u{FE0F}b"),
+        );
+        assert_eq!(s, "C-2026-012 completed — T: x‹redacted› and ab");
         // a secret that a clip would have cut is redacted first
         let secret = "ghp_0123456789abcdefghijABCDEFGHIJ012345";
         let title = format!("{}token {secret}", "y".repeat(80));

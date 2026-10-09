@@ -35,6 +35,9 @@ pub const LEDGER_DIR: &str = "ledger";
 #[derive(Debug, Clone)]
 pub struct Ledger {
     dir: PathBuf,
+    /// The logbook's root, when `dir` is its `ledger/`: `append` checks the
+    /// folder against it (WP-168).
+    root: Option<PathBuf>,
     redactor: Redactor,
 }
 
@@ -60,13 +63,17 @@ pub fn parse_line(raw: &[u8]) -> Option<Event> {
 
 impl Ledger {
     pub fn new(logbook: &Logbook, redactor: Redactor) -> Self {
-        Ledger::at(logbook.path(LEDGER_DIR), redactor)
+        Ledger {
+            root: Some(logbook.root.clone()),
+            ..Ledger::at(logbook.path(LEDGER_DIR), redactor)
+        }
     }
 
     /// A ledger in `dir` (tests).
     pub fn at(dir: impl Into<PathBuf>, redactor: Redactor) -> Self {
         Ledger {
             dir: dir.into(),
+            root: None,
             redactor,
         }
     }
@@ -192,8 +199,10 @@ impl Ledger {
     /// Every event gets a new ULID, whatever its `id` was. `subject`,
     /// `detail` and every string value of `meta` are redacted; `subject` and
     /// `detail` are cut to the schema's limits.
-    /// If any event is invalid nothing is written (engine error). Lines go
-    /// to the month file of each event's `ts`, one `write` per file.
+    /// If any event is invalid nothing is written (engine error), and
+    /// nothing either when `ledger/` is a symbolic link or no directory
+    /// (exit 1, WP-168). Lines go to the month file of each event's `ts`,
+    /// one `write` per file.
     pub fn append(&self, _lock: &Lock, events: Vec<Event>) -> Result<Vec<Event>> {
         if events.is_empty() {
             return Ok(events);
@@ -218,6 +227,9 @@ impl Ledger {
             let text = by_month.entry(e.month()).or_default();
             text.push_str(&e.to_line());
             text.push('\n');
+        }
+        if let Some(root) = &self.root {
+            crate::logbook::checked_dir(root, Path::new(LEDGER_DIR))?;
         }
         crate::sys::create_dir_private(&self.dir)
             .with_context(|| format!("cannot create {}", self.dir.display()))?;
