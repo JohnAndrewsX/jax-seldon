@@ -33,7 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the write went through the link to wherever it pointed. With a linked
   `ledger/` that includes `seldon log`, `index` and `status` (the
   plugin's refresh shows the error). Fix: make it a real folder again —
-  move the link's contents into a folder of that name. Reading through a
+  move the link's contents into a folder of that name; a logbook kept on
+  another disk goes there whole (the logbook folder itself may be a
+  link, or a bind mount). Reading through a
   link is unchanged, and the logbook folder itself may still be a link.
   A `.seldon` that is a file now means "not initialised" (exit 3).
 
