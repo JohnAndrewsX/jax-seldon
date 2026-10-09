@@ -295,3 +295,105 @@ row).
   Run from a `git archive` copy of 7e5a5010 under `engine/target/`:
   **49/50 killed**; the survivor is the equivalent `CRLF kept`. The copy
   has been removed.
+
+## Round 3c
+
+Brief: review 3b, SEND BACK on B1. Round 3b dropped the control
+characters *after* the redaction. The rules read a CR, VT, FF or NEL as
+white space, so a secret those split (`to<VT>ken=`, `ghp_0123<NEL>…`, a
+VT or NEL in the title) was read as two words and then glued back, and
+filed in clear in the file, its name and the git history. The
+orchestrator's rule (Q1): nothing is removed after the redaction that
+the redactor's reading copy kept. The brief's order for that: drop the
+controls, then `Scrubber::text_dropping_invisible`. Code ece63f11, head
+d85d26e4 (`next` merged; only work files came in).
+
+### Why the brief's order was not taken
+
+A probe of drop-first (debug build, scratch home on disk under
+`SELDON_TEST_GUARD`) showed the mirror hole. `done<CR>sk-ABCDEFGHIJKLMNOPQRSTUVWX`
+becomes `donesk-ABCDEFGHIJKLMNOPQRSTUVWX` once the CR is gone. The key
+is now glued to the word before it, no boundary-anchored rule matches,
+and it was filed in clear. Kept, a control splits a secret; dropped, it
+glues one. One reading cannot cover both.
+
+### The order now (`engine/src/commands/inbox.rs:124-155`)
+
+- **Text.** CRLF as LF, then:
+  1. the scrubber over the text as given (`Scrubber::text`; a control is
+     a boundary here, so `done<CR>sk-…` is found);
+  2. every control character but tab and newline dropped;
+  3. the scrubber again, with the invisible characters dropped after its
+     redaction and home paths rewritten (`Scrubber::text_dropping_invisible`;
+     it finds what the drop joined, `to<VT>ken=`).
+
+  Then the outer blank lines.
+- **Title.** The same two passes. The drop between them takes every
+  control but the line ends, which `one_line` refuses afterwards. No ESC
+  reaches the human line.
+- **The rule holds literally.** After the last redaction only
+  `is_invisible` characters are removed, and that pass's reading copy
+  left exactly those out. Pass 2 never un-masks: the marker is neither
+  invisible nor a control, and a match of markers alone is left as it is
+  (WP-140).
+- `droppedCharacters` counts the invisible and control characters of the
+  title and the text as given.
+- This also closes round 3b's accepted residual: `/ho\x01me/alice` is
+  now rewritten to `~`.
+- Docs: the module doc, SPEC-ENGINE §3 (the rule, the two passes, "the
+  controls that are no white space"), TESTING.md, and the corrections
+  marked in rounds 3a and 3b above (the `hook`/`plan` sentence, the
+  "reads past lone controls" claim).
+
+### The all-controls test
+
+`no_control_character_glues_a_secret_after_the_redaction`
+(`engine/tests/inbox.rs`) runs over all 65 control code points: C0, DEL
+and C1, NEL included.
+
+- **Text:** 63 of them (tab and newline aside), one line each with
+  `to<c>ken=`, a `ghp_` token split by `<c>`, `/ho<c>me/alice` and
+  `done<c>sk-…`. It asserts:
+  - the exact filed line (`token=‹redacted› ‹redacted› ~/x done‹redacted›`);
+  - no control left;
+  - `Redactor::builtin().redact(body) == body`;
+  - `redactedLines` 63 and `droppedCharacters` 4·63.
+- **Title:** 64 of them (NUL cannot travel in an argv), each splitting
+  `to<c>ken=` and a `ghp_` token and gluing `x<c>sk-…`. It asserts the
+  `--json` title, the file name and the file content. `\n` and `\r`
+  exit 1 with "must be one line".
+- **Afterwards:** no secret in any inbox file name or in `git log -p`.
+- It fails on round 3b's order (CR splitter in clear), on round 3a's
+  (`done<CR>sk-` glued) and on controls-as-spaces (`to ken=`).
+
+### How it was verified
+
+- `cargo test --test inbox`: 16 passed, 0 failed. `cargo fmt --check`
+  and `cargo clippy --all-targets -D warnings` are clean.
+- **Mutants** (`mutants.py`): the round-3c ones are no first pass
+  (text, title), the controls dropped after the scrubber (text, title),
+  and the title keeping its white-space controls. Run from a
+  `git archive` copy of d85d26e4 with the target on disk: **51/54
+  killed**. The three survivors are equivalent:
+  - `CRLF kept`, as in every round;
+  - the two round-3b "stripped before its redaction" mutants. Pass 1 now
+    reads the text as given, including its copy without the invisible
+    characters, so `x<U+200B>sk-…` is masked before pass 2 sees it.
+- The full check I had queued after the mutants was stopped by Claude
+  Code for low memory before it started (empty log, nothing left
+  behind). The orchestrator gated ece63f11 and d85d26e4 (gate logs
+  w166c, w166c-head). Fable stage 2: APPROVE, code unchanged. This
+  commit is docs only.
+
+### Residual (accepted, WP-169)
+
+Two lone controls in mixed roles in one secret (`done<CR>sk<CR>-…`) are
+filed glued, as two invisible characters are everywhere (ADR-0048 §2's
+limit). Pass 1 cannot match (the token is split), and pass 2 cannot
+match (the boundary is gone); no finite number of extra passes closes
+it. Mixed control and invisible (`done<CR>sk<ZW>-`, `done<ZW>sk<CR>-`)
+is masked.
+
+An ESC CSI colour sequence inside a key (`sk-ABCDEFGHIJ<ESC>[0mKLMN…`)
+leaves the fragments interleaved with `[0m`. That is also WP-169, which
+ADR-0048 already names.
