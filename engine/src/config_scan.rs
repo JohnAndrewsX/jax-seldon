@@ -250,12 +250,18 @@ pub fn scan_keeping(
                 if ignored_file(&name) {
                     continue;
                 }
-                // a link: its target's time, never its content; a link to
-                // a folder is not entered
+                // a link: its target's time, never its content, and only
+                // a target inside the root that the walk itself would list
+                // (WP-139 round 3); a link to a folder is not entered
                 let meta = if kind.is_file() {
                     entry.metadata()
                 } else {
-                    std::fs::metadata(&path)
+                    match resolve_within(config_dir, &path) {
+                        Some(target) if listable_target(config_dir, &target, skip, &excluded) => {
+                            std::fs::symlink_metadata(&target)
+                        }
+                        _ => continue,
+                    }
                 };
                 let Ok(modified) = meta.and_then(|m| {
                     if m.is_file() {
@@ -274,6 +280,99 @@ pub fn scan_keeping(
         }
     }
     out
+}
+
+/// Whether the walk itself would list `target` (a link's resolved target,
+/// below `root`): neither it nor a folder above it below `root` is skipped
+/// by name, matched by `skip` or excluded.
+fn listable_target(
+    root: &Path,
+    target: &Path,
+    skip: &SkipPaths,
+    excluded: &dyn Fn(&Path) -> bool,
+) -> bool {
+    let name = target.file_name().map(|n| n.to_string_lossy());
+    !name.is_some_and(|n| ignored_file(&n))
+        && !target
+            .ancestors()
+            .take_while(|p| *p != root && p.starts_with(root))
+            .any(|p| {
+                skip.matches(p)
+                    || excluded(p)
+                    || (p != target
+                        && p.file_name()
+                            .is_some_and(|n| ignored_dir(&n.to_string_lossy())))
+            })
+}
+
+/// Links resolved at most per path (as the kernel's `ELOOP` limit).
+const MAX_HOPS: usize = 40;
+
+/// Where `path` (below `root`) leads once every link on the way is
+/// resolved, without looking at anything outside `root` (AGENTS.md §6,
+/// E41: paths and times under `~/.config` only): a link whose target
+/// leaves `root` — an absolute path elsewhere, or `..` above it — ends the
+/// walk with `None`, before anything there is touched, as do a loop
+/// ([`MAX_HOPS`]) and a part that cannot be read. An absolute target may
+/// name `root` as written or as its canonical form (`~/.config` may itself
+/// be a link). The result is written below `root` as given.
+pub fn resolve_within(root: &Path, path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let canonical_root = std::fs::canonicalize(root).ok()?;
+    // components still to resolve, the next one last
+    let push = |pending: &mut Vec<std::ffi::OsString>, rest: &Path| -> Option<()> {
+        let mut parts = Vec::new();
+        for c in rest.components() {
+            match c {
+                Component::Normal(n) => parts.push(n.to_os_string()),
+                Component::ParentDir => parts.push("..".into()),
+                Component::CurDir => {}
+                Component::RootDir | Component::Prefix(_) => return None,
+            }
+        }
+        pending.extend(parts.into_iter().rev());
+        Some(())
+    };
+    let mut pending = Vec::new();
+    push(&mut pending, path.strip_prefix(root).ok()?)?;
+    let mut resolved: Vec<std::ffi::OsString> = Vec::new();
+    let mut hops = 0;
+    while let Some(part) = pending.pop() {
+        if part == ".." {
+            // above the root: outside
+            resolved.pop()?;
+            continue;
+        }
+        let candidate: PathBuf = std::iter::once(root.as_os_str())
+            .chain(resolved.iter().map(|p| p.as_os_str()))
+            .chain(std::iter::once(part.as_os_str()))
+            .collect();
+        let meta = std::fs::symlink_metadata(&candidate).ok()?;
+        if !meta.file_type().is_symlink() {
+            resolved.push(part);
+            continue;
+        }
+        hops += 1;
+        if hops > MAX_HOPS {
+            return None;
+        }
+        let target = std::fs::read_link(&candidate).ok()?;
+        if target.is_absolute() {
+            let rest = target
+                .strip_prefix(root)
+                .or_else(|_| target.strip_prefix(&canonical_root))
+                .ok()?;
+            resolved.clear();
+            push(&mut pending, rest)?;
+        } else {
+            push(&mut pending, &target)?;
+        }
+    }
+    Some(
+        std::iter::once(root.as_os_str())
+            .chain(resolved.iter().map(|p| p.as_os_str()))
+            .collect(),
+    )
 }
 
 /// Inserts `item` into `files` (newest first, equal times by path) and
@@ -579,30 +678,79 @@ mod tests {
         assert_eq!(got, ["app/ok.toml"]);
     }
 
-    /// WP-139 round 2: a link to a folder is never entered; a link to a
-    /// file is listed under its own path with its target's time (stow-style
-    /// dotfiles: an edit changes only the target); a dangling link is
+    /// WP-139 round 3: a link to a folder is never entered; a link to a
+    /// file is listed under its own path with its target's time only when
+    /// the target, resolved without leaving the root, is a regular file the
+    /// walk itself would list (not skipped, not excluded, not ignored by
+    /// name); a dangling link, a loop and a link out of the root are
     /// nothing.
     #[test]
-    fn folder_links_are_never_followed_file_links_count_by_their_target() {
+    fn a_file_link_counts_only_with_a_listable_target_inside_the_root() {
         let t = tmp("links");
         let root = &t.0.join("config");
         let outside = &t.0.join("outside");
         file(outside, "big/a.conf", 2 * DAY);
-        file(outside, "dotfiles/kitty.conf", 2 * DAY - 60);
+        file(outside, "dotfiles/kitty.conf", 2 * DAY);
         file(root, "real.conf", 2 * DAY - 120);
-        std::os::unix::fs::symlink(outside.join("big"), root.join("linked-dir")).unwrap();
-        std::os::unix::fs::symlink(
-            outside.join("dotfiles/kitty.conf"),
-            root.join("linked.conf"),
-        )
-        .unwrap();
-        std::os::unix::fs::symlink(outside.join("gone"), root.join("dangling.conf")).unwrap();
-        let scan = scan(root, &SkipPaths::default(), &limits());
-        assert_eq!(names(&scan, root), ["linked.conf", "real.conf"]);
+        file(root, "dots/foot.ini", 2 * DAY - 60);
+        file(root, "secret/token", 2 * DAY);
+        file(root, "own/index.json", 2 * DAY);
+        file(root, "keys/vault.kdbx", 2 * DAY);
+        let link = |to: &Path, at: &str| std::os::unix::fs::symlink(to, root.join(at)).unwrap();
+        link(&outside.join("big"), "linked-dir");
+        link(&outside.join("dotfiles/kitty.conf"), "out-absolute.conf");
+        link(
+            Path::new("../outside/dotfiles/kitty.conf"),
+            "out-relative.conf",
+        );
+        link(Path::new("/proc/self/status"), "proc.conf");
+        link(&root.join("dots/foot.ini"), "in-absolute.ini");
+        link(Path::new("dots/foot.ini"), "in-relative.ini");
+        link(Path::new("in-relative.ini"), "in-chain.ini");
+        link(Path::new("secret/token"), "token.conf");
+        link(Path::new("own/index.json"), "ownlink.json");
+        link(Path::new("keys/vault.kdbx"), "vault.conf");
+        link(Path::new("loop-b.conf"), "loop-a.conf");
+        link(Path::new("loop-a.conf"), "loop-b.conf");
+        link(&outside.join("gone"), "dangling.conf");
+        let limits = Limits {
+            exclude: vec![root.join("own")],
+            ..limits()
+        };
+        let skip = SkipPaths::new(&t.0, &["secret".to_string()]);
+        let scan = scan(root, &skip, &limits);
+        let mut got = names(&scan, root);
+        got.sort();
         assert_eq!(
-            scan.files[0].modified,
-            base() + Duration::from_secs(2 * DAY - 60)
+            got,
+            [
+                "dots/foot.ini",
+                "in-absolute.ini",
+                "in-chain.ini",
+                "in-relative.ini",
+                "real.conf"
+            ]
+        );
+        let chain = scan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("in-chain.ini"))
+            .unwrap();
+        assert_eq!(chain.modified, base() + Duration::from_secs(2 * DAY - 60));
+        // the resolution itself never leaves the root
+        assert_eq!(resolve_within(root, &root.join("out-relative.conf")), None);
+        assert_eq!(resolve_within(root, &root.join("out-absolute.conf")), None);
+        assert_eq!(resolve_within(root, &root.join("loop-a.conf")), None);
+        assert_eq!(
+            resolve_within(root, &root.join("in-chain.ini")),
+            Some(root.join("dots/foot.ini"))
+        );
+        // a root that is itself a link: targets in either spelling
+        let linked_root = t.0.join("config-link");
+        std::os::unix::fs::symlink(root, &linked_root).unwrap();
+        assert_eq!(
+            resolve_within(&linked_root, &linked_root.join("in-absolute.ini")),
+            Some(linked_root.join("dots/foot.ini"))
         );
     }
 

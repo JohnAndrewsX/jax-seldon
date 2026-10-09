@@ -19,11 +19,13 @@
 //! - everything under a watch path, Omarchy's plugin folder, Seldon's own
 //!   config folder and config file, and the logbook ([`exclusions`],
 //!   before a folder is entered);
-//! - a path [`shown_path`] refuses — not UTF-8, a control, direction or
-//!   format character, longer than [`SUBJECT_MAX`] characters, a `.` or
-//!   `..` folder, or one the logbook's redaction would change (it is never
-//!   shown masked: *Watch* needs the real path) — before the cut to
-//!   [`MAX_FILES`].
+//! - a path [`shown_path`] refuses — not UTF-8, a character a path may
+//!   not hold (`import::bad_path_char`), longer than [`SUBJECT_MAX`]
+//!   characters, a `.` or `..` folder, or one the logbook's redaction
+//!   would change (it is never shown masked: *Watch* needs the real path)
+//!   — before the cut to [`MAX_FILES`];
+//! - a link whose target is not a file inside `~/.config` the walk would
+//!   list itself ([`crate::config_scan::resolve_within`], WP-139 round 3).
 //!
 //! Bounded by the walker: at most [`MAX_ENTRIES`] directory entries read,
 //! [`crate::config_scan::MAX_DEPTH`] levels below `~/.config` and
@@ -150,9 +152,11 @@ fn at(t: SystemTime, now: DateTime<FixedOffset>) -> DateTime<FixedOffset> {
 }
 
 /// `path` as a `~`-path the list may show: UTF-8, under `~/.config/`, no
-/// `.` or `..` folder and no empty one, no control, direction or format
-/// character, at most [`SUBJECT_MAX`] characters, and unchanged by the
-/// logbook's redaction. `None` otherwise.
+/// `.` or `..` folder and no empty one, no character a path may not hold
+/// ([`crate::import::bad_path_char`], WP-159: control, invisible, U+2028,
+/// U+2029; the plugin's `BAD_PATH_CHARS`), at most [`SUBJECT_MAX`]
+/// characters, and unchanged by the logbook's redaction. `None`
+/// otherwise.
 pub fn shown_path(dirs: &Dirs, redactor: &Redactor, path: &Path) -> Option<String> {
     // `display` would replace what is not UTF-8 with U+FFFD (B1)
     path.to_str()?;
@@ -162,9 +166,7 @@ pub fn shown_path(dirs: &Dirs, redactor: &Redactor, path: &Path) -> Option<Strin
             .split('/')
             .all(|c| !c.is_empty() && c != "." && c != "..")
         && key.chars().count() <= SUBJECT_MAX
-        && !key
-            .chars()
-            .any(|c| c.is_control() || crate::redact::is_invisible(c))
+        && !key.chars().any(crate::import::bad_path_char)
         && redactor.redact(&key) == key;
     ok.then_some(key)
 }
@@ -555,24 +557,62 @@ mod tests {
     }
 
     #[test]
-    fn links_to_folders_are_not_followed_links_to_files_count_by_target() {
+    fn a_link_counts_only_with_a_target_the_list_would_show_inside_dot_config() {
         let h = Home::new("links");
-        let outside = h.file("dotfiles/kitty/kitty.conf", HOUR);
+        let home = &h.dirs.home;
+        let link = |to: &Path, at: &str| {
+            let at = home.join(at);
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(to, at).unwrap();
+        };
+        // outside ~/.config: a dotfile tree, Seldon's state (B2), a skipped
+        // secret (B1), /proc (N1)
+        h.file("dotfiles/kitty/kitty.conf", HOUR);
         h.file("dotfiles/fish/config.fish", HOUR);
-        std::os::unix::fs::symlink(
-            h.dirs.home.join("dotfiles/fish"),
-            h.dirs.home.join(".config/fish"),
-        )
-        .unwrap();
-        std::fs::create_dir_all(h.dirs.home.join(".config/kitty")).unwrap();
-        std::os::unix::fs::symlink(&outside, h.dirs.home.join(".config/kitty/kitty.conf")).unwrap();
-        // a dangling link is nothing
-        std::os::unix::fs::symlink(
-            h.dirs.home.join("gone"),
-            h.dirs.home.join(".config/gone.conf"),
-        )
-        .unwrap();
-        assert_eq!(h.paths(&Config::default()), ["~/.config/kitty/kitty.conf"]);
+        h.file(".local/state/seldon/index.json", HOUR);
+        h.file("secrets/token", HOUR);
+        link(&home.join("dotfiles/fish"), ".config/fish");
+        link(
+            &home.join("dotfiles/kitty/kitty.conf"),
+            ".config/kitty/kitty.conf",
+        );
+        link(
+            &home.join(".local/state/seldon/index.json"),
+            ".config/ownlink.json",
+        );
+        link(&home.join("secrets/token"), ".config/app/token.conf");
+        link(Path::new("/proc/self/status"), ".config/procfile.conf");
+        // inside: a skipped folder, a watched file, Seldon's config, and one
+        // the list shows
+        h.file(".config/private/key.conf", HOUR);
+        h.file(".config/hypr/input.lua", HOUR);
+        h.file(".config/seldon/config.toml", HOUR);
+        h.file(".config/dots/foot.ini", 2 * HOUR);
+        link(
+            &home.join(".config/private/key.conf"),
+            ".config/app/key.conf",
+        );
+        link(
+            &home.join(".config/hypr/input.lua"),
+            ".config/app/input.lua",
+        );
+        link(
+            &home.join(".config/seldon/config.toml"),
+            ".config/app/seldon.toml",
+        );
+        link(Path::new("../dots/foot.ini"), ".config/foot/foot.ini");
+        link(&home.join("gone"), ".config/gone.conf");
+        let config = Config {
+            redaction: crate::config::Redaction {
+                skip_paths: vec!["~/secrets/".into(), "private".into()],
+                ..Default::default()
+            },
+            ..Config::default()
+        };
+        assert_eq!(
+            h.paths(&config),
+            ["~/.config/dots/foot.ini", "~/.config/foot/foot.ini"]
+        );
     }
 
     #[test]
@@ -581,6 +621,8 @@ mod tests {
         h.file(".config/app/sekrit.conf", HOUR);
         h.file(".config/app/bad\u{1b}name.conf", HOUR);
         h.file(".config/app/bidi\u{202e}name.conf", HOUR);
+        h.file(".config/app/line\u{2028}sep.conf", HOUR);
+        h.file(".config/app/para\u{2029}sep.conf", HOUR);
         h.file(".config/app/fine.conf", HOUR);
         let redactor = Redactor::with_patterns(&["sekrit".into()]).unwrap();
         let scan = scan(&h.dirs, &Config::default(), &redactor, &[], h.now);
