@@ -152,6 +152,22 @@ either case.
   `jax-seldon-private/gates/check-wp171-dev-r2.log` (r1, at an earlier
   commit of this branch, also ok: `check-wp171-dev-r1.log`).
   `/tmp` and `/run/user/1000` at 2–3 % throughout.
+- **After the merge of `next` (b4a11dba: WP-159, WP-138)**, merge commit
+  ee341011: one conflict, `DECISIONS.md` (next's rows for ADR-0045
+  accepted, ADR-0047, ADR-0048, then ADR-0049). This branch never used
+  `import::is_direction_or_format` (only `bad_path_char`, still on
+  `next`); WP-159 and WP-138 bring no new logbook writer (grep over the
+  diff: test writes only). The German CLI reference's source line moves
+  to the merge (its WP-138 text came with `next`). **`next` itself is
+  not `cargo fmt` clean** (`commands/preview.rs:331`, the `shown()`
+  condition of b4a11dba): `just check` stopped at `fmt-check` (log
+  `check-wp171-dev-r3.log`); 71b3f5df is that `cargo fmt` alone, the
+  same change a fix on `next` would make. **`just check` at 71b3f5df:
+  exit 0, `check: ok`**, 102 test binaries, 2646 passed, 0 failed;
+  real-home-guard 40/0, service-states 344/0, desk-view 1808/0,
+  bar-view 196/0, ipc-restart 44/0, docs-check ok. Log:
+  `check-wp171-dev-r4.log`. The mutants ran before the merge (the merge
+  touches none of the mutated lines).
 - **Hand mutants** (`work/active/WP-171/mutants.py`, 55), each against a
   `git archive` copy under `gates/`, target dir `gates/target-wp171`,
   the tests' TMPDIR in the copy (scratch roots only; no test touches a
