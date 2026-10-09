@@ -1040,12 +1040,15 @@ or for a `.git` file `<gitdir>/HEAD`) is a regular file
 (`logbook::git::check_files`). If not, no git runs: the call is
 answered at once with "`<path>`: a FIFO | a device | a socket, not a
 regular file; git is not run in the logbook: make it a regular file and
-run the command again". A command says it once, where it meets it
-first: its autocommit's warning ("git: not committed: cannot run git:
-…"; `--json` `git.error`) or its index rebuild's warning ("git: …";
+run the command again" (for `.git`: "make it a directory or a `gitdir:`
+file"). A command says it once, where it meets it first: its
+autocommit's warning ("git: not committed: cannot run git: …";
+`--json` `git.error`) or its index rebuild's warning ("git: …";
 `logbook.git` is left out); the rest of its git calls are skipped
-quietly. Doctor's `git` row is `degraded` with that message and a fix
-(what `HEAD` holds, where the branch names are). A missing `HEAD`, or
+quietly. `import --apply` stops with exit 1 before it writes (it cannot
+commit the pending changes first). Doctor's `git` row is `degraded`
+with that message and a fix (what `HEAD` holds, where the branch names
+are, also for a linked work tree). A missing `HEAD`, or
 one that is a directory, is no refusal: git says at once that this is
 no repository. Other files git opens (`.git/config`, a loose ref) are
 not checked.
