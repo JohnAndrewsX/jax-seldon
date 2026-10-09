@@ -666,8 +666,10 @@ fn only_files_outside_the_logbook_are_written_through_a_link() {
             "the config collector's manifest and owned files (state)",
         ),
         ("collectors/mod.rs", 1, "cursors.json (state)"),
+        ("collectors/recent.rs", 1, "the recent-config list (state)"),
         ("commands/agent.rs", 1, "the launches file (state)"),
         ("commands/capture.rs", 1, "config.toml"),
+        ("commands/config_cmd.rs", 1, "config.toml (config watch)"),
         (
             "commands/hook.rs",
             2,
