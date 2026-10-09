@@ -346,7 +346,6 @@ pub(crate) fn create(
         )));
     }
     let today = ctx.now.date_naive();
-    let id = cases::next_id(logbook, ctx.now.year())?;
     let status = if spec.done.is_some() {
         CaseStatus::Completed
     } else if spec.start {
@@ -354,6 +353,16 @@ pub(crate) fn create(
     } else {
         CaseStatus::Queued
     };
+    // every folder this writes into, before the next id is read and the
+    // ledger written (WP-168)
+    cases::checked_folders(logbook)?;
+    if let Some(area) = spec.area.as_deref() {
+        logbook.checked_dir(format!("areas/{area}"))?;
+    }
+    if spec.start && spec.point {
+        logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
+    }
+    let id = cases::next_id(logbook, ctx.now.year())?;
     let case = Case {
         id: id.clone(),
         title: spec.title.clone(),
@@ -405,14 +414,6 @@ pub(crate) fn create(
             "{} already exists",
             file.path.display()
         )));
-    }
-    // every folder this writes into, before the ledger (WP-168)
-    logbook.checked_file(&file.path)?;
-    if let Some(area) = spec.area.as_deref() {
-        logbook.checked_dir(format!("areas/{area}"))?;
-    }
-    if spec.start && spec.point {
-        logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
     }
 
     // the ledger first: if it cannot be written, nothing else is
@@ -499,6 +500,7 @@ fn step(
         && cases::find(&logbook, &args.id).is_ok_and(|f| transition.target(f.case.status).is_ok()))
     .then(|| capture_first(ctx));
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut file = cases::find(&logbook, &args.id)?;
     let from = file.case.status;
     let to = transition
@@ -754,6 +756,7 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
     }
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut file = cases::find(&logbook, &args.id)?;
     open_only(&file, "set")?;
 
@@ -868,6 +871,7 @@ fn record_snapshot(ctx: &Context, args: SnapshotArgs) -> Result<Output> {
     let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut file = cases::find(&logbook, &args.id)?;
     open_only(&file, "snapshot")?;
     let n = args.number;
@@ -928,6 +932,7 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut old = cases::find(&logbook, &args.id)?;
     if old.case.status != CaseStatus::Completed {
         return Err(Error::user(format!(

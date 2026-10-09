@@ -107,6 +107,12 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
     }
 
     let redactor = Redactor::with_patterns(&config.redaction.patterns)?;
+    if args.apply {
+        // the import's folders, before the plan reads them (WP-168)
+        for rel in IMPORT_FOLDERS {
+            logbook.checked_dir(rel)?;
+        }
+    }
     let plan = omarchy_agent::plan(&vault, shown, &logbook, redactor, &ctx.now)?;
     let report_rel = report_path(SOURCE);
 
@@ -178,6 +184,19 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
         plan_json(&plan, mode, true, &files, &commit, Some(&marker_rel)),
     ))
 }
+
+/// The folders an apply writes into (SPEC-ENGINE §3 `import`).
+const IMPORT_FOLDERS: [&str; 9] = [
+    "ledger",
+    "work/queued",
+    "work/active",
+    "work/completed",
+    "journal",
+    "memory",
+    "system",
+    "outputs",
+    ".seldon/imports",
+];
 
 /// Every folder the apply writes a file in is a real folder of the
 /// logbook ([`Logbook::checked_file`], WP-168), checked before the ledger.

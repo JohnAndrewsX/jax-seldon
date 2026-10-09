@@ -63,7 +63,13 @@ impl Logbook {
         let meta_path = root.join(META_FILE);
         let text = match std::fs::read_to_string(&meta_path) {
             Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // `.seldon` a file (or the root one): no logbook either (WP-168)
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
                 return Err(Error::NotInitialised(root.to_path_buf()));
             }
             Err(e) => {

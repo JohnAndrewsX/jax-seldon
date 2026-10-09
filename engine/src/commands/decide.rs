@@ -83,6 +83,8 @@ fn new(ctx: &Context, args: DecideArgs) -> Result<Output> {
     // the decision file, its name and DECISIONS.md get the redacted title
     let title = Redactor::for_config(&config)?.redact(&title);
     let lock = ctx.lock()?;
+    // before the next id is read from it (WP-168)
+    logbook.checked_dir("decisions")?;
     if let Some(id) = &args.case_id {
         cases::find(&logbook, id)?;
     }

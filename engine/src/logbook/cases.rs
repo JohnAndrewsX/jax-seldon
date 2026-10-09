@@ -805,6 +805,22 @@ pub fn fill(template: &str, vars: &[(&str, &str)]) -> String {
     out
 }
 
+/// The case folders `work/{queued,active,completed}` are real folders of
+/// the logbook ([`Logbook::checked_dir`], WP-168). A command that writes a
+/// case checks them under the lock before it reads them: a case can move
+/// between them, the next id is read from all three, and a file in the
+/// place of one would otherwise fail the listing (exit 2).
+pub fn checked_folders(logbook: &Logbook) -> Result<()> {
+    for status in [
+        CaseStatus::Queued,
+        CaseStatus::Active,
+        CaseStatus::Completed,
+    ] {
+        logbook.checked_dir(format!("work/{}", status.folder()))?;
+    }
+    Ok(())
+}
+
 /// `.seldon/active-case`: the id of the case started last, if any.
 pub fn active_case(logbook: &Logbook) -> Option<String> {
     let text = std::fs::read_to_string(logbook.path(ACTIVE_CASE_FILE)).ok()?;
