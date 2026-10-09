@@ -37,7 +37,7 @@ import "Model.js" as Model
 // goes to Today and `+` to Work with the key. A focused field keeps every
 // key (Esc in it is the field's). Tab does nothing: the desk is not a bar
 // popup. Writing actions arm on the first press (Arm.qml): any other key
-// disarms.
+// disarms; a held key's repeats neither arm nor confirm.
 //
 // Settings writes (§1): Settings › Appearance and the sidebar's fold button
 // call writeSetting(), which sends the whole shell.json entry with the one
@@ -269,6 +269,23 @@ Item {
       return true
     }
     return false
+  }
+
+  // Every key the desk gets. An auto-repeated key (a held key) still
+  // moves, but never arms or confirms a writing action (Arm.held): a held
+  // `x` keeps its arm and hint until it is released and pressed again.
+  function keyPressed(event) {
+    if (root.editing) return
+    root.arm.touched = false
+    root.arm.held = event.isAutoRepeat === true
+    var used = false
+    try {
+      used = root.key(event)
+    } finally {
+      root.arm.held = false
+    }
+    if (!root.arm.touched) root.arm.disarm()
+    if (used) event.accepted = true
   }
 
   function key(event) {
@@ -544,13 +561,7 @@ Item {
           height: card.height - card.contentTopInset - card.contentBottomInset
           focus: true
           Keys.priority: Keys.BeforeItem
-          Keys.onPressed: function(event) {
-            if (root.editing) return
-            root.arm.touched = false
-            var used = root.key(event)
-            if (!root.arm.touched) root.arm.disarm()
-            if (used) event.accepted = true
-          }
+          Keys.onPressed: function(event) { root.keyPressed(event) }
 
           Header {
             id: header
