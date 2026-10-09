@@ -1625,8 +1625,9 @@ git itself is killed, with the same bounded pipe wait. Rules:
   `config-change` of the file itself. A symbolic link there is followed
   to its file and recorded under the link's own path (hash only, whatever
   the target is: only root can place it, and `mkinitcpio` sources it as
-  well); a link whose target lies under `/usr/` carries `meta.matches =
-  "system-link"` (§4 evidence marks) and is routine. A link to a
+  well). A link there carries no evidence mark, also when its target
+  lies under `/usr/`: it is attention like any other boot file (ADR-0037
+  §2 gives `system-link` to two home paths only; WP-164 round 3). A link to a
   directory is not followed, nor is a FIFO, socket or device opened.
   Nothing else under `/etc` is opened or stat'ed, unless the user's own
   `watchPaths` reach it; a boot file a watch path covers is walked
@@ -1694,7 +1695,8 @@ git itself is killed, with the same bounded pipe wait. Rules:
   `doctor`'s `watch` row names the default paths it lacks, with the line
   to add. **Evidence marks (ADR-0028 §5):** a new `config-add` or
   `config-change` carries `meta.matches` when, at capture, the file is a
-  symlink whose target lies under `/usr/` (`system-link`), its new hash
+  symlink under the home directory whose target lies under `/usr/`
+  (`system-link`; never a boot file under `/etc`, WP-164), its new hash
   equals Omarchy's shipped copy (`omarchy-default`: `$OMARCHY_PATH/config/
   <rel>` for `~/.config/<rel>`; for `~/.local/share/applications/<name>`
   `$OMARCHY_PATH/applications/<name>`, and for `Alacritty.desktop`
