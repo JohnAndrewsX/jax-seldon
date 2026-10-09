@@ -117,6 +117,123 @@ pub fn read_small_file(path: &Path, max: u64) -> Result<Option<String>, String> 
         .map_err(|_| "not UTF-8".to_string())
 }
 
+/// Most bytes a ledger month `ledger/<YYYY-MM>.jsonl` may hold when it is
+/// read (WP-174): about half a million events, at some 460 bytes each.
+pub const LEDGER_MONTH_MAX: u64 = 256 * 1024 * 1024;
+
+/// Most bytes any other file of the logbook may hold when it is read
+/// whole (WP-174): `AGENTS.md`, `STATUS.md`, `DECISIONS.md`, a journal
+/// day, a case, a decision, `.seldon/*`; also Claude Code's settings file.
+pub const LOGBOOK_FILE_MAX: u64 = 16 * 1024 * 1024;
+
+/// `O_NONBLOCK` of open(2) on Linux: the generic value; mips and sparc
+/// number it differently (as [`O_NOFOLLOW`]).
+#[cfg(any(target_arch = "mips", target_arch = "mips64"))]
+const O_NONBLOCK: i32 = 0o200;
+#[cfg(any(target_arch = "sparc", target_arch = "sparc64"))]
+const O_NONBLOCK: i32 = 0o40000;
+#[cfg(not(any(
+    target_arch = "mips",
+    target_arch = "mips64",
+    target_arch = "sparc",
+    target_arch = "sparc64"
+)))]
+const O_NONBLOCK: i32 = 0o4000;
+
+/// The regular file at `path`, opened to read; a file of the logbook is
+/// opened only this way (WP-174). A symbolic link is followed (reading
+/// through a linked file is unchanged, ADR-0049 §2), but what it leads to
+/// must be a regular file: a FIFO (an open would block until a writer
+/// comes), a device (`/dev/zero` reads forever), a socket or a directory
+/// is an `InvalidInput` error naming what it is. The type is checked
+/// before the open, so such a file is not opened at all, and again on the
+/// open file, which is opened `O_NONBLOCK` (no effect on a regular file's
+/// reads), so one swapped in between cannot block either. A missing file
+/// is a `NotFound` error, as for `std::fs::File::open`.
+pub fn open_regular(path: &Path) -> std::io::Result<File> {
+    not_regular(&std::fs::metadata(path)?)?;
+    open_checked(path)
+}
+
+/// The second half of [`open_regular`]: the open that cannot block, and
+/// the check on the open file.
+fn open_checked(path: &Path) -> std::io::Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NONBLOCK)
+        .open(path)?;
+    not_regular(&file.metadata()?)?;
+    Ok(file)
+}
+
+/// `Ok` for a regular file, else the `InvalidInput` error saying what
+/// the file is.
+fn not_regular(meta: &std::fs::Metadata) -> std::io::Result<()> {
+    use std::os::unix::fs::FileTypeExt as _;
+    let kind = meta.file_type();
+    let what = if kind.is_file() {
+        return Ok(());
+    } else if kind.is_dir() {
+        "a directory"
+    } else if kind.is_fifo() {
+        "a FIFO"
+    } else if kind.is_char_device() || kind.is_block_device() {
+        "a device"
+    } else if kind.is_socket() {
+        "a socket"
+    } else {
+        "no regular file"
+    };
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        format!("{what}, not a regular file; not read"),
+    ))
+}
+
+/// The bytes of the regular file at `path` ([`open_regular`]), at most
+/// `max` of them: a larger file is a `FileTooLarge` error, also one that
+/// grows past `max` while it is read (the read stops at `max + 1`). For
+/// every file of the logbook the engine reads whole (WP-174); `max` is
+/// [`LEDGER_MONTH_MAX`] for a ledger month, else [`LOGBOOK_FILE_MAX`].
+pub fn read_regular(path: &Path, max: u64) -> std::io::Result<Vec<u8>> {
+    let file = open_regular(path)?;
+    let len = file.metadata()?.len();
+    if len > max {
+        return Err(too_large(max));
+    }
+    let mut bytes = Vec::with_capacity(len as usize);
+    file.take(max + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max {
+        return Err(too_large(max));
+    }
+    Ok(bytes)
+}
+
+/// [`read_regular`] as text: bytes that are not UTF-8 are an
+/// `InvalidData` error, as for `std::fs::read_to_string`.
+pub fn read_regular_string(path: &Path, max: u64) -> std::io::Result<String> {
+    String::from_utf8(read_regular(path, max)?).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        )
+    })
+}
+
+/// The error of a file of more than `max` bytes (in MiB when whole).
+pub fn too_large(max: u64) -> std::io::Error {
+    const MIB: u64 = 1024 * 1024;
+    let size = if max >= MIB && max % MIB == 0 {
+        format!("{} MiB", max / MIB)
+    } else {
+        format!("{max} bytes")
+    };
+    std::io::Error::new(
+        std::io::ErrorKind::FileTooLarge,
+        format!("more than {size}; not read"),
+    )
+}
+
 /// Writes `bytes` to a temp file next to `path` and renames it over `path`.
 /// A symbolic link at `path` is followed: its target is replaced and the
 /// link stays. The target keeps its permission bits; a new file gets
@@ -1005,6 +1122,65 @@ mod tests {
         let mut f = open_append_nofollow(&dir.join("new")).unwrap();
         std::io::Write::write_all(&mut f, b"b\n").unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("new")).unwrap(), "a\nb\n");
+    }
+
+    /// WP-174: a reader of the logbook takes only a regular file, through
+    /// a link too, and at most `max` bytes of it; a FIFO is never waited
+    /// on and `/dev/zero` never read, also when one is swapped in after
+    /// the type check (the open itself checks again).
+    #[test]
+    fn a_bounded_read_takes_only_a_regular_file() {
+        unsafe extern "C" {
+            fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32;
+        }
+        let dir = crate::logbook::scratch::scratch("seldon-read-regular");
+        std::fs::write(dir.join("file"), "abc\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("file"), dir.join("linked")).unwrap();
+        std::os::unix::fs::symlink("/dev/zero", dir.join("zero")).unwrap();
+        std::os::unix::fs::symlink(dir.join("missing"), dir.join("dangling")).unwrap();
+        std::fs::create_dir(dir.join("folder")).unwrap();
+        let fifo = dir.join("fifo");
+        let c = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { mkfifo(c.as_ptr(), 0o600) }, 0);
+
+        assert_eq!(read_regular(&dir.join("file"), 4).unwrap(), b"abc\n");
+        assert_eq!(
+            read_regular_string(&dir.join("linked"), 4).unwrap(),
+            "abc\n"
+        );
+        let e = read_regular(&dir.join("file"), 3).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::FileTooLarge);
+        assert_eq!(e.to_string(), "more than 3 bytes; not read");
+        assert_eq!(
+            too_large(LOGBOOK_FILE_MAX).to_string(),
+            "more than 16 MiB; not read"
+        );
+        for (name, what) in [
+            ("fifo", "a FIFO"),
+            ("zero", "a device"),
+            ("folder", "a directory"),
+        ] {
+            let path = dir.join(name);
+            for e in [
+                read_regular(&path, 4).unwrap_err(),
+                read_regular_string(&path, 4).unwrap_err(),
+                open_checked(&path).unwrap_err(),
+            ] {
+                assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput, "{name}");
+                assert_eq!(
+                    e.to_string(),
+                    format!("{what}, not a regular file; not read"),
+                    "{name}"
+                );
+            }
+        }
+        for name in ["missing", "dangling"] {
+            let e = read_regular(&dir.join(name), 4).unwrap_err();
+            assert_eq!(e.kind(), std::io::ErrorKind::NotFound, "{name}");
+        }
+        std::fs::write(dir.join("latin1"), b"\xe4\n").unwrap();
+        let e = read_regular_string(&dir.join("latin1"), 4).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
     }
 
     #[test]
