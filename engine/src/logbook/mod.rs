@@ -517,6 +517,100 @@ mod tests {
         assert!(e.contains("is not in the logbook"), "{e}");
     }
 
+    /// WP-171: the file itself, after its folder, never followed.
+    #[test]
+    fn checked_file_refuses_a_link_and_a_non_regular_file() {
+        let root = scratch("file-itself");
+        let outside = scratch("file-itself-outside");
+        std::fs::create_dir_all(root.join("journal/2026")).unwrap();
+        std::fs::write(outside.join("day.md"), "outside\n").unwrap();
+        std::fs::write(root.join("journal/2026/2026-10-08.md"), "x\n").unwrap();
+        std::os::unix::fs::symlink(
+            outside.join("day.md"),
+            root.join("journal/2026/2026-10-09.md"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink("nowhere.md", root.join("journal/2026/2026-10-10.md")).unwrap();
+        std::os::unix::fs::symlink(&*outside, root.join("journal/2026/2026-10-11.md")).unwrap();
+        std::fs::create_dir(root.join("journal/2026/2026-10-12.md")).unwrap();
+        std::os::unix::fs::symlink(outside.join("day.md"), root.join("STATUS.md")).unwrap();
+        let check = |rel: &str| checked_file(&root, Path::new(rel));
+
+        // a regular file and a missing one pass, as the absolute path
+        assert_eq!(
+            check("journal/2026/2026-10-08.md").unwrap(),
+            root.join("journal/2026/2026-10-08.md")
+        );
+        assert_eq!(
+            check("journal/2026/2026-10-13.md").unwrap(),
+            root.join("journal/2026/2026-10-13.md")
+        );
+        assert_eq!(check("AGENTS.md").unwrap(), root.join("AGENTS.md"));
+        // a link to a file, a dangling one, one to a folder: named
+        for rel in [
+            "journal/2026/2026-10-09.md",
+            "journal/2026/2026-10-10.md",
+            "journal/2026/2026-10-11.md",
+            "STATUS.md",
+        ] {
+            assert_eq!(
+                user_message(check(rel)),
+                format!(
+                    "{rel} is a symbolic link, not a file of the logbook; make it a file and run the command again"
+                )
+            );
+        }
+        assert_eq!(
+            user_message(check("journal/2026/2026-10-12.md")),
+            "journal/2026/2026-10-12.md is no regular file, not a file of the logbook; make it a file and run the command again"
+        );
+        // the folder first: a linked year is named, not the day in it
+        std::fs::rename(root.join("journal/2026"), outside.join("2026")).unwrap();
+        std::os::unix::fs::symlink(outside.join("2026"), root.join("journal/2026")).unwrap();
+        assert!(
+            user_message(check("journal/2026/2026-10-08.md"))
+                .starts_with("journal/2026 is a symbolic link, not a folder of the logbook;")
+        );
+        assert_eq!(
+            std::fs::read_to_string(outside.join("day.md")).unwrap(),
+            "outside\n"
+        );
+        // plain names only, and a name at the end
+        for rel in ["", "../x.md", "/etc/x.md", "a/../b.md"] {
+            let e = engine_error(check(rel));
+            assert!(e.contains("below the logbook"), "{rel}: {e}");
+        }
+    }
+
+    #[test]
+    fn checked_file_reports_an_unreadable_file_as_an_engine_error() {
+        let root = scratch("file-unreadable");
+        let long = "x".repeat(300);
+        let e = engine_error(checked_file(&root, Path::new(&long)));
+        assert!(e.contains(&long), "{e}");
+    }
+
+    #[test]
+    fn checked_file_of_a_logbook_checks_the_file_too() {
+        let root = scratch("file-method");
+        std::os::unix::fs::symlink("nowhere", root.join("AGENTS.md")).unwrap();
+        let logbook = Logbook {
+            root: root.to_path_buf(),
+            meta: LogbookMeta {
+                schema_version: 1,
+                created: "2026-09-01T19:00:42+02:00".parse().unwrap(),
+                machine_id: "workstation-7f3a".into(),
+                language: Language::En,
+            },
+        };
+        for path in [PathBuf::from("AGENTS.md"), root.join("AGENTS.md")] {
+            assert!(
+                user_message(logbook.checked_file(&path))
+                    .starts_with("AGENTS.md is a symbolic link, not a file of the logbook;")
+            );
+        }
+    }
+
     #[test]
     fn meta_toml_style() {
         let meta = LogbookMeta {

@@ -779,5 +779,28 @@ mod tests {
             ".claude/skills is a symbolic link, not a folder of the logbook; make it a folder and run the command again"
         );
         assert_eq!(std::fs::read_dir(tmp.join("outside")).unwrap().count(), 0);
+        // a link where a file goes: refused, not "kept"; a dangling one
+        // does not have the copy create its target (WP-171)
+        std::fs::remove_file(to.join("skills")).unwrap();
+        std::fs::create_dir_all(to.join("skills/zones")).unwrap();
+        std::fs::write(tmp.join("outside/SKILL.md"), "mine").unwrap();
+        for (target, shown) in [
+            (tmp.join("outside/SKILL.md"), "SKILL.md"),
+            (tmp.join("outside/missing.md"), "missing.md"),
+        ] {
+            std::os::unix::fs::symlink(&target, to.join("skills/zones/SKILL.md")).unwrap();
+            let e = copy_tree(&from, &tmp.join("logbook"), Path::new(".claude")).unwrap_err();
+            assert_eq!(
+                e.to_string(),
+                ".claude/skills/zones/SKILL.md is a symbolic link, not a file of the logbook; make it a file and run the command again",
+                "{shown}"
+            );
+            std::fs::remove_file(to.join("skills/zones/SKILL.md")).unwrap();
+        }
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("outside/SKILL.md")).unwrap(),
+            "mine"
+        );
+        assert!(!tmp.join("outside/missing.md").exists());
     }
 }

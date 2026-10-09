@@ -281,3 +281,112 @@ fn entries(root: &Path, rel: &Path, depth: u8, found: &mut dyn FnMut(&Path, Misp
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logbook::scratch::scratch;
+    use std::os::unix::fs::symlink;
+
+    fn found(root: &Path) -> Vec<(String, &'static str)> {
+        misplaced(root)
+            .into_iter()
+            .map(|(rel, what)| (rel, what.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn a_real_layout_has_nothing_misplaced() {
+        let root = scratch("seldon-layout-real");
+        for dir in REQUIRED_DIRS {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        std::fs::create_dir_all(root.join("journal/2026")).unwrap();
+        std::fs::create_dir_all(root.join(".seldon/imports")).unwrap();
+        std::fs::write(root.join("journal/2026/2026-10-09.md"), "").unwrap();
+        std::fs::write(root.join("AGENTS.md"), "").unwrap();
+        assert!(found(&root).is_empty());
+        // nothing at all: nothing to name either
+        let empty = scratch("seldon-layout-empty");
+        assert!(found(&empty).is_empty());
+    }
+
+    #[test]
+    fn links_and_things_in_the_wrong_place_are_named() {
+        let root = scratch("seldon-layout-misplaced");
+        let outside = scratch("seldon-layout-outside");
+        std::fs::create_dir_all(outside.join("dir")).unwrap();
+        std::fs::write(outside.join("file"), "").unwrap();
+        for dir in [
+            "decisions",
+            "journal/2026",
+            "areas/editors",
+            ".seldon/imports",
+            "work/C-2026-001-x",
+            "archive",
+            ".claude",
+        ] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        // folders: a link, a file in its place, `work` once for three
+        symlink(outside.join("dir"), root.join("ledger")).unwrap();
+        std::fs::write(root.join("system"), "").unwrap();
+        // files in folders Seldon writes in, one and two levels down
+        symlink(outside.join("file"), root.join("decisions/ADR-0001-x.md")).unwrap();
+        symlink("nowhere", root.join("journal/2026/2026-10-09.md")).unwrap();
+        std::fs::create_dir(root.join("journal/2026/sub")).unwrap();
+        symlink(
+            outside.join("file"),
+            root.join("journal/2026/sub/deeper.md"),
+        )
+        .unwrap();
+        symlink(outside.join("dir"), root.join("journal/2027")).unwrap();
+        symlink(outside.join("file"), root.join("areas/editors/README.md")).unwrap();
+        symlink(outside.join("file"), root.join(".seldon/active-case")).unwrap();
+        symlink(outside.join("file"), root.join(".seldon/imports/task.json")).unwrap();
+        // the user's places: not looked into
+        symlink(
+            outside.join("file"),
+            root.join("work/C-2026-001-x/notes.md"),
+        )
+        .unwrap();
+        symlink(
+            outside.join("file"),
+            root.join("archive/AGENTS-2026-10-09.md"),
+        )
+        .unwrap();
+        symlink(outside.join("file"), root.join(".claude/settings.json")).unwrap();
+        symlink(outside.join("dir"), root.join("resources")).unwrap();
+        // root files: a link, a folder in a file's place
+        symlink(outside.join("file"), root.join("STATUS.md")).unwrap();
+        std::fs::create_dir(root.join("DECISIONS.md")).unwrap();
+        std::fs::write(root.join("AGENTS.md"), "").unwrap();
+        assert_eq!(
+            found(&root),
+            [
+                ("decisions/ADR-0001-x.md".to_string(), "symbolic link"),
+                ("journal/2026/2026-10-09.md".to_string(), "symbolic link"),
+                ("journal/2027".to_string(), "symbolic link"),
+                ("ledger".to_string(), "symbolic link"),
+                ("areas/editors/README.md".to_string(), "symbolic link"),
+                ("system".to_string(), "no directory"),
+                (".seldon/active-case".to_string(), "symbolic link"),
+                (".seldon/imports/task.json".to_string(), "symbolic link"),
+                ("STATUS.md".to_string(), "symbolic link"),
+                ("DECISIONS.md".to_string(), "no regular file"),
+            ]
+        );
+        // a linked `work`, `archive` and `.claude` are named once each
+        std::fs::remove_dir_all(root.join("work")).unwrap();
+        symlink(outside.join("dir"), root.join("work")).unwrap();
+        std::fs::remove_dir_all(root.join("archive")).unwrap();
+        symlink(outside.join("dir"), root.join("archive")).unwrap();
+        std::fs::remove_dir_all(root.join(".claude")).unwrap();
+        std::fs::write(root.join(".claude"), "").unwrap();
+        let names: Vec<String> = found(&root).into_iter().map(|(rel, _)| rel).collect();
+        assert_eq!(names.iter().filter(|n| *n == "work").count(), 1);
+        assert!(names.contains(&"archive".to_string()));
+        assert!(names.contains(&".claude".to_string()));
+        assert!(!names.iter().any(|n| n.starts_with("work/")));
+    }
+}

@@ -352,6 +352,59 @@ mod tests {
         DateTime::parse_from_rfc3339(s).unwrap()
     }
 
+    /// WP-171: a month file that is a link (dangling too) or no regular
+    /// file is refused before it is opened, also by a ledger without a
+    /// logbook root (`Ledger::at`); nothing is written anywhere.
+    #[test]
+    fn append_never_follows_a_link_at_a_month_file() {
+        let dir = crate::logbook::scratch::scratch("seldon-ledger-link");
+        let lock = lock::acquire(&dir.join("lock")).unwrap();
+        let ledger = Ledger::at(dir.join("ledger"), Redactor::builtin());
+        std::fs::create_dir_all(dir.join("ledger")).unwrap();
+        std::fs::write(dir.join("outside.jsonl"), "kept\n").unwrap();
+        let event = || {
+            vec![Event::new(
+                ts("2026-10-01T10:00:00+02:00"),
+                Source::Snapper,
+                Kind::Snapshot,
+                "1",
+            )]
+        };
+        let month = ledger.month_file("2026-10");
+        for (target, what) in [
+            (dir.join("outside.jsonl"), "a symbolic link"),
+            (dir.join("missing.jsonl"), "a symbolic link"),
+        ] {
+            std::os::unix::fs::symlink(&target, &month).unwrap();
+            let e = ledger.append(&lock, event()).unwrap_err().to_string();
+            assert!(
+                e.ends_with(&format!(
+                    "2026-10.jsonl is {what}, not a file of the logbook; nothing written"
+                )),
+                "{e}"
+            );
+            assert!(month.symlink_metadata().unwrap().is_symlink());
+            std::fs::remove_file(&month).unwrap();
+        }
+        assert_eq!(
+            std::fs::read_to_string(dir.join("outside.jsonl")).unwrap(),
+            "kept\n"
+        );
+        assert!(!dir.join("missing.jsonl").exists());
+        std::fs::create_dir(&month).unwrap();
+        let e = ledger.append(&lock, event()).unwrap_err().to_string();
+        assert!(
+            e.ends_with(
+                "2026-10.jsonl is no regular file, not a file of the logbook; nothing written"
+            ),
+            "{e}"
+        );
+        std::fs::remove_dir(&month).unwrap();
+        // a real file is appended to as before
+        ledger.append(&lock, event()).unwrap();
+        assert_eq!(ledger.read_month("2026-10").unwrap().events.len(), 1);
+    }
+
     #[test]
     fn append_rolls_over_by_ts_redacts_and_assigns_ids() {
         let dir = tmp("append");

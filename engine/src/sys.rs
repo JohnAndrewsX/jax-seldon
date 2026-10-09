@@ -832,6 +832,99 @@ mod tests {
 
     use super::*;
 
+    /// WP-171, ADR-0049: the logbook's writers never follow a link at the
+    /// path, and refuse one (dangling too) or anything but a regular file;
+    /// the link and its target stay as they were.
+    #[test]
+    fn nofollow_writes_refuse_a_link_and_a_non_regular_file() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = crate::logbook::scratch::scratch("seldon-nofollow");
+        std::fs::write(dir.join("outside.md"), "outside\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("outside.md"), dir.join("linked.md")).unwrap();
+        std::os::unix::fs::symlink("missing.md", dir.join("dangling.md")).unwrap();
+        std::fs::create_dir(dir.join("folder.md")).unwrap();
+        type Write = fn(&Path, &[u8]) -> anyhow::Result<()>;
+        let writers: [(&str, Write); 2] = [
+            ("atomic", write_atomic_nofollow),
+            ("generated", write_generated_nofollow),
+        ];
+        for (name, write) in writers {
+            for (file, what) in [
+                ("linked.md", "a symbolic link"),
+                ("dangling.md", "a symbolic link"),
+                ("folder.md", "no regular file"),
+            ] {
+                let path = dir.join(file);
+                let e = write(&path, b"new\n").unwrap_err().to_string();
+                assert_eq!(
+                    e,
+                    format!(
+                        "{} is {what}, not a file of the logbook; nothing written",
+                        path.display()
+                    ),
+                    "{name} {file}"
+                );
+            }
+            assert_eq!(
+                std::fs::read_to_string(dir.join("outside.md")).unwrap(),
+                "outside\n"
+            );
+            assert!(!dir.join("missing.md").exists());
+            assert!(
+                dir.join("linked.md")
+                    .symlink_metadata()
+                    .unwrap()
+                    .is_symlink()
+            );
+            assert!(
+                dir.join("dangling.md")
+                    .symlink_metadata()
+                    .unwrap()
+                    .is_symlink()
+            );
+            assert!(dir.join("folder.md").is_dir());
+            // a regular file keeps its mode; a new one is 0600; no temp
+            // file is left
+            let kept = dir.join(format!("kept-{name}.md"));
+            std::fs::write(&kept, "old\n").unwrap();
+            std::fs::set_permissions(&kept, std::fs::Permissions::from_mode(0o640)).unwrap();
+            write(&kept, b"new\n").unwrap();
+            assert_eq!(std::fs::read_to_string(&kept).unwrap(), "new\n");
+            let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(&kept), 0o640, "{name}");
+            let new = dir.join(format!("sub-{name}/new.md"));
+            write(&new, b"x\n").unwrap();
+            assert_eq!(std::fs::read_to_string(&new).unwrap(), "x\n");
+            assert_eq!(mode(&new), NEW_FILE_MODE, "{name}");
+        }
+        let left: Vec<_> = std::fs::read_dir(&*dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".tmp-"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        // write_atomic itself still follows the link (config, settings)
+        write_atomic(&dir.join("linked.md"), b"through\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("outside.md")).unwrap(),
+            "through\n"
+        );
+    }
+
+    #[test]
+    fn regular_or_missing_says_which() {
+        let dir = crate::logbook::scratch::scratch("seldon-regular");
+        std::fs::write(dir.join("a"), "abc").unwrap();
+        assert_eq!(
+            regular_or_missing(&dir.join("a")).unwrap().unwrap().len(),
+            3
+        );
+        assert!(regular_or_missing(&dir.join("b")).unwrap().is_none());
+        // below a file: neither missing nor a file
+        let e = regular_or_missing(&dir.join("a/b")).unwrap_err();
+        assert!(format!("{e:#}").starts_with("cannot read "), "{e:#}");
+    }
+
     #[test]
     fn a_capped_run_keeps_the_head_of_a_flood_and_reads_the_rest() {
         let cap = 64 * 1024;
