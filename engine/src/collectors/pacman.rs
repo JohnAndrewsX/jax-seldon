@@ -22,14 +22,22 @@
 //!   started>`). The latest `[PACMAN] Running '…'` line before the start is
 //!   the transaction's `meta.command`. A transaction is emitted after
 //!   `transaction completed`, after the next `transaction started`, or at
-//!   the end of the log when pacman's `db.lck` is absent. While pacman still
-//!   runs, the cursor stays at the start of the transaction's block, so
-//!   the next capture reads it whole (ADR-0013 §5).
+//!   the end of the log when pacman's `db.lck` is absent or stale. While
+//!   pacman still runs, the cursor stays at the start of the transaction's
+//!   block, so the next capture reads it whole (ADR-0013 §5).
+//! - **Stale lock** (WP-160). A `db.lck` older than the current boot
+//!   (`/proc/stat` `btime`) was left by a pacman that was killed or lost
+//!   its power ([`lock_state`]): the open transaction is emitted
+//!   `unfinished` when its last `[ALPM…]` line is older than the boot too,
+//!   and held back otherwise (pacman wrote it since: the clock was set
+//!   forward after pacman took the lock). Without a boot time, or a lock
+//!   time, the lock counts as held. The lock is only looked at, never
+//!   removed or touched.
 //! - **Status** (ADR-0043). A transaction that ended with `transaction
 //!   failed` or `transaction interrupted` writes that word as
 //!   `meta.txStatus` on each of its events; one closed by the next
-//!   `transaction started` or by the end of the log without `db.lck` writes
-//!   `unfinished`. A completed one writes none.
+//!   `transaction started` or by the end of the log without a held
+//!   `db.lck` writes `unfinished`. A completed one writes none.
 //! - **Explicit or dependency.** `meta.command` is parsed as argv ([`parse_command`],
 //!   pacman logs it unquoted, so it is split on whitespace). Packages the
 //!   command names are `explicit: true`; the others in the transaction are
@@ -59,6 +67,7 @@ use std::io::{Read as _, Seek as _, SeekFrom};
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use regex::Regex;
@@ -108,7 +117,7 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
     let path = &ctx.sources.pacman_log;
     let meta = std::fs::metadata(path)
         .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
-    let lock_present = ctx.sources.pacman_db_lock.exists();
+    let lock = lock_state(&ctx.sources.pacman_db_lock, &ctx.sources.proc_stat);
     let mut txs = Vec::new();
 
     let start = match cursor {
@@ -123,14 +132,14 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
                 // holding it back would lose it, since the cursor moves to
                 // the new file; a pacman still running at the rotation
                 // writes its end into the old file, which is not read again
-                txs.extend(parse(&bytes, c.offset, false, ctx.tz).txs);
+                txs.extend(parse(&bytes, c.offset, LockState::Absent, ctx.tz).txs);
             }
             0
         }
         _ => 0, // no cursor (baseline), or the file shrank (truncated)
     };
     let bytes = read_from(path, start)?;
-    let parsed = parse(&bytes, start, lock_present, ctx.tz);
+    let parsed = parse(&bytes, start, lock, ctx.tz);
     txs.extend(parsed.txs);
 
     let began: HashMap<String, DateTime<FixedOffset>> = txs
@@ -150,6 +159,84 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
             offset: parsed.resume,
         },
     ))
+}
+
+/// What pacman's `db.lck` says about pacman (WP-160).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockState {
+    /// No lock: pacman is not running.
+    Absent,
+    /// A lock from this boot, or one whose age cannot be told: pacman
+    /// runs, its open transaction is held back (ADR-0013 §5).
+    Held {
+        /// The boot time, when `/proc/stat` gave one.
+        boot: Option<SystemTime>,
+    },
+    /// A lock older than the current boot: left by a pacman that was
+    /// killed or lost its power. Counts as absent (ADR-0043 `unfinished`).
+    Stale {
+        modified: SystemTime,
+        boot: SystemTime,
+    },
+}
+
+impl LockState {
+    /// Whether an open transaction at the end of the log is held back.
+    pub fn is_held(self) -> bool {
+        matches!(self, LockState::Held { .. })
+    }
+}
+
+/// The state of the lock at `lock`, with the boot time from `proc_stat`.
+/// Reads the lock's metadata and `proc_stat`, nothing else.
+pub fn lock_state(lock: &Path, proc_stat: &Path) -> LockState {
+    let Ok(meta) = std::fs::symlink_metadata(lock) else {
+        return LockState::Absent;
+    };
+    let boot = std::fs::read_to_string(proc_stat)
+        .ok()
+        .and_then(|text| boot_time(&text));
+    match (meta.modified(), boot) {
+        (Ok(modified), Some(boot)) if modified < boot => LockState::Stale { modified, boot },
+        _ => LockState::Held { boot },
+    }
+}
+
+/// The `btime` line of `/proc/stat`: the boot time in whole seconds since
+/// the epoch (rounded down, so a lock made after the boot is never older).
+pub fn boot_time(proc_stat: &str) -> Option<SystemTime> {
+    let secs = proc_stat
+        .lines()
+        .find_map(|l| l.strip_prefix("btime "))?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|&s| s > 0)?;
+    UNIX_EPOCH.checked_add(Duration::from_secs(secs))
+}
+
+/// A Running line whose transaction has not started yet (pacman is still
+/// downloading) is read again next time while any lock is there, held or
+/// stale, or the transaction would lose its command line (WP-160 stage 2:
+/// under a stale-looking lock this is the download phase after a forward
+/// clock jump). Nothing is held back by it: it has no events. Once the
+/// lock is gone it is passed, and a newer Running line replaces it.
+fn hold_running(
+    resume: &mut u64,
+    command: Option<&(u64, DateTime<FixedOffset>, String)>,
+    lock: LockState,
+) {
+    if let Some((off, ..)) = command
+        && lock != LockState::Absent
+    {
+        *resume = *off;
+    }
+}
+
+/// Whether `ts` (whole seconds) lies before `boot`.
+fn before_boot(ts: DateTime<FixedOffset>, boot: SystemTime) -> bool {
+    boot.duration_since(UNIX_EPOCH)
+        .is_ok_and(|d| i64::try_from(d.as_secs()).is_ok_and(|b| ts.timestamp() < b))
 }
 
 /// `pacman.log` → `pacman.log.1`.
@@ -294,6 +381,17 @@ pub fn parse_line(line: &str, tz: Tz) -> Option<(DateTime<FixedOffset>, Line)> {
         .map(|l| (ts, l))
 }
 
+/// The time of a line libalpm wrote (`[ALPM]`, `[ALPM-SCRIPTLET]`), whatever
+/// it says; `None` for pacman's own lines (`[PACMAN] Running` comes before
+/// pacman takes the lock, WP-160) and malformed ones.
+fn alpm_ts(line: &str, tz: Tz) -> Option<DateTime<FixedOffset>> {
+    let caps = LINE.captures(line.trim_end_matches('\r'))?;
+    caps[2]
+        .starts_with("ALPM")
+        .then(|| parse_ts(&caps[1], tz))
+        .flatten()
+}
+
 /// `2026-09-03T21:14:06+0200` (pacman ≥ 5.2), or the old offset-less
 /// `2019-01-01 12:00` in the local zone.
 fn parse_ts(s: &str, tz: Tz) -> Option<DateTime<FixedOffset>> {
@@ -427,13 +525,25 @@ pub struct Parsed {
 }
 
 /// Parses `bytes`, which start at absolute offset `base` of the file.
-/// `lock_present`: pacman's `db.lck` exists, so an open transaction at the
-/// end is still running and is held back.
-pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
+/// `lock`: pacman's `db.lck` ([`lock_state`]). Held: an open transaction at
+/// the end is still running and is held back. Stale (WP-160): it is
+/// emitted `unfinished` only when its last `[ALPM…]` line is older than the
+/// boot too; one that pacman wrote since (the clock was set forward after
+/// pacman took the lock) holds it back as if held. Absent: emitted.
+pub fn parse(bytes: &[u8], base: u64, lock: LockState, tz: Tz) -> Parsed {
     struct Open {
         tx: Tx,
         rewind: u64,
+        /// The newest `[ALPM…]` line of the transaction (WP-160).
+        last: DateTime<FixedOffset>,
     }
+    // whether a transaction (or a Running line) whose last line has time
+    // `last` is still pacman's at the end of the log
+    let held = |last: DateTime<FixedOffset>| match lock {
+        LockState::Absent => false,
+        LockState::Held { .. } => true,
+        LockState::Stale { boot, .. } => !before_boot(last, boot),
+    };
     let mut txs = Vec::new();
     let mut open: Option<Open> = None;
     // latest Running line: (offset, ts, command)
@@ -444,6 +554,12 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
         let text = String::from_utf8_lossy(&bytes[pos..pos + nl]);
         pos += nl + 1;
         let Some((ts, line)) = parse_line(&text, tz) else {
+            // scriptlet output and hook lines are the transaction's too
+            if let Some(o) = &mut open
+                && let Some(t) = alpm_ts(&text, tz)
+            {
+                o.last = o.last.max(t);
+            }
             continue;
         };
         match line {
@@ -468,6 +584,7 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
                         status: None,
                     },
                     rewind,
+                    last: ts,
                 });
             }
             Line::TxEnd(status) => {
@@ -490,7 +607,10 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
                     to,
                 };
                 match &mut open {
-                    Some(o) => o.tx.lines.push(line),
+                    Some(o) => {
+                        o.last = o.last.max(ts);
+                        o.tx.lines.push(line);
+                    }
                     None => txs.push(Tx {
                         tx_id: None,
                         command: None,
@@ -504,7 +624,10 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
             Line::Left { file, left } => {
                 let line = LeftLine { ts, file, left };
                 match &mut open {
-                    Some(o) => o.tx.left.push(line),
+                    Some(o) => {
+                        o.last = o.last.max(ts);
+                        o.tx.left.push(line);
+                    }
                     None => txs.push(Tx {
                         tx_id: None,
                         command: None,
@@ -519,21 +642,14 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
     }
     let mut resume = base + pos as u64;
     match open {
-        Some(o) if lock_present => resume = o.rewind,
+        Some(o) if held(o.last) => resume = o.rewind,
         // pacman is gone and never ended it (killed, a crash, power loss)
         Some(mut o) => {
             o.tx.status = Some(TxStatus::Unfinished);
             txs.push(o.tx);
+            hold_running(&mut resume, command.as_ref(), lock);
         }
-        // a Running line whose transaction has not started yet (pacman is
-        // still downloading): read it again next time, or the transaction
-        // would lose its command line
-        None if lock_present => {
-            if let Some((off, ..)) = command {
-                resume = off;
-            }
-        }
-        None => {}
+        None => hold_running(&mut resume, command.as_ref(), lock),
     }
     txs.retain(|t| !t.lines.is_empty() || !t.left.is_empty());
     Parsed { txs, resume }
@@ -653,12 +769,193 @@ pub fn attribute(
 mod tests {
     use super::*;
 
+    /// pacman runs (the tests before WP-160 passed `true`).
+    const HELD: LockState = LockState::Held { boot: None };
+
     fn tz() -> Tz {
         Tz::Fixed(FixedOffset::east_opt(2 * 3600).unwrap())
     }
 
     fn argv(s: &str) -> PacmanCommand {
         parse_command(&split_logged(s)).unwrap()
+    }
+
+    /// WP-160: the `btime` line, and nothing that only looks like one.
+    #[test]
+    fn boot_time_from_proc_stat() {
+        let at = |s: u64| Some(UNIX_EPOCH + Duration::from_secs(s));
+        assert_eq!(
+            boot_time("cpu  1 2 3\nintr 5\nctxt 9\nbtime 1759900000\nprocesses 4\n"),
+            at(1_759_900_000)
+        );
+        assert_eq!(boot_time("btime 42"), at(42), "no newline at the end");
+        for bad in [
+            "",
+            "cpu 1 2 3\n",
+            "btime\n",
+            "btime \n",
+            "btime -5\n",
+            "btime 0\n",
+            "btime 12x\n",
+            "xbtime 12\n",
+            "btimes 12\n",
+        ] {
+            assert_eq!(boot_time(bad), None, "{bad:?}");
+        }
+    }
+
+    /// WP-160: absent, held (this boot, or no boot time) and stale (older
+    /// than the boot). The lock is never changed.
+    #[test]
+    fn lock_states() {
+        /// Removes the folder also when an assertion fails.
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let dir = std::env::temp_dir().join(format!("seldon-dblck-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _cleanup = Cleanup(dir.clone());
+        let lock = dir.join("db.lck");
+        let stat = dir.join("stat");
+        let boot = UNIX_EPOCH + Duration::from_secs(1_759_900_000);
+        std::fs::write(&stat, "cpu 1\nbtime 1759900000\n").unwrap();
+        assert_eq!(lock_state(&lock, &stat), LockState::Absent);
+        assert!(!LockState::Absent.is_held());
+
+        std::fs::write(&lock, "").unwrap();
+        let set = |t: SystemTime| {
+            File::options()
+                .write(true)
+                .open(&lock)
+                .unwrap()
+                .set_modified(t)
+                .unwrap();
+        };
+        // made after the boot, in the boot second, and a second before it
+        set(boot + Duration::from_secs(60));
+        assert_eq!(
+            lock_state(&lock, &stat),
+            LockState::Held { boot: Some(boot) }
+        );
+        set(boot);
+        assert!(
+            lock_state(&lock, &stat).is_held(),
+            "the boot second is this boot"
+        );
+        let before = boot - Duration::from_secs(1);
+        set(before);
+        let state = lock_state(&lock, &stat);
+        assert_eq!(
+            state,
+            LockState::Stale {
+                modified: before,
+                boot
+            }
+        );
+        assert!(!state.is_held());
+
+        // no boot time: today's rule, held
+        assert_eq!(
+            lock_state(&lock, &dir.join("no-stat")),
+            LockState::Held { boot: None }
+        );
+        std::fs::write(&stat, "cpu 1\n").unwrap();
+        assert_eq!(lock_state(&lock, &stat), LockState::Held { boot: None });
+
+        // looked at, never touched
+        assert_eq!(
+            std::fs::metadata(&lock).unwrap().modified().unwrap(),
+            before
+        );
+        assert_eq!(std::fs::read(&lock).unwrap(), b"");
+
+        // a dangling symbolic link is a lock too: pacman's O_EXCL create
+        // fails on it (its own mtime is now, after the boot)
+        std::fs::write(&stat, "btime 1759900000\n").unwrap();
+        let link = dir.join("link.lck");
+        std::os::unix::fs::symlink(dir.join("nowhere"), &link).unwrap();
+        assert_eq!(
+            lock_state(&link, &stat),
+            LockState::Held { boot: Some(boot) }
+        );
+        assert!(!dir.join("nowhere").exists(), "the link is not followed");
+    }
+
+    /// WP-160 round 2: a stale lock lets the open transaction go only when
+    /// its last `[ALPM…]` line is older than the boot too. A line pacman
+    /// wrote since (the clock was set forward after it took the lock)
+    /// keeps it back; pacman's own `[PACMAN] Running` line does not count
+    /// (pacman logs it before it takes the lock: a retry after the boot
+    /// that failed on the lock).
+    #[test]
+    fn a_stale_lock_and_the_last_line() {
+        // boot at 2026-10-01T10:30:00+02:00
+        let boot = UNIX_EPOCH + Duration::from_secs(1_790_843_400);
+        let stale = LockState::Stale {
+            modified: boot - Duration::from_secs(1800),
+            boot,
+        };
+        let open = "[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -Syu'\n\
+                    [2026-10-01T10:00:01+0200] [ALPM] transaction started\n\
+                    [2026-10-01T10:00:02+0200] [ALPM] upgraded gtk4 (1:4.18.6-1 -> 1:4.18.7-1)\n";
+        let emitted = |log: &str| {
+            let p = parse(&lines(log), 0, stale, tz());
+            assert_eq!(
+                p.resume as usize,
+                if p.txs.is_empty() { 0 } else { log.len() },
+                "{log}"
+            );
+            p.txs.iter().map(|t| t.status).collect::<Vec<_>>()
+        };
+        assert_eq!(emitted(open), [Some(TxStatus::Unfinished)]);
+        // a retry after the boot that failed on the lock: the dead
+        // transaction is emitted, its Running line is read again while the
+        // lock is there (stage 2 N1)
+        let retry = format!("{open}[2026-10-01T10:31:00+0200] [PACMAN] Running 'pacman -S zed'\n");
+        let p = parse(&lines(&retry), 0, stale, tz());
+        assert_eq!(
+            p.txs.iter().map(|t| t.status).collect::<Vec<_>>(),
+            [Some(TxStatus::Unfinished)]
+        );
+        assert_eq!(
+            p.resume as usize,
+            open.len(),
+            "the Running line is read again"
+        );
+        // the lock gone: passed
+        let p = parse(&lines(&retry), 0, LockState::Absent, tz());
+        assert_eq!(p.resume as usize, retry.len());
+        // pacman wrote since the boot: a package line, a hook, a scriptlet
+        for later in [
+            "[2026-10-01T10:30:00+0200] [ALPM] upgraded linux (6.16.9-1 -> 6.16.10-1)\n",
+            "[2026-10-01T10:31:00+0200] [ALPM] running '60-mkinitcpio-remove.hook'...\n",
+            "[2026-10-01T10:31:00+0200] [ALPM-SCRIPTLET] ==> Building image\n",
+            "[2026-10-01T10:31:00+0200] [ALPM] warning: /etc/pacman.conf installed as /etc/pacman.conf.pacnew\n",
+        ] {
+            assert!(emitted(&format!("{open}{later}")).is_empty(), "{later}");
+        }
+        // the last line one second before the boot
+        assert_eq!(
+            emitted(&format!(
+                "{open}[2026-10-01T10:29:59+0200] [ALPM-SCRIPTLET] ==> Building image\n"
+            )),
+            [Some(TxStatus::Unfinished)]
+        );
+        // only a Running line (no transaction yet): read again while any
+        // lock is there, from this boot or older (the download phase after
+        // a forward clock jump, stage 2 N1); passed once the lock is gone
+        let running = "[2026-10-01T10:31:00+0200] [PACMAN] Running 'pacman -Syu'\n";
+        assert_eq!(parse(&lines(running), 7, stale, tz()).resume, 7);
+        let old = "[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -Syu'\n";
+        assert_eq!(parse(&lines(old), 7, stale, tz()).resume, 7);
+        assert_eq!(
+            parse(&lines(old), 7, LockState::Absent, tz()).resume,
+            7 + old.len() as u64
+        );
     }
 
     #[test]
@@ -783,7 +1080,7 @@ mod tests {
              [2026-10-01T10:00:03+0200] [ALPM] transaction completed\n\
              [2019-01-01 12:00] [ALPM] warning: /etc/old saved as /etc/old.pacorig\n",
         );
-        let p = parse(&log, 0, false, tz());
+        let p = parse(&log, 0, LockState::Absent, tz());
         assert_eq!(p.txs.len(), 2);
         let events = p.txs[0].events();
         let kinds: Vec<(Kind, &str)> = events
@@ -942,21 +1239,21 @@ mod tests {
              [2026-10-01T10:00:03+0200] [ALPM] installed zed (2-1)\n",
         );
         // pacman still running: nothing emitted, cursor at the Running line
-        let p = parse(&log, 100, true, tz());
+        let p = parse(&log, 100, HELD, tz());
         assert!(p.txs.is_empty());
         assert_eq!(p.resume, 100);
         // only the Running line so far (downloading): cursor stays before it
         let running = lines("[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -Syu'\n");
-        let p = parse(&running, 100, true, tz());
+        let p = parse(&running, 100, HELD, tz());
         assert!(p.txs.is_empty());
         assert_eq!(p.resume, 100, "the Running line is read again");
         // ... unless pacman is not running (a no-op or failed invocation)
         assert_eq!(
-            parse(&running, 100, false, tz()).resume,
+            parse(&running, 100, LockState::Absent, tz()).resume,
             100 + running.len() as u64
         );
         // lock gone: emitted as is
-        let p = parse(&log, 100, false, tz());
+        let p = parse(&log, 100, LockState::Absent, tz());
         assert_eq!(p.txs.len(), 1);
         assert_eq!(p.resume, 100 + log.len() as u64);
         let events = p.txs[0].events();
@@ -971,7 +1268,7 @@ mod tests {
              [2026-10-01T10:05:01+0200] [ALPM] transaction completed\n\
              [2026-10-01T10:06:00+0200] [ALPM] installed half (1-",
         ));
-        let p = parse(&more, 0, true, tz());
+        let p = parse(&more, 0, HELD, tz());
         assert_eq!(p.txs.len(), 2);
         assert_eq!(
             p.txs[1].command, None,
@@ -1033,7 +1330,12 @@ mod tests {
                 Some(TxStatus::Unfinished),
             ),
         ] {
-            let p = parse(&lines(&block(end)), 0, lock, tz());
+            let p = parse(
+                &lines(&block(end)),
+                0,
+                if lock { HELD } else { LockState::Absent },
+                tz(),
+            );
             assert_eq!(p.txs[0].status, want, "{end:?} lock {lock}");
             let events = p.txs[0].events();
             assert_eq!(events.len(), 2);
@@ -1044,13 +1346,13 @@ mod tests {
             }
         }
         // still running: held back, so no status is guessed
-        let p = parse(&lines(&block("")), 0, true, tz());
+        let p = parse(&lines(&block("")), 0, HELD, tz());
         assert!(p.txs.is_empty());
         // a package line outside any transaction (old logs) has no status
         let p = parse(
             &lines("[2019-01-01 12:00] [ALPM] installed btop (1.0-1)\n"),
             0,
-            false,
+            LockState::Absent,
             tz(),
         );
         assert_eq!(p.txs[0].tx_id, None);
@@ -1065,7 +1367,7 @@ mod tests {
                  [2026-10-01T10:00:06+0200] [ALPM] transaction completed\n",
             ),
             0,
-            false,
+            LockState::Absent,
             tz(),
         );
         assert_eq!(p.txs.len(), 1);

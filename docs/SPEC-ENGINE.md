@@ -594,7 +594,7 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
                                                # rollbacks, workpieces, collectors, state, skills, omarchy, snapper,
-                                               # git, watch, drift checks (read-only). skills (WP-094,
+                                               # pacman, git, watch, drift checks (read-only). skills (WP-094,
                                                # WP-111): installed or no folder → ok; missing → ok, fix
                                                # `seldon hook install skills`; outdated and unedited →
                                                # ok, "updated at the next capture"; outdated otherwise
@@ -611,7 +611,13 @@ seldon doctor                                  # engine, config, logbook, cases,
                                                # ~/Work are not recorded", fix `seldon hook install
                                                # claude-code`; none → ok, degraded with that fix when
                                                # `harnesses` names claude-code; 1–2 of 3 user-wide or a
-                                               # file that is not JSON → degraded. Read-only
+                                               # file that is not JSON → degraded. pacman (WP-160):
+                                               # pacman's db.lck absent, or from this boot, or without a
+                                               # boot time → ok; older than the boot (§4 pacman) →
+                                               # degraded, "stale <lock> from <time>, before this boot",
+                                               # fix "make sure no pacman, yay or omarchy update is
+                                               # running, then: sudo rm <lock>" (text, never run);
+                                               # collector off → ok, "collector disabled". Read-only
 seldon doctor --only rules                     # WP-101 round 3: the engine and rules rows only; starts no
                                                # program (no omarchy, snapper or git probe), reads no collector
                                                # state, takes no lock; exit 3 without a logbook, 1 when the
@@ -1326,13 +1332,51 @@ git itself is killed, with the same bounded pipe wait. Rules:
   others in the same transaction are `dependency` and inherit the case of
   the explicit ones. A transaction is emitted only after `transaction
   completed`, the next `transaction started`, or when
-  `/var/lib/pacman/db.lck` is absent at capture time; until then the
-  cursor stays at the transaction's `[PACMAN] Running` line, else
-  `transaction started` (ADR-0013 §5). **Status** (ADR-0043): a
+  `/var/lib/pacman/db.lck` is absent or stale at capture time; until then
+  the cursor stays at the transaction's `[PACMAN] Running` line, else
+  `transaction started` (ADR-0013 §5). **Stale lock** (WP-160): a lock
+  whose mtime lies before the current boot (the `btime` line of
+  `/proc/stat`, `SELDON_PROC_STAT`; under `SELDON_TEST_GUARD` without it
+  `<guard>/proc-stat`) was left by a pacman that was killed or lost its
+  power, and pacman is gone. The open transaction is then emitted
+  `unfinished` and the cursor moves past it, when its last line libalpm
+  wrote (`[ALPM]`, `[ALPM-SCRIPTLET]`, matched by the line table or not)
+  is older than the boot too; a later one means pacman wrote since, and
+  the transaction is held back as under a held lock (round 2). pacman's
+  own `[PACMAN] Running` line does not count: pacman logs it before it
+  takes the lock, so a retry after the boot that failed on the lock
+  logs one. A Running line without a transaction is read again while any
+  lock is present, held or stale (it has no events, so nothing is held
+  back; a newer Running line replaces it; once the lock is gone it is
+  passed), so a transaction whose download phase a capture meets under a
+  stale-looking lock keeps its `meta.command`.
+  `pacman.log`'s mtime is not used for the same reason. A lock from this
+  boot, or one whose age cannot be told (no `/proc/stat`, no `btime`, no
+  mtime), counts as held (the rule before WP-160); a symbolic link at the
+  lock path is a lock (pacman's own create fails on it), its own mtime
+  counts. The lock is looked at (its metadata), never opened, touched or
+  removed (AGENTS.md §6); `doctor`'s `pacman` row names a stale one and
+  how to remove it (§3). `btime` follows the wall clock. A forward clock
+  jump after pacman took the lock (an RTC far behind, then time sync)
+  makes the lock and the lines pacman wrote before the jump older than
+  the boot. Once pacman writes a line after the jump the transaction is
+  held back and recorded whole. Until then, a capture emits it
+  `unfinished` while pacman still runs, and the cursor moves past it:
+  the lines pacman writes after that, up to `transaction completed`,
+  arrive as package lines outside any transaction, with no `txId`, no
+  `meta.command`, no status and no group (rare: pacman running before
+  time sync, a capture between the jump and its next libalpm line, that
+  is inside a long silent hook or scriptlet; the other shape, the
+  download phase before `transaction started`, is closed by the Running
+  rule above, as it has no transaction yet; the status is final,
+  ADR-0043). `SELDON_PACMAN_DB_LOCK` names the lock and
+  `SELDON_PACMAN_LOG` the log; under `SELDON_TEST_GUARD` without them
+  `<guard>/db.lck` and `<guard>/pacman.log`, so a guarded run reads none
+  of the host's. **Status** (ADR-0043): a
   transaction that ends with `transaction failed` or `transaction
   interrupted` writes that word as `meta.txStatus` on each of its package
   events; one closed by the next `transaction started`, or still open at
-  the end of the log while `db.lck` is absent, writes `unfinished`; a
+  the end of the log while `db.lck` is absent or stale, writes `unfinished`; a
   completed one writes none, nor does a package line outside any
   transaction. Lines written before ADR-0043 have none (append-only); the
   index keeps the key only on pacman events with a `txId`. A transaction

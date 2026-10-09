@@ -121,6 +121,7 @@ impl Bench {
         let sources = Sources {
             pacman_log: fixture("logs/pacman.log"),
             pacman_db_lock: scratch.path("db.lck"),
+            proc_stat: scratch.path("proc-stat"),
             snapper: scratch.stub_cat("snapper", &fixture("logs/snapper.json")),
             snapshots: scratch.path("no-snapshots"),
             omarchy_version: scratch.stub("omarchy-version", "echo 4.0.4-1"),
