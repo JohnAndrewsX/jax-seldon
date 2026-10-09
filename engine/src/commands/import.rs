@@ -533,7 +533,8 @@ fn note(c: &omarchy_agent::PlannedCase) -> Event {
 /// the import is never run twice and never reported done when it is not.
 fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
     let rel = marker_path(SOURCE);
-    match std::fs::read_to_string(logbook.path(&rel)) {
+    // a link there is not read as "imported", a FIFO not opened (WP-171)
+    match std::fs::read_to_string(logbook.checked_file(&rel)?) {
         Ok(text) => {
             let marker: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
             return Ok(Some(json!({

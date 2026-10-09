@@ -512,7 +512,8 @@ fn resolve(
         area: Some(area), ..
     }) = &action
     {
-        logbook.checked_dir(format!("areas/{area}"))?;
+        // the README too: `ensure_area` writes it after the ledger (WP-171)
+        logbook.checked_file(format!("areas/{area}/README.md"))?;
     }
     let built = index::derive(ctx, &config, &logbook)?;
     warn(&built);

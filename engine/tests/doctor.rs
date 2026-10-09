@@ -1847,3 +1847,75 @@ fn doctor_reports_leftover_workpiece_folders() {
          case, over 10.0 MiB), ≥ 11.0 MiB in all; the oldest: work/C-2024-900-a?b?c?d/"
     );
 }
+
+/// WP-171, ADR-0049 §3: the `layout` row names every linked folder and
+/// file where Seldon writes (and a folder or file of the wrong kind
+/// there), the first five, as an error with the fix; doctor follows none
+/// and writes nothing.
+#[test]
+fn doctor_names_linked_folders_and_files() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    let row = || {
+        let out = env.seldon(&["doctor", "--json"]);
+        let v = json(&out);
+        (out.status.code(), check(&v, "layout").clone())
+    };
+    let (_, ok) = row();
+    assert_eq!(ok["status"], "ok", "{ok}");
+    assert_eq!(
+        ok["message"],
+        "no linked folders or files where Seldon writes"
+    );
+    assert!(ok.get("fix").is_none(), "{ok}");
+
+    let outside = env.tmp.path().join("outside");
+    std::fs::create_dir_all(outside.join("ledger")).unwrap();
+    std::fs::write(outside.join("day.md"), "outside\n").unwrap();
+    std::fs::remove_dir_all(root.join("ledger")).unwrap();
+    std::os::unix::fs::symlink(outside.join("ledger"), root.join("ledger")).unwrap();
+    std::fs::create_dir_all(root.join("journal/2026")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.join("day.md"),
+        root.join("journal/2026/2026-10-09.md"),
+    )
+    .unwrap();
+    let before = snapshot(&outside);
+    let (code, row1) = row();
+    assert_eq!(code, Some(1), "{row1}");
+    assert_eq!(row1["status"], "error", "{row1}");
+    assert_eq!(
+        row1["message"],
+        "2 where Seldon writes, so commands that write there refuse: journal/2026/2026-10-09.md (symbolic link), ledger (symbolic link)"
+    );
+    assert_eq!(
+        row1["fix"],
+        "replace each with a real folder or file (move what the link points to into its place), then run the command again"
+    );
+    assert_eq!(snapshot(&outside), before);
+
+    // more than five: the first five and a count; a folder in a file's
+    // place and a file in a folder's place
+    let _ = std::fs::remove_file(root.join("STATUS.md"));
+    std::fs::create_dir(root.join("STATUS.md")).unwrap();
+    std::fs::remove_dir_all(root.join("system")).unwrap();
+    std::fs::write(root.join("system"), "").unwrap();
+    for n in 1..=3 {
+        std::os::unix::fs::symlink(
+            outside.join("day.md"),
+            root.join(format!("decisions/ADR-000{n}-x.md")),
+        )
+        .unwrap();
+    }
+    let (_, row2) = row();
+    assert_eq!(
+        row2["message"],
+        "7 where Seldon writes, so commands that write there refuse: decisions/ADR-0001-x.md (symbolic link), decisions/ADR-0002-x.md (symbolic link), decisions/ADR-0003-x.md (symbolic link), journal/2026/2026-10-09.md (symbolic link), ledger (symbolic link), and 2 more"
+    );
+    // the human line
+    let human = stdout(&env.seldon(&["doctor"]));
+    assert!(
+        human.contains("error     layout   7 where Seldon writes,"),
+        "{human}"
+    );
+}

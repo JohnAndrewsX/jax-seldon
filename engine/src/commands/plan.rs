@@ -357,7 +357,8 @@ pub(crate) fn create(
     // ledger written (WP-168)
     cases::checked_folders(logbook)?;
     if let Some(area) = spec.area.as_deref() {
-        logbook.checked_dir(format!("areas/{area}"))?;
+        // the README too: `ensure_area` writes it after the ledger (WP-171)
+        logbook.checked_file(format!("areas/{area}/README.md"))?;
     }
     if spec.start && spec.point {
         logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
@@ -568,6 +569,9 @@ fn step(
     if transition != Transition::Verify {
         logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
     }
+    // the case file from and to, as the save will write it: a link there
+    // fails the step before the ledger (WP-171)
+    file.prepare(&logbook, |_| {})?;
 
     // the journal day is read before the ledger is written: a day file
     // the engine cannot read fails the step before anything changes

@@ -490,14 +490,18 @@ pub fn merge_fence(existing: Option<&str>, name: &str, content: &str) -> String 
 
 /// Regenerates `STATUS.md`. A damaged fence, or the header without the
 /// fence, leaves the file as it is ([`Fill::Skipped`], F-131).
-pub fn write_status(logbook: &Logbook, built: &Built) -> anyhow::Result<Fill> {
+pub fn write_status(logbook: &Logbook, built: &Built) -> crate::error::Result<Fill> {
     const REL: &str = "STATUS.md";
-    let path = logbook.path(REL);
+    // checked before it is read: a link is not read through, a FIFO
+    // not opened (WP-171)
+    let path = logbook.checked_file(REL)?;
     let existing = match std::fs::read_to_string(&path) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
-            return Err(anyhow::Error::new(e).context(format!("cannot read {}", path.display())));
+            return Err(anyhow::Error::new(e)
+                .context(format!("cannot read {}", path.display()))
+                .into());
         }
     };
     let text = match merge_status(
@@ -569,14 +573,21 @@ pub enum Fill {
 /// (WP-050); every byte outside the fence stays. A file without the
 /// fence gets it appended under `## Index`, a missing file is created.
 /// A damaged fence ([`fence_damaged`]) is left alone.
-pub fn write_decisions_index(logbook: &Logbook, rows: &[DecisionRow]) -> anyhow::Result<Fill> {
+pub fn write_decisions_index(
+    logbook: &Logbook,
+    rows: &[DecisionRow],
+) -> crate::error::Result<Fill> {
     const REL: &str = "DECISIONS.md";
-    let path = logbook.path(REL);
+    // checked before it is read: a link is not read through, a FIFO
+    // not opened (WP-171)
+    let path = logbook.checked_file(REL)?;
     let old = match std::fs::read_to_string(&path) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
-            return Err(anyhow::Error::new(e).context(format!("cannot read {}", path.display())));
+            return Err(anyhow::Error::new(e)
+                .context(format!("cannot read {}", path.display()))
+                .into());
         }
     };
     if old

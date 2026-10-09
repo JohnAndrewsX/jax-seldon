@@ -691,3 +691,31 @@ fn a_silent_upgrade_of_a_file_with_own_changes_is_not_committed() {
     let status = env.git(&root, &["status", "--porcelain", "--", "AGENTS.md"]);
     assert_eq!(String::from_utf8_lossy(&status.stdout), " M AGENTS.md\n");
 }
+
+/// WP-171, ADR-0049 §2: an `AGENTS.md` that is a link is not upgraded
+/// through it; the capture goes on and says why in a warning, the link and
+/// the file it points to stay as they were.
+#[test]
+fn a_capture_does_not_upgrade_rules_through_a_link() {
+    let env = Env::new(Snapper::Allowed);
+    let root = logbook(&env, "en");
+    let path = root.join("AGENTS.md");
+    let outside = env.tmp.path().join("outside-AGENTS.md");
+    let text = format!("{}- Never touch ~/Music.\n", v2("wp101", "en"));
+    std::fs::write(&outside, &text).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    std::os::unix::fs::symlink(&outside, &path).unwrap();
+
+    let out = capture(&env, true);
+    assert!(out.status.code().is_some(), "{}", stderr(&out));
+    let v = json(&out);
+    assert_eq!(v["rulesUpdated"], serde_json::Value::Null, "{v}");
+    let warnings = v["warnings"].as_array().unwrap();
+    assert!(
+        warnings.iter().any(|w| w
+            == "AGENTS.md: Seldon's agent rules were not updated: AGENTS.md is a symbolic link, not a file of the logbook; make it a file and run the command again"),
+        "{v}"
+    );
+    assert_eq!(read(&outside), text);
+    assert_eq!(std::fs::read_link(&path).unwrap(), outside);
+}
