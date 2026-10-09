@@ -51,7 +51,8 @@ writes no file itself; only its own settings, through the shell
 
 ## Install
 
-Three steps: the engine, your logbook, the plugin. None needs `sudo`.
+Three steps: the engine, your logbook, the plugin, all as your user.
+No sudo or pkexec is required for these steps.
 
 **1. The engine.** AUR package: coming soon; until then install it from
 GitHub. `install.sh` checks the release against its `SHA256SUMS`, refuses
@@ -67,14 +68,20 @@ cd "$(mktemp -d)"
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
 less install.sh                                    # read what it does
+gh attestation verify install.sh --repo JohnAndrewsX/jax-seldon \
+  --signer-workflow JohnAndrewsX/jax-seldon/.github/workflows/release.yml  # optional, needs gh
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
 ```
 
-or in one line (the script still verifies the engine, not itself):
-
-```sh
-curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
-```
+The checksum line checks that `install.sh` matches the release's
+`SHA256SUMS`; it does not show who built either. With the GitHub CLI
+(`gh`) logged in, the optional `gh attestation verify` line does: it
+passes only for a file that this project's release workflow built.
+If it fails, do not run `install.sh`. `install.sh` then checks the
+engine it downloads. The panel's *Install* button (see
+[States](#states)) runs the same script without that first check: it
+downloads `install.sh` with `curl` and pipes it to `bash`, in a terminal
+you see; `install.sh` still checks the engine.
 
 Run it again to update. Its options (`--version`, `--prefix`, `--unit`
 for the optional watcher, `--force` over a self-built `seldon`,
@@ -85,7 +92,8 @@ Check the engine with `seldon --version`. If your shell says
 
 Once the AUR package is live, you can install the engine from there
 instead of GitHub. Install from one source only: both put a `seldon` on
-your `PATH`.
+your `PATH`. The AUR package installs through pacman, which asks for
+your password.
 
 ```sh
 omarchy pkg aur add jax-seldon   # install
@@ -323,7 +331,7 @@ When something is wrong the panel shows one banner with a one-click fix:
 
 | State | Banner | One-click fix |
 |---|---|---|
-| Engine missing | Install the engine, in the accent tone (a setup step); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the download against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; *Copy* puts the one-liner on the clipboard; *Check again* looks for the engine again |
+| Engine missing | Install the engine, in the accent tone (a setup step); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the engine it downloads against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; *Copy* puts the one-liner on the clipboard; *Check again* looks for the engine again |
 | Logbook not initialised | Create your logbook | *Create* opens a terminal that says what happens, shows and runs `seldon init` (it asks where to put the logbook), then says whether the logbook was created; the panel then updates by itself; *Copy*; *Check again* |
 | Index missing | No index yet / Index unreadable | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
@@ -477,7 +485,15 @@ shell plugin. This is everything it does outside its own window:
   services, timers, scripts or symlinks. The engine is installed
   separately (`install.sh` from the GitHub release, or the AUR package);
   the plugin never installs it.
-- **No privileges.** The plugin never runs `sudo`, `pacman` or `systemctl`.
+- **Privileges.** The plugin runs as your user.
+  No sudo or pkexec is required to use it.
+  One button asks for your password, and only when you press it: the
+  optional snapshot grant (*Grant* on the snapshot banner, above) runs
+  `sudo setfacl -m u:$USER:rx /.snapshots` in a terminal you see
+  (ADR-0026). Outside the plugin, installing, updating or removing the
+  engine's AUR package asks too, because pacman runs through sudo
+  (`omarchy pkg drop` runs `sudo pacman -Rns`; see [Install](#install)
+  and [Remove](#remove)).
 - **Dev mode is read-only:** with `SELDON_INDEX` set, the plugin only
   probes `seldon --version --json`; it never runs capture, status or any
   writing command.
@@ -520,15 +536,22 @@ omarchy plugin remove jax.seldon
 
 This removes the plugin only. The engine, your logbook (`~/Seldon` unless
 you chose another place) and the index under `~/.local/state/seldon/`
-stay. To remove the engine as well, installed from GitHub:
+stay. To remove the engine as well, installed from GitHub, run
+`install.sh` with `--uninstall`. No copy left? Download, read and verify
+it as under [Install](#install):
 
 ```sh
-curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash -s -- --uninstall
+cd "$(mktemp -d)"
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
+less install.sh                                    # read what it does
+gh attestation verify install.sh --repo JohnAndrewsX/jax-seldon \
+  --signer-workflow JohnAndrewsX/jax-seldon/.github/workflows/release.yml  # optional, needs gh
+sha256sum -c --ignore-missing SHA256SUMS && bash install.sh --uninstall
 ```
 
 It removes exactly the files `install.sh` installed (add the same
-`--prefix` if you gave one; `bash install.sh --uninstall` does the same
-with a downloaded copy). Installed from the AUR:
+`--prefix` if you gave one). Installed from the AUR:
 
 ```sh
 omarchy pkg drop jax-seldon

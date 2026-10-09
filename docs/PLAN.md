@@ -66,7 +66,7 @@ trace, and resolves drift without a terminal.
 |---|---|---|---|---|
 | WP-040 | AUR package `jax-seldon` (PKGBUILD, .SRCINFO), release workflow | Scaffold | WP-009 | `makepkg -si` works on a clean Omarchy; `omarchy pkg add jax-seldon` documented; version from git tag |
 | WP-041 | Plugin README, preview.png, security section, keybinding docs | Docs | WP-031 | README follows the marketplace template; preview shows panel + Prime Radiant |
-| WP-042 | Marketplace submission (plugins.omarchy.org and omahub.dev) | Docs | WP-040, WP-041 | listings live; security scan clean (no network, no units, no binaries) |
+| WP-042 | Store submission preparation for the plugin (`work/*/WP-042.md`, `packaging/store/`) | Docs | — | README without `curl … \| bash` fences, privilege wording in the store's form; predicted baseline without findings, capabilities `privilege` and `package-manager`; submission body for the operator. Filing after `v0.2.0` on the operator's go |
 | WP-043 | The operator's own logbook migration from `~/Omarchy-Agent` (optional) | Engine | WP-024 | importer maps kit cases/journal into Seldon layout; dry-run report first |
 
 ## Milestones

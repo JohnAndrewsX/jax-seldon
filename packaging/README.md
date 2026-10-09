@@ -20,6 +20,8 @@ publishes both through `.github/workflows/release.yml`.
 | `audit-ignore.sh [FILE [TODAY]]` | checks that list and prints its ids for `cargo audit --ignore`; exit 1 on an expired or malformed entry (`tests/release/`) |
 | `omarchy-pin` | the `omacom/omarchy` commit and the sha256 of its `bin/omarchy-plugin-validate` (WP-190; "The Omarchy pin" below) |
 | `omarchy-validate.sh PLUGIN_DIR` | fetches that validator over HTTPS, refuses it unless the sha256 matches, runs it on `PLUGIN_DIR`: `just plugin-validate` without the omarchy CLI (CI), the release workflow on the plugin split (`tests/release/`) |
+| `store/baseline.md` | the plugin store's security baseline predicted for the plugin split: each capability with the README line and the scanner line behind it (WP-042) |
+| `store/submission.md` | the store submission issue, drafted for the operator; filed only on the operator's go (WP-042) |
 
 ## What the package contains
 
