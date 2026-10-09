@@ -18,6 +18,7 @@ a write primitive that never follows a link); a mutant that removes the
 second layer at one call site while the first still refuses is reported
 as SURVIVED and named in the handover (only a race reaches that layer)."""
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -133,6 +134,17 @@ MUTANTS = [
     ("layout: a folder in a file's place not named", LAYOUT, plain("            } else if !kind.is_file() {\n                note(Path::new(file), Misplaced::NoRegularFile, &mut out);", "            } else if false {\n                note(Path::new(file), Misplaced::NoRegularFile, &mut out);")),
 ]
 
+# seconds one test run may take under a mutant
+LIMIT = 900
+
+
+def restore_on_term(signum, frame):
+    # a SIGTERM must not leave a mutant in the source
+    raise KeyboardInterrupt
+
+
+signal.signal(signal.SIGTERM, restore_on_term)
+
 check = "--check" in sys.argv
 only = [a for a in sys.argv[1:] if a != "--check"]
 os.makedirs(TMPDIR, exist_ok=True)
@@ -167,7 +179,18 @@ for name, file, mutate in MUTANTS:
         open(path, "w").write(mutated)
         failed = []
         for cmd in runs:
-            r = subprocess.run(cmd, cwd=WT, env=env, capture_output=True, text=True)
+            # its own process group: a test left blocked (a FIFO opened)
+            # is killed with cargo after the limit, and counts as killed
+            p = subprocess.Popen(cmd, cwd=WT, env=env, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, start_new_session=True)
+            try:
+                _, err = p.communicate(timeout=LIMIT)
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.communicate()
+                failed.append((cmd[7] if cmd[6] == "--test" else "lib") + " timeout")
+                continue
+            r = subprocess.CompletedProcess(cmd, p.returncode, "", err)
             if "error[E" in r.stderr or "error: could not compile" in r.stderr:
                 failed = None
                 break
