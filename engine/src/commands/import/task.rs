@@ -762,6 +762,6 @@ fn read_marker(path: &Path) -> Result<Marker> {
 
 fn write_marker(path: &Path, marker: &Marker) -> Result<()> {
     let text = serde_json::to_string_pretty(marker).expect("json");
-    sys::write_atomic(path, format!("{text}\n").as_bytes())?;
+    sys::write_atomic_nofollow(path, format!("{text}\n").as_bytes())?;
     Ok(())
 }

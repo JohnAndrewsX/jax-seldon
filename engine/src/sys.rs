@@ -122,6 +122,8 @@ pub fn read_small_file(path: &Path, max: u64) -> Result<Option<String>, String> 
 /// link stays. The target keeps its permission bits; a new file gets
 /// [`NEW_FILE_MODE`] and new directories [`NEW_DIR_MODE`]. File and
 /// directory are synced; the temp file is removed when anything fails.
+/// For files outside the logbook (config, state, settings); a file of the
+/// logbook goes through [`write_atomic_nofollow`] (ADR-0049).
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     write_atomic_with(path, bytes, None, true)
 }
@@ -144,6 +146,48 @@ pub fn write_atomic_replace(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Res
 /// again.
 pub fn write_generated(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     write_atomic_with(path, bytes, None, false)
+}
+
+/// [`write_atomic`] for a file of the logbook (ADR-0049): a symbolic link
+/// at `path` is never followed. A link or anything but a regular file
+/// there is an error (the command's `logbook::checked_file` names it for
+/// the user first); one that appears after this check is replaced by the
+/// rename, never its target. A regular file keeps its permission bits.
+pub fn write_atomic_nofollow(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    write_nofollow(path, bytes, true)
+}
+
+/// [`write_generated`] that never follows a link, as
+/// [`write_atomic_nofollow`]: the logbook's `STATUS.md`, ledger views and
+/// `outputs/REBUILD.md`.
+pub fn write_generated_nofollow(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    write_nofollow(path, bytes, false)
+}
+
+fn write_nofollow(path: &Path, bytes: &[u8], sync: bool) -> anyhow::Result<()> {
+    let mode = regular_or_missing(path)?.map_or(NEW_FILE_MODE, |m| m.permissions().mode() & 0o777);
+    write_atomic_at(path.to_path_buf(), bytes, Some(mode), sync)
+}
+
+/// The metadata of the regular file at `path`, without following a link;
+/// `None` when nothing is there. A symbolic link or anything else that is
+/// no regular file is an error: a file of the logbook is never written
+/// through one (ADR-0049).
+pub fn regular_or_missing(path: &Path) -> anyhow::Result<Option<std::fs::Metadata>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_file() => Ok(Some(m)),
+        Ok(m) => anyhow::bail!(
+            "{} is {}, not a file of the logbook; nothing written",
+            path.display(),
+            if m.file_type().is_symlink() {
+                "a symbolic link"
+            } else {
+                "no regular file"
+            }
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("cannot read {}", path.display())),
+    }
 }
 
 fn write_atomic_with(

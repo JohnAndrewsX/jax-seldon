@@ -103,9 +103,8 @@ impl Logbook {
         checked_dir(&self.root, relative.as_ref())
     }
 
-    /// The file `path` (below the root, or relative to it) as an absolute
-    /// path, its folder checked with [`checked_dir`]. A file directly in
-    /// the root has no folder to check.
+    /// [`checked_file`] for `path`, below the root (absolute) or relative
+    /// to it.
     pub fn checked_file(&self, path: impl AsRef<Path>) -> Result<PathBuf> {
         let path = path.as_ref();
         let relative = if path.is_absolute() {
@@ -119,10 +118,7 @@ impl Logbook {
         } else {
             path
         };
-        if let Some(dir) = relative.parent() {
-            checked_dir(&self.root, dir)?;
-        }
-        Ok(self.root.join(relative))
+        checked_file(&self.root, relative)
     }
 
     /// Case files `work/{queued,active,completed}/C-*.md`, sorted by path.
@@ -230,6 +226,41 @@ pub fn checked_dir(root: &Path, relative: &Path) -> Result<PathBuf> {
         }
     }
     Ok(root.join(relative))
+}
+
+/// `root/relative`, a file of the logbook the engine writes (replaces or
+/// appends to), checked (WP-171, ADR-0049): its folder with
+/// [`checked_dir`] first, then the file itself without following a link.
+/// A regular file or none passes (the writer creates it, 0600); a
+/// symbolic link (followed, the write would land wherever it points) or
+/// anything else (a directory, FIFO, socket or device in its place) is a
+/// user error (exit 1) naming the file relative to the root. A file
+/// directly in the root has no folder to check.
+pub fn checked_file(root: &Path, relative: &Path) -> Result<PathBuf> {
+    let Some(name) = relative.file_name() else {
+        return Err(
+            anyhow::anyhow!("{} is not a file below the logbook", relative.display()).into(),
+        );
+    };
+    let dir = checked_dir(root, relative.parent().unwrap_or(Path::new("")))?;
+    let path = dir.join(name);
+    match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.file_type().is_file() => {}
+        Ok(m) => {
+            return Err(Error::user(format!(
+                "{} is {}, not a file of the logbook; make it a file and run the command again",
+                relative.display(),
+                if m.file_type().is_symlink() {
+                    "a symbolic link"
+                } else {
+                    "no regular file"
+                }
+            )));
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(anyhow::anyhow!("{}: {e}", path.display()).into()),
+    }
+    Ok(path)
 }
 
 /// Entries of `dir`, sorted; an absent directory has none.

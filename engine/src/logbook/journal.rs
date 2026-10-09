@@ -50,7 +50,7 @@ pub struct Pending {
 impl Pending {
     /// Writes the day's file.
     pub fn write(self) -> Result<Appended> {
-        sys::write_atomic(&self.path, self.text.as_bytes())?;
+        sys::write_atomic_nofollow(&self.path, self.text.as_bytes())?;
         Ok(self.appended)
     }
 }
@@ -178,7 +178,7 @@ pub fn ensure_day(logbook: &Logbook, now: &DateTime<FixedOffset>) -> Result<Appe
         date,
         cases: Vec::new(),
     };
-    sys::write_atomic(&path, model::render_new(&record, "").as_bytes())
+    sys::write_atomic_nofollow(&path, model::render_new(&record, "").as_bytes())
         .with_context(|| format!("cannot create {rel}"))?;
     Ok(Appended {
         path: rel,

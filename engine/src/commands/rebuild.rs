@@ -66,7 +66,7 @@ pub fn run(ctx: &Context, _args: RebuildArgs) -> Result<Output> {
     let text = rebuild::merge(existing.as_deref(), &content);
     let changed = existing.as_deref() != Some(text.as_str());
     if changed {
-        sys::write_generated(&path, text.as_bytes())?;
+        sys::write_generated_nofollow(&path, text.as_bytes())?;
     }
     let commit = if changed {
         autocommit(ctx, &config, &logbook, "rebuild")

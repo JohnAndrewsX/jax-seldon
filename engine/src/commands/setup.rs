@@ -282,7 +282,8 @@ struct Copied {
 /// logbook at `root` (permissions kept, so an executable guard stays
 /// executable). A file that exists in `to` is kept, never overwritten;
 /// symbolic links are not followed or copied, and a folder on the way in
-/// the logbook that is a link or no directory stops the copy (WP-168).
+/// the logbook that is a link or no directory (WP-168), or a link or no
+/// regular file where a file goes (WP-171), stops the copy.
 fn copy_tree(from: &Path, root: &Path, to: &Path) -> anyhow::Result<Copied> {
     let mut out = Copied::default();
     let mut stack = vec![PathBuf::new()];
@@ -297,8 +298,10 @@ fn copy_tree(from: &Path, root: &Path, to: &Path) -> anyhow::Result<Copied> {
             if kind.is_dir() {
                 stack.push(rel);
             } else if kind.is_file() {
-                let folder = to.join(rel.parent().unwrap_or(Path::new("")));
-                let target = crate::logbook::checked_dir(root, &folder)?.join(entry.file_name());
+                // a link where the file goes is refused, not taken as
+                // there (a dangling one would have the copy create its
+                // target; WP-171)
+                let target = crate::logbook::checked_file(root, &to.join(&rel))?;
                 let name = rel.to_string_lossy().into_owned();
                 if target.exists() {
                     out.kept.push(name);

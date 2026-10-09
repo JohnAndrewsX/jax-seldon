@@ -634,8 +634,8 @@ fn write_if_changed(
         return Ok(false);
     }
     match durable {
-        Durable::Yes => sys::write_atomic(&path, text.as_bytes())?,
-        Durable::No => sys::write_generated(&path, text.as_bytes())?,
+        Durable::Yes => sys::write_atomic_nofollow(&path, text.as_bytes())?,
+        Durable::No => sys::write_generated_nofollow(&path, text.as_bytes())?,
     }
     Ok(true)
 }

@@ -461,7 +461,13 @@ fn upgrade_defaults(
             // named "unedited" (WP-116 round 2, N7)
             let own_changes = crate::logbook::git::is_repo(&logbook.root)
                 && !crate::logbook::git::is_clean_path(&logbook.root, rules).unwrap_or(false);
-            match crate::sys::write_atomic(&logbook.path(rules), plan.text.as_bytes()) {
+            // a link there is not followed: a warning, as for any other
+            // reason the upgrade cannot write (WP-171)
+            let written = logbook
+                .checked_file(rules)
+                .map_err(anyhow::Error::new)
+                .and_then(|path| crate::sys::write_atomic_nofollow(&path, plan.text.as_bytes()));
+            match written {
                 Ok(()) => {
                     out.rules_from = plan.from;
                     let from = plan.from.map_or("v?".to_string(), |v| format!("v{v}"));

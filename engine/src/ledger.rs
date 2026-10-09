@@ -228,8 +228,14 @@ impl Ledger {
             text.push_str(&e.to_line());
             text.push('\n');
         }
+        // the folder and every month file, before the first line (WP-168,
+        // WP-171)
         if let Some(root) = &self.root {
             crate::logbook::checked_dir(root, Path::new(LEDGER_DIR))?;
+            for month in by_month.keys() {
+                let file = Path::new(LEDGER_DIR).join(format!("{month}.jsonl"));
+                crate::logbook::checked_file(root, &file)?;
+            }
         }
         crate::sys::create_dir_private(&self.dir)
             .with_context(|| format!("cannot create {}", self.dir.display()))?;
@@ -255,8 +261,11 @@ fn next_id(ids: &mut Generator) -> Ulid {
 }
 
 /// Appends `bytes` to `path`. If the file does not end in a newline (a torn
-/// earlier write), a newline goes first so the new lines stay whole.
+/// earlier write), a newline goes first so the new lines stay whole. A
+/// symbolic link or anything but a regular file at `path` is refused, not
+/// followed (ADR-0049; `Ledger::append` names it for the user first).
 fn append_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    crate::sys::regular_or_missing(path)?;
     let mut file = OpenOptions::new()
         .create(true)
         .read(true)

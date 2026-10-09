@@ -210,6 +210,10 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
         set(&mut files, &mut warnings, fence, content);
     }
 
+    // a changed file that is a link: refused, not written through (WP-171)
+    for rel in files.changed() {
+        logbook.checked_file(&rel)?;
+    }
     let written = files.write()?;
     let commit = if written.is_empty() {
         Commit::Skipped("nothing changed")
