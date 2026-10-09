@@ -331,10 +331,7 @@ fn transaction(
 fn shown(text: &str) -> String {
     text.chars()
         .map(|c| {
-            if c.is_control()
-                || super::is_line_breaking(c)
-                || crate::redact::is_invisible(c)
-            {
+            if c.is_control() || super::is_line_breaking(c) || crate::redact::is_invisible(c) {
                 '\u{FFFD}'
             } else {
                 c
