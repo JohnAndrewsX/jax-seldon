@@ -839,7 +839,10 @@ to the pill after 30 ms, as the shell's reload of `shell.json` does
 middle|right>`, `shim:<method>[:<arg>]` (the pill's `jax.seldon.panel`
 handler), `call`, `section`, `select`, `width:<pct>` and `sidebar:<mode>`
 (Omarchy's bar settings changing a key), `resize`, real keys (`key:
-[Alt+]<Name>`, `text`, `type`), `click`, `clickName`, `clickAt`, `drag`/
+[Alt+]<Name>`, `text`, `type`, `keyDown`/`keyUp` to hold one), a held
+key's auto-repeat (`keyRepeat:<Name|char>`: QtTest makes none, so the
+harness hands an event object with `isAutoRepeat` to `keyPressed(event)`
+of the focused form or the desk; WP-173), `click`, `clickName`, `clickAt`, `drag`/
 `release` (the width slider), `wheel:<objectName>:<delta>`, `hover`,
 `settle`, `wait:<path>=<v>` (`^=` for a prefix), `pause:<ms>`, `shot`,
 `view`; for the Prime Radiant (WP-123) `fresh[:<json>]` (drop the desk and

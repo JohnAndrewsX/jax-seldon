@@ -321,7 +321,13 @@ filter and gives the keys back to the desk. Writing actions arm on the
 first press (`components/desk/Arm.qml`: `press(id)` arms, the same id
 again returns true and disarms); every key that did not press disarms,
 and the sticky action bar shows the hint while armed (the two-press rule
-of §5.7, shared by the sections).
+of §5.7, shared by the sections). A held key does not confirm: its
+auto-repeats (Omarchy's Hyprland repeats a key held for 250 ms) neither
+arm nor confirm a writing action, and an armed one stays armed with its
+hint until the key is released and pressed again (`Arm.held`, set by the
+desk for an auto-repeated key; a click is unaffected); navigation keys
+keep repeating. The forms that arm on Enter (Link, Explain, Dismiss, New
+decision; §5.4) ignore a repeated Enter the same way (WP-173).
 
 ### 5.4 Sections
 
