@@ -223,6 +223,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_collectors(ctx, &effective, logbook, &shown));
             checks.extend(check_reset(ctx, logbook));
             checks.extend(check_pending_reset(ctx, &effective, logbook, source));
+            checks.push(check_layout(&logbook.root));
         }
         logbook
     } else {
@@ -385,6 +386,54 @@ fn check_logbook(
         }
     };
     (check, Some(logbook), ids)
+}
+
+/// A name of the user's (a folder or file of the logbook) as a row shows
+/// it: no control, direction, invisible format or line-breaking character
+/// reaches the terminal (`?` instead).
+fn shown_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if crate::import::bad_path_char(c) || super::is_line_breaking(c) {
+                '?'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// Linked folders and files where Seldon writes (WP-171, ADR-0049 §3):
+/// every command that writes there refuses (exit 1), so the user learns
+/// it here first.
+fn check_layout(root: &Path) -> Check {
+    const SHOWN: usize = 5;
+    let found = layout::misplaced(root);
+    if found.is_empty() {
+        return Check::new(
+            "layout",
+            Status::Ok,
+            "no linked folders or files where Seldon writes",
+        );
+    }
+    let mut named: Vec<String> = found
+        .iter()
+        .take(SHOWN)
+        .map(|(rel, what)| format!("{} ({})", shown_name(rel), what.as_str()))
+        .collect();
+    if found.len() > SHOWN {
+        named.push(format!("and {} more", found.len() - SHOWN));
+    }
+    Check::new(
+        "layout",
+        Status::Error,
+        format!(
+            "{} where Seldon writes, so commands that write there refuse: {}",
+            found.len(),
+            named.join(", ")
+        ),
+    )
+    .fix("replace each with a real folder or file (move what the link points to into its place), then run the command again")
 }
 
 /// `config.toml` parsed; its `[redaction] patterns` must compile too, or
@@ -796,20 +845,7 @@ fn check_workpieces(logbook: &Logbook) -> Check {
             }
         }
     }
-    // a folder name is the user's: no control, direction, invisible
-    // format or line-breaking character reaches the terminal
-    let shown = |name: &str| -> String {
-        name.chars()
-            .map(|c| {
-                if crate::import::bad_path_char(c) || super::is_line_breaking(c) {
-                    '?'
-                } else {
-                    c
-                }
-            })
-            .collect()
-    };
-    let Some((oldest, _)) = oldest.map(|(name, k)| (shown(name), k)) else {
+    let Some((oldest, _)) = oldest.map(|(name, k)| (shown_name(name), k)) else {
         return Check::new(
             NAME,
             Status::Ok,
