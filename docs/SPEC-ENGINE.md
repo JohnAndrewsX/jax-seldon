@@ -889,7 +889,7 @@ parses them):
 
 ```
 seldon --version --json          → {"name":"seldon","version":"0.1.0"}
-seldon contract-version --json   → {"contractVersion":1}
+seldon contract-version --json   → {"contractVersion":2}   (the index also says contractReadableFrom, ADR-0051; this command does not)
 any user error with --json       → {"error":{"code":1,"message":"<detail>"}}  (exit 1)
 seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
                                      "checks":[{"name","status":"ok|degraded|error","message","fix"?}],

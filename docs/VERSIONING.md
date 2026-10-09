@@ -61,9 +61,14 @@ are valid and are read again after the upgrade.
 `seldon contract-version`), `schema/index.schema.json` (a `const`), every
 `index.json`, and `plugin/manifest.json` (`seldon.contractVersion`).
 The plugin refuses an index with a different number and shows the
-contract-mismatch banner (`docs/CONTRACT.md`, rule 3). A contract change
-therefore always breaks a mixed install — a new engine with an old
-plugin, or the other way round.
+contract-mismatch banner (`docs/CONTRACT.md`, rule 3) — unless the index
+is newer and its `contractReadableFrom` (ADR-0051; the engine's
+`CONTRACT_READABLE_FROM`) is at most the plugin's number: then the plugin
+reads it and asks for its own update in a quiet notice. A contract change
+therefore breaks a mixed install — a new engine with an old plugin, or
+the other way round — unless its ADR lowers `contractReadableFrom` for
+the older plugins (a 0.2.0 plugin or later; a 0.1.x plugin knows no such
+field).
 
 - A contract bump needs an ADR, updated fixtures and both sides changed
   together (`docs/CONTRACT.md`, "Changing the contract").

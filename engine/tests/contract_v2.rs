@@ -374,6 +374,7 @@ fn index_is_idempotent_with_every_v2_field() {
     assert_eq!(ledger(&root).len(), lines);
     let v: Value = serde_json::from_str(&first).unwrap();
     assert_eq!(v["contractVersion"], json!(2));
+    assert_eq!(v["contractReadableFrom"], json!(2), "ADR-0051");
     assert!(v["logbook"]["git"]["autocommit"].is_object(), "{v}");
     assert!(v["triage"].is_object());
 }

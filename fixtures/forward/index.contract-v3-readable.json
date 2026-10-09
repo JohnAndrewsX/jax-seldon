@@ -1,5 +1,5 @@
 {
-  "contractVersion": 2,
+  "contractVersion": 3,
   "contractReadableFrom": 2,
   "generatedAt": "2026-10-01T17:05:12+02:00",
   "engineVersion": "0.1.0",
@@ -62,10 +62,11 @@
   "summary": {
     "activeCases": 2,
     "queuedCases": 3,
-    "openDrift": 14,
-    "crisis": 4,
-    "eventsToday": 33,
-    "events7d": 54
+    "openDrift": 7,
+    "crisis": 2,
+    "eventsToday": 35,
+    "events7d": 56,
+    "crashes": 1
   },
   "today": {
     "date": "2026-10-01",
@@ -106,6 +107,24 @@
     ]
   },
   "events": [
+    {
+      "id": "01M3VZXA00J0VRNA0000000001",
+      "ts": "2026-10-01T17:02:00+02:00",
+      "source": "journal",
+      "kind": "crash",
+      "subject": "example",
+      "detail": "example crashed (SIGSEGV)",
+      "actor": "system"
+    },
+    {
+      "id": "01M3VZXA00J0VRNA0000000002",
+      "ts": "2026-10-01T17:01:00+02:00",
+      "source": "journal",
+      "kind": "boot-error",
+      "subject": "boot",
+      "detail": "a unit failed during boot",
+      "actor": "system"
+    },
     {
       "id": "01M3VZNFC0M2FQVGJBZGX9KDF7",
       "ts": "2026-10-01T17:00:00+02:00",
@@ -1249,6 +1268,18 @@
   ],
   "drift": [
     {
+      "eventId": "01M3VZXA00J0VRNA0000000002",
+      "ts": "2026-10-01T17:01:00+02:00",
+      "source": "journal",
+      "kind": "boot-error",
+      "subject": "boot",
+      "detail": "a unit failed during boot",
+      "actor": "system",
+      "zone": "yellow",
+      "crisis": false,
+      "rule": "journal-boot"
+    },
+    {
       "eventId": "01M3VTGNY0NZG4AY80814WSKGR",
       "ts": "2026-10-01T15:30:00+02:00",
       "source": "theme",
@@ -1259,7 +1290,7 @@
       "zone": "yellow",
       "crisis": false,
       "proposedCase": "C-2026-005",
-      "rule": "attention-all"
+      "rule": "theme"
     },
     {
       "eventId": "01M3VNJ9JGZ9169T01XCW16FT0",
@@ -1272,7 +1303,7 @@
       "zone": "red",
       "crisis": true,
       "proposedCase": null,
-      "rule": "attention-all"
+      "rule": "always-red-paths"
     },
     {
       "eventId": "01M3VNFTF8EVHWFFZ687N14Q0C",
@@ -1283,24 +1314,9 @@
       "detail": "0.6.1-1",
       "actor": "agent:codex",
       "zone": "red",
-      "crisis": true,
-      "proposedCase": null,
-      "rule": "attention-all"
-    },
-    {
-      "eventId": "01M3SXBQVR7AW8PJQC1YXDCQ14",
-      "ts": "2026-09-30T21:41:15+02:00",
-      "source": "pacman",
-      "kind": "upgrade",
-      "subject": "firefox",
-      "detail": "143.0.1-1 → 143.0.2-1",
-      "actor": "system",
-      "zone": "yellow",
       "crisis": false,
       "proposedCase": null,
-      "txId": "tx-20260930T214115",
-      "members": 3,
-      "rule": "attention-all"
+      "rule": "package"
     },
     {
       "eventId": "01M3Q7R0Z08ZD5R76DQA3PHQ1G",
@@ -1311,48 +1327,9 @@
       "detail": "sha256 — → 27d5c56a",
       "actor": "system",
       "zone": "yellow",
-      "crisis": false,
+      "crisis": true,
       "proposedCase": null,
-      "rule": "attention-all"
-    },
-    {
-      "eventId": "01M3PYK1Z0BS00S6B97XBQJ9J3",
-      "ts": "2026-09-29T18:05:00+02:00",
-      "source": "plugins",
-      "kind": "plugin-enable",
-      "subject": "io.github.example.weather-plus",
-      "detail": "1.3.0",
-      "actor": "system",
-      "zone": "yellow",
-      "crisis": false,
-      "proposedCase": null,
-      "rule": "attention-all"
-    },
-    {
-      "eventId": "01M3PY9XZ8JQEWN9G1M309QXRZ",
-      "ts": "2026-09-29T18:00:01+02:00",
-      "source": "config",
-      "kind": "config-change",
-      "subject": "~/.config/omarchy/shell.json",
-      "detail": "sha256 cd7e59a7 → d333b1b4",
-      "actor": "system",
-      "zone": "yellow",
-      "crisis": false,
-      "proposedCase": null,
-      "rule": "attention-all"
-    },
-    {
-      "eventId": "01M3PY9X00PHFTWZ10BFQWAY6R",
-      "ts": "2026-09-29T18:00:00+02:00",
-      "source": "plugins",
-      "kind": "plugin-disable",
-      "subject": "io.github.example.weather-plus",
-      "detail": "1.3.0",
-      "actor": "system",
-      "zone": "yellow",
-      "crisis": false,
-      "proposedCase": null,
-      "rule": "attention-all"
+      "rule": "always-red-paths"
     },
     {
       "eventId": "01M3KVWFR06078ZQTPRZCFYHK0",
@@ -1365,7 +1342,7 @@
       "zone": "yellow",
       "crisis": false,
       "proposedCase": null,
-      "rule": "attention-all"
+      "rule": "config-remove"
     },
     {
       "eventId": "01M3H6M720FC6BAG7ETNQTXW9K",
@@ -1376,67 +1353,11 @@
       "detail": "1:26.2.0-2 → 1:26.1.0-1",
       "actor": "system",
       "zone": "red",
-      "crisis": true,
+      "crisis": false,
       "proposedCase": null,
       "txId": "tx-20260927T123000",
       "members": 3,
-      "rule": "attention-all"
-    },
-    {
-      "eventId": "01M3CRD49GM72DN67HHC1715KC",
-      "ts": "2026-09-25T19:04:30+02:00",
-      "source": "theme",
-      "kind": "theme-set",
-      "subject": "kanagawa",
-      "detail": "catppuccin → kanagawa",
-      "actor": "human",
-      "zone": "yellow",
-      "crisis": false,
-      "proposedCase": null,
-      "rule": "attention-all"
-    },
-    {
-      "eventId": "01M3CR4WM083GP1DFYWR7Y370C",
-      "ts": "2026-09-25T19:00:00+02:00",
-      "source": "theme",
-      "kind": "theme-set",
-      "subject": "catppuccin",
-      "detail": "kanagawa → catppuccin",
-      "actor": "human",
-      "zone": "yellow",
-      "crisis": false,
-      "proposedCase": null,
-      "rule": "attention-all"
-    },
-    {
-      "eventId": "01M2W5S4XG9MX3PXAMR7WEEBVZ",
-      "ts": "2026-09-19T08:31:10+02:00",
-      "source": "pacman",
-      "kind": "upgrade",
-      "subject": "gtk4",
-      "detail": "1:4.18.6-1 → 1:4.18.7-1",
-      "actor": "system",
-      "zone": "yellow",
-      "crisis": false,
-      "proposedCase": null,
-      "txId": "tx-20260919T083110",
-      "members": 2,
-      "rule": "attention-all"
-    },
-    {
-      "eventId": "01M2TRP458WGAYTYM0MEFXC2TY",
-      "ts": "2026-09-18T19:23:05+02:00",
-      "source": "pacman",
-      "kind": "remove",
-      "subject": "pulseaudio",
-      "detail": "17.0-3",
-      "actor": "system",
-      "zone": "red",
-      "crisis": true,
-      "proposedCase": null,
-      "txId": "tx-20260918T192305",
-      "members": 4,
-      "rule": "attention-all"
+      "rule": "package"
     }
   ],
   "cases": {
@@ -3367,7 +3288,7 @@
       },
       {
         "date": "2026-10-01",
-        "total": 33,
+        "total": 35,
         "bySource": {
           "agent": 6,
           "config": 2,
@@ -3377,7 +3298,8 @@
           "plugins": 1,
           "seldon": 8,
           "snapper": 4,
-          "theme": 1
+          "theme": 1,
+          "journal": 2
         }
       }
     ],
@@ -3411,17 +3333,17 @@
       },
       {
         "week": "2026-W38",
-        "opened": 5,
-        "resolved": 2
+        "opened": 0,
+        "resolved": 0
       },
       {
         "week": "2026-W39",
-        "opened": 5,
-        "resolved": 3
+        "opened": 3,
+        "resolved": 2
       },
       {
         "week": "2026-W40",
-        "opened": 11,
+        "opened": 7,
         "resolved": 2
       }
     ],
@@ -3432,6 +3354,12 @@
       "R3": 1
     },
     "timeline": [
+      {
+        "kind": "crash",
+        "ts": "2026-10-01T17:02:00+02:00",
+        "label": "example crashed",
+        "ref": "01M3VZXA00J0VRNA0000000001"
+      },
       {
         "kind": "case",
         "ts": "2026-09-01",
@@ -3459,23 +3387,11 @@
         "ref": "4.0.6-1"
       },
       {
-        "kind": "crisis",
-        "ts": "2026-09-18T19:23:05+02:00",
-        "label": "pacman remove pulseaudio",
-        "ref": "01M2TRP458WGAYTYM0MEFXC2TY"
-      },
-      {
         "kind": "case",
         "ts": "2026-09-26",
         "end": null,
         "label": "C-2026-003 Omarchy auf 4.0.7 aktualisieren",
         "ref": "C-2026-003"
-      },
-      {
-        "kind": "crisis",
-        "ts": "2026-09-27T12:30:00+02:00",
-        "label": "pacman downgrade mesa",
-        "ref": "01M3H6M720FC6BAG7ETNQTXW9K"
       },
       {
         "kind": "case",
@@ -3490,6 +3406,12 @@
         "end": null,
         "label": "C-2026-005 Theme-Wechsel auf Tokyo Night durchziehen (Zed, Neovim)",
         "ref": "C-2026-005"
+      },
+      {
+        "kind": "crisis",
+        "ts": "2026-09-29T20:45:00+02:00",
+        "label": "config config-add ~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh",
+        "ref": "01M3Q7R0Z08ZD5R76DQA3PHQ1G"
       },
       {
         "kind": "case",
@@ -3532,12 +3454,6 @@
       },
       {
         "kind": "crisis",
-        "ts": "2026-10-01T14:02:09+02:00",
-        "label": "pacman install ollama",
-        "ref": "01M3VNFTF8EVHWFFZ687N14Q0C"
-      },
-      {
-        "kind": "crisis",
         "ts": "2026-10-01T14:03:30+02:00",
         "label": "config config-add ~/.config/systemd/user/ollama.service",
         "ref": "01M3VNJ9JGZ9169T01XCW16FT0"
@@ -3572,5 +3488,14 @@
     },
     "path": "proposals/01M3VZS4J0NDXZFC2F7RBBD3FJ.json",
     "applied": null
-  }
+  },
+  "crashes": [
+    {
+      "id": "01M3VZXA00J0VRNA0000000001",
+      "exe": "/usr/bin/example",
+      "status": "new",
+      "count": 1
+    }
+  ],
+  "reports": []
 }
