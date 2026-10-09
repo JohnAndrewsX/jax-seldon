@@ -4,36 +4,32 @@
 //! The config collector hashes what `watchPaths` names, exactly but
 //! narrowly. Edits elsewhere under `~/.config` (a terminal's config,
 //! `git/config`, `starship.toml`) are invisible to it. [`scan`] walks
-//! `~/.config` once per capture that runs the config collector and keeps
-//! the paths and modification times of the newest [`MAX_FILES`] regular
-//! files modified in the last [`DAYS`] days — never their content. The
-//! result is `$XDG_STATE_HOME/seldon/recent-config.json` ([`Saved`]);
-//! the index shows it as `system.recentConfig` ([`shown`]), filtered once
-//! more at build time, so a path watched or skipped since the scan leaves
-//! the list at the next index build.
+//! `~/.config` once per capture that runs the config collector, with the
+//! engine's one walker ([`crate::config_scan`], shared with `seldon
+//! preview`), and keeps the paths and modification times of the newest
+//! [`MAX_FILES`] files modified in the last [`DAYS`] days — never their
+//! content. The result is `$XDG_STATE_HOME/seldon/recent-config.json`
+//! ([`Saved`]); the index shows it as `system.recentConfig` ([`shown`]),
+//! filtered once more at build time, so a path watched or skipped since
+//! the scan leaves the list at the next index build.
 //!
-//! Left out, never entered or listed:
+//! Left out, never entered or listed, besides the walker's own ignore
+//! list, links and `[redaction] skipPaths` ([`crate::config_scan`]):
 //!
-//! - everything under a watch path and everything matching `[redaction]
-//!   skipPaths` (a skipped folder is not entered);
-//! - Omarchy's plugin folder and Seldon's own config folder;
-//! - the ignore list of [`ignored_dir`] and [`ignored_file`]: `.git`,
-//!   caches, state, logs, locks, databases, images, editor temp files,
-//!   `shell.json`; and every folder that holds `Cookies` or `Local State`
-//!   (a browser or Electron profile);
-//! - links to directories (never followed) and anything that is no
-//!   regular file; a link to a file counts by its target's time;
-//! - a name that is not UTF-8, and a `~`-path with a control, direction or
-//!   format character, longer than [`SUBJECT_MAX`] characters, or one the
-//!   logbook's redaction would change (it is never shown masked: *Watch*
-//!   needs the real path).
+//! - everything under a watch path, Omarchy's plugin folder, Seldon's own
+//!   config folder and config file, and the logbook ([`exclusions`],
+//!   before a folder is entered);
+//! - a path [`shown_path`] refuses — not UTF-8, a control, direction or
+//!   format character, longer than [`SUBJECT_MAX`] characters, a `.` or
+//!   `..` folder, or one the logbook's redaction would change (it is never
+//!   shown masked: *Watch* needs the real path) — before the cut to
+//!   [`MAX_FILES`].
 //!
-//! Bounded: at most [`MAX_ENTRIES`] directory entries read, [`MAX_DEPTH`]
-//! levels below `~/.config` and [`DEADLINE`] of wall time; a walk that
-//! reaches one of them stops (or does not go deeper) and says so
-//! (`partial`), in the state file and in the index.
+//! Bounded by the walker: at most [`MAX_ENTRIES`] directory entries read,
+//! [`crate::config_scan::MAX_DEPTH`] levels below `~/.config` and
+//! [`DEADLINE`] of wall time; any of them marks the result `partial`, in
+//! the state file and in the index.
 
-use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -42,6 +38,7 @@ use serde::{Deserialize, Serialize};
 
 use super::config::SkipPaths;
 use crate::config::{Config, Dirs};
+use crate::config_scan::{self, Limits};
 use crate::index::model::{RecentConfig, RecentFile};
 use crate::model::event::{SUBJECT_MAX, format_ts};
 use crate::redact::Redactor;
@@ -59,102 +56,11 @@ pub const MAX_FILES: usize = 80;
 /// Directory entries one walk reads at most.
 pub const MAX_ENTRIES: usize = 20_000;
 
-/// Directory levels below `~/.config` walked at most.
-pub const MAX_DEPTH: usize = 12;
-
 /// Wall time one walk may take; it stops there, `partial`.
 pub const DEADLINE: Duration = Duration::from_millis(500);
 
 /// The folder walked, under the home directory.
-pub const ROOT: &str = ".config";
-
-/// Folders that are never entered, by exact name: they hold no
-/// configuration a person edits.
-const DIR_NAMES: [&str; 11] = [
-    ".git",
-    "state",
-    "log",
-    "logs",
-    "history",
-    "databases",
-    "indexeddb",
-    "leveldb",
-    "local storage",
-    "session storage",
-    "blob_storage",
-];
-
-/// File endings that are never listed (lowercase): logs, locks,
-/// databases, images, editor temp files.
-const FILE_ENDINGS: [&str; 34] = [
-    ".log",
-    ".lock",
-    ".lck",
-    ".pid",
-    ".db",
-    ".db-journal",
-    ".db-wal",
-    ".db-shm",
-    ".sqlite",
-    ".sqlite3",
-    ".sqlite-journal",
-    ".sqlite-wal",
-    ".sqlite-shm",
-    ".ldb",
-    ".kdbx",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".webp",
-    ".bmp",
-    ".ico",
-    ".svg",
-    ".avif",
-    ".tif",
-    ".tiff",
-    ".heic",
-    ".jxl",
-    ".xpm",
-    ".swp",
-    ".swo",
-    ".swx",
-    ".tmp",
-    "~",
-];
-
-/// Entries that mark a folder as a browser or Electron profile.
-const PROFILE_MARKS: [&str; 2] = ["Cookies", "Local State"];
-
-/// Whether the folder `name` is never entered: [`DIR_NAMES`] (any case)
-/// or a name holding `cache` (`Cache`, `GPUCache`, `Code Cache`,
-/// `__pycache__`).
-pub fn ignored_dir(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    DIR_NAMES.contains(&lower.as_str()) || lower.contains("cache")
-}
-
-/// Whether the file `name` is never listed: `shell.json` (Omarchy's shell
-/// rewrites it), state and history files, the endings of
-/// [`FILE_ENDINGS`], rotated logs (`x.log.1`), a lock by name (`lock`,
-/// Chromium's `Singleton*`), and temp files (`.#x`, `#x#`, `x.tmp-…`, GTK's
-/// `.goutputstream-…`).
-pub fn ignored_file(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower == "shell.json"
-        || lower == "state"
-        || lower == "lock"
-        || lower.ends_with("state.json")
-        || lower.ends_with(".state")
-        || lower == "history.json"
-        || lower.starts_with("singleton")
-        || lower.contains(".log.")
-        || lower.contains(".tmp-")
-        || lower.starts_with(".#")
-        || lower.starts_with(".goutputstream-")
-        || (lower.starts_with('#') && lower.ends_with('#'))
-        || FILE_ENDINGS.iter().any(|e| lower.ends_with(e))
-}
+pub const ROOT: &str = config_scan::ROOT;
 
 /// What a scan found.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -162,35 +68,16 @@ pub struct Scan {
     /// Newest first, at most [`MAX_FILES`].
     pub files: Vec<(String, DateTime<FixedOffset>)>,
     /// The walk stopped early ([`MAX_ENTRIES`], [`DEADLINE`]) or left
-    /// folders below [`MAX_DEPTH`] out: files it did not reach are missing.
+    /// folders below its depth out: files it did not reach are missing.
     pub partial: bool,
     /// Directory entries read.
     pub entries: usize,
 }
 
-/// The rules of one scan.
-struct Walk<'a> {
-    dirs: &'a Dirs,
-    /// The watch paths, expanded: nothing below them is listed.
-    watched: Vec<PathBuf>,
-    /// Folders never entered: the plugin folders, Seldon's config.
-    excluded: Vec<PathBuf>,
-    skip: SkipPaths,
-    redactor: &'a Redactor,
-    since: SystemTime,
-    now: DateTime<FixedOffset>,
-    found: Vec<(SystemTime, String)>,
-    entries: usize,
-    /// [`MAX_ENTRIES`], smaller in tests.
-    max_entries: usize,
-    /// When the walk stops ([`DEADLINE`] after its start).
-    deadline: Instant,
-    partial: bool,
-}
-
-/// Walks `~/.config` at `now` (SPEC-ENGINE §4). `excluded` are folders
-/// never entered besides the built-in ones (the capture passes Omarchy's
-/// plugin folder as the plugins collector finds it).
+/// Walks `~/.config` at `now` (SPEC-ENGINE §4). `excluded` are paths never
+/// entered or listed besides the built-in ones ([`exclusions`]; the
+/// capture passes Omarchy's plugin folder as the plugins collector finds
+/// it, the config file and the logbook).
 pub fn scan(
     dirs: &Dirs,
     config: &Config,
@@ -212,39 +99,24 @@ fn scan_bounded(
     max_entries: usize,
     deadline: Instant,
 ) -> Scan {
-    let root = dirs.home.join(ROOT);
-    let since = SystemTime::from(now - chrono::Duration::days(DAYS));
-    let mut walk = Walk {
-        dirs,
-        watched: watched(dirs, config),
-        excluded: own_dirs(dirs)
-            .into_iter()
-            .chain(excluded.iter().cloned())
-            .collect(),
-        skip: SkipPaths::new(&dirs.home, &config.redaction.skip_paths),
-        redactor,
-        since,
-        now,
-        found: Vec::new(),
-        entries: 0,
+    let limits = Limits {
+        since: SystemTime::from(now - chrono::Duration::days(DAYS)),
+        max_files: MAX_FILES,
+        deadline: Some(deadline),
         max_entries,
-        deadline,
-        partial: false,
+        exclude: exclusions(dirs, config, excluded),
     };
-    // `~/.config` itself may be a link (dotfile managers)
-    if std::fs::metadata(&root).is_ok_and(|m| m.is_dir()) && !walk.left_out(&root) {
-        walk.dir(&root, 0);
-    }
-    let mut found = walk.found;
-    found.sort_by(|a, b| Reverse(a.0).cmp(&Reverse(b.0)).then_with(|| a.1.cmp(&b.1)));
-    found.truncate(MAX_FILES);
+    let skip = SkipPaths::new(&dirs.home, &config.redaction.skip_paths);
+    let keep = |path: &Path| shown_path(dirs, redactor, path).is_some();
+    let walked = config_scan::scan_keeping(&dirs.home.join(ROOT), &skip, &limits, &keep);
     Scan {
-        files: found
+        files: walked
+            .files
             .into_iter()
-            .map(|(t, path)| (path, at(t, now)))
+            .filter_map(|f| Some((shown_path(dirs, redactor, &f.path)?, at(f.modified, now))))
             .collect(),
-        partial: walk.partial,
-        entries: walk.entries,
+        partial: walked.partial,
+        entries: walked.entries,
     }
 }
 
@@ -257,98 +129,24 @@ fn watched(dirs: &Dirs, config: &Config) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Folders the scan never enters whatever the config says: Omarchy's
-/// plugin folder (the plugins collector's) and Seldon's own config (the
-/// *Watch* click edits it).
-fn own_dirs(dirs: &Dirs) -> Vec<PathBuf> {
-    vec![
+/// What the walk never enters or lists: the watch paths (the config
+/// collector's), Omarchy's plugin folder (the plugins collector's),
+/// Seldon's own config (the *Watch* click edits it), and `extra`.
+fn exclusions(dirs: &Dirs, config: &Config, extra: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out = watched(dirs, config);
+    out.extend([
         dirs.home.join(super::plugins::PLUGINS_DIR),
         dirs.home.join(ROOT).join("seldon"),
         dirs.config_dir(),
-    ]
+    ]);
+    out.extend(extra.iter().cloned());
+    out
 }
 
-/// `t` in `now`'s offset, whole seconds (the walk keeps no time after
-/// `now`).
+/// `t` in `now`'s offset, whole seconds, never after `now`.
 fn at(t: SystemTime, now: DateTime<FixedOffset>) -> DateTime<FixedOffset> {
     let t = DateTime::<Utc>::from(t).with_timezone(now.offset());
-    t.with_nanosecond(0).unwrap_or(t)
-}
-
-impl Walk<'_> {
-    /// Whether `path` is under a watch path, an excluded folder or a
-    /// skipPath.
-    fn left_out(&self, path: &Path) -> bool {
-        self.watched.iter().any(|w| path.starts_with(w))
-            || self.excluded.iter().any(|x| path.starts_with(x))
-            || self.skip.matches(path)
-    }
-
-    fn dir(&mut self, dir: &Path, depth: usize) {
-        let Ok(read) = std::fs::read_dir(dir) else {
-            return;
-        };
-        let mut entries = Vec::new();
-        for entry in read {
-            if self.entries >= self.max_entries || Instant::now() >= self.deadline {
-                self.partial = true;
-                return;
-            }
-            self.entries += 1;
-            if let Ok(entry) = entry {
-                entries.push(entry);
-            }
-        }
-        // a browser or Electron profile: nothing in it is listed
-        if entries
-            .iter()
-            .any(|e| PROFILE_MARKS.iter().any(|m| e.file_name() == *m))
-        {
-            return;
-        }
-        let mut subdirs = Vec::new();
-        for entry in entries {
-            let name = entry.file_name();
-            // a name that is not UTF-8 cannot be shown as it is (B1)
-            let Some(name) = name.to_str() else {
-                continue;
-            };
-            let path = entry.path();
-            let Ok(kind) = entry.file_type() else {
-                continue;
-            };
-            if kind.is_dir() {
-                if !ignored_dir(name) && !self.left_out(&path) {
-                    subdirs.push(path);
-                }
-            } else if (kind.is_file() || kind.is_symlink())
-                && !ignored_file(name)
-                && !self.left_out(&path)
-            {
-                // a link counts by its target, and only a link to a file
-                if let Ok(meta) = std::fs::metadata(&path)
-                    && meta.is_file()
-                    && let Ok(t) = meta.modified()
-                    && t >= self.since
-                    && let Some(key) = shown_path(self.dirs, self.redactor, &path)
-                {
-                    self.found.push((t.min(SystemTime::from(self.now)), key));
-                }
-            }
-        }
-        if depth >= MAX_DEPTH {
-            // folders left unread: the list may miss their files
-            self.partial |= !subdirs.is_empty();
-            return;
-        }
-        subdirs.sort();
-        for sub in subdirs {
-            if self.partial {
-                return;
-            }
-            self.dir(&sub, depth + 1);
-        }
-    }
+    t.with_nanosecond(0).unwrap_or(t).min(now)
 }
 
 /// `path` as a `~`-path the list may show: UTF-8, under `~/.config/`, no
@@ -552,75 +350,6 @@ mod tests {
     const DAY: Duration = Duration::from_secs(86_400);
 
     #[test]
-    fn the_ignore_list() {
-        for name in [
-            ".git",
-            "Cache",
-            "GPUCache",
-            "Code Cache",
-            "__pycache__",
-            "cache",
-            "state",
-            "logs",
-            "log",
-            "history",
-            "databases",
-            "IndexedDB",
-            "Local Storage",
-        ] {
-            assert!(ignored_dir(name), "{name}");
-        }
-        for name in ["alacritty", "git", "nvim", "fish", "zed", "Code", "status"] {
-            assert!(!ignored_dir(name), "{name}");
-        }
-        for name in [
-            "shell.json",
-            "state",
-            "state.json",
-            "windowstate.json",
-            "app.state",
-            "history.json",
-            "app.log",
-            "app.log.1",
-            "x.lock",
-            "lock",
-            "SingletonLock",
-            "app.pid",
-            "places.sqlite",
-            "data.db",
-            "data.db-wal",
-            "vault.kdbx",
-            "000003.ldb",
-            "wall.png",
-            "icon.SVG",
-            "face.jpeg",
-            ".init.lua.swp",
-            "notes.tmp",
-            "config.toml~",
-            ".#init.lua",
-            "#init.lua#",
-            ".config.toml.tmp-1234",
-            ".goutputstream-ABC123",
-        ] {
-            assert!(ignored_file(name), "{name}");
-        }
-        for name in [
-            "alacritty.toml",
-            "config",
-            "starship.toml",
-            "settings.json",
-            "init.lua",
-            "user-dirs.dirs",
-            "mimeapps.list",
-            "statusline.conf",
-            "catalog.json",
-            "blocklist",
-        ] {
-            assert!(!ignored_file(name), "{name}");
-        }
-    }
-
-    #[test]
     fn lists_recent_files_outside_the_watch_paths_newest_first() {
         let h = Home::new("list");
         h.file(".config/git/config", 2 * DAY);
@@ -759,12 +488,16 @@ mod tests {
         assert!(scan.partial);
         assert_eq!((scan.entries, scan.files.len()), (0, 0));
         // folders below the depth are not read, and the scan says so
-        let shallow: String = (0..MAX_DEPTH).map(|i| format!("d{i}/")).collect();
+        let shallow: String = (0..config_scan::MAX_DEPTH)
+            .map(|i| format!("d{i}/"))
+            .collect();
         h.file(&format!(".config/{shallow}level.conf"), HOUR);
         let scan = h.scan(&Config::default());
         assert!(!scan.partial, "a file at the last level is read");
         assert!(scan.files.iter().any(|(p, _)| p.ends_with("level.conf")));
-        let deep: String = (0..=MAX_DEPTH).map(|i| format!("d{i}/")).collect();
+        let deep: String = (0..=config_scan::MAX_DEPTH)
+            .map(|i| format!("d{i}/"))
+            .collect();
         h.file(&format!(".config/{deep}deep.conf"), HOUR);
         let scan = h.scan(&Config::default());
         assert!(scan.partial);

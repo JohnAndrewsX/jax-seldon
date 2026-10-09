@@ -317,7 +317,8 @@ fn skip_paths_and_redaction_patterns_of_the_config_hold() {
     assert!(!text.contains("secret-app"), "{text}");
     assert!(!text.contains("starship"), "{text}");
     assert!(!text.contains("noconfirm"), "{text}");
-    // the user's skipPaths replace the defaults: Omarchy's history.json shows
+    // Omarchy's history.json stays out whatever skipPaths say: it is on the
+    // walker's own list since the one walker of WP-139 round 2
     let files: Vec<&str> = v["files"]["items"]
         .as_array()
         .unwrap()
@@ -328,7 +329,6 @@ fn skip_paths_and_redaction_patterns_of_the_config_hold() {
         files,
         [
             "~/.config/alacritty/alacritty.toml",
-            "~/.config/omarchy/current/history.json",
             "~/.config/hypr/bindings.conf",
             "~/.config/git/config",
             "~/.config/‹redacted›.toml",
