@@ -45,6 +45,7 @@ VIEWS = "engine/src/index/views.rs"
 REBUILD = "engine/src/commands/rebuild.rs"
 SETUP = "engine/src/commands/setup.rs"
 DOCTOR = "engine/src/commands/doctor.rs"
+INDEX = "engine/src/commands/index.rs"
 
 
 def plain(a, b, count=1):
@@ -107,8 +108,12 @@ MUTANTS = [
     ("plan new: the area README not checked", PLAN, plain("        logbook.checked_file(format!(\"areas/{area}/README.md\"))?;", "        logbook.checked_dir(format!(\"areas/{area}\"))?;")),
     ("drift explain: the area README not checked", DRIFT, plain("        logbook.checked_file(format!(\"areas/{area}/README.md\"))?;", "        logbook.checked_dir(format!(\"areas/{area}\"))?;")),
     ("import: the marker read through a link", IMPORT, plain("    match std::fs::read_to_string(logbook.checked_file(&rel)?) {", "    match std::fs::read_to_string(logbook.path(&rel)) {")),
-    ("views: STATUS.md not checked before its read", VIEWS, plain("    // checked before it is read: a link is not read through, a FIFO\n    // not opened (WP-171)\n    let path = logbook.checked_file(REL)?;\n    let existing = match", "    let path = logbook.path(REL);\n    let existing = match")),
-    ("views: DECISIONS.md not checked before its read", VIEWS, plain("    // checked before it is read: a link is not read through, a FIFO\n    // not opened (WP-171)\n    let path = logbook.checked_file(REL)?;\n    let old = match", "    let path = logbook.path(REL);\n    let old = match")),
+    ("views: a refused view stops the command", VIEWS, plain("        Err(crate::error::Error::User(m)) => Ok(Err(format!(\"{rel} not updated: {m}\"))),", "        Err(crate::error::Error::User(m)) => Err(crate::error::Error::User(m)),")),
+    ("views: a linked ledger folder skipped", VIEWS, plain("    if let Some(dir) = Path::new(rel).parent() {\n        logbook.checked_dir(dir)?;\n    }\n", "")),
+    ("views: STATUS.md read before the check", VIEWS, plain("    let path = match checked_view(logbook, REL)? {\n        Ok(path) => path,\n        Err(why) => return Ok(Fill::Skipped(why)),\n    };\n    let existing = match", "    let path = logbook.path(REL);\n    let existing = match")),
+    ("views: DECISIONS.md read before the check", VIEWS, plain("    let path = match checked_view(logbook, REL)? {\n        Ok(path) => path,\n        Err(why) => return Ok(Fill::Skipped(why)),\n    };\n    let old = match", "    let path = logbook.path(REL);\n    let old = match")),
+    ("views: a skipped month view not warned", VIEWS, plain("            Fill::Skipped(w) => warnings.push(w),", "            Fill::Skipped(_) => {}")),
+    ("index: the skipped views not warned", INDEX, plain("    built.warnings.extend(skipped);\n", "")),
     ("setup: a link where a file goes taken", SETUP, plain("                let target = crate::logbook::checked_file(root, &to.join(&rel))?;", "                let folder = to.join(rel.parent().unwrap_or(Path::new(\"\")));\n                let target = crate::logbook::checked_dir(root, &folder)?.join(entry.file_name());")),
     # the second layer at single call sites (only a race reaches it)
     ("layer 2: journal day written with write_atomic", JOURNAL, plain("        sys::write_atomic_nofollow(&self.path, self.text.as_bytes())?;", "        sys::write_atomic(&self.path, self.text.as_bytes())?;")),
@@ -118,20 +123,38 @@ MUTANTS = [
     ("layer 2: dossier written with write_atomic", DOSSIER_FILES, plain("sys::write_atomic_nofollow(&f.path", "sys::write_atomic(&f.path")),
     # doctor's layout row
     ("doctor: no layout row", DOCTOR, plain("            checks.push(check_layout(&logbook.root));\n", "")),
-    ("doctor: degraded, not error", DOCTOR, plain("    Check::new(\n        \"layout\",\n        Status::Error,", "    Check::new(\n        \"layout\",\n        Status::Degraded,")),
+    ("doctor: a refusal degraded", DOCTOR, plain("        return Check::new(\"layout\", Status::Error, message)", "        return Check::new(\"layout\", Status::Degraded, message)")),
+    ("doctor: nothing refused is an error", DOCTOR, plain("        return Check::new(\"layout\", Status::Degraded, left_text)", "        return Check::new(\"layout\", Status::Error, left_text)")),
+    ("doctor: the rest left out", DOCTOR, plain("            message.push_str(&format!(\"; also {left_text}\"));", "")),
+    ("doctor: all refused", DOCTOR, plain("found.iter().partition(|f| f.refused)", "found.iter().partition(|_| true)")),
     ("doctor: six shown", DOCTOR, plain("    const SHOWN: usize = 5;", "    const SHOWN: usize = 6;")),
-    ("doctor: no count of the rest", DOCTOR, plain("    if found.len() > SHOWN {", "    if found.len() > SHOWN * 10 {")),
-    ("doctor: names shown raw", DOCTOR, plain(".map(|(rel, what)| format!(\"{} ({})\", shown_name(rel), what.as_str()))", ".map(|(rel, what)| format!(\"{} ({})\", rel, what.as_str()))")),
-    ("layout: years not looked into", LAYOUT, plain("    (\"journal\", Some(1)),", "    (\"journal\", Some(0)),")),
-    ("layout: work looked into", LAYOUT, plain("    (\"work\", None),", "    (\"work\", Some(1)),")),
-    ("layout: links in a folder not named", LAYOUT, plain("        if kind.is_symlink() {\n            found(&rel, Misplaced::Link);", "        if kind.is_symlink() {\n            continue;")),
-    ("layout: non-files in a folder not named", LAYOUT, plain("        } else if !kind.is_file() {\n            found(&rel, Misplaced::NoRegularFile);\n        }\n    }\n}", "        }\n    }\n}")),
-    ("layout: a linked folder part not named", LAYOUT, plain("                    note(&rel, what, &mut out);\n                    real = false;", "                    real = false;")),
-    ("layout: a linked folder looked into", LAYOUT, plain("        if let (true, Some(depth)) = (real, depth) {", "        if let (_, Some(depth)) = (real, depth) {")),
-    ("layout: a folder named twice", LAYOUT, plain("        if !out.iter().any(|(r, _)| *r == rel) {", "        if true {")),
-    ("layout: root files not checked", LAYOUT, plain("const WRITTEN_ROOT_FILES: &[&str] = &[\"AGENTS.md\", \"STATUS.md\", \"DECISIONS.md\"];", "const WRITTEN_ROOT_FILES: &[&str] = &[];")),
-    ("layout: a root link not named", LAYOUT, plain("            if kind.is_symlink() {\n                note(Path::new(file), Misplaced::Link, &mut out);", "            if kind.is_symlink() {\n                continue;")),
-    ("layout: a folder in a file's place not named", LAYOUT, plain("            } else if !kind.is_file() {\n                note(Path::new(file), Misplaced::NoRegularFile, &mut out);", "            } else if false {\n                note(Path::new(file), Misplaced::NoRegularFile, &mut out);")),
+    ("doctor: no count of the rest", DOCTOR, plain("        if found.len() > SHOWN {", "        if found.len() > SHOWN * 10 {")),
+    ("doctor: names shown raw", DOCTOR, plain("format!(\"{} ({})\", shown_name(&f.rel), f.what.as_str())", "format!(\"{} ({})\", f.rel, f.what.as_str())")),
+    ("layout: any path written", LAYOUT, plain("        _ => return None,\n    };", "        _ => true,\n    };")),
+    ("layout: a view refused", LAYOUT, plain("        [\"STATUS.md\" | \"DECISIONS.md\"] => false,", "        [\"STATUS.md\" | \"DECISIONS.md\"] => true,")),
+    ("layout: a month view refused", LAYOUT, plain("        [\"ledger\", n] if month(n, \".md\") => false,", "        [\"ledger\", n] if month(n, \".md\") => true,")),
+    ("layout: any ledger name a month", LAYOUT, plain("            .is_some_and(|m| NaiveDate::parse_from_str(&format!(\"{m}-01\"), \"%Y-%m-%d\").is_ok())", "            .is_some()")),
+    ("layout: a day of another year", LAYOUT, plain("                .filter(|d| d.format(\"%Y\").to_string() == *year)\n", "")),
+    ("layout: any area name", LAYOUT, plain("        [\"areas\", area, \"README.md\"] if is_slug(area) => true,", "        [\"areas\", _, \"README.md\"] => true,")),
+    ("layout: any system file", LAYOUT, plain("        [\"system\", n] if crate::dossier::FENCES.iter().any(|f| f.file == *n) => true,", "        [\"system\", _] => true,")),
+    ("layout: any import file", LAYOUT, plain("            if !names.iter().any(|m| m == n) {\n                return None;\n            }\n", "")),
+    ("layout: every entry everywhere", LAYOUT, plain("    let every = EVERY_ENTRY.contains(&folder);", "    let every = true;")),
+    ("layout: no entry of every", LAYOUT, plain("    let every = EVERY_ENTRY.contains(&folder);", "    let every = false;")),
+    ("layout: subfolders not walked", LAYOUT, plain("            } else if kind.is_dir() {\n                entries(root, &rel, out);\n            } else {", "            } else if kind.is_dir() {\n            } else {")),
+    ("layout: a file in a subfolder's place not named", LAYOUT, plain("                note(out, &rel, Misplaced::NoDirectory, true);\n", "")),
+    ("layout: a linked subfolder not named", LAYOUT, plain("            if kind.is_symlink() {\n                note(out, &rel, Misplaced::Link, true);\n", "            if kind.is_symlink() {\n")),
+    ("layout: a directory in a file's place not named", LAYOUT, plain("                if file.is_some() {\n                    note(out, &rel, Misplaced::NoRegularFile, refused);\n                }\n", "")),
+    ("layout: links in a folder not named", LAYOUT, plain("            if kind.is_symlink() {\n                note(out, &rel, Misplaced::Link, refused);\n", "            if kind.is_symlink() {\n")),
+    ("layout: non-files in a folder not named", LAYOUT, plain("            } else if !kind.is_file() {\n                note(out, &rel, Misplaced::NoRegularFile, refused);\n            }\n        }\n    }\n}", "            }\n        }\n    }\n}")),
+    ("layout: a linked folder part not named", LAYOUT, plain("                    note(&mut out, &rel.to_string_lossy(), what, true);\n", "")),
+    ("layout: a linked folder looked into", LAYOUT, plain("        if real {\n            entries(root, folder, &mut out);", "        if true {\n            entries(root, folder, &mut out);")),
+    ("layout: a folder named twice", LAYOUT, plain("    if !out.iter().any(|f| f.rel == rel) {", "    if true {")),
+    ("layout: root files not checked", LAYOUT, plain("    for file in [\"AGENTS.md\", \"STATUS.md\", \"DECISIONS.md\"] {", "    for file in [\"AGENTS.md\", \"STATUS.md\", \"DECISIONS.md\"].into_iter().take(0) {")),
+    ("layout: root files all refused", LAYOUT, plain("            let refused = written(file) == Some(Written::Refused);", "            let refused = true;")),
+    ("layout: a folder in a root file's place not named", LAYOUT, plain("            } else if !kind.is_file() {\n                note(&mut out, file, Misplaced::NoRegularFile, refused);", "            } else if false {\n                note(&mut out, file, Misplaced::NoRegularFile, refused);")),
+    # the append open (ADR-0049 §4)
+    ("sys: the append open follows a link", SYS, plain("        .custom_flags(O_NOFOLLOW)\n", "")),
+    ("sys: the append open takes a non-file", SYS, plain("    if !file.metadata()?.is_file() {", "    if false && !file.metadata()?.is_file() {")),
 ]
 
 # seconds one test run may take under a mutant
@@ -151,7 +174,7 @@ os.makedirs(TMPDIR, exist_ok=True)
 env = dict(os.environ, CARGO_TARGET_DIR=TARGET, TMPDIR=TMPDIR)
 cargo = ["cargo", "test", "--manifest-path", "engine/Cargo.toml", "--locked", "--no-fail-fast"]
 runs = [
-    cargo + ["--lib", "--", "logbook::", "sys::tests::nofollow", "sys::tests::regular", "ledger::", "commands::setup", "--test-threads=4"],
+    cargo + ["--lib", "--", "logbook::", "sys::tests::nofollow", "sys::tests::regular", "sys::tests::the_append", "ledger::", "commands::setup", "--test-threads=4"],
     cargo + ["--test", "linked_files", "--", "--test-threads=4"],
     cargo + ["--test", "linked_folders", "--", "--test-threads=4"],
     cargo + ["--test", "doctor", "--", "layout", "linked_folders_and_files", "--test-threads=4"],

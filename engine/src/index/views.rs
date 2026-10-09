@@ -31,14 +31,14 @@ pub const DECISIONS_FENCE: &str = "decisions.index";
 
 /// Writes `ledger/<month>.md` for every month with events; returns the
 /// relative paths that changed. A `ledger/` that is a symbolic link or no
-/// directory is refused (exit 1, WP-168); a month view that is a link or
-/// no regular file is skipped, the reason in `warnings` (WP-171).
+/// directory is refused (exit 1, WP-168; [`checked_view`]); a month view
+/// that is a link or no regular file is skipped, the reason in `warnings`
+/// (WP-171).
 pub fn write_ledger_views(
     logbook: &Logbook,
     built: &Built,
     warnings: &mut Vec<String>,
 ) -> crate::error::Result<Vec<String>> {
-    logbook.checked_dir(crate::ledger::LEDGER_DIR)?;
     let mut written = Vec::new();
     for (month, text) in ledger_views(built) {
         let rel = format!("ledger/{month}.md");
