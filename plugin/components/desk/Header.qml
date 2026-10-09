@@ -12,6 +12,8 @@ import "../../Model.js" as Model
 Item {
   id: root
 
+  readonly property Tone tone: Tone {}
+
   property string subline: ""
   property var kpis: []
   property string chipText: ""
@@ -32,6 +34,9 @@ Item {
   readonly property string chipShown: chip.visible ? chipLabel.text : ""
   readonly property color chipColor: root.chipTone === "urgent" ? root.urgent
     : root.chipTone === "neutral" ? root.foreground : root.accent
+  // The chip's label: the role as text, derived to read on its tint (WP-177).
+  readonly property color chipInk: root.chipTone === "urgent" ? root.tone.urgentText
+    : root.chipTone === "neutral" ? root.foreground : root.tone.accentText
 
   signal settingsRequested()
   signal closeRequested()
@@ -85,7 +90,7 @@ Item {
       anchors.top: title.bottom
       textFormat: Text.PlainText
       text: root.subline
-      color: Color.muted
+      color: root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }
@@ -121,7 +126,7 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
       text: (root.noticesFolded ? "▸ " : "▾ ") + chip.shown
-      color: root.chipColor
+      color: root.chipInk
       elide: Text.ElideRight
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -170,7 +175,7 @@ Item {
         width: Style.space(16)
         height: Style.space(16)
         path: Model.deskSection("settings").icon
-        color: Color.muted
+        color: root.tone.dim
       }
 
       HoverHandler {
@@ -187,7 +192,7 @@ Item {
     Button {
       text: "Esc"
       bordered: true
-      foreground: Color.muted
+      foreground: root.tone.dim
       fontSize: Style.font.bodySmall
       onClicked: root.closeRequested()
     }
@@ -197,6 +202,6 @@ Item {
     anchors.bottom: parent.bottom
     width: parent.width
     height: Style.spacing.hairline
-    color: Util.alpha(root.foreground, 0.12)
+    color: root.tone.divider
   }
 }

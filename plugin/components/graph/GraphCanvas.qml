@@ -4,6 +4,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../../Model.js" as Model
+import ".."
 
 // The graph's canvas (ADR-0034 §5, SPEC-PLUGIN §5.4; WP-125): the layout of
 // `build` (Model.graphBuild, made by the service when the index changes)
@@ -29,13 +30,14 @@ import "../../Model.js" as Model
 Item {
   id: root
 
+  readonly property Tone tone: Tone {}
+
   property var build: null
   property var service: null
   property bool running: false
   property color foreground: Color.popups.text
   property color accent: Color.accent
   property color urgent: Color.urgent
-  property color muted: Color.muted
   property string fontFamily: Style.font.family
 
   // The layout (Model.graphState); mutated in place, so nothing binds to it.
@@ -441,7 +443,7 @@ Item {
         }
         marks[i] = stamp
         ctx.globalAlpha = near === null || pass === 0 ? 1 : 0.35
-        ctx.fillStyle = node.kind === "change" && !focus ? root.muted : root.foreground
+        ctx.fillStyle = node.kind === "change" && !focus ? root.tone.dim : root.foreground
         var text = focus ? node.label : texts[i]
         var gap = root.screenR(i) * k + root.unit * 4
         var lx = ox + s.x[i] * k + gap
@@ -655,7 +657,7 @@ Item {
     height: cardColumn.implicitHeight + Style.spacing.md * 2
     radius: Style.cornerRadius
     color: Color.popups.background
-    border.color: Util.alpha(root.foreground, 0.18)
+    border.color: Style.normalBorderFor(root.foreground, root.accent)
     border.width: Math.max(1, Style.space(1))
 
     // Clicks on the card stay on the card (no pan beneath it).
@@ -686,7 +688,7 @@ Item {
         width: parent.width
         textFormat: Text.PlainText
         text: root.info ? root.info.line : ""
-        color: root.muted
+        color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -696,7 +698,7 @@ Item {
         visible: text !== ""
         textFormat: Text.PlainText
         text: root.info ? root.info.sub : ""
-        color: root.muted
+        color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -718,7 +720,7 @@ Item {
         visible: !!root.info && root.info.more > 0
         textFormat: Text.PlainText
         text: root.info ? "+" + root.info.more + " more" : ""
-        color: root.muted
+        color: root.tone.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
       }

@@ -246,7 +246,7 @@ BarWidget {
       readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
       readonly property real box: Style.bar.iconCanvas
       readonly property var spec: Model.barGlyph(box * dpr)
-      readonly property real gap: countsText.text === "" ? 0 : Style.space(2)
+      readonly property real gap: countsText.text === "" ? 0 : Style.spacing.xxs
       // The digits' centre in this item: the baseline minus half the digit
       // height (the tight box of the ten digits in the bar font).
       readonly property real digitCentre: countsText.y + countsText.baselineOffset + digits.tightBoundingRect.y + digits.tightBoundingRect.height / 2

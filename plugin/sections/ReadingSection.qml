@@ -121,7 +121,7 @@ Section {
       aside: root.rowAside(modelData)
       stripe: root.rowStripe(modelData)
       selected: !!root.current && root.current.id === modelData.id
-      cursor: root.cursor === index
+      cursor: list.hoverIndex === index
       onClicked: {
         root.selectedId = modelData.id
         root.rowClicked(modelData.id)

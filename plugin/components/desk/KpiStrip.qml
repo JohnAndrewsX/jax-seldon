@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import ".."
 
 // The header's KPI strip (ADR-0034 §2): active · verification · queued ·
 // crises · attention, from Model.deskKpis. Big tabular numbers over small
@@ -9,6 +10,8 @@ import qs.Commons
 // open. A click on a figure asks for its section.
 Row {
   id: root
+
+  readonly property Tone tone: Tone {}
 
   property var kpis: []
   property color foreground: Color.popups.text
@@ -64,8 +67,8 @@ Row {
         anchors.right: parent.right
         textFormat: Text.PlainText
         text: String(kpi.modelData.value)
-        color: kpi.modelData.tone === "urgent" ? root.urgent
-          : kpi.modelData.tone === "accent" ? root.accent
+        color: kpi.modelData.tone === "urgent" ? root.tone.urgentText
+          : kpi.modelData.tone === "accent" ? root.tone.accentText
           : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.display
@@ -79,7 +82,7 @@ Row {
         anchors.top: number.bottom
         textFormat: Text.PlainText
         text: kpi.modelData.label.toUpperCase()
-        color: Color.muted
+        color: root.tone.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.letterSpacing: Style.space(1)

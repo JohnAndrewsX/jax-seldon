@@ -81,7 +81,7 @@ ReadingSection {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.openResult ? root.openResult.text : ""
-      color: root.openResult && !root.openResult.ok ? Color.urgent : Color.muted
+      color: root.openResult && !root.openResult.ok ? root.tone.urgentText : root.tone.dim
       wrapMode: Text.WrapAnywhere
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -95,7 +95,7 @@ ReadingSection {
         id: big
         textFormat: Text.PlainText
         text: root.current ? root.current.big : ""
-        color: root.current && root.current.empty ? Color.muted : Color.popups.text
+        color: root.current && root.current.empty ? root.tone.dim : Color.popups.text
         font.family: Style.font.family
         font.pixelSize: Style.font.display
         font.bold: true
@@ -108,7 +108,7 @@ ReadingSection {
         bottomPadding: Style.spacing.sm
         textFormat: Text.PlainText
         text: root.current ? root.current.unit : ""
-        color: Color.muted
+        color: root.tone.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.body
       }
@@ -119,7 +119,7 @@ ReadingSection {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.current ? root.current.lead : ""
-      color: Color.muted
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.body
@@ -138,7 +138,7 @@ ReadingSection {
       textFormat: Text.PlainText
       // also after the last row went (N3)
       text: root.current && root.current.id === "recent" && root.watchResult ? root.watchResult.text : ""
-      color: root.watchResult && !root.watchResult.ok ? Color.urgent : Color.muted
+      color: root.watchResult && !root.watchResult.ok ? root.tone.urgentText : root.tone.dim
       wrapMode: Text.WrapAnywhere
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -179,7 +179,7 @@ ReadingSection {
               width: parent.width
               textFormat: Text.PlainText
               text: (fileRow.modelData.age !== "" ? fileRow.modelData.age + " · " : "") + "not watched"
-              color: Color.muted
+              color: root.tone.dim
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
             }
@@ -209,7 +209,7 @@ ReadingSection {
       text: root.current && root.current.id === "recent"
         ? "From the last capture's scan of ~/.config: paths and times only, never content. Seldon keeps no record of these edits until a path is watched."
         : "From the dossier; rebuilt on every capture."
-      color: Color.muted
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.caption

@@ -229,7 +229,7 @@ Section {
       width: titleText.width
       textFormat: Text.PlainText
       text: Model.periodCaption(root.periodData.window)
-      color: Color.muted
+      color: root.tone.dim
       elide: Text.ElideRight
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -245,7 +245,7 @@ Section {
       visible: parent.width >= titleText.implicitWidth + implicitWidth + periods.implicitWidth + Style.spacing.panelGap * 2
       textFormat: Text.PlainText
       text: "←/→ period"
-      color: Color.muted
+      color: root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }

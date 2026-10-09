@@ -4,6 +4,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../../Model.js" as Model
+import ".."
 
 // Resolve one open drift item, inline in an event's detail (desk sections
 // 1 and 2, SPEC-PLUGIN §5.4; the 0.1 DriftSheet without its card, same
@@ -42,12 +43,13 @@ import "../../Model.js" as Model
 FocusScope {
   id: root
 
+  readonly property Tone tone: Tone {}
+
   property var service: null
   property var indexData: null
   property color foreground: Color.foreground
   property color accent: Color.accent
   property color urgent: Color.urgent
-  property color muted: Color.muted
   property string fontFamily: Style.font.family
 
   // The event the sheet resolves (a row's id); set through openFor().
@@ -114,7 +116,7 @@ FocusScope {
     : !root.canWrite ? root.writeBlocker
     : root.armed ? "Press Enter again: " + root.summary
     : ""
-  readonly property color dim: Util.alpha(foreground, 0.65)
+  readonly property color dim: root.tone.dim
   readonly property real labelWidth: Style.space(64)
   // The form under the sticky bar is shown (showForm); the members, the
   // resolution and the answer show without it.
@@ -340,7 +342,7 @@ FocusScope {
       visible: root.memberLines.length > 0 && !root.membersShownAbove
       textFormat: Text.PlainText
       text: root.shown ? Model.plural(root.shown.members, "package", "packages") + " in one transaction:" : ""
-      color: root.dim
+      color: root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }
@@ -355,7 +357,7 @@ FocusScope {
         leftPadding: Style.spacing.lg
         textFormat: Text.PlainText
         text: modelData
-        color: root.dim
+        color: root.tone.dim
         elide: Text.ElideRight
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -367,7 +369,7 @@ FocusScope {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.isOpen && root.shown && root.shown.proposedCase !== "" ? "proposed for " + root.shown.proposedCase : ""
-      color: root.accent
+      color: root.tone.accentText
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }
@@ -396,7 +398,7 @@ FocusScope {
         width: parent.width
         textFormat: Text.PlainText
         text: root.action === "link" ? "LINK TO A CASE" : root.action === "explain" ? "EXPLAIN" : "DISMISS"
-        color: Color.muted
+        color: root.tone.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.letterSpacing: Style.space(1)
@@ -569,6 +571,10 @@ FocusScope {
             tooltipText: "Enter twice, or click"
             onClicked: root.clickSubmit()
           }
+
+          FocusRing {
+            shown: submitKey.activeFocus || root.armed
+          }
         }
 
         Button {
@@ -591,7 +597,7 @@ FocusScope {
         visible: text !== ""
         textFormat: Text.PlainText
         text: root.hint
-        color: root.armed ? root.accent : root.dim
+        color: root.armed ? root.tone.accentText : root.tone.dim
         wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -603,7 +609,7 @@ FocusScope {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.resultText
-      color: root.resultOk ? root.dim : root.urgent
+      color: root.resultOk ? root.tone.dim : root.tone.urgentText
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption

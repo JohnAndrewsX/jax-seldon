@@ -1,12 +1,15 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import ".."
 
 // An active case on Today's overview (prototype `.tile`): "id · risk", the
 // title, the plan's progress, "2/4 steps · claude-code". A click opens the
 // case in Work. Plain text; the title wraps to two lines.
 BorderSurface {
   id: root
+
+  readonly property Tone tone: Tone {}
 
   // { id, risk, title, progress, text } from Model.deskToday().cases
   property var caseData: null
@@ -18,7 +21,7 @@ BorderSurface {
   implicitHeight: column.implicitHeight + Style.spacing.lg * 2
   radius: Style.cornerRadius
   color: hover.hovered ? Style.hoverFill : Style.normalFill
-  borderSpec: Border.flat(Util.alpha(root.foreground, 0.12), Math.max(1, Style.space(1)))
+  borderSpec: Border.flat(root.tone.divider, Math.max(1, Style.space(1)))
 
   Column {
     id: column
@@ -31,7 +34,7 @@ BorderSurface {
       width: parent.width
       textFormat: Text.PlainText
       text: root.caseData ? root.caseData.id + " · " + root.caseData.risk : ""
-      color: Color.muted
+      color: root.tone.dim
       elide: Text.ElideRight
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -60,7 +63,7 @@ BorderSurface {
       width: parent.width
       textFormat: Text.PlainText
       text: root.caseData ? root.caseData.text : ""
-      color: Color.muted
+      color: root.tone.dim
       elide: Text.ElideRight
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption

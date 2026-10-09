@@ -1,8 +1,9 @@
 import QtQuick
 import qs.Commons
+import ".."
 
-// A thin progress bar (prototype `.progress`): a track in the foreground at
-// low alpha, the done part in the accent. `value` 0–1.
+// A thin progress bar (prototype `.progress`): a track in the divider tone,
+// the done part in the accent. `value` 0–1.
 Item {
   id: root
 
@@ -10,12 +11,14 @@ Item {
   property color foreground: Color.popups.text
   property color accent: Color.accent
 
+  readonly property Tone tone: Tone {}
+
   implicitHeight: Math.max(2, Style.space(4))
 
   Rectangle {
     anchors.fill: parent
     radius: height / 2
-    color: Util.alpha(root.foreground, 0.12)
+    color: root.tone.divider
   }
 
   Rectangle {

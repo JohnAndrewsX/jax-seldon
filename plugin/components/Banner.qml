@@ -21,6 +21,8 @@ import "../Model.js" as Model
 BorderSurface {
   id: root
 
+  readonly property Tone tone: Tone {}
+
   property var banner: null
   property color foreground: Color.foreground
   property color accent: Color.accent
@@ -33,6 +35,11 @@ BorderSurface {
   readonly property color toneColor: banner && banner.tone === "urgent" ? urgent
     : banner && banner.tone === "neutral" ? foreground
     : accent
+  // The title in the tone's colour as text: derived to read on the tint
+  // (WP-177); the tint, border, pictogram and button keep the raw role.
+  readonly property color toneText: banner && banner.tone === "urgent" ? root.tone.urgentText
+    : banner && banner.tone === "neutral" ? foreground
+    : root.tone.accentText
   readonly property string command: banner && banner.command ? banner.command : ""
   readonly property string hint: banner && banner.hint ? banner.hint : ""
   readonly property string pictogram: banner ? Model.statusPictogram(banner.status) : ""
@@ -104,7 +111,7 @@ BorderSurface {
       width: parent.width
       textFormat: Text.PlainText
       text: root.banner ? root.banner.title : ""
-      color: root.toneColor
+      color: root.toneText
       font.family: root.fontFamily
       font.pixelSize: Style.font.subtitle
       font.bold: true
@@ -126,8 +133,7 @@ BorderSurface {
       visible: root.command !== ""
       textFormat: Text.PlainText
       text: root.command
-      // Util.alpha dims on light and dark themes; Qt.darker only darkens.
-      color: Util.alpha(root.foreground, 0.65)
+      color: root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       wrapMode: Text.WrapAnywhere

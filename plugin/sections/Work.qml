@@ -88,7 +88,7 @@ Section {
   readonly property string armed: root.arm && root.arm.armedId.indexOf(root.armPrefix) === 0
     ? root.arm.armedId.slice(root.armPrefix.length) : ""
   readonly property color foreground: Color.popups.text
-  readonly property color dim: Util.alpha(root.foreground, 0.65)
+  readonly property color dim: root.tone.dim
   // WP-102b: the whole Intent of the selected imported case, as the engine
   // gave it; Start waits for it.
   readonly property var shown: root.service ? root.service.caseShown : null
@@ -271,6 +271,7 @@ Section {
         id: a.id,
         label: busy ? (a.id === "agent" ? "Starting…" : a.id === "focus" ? "Focusing…" : a.id === "open" ? "Opening…" : a.label)
           : root.armed === a.id ? "Confirm " + a.label.toLowerCase() : a.label,
+        armed: !busy && root.armed === a.id,
         primary: a.primary,
         enabled: (a.id === "open" ? !root.opening
           : a.write || a.id === "focus" ? root.canWrite && !root.pending : true) && (!a.review || root.reviewed)
@@ -471,7 +472,7 @@ Section {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: root.index ? root.wip.text + (root.wip.tone === "urgent" ? " · over the limit" : root.wip.tone === "accent" ? " · at the limit" : "") : ""
-        color: root.wip.tone === "urgent" ? Color.urgent : root.wip.tone === "accent" ? Color.accent : root.foreground
+        color: root.wip.tone === "urgent" ? root.tone.urgentText : root.wip.tone === "accent" ? root.tone.accentText : root.foreground
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
@@ -542,7 +543,7 @@ Section {
       wrapMode: Text.Wrap
       maximumLineCount: 3
       elide: Text.ElideRight
-      color: !root.importLine && root.result && !root.result.ok ? Color.urgent : root.dim
+      color: !root.importLine && root.result && !root.result.ok ? root.tone.urgentText : root.tone.dim
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
@@ -559,7 +560,7 @@ Section {
         + modelData.stepsText
       stripe: modelData.stripe
       selected: modelData.id === root.selectedId && !root.formOpen
-      cursor: false
+      cursor: list.hoverIndex === index
       onClicked: {
         root.sheetOpen = false
         root.importOpen = false
@@ -625,7 +626,7 @@ Section {
       visible: !root.formOpen && !root.detailData
       textFormat: Text.PlainText
       text: root.index ? "Nothing selected." : "No index to show"
-      color: Color.muted
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.body
@@ -658,7 +659,7 @@ Section {
           visible: !!root.askResult
           textFormat: Text.PlainText
           text: root.askResult ? root.askResult.text : ""
-          color: root.askResult && !root.askResult.ok ? Color.urgent : root.dim
+          color: root.askResult && !root.askResult.ok ? root.tone.urgentText : root.tone.dim
           wrapMode: Text.Wrap
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -673,7 +674,7 @@ Section {
             : [root.detailData.closedByAgent ? "completed by agent" : "",
                root.detailData.reopens !== "" ? "reopens " + root.detailData.reopens : ""]
               .filter(function(p) { return p !== "" }).join(" · ")
-          color: Color.accent
+          color: root.tone.accentText
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
           font.italic: true
@@ -698,7 +699,7 @@ Section {
         Text {
           textFormat: Text.PlainText
           text: "IMPORTED TASK" + (root.review && root.review.ok ? " · " + Model.plural(root.review.lines, "line", "lines") : "")
-          color: Color.muted
+          color: root.tone.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
           font.letterSpacing: Style.space(1)
@@ -710,7 +711,7 @@ Section {
           textFormat: Text.PlainText
           text: "From " + (root.detailData && root.detailData.source !== "" ? root.detailData.source : "a task file")
             + ". Read the whole Intent before you start the case: once started, an agent acts on it without asking. Only you start it."
-          color: Color.accent
+          color: root.tone.accentText
           wrapMode: Text.Wrap
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -723,7 +724,7 @@ Section {
           text: !root.review ? (root.service && root.service.canWrite ? "Loading the whole Intent…"
               : "The whole Intent needs the engine" + (root.service ? ": " + root.service.writeBlocker : ""))
             : root.review.text
-          color: root.review && !root.review.pending && !root.review.ok ? Color.urgent : root.dim
+          color: root.review && !root.review.pending && !root.review.ok ? root.tone.urgentText : root.tone.dim
           wrapMode: Text.Wrap
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -738,7 +739,7 @@ Section {
           implicitHeight: intentText.implicitHeight + Style.spacing.lg * 2
           radius: Style.cornerRadius
           color: Style.normalFill
-          borderSpec: Border.flat(Util.alpha(root.foreground, 0.25), Math.max(1, Style.space(1)))
+          borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
 
           Text {
             id: intentText
@@ -761,7 +762,7 @@ Section {
           textFormat: Text.PlainText
           text: root.review ? Model.plural(root.review.hidden, "hidden character is", "hidden characters are")
             + " marked ‹U+…› above: text you cannot see in the file. Read the case in the editor; start it from the terminal." : ""
-          color: Color.urgent
+          color: root.tone.urgentText
           wrapMode: Text.Wrap
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -772,7 +773,7 @@ Section {
           visible: !!root.review && root.review.ok && root.review.truncated
           textFormat: Text.PlainText
           text: "The first 64 KiB are shown; the rest is in the case file. Read the whole Intent in the editor; start this case from the terminal."
-          color: Color.urgent
+          color: root.tone.urgentText
           wrapMode: Text.Wrap
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -796,7 +797,7 @@ Section {
           Text {
             textFormat: Text.PlainText
             text: block.modelData[0]
-            color: Color.muted
+            color: root.tone.dim
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
             font.letterSpacing: Style.space(1)
@@ -822,7 +823,7 @@ Section {
         Text {
           textFormat: Text.PlainText
           text: "PLAN"
-          color: Color.muted
+          color: root.tone.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
           font.letterSpacing: Style.space(1)
@@ -843,7 +844,7 @@ Section {
             : root.detailData.plan.text + (root.detailData.intent !== "" || root.detailData.result !== ""
               ? ". The steps and the full Intent and Result are in the case file."
               : ". The steps, the Intent and the Result are in the case file.")
-          color: root.dim
+          color: root.tone.dim
           wrapMode: Text.Wrap
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -870,7 +871,7 @@ Section {
         Text {
           textFormat: Text.PlainText
           text: "LOG"
-          color: Color.muted
+          color: root.tone.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
           font.letterSpacing: Style.space(1)
@@ -881,7 +882,7 @@ Section {
           visible: !!root.detailData && root.detailData.log.length === 0
           textFormat: Text.PlainText
           text: "Nothing in the index yet."
-          color: root.dim
+          color: root.tone.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
         }
@@ -901,7 +902,7 @@ Section {
         Text {
           textFormat: Text.PlainText
           text: "LINKED CHANGES · " + (root.detailData ? root.detailData.linked.length : 0)
-          color: Color.muted
+          color: root.tone.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
           font.letterSpacing: Style.space(1)
@@ -912,7 +913,7 @@ Section {
           visible: !!root.detailData && root.detailData.linked.length === 0 && root.detailData.linkedMore === ""
           textFormat: Text.PlainText
           text: "No change is linked to this case."
-          color: root.dim
+          color: root.tone.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
         }
@@ -929,7 +930,7 @@ Section {
           visible: text !== ""
           textFormat: Text.PlainText
           text: root.detailData ? root.detailData.linkedMore : ""
-          color: root.dim
+          color: root.tone.dim
           wrapMode: Text.Wrap
           font.family: Style.font.family
           font.pixelSize: Style.font.caption

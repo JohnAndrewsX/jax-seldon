@@ -73,7 +73,7 @@ DetailPane {
         label: root.proposal.applyCount > 0 ? "Apply proposals (" + root.proposal.applyCount + ")" : "Apply proposals",
         // also with nothing open: a second run says what it skipped
         enabled: root.canWrite && !root.pending && root.proposal.readable },
-      { id: "discard", label: root.discardArmed ? "Confirm discard" : "Discard", enabled: root.canWrite && !root.pending }
+      { id: "discard", label: root.discardArmed ? "Confirm discard" : "Discard", armed: root.discardArmed, enabled: root.canWrite && !root.pending }
     ]
   }
 
@@ -166,14 +166,14 @@ DetailPane {
     Line {
       visible: card.modelData.intent !== ""
       text: card.modelData.intent
-      color: Color.muted
+      color: root.tone.dim
     }
 
     Line {
       objectName: "triageFlag"
       visible: card.modelData.flagged
       text: "Read twice: some evidence names an agent or an unknown author."
-      color: Color.accent
+      color: root.tone.accentText
       font.bold: true
     }
 
@@ -183,7 +183,7 @@ DetailPane {
         ? (card.modelData.outcome.state === "done" ? "Done" : card.modelData.outcome.state === "skipped" ? "Skipped" : "Refused")
           + (card.modelData.outcome.reason !== "" ? ": " + card.modelData.outcome.reason : "")
         : !card.modelData.open ? "No longer open: nothing to apply." : ""
-      color: card.modelData.outcome && card.modelData.outcome.state === "refused" ? Color.urgent : Color.muted
+      color: card.modelData.outcome && card.modelData.outcome.state === "refused" ? root.tone.urgentText : root.tone.dim
     }
 
     Repeater {
@@ -199,7 +199,7 @@ DetailPane {
 
         Line {
           text: ref.modelData.label
-          color: Color.muted
+          color: root.tone.dim
           font.pixelSize: Style.font.caption
         }
 
@@ -209,7 +209,7 @@ DetailPane {
           objectName: "evidenceText"
           text: ref.modelData.text
           wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-          color: ref.modelData.flagged ? Color.accent : root.foregroundColor
+          color: ref.modelData.flagged ? root.tone.accentText : root.foregroundColor
         }
       }
     }
@@ -222,7 +222,7 @@ DetailPane {
     Line {
       visible: root.seenId === ""
       text: "No proposal. “Agent sorts N open changes” in the list asks for one."
-      color: Color.muted
+      color: root.tone.dim
       font.pixelSize: Style.font.body
     }
 
@@ -231,14 +231,14 @@ DetailPane {
       objectName: "triageSeen"
       visible: root.seen.state === "replaced" || root.seen.state === "gone"
       text: root.seen.text
-      color: Color.urgent
+      color: root.tone.urgentText
       font.bold: true
     }
 
     Line {
       visible: !!root.proposal
       text: root.proposal ? root.proposal.state : ""
-      color: Color.muted
+      color: root.tone.dim
     }
 
     Line {
@@ -249,19 +249,19 @@ DetailPane {
         : root.result.pending ? root.result.text
         : root.result.gone ? root.result.text + ". The proposal is gone; the list shows what is open now."
         : root.result.text
-      color: root.result && !root.result.ok ? Color.urgent : Color.muted
+      color: root.result && !root.result.ok ? root.tone.urgentText : root.tone.dim
     }
 
     Line {
       visible: !!root.proposal && !root.proposal.readable
       text: "The proposal file could not be read as the engine writes it. Discard it, or ask the agent again."
-      color: Color.urgent
+      color: root.tone.urgentText
     }
 
     Line {
       visible: !!root.proposal && root.proposal.readable
       text: "Apply re-reads the file and every reference. If the file was changed since you opened it, what Apply writes can differ from what is shown here."
-      color: Color.muted
+      color: root.tone.dim
       font.pixelSize: Style.font.caption
     }
 
@@ -282,7 +282,7 @@ DetailPane {
         Line {
           visible: !!root.proposal && root.proposal.crises.length > 0
           text: "CRISES — EACH ON ITS OWN"
-          color: Color.urgent
+          color: root.tone.urgentText
           font.pixelSize: Style.font.caption
           font.bold: true
         }
@@ -319,7 +319,7 @@ DetailPane {
         Line {
           visible: !!root.proposal && root.proposal.regular.length > 0
           text: "WHAT APPLY TAKES"
-          color: Color.muted
+          color: root.tone.dim
           font.pixelSize: Style.font.caption
           font.bold: true
         }
@@ -332,7 +332,7 @@ DetailPane {
 
         Line {
           text: "Applying writes each resolution as you, with the agent's name and the evidence. Nothing is required: unproven changes stay quietly open."
-          color: Color.muted
+          color: root.tone.dim
           font.pixelSize: Style.font.caption
         }
       }

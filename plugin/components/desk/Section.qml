@@ -1,4 +1,5 @@
 import QtQuick
+import ".."
 import "../../Model.js" as Model
 
 // The base of every desk section (sections/*.qml, SPEC-PLUGIN §5). The desk
@@ -17,6 +18,9 @@ Item {
 
   property var desk: null
   property string sectionId: ""
+
+  // The theme's text and UI tones (components/Tone.qml), for every section.
+  readonly property Tone tone: Tone {}
 
   readonly property var info: Model.deskSection(root.sectionId)
   readonly property string title: root.info ? root.info.label : ""

@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../../Model.js" as Model
+import ".."
 
 // New decision, in the Decisions section's detail pane (ADR-0034 §2,
 // WP-123; the 0.1 panel's NewDecisionSheet, WP-023): one title. It sends
@@ -26,6 +27,8 @@ import "../../Model.js" as Model
 // leaves the form, gives the keys back and keeps the title.
 FocusScope {
   id: root
+
+  readonly property Tone tone: Tone {}
 
   property var service: null
   property color foreground: Color.popups.text
@@ -63,7 +66,7 @@ FocusScope {
   readonly property string hint: !root.canWrite ? root.writeBlocker
     : root.armed ? "Press Enter again: create the decision “" + root.title + "”"
     : ""
-  readonly property color dim: Util.alpha(foreground, 0.65)
+  readonly property color dim: root.tone.dim
 
   signal leaveRequested()
   signal created(string decisionId)
@@ -167,7 +170,7 @@ FocusScope {
       width: parent.width
       textFormat: Text.PlainText
       text: "The engine writes it to decisions/ as proposed and opens it in the editor."
-      color: Color.muted
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -220,6 +223,10 @@ FocusScope {
           tooltipText: "Enter twice, or click"
           onClicked: root.clickSubmit()
         }
+
+        FocusRing {
+          shown: submitKey.activeFocus || root.armed
+        }
       }
 
       Button {
@@ -241,7 +248,7 @@ FocusScope {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.hint
-      color: root.armed ? root.accent : root.dim
+      color: root.armed ? root.tone.accentText : root.tone.dim
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -252,7 +259,7 @@ FocusScope {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.resultText
-      color: root.resultOk ? root.dim : root.urgent
+      color: root.resultOk ? root.tone.dim : root.tone.urgentText
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
