@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# deploy-test-host.sh — put the main build of engine and plugin on the test
-# host, or bring the test host back to a release (WP-098).
+# deploy-test-host.sh — put the main (or next) build of engine and plugin on
+# the test host, or bring the test host back to a release (WP-098, WP-155).
 #
-#   scripts/deploy-test-host.sh [--dry-run] CHECK_LOG
+#   scripts/deploy-test-host.sh [--dry-run] [--branch main|next] CHECK_LOG
 #   scripts/deploy-test-host.sh [--dry-run] --release vX.Y.Z
 #
 # The test host follows main so the operator can watch development live;
@@ -24,6 +24,7 @@
 # step uses. Then it builds the static engine as a release does
 # (`--features watch`) with SELDON_BUILD=main.<short sha> (version
 # 0.1.3+main.<sha>), and on the host:
+#   - with --branch next, first the backup below;
 #   - copies it to ~/.local/bin/seldon, the previous one kept as seldon.prev;
 #   - syncs HEAD's plugin/ into ~/.config/omarchy/plugins/jax.seldon. A
 #     plugin dir that is not a dev copy yet (the release git clone) is moved
@@ -44,6 +45,17 @@
 #     answer) the smoke fails and says so;
 #   - appends one JSON line to ~/.local/state/seldon-dev/deploy.jsonl and
 #     prints a summary.
+#
+# --branch next (WP-155): the same with `next` for `main` everywhere: on
+# `next`, clean, HEAD equals origin/next, next's check log, the same
+# refusals; SELDON_BUILD=next.<short sha> (version 0.2.0+next.<sha>). When
+# the host does not run a next build yet (its plugin marker), the deploy
+# first copies ~/.config/omarchy/shell.json, ~/.local/state/seldon, the
+# engine and the plugin dir (whichever exist) to
+# ~/.local/state/seldon-dev/backup-before-next-<UTC stamp>/ (shell.json,
+# state/, seldon, plugin/): the way back from next, whose state may not
+# load in main. A failed backup stops the deploy before the engine swap.
+# A main deploy onto a host that runs next warns and names that backup.
 #
 # --release vX.Y.Z: installs that release on the host with its install.sh
 # (checked against the release's SHA256SUMS, run with --force because the
@@ -93,12 +105,16 @@ usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' 
 dry=0
 release=""
 check_log=""
+track=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dry-run) dry=1; shift ;;
     --release)
       [[ $# -ge 2 ]] || refuse "--release needs vX.Y.Z"
       release=$2; shift 2 ;;
+    --branch)
+      [[ $# -ge 2 ]] || refuse "--branch needs main or next"
+      track=$2; shift 2 ;;
     -h | --help) usage; exit 0 ;;
     -*) refuse "unknown option '$1'" ;;
     *)
@@ -108,9 +124,12 @@ while [[ $# -gt 0 ]]; do
 done
 if [[ -n $release ]]; then
   [[ -z $check_log ]] || refuse "--release takes no check log"
+  [[ -z $track ]] || refuse "--release takes no --branch"
   [[ $release =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || refuse "--release wants vX.Y.Z, not '$release'"
 else
-  [[ -n $check_log ]] || refuse "usage: deploy-test-host.sh [--dry-run] CHECK_LOG | [--dry-run] --release vX.Y.Z"
+  [[ -n $check_log ]] || refuse "usage: deploy-test-host.sh [--dry-run] [--branch main|next] CHECK_LOG | [--dry-run] --release vX.Y.Z"
+  track=${track:-main}
+  [[ $track == main || $track == next ]] || refuse "--branch wants main or next, not '$track'"
 fi
 for tool in git jq ssh tar base64 sha256sum; do
   command -v "$tool" >/dev/null || refuse "needs '$tool'"
@@ -132,24 +151,24 @@ while IFS= read -r line || [[ -n $line ]]; do
 done <"$hosts_file"
 [[ $listed == 1 ]] || refuse "'$host' is not listed in $hosts_file; productive machines are never a target"
 
-# ---- main: clean, pushed, checked ----------------------------------------------
+# ---- main or next: clean, pushed, checked ---------------------------------------
 
 git_() { git -C "$root" "$@"; }
 if [[ -z $release ]]; then
   branch=$(git_ symbolic-ref --quiet --short HEAD || echo "(detached)")
-  [[ $branch == main ]] || refuse "not on main (on $branch)"
+  [[ $branch == "$track" ]] || refuse "not on $track (on $branch)"
   [[ -z $(git_ status --porcelain) ]] || refuse "the working tree is not clean (git status)"
   head=$(git_ rev-parse HEAD)
-  upstream=$(git_ rev-parse --verify --quiet origin/main) || refuse "no origin/main"
-  [[ $head == "$upstream" ]] || refuse "HEAD ${head:0:12} is not origin/main ${upstream:0:12}; push first"
+  upstream=$(git_ rev-parse --verify --quiet "origin/$track") || refuse "no origin/$track"
+  [[ $head == "$upstream" ]] || refuse "HEAD ${head:0:12} is not origin/$track ${upstream:0:12}; push first"
   [[ -f $check_log && -r $check_log ]] || refuse "check log '$check_log' not found"
   ! grep -q $'\r' "$check_log" || refuse "the check log has Windows line endings (CRLF); use the log the check wrote"
   last=$(awk 'NF { l = $0 } END { print l }' "$check_log")
   [[ $last == "exit 0" ]] || refuse "the check log does not end in 'exit 0' (last line: '$last')"
   # WP-161: a check that skipped the plugin harnesses (E29) proves nothing
-  # about the plugin; main's check runs them
+  # about the plugin; a full check runs them
   ! grep -q 'Quickshell harnesses skipped' "$check_log" \
-    || refuse "the check log skipped the Quickshell harnesses; run SELDON_FULL_CHECK=1 just check on main"
+    || refuse "the check log skipped the Quickshell harnesses; run SELDON_FULL_CHECK=1 just check on $track"
   # the commit the check ran on: the log's first line `head <full sha>`
   checked=$(sed -n '1s/^head \([0-9a-f]\{40\}\)$/\1/p' "$check_log")
   [[ -n $checked ]] || refuse "the check log does not start with 'head <full sha>'; which tree it checked is unknown"
@@ -159,8 +178,8 @@ if [[ -z $release ]]; then
   git_ diff --quiet "$checked" HEAD -- engine plugin schema scripts/deploy-test-host.sh \
     || refuse "engine/, plugin/, schema/ or the deploy script changed since the checked commit ${checked:0:12}; run the check on this HEAD"
   short=$(git_ rev-parse --short HEAD)
-  version="$(awk -F'"' '/^version *=/ { print $2; exit }' "$root/engine/Cargo.toml")+main.$short"
-  mode=main
+  version="$(awk -F'"' '/^version *=/ { print $2; exit }' "$root/engine/Cargo.toml")+$track.$short"
+  mode=$track
 else
   head="" short=""
   version=${release#v}
@@ -220,7 +239,7 @@ value() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2)
 
 # ---- look at the host (read-only) ----------------------------------------------
 
-if [[ $mode == main ]]; then
+if [[ $mode != release ]]; then
   tools="rsync jq tar mktemp install sha256sum find xargs omarchy omarchy-shell omarchy-restart-shell"
 else
   tools="curl git jq sha256sum find xargs omarchy omarchy-shell omarchy-restart-shell"
@@ -269,7 +288,7 @@ missing=$(value missing "$probe")
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-if [[ $mode == main ]]; then
+if [[ $mode != release ]]; then
   # HEAD's plugin/, not the working tree: no ignored files (.qmlls.ini) go out
   mkdir -p "$work/stage"
   git_ archive --format=tar HEAD plugin | tar -x -C "$work/stage"
@@ -283,18 +302,29 @@ if [[ $plugin_change != no || $(value pending "$probe") == 1 ]]; then
   if [[ $(value lock "$probe") == free ]]; then restart_plan="restart the shell"; else restart_plan="restart pending (session locked)"; fi
 fi
 
+# next: the way back is a backup taken before the host first runs next
+deployed=$(value deployed "$probe")
+backup_plan=""
+if [[ $mode == next && $deployed != next.* ]]; then backup_plan=yes; fi
+
 if [[ $mode == release ]]; then
   warn "state written by a newer build may not load in $release: move ~/.local/state/seldon aside on $host first (mv ~/.local/state/seldon ~/.local/state/seldon.main-\$(date +%F))"
+elif [[ $mode == main && $deployed == next.* ]]; then
+  warn "$host runs a next build ($deployed); state written by next may not load in main: put back ~/.local/state/seldon from the newest ~/.local/state/seldon-dev/backup-before-next-*/state on $host first"
 fi
 
 if [[ $dry == 1 ]]; then
   resolved=$(ssh -G -- "$host" 2>/dev/null | awk '$1 == "hostname" { print $2; exit }' || true)
   say "deploy-test-host (dry run): $host (ssh resolves it to ${resolved:-?}, $pin_note)"
-  deployed=$(value deployed "$probe")
   engine_now=$(value engine "$probe")
   say "  now      engine ${engine_now:-not installed or not answering}, plugin dir $(value plugin "$probe")${deployed:+ ($deployed)}"
-  if [[ $mode == main ]]; then
-    say "  build    SELDON_BUILD=main.$short cargo build --release --features watch --target $target  → $version"
+  if [[ -n $backup_plan ]]; then
+    say "  backup   shell.json, ~/.local/state/seldon, the engine and the plugin dir to ~/.local/state/seldon-dev/backup-before-next-<stamp>/"
+  elif [[ $mode == next ]]; then
+    say "  backup   none: the host runs next already ($deployed)"
+  fi
+  if [[ $mode != release ]]; then
+    say "  build    SELDON_BUILD=$mode.$short cargo build --release --features watch --target $target  → $version"
     say "  engine   copy to ~/.local/bin/seldon (previous → seldon.prev)"
   else
     say "  engine   install.sh --version $release --force (checked against the release's SHA256SUMS)"
@@ -302,7 +332,7 @@ if [[ $dry == 1 ]]; then
   case $(value plugin "$probe") in
     git | copy) say "  plugin   move the $(value plugin "$probe") dir aside to ~/.local/state/seldon-dev/, then install" ;;
   esac
-  if [[ $mode == main ]]; then
+  if [[ $mode != release ]]; then
     say "  plugin   sync HEAD's plugin/ into ~/.config/omarchy/plugins/jax.seldon; files change: $plugin_change"
   else
     say "  plugin   clone jax-seldon-plugin at $release into ~/.config/omarchy/plugins/jax.seldon"
@@ -314,47 +344,58 @@ if [[ $dry == 1 ]]; then
   exit 0
 fi
 
-# ---- build (main) -----------------------------------------------------------------
+# ---- build (main or next) ------------------------------------------------------------
 
-if [[ $mode == main ]]; then
+if [[ $mode != release ]]; then
   say "== build $version"
   # as release.yml and the PKGBUILD build it; --target-dir so that an
   # exported CARGO_TARGET_DIR cannot leave an older binary at $bin
-  SELDON_BUILD=main.$short cargo build --manifest-path "$root/engine/Cargo.toml" --locked --release \
+  SELDON_BUILD=$mode.$short cargo build --manifest-path "$root/engine/Cargo.toml" --locked --release \
     --features watch --target "$target" --target-dir "$root/engine/target" --quiet \
     || fail "the release build"
   bin=$root/engine/target/$target/release/seldon
   got=$("$bin" --version --json | jq -r .version) || fail "the new binary does not run"
   [[ $got == "$version" ]] || fail "the new binary reports '$got', not $version"
   cp -- "$bin" "$work/stage/seldon"
-  printf 'build=main.%s\ncommit=%s\ndeployed=%s\n' "$short" "$head" "$(date -u +%FT%TZ)" >"$work/stage/build-info"
+  printf 'build=%s.%s\ncommit=%s\ndeployed=%s\n' "$mode" "$short" "$head" "$(date -u +%FT%TZ)" >"$work/stage/build-info"
 fi
 
 # ---- install on the host --------------------------------------------------------
 
-moved="" install_out="" watch="not run" restart="none" smoke="not run" failures=()
+moved="" backup="" install_out="" watch="not run" restart="none" smoke="not run" failures=()
 
 # log_line — one JSON line per deploy on the host, whatever the outcome.
 log_line() {
   local line
   line=$(jq -cn --arg ts "$(date -u +%FT%TZ)" --arg mode "$mode" --arg version "$version" \
-    --arg commit "$head" --arg change "$plugin_change" --arg moved "$moved" --arg restart "$restart" \
-    --arg watch "$watch" --arg smoke "$smoke" --args '{ts: $ts, mode: $mode, version: $version, commit: $commit,
-      pluginChanged: ($change != "no"), movedAside: $moved, watch: $watch, restart: $restart, smoke: $smoke,
-      failures: $ARGS.positional}' "${failures[@]+"${failures[@]}"}")
+    --arg commit "$head" --arg change "$plugin_change" --arg moved "$moved" --arg backup "$backup" \
+    --arg restart "$restart" --arg watch "$watch" --arg smoke "$smoke" --args '{ts: $ts, mode: $mode,
+      version: $version, commit: $commit, pluginChanged: ($change != "no"), movedAside: $moved, backup: $backup,
+      watch: $watch, restart: $restart, smoke: $smoke, failures: $ARGS.positional}' "${failures[@]+"${failures[@]}"}")
   rsh "mkdir -p \"\$dev_dir\" && printf '%s\n' $(printf '%q' "$line") >>\"\$dev_dir/deploy.jsonl\"" </dev/null \
     || warn "could not append to the deploy log on $host"
 }
 # abort <what> — a failure after the first change: log it, exit 2.
 abort() { failures+=("$1"); smoke="not run"; log_line; fail "$1"; }
 
-if [[ $mode == main ]]; then
+if [[ $mode != release ]]; then
   say "== install on $host"
-  install_out=$(tar -C "$work/stage" -cf - plugin seldon build-info | rsh '
+  install_out=$(tar -C "$work/stage" -cf - plugin seldon build-info | rsh "backup=$backup_plan"'
 mkdir -p .cache && tmp=$(mktemp -d "$HOME/.cache/seldon-dev-deploy.XXXXXX") || { echo "error=temp dir"; exit 2; }
 trap "rm -rf \"\$tmp\"" EXIT
 tar -x -C "$tmp" || { echo "error=unpack" ; exit 2; }
 [[ ! -L $plugin_dir ]] || { echo "error=plugin dir is a symlink"; exit 2; }
+# next (WP-155): before the first change, what the way back needs
+if [[ -n $backup ]]; then
+  b=$dev_dir/backup-before-next-$(date -u +%Y%m%dT%H%M%SZ)
+  mkdir -p "$dev_dir" && mkdir "$b" || { echo "error=backup: cannot create $b"; exit 2; }
+  echo "backup=$b"
+  { [[ ! -e .config/omarchy/shell.json ]] || cp -p .config/omarchy/shell.json "$b/shell.json"; } \
+    && { [[ ! -e .local/state/seldon ]] || cp -a .local/state/seldon "$b/state"; } \
+    && { [[ ! -e .local/bin/seldon ]] || cp -p .local/bin/seldon "$b/seldon"; } \
+    && { [[ ! -e $plugin_dir ]] || cp -a "$plugin_dir" "$b/plugin"; } \
+    || { echo "error=backup to $b"; exit 2; }
+fi
 mkdir -p .local/bin "$dev_dir" .config/omarchy/plugins
 # engine: the previous one stays as seldon.prev; mv keeps the swap atomic
 install -m 755 "$tmp/seldon" .local/bin/seldon.new || { echo "error=copy engine"; exit 2; }
@@ -370,7 +411,7 @@ cp "$tmp/build-info" "$plugin_dir/$marker"
 # restart, and the next deploy that validates restarts
 if [[ $(plugin_hash "$plugin_dir") != "$before" ]]; then touch "$dev_dir/restart-pending"; echo changed=yes; else echo changed=no; fi
 omarchy plugin validate "$plugin_dir" >/dev/null 2>&1 || { echo "error=omarchy plugin validate"; exit 2; }') \
-    || { moved=$(value moved "$install_out"); abort "install: $(value error "$install_out")"; }
+    || { moved=$(value moved "$install_out"); backup=$(value backup "$install_out"); abort "install: $(value error "$install_out")"; }
 else
   say "== install $release on $host"
   install_out=$(rsh "v=$(printf '%q' "$release") plugin_repo=$(printf '%q' "$plugin_repo") base=$(printf '%q' "$release_repo/releases/download")"'
@@ -392,6 +433,7 @@ if [[ $(plugin_hash "$plugin_dir") != "$before" ]]; then touch "$dev_dir/restart
     || { moved=$(value moved "$install_out"); abort "install: $(value error "$install_out")"; }
 fi
 moved=$(value moved "$install_out")
+backup=$(value backup "$install_out")
 plugin_change=$(value changed "$install_out")
 
 # ---- the watcher (seldon-watch.service runs ~/.local/bin/seldon watch) --------------
@@ -468,6 +510,7 @@ if [[ -n $engine_was ]]; then
 else
   say "  engine   ~/.local/bin/seldon (there was none before)"
 fi
+[[ -z $backup ]] || say "  backup   ~/$backup (shell.json, state, engine, plugin as they were before next)"
 say "  plugin   files changed: $plugin_change${moved:+; moved aside to ~/$moved}"
 case $watch in
   restarted) say "  watch    seldon-watch.service restarted on the new binary" ;;

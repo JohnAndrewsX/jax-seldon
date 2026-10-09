@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/deploy-test-host.sh against a fake test host (WP-098).
+# scripts/deploy-test-host.sh against a fake test host (WP-098, WP-155).
 #
 # VERBOSE=1 prints the script's output for the main cases.
 # Everything runs in a temp dir: a scratch git repository with a bare
@@ -235,13 +235,13 @@ git -C "$repo" remote add origin "$work/origin.git"
 git -C "$repo" push -q origin main
 # an ignored file in plugin/: the tree is clean, but it must not go out
 echo '[General]' >"$repo/plugin/.qmlls.ini"
-# commit <path> <text> — a commit to the repo, pushed
+# commit <path> <text> — a commit to the repo's branch, pushed
 commit() {
   mkdir -p "$(dirname "$repo/$1")"
   echo "$2" >"$repo/$1"
   git -C "$repo" add -A
   git -C "$repo" commit -q -m "change $1"
-  git -C "$repo" push -q origin main
+  git -C "$repo" push -q origin HEAD
   short=$(git -C "$repo" rev-parse --short HEAD)
 }
 log=$work/check.log
@@ -674,7 +674,142 @@ deploy --release v0.9.9
 check "release that does not exist: exit 2" test "$rc" = 2
 check "release that does not exist: engine unchanged" grep -q '"version":"0.1.3"}' "$R/home/.local/bin/seldon"
 
-# ---- 9. never the real session; the real home untouched -------------------------------------
+# ---- 9. next (WP-155) -------------------------------------------------------------------------
+# on <branch> — check out a branch of the scratch repo, its check log fresh
+on() {
+  git -C "$repo" checkout -q "$1"
+  short=$(git -C "$repo" rev-parse --short HEAD)
+  fresh_log
+}
+on main
+deploy "$log"
+check "main onto a main host: no next warning" test -z "$(grep -F "runs a next build" <<<"$out")"
+refused "--branch next while on main" "not on next (on main)" --branch next "$log"
+refused "--branch without a value" "--branch needs main or next" "$log" --branch
+refused "--branch, another value" "--branch wants main or next, not 'beta'" --branch beta "$log"
+refused "--branch with --release" "--release takes no --branch" --release v0.1.2 --branch next
+git -C "$repo" checkout -q -b next
+fresh_log
+refused "next not pushed yet" "no origin/next" --branch next "$log"
+commit plugin/Next.qml 'Item { /* next */ }'
+fresh_log
+refused "--branch main while on next" "not on main (on next)" --branch main "$log"
+refused "next without --branch (main is the default)" "not on main (on next)" "$log"
+echo dirty >>"$repo/plugin/Next.qml"
+refused "next: a modified file" "not clean" --branch next "$log"
+git -C "$repo" checkout -q -- plugin/Next.qml
+echo x >"$repo/next-notes.txt"
+git -C "$repo" add next-notes.txt
+git -C "$repo" commit -q -m local
+refused "next: HEAD not pushed" "is not origin/next" --branch next "$log"
+git -C "$repo" push -q origin next
+fresh_log
+commit plugin/Next.qml 'Item { /* next, after the check */ }'
+refused "next: plugin/ changed after the checked commit" "changed since the checked commit" --branch next "$log"
+# a check log of main's tip, which next does not contain
+on main
+commit docs/MAIN.md 'main only'
+fresh_log
+git -C "$repo" checkout -q next
+refused "next: main's check log (not an ancestor)" "not HEAD or an ancestor" --branch next "$log"
+on next
+printf 'head %s\nplugin-test: Quickshell harnesses skipped (nothing changed)\nexit 0\n' "$(git -C "$repo" rev-parse HEAD)" >"$log"
+refused "next: a log that skipped the harnesses" "run SELDON_FULL_CHECK=1 just check on next" --branch next "$log"
+
+# the host runs main, with Omarchy's shell.json and Seldon's state dir
+reset_remote
+on main
+main_short=$short
+deploy "$log" >/dev/null
+mkdir -p "$R/home/.local/state/seldon"
+echo '{"version":"0.2"}' >"$R/home/.config/omarchy/shell.json"
+echo '{"contractVersion":3}' >"$R/home/.local/state/seldon/index.json"
+on next
+before=$(remote_fingerprint)
+rm -f "$work/cargo.log"
+deploy --dry-run --branch next "$log"
+[[ -z ${VERBOSE:-} ]] || show
+check "next dry run: exit 0" test "$rc" = 0
+check "next dry run: no build, the host unchanged" test ! -e "$work/cargo.log" -a "$(remote_fingerprint)" = "$before"
+check "next dry run: the build line" has "SELDON_BUILD=next.$short cargo build"
+check "next dry run: names the version" has "→ 0.1.3+next.$short"
+check "next dry run: a backup planned" has "backup   shell.json, ~/.local/state/seldon, the engine and the plugin dir to ~/.local/state/seldon-dev/backup-before-next-<stamp>/"
+check "next dry run: the dev copy is synced, not moved" test -z "$(grep -F "aside" <<<"$out")"
+
+deploy --branch next "$log"
+[[ -z ${VERBOSE:-} ]] || show
+[[ $rc == 0 ]] || show
+check "next: exit 0" test "$rc" = 0
+check "next: cargo built with SELDON_BUILD=next.<sha>" grep -q " SELDON_BUILD=next.$short\$" "$work/cargo.log"
+check "next: the host's seldon is the next build" grep -q "\"version\":\"0.1.3+next.$short\"" "$R/home/.local/bin/seldon"
+check "next: seldon.prev is the main build" grep -q "\"version\":\"0.1.3+main.$main_short\"" "$R/home/.local/bin/seldon.prev"
+check "next: the plugin dir has next's files" diff -r -x .seldon-dev-build -x .qmlls.ini "$repo/plugin" "$pdir"
+check "next: .seldon-dev-build names the next build" grep -qx "build=next.$short" "$pdir/.seldon-dev-build"
+bk=$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'backup-before-next-*')
+check "next: one backup dir, named backup-before-next-<UTC stamp>" \
+  grep -qxE '.*/backup-before-next-[0-9]{8}T[0-9]{6}Z' <<<"$bk"
+check "next: the backup has shell.json" cmp -s "$bk/shell.json" "$R/home/.config/omarchy/shell.json"
+check "next: the backup has the state dir" cmp -s "$bk/state/index.json" "$R/home/.local/state/seldon/index.json"
+check "next: the backup has the engine before the swap (main)" grep -q "\"version\":\"0.1.3+main.$main_short\"" "$bk/seldon"
+check "next: the backup has the plugin before the sync (main)" grep -qx "build=main.$main_short" "$bk/plugin/.seldon-dev-build"
+check "next: the backup is outside the plugins dir" test "$(find "$R/home/.config/omarchy/plugins" -mindepth 1 -maxdepth 1 | wc -l)" = 1
+check "next: the summary names the backup" has "backup   ~/.local/state/seldon-dev/backup-before-next-"
+check "next: smoke ok" has "smoke    ok"
+check "next: the log line" jqe -s --arg v "0.1.3+next.$short" \
+  '.[-1].mode == "next" and .[-1].version == $v and (.[-1].backup | test("^.local/state/seldon-dev/backup-before-next-")) and .[-1].smoke == "ok"' "$jsonl"
+
+# next onto next: no second backup
+commit plugin/Next.qml 'Item { /* next 2 */ }'
+fresh_log
+deploy --dry-run --branch next "$log"
+check "next onto next, dry run: no backup" has "backup   none: the host runs next already (next."
+deploy --branch next "$log"
+check "next onto next: exit 0" test "$rc" = 0
+check "next onto next: still one backup" test "$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'backup-before-next-*' | wc -l)" = 1
+check "next onto next: logged without a backup" jqe -s '.[-1].mode == "next" and .[-1].backup == ""' "$jsonl"
+check "next onto next: no backup line" test -z "$(grep -F "backup   ~" <<<"$out")"
+
+# back to main from next: a warning that names the backup
+on main
+deploy --branch main "$log"
+check "main onto next: exit 0" test "$rc" = 0
+check "main onto next: warns about next's state" has "runs a next build (next."
+check "main onto next: names the backup" has "backup-before-next-*/state"
+check "main onto next: the main build" grep -q "\"version\":\"0.1.3+main.$short\"" "$R/home/.local/bin/seldon"
+
+# from a release host: the backup holds what exists (no shell.json, no state)
+reset_remote
+on next
+deploy --branch next "$log"
+check "next onto a release: exit 0" test "$rc" = 0
+bk=$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'backup-before-next-*')
+check "next onto a release: the release engine and clone backed up" \
+  test -d "$bk/plugin/.git" -a "$(grep -c '"version":"0.1.3"}' "$bk/seldon")" = 1
+check "next onto a release: no shell.json or state in the backup" test ! -e "$bk/shell.json" -a ! -e "$bk/state"
+
+# the backup fails: nothing changed but the partial backup and the log line
+reset_remote
+mkdir -p "$R/home/.local/state/seldon"
+echo secret >"$R/home/.local/state/seldon/unreadable"
+chmod 000 "$R/home/.local/state/seldon/unreadable"
+# the host without ~/.local/state/seldon-dev, where the backup and the log go
+host_fingerprint() { find "$R/home" ! -type d ! -path '*/seldon-dev/*' -printf '%p %y %s %T@\n' | LC_ALL=C sort | sha256sum; }
+before=$(host_fingerprint)
+deploy --branch next "$log"
+check "backup fails: exit 2" test "$rc" = 2
+check "backup fails: named" has "failed: install: backup to .local/state/seldon-dev/backup-before-next-"
+check "backup fails: engine, plugin and state unchanged" test "$(host_fingerprint)" = "$before"
+check "backup fails: logged with the partial backup" \
+  jqe -s '(.[-1].failures[0] | startswith("install: backup to")) and (.[-1].backup | test("backup-before-next-"))' "$jsonl"
+check "backup fails: no restart" test "$(count restart)" = 0
+chmod 600 "$R/home/.local/state/seldon/unreadable"
+sleep 1 # a new stamp
+deploy --branch next "$log"
+check "backup fixed: the retry takes a new backup and deploys" \
+  test "$rc" = 0 -a "$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'backup-before-next-*' | wc -l)" = 2
+on main
+
+# ---- 10. never the real session; the real home untouched -------------------------------------
 check "no quickshell, hyprctl or wtype call, no other systemctl call" test ! -e "$work/trap.log"
 [[ ! -e $work/trap.log ]] || sed 's/^/     /' "$work/trap.log"
 check "every ssh call went to the test host" test "$(sort -u "$work/ssh.log")" = "$host"
