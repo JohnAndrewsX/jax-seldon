@@ -230,7 +230,7 @@ fn is_linked_work_tree_of(git_dir: &Path, dot_git: &Path) -> bool {
         .and_then(Path::file_name)
         .is_some_and(|n| n == "worktrees");
     registered
-        && std::fs::read_to_string(git_dir.join("gitdir"))
+        && sys::read_regular_string(&git_dir.join("gitdir"), sys::LOGBOOK_FILE_MAX)
             .is_ok_and(|back| absolute(Path::new(back.trim_end_matches(['\n', '\r']))) == dot_git)
 }
 

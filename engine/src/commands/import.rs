@@ -534,7 +534,7 @@ fn note(c: &omarchy_agent::PlannedCase) -> Event {
 fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
     let rel = marker_path(SOURCE);
     // a link there is not read as "imported", a FIFO not opened (WP-171)
-    match std::fs::read_to_string(logbook.checked_file(&rel)?) {
+    match sys::read_regular_string(&logbook.checked_file(&rel)?, sys::LOGBOOK_FILE_MAX) {
         Ok(text) => {
             let marker: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
             return Ok(Some(json!({
@@ -558,7 +558,7 @@ fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
         return Ok(None);
     };
     let root = logbook.root.display();
-    let undo = std::fs::read_to_string(logbook.path(undo_path()))
+    let undo = sys::read_regular_string(&logbook.path(undo_path()), sys::LOGBOOK_FILE_MAX)
         .ok()
         .and_then(|text| serde_json::from_str::<Undo>(&text).ok())
         .filter(|undo| undo.is_sane(&logbook.root));
@@ -581,7 +581,7 @@ fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
 /// Writes the report (text outside its fence kept); `true` when it changed.
 fn write_report(logbook: &Logbook, plan: &Plan, mode: &Mode) -> Result<bool> {
     let path = logbook.checked_file(report_path(SOURCE))?;
-    let existing = match std::fs::read_to_string(&path) {
+    let existing = match sys::read_regular_string(&path, sys::LOGBOOK_FILE_MAX) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {

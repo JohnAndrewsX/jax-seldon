@@ -35,7 +35,25 @@ pub enum Error {
 
     /// Anything else (I/O, unreadable files, failed subprocesses): exit 2.
     #[error("{0:#}")]
-    Engine(#[from] anyhow::Error),
+    Engine(anyhow::Error),
+}
+
+/// A file of the logbook a reader refuses (WP-174): a ledger month that is
+/// no regular file or is over its cap. It travels up as an
+/// `anyhow::Error` like any read error and still ends as [`Error::User`]
+/// (exit 1, as WP-171's refusals): the fix is in the user's files.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct Refused(pub String);
+
+impl From<anyhow::Error> for Error {
+    fn from(err: anyhow::Error) -> Self {
+        if err.chain().any(|c| c.is::<Refused>()) {
+            Error::User(format!("{err:#}"))
+        } else {
+            Error::Engine(err)
+        }
+    }
 }
 
 impl Error {

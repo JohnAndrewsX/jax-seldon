@@ -87,6 +87,7 @@ use crate::pkgcmd::{
     parse_shell, simple_commands, unwrap_command, workdirs, write_targets,
 };
 use crate::redact::{REDACTED, Redactor};
+use crate::sys;
 
 /// The actor of `hook claude-code`.
 pub const CLAUDE_CODE: &str = "agent:claude-code";
@@ -1310,21 +1311,29 @@ fn already_recorded(
     Ok(false)
 }
 
-/// The bytes of `path` from `tail` bytes before its end on (all of it with
-/// `None`), starting at a line start; nothing when there is no file.
+/// The bytes of the ledger month `path` from `tail` bytes before its end
+/// on (all of it with `None`), starting at a line start; nothing when there
+/// is no file. Only a regular file of at most [`sys::LEDGER_MONTH_MAX`]
+/// bytes is read (WP-174).
 fn read_end(path: &Path, tail: Option<u64>) -> Result<Vec<u8>> {
     use std::io::{Seek as _, SeekFrom};
-    let mut file = match std::fs::File::open(path) {
+    let cannot = |e: std::io::Error| crate::ledger::month_read_error(path, e);
+    let mut file = match sys::open_regular(path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(anyhow::Error::new(e).into()),
+        Err(e) => return Err(cannot(e).into()),
     };
     let len = file.metadata().map_err(anyhow::Error::from)?.len();
     let start = tail.map_or(0, |t| len.saturating_sub(t));
+    if len - start > sys::LEDGER_MONTH_MAX {
+        return Err(cannot(sys::too_large(sys::LEDGER_MONTH_MAX)).into());
+    }
     file.seek(SeekFrom::Start(start))
         .map_err(anyhow::Error::from)?;
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes).map_err(anyhow::Error::from)?;
+    file.take(sys::LEDGER_MONTH_MAX)
+        .read_to_end(&mut bytes)
+        .map_err(anyhow::Error::from)?;
     if start > 0 {
         // the first line is cut: it starts before the tail
         let cut = bytes
@@ -1676,7 +1685,7 @@ pub struct Merged {
 /// A file that is not a JSON object is refused, never overwritten. `shown`
 /// names the file in messages. Used by `hook install` and `seldon init`.
 pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
-    let text = match std::fs::read_to_string(path) {
+    let text = match sys::read_regular_string(path, sys::LOGBOOK_FILE_MAX) {
         Ok(t) if t.trim().is_empty() => "{}".to_string(),
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => "{}".to_string(),
@@ -1874,7 +1883,7 @@ fn has_hook(groups: &[Value], matcher: Option<&str>, command: &str) -> bool {
 /// holds (0 without the file). Read-only, for `doctor`; `Err` is why the
 /// file cannot be read as settings.
 pub fn claude_hooks_in(path: &Path) -> std::result::Result<usize, String> {
-    let text = match std::fs::read_to_string(path) {
+    let text = match sys::read_regular_string(path, sys::LOGBOOK_FILE_MAX) {
         Ok(t) if t.trim().is_empty() => return Ok(0),
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
@@ -1927,7 +1936,7 @@ pub fn unmerge_claude_hooks(path: &Path, shown: &str) -> Result<Unmerged> {
             .collect(),
         ..Unmerged::default()
     };
-    let text = match std::fs::read_to_string(path) {
+    let text = match sys::read_regular_string(path, sys::LOGBOOK_FILE_MAX) {
         Ok(t) if t.trim().is_empty() => return Ok(all_absent()),
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(all_absent()),

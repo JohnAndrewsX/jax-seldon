@@ -33,7 +33,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 File modes (WP-064): a directory the engine creates (the logbook and its folders, the config and state directories) is 0700 and a new file 0600, whatever the umask; existing files and directories keep their mode, the engine never tightens them. Every rewrite goes through `sys::write_atomic`: a temp file `.<name>.tmp-<pid>` next to the target (new logbooks ignore `.*.tmp-*` in `.gitignore`) with the target's permission bits, synced, renamed over the target, the directory synced; the temp file is removed when any step fails. Files the engine rebuilds from the ledger and the logbook (`index.json`, `STATUS.md`, the `ledger/*.md` views, `outputs/REBUILD.md`) are written the same way without the two syncs (`sys::write_generated`): the next build writes them again. Ledger lines are synced when appended. Outside the logbook (`config.toml`, the state files, Claude Code's `settings.json`) a symbolic link at the path is followed: the link stays and its target is replaced (a link to a missing file creates the target). A file of the logbook is never written through a link (`sys::write_atomic_nofollow`, `sys::write_generated_nofollow`, the ledger's append; ADR-0049, "Linked folders and files" below). The theme hook script is written 0755. `.git/` is written by git under its own rules.
 
-Linked folders and files (WP-168, WP-171, ADR-0049): every folder of the logbook the engine creates or writes a file in (`decisions/`, `work/queued|active|completed/`, `journal/` and its year folders, `ledger/`, `areas/<area>/`, `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/` and `.seldon/imports/`, the harness kit's `.claude/` folders) must be a real directory inside the logbook (`logbook::checked_dir`). Each part below the root is checked without following links; a part that is a symbolic link (a write would land wherever it points) or no directory is refused with exit 1, "`<folder>` is a symbolic link | no directory, not a folder of the logbook; make it a folder and run the command again", and nothing is written. A part that does not exist yet is created (0700). Every file of the logbook the engine writes, replaced or appended (the journal days, the case files from and to, `.seldon/active-case` and `.seldon/imports/*`, `areas/<area>/README.md`, `ledger/*.jsonl` and the views `ledger/*.md`, `STATUS.md`, `DECISIONS.md`, `AGENTS.md`, `system/*.md`, `outputs/*.md`, the kit's files), must be a regular file or not exist yet (`logbook::checked_file`: its folder first, then the file without following a link): a symbolic link there (a dangling one too) is refused with exit 1, "`<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again", and anything else in a file's place (a directory, FIFO, socket, device) with "is no regular file"; nothing is written, and the file is not read first (a FIFO is never opened). The write primitives of the logbook refuse the same and never resolve a link: one that appears after the check is replaced by the rename, never its target, and the ledger's append opens the month file with `O_NOFOLLOW` and takes only a regular file (ADR-0049 §4). A generated view is skipped, not refused: when `STATUS.md`, `DECISIONS.md` or a month view `ledger/<month>.md` is a link or no regular file, `status` and `index` leave it as it is, warn "`<file>` not updated: `<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again" (human and `--json` `warnings`), exit 0 and still write `index.json`; a linked `ledger/` folder is still refused. A capture's silent upgrade of the rules block warns instead ("AGENTS.md: Seldon's agent rules were not updated: …") and goes on; `decide`'s fill of `DECISIONS.md` after the decision is written is a warning too. Writers that create a file with `O_EXCL` (`write_new`, `init`, the archives) never follow a final link; their path is checked as well, so a link gives the reason. The setup kit's copy refuses a link where a file goes (it used to count an existing one as kept) and makes each file with `O_CREAT|O_EXCL` and the kit file's mode (a file made since the check is kept). `write_atomic` and `write_generated` are called only for files outside the logbook; `tests/linked_files.rs` lists every call site. An omarchy-agent import whose marker is a link is refused, not taken as "already imported". The root itself may be a link: a logbook kept on another disk goes there whole (the logbook folder itself may be a link, or a bind mount). A command checks before its first write and before the ledger: a command that writes a case checks all three case folders (a case moves between them; the next id is read from all three), `drift link|explain|dismiss|apply` (the ledger, and the case folders but for a dismissal) and `import --apply` check their folders before they read them, so a file in a folder's place is refused with the reason, not failed as an unreadable listing. A `.seldon` that is no directory is no logbook (exit 3). Reading through a linked folder or file is unchanged (the index still shows a linked journal day); `doctor`'s `layout` row names every linked folder and file where the engine writes (§3); `proposals/` in the state directory has its own check (WP-124). `hook install|uninstall claude-code --settings <file>` writes the file the user names where it is, also through a linked `.claude/` of the logbook: the user chose the path, so it is not checked.
+Linked folders and files (WP-168, WP-171, ADR-0049): every folder of the logbook the engine creates or writes a file in (`decisions/`, `work/queued|active|completed/`, `journal/` and its year folders, `ledger/`, `areas/<area>/`, `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/` and `.seldon/imports/`, the harness kit's `.claude/` folders) must be a real directory inside the logbook (`logbook::checked_dir`). Each part below the root is checked without following links; a part that is a symbolic link (a write would land wherever it points) or no directory is refused with exit 1, "`<folder>` is a symbolic link | no directory, not a folder of the logbook; make it a folder and run the command again", and nothing is written. A part that does not exist yet is created (0700). Every file of the logbook the engine writes, replaced or appended (the journal days, the case files from and to, `.seldon/active-case` and `.seldon/imports/*`, `areas/<area>/README.md`, `ledger/*.jsonl` and the views `ledger/*.md`, `STATUS.md`, `DECISIONS.md`, `AGENTS.md`, `system/*.md`, `outputs/*.md`, the kit's files), must be a regular file or not exist yet (`logbook::checked_file`: its folder first, then the file without following a link): a symbolic link there (a dangling one too) is refused with exit 1, "`<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again", and anything else in a file's place (a directory, FIFO, socket, device) with "is no regular file"; nothing is written, and the file is not read first (a FIFO is never opened). The write primitives of the logbook refuse the same and never resolve a link: one that appears after the check is replaced by the rename, never its target, and the ledger's append opens the month file with `O_NOFOLLOW` and takes only a regular file (ADR-0049 §4). A generated view is skipped, not refused: when `STATUS.md`, `DECISIONS.md` or a month view `ledger/<month>.md` is a link or no regular file, `status` and `index` leave it as it is, warn "`<file>` not updated: `<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again" (human and `--json` `warnings`), exit 0 and still write `index.json`; a linked `ledger/` folder is still refused. A capture's silent upgrade of the rules block warns instead ("AGENTS.md: Seldon's agent rules were not updated: …") and goes on; `decide`'s fill of `DECISIONS.md` after the decision is written is a warning too. Writers that create a file with `O_EXCL` (`write_new`, `init`, the archives) never follow a final link; their path is checked as well, so a link gives the reason. The setup kit's copy refuses a link where a file goes (it used to count an existing one as kept) and makes each file with `O_CREAT|O_EXCL` and the kit file's mode (a file made since the check is kept). `write_atomic` and `write_generated` are called only for files outside the logbook; `tests/linked_files.rs` lists every call site. An omarchy-agent import whose marker is a link is refused, not taken as "already imported". The root itself may be a link: a logbook kept on another disk goes there whole (the logbook folder itself may be a link, or a bind mount). A command checks before its first write and before the ledger: a command that writes a case checks all three case folders (a case moves between them; the next id is read from all three), `drift link|explain|dismiss|apply` (the ledger, and the case folders but for a dismissal) and `import --apply` check their folders before they read them, so a file in a folder's place is refused with the reason, not failed as an unreadable listing. A `.seldon` that is no directory is no logbook (exit 3). Reading through a linked folder or file is unchanged (the index still shows a linked journal day), but only a regular file is read, and at most a cap of it (§3, "Bounded reads"); `doctor`'s `layout` row names every linked folder and file where the engine writes (§3); `proposals/` in the state directory has its own check (WP-124). `hook install|uninstall claude-code --settings <file>` writes the file the user names where it is, also through a linked `.claude/` of the logbook: the user chose the path, so it is not checked.
 
 ## 3. Commands
 
@@ -982,6 +982,44 @@ a folder, then the root files; the first five, then "and K more"; names
 with every control, direction, invisible format and line-breaking
 character as `?`. An entry that cannot be read is left out.
 
+Bounded reads (WP-174): every file of the logbook a command reads goes
+through `sys::read_regular` (`sys::open_regular` for a reader that
+streams, `sys::read_regular_string` for text), so that no reader hangs
+or reads without end before the `layout` row can name the file. A
+symbolic link is followed, as before (reading through a linked file is
+unchanged, ADR-0049 §2), but what it leads to must be a regular file:
+a FIFO (an open would wait for a writer), a device (`/dev/zero` never
+ends), a socket or a directory is not opened; the type is checked
+before the open and again on the open file, which is opened
+`O_NONBLOCK`, so one swapped in between cannot block either; the flag
+is cleared (`fcntl`) once the file is known to be regular, so its reads
+are plain blocking reads. `sys::read_small_file` (the state files beside
+the logbook, `triage`'s journal day) opens with the same check after its
+own `lstat`. The read stops at a cap: 256 MiB for a ledger month
+`ledger/<YYYY-MM>.jsonl` (`sys::LEDGER_MONTH_MAX`, some half a million
+events), 16 MiB for every other file (`sys::LOGBOOK_FILE_MAX`:
+`AGENTS.md`, `STATUS.md`, `DECISIONS.md`, the journal days, cases,
+decisions, `.seldon/*`, the logbook's `.git` files the index reads,
+Claude Code's settings file); a larger file is not read either. Such a
+file is "cannot read `<path>`: a FIFO | a device | a socket | a
+directory, not a regular file; not read: make it a regular file and run
+the command again" or "more than <cap>; not read", where the reader said
+"cannot read" before. A ledger month the reader refuses stops `status`
+and every other command that reads the ledger with exit 1, as WP-171's
+refusals (`error::Refused`); one over the cap adds "keep a copy of it,
+remove lines you can do without by hand (the ledger is plain JSON Lines,
+one event per line) and run the command again": the append itself has
+no cap, so a month can grow past it, and doctor warns long before
+(below). Doctor's rows say it (`ledger` error with a fix, `rules`
+degraded, `fences` degraded) and still reach `layout`; a capture's
+silent rules upgrade leaves `AGENTS.md` alone. `tests/bounded_reads.rs`
+lists, per file, every call of `std::fs::read`, `read_to_string`,
+`File::open`, `File::options` and `OpenOptions` with `.read(true)`, and
+every import of `fs::read`/`fs::read_to_string`, in `engine/src` outside
+the `#[cfg(test)]` modules: each reads a file outside the logbook, or is
+one of the checked opens in `sys.rs` (`open_checked`, the ledger's
+append).
+
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
 where one exists (an `ok` row has a fix only for the old snapper opt-in,
 §4). `config`: `config.toml` can be read, parses and its
@@ -997,7 +1035,13 @@ invalid" (or "cannot be read"), `"logbook"` is `null`, and doctor exits
 fix starts "after fixing config.toml:"). With an open logbook: `cases`, a
 case id in two files (error, the `index --check` rule); `ledger`, lines
 that are not events, per month with the count and the first line
-numbers (degraded: every reader skips them); `rules` (WP-100), the
+numbers (degraded: every reader skips them), a month of 128 MiB or more
+(`sys::LEDGER_MONTH_WARN`, degraded: "ledger/<month>.jsonl is N MiB:
+Seldon reads a ledger month of at most 256 MiB and refuses a larger one
+(status, doctor and the index stop on it)", fix to keep a copy and remove
+lines by hand before it reaches the limit), and a month the reader
+refuses (error, with the fix to make it a regular file again or, past
+the cap, to trim it; WP-174, "Bounded reads" above); `rules` (WP-100), the
 rules block of `AGENTS.md` against this engine's in the logbook's
 language: `current (v3)` ok; `vN as Seldon wrote it; the next capture
 updates it to v3` ok (a shipped block or a released v1 file nobody
@@ -1013,8 +1057,10 @@ seldon; `fences`, the generated
 fence of `STATUS.md` or `DECISIONS.md` that `status` leaves alone (no end
 marker of its own, or `STATUS.md` with the header but without the
 fence; degraded, the fix names the marker lines), an end marker
-that closes no fence (degraded), and a file that cannot be read as text
-(error: `status` stops on it); `collectors`, every enabled collector
+that closes no fence (degraded), a file that cannot be read as text
+(error: `status` stops on it), and one that is no regular file, a FIFO
+or a link to a device (degraded, "not checked": `status` skips it as a
+view; the `layout` row names it, WP-174); `collectors`, every enabled collector
 whose last capture failed according to `cursors.json` (only when the
 cursors belong to this logbook), with its message and the fixes the
 collectors stored (degraded). doctor cannot tell an intact fence from

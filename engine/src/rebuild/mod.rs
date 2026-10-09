@@ -228,7 +228,7 @@ pub fn read_dossier(root: &Path) -> BTreeMap<String, String> {
     files.sort();
     let mut out = BTreeMap::new();
     for path in files {
-        if let Ok(text) = std::fs::read_to_string(&path) {
+        if let Ok(text) = crate::sys::read_regular_string(&path, crate::sys::LOGBOOK_FILE_MAX) {
             for (name, body) in fences(&text) {
                 out.entry(name).or_insert(body);
             }

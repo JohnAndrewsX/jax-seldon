@@ -78,7 +78,8 @@ pub fn prepare(
     };
     let block = format!("{}\n{}\n", entry.heading(), escape(text.trim_end()));
 
-    let (text, created) = match std::fs::read_to_string(&path) {
+    let (text, created) = match crate::sys::read_regular_string(&path, crate::sys::LOGBOOK_FILE_MAX)
+    {
         Ok(existing) => (append_to(&existing, &block, case, date, &rel)?, false),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let record = Journal {

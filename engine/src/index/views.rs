@@ -523,7 +523,7 @@ pub fn write_status(logbook: &Logbook, built: &Built) -> crate::error::Result<Fi
         Ok(path) => path,
         Err(why) => return Ok(Fill::Skipped(why)),
     };
-    let existing = match std::fs::read_to_string(&path) {
+    let existing = match crate::sys::read_regular_string(&path, crate::sys::LOGBOOK_FILE_MAX) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
@@ -608,7 +608,7 @@ pub fn write_decisions_index(
         Ok(path) => path,
         Err(why) => return Ok(Fill::Skipped(why)),
     };
-    let old = match std::fs::read_to_string(&path) {
+    let old = match crate::sys::read_regular_string(&path, crate::sys::LOGBOOK_FILE_MAX) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
@@ -667,7 +667,9 @@ fn write_if_changed(
         Ok(path) => path,
         Err(why) => return Ok(Fill::Skipped(why)),
     };
-    if std::fs::read(&path).is_ok_and(|old| old == text.as_bytes()) {
+    if crate::sys::read_regular(&path, crate::sys::LOGBOOK_FILE_MAX)
+        .is_ok_and(|old| old == text.as_bytes())
+    {
         return Ok(Fill::Unchanged);
     }
     match durable {

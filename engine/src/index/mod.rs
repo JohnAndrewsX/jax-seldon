@@ -204,30 +204,31 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
 /// cannot be read, and an empty path in either file, is no repository
 /// either (git stops there).
 pub fn git_head_fast(root: &Path) -> Option<model::GitInfo> {
+    let read = |path: &Path| sys::read_regular_string(path, sys::LOGBOOK_FILE_MAX);
     let dot = root.join(".git");
     let gitdir = if dot.is_file() {
-        let text = std::fs::read_to_string(&dot).ok()?;
+        let text = read(&dot).ok()?;
         root.join(git_path(text.strip_prefix("gitdir: ")?)?)
     } else if dot.is_dir() {
         dot
     } else {
         return None;
     };
-    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+    let common = match read(&gitdir.join("commondir")) {
         Ok(c) => gitdir.join(git_path(&c)?),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => gitdir.clone(),
         Err(_) => return None,
     };
-    let head = std::fs::read_to_string(gitdir.join("HEAD")).ok()?;
+    let head = read(&gitdir.join("HEAD")).ok()?;
     let head = head.trim();
     let sha = match head.strip_prefix("ref:").map(str::trim) {
         None => Some(head.to_string()),
         Some(name) => [&gitdir, &common]
             .iter()
-            .find_map(|d| std::fs::read_to_string(d.join(name)).ok())
+            .find_map(|d| read(&d.join(name)).ok())
             .map(|s| s.trim().to_string())
             .or_else(|| {
-                let packed = std::fs::read_to_string(common.join("packed-refs")).ok()?;
+                let packed = read(&common.join("packed-refs")).ok()?;
                 packed.lines().find_map(|l| {
                     let (sha, r) = l.split_once(' ')?;
                     (r.trim() == name).then(|| sha.to_string())
@@ -338,7 +339,8 @@ fn ledger_lines_exceed(dir: &Path, max: usize) -> bool {
         if path.extension().is_none_or(|e| e != "jsonl") {
             continue;
         }
-        let Ok(mut file) = std::fs::File::open(&path) else {
+        // a FIFO is not waited on, a device not read (WP-174)
+        let Ok(mut file) = sys::open_regular(&path) else {
             continue;
         };
         while let Ok(n) = file.read(&mut buf) {

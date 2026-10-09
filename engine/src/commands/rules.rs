@@ -60,7 +60,7 @@ pub fn template(logbook: &Logbook, today: chrono::NaiveDate) -> String {
 /// The rules file of `logbook`: its bytes, `None` when there is none.
 pub fn read(logbook: &Logbook) -> Result<Option<Vec<u8>>> {
     let path = logbook.path(FILE);
-    match std::fs::read(&path) {
+    match sys::read_regular(&path, sys::LOGBOOK_FILE_MAX) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(anyhow::Error::new(e)

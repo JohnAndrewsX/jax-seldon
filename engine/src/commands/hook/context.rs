@@ -11,6 +11,7 @@ use std::path::Path;
 use super::super::Context;
 use crate::error::Result;
 use crate::logbook::cases::{self, CaseFile};
+use crate::sys;
 
 /// The note under the title that says what the quoted lines are.
 pub const DATA_NOTE: &str =
@@ -43,7 +44,7 @@ pub fn session_start(ctx: &Context, cwd: Option<&str>) -> Result<String> {
     let _ = writeln!(out, "{DATA_NOTE}");
 
     out.push_str("\n## Status (STATUS.md)\n");
-    match std::fs::read_to_string(logbook.path("STATUS.md")) {
+    match sys::read_regular_string(&logbook.path("STATUS.md"), sys::LOGBOOK_FILE_MAX) {
         Ok(text) => quote_lines(&mut out, status_summary(&text)),
         Err(_) => out.push_str("No STATUS.md yet (`seldon status` writes it).\n"),
     }
@@ -74,7 +75,7 @@ pub fn session_start(ctx: &Context, cwd: Option<&str>) -> Result<String> {
             // a day file's path is `journal/YYYY/YYYY-MM-DD.md` (checked above)
             let rel = cases::relative(&logbook, &path);
             let _ = writeln!(out, "\n## Journal ({rel}, last 5 lines)");
-            let text = std::fs::read_to_string(&path)?;
+            let text = sys::read_regular_string(&path, sys::LOGBOOK_FILE_MAX)?;
             let body = crate::frontmatter::Document::parse(&text)
                 .map(|d| d.body)
                 .unwrap_or(text);
@@ -88,7 +89,9 @@ pub fn session_start(ctx: &Context, cwd: Option<&str>) -> Result<String> {
     }
 
     out.push_str("\n## Lessons (memory/lessons.md, headings)\n");
-    let lessons = std::fs::read_to_string(logbook.path("memory/lessons.md")).unwrap_or_default();
+    let lessons =
+        sys::read_regular_string(&logbook.path("memory/lessons.md"), sys::LOGBOOK_FILE_MAX)
+            .unwrap_or_default();
     let headings: Vec<&str> = lessons
         .lines()
         .filter_map(|l| l.strip_prefix("## "))

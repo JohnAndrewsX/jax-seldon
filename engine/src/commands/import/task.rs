@@ -726,7 +726,7 @@ fn decide(tasks: &[Task], marker: &Marker, include_done: bool) -> Vec<Fate> {
 /// The marker, or an empty one when there is none yet; one that cannot
 /// be read is a user error (nothing is written).
 fn read_marker(path: &Path) -> Result<Marker> {
-    let text = match std::fs::read_to_string(path) {
+    let text = match sys::read_regular_string(path, sys::LOGBOOK_FILE_MAX) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Ok(Marker {

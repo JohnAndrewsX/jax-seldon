@@ -36,7 +36,7 @@ impl CaseFile {
     /// Reads a case file. Invalid frontmatter is the user's to fix (exit 1),
     /// with the file named.
     pub fn load(path: &Path) -> Result<CaseFile> {
-        let text = std::fs::read_to_string(path)
+        let text = sys::read_regular_string(path, sys::LOGBOOK_FILE_MAX)
             .with_context(|| format!("cannot read {}", path.display()))?;
         let (case, doc) = model::parse::<Case>(&text)
             .map_err(|e| Error::user(format!("{}: invalid case: {e}", path.display())))?;
@@ -227,7 +227,7 @@ pub fn all(logbook: &Logbook) -> Result<(Vec<CaseFile>, Vec<String>)> {
     for path in logbook.case_files()? {
         // a file name may hold any character but `/` and NUL
         let rel = printable(&relative(logbook, &path));
-        let text = match std::fs::read_to_string(&path) {
+        let text = match sys::read_regular_string(&path, sys::LOGBOOK_FILE_MAX) {
             Ok(text) => text,
             Err(e) => {
                 warnings.push(format!("{rel}: cannot read: {e}; skipped"));
@@ -769,7 +769,7 @@ pub fn logbook_template(logbook: &Logbook, name: &str) -> Result<String> {
             .map(|t| t.text(language).to_string())
             .ok_or_else(|| anyhow::anyhow!("no built-in template {rel}").into())
     };
-    match std::fs::read_to_string(&path) {
+    match sys::read_regular_string(&path, sys::LOGBOOK_FILE_MAX) {
         Ok(text) if shipped_template(name, &text) => built_in(),
         Ok(text) => Ok(text),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => built_in(),
@@ -823,7 +823,8 @@ pub fn checked_folders(logbook: &Logbook) -> Result<()> {
 
 /// `.seldon/active-case`: the id of the case started last, if any.
 pub fn active_case(logbook: &Logbook) -> Option<String> {
-    let text = std::fs::read_to_string(logbook.path(ACTIVE_CASE_FILE)).ok()?;
+    let text =
+        sys::read_regular_string(&logbook.path(ACTIVE_CASE_FILE), sys::LOGBOOK_FILE_MAX).ok()?;
     let id = text.trim();
     is_case_id(id).then(|| id.to_string())
 }

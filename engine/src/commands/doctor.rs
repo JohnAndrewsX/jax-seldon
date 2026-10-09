@@ -22,7 +22,7 @@ use crate::collectors::config::{Manifest, OwnWrites};
 use crate::collectors::pacman::{LockState, lock_state};
 use crate::collectors::{Cursors, Lost, ShownMessages, Sources, cursors_file, snapper};
 use crate::config::{Config, LogbookSource};
-use crate::error::{Error, Exit, Result};
+use crate::error::{Error, Exit, Refused, Result};
 use crate::index::load::{FENCE_BEGIN, FENCE_END, bad_lines_warning};
 use crate::index::views::{self, DECISIONS_FENCE, STATUS_FENCE};
 use crate::ledger::Ledger;
@@ -894,9 +894,18 @@ fn check_ledger(logbook: &Logbook) -> Check {
     let ledger = Ledger::new(logbook, Redactor::builtin());
     let (months, bad) = match ledger.months().and_then(|m| Ok((m, ledger.bad_lines()?))) {
         Ok(found) => found,
-        Err(e) => return Check::new("ledger", Status::Error, format!("{e:#}")),
+        Err(e) => {
+            let check = Check::new("ledger", Status::Error, format!("{e:#}"));
+            // a month the reader refuses (WP-174) says what to do
+            return if e.chain().any(|c| c.is::<Refused>()) {
+                check.fix(LEDGER_REFUSED_FIX)
+            } else {
+                check
+            };
+        }
     };
-    if bad.is_empty() {
+    let large = large_months(&ledger, &months, sys::LEDGER_MONTH_WARN);
+    if bad.is_empty() && large.is_empty() {
         let noun = if months.len() == 1 { "month" } else { "months" };
         return Check::new(
             "ledger",
@@ -904,21 +913,51 @@ fn check_ledger(logbook: &Logbook) -> Check {
             format!("{} {noun}, every line an event", months.len()),
         );
     }
-    let lines: Vec<String> = bad
-        .iter()
-        .filter_map(|(month, lines)| bad_lines_warning(month, lines))
-        .collect();
-    Check::new(
-        "ledger",
-        Status::Degraded,
-        format!(
+    let mut messages = Vec::new();
+    let mut fixes = Vec::new();
+    if !bad.is_empty() {
+        let lines: Vec<String> = bad
+            .iter()
+            .filter_map(|(month, lines)| bad_lines_warning(month, lines))
+            .collect();
+        messages.push(format!(
             "{}; their events are missing from the index and the views",
             lines.join("; ")
-        ),
-    )
-    .fix(
-        "repair or delete those lines by hand (the ledger is plain JSON Lines, one event per line)",
-    )
+        ));
+        fixes.push(
+            "repair or delete those lines by hand (the ledger is plain JSON Lines, one event per line)",
+        );
+    }
+    if !large.is_empty() {
+        messages.push(format!(
+            "{}: Seldon reads a ledger month of at most {} MiB and refuses a larger one (status, doctor and the index stop on it)",
+            large.join(", "),
+            sys::LEDGER_MONTH_MAX / MIB
+        ));
+        fixes.push(LEDGER_LARGE_FIX);
+    }
+    Check::new("ledger", Status::Degraded, messages.join("; ")).fix(fixes.join("; "))
+}
+
+const MIB: u64 = 1024 * 1024;
+
+/// The fix of a ledger month the reader refuses (WP-174).
+const LEDGER_REFUSED_FIX: &str = "make a month file that is no regular file a regular file again (the layout row names it); keep a copy of one that is too large and remove lines you can do without by hand (plain JSON Lines, one event per line); then run the command again";
+
+/// The fix of a ledger month near the reader's cap (WP-174).
+const LEDGER_LARGE_FIX: &str = "before it reaches the limit, keep a copy of the month file and remove lines you can do without by hand (plain JSON Lines, one event per line)";
+
+/// `ledger/<month>.jsonl is N MiB` for each month of at least `warn`
+/// bytes, months ascending; a size that cannot be read is left out (the
+/// read says why).
+fn large_months(ledger: &Ledger, months: &[String], warn: u64) -> Vec<String> {
+    months
+        .iter()
+        .filter_map(|m| {
+            let len = std::fs::metadata(ledger.month_file(m)).ok()?.len();
+            (len >= warn).then(|| format!("ledger/{m}.jsonl is {} MiB", len.div_ceil(MIB)))
+        })
+        .collect()
 }
 
 /// The generated fences of `STATUS.md` and `DECISIONS.md`. A damaged one
@@ -929,7 +968,9 @@ fn check_ledger(logbook: &Logbook) -> Check {
 /// the writer takes the text up to that stray one as the fence body and
 /// replaces it. Doctor cannot tell a removed end marker followed by a
 /// stray one from an intact fence, and says so. A file that cannot be read
-/// as text stops `status` (exit 2): an error.
+/// as text stops `status` (exit 2): an error. One that is no regular file
+/// (a FIFO, a device behind a link) is not read (WP-174); `status` skips
+/// it as a view, so it is degraded, and the `layout` row names it too.
 fn check_fences(logbook: &Logbook) -> Check {
     let mut unreadable: Vec<String> = Vec::new();
     let mut damaged: Vec<(String, String)> = Vec::new();
@@ -938,9 +979,16 @@ fn check_fences(logbook: &Logbook) -> Check {
         ("STATUS.md", STATUS_FENCE),
         ("DECISIONS.md", DECISIONS_FENCE),
     ] {
-        let text = match std::fs::read_to_string(logbook.path(rel)) {
+        let text = match sys::read_regular_string(&logbook.path(rel), sys::LOGBOOK_FILE_MAX) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
+                damaged.push((
+                    format!("{rel}: not checked ({e}); `seldon status` leaves it as it is"),
+                    format!("replace {rel} by a regular file; `seldon status` writes it again"),
+                ));
+                continue;
+            }
             Err(e) => {
                 unreadable.push(format!("{rel}: cannot read ({e})"));
                 continue;
@@ -1877,6 +1925,22 @@ fn describe(run: &Run) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-174 (review F2): a ledger month from the warning size on is
+    /// named with its size; a smaller one, a missing one is not.
+    #[test]
+    fn a_large_ledger_month_is_named() {
+        let dir = crate::logbook::scratch::scratch("seldon-large-month");
+        let ledger = Ledger::at(dir.to_path_buf(), Redactor::builtin());
+        std::fs::write(dir.join("2026-09.jsonl"), vec![b'\n'; 99]).unwrap();
+        std::fs::write(dir.join("2026-10.jsonl"), vec![b'\n'; 100]).unwrap();
+        let months = ["2026-08", "2026-09", "2026-10"].map(String::from);
+        assert_eq!(
+            large_months(&ledger, &months, 100),
+            ["ledger/2026-10.jsonl is 1 MiB"]
+        );
+        assert!(large_months(&ledger, &months, 101).is_empty());
+    }
 
     /// WP-143 round 2 (N3): the walk is bounded — by an entry cap and by
     /// a size it only has to pass — and says when it stopped early; it
