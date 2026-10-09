@@ -430,27 +430,32 @@ fn edit(env: &Env, id: &str, change: impl FnOnce(&mut Value)) {
     std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap()).unwrap();
 }
 
-/// A case folder that is a link or a file is refused before the first
-/// item is written (WP-168): exit 1, nothing in the ledger, the proposal
-/// not applied.
+/// A case folder or the ledger that is a link or a file is refused before
+/// the first item is written (WP-168): exit 1, nothing written in the
+/// logbook or through the link, the proposal not applied.
 #[test]
-fn apply_refuses_a_linked_case_folder() {
-    for file in [false, true] {
+fn apply_refuses_a_linked_case_folder_or_ledger() {
+    for (rel, file) in [
+        ("work/completed", false),
+        ("work/completed", true),
+        ("ledger", false),
+        ("ledger", true),
+    ] {
         let env = Env::new(Snapper::Missing);
         let lb = fixture_copy(&env);
         let id = stored(&env, &lb, &three_items());
-        let completed = lb.join("work/completed");
-        let outside = env.tmp.path().join("outside-completed");
-        copy_dir(&completed, &outside);
-        std::fs::remove_dir_all(&completed).unwrap();
+        let folder = lb.join(rel);
+        let outside = env.tmp.path().join("outside-folder");
+        copy_dir(&folder, &outside);
+        std::fs::remove_dir_all(&folder).unwrap();
         if file {
-            std::fs::write(&completed, "not a folder\n").unwrap();
+            std::fs::write(&folder, "not a folder\n").unwrap();
         } else {
-            std::os::unix::fs::symlink(&outside, &completed).unwrap();
+            std::os::unix::fs::symlink(&outside, &folder).unwrap();
         }
-        let before = common::ledger(&lb).len();
+        let before = common::tree(&lb);
+        let outside_before = common::tree(&outside);
         let stored_text = read(&file_of(&env, &id));
-        let outside_before = std::fs::read_dir(&outside).unwrap().count();
 
         let v = run(&env, &lb, &["drift", "apply", &id], 1);
         let what = if file {
@@ -459,14 +464,12 @@ fn apply_refuses_a_linked_case_folder() {
             "a symbolic link"
         };
         assert!(
-            message(&v).starts_with(&format!(
-                "work/completed is {what}, not a folder of the logbook"
-            )),
-            "{v}"
+            message(&v).starts_with(&format!("{rel} is {what}, not a folder of the logbook")),
+            "{rel}: {v}"
         );
-        assert_eq!(common::ledger(&lb).len(), before);
+        assert!(common::tree(&lb) == before, "{rel}");
+        assert!(common::tree(&outside) == outside_before, "{rel}");
         assert_eq!(read(&file_of(&env, &id)), stored_text);
-        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), outside_before);
     }
 }
 

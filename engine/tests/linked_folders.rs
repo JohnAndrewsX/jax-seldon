@@ -485,6 +485,17 @@ mod primitives {
     }
 
     #[test]
+    fn a_case_is_not_moved_out_of_a_linked_folder() {
+        let (env, logbook) = linked("work/queued");
+        let snapshot = tree(&logbook.root);
+        let mut file = cases::find(&logbook, "C-2026-001").unwrap();
+        file.case.status = CaseStatus::Active;
+        refused(file.save(&logbook), "work/queued");
+        assert!(tree(&logbook.root) == snapshot);
+        drop(env);
+    }
+
+    #[test]
     fn a_case_is_not_moved_into_a_linked_folder() {
         let (env, logbook) = linked("work/active");
         let snapshot = tree(&logbook.root);
