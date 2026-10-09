@@ -14,12 +14,12 @@ will differ (later WPs change `plugin/`): rerun before filing.
 | Store rules | `omacom/omarchy-plugin-marketplace` @ `5d22a9fbee57f7b22652e09df128ddf12f14a65b` (2026-10-09 19:20 UTC), read-only shallow clone |
 | Differences to the study's read (`4da3ed3e665c7376da83130445ba908865a68f7a`) | none in `SUBMISSION.md`, `SECURITY.md`, `VERIFICATION.md`, `README.md`, `AGENTS.md`, `scripts/` (byte-identical); only `registry.json` and `site/` data changed |
 | Baseline | version `3`, enforcement `selective` (`SECURITY.md:85-90`) |
-| Plugin split | `git subtree split --prefix=plugin` at branch commit `0f10c970` (`wp/042-store-prep`): split commit `689dc5db4d997f2e716e9466e006edcb0f254b60`, tree `77e833bec4942e3932c1b7dd50c24dd6a32d2d86` |
+| Plugin split | `git subtree split --prefix=plugin` at branch commit `3b951145` (`wp/042-store-prep`, review round 2): split commit `4374707833cc6ee4431e4beb6055e9c1f538c3ff`, tree `64260354471ee9e3cb3ca3a9a34650e10d922787` (round 1: `0f10c970`, split `689dc5db4d997f2e716e9466e006edcb0f254b60`, same outcome) |
 | Before WP-042 | `plugin/` tree `03f2715938f4d0e2fe497cca5f5afd42d113df39` at `9d776f9a` |
 
 Scanner references below are `scripts/security-baseline-analysis.mjs`
 (`analysis`) and `scripts/security-baseline-scope.mjs` (`scope`) at that
-commit; README lines are `plugin/README.md` at `0f10c970`.
+commit; README lines are `plugin/README.md` at `3b951145`.
 
 ## Result
 
@@ -46,22 +46,22 @@ every scanned file (`analysis:1403-1421`). The root README and every
 
 | Evidence | What it is |
 |---|---|
-| README 335 (States, "Snapshots not readable"), 449, 451 | the snapshot grant `sudo setfacl -m u:$USER:rx /.snapshots` (ADR-0026), started by the user's *Grant* in a terminal they see |
-| README 486, 488, 550 | the same grant, and `omarchy pkg drop` running `sudo pacman -Rns` when the user removes the AUR package |
+| README 340 (States, "Snapshots not readable"), 454, 456 | the snapshot grant `sudo setfacl -m u:$USER:rx /.snapshots` (ADR-0026), started by the user's *Grant* in a terminal they see |
+| README 491, 493, 494, 559 | the same grant; pacman running through sudo for the engine's AUR package, and `omarchy pkg drop` running `sudo pacman -Rns` when the user removes it |
 | `Model.js:74`, `:182`, `:190` | the grant's constant command, its comment, its run line |
 
 Recognised negations, not evidence (`analysis:1349`, the form
 `SECURITY.md:69` documents): README 55 "No sudo or pkexec is required for
-these steps." and 483 "No sudo or pkexec is required to use it." Each is
+these steps." and 488 "No sudo or pkexec is required to use it." Each is
 true where it stands: the three install steps and the plugin's own use run
 as the user; the grant is optional. The scanner reads one physical line at
 a time (`analysis:52-68`), so each sentence keeps to one line, without
 backticks around the names.
 
 The bot's report lists at most five evidence lines per capability
-(`analysis:1370`); the run listed `Model.js:74`, `Model.js:190`, README 327
+(`analysis:1370`); the run listed `Model.js:74`, `Model.js:190`, README 332
 (the States table, read as one line from its header because each row ends
-in `|`), 449 and 451.
+in `|`), 454 and 456.
 
 ### `package-manager`
 
@@ -70,11 +70,11 @@ Rule: `analysis:1422-1432` (`omarchy pkg add|drop|remove|update`,
 
 | Evidence | What it is |
 |---|---|
-| README 95 | `yay -S jax-seldon`, updating the engine from the AUR |
-| README 487, 488, 547, 550, 551 | removing the engine's AUR package: `omarchy pkg drop`, `sudo pacman -Rns`, `yay -R` |
+| README 100 | `yay -S jax-seldon`, updating the engine from the AUR |
+| README 494, 556, 559, 560 | removing the engine's AUR package: `omarchy pkg drop`, `sudo pacman -Rns`, `yay -R` |
 | `Model.js:5776` | advice text in the transaction view: reinstall packages with `pacman -S` |
 
-README 94 `omarchy pkg aur add jax-seldon` does not match (`aur` stands
+README 99 `omarchy pkg aur add jax-seldon` does not match (`aur` stands
 between `pkg` and `add`); the capability is the same either way. The
 plugin itself never starts a package manager.
 
@@ -87,17 +87,30 @@ plugin itself never starts a package manager.
   the README has no fence with a downloader piped to a shell (before: README
   76 and 525, reported as one evidence line because both are line 1 of
   their fence).
-- The two "download, read, verify, run" fences (install, README 66-72;
-  removal, 535-541) download with `curl -fsSLO` and run `bash install.sh`
+- The two "download, read, verify, run" fences (install, README 66-74;
+  removal, 542-550) download with `curl -fsSLO` and run `bash install.sh`
   only after `sha256sum -c`. The download-then-run rule reads a target
   from `-o FILE`, `--output` or `>` (`analysis:500-506`), not from `-O`,
   so it does not evaluate these lines; they verify the script against the
   release's `SHA256SUMS` anyway, which is what the rule asks for ("without
   verification"). The checksum shows that `install.sh` matches the release,
-  not who built it; `install.sh` checks the engine's build provenance with
-  `gh attestation verify` when `gh` is logged in.
-- **The panel's one-liner stays documented.** README 329 (States),
-  444 (the list of commands the plugin may start) and 474 name
+  not who built it; the optional `gh attestation verify install.sh` line in
+  both fences checks that this project's release workflow built it
+  (`release.yml` attests `install.sh`), and `install.sh` checks the
+  engine's build provenance the same way when `gh` is logged in.
+- **A review risk the scan cannot show.** Store maintainers have objected
+  to exactly this shape in other plugins: "Moving a mutable
+  download-to-shell command into the UI does not authenticate the required
+  backend. A checksum from the same movable tag as a root bootstrap supplies
+  no independent trust" (Omatalk, store issue #8407, as quoted in
+  T. Ballard's `omarchy-plugin-release/references/release-contract.md:97-101`;
+  not re-read at the store). The panel's *Install* (`Model.js:64`) and the
+  `releases/latest` + `SHA256SUMS` path are that shape; Seldon's answers
+  are the attestation of `install.sh` and the engine (above), no root, and
+  the switch to the AUR package under ADR-0024. `submission.md`'s
+  maintainer notes say this; the operator decides before filing.
+- **The panel's one-liner stays documented.** README 334 (States),
+  449 (the list of commands the plugin may start) and 479 name
   `curl -fsSL …/install.sh | bash` in prose code spans (ADR-0024). README
   prose is not a runtime file (`analysis:618-622`: mode `100644`, no
   shebang), so the rule does not read it. `Model.js:64`
@@ -108,7 +121,7 @@ plugin itself never starts a package manager.
 - **No `service-management`**: no `systemctl` or `systemd-run` in the
   README, the QML or the JavaScript, and no `.service` file. The README's
   denial sentence "never runs … `systemctl`" (before, README 479) is gone;
-  README 81-82 names `--unit` "for the optional watcher" without `systemctl`,
+  README 86-87 names `--unit` "for the optional watcher" without `systemctl`,
   which stays true (the project README describes the unit).
 - No `installer` (no file named `install`, `setup` or `uninstall`,
   `analysis:1334-1338`), no `remote-build` (no `curl`, `wget` or `git` URL
