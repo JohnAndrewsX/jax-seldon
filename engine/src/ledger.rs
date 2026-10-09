@@ -19,7 +19,7 @@ use anyhow::Context as _;
 use chrono::{DateTime, Duration, FixedOffset};
 use ulid::{Generator, Ulid};
 
-use crate::error::Result;
+use crate::error::{Refused, Result};
 use crate::logbook::Logbook;
 use crate::logbook::lock::Lock;
 use crate::model::event::{DETAIL_MAX, Event, Meta, SUBJECT_MAX, is_actor};
@@ -121,11 +121,7 @@ impl Ledger {
         let bytes = match crate::sys::read_regular(&path, crate::sys::LEDGER_MONTH_MAX) {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(MonthFile::default()),
-            Err(e) => {
-                return Err(
-                    anyhow::Error::new(e).context(format!("cannot read {}", path.display()))
-                );
-            }
+            Err(e) => return Err(month_read_error(&path, e)),
         };
         // an event takes about 460 bytes: growing the list by doubling
         // copies it and maps fresh pages each time (WP-092)
@@ -249,6 +245,20 @@ impl Ledger {
 /// reach the views, links and paths built from them (WP-059 review).
 fn loadable(e: &Event) -> bool {
     is_actor(&e.actor) && e.case.as_deref().is_none_or(is_case_id)
+}
+
+/// The error of a month file that cannot be read. One the reader refuses
+/// (no regular file, or over [`crate::sys::LEDGER_MONTH_MAX`]) is a
+/// [`crate::error::Refused`]: exit 1, with what to do (WP-174).
+pub fn month_read_error(path: &Path, e: std::io::Error) -> anyhow::Error {
+    let what = format!("cannot read {}: {e}", path.display());
+    match e.kind() {
+        std::io::ErrorKind::InvalidInput => anyhow::Error::new(Refused(what)),
+        std::io::ErrorKind::FileTooLarge => anyhow::Error::new(Refused(format!(
+            "{what}: keep a copy of it, remove lines you can do without by hand (the ledger is plain JSON Lines, one event per line) and run the command again"
+        ))),
+        _ => anyhow::Error::new(e).context(format!("cannot read {}", path.display())),
+    }
 }
 
 /// The next id of a monotonic generator (on the practically impossible

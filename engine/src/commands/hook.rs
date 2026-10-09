@@ -1317,9 +1317,7 @@ fn already_recorded(
 /// bytes is read (WP-174).
 fn read_end(path: &Path, tail: Option<u64>) -> Result<Vec<u8>> {
     use std::io::{Seek as _, SeekFrom};
-    let cannot = |e: std::io::Error| {
-        anyhow::Error::new(e).context(format!("cannot read {}", path.display()))
-    };
+    let cannot = |e: std::io::Error| crate::ledger::month_read_error(path, e);
     let mut file = match sys::open_regular(path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
