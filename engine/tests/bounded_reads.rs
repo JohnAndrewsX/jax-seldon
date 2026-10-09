@@ -21,6 +21,8 @@ use common::{Env, Snapper, hardware_root, json, stderr};
 
 const NOW: &str = "2026-10-09T10:00:00+02:00";
 const MONTH: &str = "ledger/2026-10.jsonl";
+/// What a refusal tells the user to do (review F1).
+const REMEDY: &str = "not read: make it a regular file and run the command again";
 
 unsafe extern "C" {
     fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32;
@@ -45,8 +47,8 @@ impl Swap {
     /// What the reader says the file is.
     fn what(self) -> &'static str {
         match self {
-            Swap::Fifo => "a FIFO, not a regular file; not read",
-            Swap::Zero => "a device, not a regular file; not read",
+            Swap::Fifo => "a FIFO, not a regular file; not read: make it a regular file",
+            Swap::Zero => "a device, not a regular file; not read: make it a regular file",
         }
     }
 
@@ -121,11 +123,15 @@ fn doctor(env: &Env, root: &Path, what: &str) -> (BTreeMap<String, String>, Opti
         .iter()
         .map(|c| {
             let name = c["name"].as_str().unwrap().to_string();
-            let line = format!(
+            let mut line = format!(
                 "{} {}",
                 c["status"].as_str().unwrap(),
                 c["message"].as_str().unwrap()
             );
+            if let Some(fix) = c["fix"].as_str() {
+                line.push_str(" fix: ");
+                line.push_str(fix);
+            }
             (name, line)
         })
         .fold(BTreeMap::new(), |mut m, (k, v)| {
@@ -169,12 +175,59 @@ fn a_ledger_month_that_is_no_regular_file_is_not_read() {
         let what = format!("status {how:?}");
         let out = within(&env, &root, &["status"], &what);
         let err = stderr(&out);
-        assert_eq!(out.status.code(), Some(2), "{what}: {err}");
+        // refused like WP-171's refusals: exit 1, with what to do
+        assert_eq!(out.status.code(), Some(1), "{what}: {err}");
+        assert!(err.contains(REMEDY), "{what}: {err}");
         assert!(err.contains(MONTH), "{what}: {err}");
         assert!(err.contains(how.what()), "{what}: {err}");
 
         doctor_names(&env, &root, MONTH, how, "ledger", "error", 1);
+        let (rows, _) = doctor(&env, &root, &what);
+        assert!(
+            rows["ledger"]
+                .contains(" fix: make a month file that is no regular file a regular file again"),
+            "{what}: {rows:#?}"
+        );
     }
+}
+
+/// Review F2 and Q4: a ledger month past the read cap (256 MiB) is
+/// refused with exit 1 and what to do; doctor warns from 128 MiB on
+/// (`degraded`, naming the size and the cap). Sparse files: nothing that
+/// large is written to the disk.
+#[test]
+fn a_ledger_month_past_the_cap_is_refused_and_one_near_it_is_named() {
+    const MIB: u64 = 1024 * 1024;
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let month = std::fs::File::create(root.join(MONTH)).unwrap();
+
+    month.set_len(129 * MIB).unwrap();
+    let (rows, code) = doctor(&env, &root, "doctor 129 MiB");
+    assert_eq!(code, Some(0), "{rows:#?}");
+    let line = &rows["ledger"];
+    assert!(line.starts_with("degraded "), "{line}");
+    assert!(
+        line.contains(
+            "ledger/2026-10.jsonl is 129 MiB: Seldon reads a ledger month of at most 256 MiB"
+        ),
+        "{line}"
+    );
+    assert!(line.contains("before it reaches the limit"), "{line}");
+
+    month.set_len(256 * MIB + 1).unwrap();
+    let out = within(&env, &root, &["status"], "status 256 MiB + 1");
+    let err = stderr(&out);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(err.contains(MONTH), "{err}");
+    assert!(
+        err.contains("more than 256 MiB; not read: keep a copy of it, remove lines you can do without by hand"),
+        "{err}"
+    );
+    let (rows, code) = doctor(&env, &root, "doctor 256 MiB + 1");
+    assert_eq!(code, Some(1), "{rows:#?}");
+    assert!(rows["ledger"].starts_with("error "), "{rows:#?}");
+    assert!(rows["ledger"].contains(" fix: "), "{rows:#?}");
 }
 
 #[test]
@@ -251,9 +304,11 @@ fn a_link_to_a_regular_file_is_read_as_before() {
     }
 }
 
-/// The readers of `std` (`fs::read`, `fs::read_to_string`, `File::open`)
-/// are called only for files outside the logbook: every call site in
-/// `engine/src` outside the unit tests, per file, is in this list. A new
+/// The readers of `std` (`fs::read`, `fs::read_to_string`, `File::open`,
+/// `File::options`, `OpenOptions` with `.read(true)`, an import of
+/// `fs::read`/`fs::read_to_string` for a bare call) are called only for
+/// files outside the logbook: every call site in `engine/src` outside the
+/// `#[cfg(test)]` modules, per file, is in this list. A new
 /// one fails here: a file of the logbook is read with `sys::read_regular`,
 /// `sys::read_regular_string` or `sys::open_regular` (WP-174); a file
 /// outside the logbook is added below with what it reads.
@@ -297,11 +352,16 @@ fn only_files_outside_the_logbook_are_read_without_the_bound() {
         ("sessions.rs", 3, "/proc"),
         (
             "sys.rs",
-            3,
-            "read_small_file (checked first), a folder to sync, /etc/hostname",
+            4,
+            "the checked opens (open_checked, the ledger's append), a folder to sync, /etc/hostname",
         ),
     ];
-    let pattern = regex::Regex::new(r"\b(fs::read|fs::read_to_string|File::open)\(").unwrap();
+    // the free functions, the opens (`.read(true)` on `OpenOptions`), and
+    // an import of the free functions that a bare call would use
+    let pattern = regex::Regex::new(
+        r"\b(fs::read|fs::read_to_string|File::open|File::options)\(|\.read\(true\)|use std::fs::[^;]*\bread(_to_string)?\b[,;}]",
+    )
+    .unwrap();
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut found: BTreeMap<String, usize> = BTreeMap::new();
     let mut stack = vec![src.clone()];
@@ -312,17 +372,27 @@ fn only_files_outside_the_logbook_are_read_without_the_bound() {
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "rs") {
                 let text = std::fs::read_to_string(&path).unwrap();
-                let lines: Vec<&str> = text.lines().collect();
-                // the unit tests at the end of the file read their own files
-                let end = lines
-                    .windows(2)
-                    .position(|w| w[0].trim() == "#[cfg(test)]" && w[1].contains("mod "))
-                    .unwrap_or(lines.len());
-                let calls = lines[..end]
-                    .iter()
-                    .filter(|l| !l.trim_start().starts_with("//"))
-                    .map(|l| pattern.find_iter(l).count())
-                    .sum::<usize>();
+                // a `#[cfg(test)]` module reads its own files: from the
+                // attribute to its closing brace at column 0 (rustfmt);
+                // code after it counts again
+                let mut calls = 0;
+                let mut in_test = false;
+                let mut lines = text.lines().peekable();
+                while let Some(line) = lines.next() {
+                    if in_test {
+                        in_test = line != "}";
+                        continue;
+                    }
+                    if line.trim() == "#[cfg(test)]"
+                        && lines.peek().is_some_and(|next| next.contains("mod "))
+                    {
+                        in_test = !lines.peek().is_some_and(|next| next.ends_with(';'));
+                        continue;
+                    }
+                    if !line.trim_start().starts_with("//") {
+                        calls += pattern.find_iter(line).count();
+                    }
+                }
                 if calls > 0 {
                     let rel = path
                         .strip_prefix(&src)
@@ -340,6 +410,6 @@ fn only_files_outside_the_logbook_are_read_without_the_bound() {
         .collect();
     assert_eq!(
         found, listed,
-        "a call of fs::read/fs::read_to_string/File::open was added or removed: a logbook file is read with sys::read_regular"
+        "a std reader (fs::read, fs::read_to_string, File::open, File::options, .read(true), an import of fs::read) was added or removed: a logbook file is read with sys::read_regular"
     );
 }
