@@ -357,7 +357,7 @@ House rules for every key, now and later (WP-183; the checklist
   (`engine/src/commands/plan.rs`, `reopen`). Where there is no inverse,
   the action arms (above) and its result line names the real way back.
 - **Copying copies the id.** A key or button that copies a record copies
-  its id, never logbook text (ADR-0036 §1).
+  its id, never logbook text, as ADR-0036 §1 does for agent prompts.
 - **Every hinted key is a click too**, and a primary action is always a
   visible button, never only a key.
 
@@ -1337,8 +1337,11 @@ or bold text (WP-177).
 **Geometry.** Rows and `qs.Ui` controls take `Style.cornerRadius`
 (Hyprland's `decoration:rounding`, 0 by default), as Omarchy's own
 `Ui/CursorSurface.qml` does. Only stripes, accent bars and heatmap cells
-are square (radius 0); the list row's stripe is still a capsule
-(`ListRow.qml`) until WP-126's sweep. Spacing and sizes come from
+are square (radius 0); a progress bar counts as a bar. Three shapes
+differ until WP-126's sweep: the list row's stripe and the progress bars
+are capsules (`components/desk/ListRow.qml`, `components/desk/Progress.qml`,
+`radius: height / 2`), and the banner card takes `Style.spacing.labelGap`
+(`components/Banner.qml`) instead of `Style.cornerRadius`. Spacing and sizes come from
 `Style.spacing.*` where a name exists (`controlHeight`, `rowPaddingX`,
 `panelPadding`, …) and from `Style.space(N)` otherwise, so they scale
 with the font; type sizes from `Style.font.*`, the family

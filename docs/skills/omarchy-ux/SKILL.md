@@ -56,7 +56,7 @@ installed today are cited only *when shipped*.
 - [ ] Data states (empty, no match, loading, error) each say what and offer one action; never
       fake numbers (*proposal*; WP-178's `Model.emptyState`).
 - [ ] Nothing is due: no read state, no "review needed", no nagging (ADR-0027 §1, §5).
-- [ ] Never suggest Seldon can stop or limit an agent in its terminal (ADR-0027 §9).
+- [ ] Never suggest Seldon can stop or limit an agent in its terminal (E48; ADR-0036 §2).
 
 ## 5. Keys (SPEC §5.3)
 
@@ -66,7 +66,7 @@ installed today are cited only *when shipped*.
 - [ ] Writing actions arm first; a held key never confirms (SPEC §5.3, WP-173).
 - [ ] No undo key without a true inverse verb: `plan reopen` makes a *new* case, so it is not one;
       reports get `report reopen`, not `report undo` (*proposal*, Reports ADR, 0.3).
-- [ ] Copy copies the id, never logbook text (ADR-0036 §1). Every hinted key is also a click.
+- [ ] Copy copies the id, never logbook text (SPEC §5.3). Every hinted key is also a click.
 
 ## 6. Copy (*proposal* unless cited; WP-183b lints labels)
 
@@ -81,8 +81,8 @@ installed today are cited only *when shipped*.
 - [ ] Look: `DESK_SHOTS=<dir> tests/plugin/desk-view.sh` renders three themes offscreen with a
       private HOME (`desk-view.sh:24-25,80-88`); composition first, then numbers.
 - [ ] Every process gets its own HOME and a private 0700 `XDG_RUNTIME_DIR` (AGENTS.md §6). No
-      `omarchy capture screenshot`, no `wtype`, no `omarchy-restart-shell` on the dev host; live
-      checks only on the test host.
+      `omarchy capture screenshot`, no `wtype` on the live session; no `omarchy-restart-shell` on the
+      dev host (E38: it runs releases only); live checks only on the test host.
 - [ ] *Proposal:* worst-case data too: long paths, 0 / 1 / 1,284 items, missing fields.
 - [ ] Handover names where each check ran: fixture, headless, CI, test host, desktop or not run.
 
@@ -94,7 +94,7 @@ After T. Ballard, build-omarchy-plugins (MIT), and the marketplace's public revi
 - [ ] Bounded reads: a size limit before parsing a file or process output, a deadline per process
       (ADR-0025's index budget; [review](https://github.com/omacom/omarchy-plugin-marketplace/issues/1667#issuecomment-5451236689); WP-126's index limit).
 - [ ] Fixed argv only, `--` before free text (AGENTS.md §8; CONTRACT.md; [review](https://github.com/omacom/omarchy-plugin-marketplace/issues/6292#issuecomment-5645360550)).
-- [ ] No download-to-shell in the plugin or its README ([review](https://github.com/omacom/omarchy-plugin-marketplace/issues/8407#issuecomment-5818821005); WP-042).
+- [ ] No download-to-shell in the README; in the plugin only the engine banners' constant installer until the AUR package exists (ADR-0024; SPEC §3; [review](https://github.com/omacom/omarchy-plugin-marketplace/issues/8407#issuecomment-5818821005); WP-042).
 - [ ] Privilege wording true, in the scanner's form; never an untrue denial ([review](https://github.com/omacom/omarchy-plugin-marketplace/issues/6586#issuecomment-5648899465); WP-042).
 - [ ] No agent files (`AGENTS.md`, `CLAUDE.md`) in the shipped `plugin/` tree ([review](https://github.com/omacom/omarchy-plugin-marketplace/issues/4744#issuecomment-5642689162)).
 - [ ] A shortened preview never changes what an action does ([review](https://github.com/omacom/omarchy-plugin-marketplace/issues/8478#issuecomment-5819340291); ADR-0025).

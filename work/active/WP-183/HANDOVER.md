@@ -76,3 +76,22 @@ is not Omarchy's; `CursorSurface.qml:39` uses 60 ms, `Button.qml:128`
    rounding 0/6/16 check.
 2. SPEC §5.3's "Digits are the desk's" states the rule; the Graph's `0`
    stays an exception until WP-181's registry test.
+
+## Round 2 (review 1: SEND BACK)
+
+- **B1** fixed: the store block's download line now reads "No
+  download-to-shell in the README; in the plugin only the engine banners'
+  constant installer until the AUR package exists (ADR-0024; SPEC §3; …)".
+  The same correction in `work/queued/WP-183.md` so WP-126 does not
+  inherit it.
+- **N1** citations: "cannot stop an agent" → E48, ADR-0036 §2; "copy
+  copies the id" → SPEC §5.3 in the skill, and SPEC §5.3 says "as
+  ADR-0036 §1 does for agent prompts"; the dev-host restart ban → E38.
+- **N2**: SPEC §7 Geometry counts a progress bar as a bar and names the
+  three shapes WP-126's sweep fixes: `ListRow.qml` stripe and
+  `Progress.qml` bars (capsules), `Banner.qml` (`Style.spacing.labelGap`).
+- Skill still 100 lines, store block 12.
+- Verified: **headless** (dev host) `bash scripts/docs-check.sh` with a
+  private 0700 `XDG_RUNTIME_DIR`, `TMPDIR` and cargo target on disk:
+  `docs-check: ok (472 links …)`. The full `just check` was not rerun
+  (docs-only change; round 1's run on bcdfd00c stands for the code).
