@@ -52,6 +52,7 @@ plugin/
 │   ├── desk/           DeskWindow (layer shell), Header, KpiStrip, Notices, Sidebar,
 │   │                   NavIcon, Search, Section (the section base), ListColumn, ListRow,
 │   │                   GroupedRow, DetailPane, ActionBar, KeyValues, Arm (arm twice),
+│   │                   KeyButton (a form's button, once per key press),
 │   │                   Progress, CaseTile; the sections' parts: EventDetail, DriftForm,
 │   │                   JournalField, NewCaseSheet, NewDecisionForm
 │   ├── overlay/        the Prime Radiant's charts (§6): Heatmap, Series, DriftBars,
@@ -321,13 +322,19 @@ filter and gives the keys back to the desk. Writing actions arm on the
 first press (`components/desk/Arm.qml`: `press(id)` arms, the same id
 again returns true and disarms); every key that did not press disarms,
 and the sticky action bar shows the hint while armed (the two-press rule
-of §5.7, shared by the sections). A held key does not confirm: its
-auto-repeats (Omarchy's Hyprland repeats a key held for 250 ms) neither
-arm nor confirm a writing action, and an armed one stays armed with its
-hint until the key is released and pressed again (`Arm.held`, set by the
-desk for an auto-repeated key; a click is unaffected); navigation keys
-keep repeating. The forms that arm on Enter (Link, Explain, Dismiss, New
-decision; §5.4) ignore a repeated Enter the same way (WP-173).
+of §5.7, shared by the sections). A held key does not confirm: Omarchy's Hyprland repeats a key held
+for 250 ms, and `Desk.keyPressed` drops every auto-repeat except of the
+keys that move (`Model.deskKeyRepeats`: the arrows with or without Alt,
+the page keys, Home, End, `j`/`k`, `h`/`l`, `-`/`=`). A dropped repeat
+changes nothing: it neither arms, confirms, writes, launches nor
+disarms, so an armed action stays armed with its hint until the key is
+released and pressed again; a click is unaffected. In a form, Return and
+Enter in a field and Return, Enter and Space on a writing button act once
+per press (the forms' and fields' `keyPressed`, `components/desk/
+KeyButton.qml`); the arm-twice forms (Link, Explain, Dismiss, New
+decision; §5.4) and the one-Enter fields (the note, the intents, the
+new-case sheet, Import tasks…) alike. No field acts on Qt's `accepted`,
+which a repeat emits too (WP-173).
 
 ### 5.4 Sections
 

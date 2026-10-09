@@ -207,7 +207,9 @@ Actions that write take two presses on the keyboard: *Start*,
 *Verify*, *Done*, *Drop* (`x`), *Start agent* (`a`), the drift sheet and
 a new decision. The first Enter arms the action and
 the card says "Press Enter again: Start C-2026-005". The second press
-sends it. Any other key in a list disarms it. A note and a new case are
+sends it. Any other key in a list disarms it. Holding a key counts as
+one press: it never confirms and never sends twice; only the keys that
+move the selection repeat. A note and a new case are
 sent with one Enter, a *Run* sentence too. *Reopen* takes one press or
 click: it only adds a case. With the mouse, one click sends, except
 *Drop* and *Start agent*, which ask for a second click.

@@ -261,7 +261,7 @@ resolved the change; if the logbook resolved it already, the sheet says
 new-decision sheet take two presses. The first Enter (or `x`, or `a`) arms
 the action: its button is marked and the card says "Press Enter again:
 Start C-2026-005". The second press sends it; holding the key does not
-(its repeats neither arm nor send). A note (QuickEntry) and a new
+(only the keys that move repeat; no repeat arms, sends or confirms). A note (QuickEntry) and a new
 case are sent with one Enter. In a list, any other key or a cursor move
 disarms; in a sheet, only a change to the form disarms (Tab between fields
 keeps the arm). A mouse click on a button sends at once, except *Drop* and

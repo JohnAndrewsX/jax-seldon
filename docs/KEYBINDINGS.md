@@ -44,7 +44,9 @@ replay, then lets a kept card go, then closes.
 ↑/↓ move the selection; the detail follows. A text field keeps every key
 while it has the focus; Esc in it gives the keys back and keeps the text.
 Writing actions need a second press (the action bar shows the hint); any
-other key cancels.
+other key cancels. A held key counts as one press: its repeats never
+confirm, write or start anything; only the keys that move (arrows, page
+keys, `j`/`k`, `h`/`l`, `-`/`=`) repeat.
 Tab and Shift-Tab do nothing: the desk is not a bar popup.
 
 ## The pill

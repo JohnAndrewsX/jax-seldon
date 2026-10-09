@@ -222,6 +222,8 @@ Aktionen, die schreiben, brauchen auf der Tastatur zwei Tastendrücke:
 Drift-Dialog und eine neue Entscheidung. Das erste Enter schaltet die
 Aktion scharf, und die Karte sagt „Press Enter again: Start C-2026-005“. Der
 zweite Druck sendet sie. Jede andere Taste in einer Liste entschärft sie.
+Eine gehaltene Taste zählt als ein Druck: Sie bestätigt nie und sendet nie
+zweimal; nur die Tasten, die die Auswahl bewegen, wiederholen sich.
 Eine Notiz und ein neuer Case gehen mit einem Enter raus, ein Satz für
 *Run* auch. *Reopen* braucht einen Druck oder Klick: Es fügt nur einen
 Case hinzu. Mit der Maus sendet ein Klick, außer bei *Drop* und *Start

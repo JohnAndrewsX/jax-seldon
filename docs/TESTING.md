@@ -842,7 +842,10 @@ handler), `call`, `section`, `select`, `width:<pct>` and `sidebar:<mode>`
 [Alt+]<Name>`, `text`, `type`, `keyDown`/`keyUp` to hold one), a held
 key's auto-repeat (`keyRepeat:<Name|char>`: QtTest makes none, so the
 harness hands an event object with `isAutoRepeat` to `keyPressed(event)`
-of the focused form or the desk; WP-173), `click`, `clickName`, `clickAt`, `drag`/
+of the key guard the focus is in — a field's, a form's, a `KeyButton`'s,
+else the desk's; every report's `keyGuard` holds that guard's name and
+call count, which a real `keyDown:` must raise, so the Keys handlers are
+proven to route there; WP-173), `focusName:<objectName>`, `click`, `clickName`, `clickAt`, `drag`/
 `release` (the width slider), `wheel:<objectName>:<delta>`, `hover`,
 `settle`, `wait:<path>=<v>` (`^=` for a prefix), `pause:<ms>`, `shot`,
 `view`; for the Prime Radiant (WP-123) `fresh[:<json>]` (drop the desk and
