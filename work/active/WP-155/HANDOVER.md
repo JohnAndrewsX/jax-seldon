@@ -324,3 +324,78 @@ N6, N3, Q5. Commits 231d0031 (script, test) and 3ab7f3f2 (docs).
 Not run, nothing changed there; same reason as in rounds 1 and 2 (the
 script refuses anything but a `next` checkout at `origin/next`). No ssh
 to the test host this round.
+
+## Round 4
+
+Fable stage 2 (`review-0.1.1/handovers/WP-155-stage2-fable.md`): SEND
+BACK, F1–F5, all done. Commits be577f68 (script, test) and 4d0d3fad
+(docs).
+
+- **F1.** The backup copies `shell.json` and the engine with `cp -pP`: a
+  link is copied as the link, never its target (the probe measured the
+  link). The existence tests count a link too (`-e || -L`), in the
+  backup, the probe's size list and the probe's `has_shell` /
+  `has_engine`. Rows: the engine and `shell.json` as links to files under
+  `$work/outside-files` (inside the test dir, outside the fake home) are
+  backed up as links with the same target, the targets not copied; a
+  dangling `shell.json` link is backed up as the link and gets its
+  restore line.
+- **F2.** `logbook_safe` refuses a path with a control character
+  (`*[[:cntrl:]]*`, a newline among them). It covers the probe and the
+  copy-time recheck. The fake `seldon doctor` now builds its JSON with
+  `jq --arg`, so the test can hand it any path. Row: a logbook
+  `<home>/Seldon` + newline + `x` (both dirs exist) is refused (exit 1,
+  the "not a directory below the home" message, no build, the host
+  unchanged, nothing measured). First attempt with `$'\n'` broke the
+  single-quoted remote prelude (`n: unbound variable`, every next probe
+  failed); caught by the test run, replaced by the class.
+- **F3.** `RESTORE.txt`: stop the watcher; put back the engine
+  (`mv ~/.local/bin/seldon ~/.local/bin/seldon.next && cp -pP
+  <backup>/seldon.engine ~/.local/bin/seldon`), the logbook, the config,
+  the state dir and `shell.json` (now moved aside to `.next` like the
+  others, `cp -pP`); then right away deploy main (or `--release`); then
+  start the watcher. The order row checks all eight lines (stop, engine,
+  logbook, config, state, shell.json, deploy, start). With the engine
+  put back first, the window between restore and deploy no longer runs
+  the next engine on the restored state (the next plugin still runs
+  until the deploy restarts the shell).
+- **F4.** The host counts as running next when its plugin marker *or*
+  its engine version says next (`*+next.*`). No backup then, and a main
+  or release deploy warns (the warning names both: "plugin …, engine
+  …"). A retry after a first next deploy that failed between the engine
+  swap and the marker therefore takes no second backup, and "the newest
+  RESTORE.txt" is always the right one; the round-3 N3 advice ("take the
+  oldest") is obsolete. Rows: engine next under a main marker (no backup,
+  a main dry run warns), marker next with a main engine (no backup).
+- **F5.** The fake host wraps `cp`, `du`, `mv`, `rm`, `rsync`, `install`
+  and `tar` in one loop: every argument that is not an option must
+  resolve below the test dir, else exit 1 and a line in `trap.log`
+  (which the last row requires empty). The whitelist of plain links
+  dropped those five. An isolated check of the new wrappers outside the
+  suite (nonexistent paths outside, in a scratch dir under `target/`)
+  was blocked by the guard ("a link to a protected directory at a path
+  the guard cannot know"); not redone another way. The suite passes
+  through all of them (324/0, `trap.log` empty), and the refusal is the
+  same code path as `cp`/`du`, which round 2 showed refusing `/`.
+
+### Verification
+
+- `bash tests/deploy/deploy-test-host.test.sh`: 324 passed, 0 failed.
+- Hand mutants for the round-4 code (`gates/mutants-wp155-r4.sh`, log
+  `gates/mutants-wp155-r4.log`; on disk under the worktree's
+  `target/mutants`, one runner under `flock`, `timeout 300`; before the
+  run I checked for each mutant which paths it would make the test copy:
+  all under the test dir): 11 mutants, 11 killed. `f4-engine-only` and
+  `probe-shell-file-only` survived the first pass; the rows "marker next,
+  engine main" and "a dangling shell.json link" were added and kill them.
+- Full gate `gates/check-wp155-r5.log` at 4d0d3fad (private runtime dir
+  `/tmp/r155`, 0700, removed afterwards; `SELDON_FULL_CHECK=1`): `check:
+  ok`, exit 0 (deploy-test-host.test 324/0, docs-check ok, no harness
+  skipped).
+- `/tmp` 2 % throughout. shellcheck: not installed here; CI.
+
+### Live on the test host
+
+Not run, no ssh this round; the live protocol of the stage-2 packet
+(dry run, deploy, read the backup, second dry run, the way back once
+via RESTORE.txt, next again) applies after the merge into `next`.
