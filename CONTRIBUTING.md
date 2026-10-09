@@ -28,11 +28,13 @@ It must exit 0 before a pull request is reviewed. What it runs and why
 is in [docs/TESTING.md](docs/TESTING.md). You need:
 
 - Rust ≥ 1.89 with `cargo`, `clippy` and `rustfmt` (Arch: `rust`), `just`,
-  `git`, `jq`, `python3`; `shellcheck` if you touch `packaging/` or a shell
-  script (without it, `check-packaging` falls back to `bash -n`).
-- For the host-only steps (`omarchy plugin validate`, `qmllint` against
-  the installed shell, the plugin harnesses): an Omarchy 4 install,
-  `qt6-declarative`, Quickshell and `node`.
+  `git`, `jq`, `python3`, `node` and `curl`; `shellcheck` if you touch
+  `packaging/` or a shell script (without it, `check-packaging` falls back
+  to `bash -n`). Without the omarchy CLI, `plugin-validate` fetches
+  Omarchy's validator at the pinned commit (`packaging/omarchy-pin`).
+- For the host-only steps (`qmllint` against the installed shell, the
+  plugin's Quickshell harnesses): an Omarchy 4 install,
+  `qt6-declarative` and Quickshell.
 
 Without an Omarchy host, run `SELDON_SKIP_HOST_CHECKS=1 just check` —
 the same set CI runs — and say in the pull request that the host steps

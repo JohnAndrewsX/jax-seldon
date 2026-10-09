@@ -18,6 +18,8 @@ publishes both through `.github/workflows/release.yml`.
 | `expected-files.txt` | the exact file list of the built package (`tar tf`, dot files left out) |
 | `audit-ignore.txt` | RustSec advisories accepted for `engine/Cargo.lock`, each with an expiry and a reason (CONTRIBUTING.md, "Dependency advisories") |
 | `audit-ignore.sh [FILE [TODAY]]` | checks that list and prints its ids for `cargo audit --ignore`; exit 1 on an expired or malformed entry (`tests/release/`) |
+| `omarchy-pin` | the `omacom/omarchy` commit and the sha256 of its `bin/omarchy-plugin-validate` (WP-190; "The Omarchy pin" below) |
+| `omarchy-validate.sh PLUGIN_DIR` | fetches that validator over HTTPS, refuses it unless the sha256 matches, runs it on `PLUGIN_DIR`: `just plugin-validate` without the omarchy CLI (CI), the release workflow on the plugin split (`tests/release/`) |
 
 ## What the package contains
 
@@ -69,11 +71,12 @@ The workflow then runs, in order:
 
 | Job | Runs on | Does |
 |---|---|---|
-| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md` (`release-notes.sh`, docs/VERSIONING.md); **`cargo audit` of `engine/Cargo.lock`, the release gate**: an advisory, an unmaintained or a yanked crate fails the build unless `audit-ignore.txt` accepts its id (an expired entry fails it too); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) `install.sh` and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` (its id; its `version` and `Model.js` `PLUGIN_VERSION` equal to the tag's, `plugin-version.sh`); **a build-provenance attestation** (`actions/attest-build-provenance`) of the binary tarball, the source tarball, `SHA256SUMS` and `install.sh` — the job alone has `id-token: write` and `attestations: write`; `install.sh` checks it with `gh attestation verify` (SECURITY.md, "Verifying a release") |
+| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md` (`release-notes.sh`, docs/VERSIONING.md); **`cargo audit` of `engine/Cargo.lock`, the release gate**: an advisory, an unmaintained or a yanked crate fails the build unless `audit-ignore.txt` accepts its id (an expired entry fails it too); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) `install.sh` and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` (its id; its `version` and `Model.js` `PLUGIN_VERSION` equal to the tag's, `plugin-version.sh`); **the split's own tree (`git archive` of the split, extracted) against Omarchy's pinned validator** (`omarchy-validate.sh`, WP-190), so the plugin the store installs is validated before anything is published; **a build-provenance attestation** (`actions/attest-build-provenance`) of the binary tarball, the source tarball, `SHA256SUMS` and `install.sh` — the job alone has `id-token: write` and `attestations: write`; `install.sh` checks it with `gh attestation verify` (SECURITY.md, "Verifying a release") |
+| `split` | tag and dry run | recomputes `git subtree split --prefix=plugin` on the `plugin` job's runner (both pinned to the label `ubuntu-24.04`, never `-latest`; no container: its git, not the Arch image's) and fails unless it is the split `build` validated (its `plugin_split` output). `release` needs it, and `bump`, `aur` and `plugin` need `release`, so a mismatch stops the release before anything is published (WP-190) |
 | `release` | tag | GitHub release `vX.Y.Z` with the four assets (the three above and `install.sh`, also listed in `SHA256SUMS`; README.md "Install"); the release notes are that `CHANGELOG.md` section (`packaging/release-notes.sh`) |
 | `bump` | tag | commits the updated `PKGBUILD` and `.SRCINFO` to `main` (`packaging: jax-seldon X.Y.Z`). Skipped with a warning if `main`'s `packaging/` changed after the tag; then bump by hand (below) |
 | `aur` | tag | clones `ssh://aur@aur.archlinux.org/jax-seldon.git`, commits `PKGBUILD` + `.SRCINFO` (`Update to X.Y.Z`), pushes `master`. The host key is pinned (Ed25519 `SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4`, as published on aur.archlinux.org). **Skipped with a notice** without `AUR_SSH_PRIVATE_KEY` |
-| `plugin` | tag | `git subtree split --prefix=plugin`, pushes it to `jax-seldon-plugin` as `main` and as the tag. **Skipped with a notice** without `PLUGIN_REPO_TOKEN` |
+| `plugin` | tag | `git subtree split --prefix=plugin`; refuses unless it is the split `build` validated (its `plugin_split` output); pushes it to `jax-seldon-plugin` as `main` and as the tag in one `git push --atomic` (both or neither). **Skipped with a notice** without `PLUGIN_REPO_TOKEN` |
 
 `aur` and `plugin` wait for `release`, so the AUR source URL exists before
 the AUR knows the version. `bump` failing (for example a protected `main`)
@@ -93,7 +96,7 @@ gh workflow run release.yml --ref main
 gh run watch
 ```
 
-Only `build` runs. The version comes from `engine/Cargo.toml`, the source
+Only `build` and `split` run. The version comes from `engine/Cargo.toml`, the source
 tarball is `git archive` of the branch head (no tag needed). Nothing is
 pushed, released or committed. The attestation step runs too, so it is
 exercised before a tag depends on it: the dry run's assets get real,
@@ -171,6 +174,50 @@ three workflows (each action and the image have one pin everywhere):
   comment.
 - *Then:* `just check-packaging`, and the release dry run on the branch
   ("Dry run" above) must be green before the change is merged.
+
+## The Omarchy pin
+
+`omarchy-pin` names one `omacom/omarchy` commit and the sha256 of
+`bin/omarchy-plugin-validate` at that commit, with the Omarchy version as
+a comment. Omarchy's validator is bash and jq; `omarchy-validate.sh`
+fetches that one file from `raw.githubusercontent.com` (HTTPS only,
+redirects too), refuses it on a sha256 mismatch and never runs it then,
+and runs it on a plugin folder. It runs where the omarchy CLI is absent:
+`just plugin-validate` in CI, and the release workflow on the extracted
+plugin split. On the dev host `just plugin-validate` keeps the installed
+`omarchy plugin validate` and prints a notice when the installed
+validator is not the pinned one. The pin mirrors the validator installed
+on the test host; it never replaces the installed tree as the reference
+(AGENTS.md §1).
+
+**Refreshing the pin**, like the action pins, is a manual step in one
+commit:
+
+- *When:* after the test host moves to a new Omarchy release, or when
+  `just plugin-validate` on the dev host prints the notice.
+- *The commit:* the release tag of the version `omarchy version` prints
+  on the test host (lightweight tags point at the commit; an annotated
+  one at a tag object, resolve it once more as for the actions):
+
+  ```
+  gh api repos/omacom/omarchy/git/ref/tags/v4.0.4 --jq '.object.type + " " + .object.sha'
+  ```
+
+- *The sha256:* of the file at that commit, which must equal the test
+  host's installed validator:
+
+  ```
+  curl -fsSL --proto '=https' https://raw.githubusercontent.com/omacom/omarchy/<commit>/bin/omarchy-plugin-validate | sha256sum
+  ssh <test-host> 'omarchy version; sha256sum /usr/share/omarchy/bin/omarchy-plugin-validate'
+  ```
+
+  If they differ, the test host runs a build between tags: pick the
+  commit whose file matches, and say so in the comment. Read the
+  validator's diff between the old and the new commit before you change
+  the pin.
+- *Then:* `just check-packaging` (`tests/release/omarchy-pin.test.sh`
+  runs the installed validator through the pin where they match), and
+  CI on the pull request runs the fetched one.
 
 ## One-time setup (operator)
 

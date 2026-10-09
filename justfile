@@ -1,9 +1,10 @@
 # Seldon task runner. `just check` is the gate every WP runs before handover.
 #
-# Host-only steps (`omarchy plugin validate`, qmllint against the installed
-# shell) need an Omarchy install. CI sets SELDON_SKIP_HOST_CHECKS=1 to skip
-# them with a notice; everywhere else a missing tool is an error.
-# See docs/TESTING.md.
+# Host-only steps (qmllint against the installed shell, the Quickshell
+# harnesses of plugin-test) need an Omarchy install. CI sets
+# SELDON_SKIP_HOST_CHECKS=1 to skip them with a notice; everywhere else a
+# missing tool is an error. plugin-validate and the node and bash parts of
+# plugin-test run everywhere (WP-190). See docs/TESTING.md.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
@@ -91,6 +92,7 @@ check-perf:
 # Pinned workflow actions and images, the cargo audit release gate and
 # its list of accepted advisories (WP-072): tests/release/.
 # The plugin's manifest version equals Model.js PLUGIN_VERSION (WP-090).
+# The Omarchy validator pin and its fetch-and-verify script (WP-190).
 check-packaging:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -98,7 +100,8 @@ check-packaging:
       packaging/release-notes.sh tests/release/release-notes.test.sh \
       packaging/audit-ignore.sh tests/release/audit-ignore.test.sh \
       tests/release/workflow-pins.test.sh \
-      packaging/plugin-version.sh tests/release/plugin-version.test.sh
+      packaging/plugin-version.sh tests/release/plugin-version.test.sh \
+      packaging/omarchy-validate.sh tests/release/omarchy-pin.test.sh
     if command -v shellcheck >/dev/null; then
       # PKGBUILD variables are read by makepkg, $srcdir/$pkgdir set by it
       shellcheck -s bash -e SC2034,SC2154,SC2164 packaging/PKGBUILD
@@ -106,7 +109,8 @@ check-packaging:
         packaging/release-notes.sh tests/release/release-notes.test.sh \
         packaging/audit-ignore.sh tests/release/audit-ignore.test.sh \
         tests/release/workflow-pins.test.sh \
-        packaging/plugin-version.sh tests/release/plugin-version.test.sh
+        packaging/plugin-version.sh tests/release/plugin-version.test.sh \
+        packaging/omarchy-validate.sh tests/release/omarchy-pin.test.sh
     else
       echo "check-packaging: shellcheck not installed; bash -n only"
     fi
@@ -121,6 +125,7 @@ check-packaging:
     bash tests/release/workflow-pins.test.sh
     bash packaging/plugin-version.sh plugin/manifest.json plugin/Model.js
     bash tests/release/plugin-version.test.sh
+    bash tests/release/omarchy-pin.test.sh
     echo "check-packaging: ok"
 
 # install.sh (WP-044) against a local mock of the release layout (file://
@@ -177,16 +182,24 @@ check-runtime-dir:
     if command -v shellcheck >/dev/null; then shellcheck tests/plugin/runtime-dir.test.sh; fi
     bash tests/plugin/runtime-dir.test.sh
 
-# `omarchy plugin validate plugin/` (host only).
+# Omarchy's plugin validator on plugin/: `omarchy plugin validate` where the
+# omarchy CLI is installed (the dev host; a notice when its validator is
+# not the pinned one), else the validator of packaging/omarchy-pin, fetched
+# over HTTPS and refused unless its sha256 matches (CI, WP-190).
 plugin-validate:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ -n "{{ skip_host }}" ]]; then
-      echo "plugin-validate: skipped (SELDON_SKIP_HOST_CHECKS set; needs the omarchy CLI)"
+    if ! command -v omarchy >/dev/null; then
+      bash packaging/omarchy-validate.sh plugin/
+      echo "plugin-validate: ok (pinned validator; no omarchy CLI)"
       exit 0
     fi
-    command -v omarchy >/dev/null || { echo "plugin-validate: omarchy CLI not found" >&2; exit 1; }
     omarchy plugin validate plugin/
+    installed="{{ omarchy_path }}/bin/omarchy-plugin-validate"
+    read -r _ commit sha <<< "$(bash packaging/omarchy-validate.sh --print-pin)"
+    if [[ -f $installed && $(sha256sum "$installed" | cut -d' ' -f1) != "$sha" ]]; then
+      echo "plugin-validate: NOTICE: $installed is not the validator of packaging/omarchy-pin (${commit:0:12}); refresh the pin (packaging/README.md, \"The Omarchy pin\")"
+    fi
     echo "plugin-validate: ok"
 
 # qmllint every plugin QML file against the installed shell, zero warnings (host only).
@@ -235,6 +248,9 @@ qmllint:
     echo "qmllint: ok (${#files[@]} files)"
 
 # Plugin logic: Model.js under node; the banners' terminal scripts under bash with stubs; Service.qml states, the desk (Desk.qml: width, layout, keys, settings writes, notices, IPC), the pill (BarWidget.qml) and an IPC exit with two pills in a private headless Quickshell (host only).
+# The node and bash parts run everywhere, CI included (WP-190; there the
+# bench's budgets are tripled for a shared runner); SELDON_SKIP_HOST_CHECKS
+# skips only the Quickshell harnesses (WP-191 brings them to CI).
 # The Quickshell harnesses run only when plugin/, tests/plugin/, schema/,
 # fixtures/ or this justfile changed against the merge base with main, and
 # always on main itself (HEAD is the merge base) or with SELDON_FULL_CHECK=1
@@ -242,15 +258,20 @@ qmllint:
 plugin-test: check-runtime-space
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ -n "{{ skip_host }}" ]]; then
-      echo "plugin-test: skipped (SELDON_SKIP_HOST_CHECKS set; needs node, quickshell, jq, python3 and the installed shell)"
-      exit 0
-    fi
     command -v node >/dev/null || { echo "plugin-test: node not found" >&2; exit 1; }
     node tests/plugin/model.test.js
-    node tests/plugin/model.bench.js
+    if [[ -n "{{ skip_host }}" ]]; then
+      SELDON_BENCH_BUDGET_SCALE=3 node tests/plugin/model.bench.js
+    else
+      node tests/plugin/model.bench.js
+    fi
     bash tests/plugin/terminal-scripts.sh
     bash tests/plugin/real-home-guard.test.sh
+    if [[ -n "{{ skip_host }}" ]]; then
+      echo "plugin-test: Quickshell harnesses skipped (SELDON_SKIP_HOST_CHECKS set; they need quickshell and the installed shell)"
+      echo "plugin-test: ok (node and bash parts)"
+      exit 0
+    fi
     # Operator decision E29 (WP-161): less load on the dev host. Without git
     # or a merge base the harnesses run; at the merge base itself (main, a
     # detached main, a fresh branch with no commit yet) they run too, so
