@@ -1038,8 +1038,10 @@ const CLOSING_TAIL_MAX: usize = 100;
 /// <title>: <line>`, `line` the first line of the case's *Result* (`plan
 /// done`) or the reason (`plan drop`), left out when there is none, a
 /// list marker before it dropped. The text after the dash is one line
-/// (direction and invisible format characters dropped, so none splits a
-/// token; control characters and line or paragraph separators become
+/// (control characters and line or paragraph separators as spaces,
+/// redacted, then invisible characters dropped,
+/// `Redactor::redact_dropping_invisible`, so none splits a token or hides
+/// one; control characters and line or paragraph separators become
 /// spaces), redacted and then clipped: the patterns see the whole text,
 /// so a cut cannot hide a secret from them.
 fn closing_summary(
@@ -1064,16 +1066,19 @@ fn closing_summary(
     };
     let tail: String = tail
         .chars()
-        .filter(|c| !crate::import::is_direction_or_format(*c))
         .map(|c| {
-            if c.is_control() || super::is_line_breaking(c) {
+            // the bidi controls are invisible: dropped after the redaction
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
                 ' '
             } else {
                 c
             }
         })
         .collect();
-    let tail = clip(redactor.redact(&tail).trim(), CLOSING_TAIL_MAX);
+    let tail = clip(
+        redactor.redact_dropping_invisible(&tail).trim(),
+        CLOSING_TAIL_MAX,
+    );
     if tail.is_empty() {
         format!("{id} {to}")
     } else {
@@ -1158,7 +1163,7 @@ fn show(ctx: &Context, id: &str) -> Result<Output> {
 
 /// `plan show --json` `intent` (WP-102b): the whole *Intent* section as
 /// display text (`index::build::marked_text`: control characters as
-/// spaces, every direction or format character marked `‹U+XXXX›` and
+/// spaces, every invisible character marked `‹U+XXXX›` and
 /// counted in `hidden`, redacted), at most [`SHOW_INTENT_MAX`] bytes cut at
 /// a character, with its line count before the cut. `null` while the
 /// config's redaction patterns do not compile (withheld, as the index
@@ -1288,6 +1293,13 @@ mod tests {
         );
         assert!(s.starts_with("C-2026-012 completed — Tx: token "), "{s}");
         assert!(s.ends_with(" y z"), "{s}");
+        // WP-159 round 2, B1b: an invisible character before a secret is
+        // a boundary its rule reads; it is dropped after the redaction
+        let s = summary(
+            "T",
+            Some("x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX and a\u{FE0F}b"),
+        );
+        assert_eq!(s, "C-2026-012 completed — T: x‹redacted› and ab");
         // a secret that a clip would have cut is redacted first
         let secret = "ghp_0123456789abcdefghijABCDEFGHIJ012345";
         let title = format!("{}token {secret}", "y".repeat(80));

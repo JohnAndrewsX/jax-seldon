@@ -2519,6 +2519,13 @@ mod redaction {
                 "curl ",
                 "-H 'Authorization:' \"X-Api-Key:\" ",
             ),
+            // invisible characters and no secret: the rules read the
+            // visible copy, the text comes back whole (WP-159)
+            (
+                "invisible characters",
+                "curl -sS https://h.example ",
+                "क्\u{200D}ष 👍\u{FE0F} a-u-x-b ",
+            ),
         ] {
             for (kb, budget) in [(16, 1), (64, 2)] {
                 let line = filled(head, word, kb * 1024);
@@ -2616,6 +2623,14 @@ mod redaction {
                 "quoted header values",
                 "curl ",
                 "-H 'Authorization: \"Bearer a\"' -H \"X-Api-Key: 'b'\" ",
+                Some(20),
+            ),
+            // secrets split by invisible characters, and invisible
+            // characters between them that come back (WP-159)
+            (
+                "split secrets",
+                "tool ",
+                "to\u{200B}ken=a\u{FE0F}b x\u{200D}y ",
                 Some(20),
             ),
         ] {

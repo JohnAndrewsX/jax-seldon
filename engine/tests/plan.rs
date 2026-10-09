@@ -829,6 +829,50 @@ mod plan {
         assert_eq!(head(&env), format!("seldon: {id} active"));
     }
 
+    /// WP-159: a secret split by an invisible character (WP-102b review
+    /// 1, N5) in a Result line is masked in the closing commit's subject,
+    /// and no invisible character reaches it.
+    #[test]
+    fn a_secret_split_by_an_invisible_character_is_masked_in_the_closing_commit() {
+        let env = Env::new(Snapper::Missing);
+        if !env.has_git {
+            return;
+        }
+        let root = env.init_logbook();
+        let lines = [
+            (
+                "Rotate to\u{FE0F}ken=hunter2abc now",
+                "Rotate token=‹redacted› now",
+            ),
+            (
+                "Authorization: Bearer\u{3164} tokABC123secret",
+                "Authorization: ‹redacted›",
+            ),
+            (
+                "push ghp_0123\u{E0100}456789abcdefghijABCDEFGHIJ012345 x",
+                "push ‹redacted› x",
+            ),
+        ];
+        for (i, (line, want)) in lines.iter().enumerate() {
+            let id = new_case(&env, "Keys\u{200D}", &[]);
+            let (path, _, _) = case_at(&root, &id);
+            std::fs::write(
+                &path,
+                read(&path).replacen("## Result\n", &format!("## Result\n{line}\n"), 1),
+            )
+            .unwrap();
+            for step in ["start", "verify", "done"] {
+                let out = env.at(T1, &["plan", step, &id]);
+                assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            }
+            let subject = stdout(&env.git(&root, &["log", "-1", "--format=%B"]));
+            assert_eq!(
+                subject.trim_end(),
+                format!("seldon: C-2026-00{} completed — Keys: {want}", i + 1)
+            );
+        }
+    }
+
     /// Everything a plan step may change: every work file, the marker, the
     /// journal folder, the areas.
     fn state(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {

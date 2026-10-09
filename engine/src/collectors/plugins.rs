@@ -80,7 +80,6 @@ use super::config::{
     FileStat, HASH_BASIS_KEY, STAT_HASH_ABOVE, SkipPaths, changed_at, persistent_hash,
 };
 use super::{Collector, Ctx, Lost, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
-use crate::import::is_direction_or_format;
 use crate::logbook::git::REPOSITORY_VARS;
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::redact::Redactor;
@@ -1125,23 +1124,25 @@ fn step(git: Git, redactor: &Redactor, dir: &Path, old: &str, new: &str) -> Opti
     })
 }
 
-/// A commit subject as an event holds it: control characters and the line and paragraph separators become
-/// spaces, direction and invisible format characters are dropped (the
-/// set of ADR-0038, [`is_direction_or_format`]), white space at the ends trimmed, then redacted
-/// (before the clip: a secret at the cut is masked whole) and clipped to
-/// [`COMMIT_SUBJECT_MAX`] characters with `…`. An empty one reads
-/// `(no subject)`.
+/// A commit subject as an event holds it: control characters and the
+/// line and paragraph separators become spaces; then it is redacted
+/// (before the clip: a secret at the cut is masked whole) and its
+/// invisible characters are dropped (the set of ADR-0038 and its
+/// amendments, [`Redactor::redact_dropping_invisible`]: after the
+/// redaction, so the rules read the boundary one makes, WP-159 round 2);
+/// white space at the ends trimmed, and clipped to [`COMMIT_SUBJECT_MAX`]
+/// characters with `…`. An empty one reads `(no subject)`.
 fn commit_subject(raw: &str, redactor: &Redactor) -> String {
     let clean: String = raw
         .chars()
-        .filter(|c| !is_direction_or_format(*c))
         .map(|c| if breaks(c) { ' ' } else { c })
         .collect();
-    let clean = clean.trim();
-    if clean.is_empty() {
+    let redacted = redactor.redact_dropping_invisible(&clean);
+    let redacted = redacted.trim();
+    if redacted.is_empty() {
         return "(no subject)".to_string();
     }
-    let redacted = redactor.redact(clean);
+    let redacted = redacted.to_string();
     if redacted.chars().count() <= COMMIT_SUBJECT_MAX {
         return redacted;
     }
@@ -1903,8 +1904,9 @@ mod tests {
         assert_eq!(step("pull", 2, 0, &[]).summary(), "pulled 2 commits");
     }
 
-    /// WP-140: each code point of the widened set is dropped before the
-    /// redaction, so none hides a token in a commit subject from its rule.
+    /// WP-140, WP-159: each code point of the widened set is dropped
+    /// before the redaction, so none hides a token in a commit subject from
+    /// its rule.
     #[test]
     fn a_subject_drops_every_format_character_before_the_redaction() {
         let r = Redactor::builtin();
@@ -1926,6 +1928,20 @@ mod tests {
             '\u{1D17A}',
             '\u{E0001}',
             '\u{E007F}',
+            // WP-159: fillers and variation selectors
+            '\u{034F}',
+            '\u{115F}',
+            '\u{1160}',
+            '\u{17B4}',
+            '\u{180B}',
+            '\u{180F}',
+            '\u{2065}',
+            '\u{3164}',
+            '\u{FE00}',
+            '\u{FE0F}',
+            '\u{FFA0}',
+            '\u{E0100}',
+            '\u{E01EF}',
         ] {
             assert_eq!(
                 commit_subject(&format!("Fix to{c}ken=abc{c}def here"), &r),
@@ -1933,7 +1949,38 @@ mod tests {
                 "U+{:04X}",
                 c as u32
             );
+            // WP-159: the other two examples of WP-102b review 1, N5
+            assert_eq!(
+                commit_subject(&format!("Authorization: Bearer{c} tokABC123secret"), &r),
+                "Authorization: ‹redacted›",
+                "U+{:04X}",
+                c as u32
+            );
+            assert_eq!(
+                commit_subject(
+                    &format!("push ghp_0123{c}456789abcdefghijABCDEFGHIJ012345 x"),
+                    &r
+                ),
+                "push ‹redacted› x",
+                "U+{:04X}",
+                c as u32
+            );
         }
+    }
+
+    /// WP-159 round 2, B1b: an invisible character before a secret is a
+    /// boundary its rule reads; it is dropped after the redaction.
+    #[test]
+    fn a_subject_is_redacted_before_its_invisible_characters_go() {
+        let r = Redactor::builtin();
+        assert_eq!(
+            commit_subject("Use x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX now\u{FE0F}", &r),
+            "Use x‹redacted› now"
+        );
+        assert_eq!(
+            commit_subject("ci: a\u{200B}mysql -u root -phunter2secret", &r),
+            "ci: amysql -u root -p‹redacted›"
+        );
     }
 
     #[test]

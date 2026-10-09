@@ -3665,8 +3665,9 @@ test("BAD_PATH_CHARS is exactly fixtures/bad-path-chars.txt, the engine's bad_pa
     const refused = M.BAD_PATH_CHARS.test(String.fromCodePoint(cp))
     if (listed !== refused) assert.fail("U+" + cp.toString(16).toUpperCase() + ": listed " + listed + ", refused " + refused)
   }
-  // in a path: the separators and a tag character too
-  for (const bad of ["~/x Reviewed by you.md", "~/a b.md", "~/t\u{e0072}.md", "~/s­hy.md"])
+  // in a path: the separators, a tag character, a variation selector
+  // and a filler too (WP-159)
+  for (const bad of ["~/x Reviewed by you.md", "~/a b.md", "~/t\u{e0072}.md", "~/v\u{fe0f}.md", "~/f\u{3164}.md", "~/s­hy.md"])
     assert.notStrictEqual(M.importPathError(bad), "", JSON.stringify(bad))
 })
 
