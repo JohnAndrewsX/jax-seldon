@@ -15,8 +15,10 @@ The target dir is `MUTANTS_TARGET` (on disk, never under /tmp), else
 A mutant that does not compile is reported as such, not as killed. The
 writers have two layers on purpose (`checked_file` before the ledger, and
 a write primitive that never follows a link); a mutant that removes the
-second layer at one call site while the first still refuses is reported
-as SURVIVED and named in the handover (only a race reaches that layer)."""
+second layer at one call site while the first still refuses only a race
+reaches; since round 3 the call-site list of
+`linked_files::only_files_outside_the_logbook_are_written_through_a_link`
+kills it."""
 import os
 import signal
 import subprocess
@@ -114,6 +116,7 @@ MUTANTS = [
     ("views: DECISIONS.md read before the check", VIEWS, plain("    let path = match checked_view(logbook, REL)? {\n        Ok(path) => path,\n        Err(why) => return Ok(Fill::Skipped(why)),\n    };\n    let old = match", "    let path = logbook.path(REL);\n    let old = match")),
     ("views: a skipped month view not warned", VIEWS, plain("            Fill::Skipped(w) => warnings.push(w),", "            Fill::Skipped(_) => {}")),
     ("index: the skipped views not warned", INDEX, plain("    built.warnings.extend(skipped);\n", "")),
+    ("setup: the copy follows a link", SETUP, plain("        .write(true)\n        .create_new(true)\n        .mode(mode)\n        .open(to)?;", "        .write(true)\n        .create(true)\n        .truncate(true)\n        .mode(mode)\n        .open(to)?;")),
     ("setup: a link where a file goes taken", SETUP, plain("                let target = crate::logbook::checked_file(root, &to.join(&rel))?;", "                let folder = to.join(rel.parent().unwrap_or(Path::new(\"\")));\n                let target = crate::logbook::checked_dir(root, &folder)?.join(entry.file_name());")),
     # the second layer at single call sites (only a race reaches it)
     ("layer 2: journal day written with write_atomic", JOURNAL, plain("        sys::write_atomic_nofollow(&self.path, self.text.as_bytes())?;", "        sys::write_atomic(&self.path, self.text.as_bytes())?;")),

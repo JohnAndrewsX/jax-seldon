@@ -102,7 +102,9 @@ following a link:
   is a link or no directory;
 - every file the engine writes (one list, derived from the writers and
   tied to their tests) that is a link or no regular file, a directory in
-  its place included;
+  its place included — but the setup kit's files under `.claude/`, which
+  `setup` refuses itself and the row does not list (it checks the
+  `.claude/` folder, not its contents);
 - in `decisions/`, the three status folders, `ledger/`, `system/` and
   `memory/`, also any other entry that is a link or neither a folder nor
   a regular file. In `areas/<area>/`, `outputs/`, `journal/<YYYY>/` and
@@ -120,14 +122,18 @@ review N3).
 
 ### 4. Accepted residual (WP-168 and WP-171)
 
-The check is `lstat`-then-create without `O_NOFOLLOW`; a process with
-write access to the logbook can swap a folder for a link between the two.
-Accepted: such a process can edit the logbook directly. Files are closed
-against that race: a replaced file's rename never follows a link, and
-the ledger's append opens the month file with `O_NOFOLLOW` (std's
-`OpenOptionsExt::custom_flags`, the constant written out as the crate
-does for `SIGKILL`) and takes only a regular file, checked on the open
-file. An `openat` walk for every folder part would close the folder race
+For folders, the check is `lstat`-then-create without `O_NOFOLLOW`; a
+process with write access to the logbook can swap a folder for a link
+between the two. Accepted: such a process can edit the logbook directly.
+Files are closed against that race (the last part of the path): a
+replaced file's rename never follows a link; the ledger's append opens
+the month file with `O_NOFOLLOW` (std's `OpenOptionsExt::custom_flags`,
+the constant written out as the crate does for `SIGKILL`) and takes only
+a regular file, checked on the open file; a new file (`write_new`, the
+archives, the setup kit's copy) is made with `O_CREAT|O_EXCL`, which
+fails on a link. A writer that follows links (`write_atomic`,
+`write_generated`) may be called only for files outside the logbook: a
+test lists every call site. An `openat` walk for every folder part would close the folder race
 too; it is left out for proportion, not because it cannot be done.
 
 ## Consequences

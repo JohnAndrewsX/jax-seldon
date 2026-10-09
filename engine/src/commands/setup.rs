@@ -271,6 +271,29 @@ fn omarchy_agent(dirs: &Dirs, root: &Path) -> HarnessReport {
     }
 }
 
+/// Copies the regular file `from` to the new file `to` with `from`'s
+/// permission bits. `O_CREAT|O_EXCL`: never through a link at `to`, also
+/// one that appears after the caller's check (ADR-0049 §4); an existing
+/// `to` is `AlreadyExists`. A copy that fails half way is removed.
+fn copy_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+    let mode = std::fs::metadata(from)?.permissions().mode() & 0o777;
+    let bytes = std::fs::read(from)?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(mode)
+        .open(to)?;
+    let written = file
+        .set_permissions(std::fs::Permissions::from_mode(mode))
+        .and_then(|()| file.write_all(&bytes));
+    if written.is_err() {
+        let _ = std::fs::remove_file(to);
+    }
+    written
+}
+
 /// Files [`copy_tree`] copied and kept, relative to the target, sorted.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Copied {
@@ -311,9 +334,14 @@ fn copy_tree(from: &Path, root: &Path, to: &Path) -> anyhow::Result<Copied> {
                     sys::create_dir_private(parent)
                         .with_context(|| format!("cannot create {}", parent.display()))?;
                 }
-                std::fs::copy(entry.path(), &target)
-                    .with_context(|| format!("cannot copy {name}"))?;
-                out.copied.push(name);
+                match copy_new(&entry.path(), &target) {
+                    Ok(()) => out.copied.push(name),
+                    // made since the check (a link included): kept
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => out.kept.push(name),
+                    Err(e) => {
+                        return Err(anyhow::Error::new(e).context(format!("cannot copy {name}")));
+                    }
+                }
             }
         }
     }
@@ -802,5 +830,36 @@ mod tests {
             "mine"
         );
         assert!(!tmp.join("outside/missing.md").exists());
+    }
+
+    /// ADR-0049 §4: the copy itself never follows a link at the target,
+    /// with no check in front (the race the check cannot close): a link,
+    /// dangling or not, is `AlreadyExists` and nothing is written where
+    /// it points; a new file gets the source's mode.
+    #[test]
+    fn copy_new_never_follows_a_link() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = crate::logbook::scratch::scratch("seldon-copy-new");
+        std::fs::write(tmp.join("kit"), "kit").unwrap();
+        std::fs::set_permissions(tmp.join("kit"), std::fs::Permissions::from_mode(0o750)).unwrap();
+        std::fs::write(tmp.join("outside"), "mine").unwrap();
+        std::os::unix::fs::symlink(tmp.join("outside"), tmp.join("linked")).unwrap();
+        std::os::unix::fs::symlink(tmp.join("missing"), tmp.join("dangling")).unwrap();
+        for name in ["linked", "dangling"] {
+            let e = copy_new(&tmp.join("kit"), &tmp.join(name)).unwrap_err();
+            assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists, "{name}");
+        }
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("outside")).unwrap(),
+            "mine"
+        );
+        assert!(!tmp.join("missing").exists());
+        copy_new(&tmp.join("kit"), &tmp.join("new")).unwrap();
+        assert_eq!(std::fs::read_to_string(tmp.join("new")).unwrap(), "kit");
+        let mode = std::fs::metadata(tmp.join("new"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o750);
     }
 }

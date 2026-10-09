@@ -649,3 +649,77 @@ mod primitives {
         assert!(!outside(&env, "areas/editors/README.md").exists());
     }
 }
+
+/// The writers that follow a link (`write_atomic`, `write_generated` and
+/// their `_mode`/`_replace` forms) are called only for files outside the
+/// logbook (ADR-0049 §2): every call site in `engine/src`, per file, is in
+/// this list. A new one fails here: a file of the logbook goes through
+/// `write_atomic_nofollow` or `write_generated_nofollow`, is checked with
+/// `logbook::checked_file` first and is listed in `layout::written`; a file
+/// outside the logbook is added below with what it writes.
+#[test]
+fn only_files_outside_the_logbook_are_written_through_a_link() {
+    const OUTSIDE: &[(&str, usize, &str)] = &[
+        (
+            "collectors/config.rs",
+            2,
+            "the config collector's manifest and owned files (state)",
+        ),
+        ("collectors/mod.rs", 1, "cursors.json (state)"),
+        ("commands/agent.rs", 1, "the launches file (state)"),
+        ("commands/capture.rs", 1, "config.toml"),
+        (
+            "commands/hook.rs",
+            2,
+            "Claude Code's settings.json, named by the user",
+        ),
+        ("commands/init.rs", 1, "config.toml"),
+        ("commands/setup.rs", 1, "the theme hook script (~/.config)"),
+        ("commands/skills.rs", 1, "the agent skill folders"),
+        (
+            "commands/triage.rs",
+            1,
+            "proposals/<id>.json (state; replaces a link)",
+        ),
+        ("config.rs", 1, "config.toml"),
+        ("index/autocommit.rs", 1, "autocommit.json (state)"),
+        ("index/mod.rs", 1, "index.json (state)"),
+        ("sys.rs", 5, "the definitions and their tests"),
+    ];
+    let pattern =
+        regex::Regex::new(r"\b(write_atomic(_mode|_replace)?|write_generated)\(").unwrap();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut found: BTreeMap<String, usize> = BTreeMap::new();
+    let mut stack = vec![src.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let calls = std::fs::read_to_string(&path)
+                    .unwrap()
+                    .lines()
+                    .filter(|l| !l.trim_start().starts_with("//"))
+                    .map(|l| pattern.find_iter(l).count())
+                    .sum::<usize>();
+                if calls > 0 {
+                    let rel = path
+                        .strip_prefix(&src)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned();
+                    found.insert(rel, calls);
+                }
+            }
+        }
+    }
+    let listed: BTreeMap<String, usize> = OUTSIDE
+        .iter()
+        .map(|(file, n, _)| (file.to_string(), *n))
+        .collect();
+    assert_eq!(
+        found, listed,
+        "a call of write_atomic/write_generated was added or removed: a logbook file goes through the nofollow writers"
+    );
+}
