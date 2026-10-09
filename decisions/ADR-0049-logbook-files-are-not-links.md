@@ -63,9 +63,20 @@ primitives never resolve a link: `sys::write_atomic_nofollow` and
 `sys::write_generated_nofollow` refuse a link or non-regular file at the
 path, and should one appear after that check, the rename replaces the
 link itself, not its target. The ledger's append checks the month file
-before it opens it. `write_atomic` and `write_generated` keep following
+before it opens it, and opens it with `O_NOFOLLOW` (§4). `write_atomic`
+and `write_generated` keep following
 links and are used only for files outside the logbook (config, state,
 Claude Code settings, agent skills).
+
+A generated view — `STATUS.md`, the fence of `DECISIONS.md`, a month
+view `ledger/<month>.md` — is skipped instead of refused: `status` and
+`index` name it in a warning ("`<file>` not updated: `<file>` is a
+symbolic link, …"), exit 0, and still write `index.json` (CONTRACT rule
+2: the plugin's file stays fresh). The view is rebuilt from the ledger
+once it is a real file again; nothing of the user's is lost by skipping
+it. A linked `ledger/` folder stays refused (WP-168): the ledger itself
+is written there. `decide`'s fill of `DECISIONS.md` was a warning
+already.
 
 A capture's silent upgrade of the rules block in `AGENTS.md` turns the
 refusal into a warning and goes on, as for every other reason that
@@ -83,31 +94,47 @@ linked journal day. Only writes are refused.
 
 ### 3. `doctor` names them: the `layout` row
 
-`seldon doctor` gets a `layout` row (read-only, no lock): every folder of
-the logbook the engine writes in (SPEC-ENGINE §2) and every entry
-directly in those folders, plus `AGENTS.md`, `STATUS.md` and
-`DECISIONS.md`, checked without following links. `ok` when there is
-nothing to name; otherwise `error`, naming each link and each thing in a
-folder's or file's place (the first five, then a count), with the fix to
-replace each by a real folder or file. Error, not degraded: every command
-that writes there exits 1, and a linked `ledger/` stops `status` and
-`capture`. This makes WP-168's refusal discoverable before a write fails
-(WP-168 review N3).
+`seldon doctor` gets a `layout` row (read-only, no lock), found without
+following a link:
+
+- every part of a folder the engine writes in (SPEC-ENGINE §2), and the
+  year folders `journal/<YYYY>/` and area folders `areas/<area>/`, that
+  is a link or no directory;
+- every file the engine writes (one list, derived from the writers and
+  tied to their tests) that is a link or no regular file, a directory in
+  its place included;
+- in `decisions/`, the three status folders, `ledger/`, `system/` and
+  `memory/`, also any other entry that is a link or neither a folder nor
+  a regular file. In `areas/<area>/`, `outputs/`, `journal/<YYYY>/` and
+  `.seldon/` only the engine's own files are looked at: a case template
+  kept in a dotfiles repository, a note in an area or a report of the
+  user's in `outputs/` is not named.
+
+`error` when one of them is refused by a command (exit 1), naming those
+(the first five, then a count) with the fix to replace each by a real
+folder or file. What no command refuses — a skipped view (§2), another
+link beside Seldon's files — is `degraded` on its own, and named after
+the refused ones when both occur. `ok` when there is nothing to name.
+This makes WP-168's refusal discoverable before a write fails (WP-168
+review N3).
 
 ### 4. Accepted residual (WP-168 and WP-171)
 
 The check is `lstat`-then-create without `O_NOFOLLOW`; a process with
 write access to the logbook can swap a folder for a link between the two.
-Accepted: such a process can edit the logbook directly. The same holds
-for a file swapped for a link between the check and the ledger's append
-(the open follows it); a replaced file's rename never follows one. An
-`openat`/`O_NOFOLLOW` walk is disproportionate to that threat (and std
-offers `O_NOFOLLOW` only through `libc`, not an allowed crate).
+Accepted: such a process can edit the logbook directly. Files are closed
+against that race: a replaced file's rename never follows a link, and
+the ledger's append opens the month file with `O_NOFOLLOW` (std's
+`OpenOptionsExt::custom_flags`, the constant written out as the crate
+does for `SIGKILL`) and takes only a regular file, checked on the open
+file. An `openat` walk for every folder part would close the folder race
+too; it is left out for proportion, not because it cannot be done.
 
 ## Consequences
 
 - A logbook with a linked file stops the commands that write it, exit 1,
-  until the user replaces the link with the file. CHANGELOG, Unreleased ›
+  until the user replaces the link with the file (a generated view is
+  skipped with a warning instead, §2). CHANGELOG, Unreleased ›
   Breaking, beside WP-168's entry.
 - The logbook folder itself may still be a link (WP-168): a logbook kept
   on another disk goes there whole, or behind a bind mount.

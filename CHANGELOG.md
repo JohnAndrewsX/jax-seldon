@@ -48,12 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logbook; make it a file and run the command again"), and nothing is
   written; before, the write replaced the file the link pointed to,
   wherever it was, and a dangling link created its target. A capture
-  that would update the rules in a linked `AGENTS.md` only warns. Fix:
+  that would update the rules in a linked `AGENTS.md` only warns; a
+  linked generated view (`STATUS.md`, `DECISIONS.md`, `ledger/<month>.md`)
+  is skipped with a warning, and `status` still refreshes `index.json`. Fix:
   replace the link with the file it points to. Outside the logbook
   (`config.toml`, Claude Code's `settings.json`) links are followed as
   before. `seldon doctor` has a new `layout` row that names every linked
   folder and file where Seldon writes, so you see them before a write is
-  refused.
+  refused (`error`; `degraded` for what is only skipped).
 
 ### Engine
 

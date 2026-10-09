@@ -32,7 +32,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 File modes (WP-064): a directory the engine creates (the logbook and its folders, the config and state directories) is 0700 and a new file 0600, whatever the umask; existing files and directories keep their mode, the engine never tightens them. Every rewrite goes through `sys::write_atomic`: a temp file `.<name>.tmp-<pid>` next to the target (new logbooks ignore `.*.tmp-*` in `.gitignore`) with the target's permission bits, synced, renamed over the target, the directory synced; the temp file is removed when any step fails. Files the engine rebuilds from the ledger and the logbook (`index.json`, `STATUS.md`, the `ledger/*.md` views, `outputs/REBUILD.md`) are written the same way without the two syncs (`sys::write_generated`): the next build writes them again. Ledger lines are synced when appended. Outside the logbook (`config.toml`, the state files, Claude Code's `settings.json`) a symbolic link at the path is followed: the link stays and its target is replaced (a link to a missing file creates the target). A file of the logbook is never written through a link (`sys::write_atomic_nofollow`, `sys::write_generated_nofollow`, the ledger's append; ADR-0049, "Linked folders and files" below). The theme hook script is written 0755. `.git/` is written by git under its own rules.
 
-Linked folders and files (WP-168, WP-171, ADR-0049): every folder of the logbook the engine creates or writes a file in (`decisions/`, `work/queued|active|completed/`, `journal/` and its year folders, `ledger/`, `areas/<area>/`, `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/` and `.seldon/imports/`, the harness kit's `.claude/` folders) must be a real directory inside the logbook (`logbook::checked_dir`). Each part below the root is checked without following links; a part that is a symbolic link (a write would land wherever it points) or no directory is refused with exit 1, "`<folder>` is a symbolic link | no directory, not a folder of the logbook; make it a folder and run the command again", and nothing is written. A part that does not exist yet is created (0700). Every file of the logbook the engine writes, replaced or appended (the journal days, the case files from and to, `.seldon/active-case` and `.seldon/imports/*`, `areas/<area>/README.md`, `ledger/*.jsonl` and the views `ledger/*.md`, `STATUS.md`, `DECISIONS.md`, `AGENTS.md`, `system/*.md`, `outputs/*.md`, the kit's files), must be a regular file or not exist yet (`logbook::checked_file`: its folder first, then the file without following a link): a symbolic link there (a dangling one too) is refused with exit 1, "`<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again", and anything else in a file's place (a directory, FIFO, socket, device) with "is no regular file"; nothing is written, and the file is not read first (a FIFO is never opened). The write primitives of the logbook refuse the same and never resolve a link: one that appears after the check is replaced by the rename, never its target (the ledger's append opens the month file; ADR-0049 §4 records that residual). A capture's silent upgrade of the rules block warns instead ("AGENTS.md: Seldon's agent rules were not updated: …") and goes on; `decide`'s fill of `DECISIONS.md` after the decision is written is a warning too. Writers that create a file with `O_EXCL` (`write_new`, `init`, the archives) never follow a final link; their path is checked as well, so a link gives the reason. The setup kit's copy refuses a link where a file goes (it used to count an existing one as kept). An omarchy-agent import whose marker is a link is refused, not taken as "already imported". The root itself may be a link: a logbook kept on another disk goes there whole (the logbook folder itself may be a link, or a bind mount). A command checks before its first write and before the ledger: a command that writes a case checks all three case folders (a case moves between them; the next id is read from all three), `drift link|explain|dismiss|apply` (the ledger, and the case folders but for a dismissal) and `import --apply` check their folders before they read them, so a file in a folder's place is refused with the reason, not failed as an unreadable listing. A `.seldon` that is no directory is no logbook (exit 3). Reading through a linked folder or file is unchanged (the index still shows a linked journal day); `doctor`'s `layout` row names every linked folder and file where the engine writes (§3); `proposals/` in the state directory has its own check (WP-124). `hook install|uninstall claude-code --settings <file>` writes the file the user names where it is, also through a linked `.claude/` of the logbook: the user chose the path, so it is not checked.
+Linked folders and files (WP-168, WP-171, ADR-0049): every folder of the logbook the engine creates or writes a file in (`decisions/`, `work/queued|active|completed/`, `journal/` and its year folders, `ledger/`, `areas/<area>/`, `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/` and `.seldon/imports/`, the harness kit's `.claude/` folders) must be a real directory inside the logbook (`logbook::checked_dir`). Each part below the root is checked without following links; a part that is a symbolic link (a write would land wherever it points) or no directory is refused with exit 1, "`<folder>` is a symbolic link | no directory, not a folder of the logbook; make it a folder and run the command again", and nothing is written. A part that does not exist yet is created (0700). Every file of the logbook the engine writes, replaced or appended (the journal days, the case files from and to, `.seldon/active-case` and `.seldon/imports/*`, `areas/<area>/README.md`, `ledger/*.jsonl` and the views `ledger/*.md`, `STATUS.md`, `DECISIONS.md`, `AGENTS.md`, `system/*.md`, `outputs/*.md`, the kit's files), must be a regular file or not exist yet (`logbook::checked_file`: its folder first, then the file without following a link): a symbolic link there (a dangling one too) is refused with exit 1, "`<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again", and anything else in a file's place (a directory, FIFO, socket, device) with "is no regular file"; nothing is written, and the file is not read first (a FIFO is never opened). The write primitives of the logbook refuse the same and never resolve a link: one that appears after the check is replaced by the rename, never its target, and the ledger's append opens the month file with `O_NOFOLLOW` and takes only a regular file (ADR-0049 §4). A generated view is skipped, not refused: when `STATUS.md`, `DECISIONS.md` or a month view `ledger/<month>.md` is a link or no regular file, `status` and `index` leave it as it is, warn "`<file>` not updated: `<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again" (human and `--json` `warnings`), exit 0 and still write `index.json`; a linked `ledger/` folder is still refused. A capture's silent upgrade of the rules block warns instead ("AGENTS.md: Seldon's agent rules were not updated: …") and goes on; `decide`'s fill of `DECISIONS.md` after the decision is written is a warning too. Writers that create a file with `O_EXCL` (`write_new`, `init`, the archives) never follow a final link; their path is checked as well, so a link gives the reason. The setup kit's copy refuses a link where a file goes (it used to count an existing one as kept). An omarchy-agent import whose marker is a link is refused, not taken as "already imported". The root itself may be a link: a logbook kept on another disk goes there whole (the logbook folder itself may be a link, or a bind mount). A command checks before its first write and before the ledger: a command that writes a case checks all three case folders (a case moves between them; the next id is read from all three), `drift link|explain|dismiss|apply` (the ledger, and the case folders but for a dismissal) and `import --apply` check their folders before they read them, so a file in a folder's place is refused with the reason, not failed as an unreadable listing. A `.seldon` that is no directory is no logbook (exit 3). Reading through a linked folder or file is unchanged (the index still shows a linked journal day); `doctor`'s `layout` row names every linked folder and file where the engine writes (§3); `proposals/` in the state directory has its own check (WP-124). `hook install|uninstall claude-code --settings <file>` writes the file the user names where it is, also through a linked `.claude/` of the logbook: the user chose the path, so it is not checked.
 
 ## 3. Commands
 
@@ -864,27 +864,43 @@ measured.
 
 `layout` (WP-171, ADR-0049 §3), with an open logbook, after the
 collector and reset rows: the places where the engine writes and would
-refuse to (§2, "Linked folders and files"), found without following a
-link (`layout::misplaced`). Each part of `decisions/`,
+refuse or skip (§2, "Linked folders and files"), found without
+following a link (`layout::misplaced`). (1) Each part of `decisions/`,
 `work/queued|active|completed/`, `journal/`, `ledger/`, `areas/`,
-`system/`, `outputs/`, `archive/`, `memory/`, `.seldon/` and `.claude/`
-that is a symbolic link or no directory; every entry directly in
-`decisions/`, the three status folders, `ledger/`, `system/`,
-`outputs/` and `memory/`, and one folder level deeper in `journal/`
-(the years), `areas/` (each area) and `.seldon/` (`imports/`), that is a
-symbolic link or neither a folder nor a regular file; and `AGENTS.md`,
-`STATUS.md`, `DECISIONS.md` when one is a link or no regular file.
-Workpiece folders `work/C-…/`, the contents of `archive/` and `.claude/`
-and the other root entries are not looked into (the user's, or written
-with `O_EXCL`). Nothing to name: `ok`, "no linked folders or files
-where Seldon writes". Otherwise `error`, "N where Seldon writes, so
-commands that write there refuse: <rel> (symbolic link | no directory
-| no regular file), …" (folder by folder in the order of the first
-list, by name within a folder, then the root files; the first five,
-then "and K more"; names with every control, direction, invisible format and
-line-breaking character as `?`), fix "replace each with a real folder
-or file (move what the link points to into its place), then run the
-command again". An entry that cannot be read is left out.
+`system/`, `outputs/`, `archive/`, `memory/`, `.seldon/`,
+`.seldon/imports/` and `.claude/`, and each year folder
+`journal/<YYYY>/` and area folder `areas/<area>/`, that is a symbolic
+link or no directory: refused. (2) Each file the engine writes that is a
+symbolic link or no regular file, a directory in its place included
+(`layout::written`, the list of the writers: `AGENTS.md`; `STATUS.md`,
+`DECISIONS.md` and `ledger/<YYYY-MM>.md`, skipped; `ledger/<YYYY-MM>.jsonl`;
+`journal/<YYYY>/<YYYY-MM-DD>.md`; `work/<status>/C-*.md`;
+`decisions/ADR-*.md`; `areas/<area>/README.md`; the `system/` files of
+the dossier's fences; `memory/*.md`; `outputs/REBUILD.md` and
+`outputs/IMPORT-*.md`; `.seldon/active-case`;
+`.seldon/imports/omarchy-agent.json`, `omarchy-agent.undo.json` and
+`tasks.json`): refused, or not for a skipped view.
+`tests/linked_files.rs` ties every file its writer tests refuse or skip
+to this list. (3) In `decisions/`, the three status folders, `ledger/`,
+`system/` and `memory/`, any other entry that is a symbolic link or
+neither a folder nor a regular file: not refused. Nothing else is looked
+at: other entries of `areas/<area>/`, `outputs/`, `journal/<YYYY>/`,
+`journal/`, `areas/` and `.seldon/` (a linked case template under
+`.seldon/templates/`, a note in an area, a report of the user's), the
+workpiece folders `work/C-…/`, the contents of `archive/` and
+`.claude/`, sub-folders. `error` when something refused is named:
+"N where Seldon writes, so commands that write there refuse: <rel>
+(symbolic link | no directory | no regular file), …", then, when there
+are, "; also M where Seldon writes but refuses nothing (a view is not
+updated, another file is left alone): …", fix "replace each with a real
+folder or file (move what the link points to into its place), then run
+the command again". Only what is not refused: `degraded`, the second
+sentence alone, fix "replace each with a real file, or move it out of
+the folder". Nothing: `ok`, "no linked folders or files where Seldon
+writes". Each list folder by folder in the order of (1), by name within
+a folder, then the root files; the first five, then "and K more"; names
+with every control, direction, invisible format and line-breaking
+character as `?`. An entry that cannot be read is left out.
 
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
 where one exists (an `ok` row has a fix only for the old snapper opt-in,
