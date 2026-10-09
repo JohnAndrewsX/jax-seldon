@@ -1096,9 +1096,7 @@ mod tests {
     /// (WP-168).
     #[test]
     fn the_archive_refuses_a_linked_or_non_directory_archive_folder() {
-        let base =
-            std::env::temp_dir().join(format!("seldon-skill-archive-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        let base = crate::logbook::scratch::scratch("seldon-skill-archive");
         let (root, outside) = (base.join("logbook"), base.join("outside"));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
@@ -1127,7 +1125,6 @@ mod tests {
             std::fs::read(root.join(&rel).join("SKILL.md")).unwrap(),
             b"x"
         );
-        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

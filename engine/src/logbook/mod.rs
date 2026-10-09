@@ -262,18 +262,54 @@ fn md_files(dir: &Path, prefix: &str) -> anyhow::Result<Vec<PathBuf>> {
         .collect())
 }
 
+/// A fresh directory under `TMPDIR` for one unit test, removed first if a
+/// run left it and again when the test ends, passed or not (WP-168).
+#[cfg(test)]
+pub(crate) mod scratch {
+    use std::path::{Path, PathBuf};
+
+    pub struct Scratch(PathBuf);
+
+    impl std::ops::Deref for Scratch {
+        type Target = PathBuf;
+        fn deref(&self) -> &PathBuf {
+            &self.0
+        }
+    }
+
+    impl AsRef<Path> for Scratch {
+        fn as_ref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// `<TMPDIR>/<name>-<pid>`, empty.
+    pub fn scratch(name: &str) -> Scratch {
+        let dir = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Scratch(dir)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A fresh directory for one test, removed first if a run left it.
-    fn scratch(tag: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("seldon-checked-dir-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    use crate::logbook::scratch::{Scratch, scratch as fresh};
+
+    fn scratch(tag: &str) -> Scratch {
+        fresh(&format!("seldon-checked-dir-{tag}"))
     }
+
+    /// Longest path a Unix socket can be bound at (`sun_path` less its NUL).
+    const SOCKET_PATH_MAX: usize = 107;
 
     fn user_message(r: Result<PathBuf>) -> String {
         match r {
@@ -301,8 +337,7 @@ mod tests {
         assert_eq!(check("work/queued").unwrap(), root.join("work/queued"));
         assert_eq!(check("journal/2026").unwrap(), root.join("journal/2026"));
         // nothing to check: the root itself
-        assert_eq!(check("").unwrap(), root);
-        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(check("").unwrap(), *root);
     }
 
     #[test]
@@ -315,7 +350,17 @@ mod tests {
         std::os::unix::fs::symlink(&outside, root.join("work/active")).unwrap();
         std::fs::write(root.join("ledger"), "").unwrap();
         std::fs::write(root.join("work/queued"), "").unwrap();
-        let _socket = std::os::unix::net::UnixListener::bind(root.join("system")).unwrap();
+        // a socket: neither link nor directory; it can be bound only at a
+        // short path, so a long TMPDIR leaves this case out
+        let socket = root.join("system");
+        let _socket = (socket.as_os_str().len() <= SOCKET_PATH_MAX)
+            .then(|| std::os::unix::net::UnixListener::bind(&socket).unwrap());
+        if _socket.is_none() {
+            eprintln!(
+                "note: the socket case is skipped: {} is longer than {SOCKET_PATH_MAX} bytes",
+                socket.display()
+            );
+        }
         let check = |rel: &str| checked_dir(&root, Path::new(rel));
 
         for (rel, shown) in [
@@ -332,12 +377,16 @@ mod tests {
                 "{rel}"
             );
         }
-        for (rel, shown) in [
-            ("ledger", "ledger"),
-            ("work/queued", "work/queued"),
-            ("system", "system"),
-            ("system/x", "system"),
-        ] {
+        let socket_cases = [("system", "system"), ("system/x", "system")];
+        let socket_cases = if _socket.is_some() {
+            &socket_cases[..]
+        } else {
+            &[]
+        };
+        for (rel, shown) in [("ledger", "ledger"), ("work/queued", "work/queued")]
+            .iter()
+            .chain(socket_cases)
+        {
             assert_eq!(
                 user_message(check(rel)),
                 format!(
@@ -351,9 +400,7 @@ mod tests {
         std::os::unix::fs::symlink(&outside, root.join("work")).unwrap();
         std::fs::create_dir_all(outside.join("active")).unwrap();
         assert!(user_message(check("work/active")).starts_with("work is a symbolic link,"));
-        assert!(std::fs::read_dir(&outside).unwrap().count() == 1);
-        std::fs::remove_dir_all(&root).unwrap();
-        std::fs::remove_dir_all(&outside).unwrap();
+        assert!(std::fs::read_dir(&*outside).unwrap().count() == 1);
     }
 
     #[test]
@@ -366,7 +413,6 @@ mod tests {
                 "{rel}: {e}"
             );
         }
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -379,7 +425,6 @@ mod tests {
             checked_dir(&root, Path::new("decisions")).unwrap(),
             root.join("decisions")
         );
-        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
@@ -395,7 +440,6 @@ mod tests {
         let long = "x".repeat(300);
         let e = engine_error(checked_dir(&root, Path::new(&long)));
         assert!(e.contains(&long), "{e}");
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -404,7 +448,7 @@ mod tests {
         let outside = scratch("file-outside");
         std::os::unix::fs::symlink(&outside, root.join("decisions")).unwrap();
         let logbook = Logbook {
-            root: root.clone(),
+            root: root.to_path_buf(),
             meta: LogbookMeta {
                 schema_version: 1,
                 created: "2026-09-01T19:00:42+02:00".parse().unwrap(),
@@ -440,8 +484,6 @@ mod tests {
         );
         let e = engine_error(logbook.checked_file(outside.join("x.md")));
         assert!(e.contains("is not in the logbook"), "{e}");
-        std::fs::remove_dir_all(&root).unwrap();
-        std::fs::remove_dir_all(&outside).unwrap();
     }
 
     #[test]

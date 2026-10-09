@@ -733,8 +733,7 @@ mod tests {
     #[test]
     fn copy_tree_keeps_existing_files_and_modes() {
         use std::os::unix::fs::PermissionsExt as _;
-        let tmp = std::env::temp_dir().join(format!("seldon-copy-tree-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
+        let tmp = crate::logbook::scratch::scratch("seldon-copy-tree");
         let (from, to) = (tmp.join("kit"), tmp.join("logbook/.claude"));
         std::fs::create_dir_all(from.join("hooks")).unwrap();
         std::fs::create_dir_all(from.join("skills/zones")).unwrap();
@@ -777,6 +776,5 @@ mod tests {
             ".claude/skills is a symbolic link, not a folder of the logbook; make it a folder and run the command again"
         );
         assert_eq!(std::fs::read_dir(tmp.join("outside")).unwrap().count(), 0);
-        std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

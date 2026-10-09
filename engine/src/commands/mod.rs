@@ -327,8 +327,7 @@ mod tests {
     /// checked first (WP-168).
     #[test]
     fn write_new_refuses_a_linked_folder() {
-        let base = std::env::temp_dir().join(format!("seldon-write-new-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
+        let base = crate::logbook::scratch::scratch("seldon-write-new");
         let (root, outside) = (base.join("logbook"), base.join("outside"));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
@@ -352,7 +351,6 @@ mod tests {
             std::fs::read_to_string(root.join("memory/x.md")).unwrap(),
             "x\n"
         );
-        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
