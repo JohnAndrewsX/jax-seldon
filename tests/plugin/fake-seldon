@@ -67,6 +67,13 @@
 #                        still runs: focused, nothing launched (WP-156)
 #   FAKE_SELDON_APPLY_REFUSED  an event id `drift apply` refuses (its
 #                        evidence "no longer resolves") (WP-124b)
+#   FAKE_SELDON_PREVIEW  the file `preview --json` prints (WP-138); unset:
+#                        the engine's answer without a pacman log and with
+#                        a withheld file list. FAKE_SELDON_PREVIEW_EXIT: exit
+#                        with that code and the engine's JSON error instead
+#   FAKE_SELDON_VERSION_DELAY  seconds `--version` waits before it answers;
+#                        the harness waits for the probe, so its first step
+#                        meets the start-up capture still running (WP-138)
 #   FAKE_SELDON_RULES    the rules row `doctor --json` reports: current
 #                        (default) | outdated | damaged; $HOME/rules overrides
 #                        it, and `rules update` writes "current" there (WP-101);
@@ -176,6 +183,21 @@ if [[ $cmd == doctor ]]; then
   esac
   echo "{\"checks\":[{\"name\":\"engine\",\"status\":\"ok\",\"message\":\"seldon 99.0.0-fake\"},$row]}"
   [[ $rules == damaged ]] && exit 1
+  exit 0
+fi
+# `preview --json` (WP-138) runs in its own process like `doctor`: logged to
+# $HOME/preview.log only. Read-only; it answers in every mode.
+if [[ $cmd == preview ]]; then
+  printf '%s\n' "$(printf '%q ' "$@")" >>"$HOME/preview.log"
+  if [[ -n ${FAKE_SELDON_PREVIEW_EXIT:-} ]]; then
+    echo "{\"error\":{\"code\":$FAKE_SELDON_PREVIEW_EXIT,\"message\":\"cannot read the preview\"}}"
+    exit "$FAKE_SELDON_PREVIEW_EXIT"
+  fi
+  if [[ -n ${FAKE_SELDON_PREVIEW:-} ]]; then
+    jq -c . "$FAKE_SELDON_PREVIEW"
+  else
+    echo '{"contractVersion":2,"generatedAt":"2026-10-08T12:00:00+02:00","since":"2026-10-01T12:00:00+02:00","days":7,"pacman":{"ok":false,"message":"cannot read /var/log/pacman.log: No such file or directory (os error 2)","partial":false,"transactions":[]},"files":{"ok":false,"message":"withheld: config.toml or one of its [redaction] patterns cannot be used","partial":false,"root":"~/.config","items":[]},"truncated":false,"elapsedMs":1}'
+  fi
   exit 0
 fi
 if [[ $cmd == agent && ${2:-} == sessions ]]; then
@@ -787,6 +809,7 @@ case "$cmd" in
   --version)
     # Above every engineMin: the harness tests plugin states; the version
     # gate itself is model.test.js's (engineOutdatedBanner).
+    [[ -n ${FAKE_SELDON_VERSION_DELAY:-} ]] && sleep "$FAKE_SELDON_VERSION_DELAY"
     echo '{"name":"seldon","version":"99.0.0-fake"}'
     ;;
   capture)

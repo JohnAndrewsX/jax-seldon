@@ -942,7 +942,15 @@ open within 2 s sends nothing, after 2 s it is sent, and a failed open
 does not start the 2 s (`aside-openfail`); an editor window the engine
 focused (`FAKE_SELDON_OPEN_FOCUSED`) launches nothing. The fake engine
 keeps the open agent windows in `$HOME/sessions` and logs `agent
-sessions` (its own process) to `sessions.log`, not `argv.log`; Import tasks… (WP-102b) live against the fake engine (`import
+sessions` (its own process) to `sessions.log`, not `argv.log`; before
+init (WP-138) Today lists what `seldon preview --json` returns
+(`FAKE_SELDON_PREVIEW`, the sample; its own process, logged to
+`preview.log`, not `argv.log`): both groups, the card's sentence and
+summary, and Set up Seldon opening the init terminal (`preview-uninit`);
+a failed preview's error on the card and in the list (`preview-failed`,
+`FAKE_SELDON_PREVIEW_EXIT`; `FAKE_SELDON_VERSION_DELAY` holds the probe so
+the status turns notInitialised after the desk opened); none in dev mode
+(`uninit`); Import tasks… (WP-102b) live against the fake engine (`import
 task` and `plan show` there): the form, the dry run's list and skips, one
 click imports, the first case selected with the list's line, its detail's
 whole Intent (plain text, 5 lines, the provenance line, the source) and

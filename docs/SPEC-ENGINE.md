@@ -707,6 +707,35 @@ seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--jso
 # "program"} (exit 0; the human line says so). A GUI editor's window, no
 # `hyprctl` (not a Hyprland session) or a failed focus: it launches as before.
 # The terminal path is unchanged. `decide`'s editor follows the same rule.
+seldon preview [--days N] [--json]
+# WP-138, ADR-0047: before the logbook exists, what the machine remembers on
+# its own. Read-only: no logbook needed (one that exists is not read), no lock,
+# nothing written (no state directory, no config); exit 0 for a finished
+# preview, 1 for --days outside 1–7 (default 7). pacman: the package lines of
+# the window from the tail of pacman.log (SELDON_PACMAN_LOG; slices from the
+# end, 256 KiB × 4ⁿ, until one starts before the window, at most 8 MiB, else
+# `partial`), parsed by the collector's grammar, grouped by transaction,
+# newest first; `at` its Running line (else `transaction started`), or its
+# first line in the window; `command` redacted, one line, ≤ 256 characters;
+# `status` as ADR-0043; a missing log is `pacman.ok: false` with the error.
+# files: `config_scan` (engine/src/config_scan.rs, shared with WP-139) walks
+# $XDG_CONFIG_HOME by mtime, never content: regular files only, symlinks
+# never followed, ≤ 16 folders deep; skips caches (`*cache*`), profiles (a
+# folder holding `Cookies` or `Local State`), state, log(s), crash folders,
+# databases (sqlite, *.db, LevelDB, IndexedDB, Local/Session Storage,
+# dconf), images, locks, pid and swap files, `*~`, `*.bak.*`, `.git`,
+# omarchy/plugins, omarchy/shell.json and every [redaction] skipPaths match;
+# the walk runs first and stops 0.25 s after it started or after 200 000
+# entries (`partial`); names, versions and the command line through the
+# same one-line rule, clipped to 512/256/256 characters. Together under 0.5 s
+# on the dev host's release build (worst case measured 0.30 s: a 100 MiB log
+# dense to its end, 50 000 files).
+# Paths `~/…`, redacted, control, line-breaking and the index's direction and
+# format characters (import::is_direction_or_format) as U+FFFD. Bounds: 200
+# rows (files first, the newest 80; transactions fill the rest), 10
+# packages listed per transaction (`count` all, `kinds` all), `truncated`
+# when cut. config.toml unreadable or its patterns invalid: files withheld
+# (`files.ok: false`) and no command lines. --json → schema/preview.schema.json
 seldon --version / seldon contract-version
 seldon completions bash|zsh|fish               # WP-049: the completion script (clap_complete) on stdout;
                                                # --json → {shell, script}
