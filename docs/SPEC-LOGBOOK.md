@@ -44,9 +44,12 @@ Seldon/
 
 File and folder names: lowercase, hyphens, English. Prose: user's language.
 
-The folders are real directories inside the logbook: the engine refuses to
-write into one that is a symbolic link or a file (SPEC-ENGINE §2, "Linked
-folders"). The logbook folder itself may be a link.
+The folders are real directories inside the logbook, and the files the
+engine writes are regular files: the engine refuses to write into a folder
+that is a symbolic link or a file, and to write a file that is a symbolic
+link or no regular file (SPEC-ENGINE §2, "Linked folders and files";
+ADR-0049). `seldon doctor` names them (its `layout` row). The logbook
+folder itself may be a link.
 
 ## 3. Frontmatter conventions
 
