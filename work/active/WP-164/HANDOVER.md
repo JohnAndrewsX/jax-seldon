@@ -19,7 +19,7 @@ Plan: `work/active/WP-164/PLAN.md`.
   the stored hash is reused). The content never leaves SHA-256.
 - **Class.** Attention `config` / `config-remove` by ADR-0028 §2's total
   row; no new rule, no class code change, no contract change.
-- **Tests.** `engine/tests/boot_hashes.rs` (7 tests: add / change /
+- **Tests.** `engine/tests/boot_hashes.rs` (6 tests: add / change /
   remove / same bytes re-extracted / main file and `default/limine`,
   hash only and nothing beside the listed files, presets and `.pacnew`
   merges, unreadable → stat, scope entry without events and
@@ -154,3 +154,37 @@ step 2 removes it before one runs.
 - The first scratch run (`fail closed … the command name is computed`:
   the binary was called through a shell variable). Rerun with the
   literal path on the orchestrator's go.
+
+## Round 2
+
+Stage 1 (Opus) approved with notes N1–N3
+(`review-0.1.1/handovers/WP-164-review-1.md` in the private folder).
+
+- **N1** (mutant M5 survived): `collectors_user.rs`
+  `config::a_failed_write_keeps_the_stat_basis_of_a_boot_file`. An
+  unreadable drop-in (mode 0, mtime an hour back so its stats are
+  stored) is added; the ledger write of its `config-add` "fails" (events
+  dropped, cursor not saved); the retry reuses the stored hash and the
+  re-reported `config-add` still carries `meta.hashBasis = "stat"`, same
+  `hashTo`; a further capture is quiet. Skipped as root. M5 (`hashBasis`
+  only when the hash was computed fresh) applied by hand: this test fails
+  (`tests/collectors_user.rs:2147`); restored.
+- **N2**: `docs/user/de/06-configuration.md` source line at `83ec84fb`,
+  the English page's commit after N3. `docs-check` no longer warns for
+  page 06. Its one remaining warning (`de/01-getting-started.md` at
+  9daa7a3) is on `next` already (fd7b741d), not from this WP.
+- **N3**: SPEC-ENGINE §4 and guide 06 en/de: a symlink in a boot
+  directory is followed to its file and recorded under the link's own
+  path, hash only; SPEC also says a link into `/usr/` carries
+  `system-link` (routine) and that directory links, FIFOs, sockets and
+  devices are not opened. The handover's test count is fixed: 6 tests in
+  `boot_hashes.rs`.
+- Unchanged by decision: the two `sudo` operator steps stay pending (they
+  gate the release, not the merge); crisis-unless-owner-window is a later
+  ADR (WP-170); ADR-0042's text stays.
+
+**Check:** `XDG_RUNTIME_DIR=/tmp/r164b` (0700, removed afterwards),
+`SELDON_FULL_CHECK=1`, `JUST_TEMPDIR=<scratch>`, `CARGO_TARGET_DIR`
+unset (the worktree's `engine/target`, on disk), `flock
+/tmp/seldon-check.lock just check`: **`check: ok`, exit 0**, 2428 passed,
+0 failed; no Quickshell harness skipped; `/run/user/1000` 2 % before.
