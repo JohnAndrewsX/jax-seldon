@@ -198,3 +198,78 @@ lines) is unchanged and not this WP's; part B (one walker in WP-138's
 list with `node_modules`, `Limits.exclude`, root `~/.config`) waits for
 WP-138 on `next`. AGENTS.md §6 needs the operator's line for the
 `~/.config` metadata walk (review §3, open question 4).
+
+## Round 2b (brief part B, after WP-138 on next)
+
+- **Merges of `next`:** 21ad24b7 (954855dd), then b4a11dba (cbb15779;
+  its `preview.rs` fix equals mine, only the formatting conflicted, taken
+  from `next`). First merge: conflicts in CHANGELOG,
+  DECISIONS (rows 0045, 0046, 0047, 0048 kept in order), fixtures/README
+  and validate-fixtures.py, all unions. **`next` at 21ad24b7 does not
+  build:** WP-159 replaced `import::is_direction_or_format` with
+  `redact::is_invisible`, which WP-138's `commands/preview.rs` still
+  called. The merge commit fixes it there and in recent-config (all three
+  call sites now `redact::is_invisible`); `next` needs the same one-line
+  fix in `preview.rs` if it is gated before this branch merges.
+- **One walker:** `engine/src/config_scan.rs` is the only `~/.config`
+  walk; `collectors/recent.rs` keeps the per-path rules (`shown_path`),
+  the exclusions, the times, the state file and the index filter, and
+  calls `config_scan::scan_keeping`. In `config_scan`:
+  - **breadth-first** (a queue; each folder's entries sorted by name), so
+    a heavy folder cannot spend the 20 000 entries before shallow config
+    files elsewhere are read (test `breadth_first_reads_shallow_files_…`:
+    depth-first would fail it);
+  - **links:** a link to a folder is never entered; a link to a file is
+    listed under its own path with the target's mtime (stat only, never
+    opened); a dangling link is nothing. WP-138's test became
+    `folder_links_are_never_followed_file_links_count_by_their_target`;
+  - **ignore list:** the union of both plus `node_modules` (folders
+    `history`, `node_modules`; files `state`, `shell.json` anywhere,
+    `history.json`, `*state.json`, `Singleton*`, `*.log.*`, `*.tmp-*`,
+    `.#*`, `#*#`, `.goutputstream-*`; extensions `kdbx`, `jxl`, `xpm`,
+    `swx`); a folder below the root holding `Cookies` or `Local State` is
+    skipped whole. WP-138's tests adjusted where the union changed them
+    (`omarchy/themed/shell.json` now ignored; the exclude test uses
+    `settings.json`; the preview test no longer shows Omarchy's
+    `history.json` under a user's own skipPaths);
+  - **`Limits.exclude` before a folder is entered:** watch paths, Seldon's
+    config folder and file, the plugin folder, the logbook;
+  - **`keep`** (`scan_keeping`): the caller's path rules before the cut
+    to `max_files`, also for folders (not entered when refused): recent's
+    `shown_path` (UTF-8, no control or invisible character, ≤ 512, no
+    `.`/`..`/empty folder, unchanged by the redaction); test
+    `refused_paths_take_no_place_in_the_eighty`;
+  - **partial** from the entry budget, the deadline or the depth (16,
+    WP-138's) reaches the state file and the index;
+  - `Scan.entries` (entries read), `config_scan::ROOT = ".config"`.
+- **Root:** `~/.config` for both callers; `seldon preview` no longer
+  follows `$XDG_CONFIG_HOME` (identical on Omarchy, where it is unset).
+  **ADR-0047 is accepted and says `$XDG_CONFIG_HOME` and "symbolic links
+  never followed"**; ADR-0046 §5 (proposed) records both changes to the
+  preview, and SPEC-ENGINE (preview and §4) and `preview.schema.json`'s
+  description of `root` follow. If the operator wants ADR-0047 left as
+  written, the preview needs its own root again (one line).
+- **Cost** (bench profile, dev host, load ≈ 2–4.9 from other agents'
+  gates): 2.7 ms per capture on the lived-in tree (2.3 ms before, at
+  rest), 128 ms at the 20 000-entry budget, 0.49 ms per index build.
+- **Verified** on 37c75f08: `just check` (SELDON_FULL_CHECK=1, private
+  runtime dir, JUST_TEMPDIR on disk in the private gates folder,
+  `/run/user/1000` 2 %) **green** — cargo 2650 passed, 0 failed (with the
+  `watch` feature); desk-view 1845/0; service-states 344/0; model.test.js
+  194; validate-fixtures (11 variants), docs-check, qmllint, plugin
+  validate ok. `just check-rss`: `rss_stays_under_11_mb_on_the_x10_fixture
+  … ok`. Logs: `jax-seldon-private/gates/check-wp139-r2b.log`,
+  `rss-wp139-r2b.log`.
+- **Hand mutants** now run in a scratch copy (`git archive HEAD` into
+  `jax-seldon-private/gates/wp139-mutant-root`, target dir
+  `gates/target-wp139`, both on disk; the root is removed after the run):
+  **74 of 74 killed** (29 on the one walker: breadth-first, links, the
+  exclusions, skipPaths, `keep` for folders and before the cut, the union
+  names, budget, deadline, depth, `partial`; the rest as before). The one
+  survivor of the first run (preview walking `$XDG_CONFIG_HOME`) got the
+  test `the_root_is_dot_config_whatever_xdg_config_home_says`.
+- **Not mutated:** the sort of each folder's entries (determinism only;
+  no output differs on the test trees).
+- **Open:** ADR-0047's text (root, file links) vs. ADR-0046 §5 — see
+  above; `check-perf`'s ledger-line precondition (10 788 vs 11 656) is
+  unchanged and not this WP's; not run on the test host.
