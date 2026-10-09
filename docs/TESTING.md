@@ -1750,7 +1750,8 @@ as an absolute path: `just` runs the recipe in the repository root.
    plugin are installed then.
 6. Appends one JSON line to `~/.local/state/seldon-dev/deploy.jsonl`
    (`ts`, `mode`, `version`, `commit`, `pluginChanged`, `movedAside`,
-   `backup`, `watch`, `restart`, `smoke`, `failures`) and prints a summary.
+   `backup`, `watch`, `restart`, `smoke`, `failures`) and prints a summary;
+   for a main or next build its `commit` line has the full commit.
 
 **Back to a release:** `just deploy-test-host --release vX.Y.Z` is the
 only way back: `seldon.prev` holds the previous *main* build from the
@@ -1765,6 +1766,12 @@ first; the script warns but does not move it.
 
 `just e2e` on the test host afterwards restores what it found, so the
 deployed build is back after it.
+
+**Live test of a release.** The summary's `commit   <sha>` line is the
+commit a release's live test ran on; the record of that test,
+`packaging/acceptance/vX.Y.Z.json`, names it, and
+`packaging/acceptance-check.sh` refuses a tag whose code changed after it
+(VERSIONING.md, "Release acceptance record").
 
 ## Fresh machine smoke list
 
