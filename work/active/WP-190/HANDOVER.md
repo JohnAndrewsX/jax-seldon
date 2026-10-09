@@ -54,7 +54,8 @@ checkout (WP-191).
   - The `plugin` job recomputes the split and refuses to push unless it
     equals `needs.build.outputs.plugin_split`. This is an addition beyond
     the WP's text: it ties the pushed split to the validated one instead
-    of relying on determinism. The reviewer may drop it.
+    of relying on determinism. Round 2 moved the decisive comparison into
+    the `split` job before `release` (below).
 - **`tests/release/omarchy-pin.test.sh`** (new, offline, `file://` mirror),
   20 cases:
   - The real pin is well-formed.
@@ -86,6 +87,56 @@ checkout (WP-191).
   - `CONTRIBUTING.md` and `docs/DEVELOPMENT.md`: the host-only lists are
     corrected.
 
+## Round 2 (review 1: F1, F2, F3, Q3, Q4)
+
+- **F1:** a new job `split` (`needs: build`, no `if:`, so it runs in a dry
+  run too) runs on the `plugin` job's runner (`ubuntu-latest`, no
+  container, so the same git). It recomputes `git subtree split
+  --prefix=plugin` and fails unless the result equals
+  `needs.build.outputs.plugin_split`. `release` now needs
+  `[build, split]`. `aur`, `bump` and `plugin` need `[build, release]`, so
+  they depend on `split` through `release`; I kept their `needs` as they
+  were, which the test pins. A mismatch now stops the workflow before
+  anything is published. The `plugin` job keeps its own comparison
+  before the push.
+- **F2:** `workflow-pins.test.sh` has a new `refuses` helper. It requires
+  `exit 1` as the last line of the `if [[ $split != "$VALIDATED" ]]`
+  block, both in the `split` job and in the `plugin` job (there before
+  the push).
+  - The `split` job is checked for: `needs: build`, no `if:`, the same
+    `runs-on`/`container` lines as `plugin`, the `VALIDATED` env, the
+    subtree split line, and no `||` or `set +e`.
+  - `release` must need exactly `[build, split]`.
+  - The push must be `--atomic`.
+  - New mutants, each caught: no split job; split job without needs; on
+    tags only; in the Arch container; without `exit 1`; `|| true`;
+    compares another value; plugin push without `exit 1`; `exit 0` on a
+    mismatch; not atomic; release without split. The old "release job
+    without build" mutant was rewritten for the new `needs` line.
+    55 cases.
+- **F3:** the verification table uses only the §5 words; see the note
+  above it.
+- **Q3:** the pin comment records the move. `github.com/basecamp/omarchy`
+  answers 301 to `omacom/omarchy`, and `gh api repos/basecamp/omarchy`
+  returns `omacom/omarchy` with the same id 994093166 (checked
+  2026-10-09).
+- **Q4:** the plugin push is `git push --atomic` (main and the tag, both
+  or neither).
+- `packaging/README.md` (job table with `split`, the dry run runs `build`
+  and `split`, the atomic push) and `docs/TESTING.md` are updated, and so
+  is the release.yml header.
+
+| Check (round 2) | Where | Result |
+|---|---|---|
+| `bash tests/release/workflow-pins.test.sh` | fixture | 55 ok |
+| `bash tests/release/omarchy-pin.test.sh` | fixture | ok (20) |
+| `audit-ignore.test.sh`, `plugin-version.test.sh`, `release-notes.test.sh` | fixture | ok |
+| `bash -n` on the changed scripts | fixture | ok |
+| `yaml.safe_load` of release.yml: jobs, `release.needs == [build, split]`, `split` without `if` | fixture | as described |
+| `split` job and the atomic push on GitHub (dry run) | **not run** (CI) | — |
+| shellcheck | **not run locally**; CI | — |
+| `just check` in full | **not run** in round 2 (only workflow, test, pin comment and docs changed; no recipe, engine or plugin file) | — |
+
 ## What was not done
 
 - No CI run, no push, no release dry run (operator brief: CI runs only on
@@ -97,19 +148,21 @@ checkout (WP-191).
 
 All local runs used `TMPDIR`, `CARGO_TARGET_DIR` (`gates/target-wp190`) and
 a private 0700 `XDG_RUNTIME_DIR` on disk under `jax-seldon-private/gates/`,
-and `CARGO_BUILD_JOBS=4`.
+and `CARGO_BUILD_JOBS=4`. Every *fixture* and *headless* row ran on the
+dev host; "with the network fetch" marks the rows that fetched the pinned
+validator from `raw.githubusercontent.com`.
 
 | Check | Where | Result |
 |---|---|---|
-| `SELDON_FULL_CHECK=1 just check` at `1e47fd4f` (harnesses ran) | fixture, headless (dev host) | exit 0; log `gates/check-wp190.log` |
-| `bash tests/release/omarchy-pin.test.sh` | fixture (dev host) | 20 ok, including the real-validator cases |
-| `bash tests/release/workflow-pins.test.sh` | fixture (dev host) | 44 ok |
-| `bash packaging/omarchy-validate.sh plugin/`, real HTTPS fetch | dev host | ok, sha256 matched |
-| `SELDON_SKIP_HOST_CHECKS=1 just plugin-test` (CI mode) | fixture (dev host) | node and bash parts ok, harnesses skipped with the notice |
-| Mutant: `Model.js` `pillText` drops the separator → `node tests/plugin/model.test.js` | fixture (dev host) | exit 1 (red) |
-| Mutant: manifest `entryPoints.service = "Missing.qml"` → pinned validator, real fetch | dev host | exit 1, "entry point file not found" |
-| Mutant: last hex digit of `validator_sha256` changed → `omarchy-validate.sh`, real fetch | dev host | exit 1, "refusing …", validator not run |
-| Release split: `git subtree split --prefix=plugin`, then `git archive \| tar -x`, then pinned validator on HEAD | dev host | split `e8eb639a…` valid |
+| `SELDON_FULL_CHECK=1 just check` at `1e47fd4f` (harnesses ran) | fixture, headless | exit 0; log `gates/check-wp190.log` |
+| `bash tests/release/omarchy-pin.test.sh` | fixture | 20 ok, including the real-validator cases |
+| `bash tests/release/workflow-pins.test.sh` | fixture | 44 ok (round 2: 55, below) |
+| `bash packaging/omarchy-validate.sh plugin/`, real HTTPS fetch | fixture (with the network fetch) | ok, sha256 matched |
+| `SELDON_SKIP_HOST_CHECKS=1 just plugin-test` (CI mode) | fixture | node and bash parts ok, harnesses skipped with the notice |
+| Mutant: `Model.js` `pillText` drops the separator → `node tests/plugin/model.test.js` | fixture | exit 1 (red) |
+| Mutant: manifest `entryPoints.service = "Missing.qml"` → pinned validator, real fetch | fixture (with the network fetch) | exit 1, "entry point file not found" |
+| Mutant: last hex digit of `validator_sha256` changed → `omarchy-validate.sh`, real fetch | fixture (with the network fetch) | exit 1, "refusing …", validator not run |
+| Release split: `git subtree split --prefix=plugin`, then `git archive \| tar -x`, then pinned validator on HEAD | fixture (with the network fetch) | split `e8eb639a…` valid |
 | `just plugin-validate` without the omarchy CLI on PATH | **not run** | the guard blocked the scratch PATH of tool symlinks ("a link to a protected directory at a path the guard cannot know"). Not routed around; CI runs exactly this on the PR |
 | `shellcheck` on the new and changed scripts | **not run locally** (not installed on the dev host); CI | `check-packaging` ran `bash -n` only |
 | Red CI on a `Model.js` mutant | **not run** (CI) | — |
@@ -117,7 +170,7 @@ and `CARGO_BUILD_JOBS=4`.
 | Wrong sha256 in `packaging/omarchy-pin` refused | fixture (above); CI **not run** | — |
 | Release dry run (`workflow_dispatch`) validates the split | **not run** (CI) | — |
 | `model.bench.js` timing on a CI runner | **not run** (CI) | the ×3 budget is an estimate (see above) |
-| `just check` on the dev host unchanged and green | fixture, headless (dev host) | green; `plugin-validate` still uses the installed CLI, no notice (sha256 equal) |
+| `just check` on the dev host unchanged and green | fixture, headless | green; `plugin-validate` still uses the installed CLI, no notice (sha256 equal) |
 
 **To run the CI acceptance (orchestrator):** open the PR; the green run
 covers the pinned validator, the node and bash tests, and shellcheck. On
@@ -129,7 +182,8 @@ changed last digit in `packaging/omarchy-pin`. Then run
 
 ## Open questions
 
-- Does the plugin job's split comparison stay (an addition beyond the WP)?
+- Should `aur` (and `bump`, `plugin`) also list `split` in `needs`
+  explicitly? Today they depend on it through `release`.
 - CI now also fetches from `raw.githubusercontent.com` for
   `plugin-validate` (before, only the pacman toolchain and the checkout).
   An outage there turns CI red (curl `--retry 3`).
