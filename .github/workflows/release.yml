@@ -6,9 +6,16 @@
 #            source tarball, binary tarball, SHA256SUMS;
 #            PKGBUILD/.SRCINFO for the version; a real makepkg build of
 #            the PKGBUILD from the source tarball, its file list and the
-#            packaged binary checked; `git subtree split --prefix=plugin`;
+#            packaged binary checked; `git subtree split --prefix=plugin`,
+#            the split's tree checked by Omarchy's pinned plugin validator
+#            (packaging/omarchy-pin, WP-190);
 #            a build-provenance attestation for every release asset
 #            (WP-080; install.sh verifies it with `gh attestation verify`).
+#   split    (tag and dry run)  recomputes the plugin split where the
+#            plugin job will (same runner, no container) and refuses
+#            unless it is the split build validated; release, and with it
+#            aur, bump and plugin, wait for it, so a mismatch stops the
+#            release before anything is published (WP-190).
 #   release  (tag only)  GitHub release with the assets; its notes are the
 #            version's CHANGELOG.md section (packaging/release-notes.sh).
 #   bump     (tag only)  the updated PKGBUILD/.SRCINFO committed to main;
@@ -17,10 +24,12 @@
 #   aur      (tag only)  push PKGBUILD/.SRCINFO to the AUR; skipped with a
 #            notice when the AUR_SSH_PRIVATE_KEY secret is absent.
 #   plugin   (tag only)  push the plugin split to jax-seldon-plugin (main
-#            and the tag); skipped when PLUGIN_REPO_TOKEN is absent.
+#            and the tag, atomically), refused unless it is the split
+#            build validated;
+#            skipped when PLUGIN_REPO_TOKEN is absent.
 #
 # Dry run: start the workflow by hand (Actions → release → Run workflow,
-# or `gh workflow run release.yml --ref <branch>`). Only `build` runs;
+# or `gh workflow run release.yml --ref <branch>`). Only `build` and `split` run;
 # nothing is pushed or published. Its summary and the `dist` and
 # `package` artifacts show what a tag would publish. packaging/README.md.
 # The attestation step runs in a dry run too, so it is exercised before a
@@ -65,14 +74,16 @@ jobs:
       SELDON_SKIP_HOST_CHECKS: "1"
     outputs:
       version: ${{ steps.version.outputs.version }}
+      plugin_split: ${{ steps.split.outputs.split }}
     steps:
       # Arch's `rust` ships cargo, clippy and rustfmt; `rust-musl` adds the
       # musl target for the static release asset (AGENTS.md §7); shellcheck
       # makes `just check-packaging` lint the PKGBUILD and its scripts;
       # cargo-audit runs the release gate below; rsync is what
-      # `just check-deploy` needs (as in ci.yml).
+      # `just check-deploy` needs and nodejs what `just plugin-test` needs
+      # (as in ci.yml).
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq shellcheck cargo-audit rsync
+        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq shellcheck cargo-audit rsync nodejs
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -193,6 +204,7 @@ jobs:
           cp "$pkg" package/
 
       - name: Plugin split
+        id: split
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -201,6 +213,18 @@ jobs:
           # the manifest and Model.js PLUGIN_VERSION at the release's version (WP-090)
           bash packaging/plugin-version.sh <(git show "$split:manifest.json") <(git show "$split:Model.js") "$VERSION"
           echo "plugin split: $split"
+          echo "split=$split" >> "$GITHUB_OUTPUT"
+
+      # What the plugin job pushes and the store installs: the split's own
+      # tree, extracted, against Omarchy's validator at packaging/omarchy-pin
+      # (fetched over HTTPS, refused on a sha256 mismatch; WP-190).
+      - name: Validate the plugin split
+        env:
+          SPLIT: ${{ steps.split.outputs.split }}
+        run: |
+          tree=$(mktemp -d)
+          git archive "$SPLIT" | tar -x -C "$tree"
+          bash packaging/omarchy-validate.sh "$tree"
 
       # Build provenance (SLSA v1, signed with the job's identity) for each
       # asset the release publishes; `gh attestation verify <file> --repo
@@ -266,8 +290,35 @@ jobs:
           path: package/
           if-no-files-found: error
 
-  release:
+  # The split the plugin job will push, recomputed on the plugin job's
+  # runner (ubuntu-24.04, no container: its git, not the Arch image's)
+  # and compared with the one build validated, before anything is
+  # published; runs in a dry run too, so `gh workflow run` exercises it.
+  # Both jobs name the same fixed image label, not ubuntu-latest, so a
+  # runner-image rollout cannot put them on two releases
+  # (tests/release/workflow-pins.test.sh).
+  split:
     needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compare the plugin split
+        env:
+          VALIDATED: ${{ needs.build.outputs.plugin_split }}
+        run: |
+          split=$(git subtree split --prefix=plugin)
+          if [[ $split != "$VALIDATED" ]]; then
+            echo "::error::plugin split $split on this runner is not the one the build job validated (${VALIDATED:-none})"
+            exit 1
+          fi
+          echo "plugin split: $split, as validated"
+
+  release:
+    needs: [build, split]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -393,7 +444,7 @@ jobs:
   plugin:
     needs: [build, release]
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # the split job's image (see there)
     env:
       PLUGIN_REPO_TOKEN: ${{ secrets.PLUGIN_REPO_TOKEN }}
       PLUGIN_REPO: https://github.com/JohnAndrewsX/jax-seldon-plugin.git
@@ -414,11 +465,20 @@ jobs:
           fetch-depth: 0
           persist-credentials: false  # the push below authenticates with its own token
 
+      # the split the build job validated (the split job compared it on
+      # this runner before the release), or nothing; main and the tag
+      # together or neither
       - name: Push the plugin split
         if: steps.token.outputs.present == 'true'
+        env:
+          VALIDATED: ${{ needs.build.outputs.plugin_split }}
         run: |
           split=$(git subtree split --prefix=plugin)
+          if [[ $split != "$VALIDATED" ]]; then
+            echo "::error::plugin split $split is not the one the build job validated (${VALIDATED:-none})"
+            exit 1
+          fi
           auth=$(printf 'x-access-token:%s' "$PLUGIN_REPO_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
           git -c http.extraheader="AUTHORIZATION: basic $auth" \
-            push "$PLUGIN_REPO" "$split:refs/heads/main" "$split:refs/tags/$GITHUB_REF_NAME"
+            push --atomic "$PLUGIN_REPO" "$split:refs/heads/main" "$split:refs/tags/$GITHUB_REF_NAME"

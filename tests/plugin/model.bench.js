@@ -12,6 +12,9 @@
 // contextified global lookup; reported only: about 8× slower and swings
 // from 14 to 30 ms with the host's load).
 // Run: node tests/plugin/model.bench.js
+// SELDON_BENCH_BUDGET_SCALE multiplies both budgets (CI sets 3 for a shared
+// runner, WP-190; the dev host runs the plain budgets). The graph's path
+// counter is not scaled.
 "use strict"
 
 const fs = require("fs")
@@ -26,7 +29,9 @@ vm.runInContext(source, M, { filename: "Model.js" })
 const P = new Function(source + "\nreturn { periodTable, seriesInPeriod, periodWindow, todayDate, PERIODS }")()
 
 const sample = M.parseIndex(fs.readFileSync(path.join(root, "fixtures/index.sample.json"), "utf8")).index
-const BUDGET_MS = 10
+const SCALE = Number(process.env.SELDON_BENCH_BUDGET_SCALE || 1)
+if (!(SCALE >= 1)) throw new Error(`SELDON_BENCH_BUDGET_SCALE must be a number >= 1, not ${process.env.SELDON_BENCH_BUDGET_SCALE}`)
+const BUDGET_MS = 10 * SCALE
 
 // Every series list and case group repeated `n` times (rows unchanged, so
 // every copy lands in the same windows: the worst case for the charts).
@@ -106,7 +111,7 @@ for (const [name, index] of cases) {
 const G = new Function(source + "\nreturn { graphBuild, graphState, graphStep, graphWake, parseIndex }")()
 const { bigIndex } = require("./graph-index.js")
 const big = G.parseIndex(JSON.stringify(bigIndex())).index
-const GRAPH_BUDGET_MS = 8
+const GRAPH_BUDGET_MS = 8 * SCALE
 const build = G.graphBuild(big, 400)
 const state = G.graphState(build, null)
 for (let i = 0; i < 40; i++) G.graphStep(state, 1000)

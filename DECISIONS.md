@@ -52,5 +52,6 @@
 | ADR-0048 | ADR-0038 amended: the invisible set is every default-ignorable code point; redaction reads the text without invisible and control characters and as given | accepted |
 | ADR-0049 | A file of the logbook is never written through a symbolic link: a linked or non-regular file is refused like a linked folder (WP-168), the logbook's write primitives never follow a link, `doctor` gets a `layout` row; records the lstat-then-create residual | accepted |
 | ADR-0050 | ADR-0028 amended: adding or enabling Seldon's own plugin `jax.seldon` is routine `seldon-self` (no resolution; rule 8 unchanged); records the no-provenance residual | accepted |
+| ADR-0051 | Contract forward compatibility: the optional index field `contractReadableFrom`; a plugin reads a newer index that says it can (quiet update notice), a later bump lists per field why an older reader does not misread | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

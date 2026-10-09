@@ -44,6 +44,10 @@ SAMPLE = os.path.join(FIX, "index.sample.json")
 # ADR-0028 §5: the sample logbook indexed with `[drift] attention = "all"` (the rollback, the drift
 # derivation before ADR-0028); the engine's golden test holds `seldon index` to it.
 ATTENTION_ALL = os.path.join(FIX, "index.attention-all.json")
+# ADR-0051: the oldest plugin contract that reads the engine's index (engine: CONTRACT_READABLE_FROM)
+CONTRACT_READABLE_FROM = 2
+# ADR-0051: a later contract's index that a contract-2 plugin may read: the sample plus FORWARD
+FORWARD = os.path.join(FIX, "forward", "index.contract-v3-readable.json")
 ID = "https://github.com/JohnAndrewsX/jax-seldon/schema/"
 
 EVENT, CASE, INDEX = ID + "event.schema.json", ID + "case.schema.json", ID + "index.schema.json"
@@ -1843,6 +1847,47 @@ VARIANTS = {
 
 # SELDON_NOW for index-variants/index-stale.json (fixtures/README.md); the plugin harness pins
 # the same clock for its clock-driven stale case.
+# ADR-0051: what a later contract may add that a contract-2 reader must not misread: the version
+# and the field that lets a v2 plugin read it, unknown top-level and summary keys, an event of an
+# unknown source and kind, a drift row of an unknown source and kind (no crisis), an unknown
+# timeline kind. The counts follow the rows (ADR-0051 §3: complete): openDrift +1, the day's and
+# the week's events +2 (summary, heatmap), the week's opened drift +1; crisis and the cases stay.
+# Not a v2 index: it must fail the v2 schema.
+# plugin model.test.js reads it; the orchestrator points SELDON_INDEX at it for the live check.
+FORWARD_OPS = [
+    {"op": "replace", "path": "/contractVersion", "value": 3},
+    {"op": "test", "path": "/contractReadableFrom", "value": 2},
+    {"op": "add", "path": "/crashes", "value": [
+        {"id": "01M3VZXA00J0VRNA0000000001", "exe": "/usr/bin/example", "status": "new", "count": 1}]},
+    {"op": "add", "path": "/reports", "value": []},
+    {"op": "add", "path": "/summary/crashes", "value": 1},
+    {"op": "test", "path": "/summary/openDrift", "value": 6},
+    {"op": "replace", "path": "/summary/openDrift", "value": 7},
+    {"op": "test", "path": "/summary/eventsToday", "value": 33},
+    {"op": "replace", "path": "/summary/eventsToday", "value": 35},
+    {"op": "test", "path": "/summary/events7d", "value": 54},
+    {"op": "replace", "path": "/summary/events7d", "value": 56},
+    {"op": "test", "path": "/series/heatmap/365/date", "value": "2026-10-01"},
+    {"op": "test", "path": "/series/heatmap/365/total", "value": 33},
+    {"op": "replace", "path": "/series/heatmap/365/total", "value": 35},
+    {"op": "add", "path": "/series/heatmap/365/bySource/journal", "value": 2},
+    {"op": "test", "path": "/series/drift/4/week", "value": "2026-W40"},
+    {"op": "test", "path": "/series/drift/4/opened", "value": 6},
+    {"op": "replace", "path": "/series/drift/4/opened", "value": 7},
+    {"op": "add", "path": "/events/0", "value": {
+        "id": "01M3VZXA00J0VRNA0000000001", "ts": "2026-10-01T17:02:00+02:00", "source": "journal",
+        "kind": "crash", "subject": "example", "detail": "example crashed (SIGSEGV)", "actor": "system"}},
+    {"op": "add", "path": "/events/1", "value": {
+        "id": "01M3VZXA00J0VRNA0000000002", "ts": "2026-10-01T17:01:00+02:00", "source": "journal",
+        "kind": "boot-error", "subject": "boot", "detail": "a unit failed during boot", "actor": "system"}},
+    {"op": "add", "path": "/drift/0", "value": {
+        "eventId": "01M3VZXA00J0VRNA0000000002", "ts": "2026-10-01T17:01:00+02:00", "source": "journal",
+        "kind": "boot-error", "subject": "boot", "detail": "a unit failed during boot", "actor": "system",
+        "zone": "yellow", "crisis": False, "rule": "journal-boot"}},
+    {"op": "add", "path": "/series/timeline/0", "value": {
+        "kind": "crash", "ts": "2026-10-01T17:02:00+02:00", "label": "example crashed", "ref": "01M3VZXA00J0VRNA0000000001"}},
+]
+
 STALE_NOW = "2026-10-01T20:05:12+02:00"
 STALE_AFTER = dt.timedelta(hours=2)  # SPEC-PLUGIN §3
 
@@ -2320,6 +2365,9 @@ def collect_instances():
             # engine state, not contract: its shape is `system.recentConfig`'s, checked through the
             # derived sample (derive_recent_config)
             continue
+        elif r == "forward/index.contract-v3-readable.json":
+            # ADR-0051: a later contract's index, no v2 index (checked against the sample below)
+            sid, bad = INDEX, True
         elif re.fullmatch(r"invalid/(index|event|case|proposal|preview)\.[a-z0-9-]+\.json", r):
             sid, bad = ID + r.split("/")[1].split(".")[0] + ".schema.json", True
         else:
@@ -2366,7 +2414,8 @@ def main():
     recent = derive_recent_config(sample["generatedAt"], problems)
 
     def as_sample(d):
-        out = {k: sample[k] for k in ("contractVersion", "generatedAt", "engineVersion")}
+        out = {"contractVersion": sample["contractVersion"], "contractReadableFrom": CONTRACT_READABLE_FROM}
+        out.update({k: sample[k] for k in ("generatedAt", "engineVersion")})
         out["logbook"] = {"path": sample["logbook"]["path"], **d["logbook"]}
         if "git" in sample["logbook"]:
             out["logbook"]["git"] = sample["logbook"]["git"]
@@ -2386,6 +2435,12 @@ def main():
         print(f"wrote {rel(SAMPLE)}")
         dump_json(ATTENTION_ALL, as_sample(derived_all))
         print(f"wrote {rel(ATTENTION_ALL)}")
+        try:
+            os.makedirs(os.path.dirname(FORWARD), exist_ok=True)
+            dump_json(FORWARD, apply_overlay(sample, FORWARD_OPS, "forward"))
+            print(f"wrote {rel(FORWARD)}")
+        except Fail as e:
+            problems.append(f"{e} (not written)")
         for name, ops in VARIANTS.items():
             path = os.path.join(FIX, "index-variants", f"{name}.json")
             try:
@@ -2417,6 +2472,9 @@ def main():
     want = as_sample(derived)
     for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
         problems += [f"index.sample.json /{k}{d}" for d in diff(sample.get(k), want[k])]
+    if sample.get("contractReadableFrom") != CONTRACT_READABLE_FROM:
+        problems.append(f"index.sample.json /contractReadableFrom: {sample.get('contractReadableFrom')!r} "
+                        f"!= {CONTRACT_READABLE_FROM} (ADR-0051)")
     for k in ("language", "machine"):
         if sample["logbook"].get(k) != derived["logbook"][k]:
             problems.append(f"index.sample.json /logbook/{k}: != PROJECT.md")
@@ -2457,6 +2515,20 @@ def main():
             for k, v in (("generatedAt", have["generatedAt"]), ("state.lastCapture", have["state"]["lastCapture"])):
                 if instant(STALE_NOW) - instant(v) <= STALE_AFTER:
                     problems.append(f"{rel(path)} {k} {v} is not more than 2 h before STALE_NOW {STALE_NOW}")
+
+    # 3a. the forward index (ADR-0051) is the sample plus FORWARD_OPS
+    if not os.path.exists(FORWARD):
+        problems.append(f"{rel(FORWARD)}: missing; run with --write-index")
+    else:
+        with open(FORWARD, encoding="utf-8") as f:
+            have = json.load(f)
+        try:
+            want = apply_overlay(sample, FORWARD_OPS, "forward")
+        except Fail as e:
+            problems.append(str(e))
+        else:
+            problems += [f"{rel(FORWARD)} {d} (regenerate with --write-index)" for d in diff(have, want)]
+        problems += check_times(have, rel(FORWARD))
 
     # 3b. a `-pre` hook payload is its PostToolUse sibling as PreToolUse, without tool_response
     for pre in sorted(glob.glob(os.path.join(FIX, "hooks", "*-pre.json"))):

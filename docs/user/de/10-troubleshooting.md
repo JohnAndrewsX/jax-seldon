@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 8bd7f5ff -->
+<!-- source: en/10-troubleshooting.md @ 59a4bcda -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -48,6 +48,7 @@ Knopf, der es behebt.
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` fehlt oder ist kaputt | *Build index* startet `seldon status` |
 | Index is stale | der Index ist älter als zwei Stunden | *Capture now* |
 | Index format mismatch | Plugin und Engine sprechen verschiedene Versionen des Index | das ältere aktualisieren. Plugin: `omarchy plugin update jax.seldon`, danach `omarchy-restart-shell`. Engine: *Update* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)) |
+| The engine is newer than the plugin | die Engine schreibt ein neueres Index-Format, das dieses Plugin laut Index noch lesen kann; die Leiste zeigt weiter Zahlen und Farbe | das Plugin aktualisieren: *Update* startet `omarchy plugin update jax.seldon`, danach `omarchy-restart-shell` |
 | Engine too old | die Engine ist älter, als dieses Plugin sie braucht (das `engineMin` in seinem Manifest) | *Update* führt den Installer in einem Terminal noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)), dann *Check again* |
 | Read snapshots (optional) | Snapper weist deinen Benutzer ab, und `/.snapshots` ist nicht lesbar | *Grant* öffnet ein Terminal, das sagt, was die Freigabe erlaubt, die einmalige Lesefreigabe startet (dort tippst du dein Passwort) und die Snapshots aufzeichnet; danach verschwindet das Banner von selbst. Seldon funktioniert auch ohne Snapshots |
 | Restart the shell to finish the update | das Plugin wurde aktualisiert, aber die Shell führt noch den vorher geladenen Code aus (neuen Plugin-Code lädt sie erst beim Neustart) | *Restart shell* startet `omarchy-restart-shell`; Leiste und Panels sind nach wenigen Sekunden wieder da. Siehe [Das Plugin aktualisieren](11-update-and-uninstall.md#das-plugin-aktualisieren) |

@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **The index says which plugin can read it (WP-176, ADR-0051).** Every
+  `index.json` carries `contractReadableFrom: 2`, the oldest plugin
+  contract that reads it without misreading a field it keys on (optional
+  in the schema, checked by `seldon index --check`). A later engine that
+  moves the index to contract 3 can keep this release's plugin reading it,
+  if the ADR of that bump shows, field by field, that nothing is misread.
 - **Installing Seldon's plugin is no drift (WP-172, ADR-0050).** After
   `seldon init`, `omarchy plugin add …jax-seldon-plugin… --enable` was the
   first thing Seldon asked a new user to explain. Adding or enabling the
@@ -354,6 +360,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **A newer engine no longer dims the bar when its index is readable
+  (WP-176, ADR-0051).** The plugin reads an index of a newer contract
+  when the index says this plugin can (`contractReadableFrom` at most 2):
+  the pill keeps its counts and the crisis colour, and the desk shows a
+  quiet notice, "The engine writes index vN; this plugin reads v2 —
+  update the plugin.", with *Update* (`omarchy plugin update
+  jax.seldon`) and *Copy*. Any other contract shows the "Index format
+  mismatch" banner as before.
 - **A held key acts once (WP-173).** Omarchy's Hyprland repeats a key
   held for a quarter second, and the repeat confirmed what the first
   press armed: holding `x` dropped a case, holding `a` started an agent,

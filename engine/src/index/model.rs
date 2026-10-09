@@ -1,7 +1,9 @@
 //! `index.json` as typed structs (`schema/index.schema.json`). Field order
 //! is the key order of `fixtures/index.sample.json`; every object of the
 //! schema is closed, so nothing here may grow a field without an ADR and a
-//! `contractVersion` bump (docs/CONTRACT.md).
+//! `contractVersion` bump (docs/CONTRACT.md), except an optional field an
+//! accepted ADR adds within contract 2 before 0.2.0 is tagged (ADR-0035 §6,
+//! CONTRACT.md rule 9).
 
 use std::collections::BTreeMap;
 
@@ -15,6 +17,8 @@ use crate::model::event::{Event, format_ts};
 #[serde(rename_all = "camelCase")]
 pub struct Index {
     pub contract_version: u32,
+    /// ADR-0051: the oldest plugin contract that can read this index.
+    pub contract_readable_from: u32,
     pub generated_at: String,
     pub engine_version: String,
     pub logbook: LogbookInfo,

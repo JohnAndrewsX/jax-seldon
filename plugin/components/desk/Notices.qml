@@ -4,7 +4,8 @@ import ".."
 
 // The notices under the desk's header (ADR-0034 §2: today's banner states,
 // with their one-click fixes): the restart notice after a plugin update
-// (WP-090), the status banner (WP-010), snapper not readable (ADR-0026),
+// (WP-090), the status banner (WP-010), the engine newer than the plugin
+// (ADR-0051), snapper not readable (ADR-0026),
 // the outdated agent rules (WP-101) and what their update did (WP-111),
 // and the last capture's warnings (WP-085). The service builds them
 // (Service.qml); a click on a fix goes back to Service.fix with the
@@ -25,6 +26,7 @@ Column {
     var all = [
       { id: "restart", banner: s.restartNotice },
       { id: "status", banner: s.banner },
+      { id: "contract", banner: s.contractNotice },
       { id: "snapper", banner: s.snapperBanner },
       { id: "rules", banner: s.rulesBanner },
       { id: "rulesNotice", banner: s.rulesNotice },
@@ -64,6 +66,15 @@ Column {
     urgent: root.urgent
     fontFamily: root.fontFamily
     onActionRequested: function(actionId) { root.fix("status", actionId) }
+  }
+
+  Banner {
+    width: root.width - root.leftPadding - root.rightPadding
+    banner: root.service ? root.service.contractNotice : null
+    foreground: root.foreground
+    urgent: root.urgent
+    fontFamily: root.fontFamily
+    onActionRequested: function(actionId) { root.fix("contract", actionId) }
   }
 
   Banner {

@@ -25,9 +25,23 @@ exists (ADR-0047). This file explains it; the schema decides.
    The file is compact JSON on one line (the fixture stays pretty-printed
    for humans); the `ledger/*.md` views are refreshed by `index`/`status`,
    so they may lag a writing command until the next `status`.
-3. `contractVersion` is an integer. The plugin refuses an index with a
-   different version and shows the `contractMismatch` banner with both
-   numbers and the update command.
+3. `contractVersion` is an integer. Since 0.2.0 the index also says
+   `contractReadableFrom` (ADR-0051): the oldest plugin contract that can
+   read it without misreading a field it keys on, an integer from 1 to
+   `contractVersion`; absent (or out of that range) it means
+   `contractVersion`. A plugin of contract `P` reads an index of
+   `contractVersion` `V` when `V = P`, or when `V > P` and
+   `contractReadableFrom ≤ P`; then it reads the index as its own
+   contract (status, pill counts, crisis colour) and the desk shows the
+   quiet notice "The engine writes index v`V`; this plugin reads v`P` —
+   update the plugin." with Omarchy's `omarchy plugin update jax.seldon`.
+   Every other index is refused with the `contractMismatch` banner with
+   both numbers and the update command. The engine writes a value below
+   `contractVersion` only when the ADR of that bump lists, per added or
+   changed field, why a reader of that contract does not misread it
+   (ADR-0051 §3) — including that `summary.crisis` and
+   `summary.openDrift` stay complete. The output of `seldon preview --json` keeps its own
+   strict check.
 4. The index is a **view**, not a database: newest 500 events, last 50
    completed cases, 366 heatmap days, 10 snapshots, and the newest 200 open
    drift items with crises first (ADR-0020; `summary.openDrift` and
@@ -131,6 +145,10 @@ exists (ADR-0047). This file explains it; the schema decides.
        that shape is left out with a build warning). Display only: never
        an argument of any command. The import's marker stays the only
        idempotency key.
+   - Optional, ADR-0051 (WP-176): `contractReadableFrom` (rule 3), an
+     integer, 1 ≤ value ≤ `contractVersion`; the 0.2.0 engine writes
+     `2` on every index. An index of an earlier contract-2 build lacks it
+     and is read as before.
    - Optional, ADR-0043 (WP-137): `meta.txStatus` on every
      package event of a pacman transaction that did not complete —
      `failed` or `interrupted` (pacman logged that end), `unfinished`
@@ -156,7 +174,17 @@ exists (ADR-0047). This file explains it; the schema decides.
 
 ADR → bump `contractVersion` → update schema → update fixture → update
 engine and plugin → one coordinated merge → `seldon contract-version` and
-`manifest.json.seldon.contractVersion` agree.
+`manifest.json.seldon.contractVersion` agree. The bump's ADR also sets
+`contractReadableFrom` (rule 3, ADR-0051 §3): the new number unless it
+lists, per field, why a plugin of an older contract does not misread the
+index — a field absent, renamed or of another type, a changed meaning, an
+unknown value of a closed set it keys on, or an incomplete count are
+misreads; `summary.crisis` and `summary.openDrift` stay complete and the
+bounds of rules 4 and 5 hold — as a table (field, change, where that
+reader reads it or "not read", its fallback), and its PR runs the
+released plugin's `Model.js` at its tag against the new sample with the
+same status, counts and tone. The engine's `CONTRACT_READABLE_FROM`
+follows it.
 
 ## Commands the plugin may run (fixed argument lists)
 

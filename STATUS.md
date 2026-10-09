@@ -699,6 +699,9 @@ submission). (see `work/queued/`)
   WP-183a/WP-126. E73 AGENTS.md §5 evidence words. E74 behaviour tests for
   the agent skill planned for 0.3. E75 a store scan of similar plugins only
   after Seldon's own submission.
+- E76 ADR-0051 accepted (contract forward compatibility:
+  `contractReadableFrom`; a later bump proves per field that a v2 plugin
+  misreads nothing and never counts fewer crises) → WP-176, before 0.2.0.
 
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).

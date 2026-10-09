@@ -255,6 +255,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
 
     let index = Index {
         contract_version: crate::CONTRACT_VERSION,
+        contract_readable_from: crate::CONTRACT_READABLE_FROM,
         generated_at: format_ts(&input.now),
         engine_version: crate::VERSION.to_string(),
         logbook: LogbookInfo {

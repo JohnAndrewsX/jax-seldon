@@ -249,6 +249,13 @@ impl Validator {
                         errs.push(format!("{w}: below minimum {v}"));
                     }
                 }
+                "maximum" => {
+                    if let (Some(n), Some(max)) = (number(x), v.as_f64())
+                        && n > max
+                    {
+                        errs.push(format!("{w}: above maximum {v}"));
+                    }
+                }
                 "pattern" => {
                     if let Some(t) = x.as_str() {
                         match v.as_str().and_then(|p| self.pattern(p)) {
@@ -391,6 +398,19 @@ mod tests {
         assert!(format_ok("date-time", "2026-10-01T17:05:12Z"));
         assert!(!format_ok("date-time", "2026-10-01T17:05:12"));
         assert!(!format_ok("date-time", "2026-10-01 17:05:12+02:00"));
+    }
+
+    #[test]
+    fn minimum_and_maximum() {
+        let v = Validator::new();
+        let doc = json!({"type": "integer", "minimum": 1, "maximum": 2});
+        let mut errs = Vec::new();
+        for (x, n) in [(json!(1), 0), (json!(2), 0), (json!(0), 1), (json!(3), 1)] {
+            errs.clear();
+            v.walk(&x, &doc, "", "", &mut errs);
+            assert_eq!(errs.len(), n, "{x}: {errs:?}");
+        }
+        assert!(errs[0].contains("above maximum 2"), "{errs:?}");
     }
 
     #[test]
