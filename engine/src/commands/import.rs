@@ -152,6 +152,7 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
             return Err(Error::user(format!("{} already exists", c.path)));
         }
     }
+    check_folders(&logbook, &plan)?;
     commit_pending(ctx, &config, &logbook)?;
     let mut undo = Undo::new(&logbook);
     let files = write_plan(ctx, &config, &logbook, &lock, &plan, &mut undo)
@@ -178,6 +179,19 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
     ))
 }
 
+/// Every folder the apply writes a file in is a real folder of the
+/// logbook ([`Logbook::checked_file`], WP-168), checked before the ledger.
+fn check_folders(logbook: &Logbook, plan: &Plan) -> Result<()> {
+    let files = plan.cases.iter().map(|c| c.path.clone());
+    let files = files.chain(plan.days.iter().map(|d| d.path.clone()));
+    let files = files.chain(plan.memory.iter().map(|m| m.path.clone()));
+    let files = files.chain(plan.dossier.iter().flat_map(|d| d.changed()));
+    for rel in files.chain([report_path(SOURCE), marker_path(SOURCE), undo_path()]) {
+        logbook.checked_file(&rel)?;
+    }
+    Ok(())
+}
+
 /// Writes the plan: ledger notes, cases, journal days, memory files,
 /// deviation rows, the report and the marker. Returns the files written.
 /// Every file is noted in `undo` before it is written.
@@ -202,7 +216,11 @@ fn write_plan(
         let mut case = c.case.clone();
         case.events.push(event.id.to_string());
         undo.note(&c.path);
-        write_new(&logbook.path(&c.path), &model::render_new(&case, &c.body))?;
+        write_new(
+            logbook,
+            &logbook.path(&c.path),
+            &model::render_new(&case, &c.body),
+        )?;
         files.push(c.path.clone());
     }
     for d in &plan.days {
@@ -542,7 +560,7 @@ fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
 
 /// Writes the report (text outside its fence kept); `true` when it changed.
 fn write_report(logbook: &Logbook, plan: &Plan, mode: &Mode) -> Result<bool> {
-    let path = logbook.path(report_path(SOURCE));
+    let path = logbook.checked_file(report_path(SOURCE))?;
     let existing = match std::fs::read_to_string(&path) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,

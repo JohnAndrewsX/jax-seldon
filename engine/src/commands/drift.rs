@@ -690,6 +690,13 @@ pub(super) fn write_resolution(
     if let (Action::Link { .. }, Some(file)) = (action, &case_file) {
         file.prepare(logbook, attach)?;
     }
+    // the folders of a new case and its area, before the ledger (WP-168)
+    if let (Action::Explain(explain), Some(file)) = (action, &case_file) {
+        logbook.checked_file(&file.path)?;
+        if let Some(area) = explain.area.as_deref() {
+            logbook.checked_dir(format!("areas/{area}"))?;
+        }
+    }
     let written = emit(lock, config, logbook, events)?;
 
     // the ledger lines are written and win; a case file that cannot follow
@@ -707,7 +714,7 @@ pub(super) fn write_resolution(
                         .transpose()?
                         .flatten();
                     let text = crate::model::render_new(&file.case, &file.doc.body);
-                    write_new(&file.path, &text)?;
+                    write_new(logbook, &file.path, &text)?;
                 }
                 _ => {
                     file.save(logbook)?;

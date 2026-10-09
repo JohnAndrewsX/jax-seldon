@@ -406,6 +406,14 @@ pub(crate) fn create(
             file.path.display()
         )));
     }
+    // every folder this writes into, before the ledger (WP-168)
+    logbook.checked_file(&file.path)?;
+    if let Some(area) = spec.area.as_deref() {
+        logbook.checked_dir(format!("areas/{area}"))?;
+    }
+    if spec.start && spec.point {
+        logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
+    }
 
     // the ledger first: if it cannot be written, nothing else is
     let mut events = vec![
@@ -437,7 +445,7 @@ pub(crate) fn create(
         .map(|a| cases::ensure_area(logbook, a))
         .transpose()?
         .flatten();
-    write_new(&file.path, &text)?;
+    write_new(logbook, &file.path, &text)?;
     if spec.start && spec.point {
         cases::set_active_case(logbook, &id)?;
     }
@@ -552,6 +560,14 @@ fn step(
             Language::De => format!("Case abgeschlossen: {}", file.case.title),
         })
     });
+
+    // the folders the step writes into, before the ledger (WP-168): the
+    // case's from and to, `.seldon/` for the active case
+    logbook.checked_file(&file.path)?;
+    logbook.checked_dir(format!("work/{}", to.folder()))?;
+    if transition != Transition::Verify {
+        logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
+    }
 
     // the journal day is read before the ledger is written: a day file
     // the engine cannot read fails the step before anything changes

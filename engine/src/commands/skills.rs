@@ -426,7 +426,7 @@ impl Archive {
         if let Some(rel) = &self.rel {
             return Ok(rel.clone());
         }
-        let parent = self.root.join("archive");
+        let parent = crate::logbook::checked_dir(&self.root, Path::new("archive"))?;
         sys::create_dir_private(&parent)
             .map_err(|e| anyhow::anyhow!("cannot create {}: {e}", parent.display()))?;
         let mut n = 1u32;
@@ -452,7 +452,7 @@ impl Archive {
     /// `<run folder>/<label>`.
     fn copy(&mut self, label: &str, name: &str, bytes: &[u8]) -> Result<String> {
         let rel = format!("{}/{label}", self.dir()?);
-        let dir = self.root.join(&rel);
+        let dir = crate::logbook::checked_dir(&self.root, Path::new(&rel))?;
         sys::create_dir_private(&dir).map_err(|e| anyhow::anyhow!("cannot create {rel}: {e}"))?;
         let mut file = sys::create_new_private(&dir.join(name))
             .map_err(|e| anyhow::anyhow!("cannot write {rel}/{name}: {e}"))?;

@@ -297,9 +297,11 @@ pub(crate) fn is_line_breaking(c: char) -> bool {
     matches!(c, '\u{2028}' | '\u{2029}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
-/// Creates `path` with `text`; an existing file is a user error, never
-/// overwritten.
-pub(crate) fn write_new(path: &Path, text: &str) -> Result<()> {
+/// Creates `path` (in `logbook`) with `text`; an existing file is a user
+/// error, never overwritten, and so is a folder on the way that is a
+/// symbolic link or no directory ([`Logbook::checked_file`], WP-168).
+pub(crate) fn write_new(logbook: &Logbook, path: &Path, text: &str) -> Result<()> {
+    let path = &logbook.checked_file(path)?;
     if let Some(dir) = path.parent() {
         crate::sys::create_dir_private(dir)
             .with_context(|| format!("cannot create {}", dir.display()))?;

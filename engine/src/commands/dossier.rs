@@ -73,7 +73,7 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
     let built = index::derive(ctx, &config, &logbook)?;
     let facts = dossier::facts(&built);
     let hosts = Hosts::from_env();
-    let mut files = Files::read(&logbook.path("system"), logbook.meta.language)?;
+    let mut files = Files::read(&logbook.checked_dir("system")?, logbook.meta.language)?;
 
     let mut warnings: Vec<String> = Vec::new();
     let mut counts = Counts::default();

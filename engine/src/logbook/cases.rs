@@ -123,9 +123,12 @@ impl CaseFile {
     }
 
     /// The save's checks: the file is still there, the frontmatter takes
-    /// the case ([`model::update`], into `doc`), and the folder of its
-    /// status has no other file of this name. Returns the target path.
+    /// the case ([`model::update`], into `doc`), its folder and the folder
+    /// of its status are real folders of the logbook
+    /// ([`Logbook::checked_file`], WP-168), and that folder has no other
+    /// file of this name. Returns the target path.
     fn checked(&mut self, logbook: &Logbook) -> Result<PathBuf> {
+        logbook.checked_file(&self.path)?;
         if !self.path.is_file() {
             return Err(Error::user(format!(
                 "{} is gone (moved by another seldon?); nothing written",
@@ -139,10 +142,8 @@ impl CaseFile {
             .file_name()
             .context("a case file has a name")?
             .to_os_string();
-        let target = logbook
-            .path("work")
-            .join(self.case.status.folder())
-            .join(name);
+        let target =
+            logbook.checked_file(Path::new("work").join(self.case.status.folder()).join(name))?;
         if target != self.path && target.exists() {
             return Err(Error::user(format!(
                 "cannot move {} to {}: the target exists",
@@ -814,7 +815,7 @@ pub fn active_case(logbook: &Logbook) -> Option<String> {
 /// Writes `.seldon/active-case`.
 pub fn set_active_case(logbook: &Logbook, id: &str) -> Result<()> {
     sys::write_atomic(
-        &logbook.path(ACTIVE_CASE_FILE),
+        &logbook.checked_file(ACTIVE_CASE_FILE)?,
         format!("{id}\n").as_bytes(),
     )?;
     Ok(())
@@ -825,13 +826,14 @@ pub fn clear_active_case(logbook: &Logbook, id: &str) -> Result<bool> {
     if active_case(logbook).as_deref() != Some(id) {
         return Ok(false);
     }
-    let path = logbook.path(ACTIVE_CASE_FILE);
+    let path = logbook.checked_file(ACTIVE_CASE_FILE)?;
     std::fs::remove_file(&path).with_context(|| format!("cannot remove {}", path.display()))?;
     Ok(true)
 }
 
 /// Creates `areas/<area>/README.md` on first use. Returns the new file's
-/// relative path, or `None` when the area exists.
+/// relative path, or `None` when the area exists. A linked or non-directory
+/// `areas/` or `areas/<area>/` is refused either way (WP-168).
 pub fn ensure_area(logbook: &Logbook, area: &str) -> Result<Option<String>> {
     if !is_slug(area) {
         return Err(Error::user(format!(
@@ -839,7 +841,7 @@ pub fn ensure_area(logbook: &Logbook, area: &str) -> Result<Option<String>> {
         )));
     }
     let rel = format!("areas/{area}/README.md");
-    let path = logbook.path(&rel);
+    let path = logbook.checked_file(&rel)?;
     if path.is_file() {
         return Ok(None);
     }
