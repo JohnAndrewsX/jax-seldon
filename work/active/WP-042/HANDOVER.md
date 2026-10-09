@@ -139,3 +139,23 @@ the test host was removed afterwards (checked).
 | `omarchy plugin validate` on the new split `4374707833cc6ee4431e4beb6055e9c1f538c3ff` | *fixture* | exit 0 |
 | The store's baseline on that split, as in round 1 | *test host* | `review-required`, no findings, capabilities `privilege`, `package-manager`; scan folder removed afterwards |
 | `just check-packaging` | *fixture* | `check-packaging: ok` (shellcheck absent: `bash -n` only) |
+
+## Round 3 (stage 2, Fable: APPROVE with two wording fixes)
+
+- **N1**: after the optional `gh attestation verify` line's explanation,
+  `plugin/README.md` says "If it fails, do not run `install.sh`."
+- **N2**: the States row "Engine missing" says the script verifies the
+  engine it downloads against `SHA256SUMS`.
+- `packaging/store/submission.md` gains "Operator decisions at filing time
+  (open)", copied from stage 2's list as unchecked items: tags,
+  attestations 3 and 4, the #8407 risk, exact-SHA binding, re-reading the
+  store form. Nothing decided.
+- The README keeps its line count, so `baseline.md`'s line numbers (at
+  `3b951145`) still hold.
+
+| Check | Where | Result |
+|---|---|---|
+| `bash tests/release/store-readme.test.sh` | *fixture* | 22 ok |
+| `bash scripts/docs-check.sh` | *fixture* | ok (476 links) |
+| `tests/plugin/model.test.js` (the States-row test) | *not run* | no node on the dev host; the row keeps its title, actions and "GitHub one-liner" |
+| shellcheck, CI | *not run* | unchanged from round 2 |
