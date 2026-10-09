@@ -158,3 +158,99 @@ two or three `stat` calls before each git call.
    host (see above). Raise the limit, or open a WP to look into it?
 6. The plugins collector's git queries of a plugin clone (outside the
    logbook) do not go through this gate. That is out of scope here.
+
+## Round 2 (review 1: APPROVE, small fold-in)
+
+Commits `206f5043` (engine), `1c1634d5` (docs), then this section.
+
+- **N1:** the CHANGELOG headline now reads "No git waits on a FIFO at
+  `.git/HEAD`". It also says that other files git opens (`.git/config`,
+  a loose ref) are not checked and still cost one git timeout. Per Q1
+  this is accepted; SPEC §3 states the same limit, unchanged.
+- **N2:** for a `.git` that is no directory, the refusal now ends "make
+  it a directory or a `gitdir:` file and run the command again". For
+  `HEAD` it still says "make it a regular file". SPEC §3 mentions both.
+- **N3:** `check_files` now uses the file type (`meta.is_dir()`) to
+  decide that a `HEAD` directory is no refusal, instead of comparing
+  the text of `sys::irregular`. The unit test gained that case: a
+  `HEAD` that is a directory passes.
+- **N5:** `GIT_FILE_FIX` says the branches are under `refs/heads` and in
+  `packed-refs` of the repository's git directory, which is `.git` or,
+  for a linked work tree, the main work tree's `.git`. It also says
+  `.git` is a directory or a `gitdir: <path>` file.
+- **Q3:** `import --apply` checks `git::check_files` first in
+  `commit_pending`, so a refused `.git`/`HEAD` stops with exit 1 before
+  anything is written. Before, it exited 2 with "cannot read the
+  logbook's git status: cannot run git: …". New integration test
+  `bounded_reads::an_import_into_a_logbook_with_a_fifo_head_is_refused`:
+  a FIFO `HEAD`, the harness's time limit, under 8 s, exit 1, the
+  message starts with the path, no import marker written. Mutation
+  check: without the new line the test fails (exit 2 instead of 1).
+- N4 (no `fix` on the `logbook` row) was not in the fold-in list and is
+  not done.
+
+**Verified:** `cargo fmt --check` and `cargo clippy --all-targets -D
+warnings` are clean. `cargo test -j 4` passes, exit 0: 1388 passed,
+0 failed. Log: `gates/test-wp175-r2.log`. Same environment as round 1:
+target, TMPDIR and a private 0700 runtime dir under `gates/`, all on
+disk.
+
+### Q4: which commit on `next` raised `check-rss`
+
+**Method:** a detached worktree on disk (removed afterwards). For each
+commit: `cargo test --profile bench --features watch --test watch
+rss_stays_under -- --nocapture`, which prints idle, after-rebuild and
+peak RSS plus the heap (RssAnon). Then the bench binary, read with
+`size -A`. Points measured: `main` (603d832b; `next` contains it) and
+all 38 merges on `next`'s first-parent line. The peak was taken three
+times per commit. Scripts and logs are in `gates/`: `rss-at-wp175.sh`,
+`rss-bisect*-wp175.log`, `rss-merges-wp175.log` (peaks ×3),
+`rss-text-wp175-table.txt` (text, heap, peak per merge).
+
+**Result: there is no single culprit. The binary grew steadily over
+about ten WPs, and the heap grew a little.** The limit is 11 264 kB.
+
+| | `.text` | heap after rebuild | peak RSS (runs) |
+|---|---|---|---|
+| `main` 603d832b | 5 802 782 B | 2 816 kB | 10 268 to 10 432 kB |
+| `next` 7f6341c4 | 6 588 222 B (+785 kB) | 3 184 kB (+368 kB) | 11 196 to 11 460 kB (about +1 000 kB) |
+
+The peak is noisy. Between runs of the same commit it varies by up to
+about 300 kB, and consecutive merges with no engine change differ by
+±300 kB (WP-164 +308, then WP-168 −296). So a bisect on the peak
+alone points at random merges. My first two bisects named cd75339a
+(WP-162, plugin only, no engine change) and 49d9abb9 (a work file), and
+both are noise. `.text` and the heap are deterministic. The peak
+follows them: about +1 000 kB = +368 kB heap + the file-backed share of
+the larger code.
+
+Largest steps in `.text` (merge into `next`, then Δ):
+
+- WP-124a (bulk triage, engine): +146 kB
+- WP-102a (import task files): +105 kB
+- WP-156 (desk steps aside, sessions): +94 kB
+- WP-139 (recent ~/.config edits): +69 kB
+- WP-166 (crash inbox): +54 kB
+- WP-127 (optional index fields): +51 kB
+- WP-113 (code the collectors could not see): +42 kB
+- WP-120 (contract v2): +37 kB
+- WP-159 (two-pass redaction): +32 kB
+- the rest: < 30 kB each
+
+Largest steps in the heap: WP-137 (transaction packages, `meta.txStatus`)
++132 kB, WP-127 +80, WP-120 +52, WP-113 +36, WP-141 +32. The rest are
+±12 kB or less.
+
+**When the limit was first crossed:** the median peak first reaches
+the limit around the merge of WP-137 (9577717f: 11 260 / 11 128 kB in
+two passes). From WP-156 (f5f7581b) on, every merge's median is above
+it. WP-138's merge (3535cc11) does not compile the watch test at that
+commit, so there is no number for it; it was fixed by 66257638 and
+b4a11dba. WP-175 itself adds nothing measurable: branch 11 264 to
+11 388 kB against `next` 11 328 to 11 396 kB, same heap.
+
+The limit is not raised (per the brief). Options for the orchestrator:
+raise it with a recorded reason (code growth, not a leak); or measure
+heap and anonymous RSS instead of the peak, since they are stable while
+file-backed pages track binary size; or open a WP on the size of the
+largest additions.
