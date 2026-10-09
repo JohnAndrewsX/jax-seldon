@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Old ledger lines are not rewritten and still index. A 0.1.x engine
   skips the new kinds as unreadable lines: going back is not supported
   (WP-120).
+- **Linked logbook folders refuse writes (WP-168).** A folder of the
+  logbook that the engine writes into (`ledger/`, `journal/`,
+  `decisions/`, `work/queued|active|completed/`, `areas/<area>/`,
+  `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/`, …) must be a
+  real folder inside the logbook. When it is a symbolic link or a file,
+  every command that would write there stops with exit 1 and names it
+  ("ledger is a symbolic link, not a folder of the logbook; make it a
+  folder and run the command again"), and nothing is written; before,
+  the write went through the link to wherever it pointed. With a linked
+  `ledger/` that includes `seldon log`, `index` and `status` (the
+  plugin's refresh shows the error). Fix: make it a real folder again —
+  move the link's contents into a folder of that name; a logbook kept on
+  another disk goes there whole (the logbook folder itself may be a
+  link, or a bind mount). Reading through a
+  link is unchanged, and the logbook folder itself may still be a link.
+  A `.seldon` that is a file now means "not initialised" (exit 3).
 
 ### Engine
 
@@ -44,6 +60,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was imported before this release with one) now counts the selector as
   a hidden character: the desk keeps Start off and points to the
   terminal. It fails safe; start such a case with `seldon plan start`.
+- **Boot configuration (WP-164).** The config collector now hashes the
+  boot configuration, whatever `watchPaths` says:
+  `/etc/mkinitcpio.conf`, the files in `/etc/mkinitcpio.conf.d/` and
+  `/etc/mkinitcpio.d/`, `/etc/default/limine`,
+  `/etc/limine-entry-tool.conf` and the files in
+  `/etc/limine-entry-tool.d/`. A change shows up at the next capture,
+  also when no agent made it; only hashes are recorded, never the
+  content. It is quiet attention, not a crisis (add the paths to
+  `[drift] alwaysRedPaths` for one). A file that cannot be read is
+  hashed from its size, times and inode (`meta.hashBasis = "stat"`).
+  `/boot/limine*.conf` is left out: only root can open `/boot` on
+  Omarchy, and the Limine tools rewrite it on every snapshot and kernel
+  update. The `.pacnew` files pacman leaves there are not hashed (the
+  pacman note covers them). The first capture after the update takes the
+  files in without events. Opt out with `[redaction] skipPaths`.
 - **Files pacman left (WP-141).** A `.pacnew` (the package's new default
   was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
   that pacman reports in `/var/log/pacman.log` is now recorded: a pacman
@@ -71,6 +102,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lost), each of its package events records `meta.txStatus`; the month's
   ledger view adds `· transaction interrupted`. Lines written before keep
   none. `seldon event --meta txStatus=…` is refused.
+- **A lock left by a dead pacman no longer hides its transaction
+  (WP-160).** After a power loss or a killed pacman,
+  `/var/lib/pacman/db.lck` stays. A lock older than the current boot is
+  now known as stale: the transaction it left open is recorded at once,
+  marked `unfinished`, instead of waiting until you delete the lock.
+  `seldon doctor` has a `pacman` row that names a stale lock and how to
+  remove it. Seldon only looks at the lock, never removes it.
 - **`seldon decide accept ADR-NNNN` (ADR-0040).** Accepts a proposed
   decision: `status: accepted` and today's date in its frontmatter, a
   `seldon` note in the ledger, `DECISIONS.md`, the commit and the index.

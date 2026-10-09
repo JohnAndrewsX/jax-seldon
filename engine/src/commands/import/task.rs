@@ -254,6 +254,10 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
         Some(ctx.lock()?)
     };
     let marker_rel = marker_path(MARKER);
+    if lock.is_some() {
+        // the marker's folder, before anything is written (WP-168)
+        logbook.checked_file(&marker_rel)?;
+    }
     let mut marker = read_marker(&logbook.path(&marker_rel))?;
     // what an earlier run left pending: settled in the file only when this
     // run writes (never in a dry run)

@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ e2ad33d7 -->
+<!-- source: en/06-configuration.md @ 51759fb3 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -112,7 +112,7 @@ Sprache des nächsten Logbuchs fest, das `seldon init` anlegt.
 | `omarchy` | `omarchy-version` | Wechsel der Omarchy-Version |
 | `plugins` | `omarchy plugin list --json` | Shell-Plugins: hinzugefügt, entfernt, aktiviert, deaktiviert, aktualisiert |
 | `theme` | `~/.local/state/omarchy/current/theme.name` | Theme-Wechsel |
-| `config` | die Dateien unter `watchPaths` | Dateien: hinzugefügt, geändert, entfernt |
+| `config` | die Dateien unter `watchPaths` und die Boot-Konfiguration | Dateien: hinzugefügt, geändert, entfernt |
 
 Jeder Collector liest nur. Mit `false` schaltest du einen aus;
 `seldon capture --source <name>` startet ihn trotzdem bei Bedarf.
@@ -193,6 +193,53 @@ an einer davon ohne Case eine Krise (beide stehen in der Vorgabe von
 ```toml
 watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
 ```
+
+Deine Boot-Konfiguration wird beobachtet, egal was `watchPaths` sagt.
+Der Config-Collector hasht `/etc/mkinitcpio.conf`, die Dateien in
+`/etc/mkinitcpio.conf.d/` und `/etc/mkinitcpio.d/`, `/etc/default/limine`,
+`/etc/limine-entry-tool.conf` und die Dateien in
+`/etc/limine-entry-tool.d/`. Sie bestimmen, wie die nächste Initramfs
+gebaut wird und was das Bootmenü startet. Eine Änderung an einer davon
+erscheint bei der nächsten Erfassung, auch wenn kein Agent sie gemacht
+hat: eine Änderung von Hand, `omarchy hibernation setup`, eine Migration,
+ein `omarchy-settings`-Update, das eine Datei geändert hat. Aufgezeichnet
+werden nur Hashes, nie der Inhalt (eine Kernel-Befehlszeile nennt deine
+Platten). Einem Symlink in einem dieser Ordner folgt Seldon zu seiner
+Datei und zeichnet nur deren Hash auf; ein Link auf eine Datei, die ein
+Paket mitbringt, zählt dort wie jede andere Änderung. Sonst liest Seldon
+nichts unter `/etc`. Die `.pacnew`-Dateien,
+die pacman dort hinterlässt, werden nicht gehasht: Der Pacman-Collector
+listet jede schon auf, und wenn du sie mit `pacdiff` zusammenführst, wird
+die Änderung der Datei selbst aufgezeichnet.
+
+`/boot/limine.conf` wird nicht beobachtet. Auf Omarchy kann nur root
+`/boot` öffnen, und die Limine-Werkzeuge schreiben diese Datei bei jedem
+Snapshot und jedem Kernel-Update aus den Dateien oben neu. Sie würde sich
+also bei jedem Systemupdate ändern, ohne dass jemand eine Einstellung
+ändert.
+
+Eine Datei, die Seldon nicht lesen kann, wird stattdessen aus Größe,
+Zeiten und Inode gehasht (das Ereignis sagt `hashBasis: stat`). Das
+zeigt, *dass* die Datei geschrieben wurde, nicht *was* sich geändert hat.
+Auf Omarchy sind all diese Dateien lesbar.
+
+Eine Änderung an der Boot-Konfiguration wird aufgelistet, ist aber keine
+Krise: Ein `omarchy-settings`-Update schreibt Omarchys eigene Drop-ins
+neu, und eine rote Leiste nach einem normalen Update würde dir
+beibringen, Rot zu übersehen. Willst du die Krise, nimm die Pfade in
+`alwaysRedPaths` auf (siehe [Drift](#drift)):
+
+```toml
+[drift]
+alwaysRedPaths = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**", "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile", "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2", "/etc/mkinitcpio*", "/etc/limine*", "/etc/default/limine"]
+```
+
+Ein offener Case übernimmt eine solche Änderung, wenn der Befehl des
+Agenten den Pfad geschrieben hat (`sudo tee /etc/mkinitcpio.conf.d/…`)
+oder der Plan des Case den Pfad nennt; sonst verknüpfst du sie mit
+`seldon drift link`. Um die Boot-Dateien auszunehmen, trag
+`/etc/mkinitcpio*`, `/etc/limine*` und `/etc/default/limine` in
+`[redaction] skipPaths` ein.
 
 Immer ausgenommen:
 

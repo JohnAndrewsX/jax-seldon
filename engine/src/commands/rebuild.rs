@@ -53,7 +53,7 @@ pub fn run(ctx: &Context, _args: RebuildArgs) -> Result<Output> {
     let counts = doc.counts();
     let (content, skipped) = rebuild::render::text(&doc, logbook.meta.language);
 
-    let path = logbook.path(REL_PATH);
+    let path = logbook.checked_file(REL_PATH)?;
     let existing = match std::fs::read_to_string(&path) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,

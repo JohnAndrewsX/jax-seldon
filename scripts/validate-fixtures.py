@@ -1741,6 +1741,21 @@ VARIANTS = {
         {"op": "test", "path": "/summary/openDrift", "value": 6},
         {"op": "replace", "path": "/summary/openDrift", "value": 250},
     ],
+    # WP-164: the boot configuration's events carry absolute subjects under /etc (the config
+    # collector's boot files). On 09-23 the human took `plymouth` out of Omarchy's hooks drop-in by
+    # hand, and `omarchy-provision-owner` wrote a key drop-in the user cannot read (hashed by its
+    # metadata, `meta.hashBasis: "stat"`). Both are open attention items. Index only, like
+    # drift-explained-case: in the logbook they would move every list the plugin harness walks.
+    "boot-config": [
+        {"op": "test", "path": "/events/55/ts", "value": "2026-09-22T20:10:00+02:00"},
+        {"op": "add", "path": "/events/55", "value": {"id": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "meta": {"hashFrom": "8276d859e9e973d922e3a2adf580b1c061fe8507ff28318ef761e1e355e7eb7d", "hashTo": "ebe226cdad440acc4006c3a4058dc87ff1db9158f7a46442003ef889ed1e6623"}}},
+        {"op": "add", "path": "/events/55", "value": {"id": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "meta": {"hashTo": "140b21ced41879c8ef31256c8b35302b27df920c7efa2a56e6426a7ca056d017", "hashBasis": "stat"}}},
+        {"op": "test", "path": "/drift/5/ts", "value": "2026-09-27T12:30:00+02:00"},
+        {"op": "add", "path": "/drift/6", "value": {"eventId": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "crisis": False, "proposedCase": None, "rule": "config"}},
+        {"op": "add", "path": "/drift/7", "value": {"eventId": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "crisis": False, "proposedCase": None, "rule": "config"}},
+        {"op": "test", "path": "/summary/openDrift", "value": 6},
+        {"op": "replace", "path": "/summary/openDrift", "value": 8},
+    ],
     # ADR-0027 §5 (WP-101): the user reopened the agent-closed C-2026-002 (`seldon plan reopen`):
     # a new active case with the tag `reopens:C-2026-002`, its Intent copied. Index only, like
     # drift-explained-case: in the logbook it would move every list the plugin harness walks.

@@ -181,6 +181,8 @@ as two subagents; both are allowed for this bounded fan-out.
 - After each green main check and its push, the orchestrator runs
   `SELDON_TEST_HOST=<alias> just deploy-test-host <check log>`, so the
   test host follows main (docs/TESTING.md, "Test host follows main").
+  For a live test of `next` it runs `just deploy-test-host --branch next
+  <next check log>` after next's check and push (WP-155).
 - Every tick ends with `git status` clean on `main`, STATUS.md committed,
   and a one-line entry in `work/ORCHESTRATOR-LOG.md` (date, tick, what
   changed). This file is the operator's way to catch up.

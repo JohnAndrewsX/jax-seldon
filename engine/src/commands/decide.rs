@@ -83,6 +83,8 @@ fn new(ctx: &Context, args: DecideArgs) -> Result<Output> {
     // the decision file, its name and DECISIONS.md get the redacted title
     let title = Redactor::for_config(&config)?.redact(&title);
     let lock = ctx.lock()?;
+    // before the next id is read from it (WP-168)
+    logbook.checked_dir("decisions")?;
     if let Some(id) = &args.case_id {
         cases::find(&logbook, id)?;
     }
@@ -99,7 +101,7 @@ fn new(ctx: &Context, args: DecideArgs) -> Result<Output> {
     let body = cases::fill(&template, &[("id", &id), ("title", &title)]);
     let rel = format!("decisions/{id}-{}.md", cases::slug(&title, "decision"));
     let path = logbook.path(&rel);
-    write_new(&path, &model::render_new(&decision, &body))?;
+    write_new(&logbook, &path, &model::render_new(&decision, &body))?;
     let warnings = fill_index(&logbook);
     let commit = autocommit(ctx, &config, &logbook, &format!("{id} proposed"));
     crate::index::rebuild_if_initialised(ctx);
@@ -167,6 +169,9 @@ fn accept(ctx: &Context, args: AcceptArgs) -> Result<Output> {
     let actor = user_actor(args.actor, &id)?;
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
+    // before the ledger note: a linked `decisions/` would take the
+    // rewrite out of the logbook (WP-168)
+    logbook.checked_dir("decisions")?;
     // two files with one id (a hand-made copy): which one the user means is
     // not for the engine to guess (round 3)
     let path = match logbook.decision_files_of(&id)?.as_slice() {

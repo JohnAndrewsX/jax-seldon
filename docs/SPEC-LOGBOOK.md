@@ -44,6 +44,10 @@ Seldon/
 
 File and folder names: lowercase, hyphens, English. Prose: user's language.
 
+The folders are real directories inside the logbook: the engine refuses to
+write into one that is a symbolic link or a file (SPEC-ENGINE §2, "Linked
+folders"). The logbook folder itself may be a link.
+
 ## 3. Frontmatter conventions
 
 All YAML keys are English, enum values are English, free text may be any

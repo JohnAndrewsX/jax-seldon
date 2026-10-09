@@ -46,7 +46,7 @@ mod collectors {
     #[test]
     fn pacman_offsets_match_the_fixture_readme() {
         let log = std::fs::read(fixture("logs/pacman.log")).unwrap();
-        let parsed = pacman::parse(&log, 0, false, cest());
+        let parsed = pacman::parse(&log, 0, pacman::LockState::Absent, cest());
         assert_eq!(parsed.resume, 13475, "complete lines end at byte 13475");
         // both forms of a file pacman left (WP-141): the `.pacsave` before
         // the baseline, the `.pacnew` in the 10-01 `omarchy update`
@@ -261,6 +261,160 @@ mod collectors {
         assert_eq!(
             out.events[0].meta.tx_status,
             Some(seldon::model::event::TxStatus::Unfinished)
+        );
+    }
+
+    /// WP-160: a `db.lck` older than the boot (`/proc/stat` `btime`) was
+    /// left by a pacman that died; the transaction it left open is emitted
+    /// `unfinished` at once, and a later capture, with the lock still
+    /// there or removed, adds nothing. A lock from this boot keeps the
+    /// transaction back as before. The lock is never touched.
+    #[test]
+    fn pacman_emits_the_open_transaction_of_a_stale_lock() {
+        use seldon::model::event::TxStatus;
+        use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+        let set_mtime = |path: &std::path::Path, t: SystemTime| {
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(t)
+                .unwrap();
+        };
+        // the fake boot: 2026-10-01T10:30:00+02:00
+        let boot = UNIX_EPOCH + Duration::from_secs(1_790_843_400);
+        let open = "[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -Syu'\n\
+                    [2026-10-01T10:00:01+0200] [ALPM] transaction started\n\
+                    [2026-10-01T10:00:02+0200] [ALPM] upgraded gtk4 (1:4.18.6-1 -> 1:4.18.7-1)\n\
+                    [2026-10-01T10:00:03+0200] [ALPM] upgraded linux (6.16.9-1 -> 6.16.10-1)\n";
+
+        // stale: the lock is from 10:00, the machine booted at 10:30
+        let mut b = Bench::new("stale-lock");
+        let log = b.scratch.path("pacman.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::write(&b.sources.proc_stat, "cpu 1 2 3\nbtime 1790843400\n").unwrap();
+        std::fs::write(&log, open).unwrap();
+        let lock = b.sources.pacman_db_lock.clone();
+        std::fs::write(&lock, "").unwrap();
+        let made = boot - Duration::from_secs(1800);
+        set_mtime(&lock, made);
+        let out = b.run(&Pacman, "2026-10-01T10:31:00+02:00");
+        assert_eq!(subjects(&out.events), ["gtk4", "linux"]);
+        assert!(
+            out.events
+                .iter()
+                .all(|e| e.meta.tx_status == Some(TxStatus::Unfinished)),
+            "{:?}",
+            out.events
+        );
+        assert_eq!(out.events[0].meta.command.as_deref(), Some("pacman -Syu"));
+        assert_eq!(
+            out.cursor.as_ref().unwrap()["offset"],
+            open.len(),
+            "cursor past the transaction"
+        );
+        assert_eq!(b.ledger_events(Source::Pacman).len(), 2);
+        // read only
+        let meta = std::fs::metadata(&lock).unwrap();
+        assert_eq!(meta.modified().unwrap(), made);
+        assert_eq!(meta.len(), 0);
+        // idempotent: the lock still there, then removed by the user
+        assert!(
+            b.run(&Pacman, "2026-10-01T10:32:00+02:00")
+                .events
+                .is_empty()
+        );
+        std::fs::remove_file(&lock).unwrap();
+        assert!(
+            b.run(&Pacman, "2026-10-01T10:40:00+02:00")
+                .events
+                .is_empty()
+        );
+        assert_eq!(b.ledger_events(Source::Pacman).len(), 2);
+        // the next pacman, after the lock is gone, is recorded as usual
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&log)
+            .unwrap()
+            .write_all(
+                b"[2026-10-01T10:45:00+0200] [ALPM] transaction started\n\
+                  [2026-10-01T10:45:01+0200] [ALPM] installed zed (0.198.4-1)\n\
+                  [2026-10-01T10:45:01+0200] [ALPM] transaction completed\n",
+            )
+            .unwrap();
+        let out = b.run(&Pacman, "2026-10-01T10:46:00+02:00");
+        assert_eq!(subjects(&out.events), ["zed"]);
+        assert_eq!(out.events[0].meta.tx_status, None);
+
+        // this boot: the lock is from 10:00, the machine booted at 09:00
+        let mut b = Bench::new("fresh-lock");
+        let log = b.scratch.path("pacman.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::write(&b.sources.proc_stat, "btime 1790838000\n").unwrap();
+        std::fs::write(&log, open).unwrap();
+        let lock = b.sources.pacman_db_lock.clone();
+        std::fs::write(&lock, "").unwrap();
+        set_mtime(&lock, made);
+        let out = b.run(&Pacman, "2026-10-01T10:00:04+02:00");
+        assert!(out.events.is_empty(), "pacman still runs");
+        assert_eq!(out.cursor.as_ref().unwrap()["offset"], 0);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&log)
+            .unwrap()
+            .write_all(b"[2026-10-01T10:00:05+0200] [ALPM] transaction completed\n")
+            .unwrap();
+        let out = b.run(&Pacman, "2026-10-01T10:00:06+02:00");
+        assert_eq!(subjects(&out.events), ["gtk4", "linux"]);
+        assert!(out.events.iter().all(|e| e.meta.tx_status.is_none()));
+
+        // round 2 (review N2): the clock was set forward after pacman took
+        // the lock. Its lock and first lines are older than the boot, but
+        // it wrote a line since: held back, then recorded whole once it
+        // completes (txId, command, no status)
+        let mut b = Bench::new("clock-jump");
+        let log = b.scratch.path("pacman.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::write(&b.sources.proc_stat, "btime 1790843400\n").unwrap();
+        std::fs::write(
+            &log,
+            format!("{open}[2026-10-01T10:31:00+0200] [ALPM-SCRIPTLET] ==> Building image\n"),
+        )
+        .unwrap();
+        let lock = b.sources.pacman_db_lock.clone();
+        std::fs::write(&lock, "").unwrap();
+        set_mtime(&lock, made);
+        let out = b.run(&Pacman, "2026-10-01T10:31:30+02:00");
+        assert!(out.events.is_empty(), "pacman wrote since the boot");
+        assert_eq!(out.cursor.as_ref().unwrap()["offset"], 0);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&log)
+            .unwrap()
+            .write_all(
+                b"[2026-10-01T10:32:00+0200] [ALPM] upgraded mesa (1:26.1.0-1 -> 1:26.2.0-1)\n\
+                  [2026-10-01T10:32:01+0200] [ALPM] transaction completed\n",
+            )
+            .unwrap();
+        std::fs::remove_file(&lock).unwrap();
+        let out = b.run(&Pacman, "2026-10-01T10:33:00+02:00");
+        assert_eq!(subjects(&out.events), ["gtk4", "linux", "mesa"]);
+        assert!(out.events.iter().all(|e| e.meta.tx_status.is_none()
+            && e.tx_id.as_deref() == Some("tx-20261001T100001")
+            && e.meta.command.as_deref() == Some("pacman -Syu")));
+
+        // no boot time (no /proc/stat): held, as before WP-160
+        let mut b = Bench::new("lock-no-boot");
+        let log = b.scratch.path("pacman.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::write(&log, open).unwrap();
+        std::fs::write(&b.sources.pacman_db_lock, "").unwrap();
+        set_mtime(&b.sources.pacman_db_lock, made);
+        assert!(
+            b.run(&Pacman, "2026-10-01T10:31:00+02:00")
+                .events
+                .is_empty()
         );
     }
 
@@ -1403,6 +1557,63 @@ fn attribution(events: &[Event]) -> Vec<(&str, &str, Option<&str>)> {
         .iter()
         .map(|e| (e.subject.as_str(), e.actor.as_str(), e.case.as_deref()))
         .collect()
+}
+
+/// WP-160 round 2 (review N4): under `SELDON_TEST_GUARD` without
+/// `SELDON_PACMAN_LOG` the pacman collector reads `<guard>/pacman.log`,
+/// never the host's log, as the lock (`<guard>/db.lck`) and the boot time
+/// (`<guard>/proc-stat`) do.
+#[test]
+fn a_guarded_capture_reads_the_guards_pacman_log() {
+    let env = common::Env::new(common::Snapper::Missing);
+    let logbook = env.init_logbook();
+    let meta = logbook.join(".seldon/logbook.toml");
+    let text = common::read(&meta);
+    let line = text.lines().find(|l| l.starts_with("created = ")).unwrap();
+    std::fs::write(
+        &meta,
+        text.replace(line, "created = 2026-10-01T09:00:00+02:00"),
+    )
+    .unwrap();
+    let capture = || {
+        let out = env
+            .command(&["capture", "--source", "pacman", "--json"])
+            .env("SELDON_NOW", "2026-10-01T11:00:00+02:00")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        common::json(&out)["collectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "pacman")
+            .cloned()
+            .unwrap()
+    };
+    let log = env.tmp.path().join("pacman.log");
+    let pacman = capture();
+    assert_eq!(pacman["ok"], false, "{pacman}");
+    assert!(
+        pacman["message"]
+            .as_str()
+            .unwrap()
+            .contains(&log.display().to_string()),
+        "{pacman}"
+    );
+    std::fs::write(
+        &log,
+        "[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -S zed'\n\
+         [2026-10-01T10:00:01+0200] [ALPM] transaction started\n\
+         [2026-10-01T10:00:02+0200] [ALPM] installed zed (0.198.4-1)\n\
+         [2026-10-01T10:00:02+0200] [ALPM] transaction completed\n",
+    )
+    .unwrap();
+    let pacman = capture();
+    assert_eq!(
+        (&pacman["ok"], &pacman["events"]),
+        (&true.into(), &1.into()),
+        "{pacman}"
+    );
 }
 
 fn find(hay: &[u8], needle: &[u8]) -> usize {
