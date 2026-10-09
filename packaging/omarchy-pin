@@ -1,0 +1,14 @@
+# The Omarchy commit whose plugin validator checks plugin/ where the
+# omarchy CLI is absent (CI) and the plugin split in the release workflow
+# (WP-190). packaging/omarchy-validate.sh reads this file; it fetches
+# bin/omarchy-plugin-validate at `commit` over HTTPS, refuses it unless its
+# sha256 is `validator_sha256`, then runs it. The pin mirrors the
+# validator installed on the test host; it never replaces the installed
+# tree as the reference (AGENTS.md §1). packaging/README.md, "The Omarchy
+# pin", says how to refresh it.
+#
+# Omarchy 4.0.4 (tag v4.0.4; `omarchy version` 4.0.4-1 on the test host
+# and the dev host, 2026-10-09, same validator sha256)
+repo=omacom/omarchy
+commit=c668141e9c42b13c80c9ca4ea108e11708c5e8a5
+validator_sha256=f7507e5042eb970e3dc918bdf6bf251c7557443892a77e71a17d7019ddde72c8
