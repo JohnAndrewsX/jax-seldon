@@ -707,7 +707,7 @@ fn a_capture_does_not_upgrade_rules_through_a_link() {
     std::os::unix::fs::symlink(&outside, &path).unwrap();
 
     let out = capture(&env, true);
-    assert!(out.status.code().is_some(), "{}", stderr(&out));
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let v = json(&out);
     assert_eq!(v["rulesUpdated"], serde_json::Value::Null, "{v}");
     let warnings = v["warnings"].as_array().unwrap();

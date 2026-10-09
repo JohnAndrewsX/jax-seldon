@@ -12,9 +12,7 @@
 //! once per command; the `&Lock` parameter proves it is held.
 
 use std::collections::BTreeMap;
-use std::fs::OpenOptions;
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
-use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
@@ -263,16 +261,13 @@ fn next_id(ids: &mut Generator) -> Ulid {
 /// Appends `bytes` to `path`. If the file does not end in a newline (a torn
 /// earlier write), a newline goes first so the new lines stay whole. A
 /// symbolic link or anything but a regular file at `path` is refused, not
-/// followed (ADR-0049; `Ledger::append` names it for the user first).
+/// followed (ADR-0049; `Ledger::append` names it for the user first), also
+/// one that appears after the check (`sys::open_append_nofollow`).
 fn append_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    // the check names a link or a folder first; the open refuses one
+    // swapped in after it (ADR-0049 §4)
     crate::sys::regular_or_missing(path)?;
-    let mut file = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .append(true)
-        .mode(crate::sys::NEW_FILE_MODE)
-        .open(path)
-        .with_context(|| format!("cannot open {}", path.display()))?;
+    let mut file = crate::sys::open_append_nofollow(path)?;
     let len = file.metadata()?.len();
     let mut out = Vec::with_capacity(bytes.len() + 1);
     if len > 0 {
@@ -340,6 +335,7 @@ mod tests {
     use super::*;
     use crate::logbook::lock;
     use crate::model::event::{Kind, Meta, Source};
+    use std::fs::OpenOptions;
 
     fn tmp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("seldon-ledger-{tag}-{}", std::process::id()));

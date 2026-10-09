@@ -10,6 +10,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 
 use ulid::Ulid;
 
@@ -30,16 +31,40 @@ pub const DECISIONS_FENCE: &str = "decisions.index";
 
 /// Writes `ledger/<month>.md` for every month with events; returns the
 /// relative paths that changed. A `ledger/` that is a symbolic link or no
-/// directory is refused (exit 1, WP-168).
-pub fn write_ledger_views(logbook: &Logbook, built: &Built) -> crate::error::Result<Vec<String>> {
+/// directory is refused (exit 1, WP-168); a month view that is a link or
+/// no regular file is skipped, the reason in `warnings` (WP-171).
+pub fn write_ledger_views(
+    logbook: &Logbook,
+    built: &Built,
+    warnings: &mut Vec<String>,
+) -> crate::error::Result<Vec<String>> {
+    logbook.checked_dir(crate::ledger::LEDGER_DIR)?;
     let mut written = Vec::new();
     for (month, text) in ledger_views(built) {
         let rel = format!("ledger/{month}.md");
-        if write_if_changed(logbook, &rel, &text, Durable::No)? {
-            written.push(rel);
+        match write_if_changed(logbook, &rel, &text, Durable::No)? {
+            Fill::Written => written.push(rel),
+            Fill::Unchanged => {}
+            Fill::Skipped(w) => warnings.push(w),
         }
     }
     Ok(written)
+}
+
+/// The generated file `rel` of the logbook, checked ([`Logbook::checked_file`]):
+/// `Ok(Err(warning))` when the file itself is a link or no regular file
+/// (WP-171): a view is generated, so it is skipped with the reason and the
+/// command goes on (`index.json` is still written). A refused folder stays
+/// an error.
+fn checked_view(logbook: &Logbook, rel: &str) -> crate::error::Result<Result<PathBuf, String>> {
+    if let Some(dir) = Path::new(rel).parent() {
+        logbook.checked_dir(dir)?;
+    }
+    match logbook.checked_file(rel) {
+        Ok(path) => Ok(Ok(path)),
+        Err(crate::error::Error::User(m)) => Ok(Err(format!("{rel} not updated: {m}"))),
+        Err(e) => Err(e),
+    }
 }
 
 /// The text of every month view, by month.
@@ -493,8 +518,11 @@ pub fn merge_fence(existing: Option<&str>, name: &str, content: &str) -> String 
 pub fn write_status(logbook: &Logbook, built: &Built) -> crate::error::Result<Fill> {
     const REL: &str = "STATUS.md";
     // checked before it is read: a link is not read through, a FIFO
-    // not opened (WP-171)
-    let path = logbook.checked_file(REL)?;
+    // not opened; skipped with the reason (WP-171)
+    let path = match checked_view(logbook, REL)? {
+        Ok(path) => path,
+        Err(why) => return Ok(Fill::Skipped(why)),
+    };
     let existing = match std::fs::read_to_string(&path) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -516,11 +544,7 @@ pub fn write_status(logbook: &Logbook, built: &Built) -> crate::error::Result<Fi
             )));
         }
     };
-    Ok(if write_if_changed(logbook, REL, &text, Durable::No)? {
-        Fill::Written
-    } else {
-        Fill::Unchanged
-    })
+    write_if_changed(logbook, REL, &text, Durable::No)
 }
 
 /// The body of the `decisions.index` fence of `DECISIONS.md`: the table
@@ -579,8 +603,11 @@ pub fn write_decisions_index(
 ) -> crate::error::Result<Fill> {
     const REL: &str = "DECISIONS.md";
     // checked before it is read: a link is not read through, a FIFO
-    // not opened (WP-171)
-    let path = logbook.checked_file(REL)?;
+    // not opened; skipped with the reason (WP-171)
+    let path = match checked_view(logbook, REL)? {
+        Ok(path) => path,
+        Err(why) => return Ok(Fill::Skipped(why)),
+    };
     let old = match std::fs::read_to_string(&path) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -618,11 +645,7 @@ pub fn write_decisions_index(
             format!("# Decisions\n\n{FENCE_BEGIN}{DECISIONS_FENCE} -->\n{content}{FENCE_END}\n")
         }
     };
-    Ok(if write_if_changed(logbook, REL, &text, Durable::Yes)? {
-        Fill::Written
-    } else {
-        Fill::Unchanged
-    })
+    write_if_changed(logbook, REL, &text, Durable::Yes)
 }
 
 /// How [`write_if_changed`] writes: `Yes` syncs (`DECISIONS.md`, whose
@@ -639,16 +662,19 @@ fn write_if_changed(
     rel: &str,
     text: &str,
     durable: Durable,
-) -> crate::error::Result<bool> {
-    let path = logbook.checked_file(rel)?;
+) -> crate::error::Result<Fill> {
+    let path = match checked_view(logbook, rel)? {
+        Ok(path) => path,
+        Err(why) => return Ok(Fill::Skipped(why)),
+    };
     if std::fs::read(&path).is_ok_and(|old| old == text.as_bytes()) {
-        return Ok(false);
+        return Ok(Fill::Unchanged);
     }
     match durable {
         Durable::Yes => sys::write_atomic_nofollow(&path, text.as_bytes())?,
         Durable::No => sys::write_generated_nofollow(&path, text.as_bytes())?,
     }
-    Ok(true)
+    Ok(Fill::Written)
 }
 
 #[cfg(test)]

@@ -4,6 +4,8 @@
 //! would create its target) or anything else in its place is refused with
 //! exit 1 and a reason naming the file, and nothing is written: not in the
 //! logbook, not through the link, not in the ledger. One test per writer.
+//! The generated views (`STATUS.md`, `DECISIONS.md`, `ledger/*.md`) are
+//! skipped with a warning instead, and `index.json` is still written.
 //! The setup kit's copy is covered by the unit tests of
 //! `setup::copy_tree`, the write primitives by those of `sys` and
 //! `ledger`; the capture's rules upgrade by `tests/rules.rs`.
@@ -372,17 +374,71 @@ fn a_decision() {
     );
 }
 
+/// A generated view is skipped, not refused (WP-171 round 2): `status`
+/// and `index` exit 0 with the reason as a warning (human and JSON), the
+/// view and what it points to stay as they were, and `index.json` is
+/// written all the same. A linked `ledger/` folder is still refused
+/// (`tests/linked_folders.rs`).
 #[test]
-fn the_views() {
-    // `status` writes the month views, STATUS.md and DECISIONS.md
+fn the_views_are_skipped() {
     let status = |env: &Env, root: &Path| {
         logged(env, root);
         ok(env, &["status"]);
     };
-    for file in ["STATUS.md", "DECISIONS.md", "ledger/2026-10.md"] {
-        refused(ALL, fixed(file), status, &["status"]);
+    for (file, command) in [
+        ("STATUS.md", "status"),
+        ("DECISIONS.md", "status"),
+        ("ledger/2026-10.md", "status"),
+        ("ledger/2026-10.md", "index"),
+    ] {
+        for &how in ALL {
+            let what = format!("{file} {how:?} {command}");
+            let env = Env::new(Snapper::Missing);
+            let root = env.init_logbook();
+            status(&env, &root);
+            swap(&env, &root, file, how);
+            let view = snapshot(&root).get(file).cloned();
+            let beside = snapshot(&env.tmp.path().join("outside"));
+            let warning = format!(
+                "{file} not updated: {file} is {}, not a file of the logbook; make it a file and run the command again",
+                how.what()
+            );
+
+            let mut cmd = env.command(&["--json", command]);
+            cmd.env("SELDON_LOGBOOK", &root).env("SELDON_NOW", T1);
+            let out = within(cmd, &what);
+            assert_eq!(out.status.code(), Some(0), "{what}: {}", stderr(&out));
+            let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+            assert!(
+                v["warnings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|w| *w == warning.as_str()),
+                "{what}: {v}"
+            );
+            let index: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(env.home.join(".local/state/seldon/index.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(index["generatedAt"], T1, "{what}");
+            assert_eq!(snapshot(&root).get(file).cloned(), view, "{what}");
+            assert!(
+                snapshot(&env.tmp.path().join("outside")) == beside,
+                "{what}: a file outside changed"
+            );
+
+            let mut cmd = env.command(&[command]);
+            cmd.env("SELDON_LOGBOOK", &root).env("SELDON_NOW", T1);
+            let out = within(cmd, &what);
+            assert_eq!(out.status.code(), Some(0), "{what}");
+            let human = format!("{}{}", String::from_utf8_lossy(&out.stdout), stderr(&out));
+            assert!(
+                human.contains(&format!("warning: {warning}")),
+                "{what}: {human}"
+            );
+        }
     }
-    refused(ALL, fixed("ledger/2026-10.md"), status, &["index"]);
 }
 
 #[test]
