@@ -273,3 +273,68 @@ WP-138 on `next`. AGENTS.md §6 needs the operator's line for the
 - **Open:** ADR-0047's text (root, file links) vs. ADR-0046 §5 — see
   above; `check-perf`'s ledger-line precondition (10 788 vs 11 656) is
   unchanged and not this WP's; not run on the test host.
+
+## Round 3 (review 2, orchestrator decisions)
+
+- **Merge of `next`** dcc19901 (main's AGENTS.md §3/§6, E41): clean,
+  7507d8fe.
+- **B1/B2/N1, the walker:** a link to a file is listed only when its
+  target is a regular file **inside `~/.config`** that the walk itself
+  would list: not skipped (the target or a folder above it), not excluded
+  (watch paths, Seldon's own files, the plugin folder), not ignored by
+  name. The target is resolved by `config_scan::resolve_within`, which
+  never looks at anything outside `~/.config` (E41): an absolute target
+  elsewhere or `..` above the root ends it before anything there is
+  touched; a loop ends after 40 hops; an absolute target may spell the
+  root as written or canonical (`~/.config` itself a link). So
+  `~/.config/app/token.conf → ~/secrets/token`, `ownlink.json →
+  ~/.local/state/seldon/index.json` and `procfile.conf →
+  /proc/self/status` are all left out; so is a stow link to `~/dotfiles`
+  (outside `~/.config`; `config watch` still takes it, below).
+- **B1/B2, `config watch`:** the same checks on the canonical path
+  (`collectors::config::link_refusal`, `outside_home` on): a path that
+  leads through a link out of the home, into Seldon's own files or under
+  skipPaths is refused with that reason and the target.
+- **The config collector's link following** (`collectors/config.rs`, the
+  root loop and the walk): a watch path that is itself a link or lies
+  behind one is checked on its canonical target before it is opened:
+  into Seldon's own files → counted as before (`link(s) into Seldon's own
+  files not followed`); under skipPaths or an excluded folder, or (the
+  watch path itself a link) out of the home → not followed, counted
+  (`N link(s) not followed: …`). A link to a file inside a watched folder
+  is left out when its target is skipped or excluded; a target outside
+  the home stays allowed there on purpose (`systemctl --user enable`
+  links to `/usr`, the `system-link` evidence of ADR-0028 §5 / WP-109).
+  Boot-configuration roots (WP-164) are not touched. Tests:
+  `a_link_to_a_skipped_secret_is_never_listed_watched_or_hashed` (also
+  hand-written into watchPaths and as a link inside `~/.config/hypr`: no
+  event, nothing in the manifest's files/skipped) and
+  `a_link_into_seldons_state_keeps_captures_idempotent` (three captures,
+  `written: 0` after the first, no event for the link);
+  `a_link_out_of_the_home_is_not_listed_and_not_watchable`; unit tests
+  `a_file_link_counts_only_with_a_listable_target_inside_the_root`
+  (`config_scan`) and
+  `a_link_counts_only_with_a_target_the_list_would_show_inside_dot_config`
+  (`recent`).
+- **B3:** `recent::shown_path` and `config watch` use
+  `import::bad_path_char` (control, invisible, U+2028, U+2029: the
+  plugin's `BAD_PATH_CHARS`); tests with U+2028 and U+2029.
+- **N2:** ADR-0046's header says "amends ADR-0047 §3"; its DECISIONS.md
+  row too.
+- Docs: ADR-0046 §1, §3, §5 (and the collector paragraph), SPEC-ENGINE
+  §3/§4 (preview and recent walk, collector links), CLI reference en/de,
+  CHANGELOG.
+- **A decision to confirm:** a config whose `~/.config` is itself a link
+  to a folder outside the home (e.g. `/mnt/dotfiles`) loses nothing in
+  the collector (the home rule applies only when the watch path itself
+  is the link), but `config watch` refuses its paths (strict: canonical
+  outside the home). Rare on Omarchy; say if the watch rule should match
+  the collector's.
+- **Mutants (round 3):** 86 of 87 killed in the scratch copy; the
+  survivor (`..` above the root ignored instead of ending the
+  resolution) was equivalent on the test tree and got an assertion
+  (`escape.ini → ../dots/foot.ini` must resolve to nothing).
+- **Gate:** the full check of 130f9da4 was **stopped by Claude Code's
+  low-memory reaper** while it ran (not a failure of the check; log
+  `gates/check-wp139-r3.log`, unfinished). Not restarted on my own; it
+  needs the orchestrator's go.

@@ -737,7 +737,10 @@ mod tests {
             .find(|f| f.path.ends_with("in-chain.ini"))
             .unwrap();
         assert_eq!(chain.modified, base() + Duration::from_secs(2 * DAY - 60));
-        // the resolution itself never leaves the root
+        // the resolution itself never leaves the root, also when `..`
+        // above it would name a file that exists below it
+        link(Path::new("../dots/foot.ini"), "escape.ini");
+        assert_eq!(resolve_within(root, &root.join("escape.ini")), None);
         assert_eq!(resolve_within(root, &root.join("out-relative.conf")), None);
         assert_eq!(resolve_within(root, &root.join("out-absolute.conf")), None);
         assert_eq!(resolve_within(root, &root.join("loop-a.conf")), None);
