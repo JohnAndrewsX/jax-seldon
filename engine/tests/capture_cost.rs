@@ -141,6 +141,7 @@ impl Home {
         let sources = Sources {
             pacman_log: tmp.path().join("pacman.log"),
             pacman_db_lock: tmp.path().join("db.lck"),
+            proc_stat: tmp.path().join("proc-stat"),
             snapper: missing.clone(),
             snapshots: tmp.path().join("no-snapshots"),
             omarchy_version: missing.clone(),
@@ -149,6 +150,7 @@ impl Home {
             plugins_dir: Some(plugins_dir.clone()),
             theme_file: Some(tmp.path().join("theme.name")),
             omarchy_path: tmp.path().join("omarchy"),
+            etc_dir: tmp.path().join("etc"),
         };
         // the files must be older than the stat cache's racy window
         let old = std::time::SystemTime::now() - Duration::from_secs(3600);

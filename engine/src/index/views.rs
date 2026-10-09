@@ -29,8 +29,9 @@ pub const STATUS_FENCE: &str = "status";
 pub const DECISIONS_FENCE: &str = "decisions.index";
 
 /// Writes `ledger/<month>.md` for every month with events; returns the
-/// relative paths that changed.
-pub fn write_ledger_views(logbook: &Logbook, built: &Built) -> anyhow::Result<Vec<String>> {
+/// relative paths that changed. A `ledger/` that is a symbolic link or no
+/// directory is refused (exit 1, WP-168).
+pub fn write_ledger_views(logbook: &Logbook, built: &Built) -> crate::error::Result<Vec<String>> {
     let mut written = Vec::new();
     for (month, text) in ledger_views(built) {
         let rel = format!("ledger/{month}.md");
@@ -627,8 +628,8 @@ fn write_if_changed(
     rel: &str,
     text: &str,
     durable: Durable,
-) -> anyhow::Result<bool> {
-    let path = logbook.path(rel);
+) -> crate::error::Result<bool> {
+    let path = logbook.checked_file(rel)?;
     if std::fs::read(&path).is_ok_and(|old| old == text.as_bytes()) {
         return Ok(false);
     }

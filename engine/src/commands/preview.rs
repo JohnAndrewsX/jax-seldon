@@ -192,7 +192,9 @@ fn read_pacman(
         Ok(t) => t,
         Err(e) => return Section::failed(&format!("cannot read {}: {e}", path.display())),
     };
-    let lock = sources.pacman_db_lock.exists();
+    // the collector's rule (WP-160): a db.lck older than the boot holds
+    // nothing back
+    let lock = pacman::lock_state(&sources.pacman_db_lock, &sources.proc_stat);
     let parsed = pacman::parse(&bytes, 0, lock, Tz::Local);
     let mut txs: Vec<Value> = parsed
         .txs
@@ -553,7 +555,7 @@ mod tests {
         ]
         .concat();
         let since = ts("2026-10-02T00:00:00+02:00");
-        let parsed = pacman::parse(text.as_bytes(), 0, false, tz());
+        let parsed = pacman::parse(text.as_bytes(), 0, pacman::LockState::Absent, tz());
         let redactor = Redactor::builtin();
         let mut txs: Vec<Value> = parsed
             .txs
@@ -584,7 +586,7 @@ mod tests {
                     [2026-10-01T23:59:59+0200] [ALPM] installed a (1-1)\n\
                     [2026-10-02T00:00:00+0200] [ALPM] installed b (1-1)\n\
                     [2026-10-02T00:00:01+0200] [ALPM] transaction failed\n";
-        let parsed = pacman::parse(text.as_bytes(), 0, false, tz());
+        let parsed = pacman::parse(text.as_bytes(), 0, pacman::LockState::Absent, tz());
         let t = transaction(&parsed.txs[0], ts("2026-10-02T00:00:00+02:00"), None).unwrap();
         assert_eq!(t["count"], 1);
         assert_eq!(t["packages"][0]["name"], "b");
@@ -598,7 +600,7 @@ mod tests {
                     [2026-10-05T11:59:55+0200] [ALPM] transaction started\n\
                     [2026-10-05T12:00:03+0200] [ALPM] installed x (1-1)\n\
                     [2026-10-05T12:00:04+0200] [ALPM] transaction completed\n";
-        let parsed = pacman::parse(text.as_bytes(), 0, false, tz());
+        let parsed = pacman::parse(text.as_bytes(), 0, pacman::LockState::Absent, tz());
         let t = transaction(&parsed.txs[0], ts("2026-10-01T00:00:00+02:00"), None).unwrap();
         assert_eq!(t["at"], "2026-10-05T11:59:50+02:00");
     }
@@ -609,7 +611,7 @@ mod tests {
                     [2026-10-05T12:00:00+0200] [ALPM] transaction started\n\
                     [2026-10-05T12:00:00+0200] [ALPM] installed x (1-1)\n\
                     [2026-10-05T12:00:00+0200] [ALPM] transaction completed\n";
-        let parsed = pacman::parse(text.as_bytes(), 0, false, tz());
+        let parsed = pacman::parse(text.as_bytes(), 0, pacman::LockState::Absent, tz());
         let t = transaction(
             &parsed.txs[0],
             ts("2026-10-01T00:00:00+02:00"),

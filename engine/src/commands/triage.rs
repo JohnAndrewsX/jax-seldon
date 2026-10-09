@@ -884,6 +884,10 @@ pub fn apply(ctx: &Context, id: &str, named: &[String], actor: Option<String>) -
     let redactor = Redactor::for_config(&config)?;
     let lock = ctx.lock()?;
     let (path, mut proposal) = load(&ctx.dirs, &logbook, id)?;
+    // the folders a link or an explanation writes into, before the index
+    // reads them and before the first item is written (WP-168)
+    logbook.checked_dir(crate::ledger::LEDGER_DIR)?;
+    crate::logbook::cases::checked_folders(&logbook)?;
     for n in named {
         if !proposal.items.iter().any(|i| &i.event_id == n) {
             return Err(Error::user(format!(

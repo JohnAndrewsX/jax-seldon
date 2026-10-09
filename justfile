@@ -290,9 +290,10 @@ fixtures-refresh:
 # SELDON_TEST_HOST, listed in scripts/guard-hosts.local. See docs/TESTING.md,
 # "Test host follows main".
 #   just deploy-test-host <main check log>       deploy main
+#   just deploy-test-host --branch next <log>    deploy next (WP-155)
 #   just deploy-test-host --dry-run <log>        show what it would do
 #   just deploy-test-host --release vX.Y.Z       back to a release
-# Put the main build of engine and plugin on the test host (WP-098).
+# Put the main (or next) build of engine and plugin on the test host (WP-098).
 deploy-test-host *args:
     bash scripts/deploy-test-host.sh {{ args }}
 

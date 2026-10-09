@@ -298,9 +298,11 @@ pub(crate) fn is_line_breaking(c: char) -> bool {
     matches!(c, '\u{2028}' | '\u{2029}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
-/// Creates `path` with `text`; an existing file is a user error, never
-/// overwritten.
-pub(crate) fn write_new(path: &Path, text: &str) -> Result<()> {
+/// Creates `path` (in `logbook`) with `text`; an existing file is a user
+/// error, never overwritten, and so is a folder on the way that is a
+/// symbolic link or no directory ([`Logbook::checked_file`], WP-168).
+pub(crate) fn write_new(logbook: &Logbook, path: &Path, text: &str) -> Result<()> {
+    let path = &logbook.checked_file(path)?;
     if let Some(dir) = path.parent() {
         crate::sys::create_dir_private(dir)
             .with_context(|| format!("cannot create {}", dir.display()))?;
@@ -321,6 +323,36 @@ pub(crate) fn write_new(path: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `write_new` refuses a linked folder on its own, whatever its caller
+    /// checked first (WP-168).
+    #[test]
+    fn write_new_refuses_a_linked_folder() {
+        let base = crate::logbook::scratch::scratch("seldon-write-new");
+        let (root, outside) = (base.join("logbook"), base.join("outside"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("decisions")).unwrap();
+        let logbook = Logbook {
+            root: root.clone(),
+            meta: crate::logbook::LogbookMeta {
+                schema_version: 1,
+                created: "2026-09-01T19:00:42+02:00".parse().unwrap(),
+                machine_id: "workstation-7f3a".into(),
+                language: crate::model::Language::En,
+            },
+        };
+        match write_new(&logbook, &root.join("decisions/ADR-0001-x.md"), "x\n") {
+            Err(Error::User(m)) => assert!(m.starts_with("decisions is a symbolic link,"), "{m}"),
+            other => panic!("expected a user error, got {other:?}"),
+        }
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        write_new(&logbook, &root.join("memory/x.md"), "x\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("memory/x.md")).unwrap(),
+            "x\n"
+        );
+    }
 
     #[test]
     fn one_line_refuses_separators_and_bidi_controls() {

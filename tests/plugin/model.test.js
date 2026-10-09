@@ -87,6 +87,18 @@ test("parseIndex accepts the sample and reads its counts", () => {
   assert.strictEqual(M.pillText(M.counts(r.index), "all"), "2 · 6")
 })
 
+test("WP-164: boot-file events with absolute subjects under /etc (index-variants/boot-config)", () => {
+  const r = M.parseIndex(fs.readFileSync(path.join(root, "fixtures/index-variants/boot-config.json"), "utf8"))
+  assert.strictEqual(r.ok, true)
+  same(M.counts(r.index), { active: 2, queued: 3, drift: 8, crisis: 2, attention: 6 })
+  const boot = M.changelogRows(r.index, "config").filter((row) => row.subject.startsWith("/etc/"))
+  same(boot.map((row) => row.subject), [
+    "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf",
+    "/etc/mkinitcpio.conf.d/omarchy_hooks.conf",
+  ])
+  same(boot.map((row) => M.lastSegment(row.subject)), ["99-omarchy-provisioning-key.conf", "omarchy_hooks.conf"])
+})
+
 test("parseIndex reports a contract mismatch with the version found", () => {
   const r = M.parseIndex(v3)
   assert.strictEqual(r.ok, false)
