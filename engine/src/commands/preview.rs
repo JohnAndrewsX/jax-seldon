@@ -325,7 +325,7 @@ fn transaction(
 }
 
 /// `text` with control and line-breaking characters and the direction and
-/// format set the index drops ([`crate::import::is_direction_or_format`])
+/// format set the index drops ([`crate::redact::is_invisible`])
 /// as U+FFFD: a name shown on one line that cannot reorder, break or hide
 /// part of it (WP-138 stage 2, F2).
 fn shown(text: &str) -> String {
@@ -333,7 +333,7 @@ fn shown(text: &str) -> String {
         .map(|c| {
             if c.is_control()
                 || super::is_line_breaking(c)
-                || crate::import::is_direction_or_format(c)
+                || crate::redact::is_invisible(c)
             {
                 '\u{FFFD}'
             } else {
