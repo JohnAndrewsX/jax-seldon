@@ -666,6 +666,22 @@ submission). (see `work/queued/`)
   E46 ADR-0049 accepted (a logbook file is never written through a link;
   doctor's `layout` row) → WP-171. E47 ADR-0050 accepted (adding or
   enabling Seldon's own plugin is routine `seldon-self`) → WP-172.
+- Prototype 0.3 roadmap (debate `jax-seldon-private/prototype-0.3/debate-2026-10-09/`),
+  all as recommended: E48 no "pause agent starts" (Q1). E49 graph Timeline
+  preset in 0.3 (Q2). E50 an interrupted update leaves Needs you when every
+  marked package reappears in a later complete transaction or the event
+  leaves the window (Q3). E51 ADR-0045's "Pick your agent" opens Omarchy's
+  menu route (amending ADR) (Q4). E52 the PRO cue as ADR-0045 §4, at most
+  5 s per open (Q5). E53 pill `A · !C`, no ⏸ (Q6). E54 two upstream reports
+  to Omarchy (ConfirmDialog default, focus border) as the operator's (Q7).
+  E55 `contractReadableFrom` before the 0.2.0 tag (Q8). E56 reports: a file
+  with status, steps as notes, `reopen` not `undo`, `defer` stays (Q9).
+  E57 no bar colour for a shell/Hyprland/hyprlock crash (Q10). E58 the
+  boot-file crisis question after a live week (Q11). E59 the engine titles
+  EASY "It was me." cases (Q12). E60 AGENTS.md §7 points at the
+  `omarchy-ux` skill when it lands (Q13). E61 the crash inbox guards
+  against mistakes, not an adversary (residual → WP-169). E62 no plugin
+  origin URL recorded. E63 the test host stays on Omarchy's rc channel.
 
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
