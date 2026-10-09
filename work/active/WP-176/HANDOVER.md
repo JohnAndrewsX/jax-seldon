@@ -144,3 +144,44 @@ per the WP).
    `mktemp -d /tmp/seldon-rt.XXXXXX` (WP-161, the 107-byte socket path
    limit); that is the repo's harness design, not changed here. My own
    TMPDIR, cargo target and XDG_RUNTIME_DIR were on disk.
+
+## Round 2 (stage 1 APPROVE, Fable stage 2: seven ADR edits)
+
+- **ADR-0051, Fable's edits (a)–(g) verbatim:** the definition of a
+  misread (§1: absent, renamed or retyped field, changed meaning, an
+  unknown value of a closed set it keys on, an incomplete count — an
+  omission is a misread); §3 bullet 1 "new keys — required or optional
+  in `V` — and new sections"; bullet 3 `summary.crisis` /
+  `summary.openDrift` complete, a crisis class elsewhere keeps `R = V`;
+  new bullet: the bounds of rules 4 and 5; the per-field table and the
+  tagged-`Model.js` run as the bump's obligation ("the table is the
+  argument; the test is the evidence"); the proposal paragraph (head and
+  counts, no items); §2 the preview sentence. Status stays **proposed**.
+- **CONTRACT.md:** rule 3 "— including that `summary.crisis` and
+  `summary.openDrift` stay complete"; "Changing the contract" names the
+  misread list, completeness, the bounds, the table and the tagged run.
+- **N1:** the forward fixture's numbers follow its rows (FORWARD_OPS,
+  with `test` ops on the sample's values): `openDrift` 7, `eventsToday`
+  35, `events7d` 56, the day's heatmap `total` 35 with `bySource.journal`
+  2, the week's drift `opened` 7; crises and cases unchanged. The drift
+  row stays (the WP asks for it). `model.test.js` now asserts the
+  fixture's own counts `{active 2, queued 3, drift 7, crisis 2,
+  attention 5}`, pill "2 · 2" (crisis) and "2 · 7" (all), tone urgent,
+  the tooltip text; crisis text equals the sample's.
+- **N2:** `contractNewerNotice(parsed, status)` returns null while the
+  status is `engineMissing`; `Service.qml` passes its status. Tested in
+  `model.test.js` (null for `engineMissing`, shown for `indexStale`).
+  ADR §2 and SPEC-PLUGIN §5.6 say so. No new Quickshell harness case
+  (the service only passes its status through).
+- **N3:** `engine/src/index/model.rs` module doc names the ADR-0035 §6
+  window as the exception.
+- `fixtures/forward/` kept.
+
+Verified (target, TMPDIR, XDG_RUNTIME_DIR on disk): `cargo fmt --check`,
+`cargo clippy --all-targets -j 4 -D warnings` clean; `cargo test --locked
+-j 4` 54 binaries, 1385 passed, 0 failed; validate-fixtures ok (151
+instances, 21 expected failures); `model.test.js` 197 passed;
+docs-check ok; qmllint ok (49 files); `omarchy plugin validate plugin/`
+exit 0. The full `just check` was not rerun this round (the harnesses
+were green in round 1; the service-states `contract-newer` case asserts
+pill "2 · 2", which still holds).
