@@ -51,7 +51,8 @@ writes no file itself; only its own settings, through the shell
 
 ## Install
 
-Three steps: the engine, your logbook, the plugin. None needs `sudo`.
+Three steps: the engine, your logbook, the plugin, all as your user.
+No sudo or pkexec is required for these steps.
 
 **1. The engine.** AUR package: coming soon; until then install it from
 GitHub. `install.sh` checks the release against its `SHA256SUMS`, refuses
@@ -70,11 +71,12 @@ less install.sh                                    # read what it does
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
 ```
 
-or in one line (the script still verifies the engine, not itself):
-
-```sh
-curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
-```
+The checksum line checks that `install.sh` arrived as the release
+published it; `install.sh` then checks the engine it downloads. The
+panel's *Install* button (see [States](#states)) runs the same script
+without that first check: it downloads `install.sh` with `curl` and
+pipes it to `bash`, in a terminal you see; `install.sh` still checks the
+engine.
 
 Run it again to update. Its options (`--version`, `--prefix`, `--unit`
 for the optional watcher, `--force` over a self-built `seldon`,
@@ -85,7 +87,8 @@ Check the engine with `seldon --version`. If your shell says
 
 Once the AUR package is live, you can install the engine from there
 instead of GitHub. Install from one source only: both put a `seldon` on
-your `PATH`.
+your `PATH`. The AUR package installs through pacman, which asks for
+your password.
 
 ```sh
 omarchy pkg aur add jax-seldon   # install
@@ -476,7 +479,13 @@ shell plugin. This is everything it does outside its own window:
   services, timers, scripts or symlinks. The engine is installed
   separately (`install.sh` from the GitHub release, or the AUR package);
   the plugin never installs it.
-- **No privileges.** The plugin never runs `sudo`, `pacman` or `systemctl`.
+- **Privileges.** The plugin runs as your user.
+  No sudo or pkexec is required to use it.
+  Two steps ask for your password, and only when you start them: the
+  optional snapshot grant (*Grant* on the snapshot banner, above) runs
+  `sudo setfacl -m u:$USER:rx /.snapshots` in a terminal you see
+  (ADR-0026), and removing the AUR package with `omarchy pkg drop`
+  runs `sudo pacman -Rns` (see [Remove](#remove)).
 - **Dev mode is read-only:** with `SELDON_INDEX` set, the plugin only
   probes `seldon --version --json`; it never runs capture, status or any
   writing command.
@@ -519,15 +528,20 @@ omarchy plugin remove jax.seldon
 
 This removes the plugin only. The engine, your logbook (`~/Seldon` unless
 you chose another place) and the index under `~/.local/state/seldon/`
-stay. To remove the engine as well, installed from GitHub:
+stay. To remove the engine as well, installed from GitHub, run
+`install.sh` with `--uninstall`. No copy left? Download, read and verify
+it as under [Install](#install):
 
 ```sh
-curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash -s -- --uninstall
+cd "$(mktemp -d)"
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
+less install.sh                                    # read what it does
+sha256sum -c --ignore-missing SHA256SUMS && bash install.sh --uninstall
 ```
 
 It removes exactly the files `install.sh` installed (add the same
-`--prefix` if you gave one; `bash install.sh --uninstall` does the same
-with a downloaded copy). Installed from the AUR:
+`--prefix` if you gave one). Installed from the AUR:
 
 ```sh
 omarchy pkg drop jax-seldon
