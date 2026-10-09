@@ -1,6 +1,7 @@
 //! The steps `seldon init` runs once the logbook exists (SPEC-ENGINE §9):
-//! the agent harnesses, the first capture with an optional backfill, the
-//! pre-Seldon baseline, and Omarchy's theme-set hook.
+//! the agent harnesses, the first capture with its backfill, the baseline
+//! that marks the backfill "before Seldon" (ADR-0033), and Omarchy's
+//! theme-set hook.
 //!
 //! None of them fails the wizard: the logbook is already there, so each
 //! step reports what it did, or why not, and the fix.
@@ -51,8 +52,8 @@ use crate::model::event::{ACTOR_HUMAN, Event, Resolution};
 use crate::reconcile::{self, Resolve};
 use crate::sys::{self, Run};
 
-/// The reason of every resolution [`baseline`] writes.
-pub const BASELINE_REASON: &str = "pre-Seldon baseline";
+/// The reason of every resolution [`baseline`] writes (ADR-0033 §2).
+pub const BASELINE_REASON: &str = "before Seldon";
 
 /// Environment variable naming the Omarchy-Agent kit's template directory.
 pub const KIT_ENV: &str = "SELDON_OMARCHY_AGENT_KIT";

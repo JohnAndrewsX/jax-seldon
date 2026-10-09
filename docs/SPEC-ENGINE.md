@@ -38,11 +38,12 @@ Linked folders and files (WP-168, WP-171, ADR-0049): every folder of the logbook
 ## 3. Commands
 
 ```
-seldon init [--path DIR] [--non-interactive] [--language de|en] [--obsidian]
-            [--harness claude-code|omarchy-agent]… [--git/--no-git]
+seldon init [--path DIR] [--defaults | --ask | --non-interactive] [--language de|en]
+            [--obsidian] [--harness claude-code|omarchy-agent|skills]… [--git/--no-git]
             [--since TS [--baseline]] [--no-capture] [--theme-hook]
             # --since: YYYY-MM-DD (local midnight) or RFC 3339; --baseline requires
-            # --since; --no-capture conflicts with --since (WP-024)
+            # --since; --no-capture conflicts with --since (WP-024); without a mode
+            # flag init asks only the location (§9, WP-119, ADR-0033)
 seldon init --remove-theme-hook                # WP-049: undoes --theme-hook (§9); conflicts with
                                                # every other init flag, needs no logbook
 seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case only; the prompt
@@ -1235,9 +1236,11 @@ kind); `decide accept` writes the `seldon` note above (ADR-0040). `.seldon/activ
 clear it only when it names that case.
 
 ```
-seldon init --json   → {logbook, config, machineId, language, files, obsidian, collectors, watchPaths,
+seldon init --json   → {mode: location|defaults|ask|non-interactive, logbook, config, machineId, language,
+                        files, obsidian, collectors, watchPaths,
                         harnesses, harnessSetup:{<name>:{…}}, git, snapper,
-                        capture:{ran, since, written, files, collectors, sinceIgnored, openDrift, crisis,
+                        capture:{ran, since, lookbackDays (90 | null), written, files, collectors,
+                                 sinceIgnored, openDrift, crisis,
                                  baseline:{reason, items, events}|null, git} | {ran:false, reason|error},
                         dossier:{ran:true, files, sections, counts, git, warnings} | {ran:false, reason|error},
                         themeHook:{requested, installed, already?, script?, hook?, error?, fix?,
@@ -3365,15 +3368,47 @@ stays empty (WP-081).
 
 ## 9. Wizard (`seldon init`)
 
-Interactive via `dialoguer` (no `gum` dependency; gum is optional eye candy
-later). The wizard asks: path (the options of ADR-0010: `~/Seldon`,
+Four ways to ask (WP-119, ADR-0033), one flag each, excluding each other:
+
+- **`--defaults`** asks nothing; it needs no terminal and reads nothing
+  from stdin (the plugin's setup card runs it, SPEC-PLUGIN §5.4). The
+  defaults of `--non-interactive` below, plus: Obsidian's settings when
+  Obsidian is installed (a desktop entry `obsidian.desktop` or
+  `md.obsidian.Obsidian.desktop` in the `applications/` folder of
+  `$XDG_DATA_HOME`, default `~/.local/share`, or of a `$XDG_DATA_DIRS`
+  entry, default `/usr/local/share:/usr/share`; whether the file is
+  there, nothing read), and, unless `--since` or `--no-capture` says
+  otherwise, the **look-back**: the first capture records from local
+  midnight 90 days before today (`$SELDON_NOW` sets the clock) and the
+  baseline dismisses every drift item it opens with the reason `before
+  Seldon`, without a question; a `--since` backfill is dismissed the same
+  way. Harnesses come from the config (none on a fresh machine; operator
+  decision 2026-10-10), the theme hook stays off. The History row is one
+  line, "Looked back 90 days: N changes recorded as history before
+  Seldon".
+- **Plain `seldon init`** (no mode flag) asks one question, where the
+  logbook goes (unless `--path` or `--logbook` names it), and takes the
+  rest as `--defaults` does. It needs a terminal.
+- **`--ask`** is the full wizard below; it needs a terminal. Its Obsidian
+  question defaults to what the detection says, its backfill question to
+  the look-back's date ("none" records from now on).
+- **`--non-interactive`** is the scripting form, unchanged (operator
+  decision 2026-10-10): flags, the config, the defaults; from now on, no
+  backfill, no detection (below).
+
+Without a terminal, plain `init` and `--ask` stop with exit 1 and name
+`--defaults` and `--non-interactive`; nothing is written.
+
+The full wizard (`--ask`) is interactive via `dialoguer` (no `gum`
+dependency). It asks: path (the options of ADR-0010: `~/Seldon`,
 `~/Documents/Seldon`, a detected project folder, custom) → language →
 Obsidian config yes/no → collectors (all on by default) → watched config
 paths (defaults shown) → agent setup (`claude-code`, `skills`, and
 `omarchy-agent` only when the kit directory exists, labelled as a private
 template, WP-118) → theme hook (a note above a short yes/no question,
-default no) → git → backfill (a note: older changes are mostly routine
-history, the rest can be marked as the baseline; then a date or empty).
+default no) → git → backfill (a note: a new logbook looks back 90 days,
+mostly routine history, the rest can be dismissed "before Seldon"; then a
+date, Enter for the look-back's, or `none`).
 Every question and list item, dialoguer's marks included, fits on one
 line of a 70-column terminal (Omarchy's presentation terminal is wider);
 an explanation is a plain line above it (a prompt or item that wraps is
@@ -3392,9 +3427,10 @@ folder that was) + harness files (the Omarchy-Agent kit from
 overwriting, symlinks skipped, modes kept, before the Claude Code hook
 merge of §8; without the dir `init` reports what it would copy) → git init
 + first commit → `capture --all [--since]` in-process, pinned to the new
-logbook → pre-Seldon baseline (`--baseline`, or asked interactively with
-the item count, default yes): one `dismissed` resolution per open drift
-*member*, reason `pre-Seldon baseline`, actor `human`, `meta.txId` on
+logbook → pre-Seldon baseline (`--baseline`, the look-back of `--defaults` and
+plain `init`, or asked by `--ask` with the item count, default yes): one
+`dismissed` resolution per open drift *member*, reason `before Seldon`
+(ADR-0033 §2; `pre-Seldon baseline` before 0.2.0), actor `human`, `meta.txId` on
 groups, one ledger write over every open item (not capped), events stay
 → commit `seldon: first capture[ and pre-Seldon baseline]` → index
 rebuild → `seldon dossier` once, all sections, its own commit `seldon:

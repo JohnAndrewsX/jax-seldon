@@ -632,17 +632,40 @@ mod init {
         assert_eq!(init(&env, &["--no-git"]).status.code(), Some(0));
     }
 
+    /// Plain `init` (the location question) and `--ask` (the wizard) need
+    /// a terminal; the refusal names `--defaults` (WP-119). Nothing is
+    /// written.
     #[test]
     fn interactive_without_a_terminal_is_a_user_error() {
         let env = Env::new(Snapper::Allowed);
-        let out = env.seldon(&["init", "--json"]);
-        assert_eq!(out.status.code(), Some(1));
-        assert!(
-            json(&out)["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("--non-interactive")
-        );
+        for args in [&["init", "--json"][..], &["init", "--ask", "--json"][..]] {
+            let out = env.seldon(args);
+            assert_eq!(out.status.code(), Some(1), "{args:?}");
+            let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+            assert!(
+                message.contains("`seldon init --defaults`")
+                    && message.contains("--non-interactive"),
+                "{message}"
+            );
+        }
+        assert!(!env.config_file().exists());
+        assert!(!env.home.join("Seldon").exists());
+    }
+
+    /// `--defaults`, `--ask` and `--non-interactive` exclude each other.
+    #[test]
+    fn the_ways_to_ask_exclude_each_other() {
+        let env = Env::new(Snapper::Allowed);
+        for args in [
+            &["init", "--defaults", "--ask"][..],
+            &["init", "--defaults", "--non-interactive"][..],
+            &["init", "--ask", "--non-interactive"][..],
+            &["init", "--defaults", "--remove-theme-hook"][..],
+        ] {
+            let out = env.seldon(args);
+            assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stderr(&out));
+        }
+        assert!(!env.config_file().exists());
     }
 
     #[test]
@@ -959,7 +982,7 @@ mod setup {
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
         let v = json(&out);
         let baseline = &v["capture"]["baseline"];
-        assert_eq!(baseline["reason"], "pre-Seldon baseline");
+        assert_eq!(baseline["reason"], "before Seldon");
         assert_eq!(baseline["items"].as_u64(), Some(open), "{baseline}");
         assert_eq!(v["capture"]["openDrift"], 0);
         assert_eq!(v["capture"]["crisis"], 0);
@@ -990,7 +1013,7 @@ mod setup {
         );
         assert!(
             row.ends_with(&format!(
-                "; {open} drift item(s) marked as the pre-Seldon baseline"
+                "; {open} drift item(s) dismissed as \"before Seldon\""
             )),
             "{text}"
         );
@@ -1025,7 +1048,7 @@ mod setup {
         assert_eq!(refers.len(), resolutions.len());
         for r in &resolutions {
             assert_eq!(r["resolution"], "dismissed");
-            assert_eq!(r["detail"], "pre-Seldon baseline");
+            assert_eq!(r["detail"], "before Seldon");
             assert_eq!(r["actor"], "human");
             assert_eq!(r["source"], "seldon");
         }
@@ -1816,5 +1839,296 @@ command changes system state.";
             assert!(agents.contains("docs/AGENT-GUIDE.md"), "{language}");
             assert!(!root.join("CLAUDE.md").exists(), "{language}");
         }
+    }
+}
+
+/// WP-119, ADR-0033: `init --defaults`, the setup card's path — no
+/// question, the last 90 days recorded and marked "before Seldon",
+/// Obsidian's settings only where Obsidian is installed.
+mod defaults {
+    use std::io::Read as _;
+    use std::path::{Path, PathBuf};
+    use std::process::{Output, Stdio};
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    /// The clock of these tests: the look-back starts at local midnight
+    /// 90 days before, 2026-07-17T00:00:00+02:00.
+    const NOW: &str = "2026-10-15T12:00:00+02:00";
+    const START: &str = "2026-07-17T00:00:00+02:00";
+
+    /// A package log with one hand-installed package (open drift without a
+    /// case) per day: 100 days back (outside the look-back), the look-back's
+    /// first day, 30 days back and yesterday.
+    fn log(env: &Env) -> PathBuf {
+        let mut text = String::new();
+        for (day, pkg) in [
+            ("2026-07-07", "too-old"),
+            ("2026-07-17", "first-day"),
+            ("2026-09-15", "month-ago"),
+            ("2026-10-14", "yesterday"),
+        ] {
+            text.push_str(&format!(
+                "[{day}T10:00:00+0200] [PACMAN] Running 'pacman -S {pkg}'\n\
+                 [{day}T10:00:01+0200] [ALPM] transaction started\n\
+                 [{day}T10:00:01+0200] [ALPM] installed {pkg} (1.0-1)\n\
+                 [{day}T10:00:02+0200] [ALPM] transaction completed\n"
+            ));
+        }
+        let path = env.tmp.path().join("pacman.log");
+        std::fs::write(&path, text).unwrap();
+        path
+    }
+
+    /// `seldon init --defaults --path <tmp>/logbook extra…`, the sources
+    /// stubbed as in `setup::init_with`, the clock at [`NOW`]. stdin is a
+    /// pipe this test holds open and never writes: a prompt that read it
+    /// would wait forever, so the run must end on its own within the
+    /// deadline (killed and failed otherwise).
+    fn defaults(env: &Env, extra: &[&str]) -> Output {
+        let path = env.tmp.path().join("logbook");
+        let mut args = vec!["init", "--defaults", "--path", path.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        let tmp = env.tmp.path();
+        let mut child = env
+            .command(&args)
+            .env("SELDON_NOW", NOW)
+            .env("SELDON_PACMAN_LOG", log(env))
+            .env("SELDON_PACMAN_DB_LOCK", tmp.join("no-db.lck"))
+            .env("SELDON_OMARCHY", tmp.join("no-omarchy"))
+            .env("SELDON_OMARCHY_PLUGINS_DIR", tmp.join("plugins"))
+            .env("SELDON_THEME_FILE", tmp.join("theme.name"))
+            .env("SELDON_HARDWARE_ROOT", common::hardware_root())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stdin = child.stdin.take();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if Instant::now() > deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("init --defaults did not end: a prompt reads stdin");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        drop(stdin);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_end(&mut stdout)
+            .unwrap();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_end(&mut stderr)
+            .unwrap();
+        Output {
+            status,
+            stdout,
+            stderr,
+        }
+    }
+
+    fn subjects(root: &Path) -> Vec<String> {
+        common::ledger(root)
+            .iter()
+            .filter(|e| e["source"] == "pacman")
+            .filter_map(|e| e["subject"].as_str().map(String::from))
+            .collect()
+    }
+
+    #[test]
+    fn defaults_ask_nothing_and_look_back_90_days() {
+        let env = Env::new(Snapper::NoPermissions);
+        let out = defaults(&env, &["--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v = json(&out);
+        assert_eq!(v["mode"], "defaults");
+        let root = env.tmp.path().join("logbook");
+        assert_eq!(v["logbook"], root.to_str().unwrap());
+        // no harness on a fresh machine (operator, 2026-10-10), no Obsidian
+        // without its desktop entry, no theme hook
+        assert_eq!(v["harnesses"], serde_json::json!([]));
+        assert_eq!(v["obsidian"], false);
+        assert!(!root.join(".obsidian").exists());
+        assert_eq!(v["themeHook"]["requested"], false);
+
+        // the look-back: from local midnight 90 days back, the drift it
+        // opened dismissed "before Seldon" at once (ADR-0033 §1, §2)
+        let capture = &v["capture"];
+        assert_eq!(capture["since"], START, "{capture}");
+        assert_eq!(capture["lookbackDays"], 90);
+        assert_eq!(capture["baseline"]["reason"], "before Seldon", "{capture}");
+        assert!(
+            capture["baseline"]["items"].as_u64().unwrap() > 0,
+            "{capture}"
+        );
+        assert_eq!(capture["openDrift"], 0);
+        assert_eq!(capture["crisis"], 0);
+        let mut seen = subjects(&root);
+        seen.sort();
+        assert_eq!(seen, ["first-day", "month-ago", "yesterday"]);
+        for r in common::ledger(&root)
+            .iter()
+            .filter(|e| e["kind"] == "resolution")
+        {
+            assert_eq!(r["resolution"], "dismissed");
+            assert_eq!(r["detail"], "before Seldon");
+            assert_eq!(r["actor"], "human");
+        }
+        assert!(
+            !v["nextSteps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s.as_str().unwrap().starts_with("seldon drift")),
+            "{}",
+            v["nextSteps"]
+        );
+        let config: toml::Table = std::fs::read_to_string(env.config_file())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(config["logbook"].as_str(), root.to_str());
+
+        // the History row is ADR-0033 §4's one line
+        let human_env = Env::new(Snapper::NoPermissions);
+        let human = defaults(&human_env, &[]);
+        assert_eq!(human.status.code(), Some(0), "{}", stderr(&human));
+        let written = v["capture"]["written"].as_u64().unwrap();
+        let text = stdout(&human);
+        let row = text
+            .lines()
+            .find(|l| l.starts_with("History     "))
+            .unwrap_or_default();
+        // (the plugins and theme sources are not stubbed here)
+        assert_eq!(
+            row,
+            format!(
+                "History     Looked back 90 days: {written} changes recorded as history before Seldon; plugins, theme degraded"
+            ),
+            "{text}"
+        );
+
+        // a second capture finds nothing new (idempotent)
+        let tmp = env.tmp.path();
+        let again = env
+            .command(&["--json", "capture", "--all"])
+            .env("SELDON_NOW", NOW)
+            .env("SELDON_PACMAN_LOG", tmp.join("pacman.log"))
+            .env("SELDON_PACMAN_DB_LOCK", tmp.join("no-db.lck"))
+            .env("SELDON_OMARCHY", tmp.join("no-omarchy"))
+            .env("SELDON_OMARCHY_PLUGINS_DIR", tmp.join("plugins"))
+            .env("SELDON_THEME_FILE", tmp.join("theme.name"))
+            .output()
+            .unwrap();
+        assert_eq!(again.status.code(), Some(0), "{}", stderr(&again));
+        assert_eq!(json(&again)["written"], 0);
+    }
+
+    /// Obsidian's settings when its desktop entry is in an application
+    /// folder: the package's in `$XDG_DATA_DIRS`, the Flatpak's in
+    /// `$XDG_DATA_HOME` (ADR-0033's "detected rather than asked").
+    #[test]
+    fn defaults_add_obsidian_where_it_is_installed() {
+        for (folder, file) in [
+            ("xdg-data", "obsidian.desktop"),
+            ("home/.local/share", "md.obsidian.Obsidian.desktop"),
+        ] {
+            let env = Env::new(Snapper::Allowed);
+            let apps = env.tmp.path().join(folder).join("applications");
+            std::fs::create_dir_all(&apps).unwrap();
+            std::fs::write(apps.join(file), "[Desktop Entry]\n").unwrap();
+            let out = defaults(&env, &["--json", "--no-git", "--no-capture"]);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            assert_eq!(json(&out)["obsidian"], true, "{file}");
+            assert!(env.tmp.path().join("logbook/.obsidian").is_dir(), "{file}");
+        }
+        // another desktop entry is not Obsidian
+        let env = Env::new(Snapper::Allowed);
+        let apps = env.tmp.path().join("xdg-data/applications");
+        std::fs::create_dir_all(&apps).unwrap();
+        std::fs::write(apps.join("obsidian-notes.desktop"), "").unwrap();
+        let out = defaults(&env, &["--json", "--no-git", "--no-capture"]);
+        assert_eq!(json(&out)["obsidian"], false);
+    }
+
+    /// A flag still decides: `--since` sets another start (its backfill
+    /// marked the same way), `--no-capture` records nothing, so there is
+    /// no look-back either.
+    #[test]
+    fn defaults_keep_the_flags() {
+        let env = Env::new(Snapper::Allowed);
+        let out = defaults(&env, &["--json", "--no-git", "--since", "2026-09-01"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let capture = &json(&out)["capture"];
+        assert_eq!(capture["lookbackDays"], serde_json::Value::Null);
+        // local midnight; the test process has no TZ
+        assert!(
+            capture["since"]
+                .as_str()
+                .unwrap()
+                .starts_with("2026-09-01T00:00:00"),
+            "{capture}"
+        );
+        assert_eq!(capture["baseline"]["reason"], "before Seldon");
+        assert_eq!(capture["openDrift"], 0);
+        let mut seen = subjects(&env.tmp.path().join("logbook"));
+        seen.sort();
+        assert_eq!(seen, ["month-ago", "yesterday"]);
+
+        let env = Env::new(Snapper::Allowed);
+        let out = defaults(&env, &["--json", "--no-git", "--no-capture"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v = json(&out);
+        assert_eq!(v["capture"]["ran"], false);
+        assert_eq!(v["capture"]["reason"], "--no-capture");
+    }
+
+    /// `--non-interactive` is unchanged (operator, 2026-10-10): from now
+    /// on, no look-back, no detection.
+    #[test]
+    fn non_interactive_records_from_now_on() {
+        let env = Env::new(Snapper::Allowed);
+        let apps = env.tmp.path().join("xdg-data/applications");
+        std::fs::create_dir_all(&apps).unwrap();
+        std::fs::write(apps.join("obsidian.desktop"), "").unwrap();
+        let path = env.tmp.path().join("logbook");
+        let tmp = env.tmp.path();
+        let out = env
+            .command(&[
+                "init",
+                "--non-interactive",
+                "--no-git",
+                "--json",
+                "--path",
+                path.to_str().unwrap(),
+            ])
+            .env("SELDON_NOW", NOW)
+            .env("SELDON_PACMAN_LOG", log(&env))
+            .env("SELDON_PACMAN_DB_LOCK", tmp.join("no-db.lck"))
+            .env("SELDON_OMARCHY", tmp.join("no-omarchy"))
+            .env("SELDON_OMARCHY_PLUGINS_DIR", tmp.join("plugins"))
+            .env("SELDON_THEME_FILE", tmp.join("theme.name"))
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v = json(&out);
+        assert_eq!(v["mode"], "non-interactive");
+        assert_eq!(v["obsidian"], false);
+        assert_eq!(v["capture"]["since"], serde_json::Value::Null);
+        assert_eq!(v["capture"]["lookbackDays"], serde_json::Value::Null);
+        assert_eq!(v["capture"]["baseline"], serde_json::Value::Null);
     }
 }

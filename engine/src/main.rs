@@ -12,7 +12,11 @@ use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use serde_json::json;
 
-use seldon::commands::{self, Context, Output, capture::CaptureArgs, init::InitArgs};
+use seldon::commands::{
+    self, Context, Output,
+    capture::CaptureArgs,
+    init::{InitArgs, InitMode},
+};
 use seldon::error::{Error, Exit};
 use seldon::model::Language;
 use seldon::{CONTRACT_VERSION, VERSION};
@@ -57,7 +61,7 @@ enum Command {
     /// Print the engine/plugin contract version
     ContractVersion,
 
-    /// Create a logbook (wizard; --non-interactive takes defaults)
+    /// Create a logbook (asks only where; --defaults asks nothing, --ask everything)
     Init(InitCmd),
 
     /// Check engine, config, logbook, collector state, agent skill, omarchy, snapper and git
@@ -170,14 +174,31 @@ enum Command {
 }
 
 #[derive(Debug, Args)]
-#[command(after_help = "Examples:
+#[command(
+    after_help = "Without --defaults, --ask or --non-interactive, init asks only where the
+logbook goes and takes the defaults for the rest.
+
+Examples:
   seldon init
+  seldon init --defaults
+  seldon init --ask
   seldon init --non-interactive --since 2026-09-01 --baseline
-  seldon init --remove-theme-hook")]
+  seldon init --remove-theme-hook"
+)]
 struct InitCmd {
     /// Logbook directory (default ~/Seldon)
     #[arg(long, value_name = "DIR")]
     path: Option<PathBuf>,
+
+    /// Ask nothing: ~/Seldon (or the config's logbook), language from the
+    /// locale, Obsidian settings when Obsidian is installed, and the last
+    /// 90 days recorded as history before Seldon
+    #[arg(long, conflicts_with_all = ["non_interactive", "ask"])]
+    defaults: bool,
+
+    /// The full wizard: every question, the defaults pre-selected
+    #[arg(long, conflicts_with = "non_interactive")]
+    ask: bool,
 
     /// Ask nothing; take flags, then the existing config, then the
     /// defaults: ~/Seldon, language from the locale, all collectors, git
@@ -203,7 +224,8 @@ struct InitCmd {
     #[arg(long, value_name = "TS")]
     since: Option<String>,
 
-    /// Mark the backfilled drift as the pre-Seldon baseline (dismissed)
+    /// Dismiss the drift the backfill opens as "before Seldon" (--defaults
+    /// and plain init do it without the flag)
     #[arg(long, requires = "since")]
     baseline: bool,
 
@@ -218,7 +240,7 @@ struct InitCmd {
     /// Remove the theme-set hook that --theme-hook installed, and nothing
     /// else; needs no logbook
     #[arg(long, conflicts_with_all = [
-        "path", "non_interactive", "language", "obsidian", "harness", "since",
+        "path", "defaults", "ask", "non_interactive", "language", "obsidian", "harness", "since",
         "baseline", "no_capture", "theme_hook", "git", "no_git",
     ])]
     remove_theme_hook: bool,
@@ -338,7 +360,15 @@ fn run(cli: Cli) -> Result<Output, Error> {
             &ctx,
             InitArgs {
                 path: c.path,
-                non_interactive: c.non_interactive,
+                mode: if c.defaults {
+                    InitMode::Defaults
+                } else if c.ask {
+                    InitMode::Ask
+                } else if c.non_interactive {
+                    InitMode::NonInteractive
+                } else {
+                    InitMode::Location
+                },
                 language: c
                     .language
                     .map(|l| l.parse::<Language>())
