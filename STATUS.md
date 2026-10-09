@@ -653,6 +653,15 @@ submission). (see `work/queued/`)
 - The test host is the orchestrator's until the operator announces the
   reinstall.
 
+## Decided 2026-10-09 (operator)
+- E39 ADR-0045 accepted (EASY | PRO; the header switch stores the mode for
+  good). E40 ADR-0047 accepted (`seldon preview` before init) → WP-138.
+  E41 AGENTS.md §6: paths and mtimes under `~/.config`, also before init.
+  E42 AGENTS.md §3: command JSON output is contract; a bump only when a
+  released plugin would misread. E43 ADR-0048 accepted (redaction reads the
+  original and the visible copy) → WP-159. E44 the way back of
+  `deploy-test-host --branch next` is tested on the test host now.
+
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
 - E16 ADR-0039 accepted (the hook records an agent's privileged commands;
