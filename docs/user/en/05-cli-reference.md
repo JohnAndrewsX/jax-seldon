@@ -33,6 +33,7 @@ Commands:
   event             Record an event by hand (hooks, scripts)
   plan              Plan and track cases: new, start, verify, done, drop, list, show
   decide            Create a decision record (ADR) and open it in the editor; accept a proposed one
+  preview           Before the logbook exists: the last days' pacman transactions and the files edited under ~/.config, read-only, nothing written
   open              Print the path of a logbook file; --editor opens it
   index             Rebuild index.json and the ledger/*.md views; --check validates
   status            Regenerate STATUS.md, the ledger views and index.json; print a summary
@@ -665,6 +666,29 @@ Arguments:
 
 Options:
       --editor         Open it in the editor
+```
+<!-- /help -->
+
+### seldon preview
+
+Before you set up Seldon: what this machine remembers of the last days on
+its own — pacman's transactions and the files edited under `~/.config`,
+by modification time only. No who, no why, and gone when the logs rotate.
+It needs no logbook and writes nothing. `--days` looks back 1 to 7 days
+(default 7). The desk shows it on Today until the logbook exists.
+
+<!-- help: seldon preview -->
+```text
+Before the logbook exists: the last days' pacman transactions and the files edited under ~/.config, read-only, nothing written
+
+Usage: seldon preview [OPTIONS]
+
+Options:
+      --days <N>       Days to look back, 1 to 7 [default: 7]
+
+Examples:
+  seldon preview
+  seldon preview --days 2 --json
 ```
 <!-- /help -->
 

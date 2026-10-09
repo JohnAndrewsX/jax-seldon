@@ -48,6 +48,8 @@ ID = "https://github.com/JohnAndrewsX/jax-seldon/schema/"
 
 EVENT, CASE, INDEX = ID + "event.schema.json", ID + "case.schema.json", ID + "index.schema.json"
 PROPOSAL = ID + "proposal.schema.json"
+# ADR-0047 (WP-138): what `seldon preview --json` prints for the fixture home of engine/tests/preview.rs
+PREVIEW = ID + "preview.schema.json"
 # ADR-0035 §6: the triage proposals the sample's `triage` points at (the engine's state dir)
 PROPOSALS = os.path.join(FIX, "proposals")
 EXT = {
@@ -567,6 +569,9 @@ class Builtin:
             elif k == "minimum":
                 if self._type_ok("number", x) and x < v:
                     errs.append(f"{where}: below minimum {v}")
+            elif k == "maximum":
+                if self._type_ok("number", x) and x > v:
+                    errs.append(f"{where}: above maximum {v}")
             elif k == "pattern":
                 if isinstance(x, str) and not re.search(v, x):
                     errs.append(f"{where}: {x[:60]!r} does not match {v}")
@@ -2255,7 +2260,9 @@ def collect_instances():
             sid, bad = EXT["hook"], False
         elif re.fullmatch(r"proposals/[0-7][0-9A-HJKMNP-TV-Z]{25}\.json", r):
             sid, bad = PROPOSAL, False
-        elif re.fullmatch(r"invalid/(index|event|case|proposal)\.[a-z0-9-]+\.json", r):
+        elif r == "preview.sample.json":
+            sid, bad = PREVIEW, False
+        elif re.fullmatch(r"invalid/(index|event|case|proposal|preview)\.[a-z0-9-]+\.json", r):
             sid, bad = ID + r.split("/")[1].split(".")[0] + ".schema.json", True
         else:
             unmapped.append(r)
