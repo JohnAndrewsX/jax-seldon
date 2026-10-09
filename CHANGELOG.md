@@ -57,6 +57,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **No secret hides behind an invisible or control character
+  (WP-159, ADR-0048).** Every redaction now reads the text twice: without
+  its invisible characters and lone control characters (so
+  `to<U+200B>ken=…`, `Authorization: Bearer<U+3164> …`, `to<BS>ken=…` or
+  a GitHub token split by a variation selector is masked), and as given
+  (so `x<U+200B>sk-…` is masked too), in a note, an imported task, a
+  closing commit, `plan show` and every event, as its plain form is. A
+  text with no secret is written as it was, its joiners and emoji
+  selectors included. The invisible set grows by the fillers (U+034F, U+115F,
+  U+1160, U+17B4, U+17B5, U+3164, U+FFA0), the variation selectors
+  (U+180B–U+180D, U+180F, U+FE00–U+FE0F, U+E0100–U+E01EF) and U+2065:
+  a task file's path may not hold them, the desk's texts drop them, and
+  `plan show --json` marks them. A `[redaction] patterns` entry that
+  names one of them matches only the text as given now.
+- **Start stays off for a hand-edited emoji (WP-159).** An imported case
+  whose Intent you edited by hand with an emoji and its U+FE0F (or that
+  was imported before this release with one) now counts the selector as
+  a hidden character: the desk keeps Start off and points to the
+  terminal. It fails safe; start such a case with `seldon plan start`.
 - **Boot configuration (WP-164).** The config collector now hashes the
   boot configuration, whatever `watchPaths` says:
   `/etc/mkinitcpio.conf`, the files in `/etc/mkinitcpio.conf.d/` and
@@ -72,6 +91,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   update. The `.pacnew` files pacman leaves there are not hashed (the
   pacman note covers them). The first capture after the update takes the
   files in without events. Opt out with `[redaction] skipPaths`.
+- **`seldon preview` (WP-138, ADR-0047).** Before you set up Seldon:
+  what your machine remembers of the last 7 days on its own — pacman's
+  transactions and the files edited under `~/.config`, by modification
+  time only (no content; caches, browser profiles, databases, logs and
+  your `skipPaths` left out). Read-only: it needs no logbook and writes
+  nothing. `--days` 1–7, `--json` for the desk.
 - **Files pacman left (WP-141).** A `.pacnew` (the package's new default
   was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
   that pacman reports in `/var/log/pacman.log` is now recorded: a pacman
@@ -253,6 +278,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **Before init, a preview without memory (WP-138).** Until the logbook
+  exists, Today lists the last 7 days' pacman transactions and the files
+  edited under `~/.config` — "This is without memory: no who, no why,
+  gone when the logs rotate. Set up Seldon?" — and **Set up Seldon**
+  opens the setup in a terminal.
 - **The pacdiff hint (WP-141).** The Changelog's detail of a file pacman
   left reads "Merge with pacdiff (from pacman-contrib) in a terminal." —
   text only; the plugin runs nothing. A crisis of rule `pacnew-red` says

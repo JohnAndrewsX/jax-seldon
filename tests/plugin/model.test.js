@@ -3665,8 +3665,9 @@ test("BAD_PATH_CHARS is exactly fixtures/bad-path-chars.txt, the engine's bad_pa
     const refused = M.BAD_PATH_CHARS.test(String.fromCodePoint(cp))
     if (listed !== refused) assert.fail("U+" + cp.toString(16).toUpperCase() + ": listed " + listed + ", refused " + refused)
   }
-  // in a path: the separators and a tag character too
-  for (const bad of ["~/x Reviewed by you.md", "~/a b.md", "~/t\u{e0072}.md", "~/s­hy.md"])
+  // in a path: the separators, a tag character, a variation selector
+  // and a filler too (WP-159)
+  for (const bad of ["~/x Reviewed by you.md", "~/a b.md", "~/t\u{e0072}.md", "~/v\u{fe0f}.md", "~/f\u{3164}.md", "~/s­hy.md"])
     assert.notStrictEqual(M.importPathError(bad), "", JSON.stringify(bad))
 })
 
@@ -3716,6 +3717,118 @@ test("ImportForm and the imported review show engine text as plain text", () => 
     const blocks = qml.split(/\n\s*Text \{/).slice(1)
     for (const b of blocks) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), f + ": " + b.slice(0, 120))
   }
+})
+
+const previewSample = fs.readFileSync(path.join(root, "fixtures/preview.sample.json"), "utf8")
+
+test("WP-138: preview --json is the only preview argv", () => {
+  assert.strictEqual(M.validateArgs(M.PREVIEW_ARGS), "")
+  same(M.PREVIEW_ARGS, ["preview", "--json"])
+  for (const bad of [["preview"], ["preview", "--days", "3", "--json"], ["preview", "--json", "--", "x"],
+    ["preview", "--all", "--json"]])
+    assert.notStrictEqual(M.validateArgs(bad), "", JSON.stringify(bad))
+})
+
+test("WP-138: previewResult reads the sample and keeps the schema's shape", () => {
+  const r = M.previewResult(0, previewSample, "")
+  assert.strictEqual(r.ok, true)
+  assert.strictEqual(r.days, 7)
+  assert.strictEqual(r.root, "~/.config")
+  assert.strictEqual(r.transactions.length, 6)
+  assert.strictEqual(r.files.length, 4)
+  assert.strictEqual(r.truncated, true)
+  same(r.transactions[1], { at: "2026-10-06T09:41:30+02:00", count: 2, kinds: ["install"],
+    packages: [{ kind: "install", name: "qt6-websockets" }, { kind: "install", name: "obs-studio" }],
+    command: "pacman -S --noconfirm obs-studio", status: "failed" })
+  assert.strictEqual(r.transactions[2].count, 14)
+  assert.strictEqual(r.transactions[2].packages.length, 10)
+  assert.strictEqual(r.pacmanNote + r.filesNote, "")
+})
+
+test("WP-138: previewResult refuses what it cannot read and applies the bounds again", () => {
+  const failed = M.previewResult(2, '{"error":{"code":2,"message":"boom"}}', "")
+  same([failed.ok, failed.text, failed.transactions.length], [false, "boom", 0])
+  assert.strictEqual(M.previewResult(0, "not json", "").ok, false)
+  const d = JSON.parse(previewSample)
+  assert.strictEqual(M.previewResult(0, JSON.stringify(Object.assign({}, d, { contractVersion: 3 })), "").ok, false)
+  // 300 transactions, 90 files: 80 files, 120 transactions
+  const tx = d.pacman.transactions[0]
+  const many = Object.assign({}, d, {
+    truncated: false,
+    pacman: Object.assign({}, d.pacman, { transactions: Array.from({ length: 300 }, () => tx) }),
+    files: Object.assign({}, d.files, { items: Array.from({ length: 90 }, () => d.files.items[0]) })
+  })
+  const r = M.previewResult(0, JSON.stringify(many), "")
+  same([r.files.length, r.transactions.length, r.truncated], [80, 120, true])
+  // a row the plugin cannot read is dropped; unknown words and long texts go
+  const odd = JSON.parse(previewSample)
+  odd.truncated = false
+  odd.pacman.transactions = [
+    { at: "yesterday", count: 1, kinds: ["install"], packages: [{ kind: "install", name: "a" }] },
+    { at: tx.at, count: 0, kinds: ["install"], packages: [{ kind: "install", name: "a" }] },
+    { at: tx.at, count: 1, kinds: ["explode"], packages: [{ kind: "install", name: "a" }] },
+    { at: tx.at, count: 1, kinds: ["install"], packages: [{ kind: "install", name: "" }] },
+    { at: tx.at, count: 1, kinds: ["install"], packages: [{ kind: "install", name: "ok" }], status: "exploded",
+      command: "x".repeat(257) }
+  ]
+  odd.files.items = [{ path: "", modified: tx.at }, { path: "~/.config/a", modified: "now" }, { path: "~/.config/b", modified: tx.at }]
+  const o = M.previewResult(0, JSON.stringify(odd), "")
+  same(o.transactions, [{ at: tx.at, count: 1, kinds: ["install"], packages: [{ kind: "install", name: "ok" }],
+    command: "", status: "" }])
+  same(o.files, [{ path: "~/.config/b", modified: tx.at }])
+  // a name is at most 512 characters (the schema's bound): 512 is kept, 513 dropped
+  const names = JSON.parse(previewSample)
+  names.pacman.transactions = [
+    { at: tx.at, count: 2, kinds: ["install"], packages: [{ kind: "install", name: "a".repeat(512) },
+      { kind: "install", name: "b".repeat(513) }] }
+  ]
+  same(M.previewResult(0, JSON.stringify(names), "").transactions[0].packages.map(p => p.name.length), [512])
+  // notes: a source that was not read, a walk that stopped early
+  const notes = JSON.parse(previewSample)
+  notes.pacman = { ok: false, message: "cannot read /var/log/pacman.log", partial: false, transactions: [tx] }
+  notes.files.partial = true
+  const n = M.previewResult(0, JSON.stringify(notes), "")
+  same([n.transactions.length, n.pacmanNote, n.filesNote],
+    [0, "cannot read /var/log/pacman.log", "The search stopped early: some files may be missing."])
+  same(M.previewRows(n, "").filter(x => x.type === "note").map(x => [x.id, x.title]),
+    [["note:packages", "cannot read /var/log/pacman.log"], ["note:files", "The search stopped early: some files may be missing."]])
+  same(M.previewRows(n, "").filter(x => x.type === "empty").length, 0)
+})
+
+test("WP-138: previewRows groups transactions and files, says what is empty, searches", () => {
+  const r = M.previewResult(0, previewSample, "")
+  const rows = M.previewRows(r, "")
+  same(rows.map(x => x.id), ["tx:0", "tx:1", "tx:2", "tx:3", "tx:4", "tx:5", "file:0", "file:1", "file:2", "file:3"])
+  same([rows[0].groupTitle, rows[6].groupTitle], ["Packages · last 7 days", "Edited config files"])
+  same([rows[2].title, rows[2].meta, rows[2].aside],
+    ["Upgraded linux, linux-headers, mesa and 11 more", "Mon 5 Oct 21:14 · pacman -Syu --noconfirm", ""])
+  same([rows[1].title, rows[1].aside], ["Installed qt6-websockets, obs-studio", "failed"])
+  same([rows[0].title, rows[0].meta.slice(0, 15)], ["Downgraded mesa", "Yesterday 16:02"])
+  same([rows[6].title, rows[6].meta], ["~/.config/alacritty/alacritty.toml", "Yesterday 21:15"])
+  same(M.previewRows(r, "HYPR").map(x => x.id), ["tx:2", "file:1"])
+  const empty = Object.assign({}, r, { transactions: [], files: [], pacmanNote: "", filesNote: "the files were withheld" })
+  same(M.previewRows(empty, "").map(x => [x.type, x.title]),
+    [["empty", "No package changed in these days."], ["note", "the files were withheld"]])
+  same(M.previewRows(null, ""), [])
+  same(M.previewRows({ ok: false, pending: true }, ""), [])
+  const mixed = { at: "2026-10-05T21:14:06+02:00", count: 2, kinds: ["remove", "install"],
+    packages: [{ kind: "remove", name: "pulseaudio" }, { kind: "install", name: "pipewire-pulse" }], command: "", status: "" }
+  assert.strictEqual(M.previewTxTitle(mixed), "Changed pulseaudio, pipewire-pulse")
+})
+
+test("WP-138: previewSummary says what was found, what is pending and what failed", () => {
+  assert.strictEqual(M.previewSummary(M.previewResult(0, previewSample, "")),
+    "The last 7 days: 6 pacman transactions and 4 files edited under ~/.config. The newest are shown.")
+  assert.strictEqual(M.previewSummary(null), "Reading what this machine remembers…")
+  assert.strictEqual(M.previewSummary({ ok: false, pending: true, text: "" }), "Reading what this machine remembers…")
+  assert.strictEqual(M.previewSummary(M.previewResult(2, "", "boom")), "boom")
+  assert.strictEqual(M.PREVIEW_LEAD, "This is without memory: no who, no why, gone when the logs rotate. Set up Seldon?")
+})
+
+test("WP-138: Today shows the preview as plain text", () => {
+  const qml = fs.readFileSync(path.join(root, "plugin/sections/Today.qml"), "utf8")
+  assert.ok(!/StyledText|RichText|MarkdownText|AutoText/.test(qml))
+  for (const b of qml.split(/\n\s*Text \{/).slice(1)) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

@@ -11,6 +11,7 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0026), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`, `case-reopened` (ADR-0027), `boot-config` (WP-164); generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
 | `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v3` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
 | `proposals/<id>.json` | the agent's triage proposal the sample's `triage` points at (ADR-0034 §6, ADR-0035 §6): a link (tokyo-night → C-2026-005, evidence a Plan line and a journal entry), an explain (the `monitors.conf` removal) and a crisis item (the ollama unit); `logbook` is the sample's `/home/user/Seldon`. In the engine's state directory in real life; the plugin's dev mode reads it next to the index | `schema/proposal.schema.json` |
+| `preview.sample.json` | what `seldon preview --json` prints before init (WP-138, ADR-0047) for the fixture home of `engine/tests/preview.rs` at 2026-10-08 12:00 with `logs/pacman-preview.log`; held equal to the engine's output by that test (`SELDON_WRITE_PREVIEW_SAMPLE=1` rewrites it), `elapsedMs` fixed at 23; the plugin's preview case reads it | `schema/preview.schema.json` |
 | `bad-path-chars.txt` | the characters a task file's path may not hold (WP-102b): inclusive code-point ranges, one per line (text, so no schema) that the engine's `import::bad_path_char` and the plugin's `Model.BAD_PATH_CHARS` are both tested against, so the two sets stay one | — |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
@@ -247,6 +248,10 @@ Markdown table):
     `pacman -Syu` block removes, installs and upgrades (a `:: Replace`);
     the 09-19 one ends with `transaction interrupted` (ADR-0043:
     `meta.txStatus`). Both are routine `sysupgrade` (WP-137).
+- `pacman-preview.log` — the preview's week (WP-138), 2026-09-29 → 10-07: a
+  transaction before the window, a `-Syu` across the window's start (one
+  line before, one inside), installs, a removal, a 14-package `-Syu` (10
+  listed, `count` 14), a failed install of two packages and a downgrade.
 - `pacman-rotation/` — `pacman.log.1` (old inode, ends after the 09-15
   transaction, 7359 bytes; cursor at its end) and the new `pacman.log`, which
   starts by **repeating the 09-15 transaction** (copytruncate race) and continues

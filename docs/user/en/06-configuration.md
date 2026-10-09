@@ -338,6 +338,11 @@ The domain of an address stays visible. If yours names you, add a
 pattern for it: `"@smith\\.example\\b"` turns `jo@smith.example` into
 `‹redacted›‹redacted›`.
 
+An invisible character inside or before a secret (a zero-width space, a
+variation selector), or a control character inside one, does not hide
+it: the rules, yours included, read the text both without such
+characters and as it is. A text with nothing to redact keeps them.
+
 An invalid pattern is an error (exit 1): Seldon refuses to write rather
 than leak.
 

@@ -48,6 +48,8 @@ ID = "https://github.com/JohnAndrewsX/jax-seldon/schema/"
 
 EVENT, CASE, INDEX = ID + "event.schema.json", ID + "case.schema.json", ID + "index.schema.json"
 PROPOSAL = ID + "proposal.schema.json"
+# ADR-0047 (WP-138): what `seldon preview --json` prints for the fixture home of engine/tests/preview.rs
+PREVIEW = ID + "preview.schema.json"
 # ADR-0035 §6: the triage proposals the sample's `triage` points at (the engine's state dir)
 PROPOSALS = os.path.join(FIX, "proposals")
 EXT = {
@@ -567,6 +569,9 @@ class Builtin:
             elif k == "minimum":
                 if self._type_ok("number", x) and x < v:
                     errs.append(f"{where}: below minimum {v}")
+            elif k == "maximum":
+                if self._type_ok("number", x) and x > v:
+                    errs.append(f"{where}: above maximum {v}")
             elif k == "pattern":
                 if isinstance(x, str) and not re.search(v, x):
                     errs.append(f"{where}: {x[:60]!r} does not match {v}")
@@ -925,10 +930,11 @@ def case_intent(fm, body):
     return ps[0] if ps else None
 
 
-# engine: import::is_direction_or_format (ADR-0038 §2, the set WP-140 widened)
+# engine: redact::is_invisible (ADR-0038 §2, the set WP-140 and WP-159 widened)
 FORMAT_SET = (
-    "\u00ad\u0600-\u0605\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f"
-    "\ufeff\ufff9-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e007f"
+    "\u00ad\u034f\u0600-\u0605\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f"
+    "\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff9-\ufffb"
+    "\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e007f\U000e0100-\U000e01ef"
 )
 DIRECTION_OR_FORMAT = re.compile(f"[{FORMAT_SET}]")
 
@@ -2254,7 +2260,9 @@ def collect_instances():
             sid, bad = EXT["hook"], False
         elif re.fullmatch(r"proposals/[0-7][0-9A-HJKMNP-TV-Z]{25}\.json", r):
             sid, bad = PROPOSAL, False
-        elif re.fullmatch(r"invalid/(index|event|case|proposal)\.[a-z0-9-]+\.json", r):
+        elif r == "preview.sample.json":
+            sid, bad = PREVIEW, False
+        elif re.fullmatch(r"invalid/(index|event|case|proposal|preview)\.[a-z0-9-]+\.json", r):
             sid, bad = ID + r.split("/")[1].split(".")[0] + ".schema.json", True
         else:
             unmapped.append(r)

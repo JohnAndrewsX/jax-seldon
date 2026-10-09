@@ -1,0 +1,44 @@
+[2026-09-29T10:00:00+0200] [PACMAN] Running 'pacman -S --noconfirm htop'
+[2026-09-29T10:00:00+0200] [ALPM] transaction started
+[2026-09-29T10:00:00+0200] [ALPM] installed htop (3.4.1-1)
+[2026-09-29T10:00:00+0200] [ALPM] transaction completed
+[2026-09-30T23:59:58+0200] [PACMAN] Running 'pacman -Syu'
+[2026-09-30T23:59:58+0200] [ALPM] transaction started
+[2026-09-30T23:59:59+0200] [ALPM] upgraded curl (8.16.0-1 -> 8.16.0-2)
+[2026-10-01T12:00:01+0200] [ALPM] upgraded git (2.51.0-1 -> 2.51.1-1)
+[2026-10-01T12:00:02+0200] [ALPM] transaction completed
+[2026-10-03T19:22:41+0200] [PACMAN] Running 'pacman -S --noconfirm btop'
+[2026-10-03T19:22:41+0200] [ALPM] transaction started
+[2026-10-03T19:22:41+0200] [ALPM] installed btop (1.4.5-1)
+[2026-10-03T19:22:41+0200] [ALPM] transaction completed
+[2026-10-04T08:05:10+0200] [PACMAN] Running 'pacman -Rns --noconfirm nano'
+[2026-10-04T08:05:10+0200] [ALPM] transaction started
+[2026-10-04T08:05:10+0200] [ALPM] removed nano (8.6-1)
+[2026-10-04T08:05:10+0200] [ALPM] transaction completed
+[2026-10-05T21:14:06+0200] [PACMAN] Running 'pacman -Syu --noconfirm'
+[2026-10-05T21:14:06+0200] [ALPM] transaction started
+[2026-10-05T21:14:06+0200] [ALPM] upgraded linux (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded linux-headers (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded mesa (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded vulkan-radeon (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded lib32-mesa (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded hyprland (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded hyprlock (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded waybar (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded systemd (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded systemd-libs (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded glibc (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded firefox (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded chromium (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] upgraded quickshell (1.0-1 -> 1.0-2)
+[2026-10-05T21:14:06+0200] [ALPM] transaction completed
+[2026-10-06T09:41:30+0200] [PACMAN] Running 'pacman -S --noconfirm obs-studio'
+[2026-10-06T09:41:30+0200] [ALPM] transaction started
+[2026-10-06T09:41:30+0200] [ALPM] installed qt6-websockets (6.9.3-1)
+[2026-10-06T09:41:30+0200] [ALPM] installed obs-studio (32.0.1-1)
+[2026-10-06T09:41:30+0200] [ALPM] transaction failed
+[2026-10-07T16:02:55+0200] [PACMAN] Running 'pacman -U /var/cache/pacman/pkg/mesa-1:25.2.4-1-x86_64.pkg.tar.zst'
+[2026-10-07T16:02:55+0200] [ALPM] transaction started
+[2026-10-07T16:02:55+0200] [ALPM] downgraded mesa (1.0-2 -> 1:25.2.4-1)
+[2026-10-07T16:02:55+0200] [ALPM] transaction completed
+[2026-10-07T16:02:56+0200] [ALPM] running '30-systemd-daemon-reload-system.hook'...

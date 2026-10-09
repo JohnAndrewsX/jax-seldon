@@ -1,6 +1,6 @@
 # ADR-0045 — EASY | PRO: one desk, two views; the mode is the plugin setting `deskMode`, the user's deliberate choice
 
-**Status:** proposed (WP-167; operator decisions E33 and E34, 2026-10-08)
+**Status:** accepted 2026-10-09 (operator, E39: the header switch stores the mode for good)
 **Date:** 2026-10-08
 
 > No contract change: `contractVersion` stays 2, no schema, fixture or
