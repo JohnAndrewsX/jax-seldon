@@ -242,8 +242,10 @@ any other. A path already watched changes nothing (exit 0). Refused,
 exit 1 and nothing written: a path outside your home directory, one in
 or around Seldon's own files (the logbook, `~/.local/state/seldon`,
 `~/.config/seldon`), one that does not exist, one under `[redaction]
-skipPaths`, and a `config.toml` whose list cannot be extended without
-rewriting the file (the message names the line to add by hand).
+skipPaths`, one that leads through a link out of your home directory,
+into Seldon's own files or under `skipPaths`, and a `config.toml` whose
+list cannot be extended without rewriting the file (the message names
+the line to add by hand).
 
 <!-- help: seldon config watch -->
 ```text

@@ -666,9 +666,13 @@ seldon config watch <PATH> [--json]           # ADR-0046, WP-139: appends PATH (
                                                # not existing, holding or lying in Seldon's own
                                                # files (the logbook, the state directory, the config
                                                # directory, the config file), under a skipPath (a name
-                                               # pattern matches a folder's name too), a control or format
-                                               # character, over 512 characters, or a file the edit cannot
-                                               # extend (the message names the line to add). Already under
+                                               # pattern matches a folder's name too), a character a path
+                                               # may not hold (import::bad_path_char: control, invisible,
+                                               # U+2028, U+2029), over 512 characters, leading through a
+                                               # link out of the home, into Seldon's own files or under a
+                                               # skipPath (its canonical path, WP-139 round 3), or a file
+                                               # the edit cannot extend (the message names the line to
+                                               # add). Already under
                                                # a watch path: exit 0, nothing written. Rebuilds the index
                                                # (the row of `system.recentConfig` goes); the next capture
                                                # takes the files in without events (§4 scope changes).
@@ -703,8 +707,10 @@ seldon preview [--days N] [--json]
 # files: `config_scan` (engine/src/config_scan.rs, the one walker, shared
 # with the capture's recently edited list, §4) walks ~/.config (whatever
 # $XDG_CONFIG_HOME says; WP-139 round 2) by mtime, never content,
-# breadth-first: regular files and links to them (the target stat'ed,
-# never opened; the link's path listed), a link to a folder never entered,
+# breadth-first: regular files and links to them whose target resolves,
+# without a look outside ~/.config, to a regular file the walk would list
+# (not skipped, excluded or ignored; the link's path listed with the
+# target's time, never opened; WP-139 round 3), a link to a folder never entered,
 # ≤ 16 folders deep; skips the ignore list of §4 (caches, node_modules,
 # profiles — a folder holding `Cookies` or `Local State` —, state,
 # history, log(s), crash folders, databases, key stores, images, locks,
@@ -1868,7 +1874,16 @@ git itself is killed, with the same bounded pipe wait. Rules:
   canonical path holds one of them (a link to `~/.local` walks beside the
   state directory, not into it) is walked (WP-113 rounds 2 and 3: it
   would change with every capture; counted: `N link(s) into Seldon's own
-  files not followed`). A cut stays with its link: the walk above it and
+  files not followed`). A watch path that is itself a link or lies behind
+  one is checked on its canonical target before it is opened (WP-139
+  round 3, `link_refusal`): into Seldon's own files it counts as above;
+  under `[redaction] skipPaths` or an excluded folder (the target or a
+  folder above it below the home), or — when the watch path is itself
+  the link — out of the home directory, it is not followed (counted:
+  `N link(s) not followed: they lead to a skipped or excluded file, or a
+  watch path out of the home directory`); so is a link to a file inside
+  a watched folder whose target is skipped or excluded (one to `/usr`
+  stays: `system-link`). A cut stays with its link: the walk above it and
   the later watch paths go on. `~/.config/omarchy/plugins/` and
   `~/.local/share/applications/mimeinfo.cache` are excluded wherever the
   watch paths reach them. Known secret-bearing
@@ -1938,8 +1953,14 @@ seconds, never after the capture, newest first (equal times by path).
 The walk (`config_scan`): breadth-first, each folder's entries by name,
 so every file one level down is read before any two levels down;
 regular files, and links to regular files listed under the link's path
-with the target's time (stat only, never opened: stow-style dotfiles); a
-link to a folder is never entered. Ignored: the folders `.git`,
+with the target's time (stat only, never opened) — only when the target,
+resolved without looking at anything outside `~/.config`
+(`config_scan::resolve_within`: an absolute target elsewhere or `..`
+above the root ends it before anything there is touched; a loop, 40
+hops), is a regular file under `~/.config` that the walk itself would
+list (neither it nor a folder above it skipped, excluded or ignored by
+name: a link to a skipped secret or into Seldon's state is not listed;
+WP-139 round 3); a link to a folder is never entered. Ignored: the folders `.git`,
 `node_modules`, any whose name holds `cache` (any case), `state`,
 `history`, `log`, `logs`, `crashpad`, `crash reports`, `IndexedDB`,
 `Local Storage`, `Session Storage`, `databases`, `blob_storage`,
@@ -1959,7 +1980,8 @@ matches a folder's name too). Excluded before a folder is entered
 plugins collector finds it), `~/.config/seldon`, the config directory,
 the config file and the logbook. Before the cut to 80, and a folder so
 named is not entered: a name that is not UTF-8, and a `~`-path with a
-control or invisible character (`redact::is_invisible`, ADR-0048),
+character a path may not hold (`import::bad_path_char`, WP-159:
+control, invisible, U+2028, U+2029),
 longer than 512 characters, with a `.`, `..` or empty folder, or one the
 logbook's redaction would change (never shown masked). Bounded: at most
 20 000 directory entries read and 500 ms of wall time (a walk that

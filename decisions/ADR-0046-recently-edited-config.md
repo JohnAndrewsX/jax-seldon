@@ -3,7 +3,8 @@
 **Status:** proposed (WP-139)
 **Date:** 2026-10-08
 
-> Amends ADR-0038: adds one more **optional** field to contract 2 under
+> Amends ADR-0038 and **amends ADR-0047 §3** (the preview's walk: its
+> root and its file links, §5). Adds one more **optional** field to contract 2 under
 > ADR-0035 §6, before 0.2.0 is tagged — nothing required is added,
 > nothing is removed or changes meaning, `contractVersion` stays 2. Adds
 > one command form the plugin may run. Operator decision 2026-10-07
@@ -47,14 +48,17 @@ before the scan:
   config file (the click below edits it) and the logbook.
 - **Bounded**: at most 20 000 directory entries read, 16 levels below
   `~/.config` and 500 ms of wall time (§5); directory links are never
-  followed, a link to a file counts by its target's time. A walk that
+  followed, a link to a file counts by its target's time under §5's
+  rule. A walk that
   reaches the entry budget or the deadline stops, one that leaves folders
   below the depth unread goes no deeper; either way the result is marked
   `partial` (§2).
 - **Never masked**: a name that is not UTF-8 (shown, it would become
   U+FFFD: two real files would merge into one path that does not exist),
-  and a `~`-path with a control, direction or format character (the set
-  of `redact::is_invisible`, ADR-0048), longer than 512 characters, or
+  and a `~`-path with a character a path may not hold (WP-159's
+  `import::bad_path_char`: control, invisible — `redact::is_invisible`,
+  ADR-0048 — and U+2028, U+2029; the plugin's `BAD_PATH_CHARS`), longer
+  than 512 characters, or
   one the logbook's redaction would change is left out. The list's only
   action needs the real path; a masked one would watch nothing, so the
   click (§3) also refuses a path that does not exist.
@@ -98,8 +102,11 @@ path added; an empty array now takes it too). Under the state lock (exit
 Refused, exit 1, nothing written: a path not below the home directory
 (or the home directory itself), one that does not exist, one that
 holds or lies in Seldon's own files (the logbook, the state directory,
-Seldon's config), one under a skipPath, one with a control or format
-character or over 512 characters, and a file the minimal edit cannot
+Seldon's config), one under a skipPath, one with a character a path may
+not hold (`import::bad_path_char`, WP-159: control, invisible, U+2028,
+U+2029) or over 512 characters, one that leads through a link out of
+the home directory, into Seldon's own files or under a skipPath (the
+same checks on its canonical path; WP-139 round 3), and a file the minimal edit cannot
 extend (the message names the line to add by hand). A path already under
 a watch path is exit 0, `added: false`, nothing written. Without a
 `config.toml` the defaults plus the path are written. The index is
@@ -125,14 +132,30 @@ shared with `seldon preview`). The two lists became one: it walks
 breadth-first (each folder's entries by name), so one heavy folder
 cannot spend the entry budget before shallow config files elsewhere are
 read; it ignores the union of both lists plus `node_modules`; a link to
-a file is listed under its own path with the target's time (stat only),
-a link to a folder never entered; the exclusions of §1 apply before a
+a file is listed under its own path with the target's time only when
+the target, resolved without looking at anything outside `~/.config`
+(AGENTS.md §6, E41), is a regular file under `~/.config` that the walk
+itself would list — not skipped, not excluded (watch paths, Seldon's
+own files), not ignored by name (round 3: a link to a skipped secret
+or into Seldon's state would otherwise be listed, watched and hashed);
+any other link, a loop and a dangling link are left out; a link to a
+folder is never entered; the exclusions of §1 apply before a
 folder is entered (`Limits.exclude`); the depth is 16; and the root is
 `~/.config` for both callers, whatever `$XDG_CONFIG_HOME` says (the
 index's paths start with `~/.config/`). For the preview this changes
 ADR-0047 §3 on two points — file links are now listed, and the root no
 longer follows `$XDG_CONFIG_HOME` — and adds to its ignore list; nothing
 in its JSON shape changes.
+
+The config collector applies the same idea to what it opens (round 3):
+a watch path that is itself a link, or lies behind one, is checked on
+its canonical target before it is opened or hashed — out of the home
+directory (for a watch path that is itself a link), into Seldon's own
+files, or under skipPaths or an excluded folder, it is left out and
+counted (`N link(s) not followed: …`); a link to a file inside a watched
+folder is left out when its target is skipped or excluded (a target
+outside the home stays allowed there: `systemctl --user enable` links to
+`/usr`, the `system-link` evidence of ADR-0028 §5).
 
 ## Consequences
 

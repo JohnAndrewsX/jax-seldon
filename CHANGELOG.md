@@ -96,6 +96,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is. The scan costs about 2 ms per capture; it stops at 20 000 entries
   or 500 ms and then marks the list `partial` (the desk: "The scan
   stopped early; the list may be incomplete.").
+- **Links are checked before they are read (WP-139).** The config
+  collector no longer follows a watch path that is a link (or lies behind
+  one) to a file under your `skipPaths`, into Seldon's own files, or — a
+  link itself — out of your home directory; nor a link in a watched
+  folder to a skipped file. The message counts them. `seldon config
+  watch` refuses such a path and says why, and the recently edited list
+  shows a link only when it points to a file inside `~/.config` it would
+  show itself.
 - **Files pacman left (WP-141).** A `.pacnew` (the package's new default
   was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
   that pacman reports in `/var/log/pacman.log` is now recorded: a pacman
