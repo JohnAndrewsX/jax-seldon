@@ -131,11 +131,54 @@ links never touched, WP-094), `setup.rs:669` (theme hook script).
 
 ## Mutants
 
-MUTANTS_RESULT
+`work/active/WP-168/mutants.py`, 53 mutants by hand (run from a copy of
+the tree, its own target dir on disk): 16 on the helper (the part filter,
+`symlink_metadata` → `metadata`, a link or a file taken as a folder, the
+two words swapped, a missing part refused, an unreadable part accepted,
+exit 2 instead of 1, the absolute path shown, the returned path,
+`checked_file`'s folder, the file instead of its folder, a path outside
+taken, `Logbook::open` on a `.seldon` file) and 37 on the wiring (every
+primitive and every command check above, one at a time).
+
+- Run 1 (at `0daed49e`): every helper mutant killed; 11
+  wiring mutants survived and one did not compile (the folder array's
+  length). The survivors were of two kinds: a check behind an earlier
+  check of the same folder (a plan step's second from/to check, the
+  explain check in `write_resolution`), removed as redundant; and a
+  primitive no test called without a command check in front (case save,
+  active case, `ensure_day`, `write_new`, the skill archive, the import's
+  planned paths and dry-run report), now tested on its own.
+- Run 2 (at `3c36347f`): 51/53; the two survivors (a case moved *out of*
+  a linked folder; `drift apply` with a file as `ledger`) got tests.
+- Run 3 (at `6592eb86`, those mutants only): 4/4 killed.
+
+All 53 are killed by `--lib` (`logbook::`, `commands::setup`,
+`commands::skills`, `commands::tests::write_new`), `--test
+linked_folders` or `--test triage apply_refuses_a_linked`.
 
 ## Check
 
-CHECK_RESULT
+`XDG_RUNTIME_DIR=<private 0700 dir> SELDON_FULL_CHECK=1
+JUST_TEMPDIR=<scratch> flock /tmp/seldon-check.lock just check`, the
+cargo target on disk (`engine/target`).
+
+- **Run 1, at `0daed49e`** (the helper, all the wiring, the integration
+  tests, the docs): `check: ok`, every recipe.
+- **Run 2, at `6592eb86`** (final code): every engine recipe green (fmt,
+  clippy, 98 test binaries with 0 failures, `check-watch`,
+  packaging, install, deploy, guard, runtime dir, schema, docs-check,
+  plugin-validate, qmllint); **`plugin-test` failed** in the live
+  service-states test (`FAIL live: .pill = <no snapshot>`,
+  `…/home-live/calls.log: No such file or directory`). At that moment
+  `/tmp` (RAM tmpfs) had filled to 81 % and the user's quota there was
+  exhausted (EDQUOT) by another session's mutant run (13 GB in
+  `/tmp/tmp.*/remote/home`, from WP-155's `run-mutants.sh`, mutant
+  `no-unsafe-check` of `deploy-test-host.sh`, started with the real
+  `XDG_RUNTIME_DIR`). Nothing of it was touched. The plugin is not
+  changed by this WP and passed in run 1; `plugin-test` should be run
+  again once `/tmp` is free. **Not verified on the final commit:
+  `plugin-test`.**
+- After the last check only `work/active/WP-168/HANDOVER.md` changed.
 
 ## Not done / open questions
 
