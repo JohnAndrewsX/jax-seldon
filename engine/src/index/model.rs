@@ -1,7 +1,9 @@
 //! `index.json` as typed structs (`schema/index.schema.json`). Field order
 //! is the key order of `fixtures/index.sample.json`; every object of the
 //! schema is closed, so nothing here may grow a field without an ADR and a
-//! `contractVersion` bump (docs/CONTRACT.md).
+//! `contractVersion` bump (docs/CONTRACT.md), except an optional field an
+//! accepted ADR adds within contract 2 before 0.2.0 is tagged (ADR-0035 §6,
+//! CONTRACT.md rule 9).
 
 use std::collections::BTreeMap;
 
