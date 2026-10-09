@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 954855dd -->
+<!-- source: en/05-cli-reference.md @ f03f9383 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -251,7 +251,9 @@ andere. Ein Pfad, der schon beobachtet wird, ändert nichts (Exit 0).
 Abgewiesen, mit Exit 1 und ohne Schreiben: ein Pfad außerhalb deines
 Home-Verzeichnisses, einer in oder um Seldons eigene Dateien (das
 Logbuch, `~/.local/state/seldon`, `~/.config/seldon`), einer, den es
-nicht gibt, einer unter `[redaction] skipPaths` und eine `config.toml`,
+nicht gibt, einer unter `[redaction] skipPaths`, einer, der über einen
+Link aus deinem Home-Verzeichnis, in Seldons eigene Dateien oder unter
+`skipPaths` führt, und eine `config.toml`,
 deren Liste sich nicht erweitern lässt, ohne die Datei neu zu schreiben
 (die Meldung nennt die Zeile, die du von Hand ergänzt).
 
