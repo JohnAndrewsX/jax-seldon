@@ -1,7 +1,6 @@
 # ADR-0051 — Contract forward compatibility: `contractReadableFrom`
 
-**Status:** proposed (the operator accepted the direction, E55; the text
-waits for the operator)
+**Status:** accepted 2026-10-09 (operator: direction E55, text E76; WP-176)
 **Date:** 2026-10-09
 
 > Adds one **optional** field to contract 2 under ADR-0035 §6, before
