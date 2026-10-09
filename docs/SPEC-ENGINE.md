@@ -911,22 +911,34 @@ unchanged, ADR-0049 §2), but what it leads to must be a regular file:
 a FIFO (an open would wait for a writer), a device (`/dev/zero` never
 ends), a socket or a directory is not opened; the type is checked
 before the open and again on the open file, which is opened
-`O_NONBLOCK`, so one swapped in between cannot block either. The read
-stops at a cap: 256 MiB for a ledger month `ledger/<YYYY-MM>.jsonl`
-(`sys::LEDGER_MONTH_MAX`, some half a million events), 16 MiB for every
-other file (`sys::LOGBOOK_FILE_MAX`: `AGENTS.md`, `STATUS.md`,
-`DECISIONS.md`, the journal days, cases, decisions, `.seldon/*`, the
-logbook's `.git` files the index reads, Claude Code's settings file); a
-larger file is not read either. Such a file is "cannot read `<path>`: a
-FIFO | a device | a socket | a directory, not a regular file; not read"
-or "more than <cap>; not read", where the reader said "cannot read"
-before: `status` and the other commands that read the ledger stop with
-exit 2, doctor's rows say it (`ledger` error, `rules` degraded,
-`fences` degraded) and still reach `layout`, a capture's silent rules
-upgrade leaves `AGENTS.md` alone. `tests/bounded_reads.rs` lists every
-call of `std::fs::read`, `read_to_string` and `File::open` in
-`engine/src` outside the unit tests: each reads a file outside the
-logbook.
+`O_NONBLOCK`, so one swapped in between cannot block either; the flag
+is cleared (`fcntl`) once the file is known to be regular, so its reads
+are plain blocking reads. `sys::read_small_file` (the state files beside
+the logbook, `triage`'s journal day) opens with the same check after its
+own `lstat`. The read stops at a cap: 256 MiB for a ledger month
+`ledger/<YYYY-MM>.jsonl` (`sys::LEDGER_MONTH_MAX`, some half a million
+events), 16 MiB for every other file (`sys::LOGBOOK_FILE_MAX`:
+`AGENTS.md`, `STATUS.md`, `DECISIONS.md`, the journal days, cases,
+decisions, `.seldon/*`, the logbook's `.git` files the index reads,
+Claude Code's settings file); a larger file is not read either. Such a
+file is "cannot read `<path>`: a FIFO | a device | a socket | a
+directory, not a regular file; not read: make it a regular file and run
+the command again" or "more than <cap>; not read", where the reader said
+"cannot read" before. A ledger month the reader refuses stops `status`
+and every other command that reads the ledger with exit 1, as WP-171's
+refusals (`error::Refused`); one over the cap adds "keep a copy of it,
+remove lines you can do without by hand (the ledger is plain JSON Lines,
+one event per line) and run the command again": the append itself has
+no cap, so a month can grow past it, and doctor warns long before
+(below). Doctor's rows say it (`ledger` error with a fix, `rules`
+degraded, `fences` degraded) and still reach `layout`; a capture's
+silent rules upgrade leaves `AGENTS.md` alone. `tests/bounded_reads.rs`
+lists, per file, every call of `std::fs::read`, `read_to_string`,
+`File::open`, `File::options` and `OpenOptions` with `.read(true)`, and
+every import of `fs::read`/`fs::read_to_string`, in `engine/src` outside
+the `#[cfg(test)]` modules: each reads a file outside the logbook, or is
+one of the checked opens in `sys.rs` (`open_checked`, the ledger's
+append).
 
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
 where one exists (an `ok` row has a fix only for the old snapper opt-in,
@@ -943,7 +955,13 @@ invalid" (or "cannot be read"), `"logbook"` is `null`, and doctor exits
 fix starts "after fixing config.toml:"). With an open logbook: `cases`, a
 case id in two files (error, the `index --check` rule); `ledger`, lines
 that are not events, per month with the count and the first line
-numbers (degraded: every reader skips them); `rules` (WP-100), the
+numbers (degraded: every reader skips them), a month of 128 MiB or more
+(`sys::LEDGER_MONTH_WARN`, degraded: "ledger/<month>.jsonl is N MiB:
+Seldon reads a ledger month of at most 256 MiB and refuses a larger one
+(status, doctor and the index stop on it)", fix to keep a copy and remove
+lines by hand before it reaches the limit), and a month the reader
+refuses (error, with the fix to make it a regular file again or, past
+the cap, to trim it; WP-174, "Bounded reads" above); `rules` (WP-100), the
 rules block of `AGENTS.md` against this engine's in the logbook's
 language: `current (v3)` ok; `vN as Seldon wrote it; the next capture
 updates it to v3` ok (a shipped block or a released v1 file nobody
