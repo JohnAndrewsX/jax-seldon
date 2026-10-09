@@ -62,6 +62,16 @@ import qs.Ui
 //                       key:[Alt+]<Name> a key (Up, Down, Left, Right,
 //                                        Return, Space, Escape, Tab, Backtab)
 //                       text:<char>      a typed character
+//                       keyDown:<Name|char>  press a key (Up, …, or a
+//                                        character) and keep it down
+//                       keyRepeat:<Name|char>  one auto-repeated press of
+//                                        that key, as Hyprland sends while
+//                                        it is held (QtTest makes none):
+//                                        an event object with isAutoRepeat
+//                                        handed to keyPressed(event) of the
+//                                        focused item's nearest ancestor
+//                                        that has one, else the desk's
+//                       keyUp:<Name|char>  release it
 //                       type:<text>      each character of text, typed
 //                       click:<text>     click the first visible item whose
 //                                        text is <text>
@@ -364,6 +374,28 @@ ShellRoot {
     return null
   }
 
+  // One auto-repeated press (keyRepeat:): what keyPressed(event) reads of
+  // a KeyEvent. Accepted, the key stops there, as a real one would.
+  function keyRepeat(name) {
+    var named = root.keys[name] !== undefined
+    var event = {
+      key: named ? root.keys[name] : name.toUpperCase().charCodeAt(0),
+      text: named ? (name === "Return" ? "\r" : name === "Space" ? " " : "") : name,
+      modifiers: Qt.NoModifier,
+      isAutoRepeat: true,
+      count: 1,
+      accepted: false
+    }
+    for (var it = win.activeFocusItem; it; it = it.parent) {
+      if (typeof it.keyPressed === "function") {
+        it.keyPressed(event)
+        return
+      }
+    }
+    if (root.desk) root.desk.keyPressed(event)
+    else console.log("HARNESS nothing to repeat: " + name)
+  }
+
   function act(spec) {
     var colon = spec.indexOf(":")
     var verb = colon === -1 ? spec : spec.slice(0, colon)
@@ -480,6 +512,14 @@ ShellRoot {
         name = name.slice(4)
       }
       driver.keyClick(root.keys[name], mods)
+    } else if (verb === "keyDown") {
+      if (root.keys[arg] !== undefined) driver.keyPress(root.keys[arg])
+      else driver.keyPress(arg)
+    } else if (verb === "keyUp") {
+      if (root.keys[arg] !== undefined) driver.keyRelease(root.keys[arg])
+      else driver.keyRelease(arg)
+    } else if (verb === "keyRepeat") {
+      root.keyRepeat(arg)
     } else if (verb === "text") {
       driver.keyClick(arg)
     } else if (verb === "type") {

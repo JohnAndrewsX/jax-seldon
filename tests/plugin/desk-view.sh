@@ -133,7 +133,7 @@ expected_warnings='jax\.seldon: seldon (rules exit 1: AGENTS\.md is not UTF-8 te
 # (also allow the warnings the regex matches).
 clean_log() {
   local bad
-  bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop|HARNESS error|nothing to (click|drag|hover|wheel)|wait timed out" \
+  bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop|HARNESS error|nothing to (click|drag|hover|wheel|repeat)|wait timed out" \
     | grep -a -v -E "WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" \
     | grep -a -v -E "$expected_warnings" | grep -a -v -E "${2:-^$}" || true)
   if [[ -z $bad ]]; then
@@ -1088,6 +1088,65 @@ refusal='C-2026-004 is queued; start it first: `seldon plan start C-2026-004`'
 expect work-agent 16 "[$tv.result, $tv.resultOk, .view.lastError, .view.opened] | map(tostring) | join(\",\")" "$refusal,false,,true"
 argv_check work-agent "$work/home-agent" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" "$(q agent start C-2026-004 --json)")"
 clean_log work-agent
+
+# 8d'. A held key never confirms (WP-173). Hyprland repeats a held key
+#      (Omarchy: repeat_delay 250 ms, repeat_rate 40); QtTest makes no
+#      auto-repeat, so `keyRepeat:` hands the desk (or the focused form) the
+#      event a repeat is. Work: a repeat alone arms nothing; `x` down arms
+#      Drop, two seconds of repeats (70) and the release leave it armed with
+#      its hint and run nothing, a real second `x` drops; the same for Enter
+#      (Start) and `a` (Hand to agent). Repeated `j`, ↓ and `k` still move,
+#      and disarm as any other key. The engine sees one call per real second
+#      press.
+mkdir -p "$work/home-held"
+run held-key "" 1920x1080 \
+  "summon:$wk;select:C-2026-004;keyRepeat:x*5;keyDown:x;keyRepeat:x*70;keyUp:x;settle;keyDown:x;keyUp:x;settle;wait:sectionView.case.status=dropped;select:C-2026-005;keyDown:Return;keyRepeat:Return*10;keyUp:Return;key:Return;settle;wait:sectionView.case.status=active;select:C-2026-003;keyDown:a;keyRepeat:a*10;keyUp:a;text:a;settle;summon:$wk;select:C-2026-003;keyDown:x;keyRepeat:j;keyRepeat:j;keyRepeat:Down;keyRepeat:k" \
+  HOME="$work/home-held" FAKE_SELDON_FIXTURE="$sample"
+expect held-key 3 "[$tv.selected, $tc.armed, .view.arm.armed] | join(\",\")" "C-2026-004,,"
+drop_hint="Drop C-2026-004? Press x again or click Confirm. This is final."
+for i in 4 5 6 7; do
+  expect held-key $i "[$tc.status, $tc.armed, $tc.hint, .view.arm.armed] | join(\",\")" "active,drop,$drop_hint,case:C-2026-004:drop"
+done
+shows held-key 5 "Confirm drop"
+shows held-key 7 "$drop_hint"
+expect held-key 8 "$tc.armed" ""
+expect held-key 10 "$tc.status" dropped
+start_hint="Start C-2026-005? Press Enter again or click Confirm."
+for i in 13 14 15; do expect held-key $i "[$tc.status, $tc.armed, $tc.hint] | join(\",\")" "queued,start,$start_hint"; done
+expect held-key 17 "[$tc.status, $tc.armed] | join(\",\")" "active,"
+agent_hint="Hand to agent C-2026-003? Press a again or click Confirm."
+for i in 20 21 22; do expect held-key $i "[$tc.armed, $tc.hint, .view.opened] | map(tostring) | join(\",\")" "agent,$agent_hint,true"; done
+# the agent launched: the desk stepped aside (WP-156)
+expect held-key 24 .view.opened false
+expect held-key 27 "[$tv.selected, $tc.armed] | join(\",\")" "C-2026-003,drop"
+expect held-key 28 "[$tv.selected, $tc.armed, .view.arm.armed] | join(\",\")" "C-2026-005,,"
+expect held-key 29 "$tv.selected" C-2026-008
+expect held-key 30 "$tv.selected" C-2026-006
+expect held-key 31 "[$tv.selected, $tc.armed] | join(\",\")" "C-2026-008,"
+argv_check held-key "$work/home-held" "$(printf '%s\n' "$startup" \
+  "$(q plan drop C-2026-004 --json)" "$(q plan start C-2026-005 --json)" "$(q agent start C-2026-003 --json)")"
+clean_log held-key
+
+# The forms that arm on Enter (§5.4): a held Enter in the new decision's
+# title neither arms nor creates, a held Enter on an open drift row opens
+# the form and stops there (before, its repeats armed and linked); a real
+# press arms, the next runs.
+mkdir -p "$work/home-held-forms"
+run held-forms "" 1920x1080 \
+  "summon;text:4;text:d;type:Held;keyRepeat:Return*3;keyDown:Return;keyRepeat:Return*10;keyUp:Return;key:Return;settle;summon:$cl;keyDown:Return;keyRepeat:Return;keyRepeat:Return*10;keyUp:Return;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle" \
+  HOME="$work/home-held-forms" FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/held-forms.record"
+expect held-forms 5 '[.view.sectionView.form.open, .view.sectionView.form.armed, .view.sectionView.form.title] | map(tostring) | join(",")' "true,false,Held"
+for i in 6 7 8; do
+  expect held-forms $i '[.view.sectionView.form.armed, .view.sectionView.form.hint] | map(tostring) | join(",")' "true,Press Enter again: create the decision “Held”"
+done
+# created: the desk steps aside for its editor (WP-156)
+expect held-forms 10 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+for i in 12 13 14 15; do expect held-forms $i "[$tf.shown, $tf.armed, $tf.result] | map(tostring) | join(\",\")" "true,false,"; done
+expect held-forms 16 "[$tf.armed, $tf.hint] | map(tostring) | join(\",\")" "true,Press Enter again: Link tokyo-night to C-2026-005"
+expect held-forms 18 "[$tf.isOpen, $tf.result] | map(tostring) | join(\",\")" "false,Linked 1 event to C-2026-005"
+argv_check held-forms "$work/home-held-forms" "$(printf '%s\n' "$startup" \
+  "$(q decide --no-edit --json -- Held)" "$(q open ADR-0005 --editor --json)" "$(q drift link $THEME C-2026-005 --json)")"
+clean_log held-forms
 
 # WP-102b, Import tasks…: the form in the detail, a dry run first (the list
 # of what would be created and what is skipped), then one click imports;
