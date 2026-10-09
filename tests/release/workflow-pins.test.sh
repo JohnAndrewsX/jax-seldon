@@ -18,7 +18,13 @@
 #     assets` step (actions/attest-build-provenance) that names the binary
 #     tarball, the source tarball, SHA256SUMS and install.sh (WP-080);
 #     that step is the last one before `Summary`, after every check, and
-#     no other job has an `id-token:` or `attestations:` permission.
+#     no other job has an `id-token:` or `attestations:` permission;
+#   - release.yml's build job validates the plugin split (WP-190): an
+#     unconditional `Validate the plugin split` step after `Plugin split`
+#     (which outputs the split) and before `Summary` extracts the split
+#     with `git archive` and ends with packaging/omarchy-validate.sh on
+#     it, ignoring no failure; the build job outputs the split, and the
+#     plugin job refuses to push any other.
 #
 # Limit: a SHA is not checked against its version comment (that needs
 # the network); the refresh steps in packaging/README.md resolve both.
@@ -161,6 +167,46 @@ problems() {
     [[ $before == "      - name: Attest the release assets" ]] \
       || echo "$release: the attest step is not the last step before Summary"
   fi
+  # the plugin split (WP-190): the store installs exactly what the pinned
+  # validator checked
+  local split validate vblock order push
+  split=$(step "$build" "Plugin split")
+  validate=$(step "$build" "Validate the plugin split")
+  vblock=$(run_block "$validate")
+  # shellcheck disable=SC2016  # the workflow's lines, literally
+  {
+    grep -x -q -F '        id: split' <<< "$split" \
+      && grep -x -q -F 'echo "split=$split" >> "$GITHUB_OUTPUT"' <<< "$(run_block "$split")" \
+      || echo "$release: the Plugin split step does not output the split (id: split)"
+    grep -x -q -F '      plugin_split: ${{ steps.split.outputs.split }}' <<< "$build" \
+      || echo "$release: the build job does not output plugin_split"
+    if [[ -z $validate ]]; then
+      echo "$release: the build job has no step named Validate the plugin split"
+    else
+      ! grep -E -q '^        (if|shell):' <<< "$validate" \
+        || echo "$release: the Validate the plugin split step has an if: or a shell: of its own"
+      grep -x -q -F '          SPLIT: ${{ steps.split.outputs.split }}' <<< "$validate" \
+        || echo "$release: the Validate the plugin split step does not take the split step's output"
+      grep -x -q -F 'git archive "$SPLIT" | tar -x -C "$tree"' <<< "$vblock" \
+        || echo "$release: the Validate the plugin split step does not extract the split with git archive"
+      ! grep -E -q '\|\||set \+[eo]' <<< "$vblock" \
+        || echo "$release: the Validate the plugin split step ignores a failure (|| or set +e)"
+      [[ $(tail -n 1 <<< "$vblock") == 'bash packaging/omarchy-validate.sh "$tree"' ]] \
+        || echo "$release: the pinned validator on the extracted split is not the last line of its step"
+    fi
+    # step order in the build job: Plugin split, Validate the plugin split, Summary
+    order=$(grep -E '^      - name: (Plugin split|Validate the plugin split|Summary)$' <<< "$build" | sed 's/^      - name: //' | paste -sd '|')
+    [[ $order == 'Plugin split|Validate the plugin split|Summary' ]] \
+      || echo "$release: the build job's order is not Plugin split, Validate the plugin split, Summary ($order)"
+    # the comparison's line, then the push's: "<if> <push>", both present
+    push=$(run_block "$(step "$(job "$release" plugin)" "Push the plugin split")" | awk '
+      $0 == "if [[ $split != \"$VALIDATED\" ]]; then" && !cmp { cmp = NR }
+      /push "\$PLUGIN_REPO"/ && !at { at = NR }
+      END { print cmp + 0, at + 0 }')
+    grep -x -q -F '          VALIDATED: ${{ needs.build.outputs.plugin_split }}' <<< "$(job "$release" plugin)" \
+      && [[ $push =~ ^([1-9][0-9]*)\ ([1-9][0-9]*)$ ]] && ((BASH_REMATCH[1] < BASH_REMATCH[2])) \
+      || echo "$release: the plugin job does not refuse a split other than the validated one before the push"
+  }
   # only build signs: no other job may ask for an OIDC token or attestations
   local j
   while read -r j; do
@@ -269,6 +315,28 @@ expect_problem "id-token on the release job" "release job has id-token" \
   '/^  release:$/,/^    permissions:$/s/^(    permissions:)$/\1\n      id-token: write/'
 expect_problem "attest step before Build the package" "not the last step before Summary" \
   '/^      - name: Attest the release assets$/,/^      - name: Summary$/{/^      - name: Summary$/!d}; s/^      - name: Build the package$/      - name: Attest the release assets\n        uses: actions\/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2\n\n&/'
+expect_problem "no split validation" "no step named Validate the plugin split" \
+  's/^      - name: Validate the plugin split$/      - name: Validate/'
+expect_problem "split validation with if: false" "has an if: or a shell:" \
+  's/^(      - name: Validate the plugin split)$/\1\n        if: false/'
+expect_problem "split validation || true" "ignores a failure" \
+  's/^(          bash packaging\/omarchy-validate.sh "\$tree")$/\1 || true/'
+expect_problem "split validation of the work tree" "not the last line" \
+  's/^(          bash packaging\/omarchy-validate.sh )"\$tree"$/\1plugin\//'
+expect_problem "split validation without the extraction" "does not extract the split" \
+  's/^          git archive "\$SPLIT" \| tar -x -C "\$tree"$/          cp -r plugin\/. "$tree"/'
+expect_problem "split validation of another commit" "does not take the split" \
+  's/^(          SPLIT: )\$\{\{ steps.split.outputs.split \}\}$/\1HEAD/'
+expect_problem "split without its output" "does not output the split" \
+  '/^          echo "split=\$split" >> "\$GITHUB_OUTPUT"$/d'
+expect_problem "build job without plugin_split" "does not output plugin_split" \
+  '/^      plugin_split: /d'
+expect_problem "split validation before the split" "order is not" \
+  '/^      - name: Validate the plugin split$/,/^      - name: Attest the release assets$/{/^      - name: Attest the release assets$/!d}; s/^      - name: Plugin split$/      - name: Validate the plugin split\n        env:\n          SPLIT: $\{\{ steps.split.outputs.split \}\}\n        run: |\n          tree=$(mktemp -d)\n          git archive "$SPLIT" | tar -x -C "$tree"\n          bash packaging\/omarchy-validate.sh "$tree"\n\n&/'
+expect_problem "plugin push without the comparison" "does not refuse a split" \
+  '/^          if \[\[ \$split != "\$VALIDATED" \]\]; then$/,/^          fi$/d'
+expect_problem "plugin push compares after the push" "does not refuse a split" \
+  '/^          if \[\[ \$split != "\$VALIDATED" \]\]; then$/,/^          fi$/d; s/^(            push "\$PLUGIN_REPO" .*)$/\1\n          if [[ $split != "$VALIDATED" ]]; then exit 1; fi/'
 
 if ((fails > 0)); then
   echo "workflow-pins.test: $fails failure(s)" >&2
