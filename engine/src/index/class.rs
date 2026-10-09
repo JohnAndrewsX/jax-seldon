@@ -10,7 +10,8 @@
 //!   downgraded by name, a third-party plugin added, removed or updated,
 //!   an override under a watched path, and every event no row names;
 //! - **routine**: a plain full upgrade, an upgrade of what is installed,
-//!   the keyrings, Omarchy's own update, a plugin toggle, a theme switch,
+//!   the keyrings, Omarchy's own update, a plugin toggle, Seldon's own
+//!   plugin added or enabled, a theme switch,
 //!   Omarchy's own copy of a file (`meta.matches`), a link into `/usr/`,
 //!   the `routinePaths`, a theme's assets.
 //!
@@ -27,6 +28,7 @@ use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
 
 use super::drift::AlwaysRed;
+use crate::attribution::OWN_PLUGIN;
 use crate::config::{AttentionMode, DriftConfig};
 use crate::model::event::{Event, Kind, Source};
 use crate::pkgcmd::{Op, PacmanCommand, parse_command, split_logged};
@@ -362,6 +364,14 @@ impl Rules {
     }
 
     fn plugins(&self, e: &Event) -> Verdict {
+        // Seldon's own plugin added or enabled: the user installing Seldon
+        // (ADR-0050); before the toggle row, so its rule says so
+        if e.subject == OWN_PLUGIN
+            && matches!(e.kind, Kind::PluginAdd | Kind::PluginEnable)
+            && let Some(v) = self.routine("seldon-self")
+        {
+            return v;
+        }
         if matches!(e.kind, Kind::PluginEnable | Kind::PluginDisable)
             && let Some(v) = self.routine("plugin-toggle")
         {
@@ -968,6 +978,43 @@ mod tests {
             (
                 "plugin-disable",
                 ev(Source::Plugins, Kind::PluginDisable, "io.github.example.x"),
+                (R, "plugin-toggle"),
+            ),
+            // Seldon's own plugin (ADR-0050): its add and enable; the rest
+            // is rule 8's (update, disable) or stays attention (remove)
+            (
+                "own plugin-add",
+                ev(Source::Plugins, Kind::PluginAdd, "jax.seldon"),
+                (R, "seldon-self"),
+            ),
+            (
+                "own plugin-enable",
+                ev(Source::Plugins, Kind::PluginEnable, "jax.seldon"),
+                (R, "seldon-self"),
+            ),
+            (
+                "own plugin-disable",
+                ev(Source::Plugins, Kind::PluginDisable, "jax.seldon"),
+                (R, "plugin-toggle"),
+            ),
+            (
+                "own plugin-remove",
+                ev(Source::Plugins, Kind::PluginRemove, "jax.seldon"),
+                (A, "plugin"),
+            ),
+            (
+                "own plugin-update",
+                ev(Source::Plugins, Kind::PluginUpdate, "jax.seldon"),
+                (A, "plugin"),
+            ),
+            (
+                "a look-alike id's add",
+                ev(Source::Plugins, Kind::PluginAdd, "jax.seldon-extra"),
+                (A, "plugin"),
+            ),
+            (
+                "a look-alike id's enable",
+                ev(Source::Plugins, Kind::PluginEnable, "jax.seldon.x"),
                 (R, "plugin-toggle"),
             ),
             (
@@ -1590,6 +1637,16 @@ mod tests {
         };
         let theme = [ev(Source::Theme, Kind::ThemeSet, "x")];
         assert_eq!(verdict(&without("theme"), &theme, &[0]), (A, "other"));
+        // Seldon's own plugin falls to the plugin rows
+        let own = [
+            ev(Source::Plugins, Kind::PluginAdd, "jax.seldon"),
+            ev(Source::Plugins, Kind::PluginEnable, "jax.seldon"),
+        ];
+        assert_eq!(verdict(&without("seldon-self"), &own, &[0]), (A, "plugin"));
+        assert_eq!(
+            verdict(&without("seldon-self"), &own, &[1]),
+            (R, "plugin-toggle")
+        );
         let link = [config(
             Kind::ConfigAdd,
             "~/.config/systemd/user/x.service",

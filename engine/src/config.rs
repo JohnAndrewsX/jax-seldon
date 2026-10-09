@@ -648,13 +648,15 @@ impl AttentionMode {
 }
 
 /// The routine rule ids of ADR-0028 §2 (and WP-109's theme rules,
-/// ADR-0037's `toggle-flag`), the default of `[drift] routine`.
-pub const ROUTINE_RULES: [&str; 12] = [
+/// ADR-0037's `toggle-flag`, ADR-0050's `seldon-self`), the default of
+/// `[drift] routine`.
+pub const ROUTINE_RULES: [&str; 13] = [
     "sysupgrade",
     "upgrade",
     "keyring",
     "omarchy-update",
     "plugin-toggle",
+    "seldon-self",
     "theme",
     "omarchy-default",
     "system-link",
