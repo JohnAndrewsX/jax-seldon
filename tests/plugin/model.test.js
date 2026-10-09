@@ -4016,4 +4016,204 @@ test("WP-138: Today shows the preview as plain text", () => {
   for (const b of qml.split(/\n\s*Text \{/).slice(1)) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
 })
 
+// ---- Text and UI tones (WP-177; SPEC-PLUGIN §7 "Theming") ----------------
+
+// The five roles of a theme's colors.toml as shell/Commons/Color.qml reads
+// them (its loop over `key = "#rrggbb"` lines and the fallbacks after it).
+function themeRoles(text) {
+  const r = { foreground: "#cacccc", background: "#101315", accent: "#cacccc", urgent: "#a55555", muted: "#707880" }
+  const seen = {}
+  const extra = {}
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*([A-Za-z0-9_-]+)\s*=\s*["']?(#[0-9A-Fa-f]{6})/)
+    if (!m) continue
+    const [, k, v] = m
+    if (["foreground", "background", "accent", "muted"].includes(k)) { r[k] = v; seen[k] = true }
+    else if (["color0", "color4", "color7", "color8"].includes(k)) extra[k] = v
+    else if (k === "red" || k === "color1") r.urgent = v
+  }
+  if (!seen.background && extra.color0) r.background = extra.color0
+  if (!seen.foreground && extra.color7) r.foreground = extra.color7
+  if (!seen.accent && extra.color4) r.accent = extra.color4
+  if (!seen.muted) r.muted = extra.color8 || r.foreground
+  return r
+}
+
+// Omarchy's default state alphas (Commons/Style.qml), the fills the desk
+// passes from Style; fg at that alpha in Qt's #aarrggbb.
+const withAlpha = (hex, a) => "#" + Math.round(a * 255).toString(16).padStart(2, "0") + hex.slice(1)
+function themeInput(r) {
+  return Object.assign({}, r, {
+    normal: withAlpha(r.foreground, 0.04), hover: withAlpha(r.foreground, 0.08), selected: withAlpha(r.foreground, 0.18),
+    focusBorder: withAlpha(r.foreground, 0.25), focusBorderWidth: 1
+  })
+}
+
+const committedThemes = JSON.parse(fs.readFileSync(path.join(root, "fixtures/themes/roles.json"), "utf8")).themes
+const hostThemeDir = path.join(process.env.OMARCHY_PATH || "/usr/share/omarchy", "themes")
+const hostThemes = {}
+if (fs.existsSync(hostThemeDir)) {
+  for (const name of fs.readdirSync(hostThemeDir).sort()) {
+    const file = path.join(hostThemeDir, name, "colors.toml")
+    if (fs.existsSync(file)) hostThemes[name] = themeRoles(fs.readFileSync(file, "utf8"))
+  }
+}
+
+// Every surface a tone is held to, as the desk composes it.
+function toneSurfaces(r) {
+  const bg = M.colourRgba(r.background)
+  // the alpha as the desk hands it over: 8 bits, like the fills of themeInput
+  const at = (c, a) => M.colourHex(M.overColour(M.colourRgba(withAlpha(c, a)), bg))
+  const plain = [r.background, at(r.foreground, 0.04), at(r.foreground, 0.08), at(r.foreground, 0.18)]
+  return { plain, accentTint: at(r.accent, 0.18), urgentTint: at(r.urgent, 0.18) }
+}
+
+// c lies on the straight line from `from` to `to` (within rounding): a mix
+// of the theme's own colours, never a black or white of Seldon's.
+function onMixLine(c, from, to) {
+  const x = M.colourRgba(c), a = M.colourRgba(from), b = M.colourRgba(to)
+  for (let i = 0; i <= M.TONE_STEPS; i++) {
+    const m = M.mixColour(a, b, i / M.TONE_STEPS)
+    if (["r", "g", "b"].every((k) => Math.abs(m[k] - x[k]) <= 1.01 / 255)) return true
+  }
+  return false
+}
+
+test("WP-177: colour helpers read QML and hex colours, WCAG contrast", () => {
+  same(M.colourRgba("#ff0000"), { r: 1, g: 0, b: 0, a: 1 })
+  same(M.colourRgba("#f00"), { r: 1, g: 0, b: 0, a: 1 })
+  // Qt's #aarrggbb
+  assert.strictEqual(M.colourRgba("#80ffffff").a, 128 / 255)
+  same(M.colourRgba({ r: 0.5, g: 0.25, b: 1, a: 0.5 }), { r: 0.5, g: 0.25, b: 1, a: 0.5 })
+  for (const bad of [null, undefined, "", "red", "#12345", 7]) assert.strictEqual(M.colourRgba(bad), null, String(bad))
+  assert.strictEqual(M.colourHex({ r: 1, g: 0.5, b: 0 }), "#ff8000")
+  assert.strictEqual(M.colourHex({ r: 1, g: 1, b: 1 }, 0.12), "#1fffffff")
+  assert.strictEqual(M.contrastRatio("#000000", "#ffffff"), 21)
+  assert.strictEqual(M.contrastRatio("#777777", "#777777"), 1)
+  // FEEDBACK 6: Tokyo Night's muted on its background
+  assert.strictEqual(M.contrastRatio("#414868", "#1a1b26").toFixed(1), "1.9")
+  assert.strictEqual(M.contrastRatio("#000", "nope"), 0)
+})
+
+test("WP-177: textOn mixes towards the given colour until the target, else returns it", () => {
+  // already there: unchanged
+  assert.strictEqual(M.textOn("#ffffff", "#000000", 4.7, "#ffffff"), "#ffffff")
+  // muted on Tokyo Night: lifted towards the foreground, just past the target
+  const t = M.textOn("#414868", ["#1a1b26"], 4.7, "#a9b1d6")
+  assert.ok(M.contrastRatio(t, "#1a1b26") >= 4.7, t)
+  assert.ok(onMixLine(t, "#414868", "#a9b1d6"), t)
+  // the smallest step that reaches it: one step less does not
+  let p = 0
+  for (let i = 0; i <= M.TONE_STEPS; i++) {
+    if (M.colourHex(M.mixColour(M.colourRgba("#414868"), M.colourRgba("#a9b1d6"), i / M.TONE_STEPS)) === t) { p = i; break }
+  }
+  assert.ok(p > 0)
+  assert.ok(M.contrastRatio(M.colourHex(M.mixColour(M.colourRgba("#414868"), M.colourRgba("#a9b1d6"), (p - 1) / M.TONE_STEPS)), "#1a1b26") < 4.7)
+  // every surface counts
+  const two = M.textOn("#414868", ["#1a1b26", "#2a2c3d"], 4.7, "#a9b1d6")
+  assert.ok(M.contrastRatio(two, "#2a2c3d") >= 4.7)
+  // unreachable: the target colour itself (no fallback of its own)
+  assert.strictEqual(M.textOn("#555555", "#666666", 4.7, "#777777"), "#777777")
+  assert.strictEqual(M.textOn("nope", "#000000", 4.7, "#ffffff"), "")
+})
+
+test("WP-177: deskTones is computed once per theme and only from the theme's colours", () => {
+  const input = themeInput(committedThemes["tokyo-night"])
+  const before = M.deskTonesBuilds
+  const a = M.deskTones(input)
+  const b = M.deskTones(Object.assign({}, input))
+  assert.strictEqual(a, b)
+  assert.strictEqual(M.deskTonesBuilds, before + 1)
+  const c = M.deskTones(themeInput(committedThemes["rose-pine"]))
+  assert.notStrictEqual(c, a)
+  assert.strictEqual(M.deskTonesBuilds, before + 2)
+  // the keys every Tone.qml binds
+  same(Object.keys(a), ["text", "dim", "accentText", "urgentText", "accentUi", "ui", "focusRing", "themeFocus", "focusRatio", "divider", "limited"])
+  assert.strictEqual(a.text, "#a9b1d6")
+  assert.strictEqual(a.divider, "#1fa9b1d6")
+  // nothing given: Color.qml's defaults
+  assert.strictEqual(M.deskTones(null).text, "#cacccc")
+  // an alpha < 1 background counts as opaque (SPEC-PLUGIN §7)
+  same(M.deskTones(Object.assign({}, input, { background: "#801a1b26" })).dim, a.dim)
+})
+
+// One theme against the targets: every text tone ≥ TONE_TEXT_TARGET on each
+// surface it sits on, every UI tone ≥ TONE_UI_TARGET, each a mix of the
+// theme's colour towards its foreground; where the foreground itself cannot
+// reach a target, the tone is the foreground and the theme is reported.
+function checkTheme(name, r, reports) {
+  const t = M.deskTones(themeInput(r))
+  const s = toneSurfaces(r)
+  const tintBoth = s.plain.concat([s.accentTint, s.urgentTint])
+  const cases = [
+    ["dim", r.muted, tintBoth, M.TONE_TEXT_TARGET],
+    ["accentText", r.accent, s.plain.concat([s.accentTint]), M.TONE_TEXT_TARGET],
+    ["urgentText", r.urgent, s.plain.concat([s.urgentTint]), M.TONE_TEXT_TARGET],
+    ["accentUi", r.accent, s.plain, M.TONE_UI_TARGET]
+  ]
+  for (const [key, from, surfaces, target] of cases) {
+    const worst = Math.min(...surfaces.map((x) => M.contrastRatio(t[key], x)))
+    assert.ok(onMixLine(t[key], from, r.foreground), name + " " + key + " " + t[key] + " is not a mix of " + from + " and " + r.foreground)
+    if (worst >= target) continue
+    assert.strictEqual(t[key], r.foreground.toLowerCase(), name + " " + key + " " + worst.toFixed(2))
+    assert.ok(t.limited.includes(key), name + " " + key + " not listed as limited")
+  }
+  assert.ok(Math.min(...s.plain.slice(0, 3).map((x) => M.contrastRatio(t.ui, x))) >= M.TONE_UI_TARGET || t.limited.includes("ui"), name + " ui")
+  // the ring: the theme's own focus border where it reaches 3:1, else ui
+  assert.strictEqual(t.focusRing, t.themeFocus ? t.focusRing : t.ui, name)
+  assert.strictEqual(t.themeFocus, t.focusRatio >= M.TONE_FOCUS_MIN, name)
+  // the raw roles stay what they were: stripes, bars and the pill use them
+  const own = M.contrastRatio(r.foreground, r.background)
+  if (own < 4.5 || t.limited.length > 0)
+    reports.push(name + ": fg/bg " + own.toFixed(2) + (t.limited.length ? ", limited " + t.limited.join(" ") : ""))
+  return t
+}
+
+test("WP-177: tones reach the targets on the committed themes (tokyo-night, rose-pine, miasma)", () => {
+  same(Object.keys(committedThemes), ["tokyo-night", "rose-pine", "miasma"])
+  const reports = []
+  for (const [name, r] of Object.entries(committedThemes)) {
+    same(Object.keys(r), ["foreground", "background", "accent", "urgent", "muted"])
+    checkTheme(name, r, reports)
+  }
+  // the three are not weak themes: nothing reported
+  same(reports, [])
+})
+
+test("WP-177: tones reach the targets on the host's themes (reported, not failed, where the theme cannot)", () => {
+  const names = Object.keys(hostThemes)
+  if (names.length === 0) {
+    console.log("model.test.js: no themes under " + hostThemeDir + "; host themes skipped")
+    return
+  }
+  const reports = []
+  for (const name of names) checkTheme(name, hostThemes[name], reports)
+  for (const line of reports) console.log("model.test.js: theme report: " + line)
+  // the committed roles are the host's, as long as Omarchy keeps them
+  for (const [name, r] of Object.entries(committedThemes)) {
+    if (hostThemes[name] && JSON.stringify(hostThemes[name]) !== JSON.stringify(r))
+      console.log("model.test.js: notice: fixtures/themes/roles.json " + name + " differs from " + hostThemeDir + "/" + name)
+  }
+  // E54: SELDON_TONE_REPORT=1 prints the focus border Omarchy draws by
+  // default (fg at 0.25, 1 px) against each theme's popup background.
+  if (process.env.SELDON_TONE_REPORT === "1") {
+    for (const name of names) {
+      const r = hostThemes[name]
+      const t = M.deskTones(themeInput(r))
+      console.log(["tone-report", name, "fg/bg " + M.contrastRatio(r.foreground, r.background).toFixed(2),
+        "muted/bg " + M.contrastRatio(r.muted, r.background).toFixed(2), "dim/bg " + M.contrastRatio(t.dim, r.background).toFixed(2),
+        "focus(fg 0.25)/bg " + t.focusRatio.toFixed(2), "ring " + t.focusRing + " " + M.contrastRatio(t.focusRing, r.background).toFixed(2)].join(" | "))
+    }
+  }
+})
+
+test("WP-177: a weak theme is reported with the foreground as its tones, never black or white", () => {
+  const weak = { foreground: "#777777", background: "#5a5a5a", accent: "#6a6a8a", urgent: "#8a5a5a", muted: "#666666" }
+  const reports = []
+  const t = checkTheme("weak", weak, reports)
+  assert.strictEqual(reports.length, 1)
+  assert.ok(/^weak: fg\/bg 1\.\d\d, limited dim accentText urgentText accentUi ui$/.test(reports[0]), reports[0])
+  for (const k of ["dim", "accentText", "urgentText", "accentUi", "ui"]) assert.strictEqual(t[k], "#777777", k)
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

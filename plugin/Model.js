@@ -6197,3 +6197,182 @@ function previewSummary(p) {
     "pacman transactions") + " and " + plural(p.files.length, "file", "files") + " edited under " + p.root + "."
     + (p.truncated ? " The newest are shown." : "")
 }
+
+// ---- Text and UI tones from the theme (WP-177; SPEC-PLUGIN §7 "Theming") ----
+
+// The contrast every derived tone reaches on the surfaces it sits on: text
+// 4.7:1 (WCAG's 4.5 for text plus a margin), UI parts 3.2:1 (WCAG 1.4.11's
+// 3 plus a margin). One constant each, for every text and every UI part.
+var TONE_TEXT_TARGET = 4.7
+var TONE_UI_TARGET = 3.2
+// The theme's own focus border is kept when it reaches this (WCAG 1.4.11).
+var TONE_FOCUS_MIN = 3
+// The mix moves towards the theme's foreground in steps of 1/TONE_STEPS.
+var TONE_STEPS = 50
+// The hairlines between header, list and detail: the foreground at 12 %.
+var TONE_DIVIDER_ALPHA = 0.12
+// Where a line starts before it is lifted to TONE_UI_TARGET: 40 % of the
+// way from the background to the foreground.
+var TONE_LINE_START = 0.4
+
+// A colour as { r, g, b, a } in 0…1: a QML color (r, g, b, a), "#rgb",
+// "#rrggbb" or Qt's "#aarrggbb"; null for anything else.
+function colourRgba(c) {
+  if (isObject(c) && typeof c.r === "number" && typeof c.g === "number" && typeof c.b === "number")
+    return { r: c.r, g: c.g, b: c.b, a: typeof c.a === "number" ? c.a : 1 }
+  var m = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(String(c === undefined || c === null ? "" : c).trim())
+  if (!m) return null
+  var h = m[1]
+  if (h.length === 3) h = h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2)
+  var a = 1
+  if (h.length === 8) {
+    a = parseInt(h.slice(0, 2), 16) / 255
+    h = h.slice(2)
+  }
+  return { r: parseInt(h.slice(0, 2), 16) / 255, g: parseInt(h.slice(2, 4), 16) / 255, b: parseInt(h.slice(4, 6), 16) / 255, a: a }
+}
+
+// "#rrggbb", or Qt's "#aarrggbb" for an alpha below 1.
+function colourHex(c, alpha) {
+  var byte = function(x) {
+    var s = Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16)
+    return s.length === 1 ? "0" + s : s
+  }
+  var a = alpha === undefined ? 1 : alpha
+  return "#" + (a < 1 ? byte(a) : "") + byte(c.r) + byte(c.g) + byte(c.b)
+}
+
+// WCAG 2 relative luminance and contrast ratio of two opaque colours.
+function luminance(c) {
+  var lin = function(x) { return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4) }
+  return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+}
+
+function contrastRatio(a, b) {
+  var x = colourRgba(a)
+  var y = colourRgba(b)
+  if (!x || !y) return 0
+  var l1 = luminance(x)
+  var l2 = luminance(y)
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
+}
+
+// a moved the share p (0…1) of the way to b.
+function mixColour(a, b, p) {
+  return { r: a.r + (b.r - a.r) * p, g: a.g + (b.g - a.g) * p, b: a.b + (b.b - a.b) * p, a: 1 }
+}
+
+// top (with its alpha) painted over an opaque bottom.
+function overColour(top, bottom) {
+  return mixColour(bottom, top, top.a)
+}
+
+// `colour` moved towards `toward` (the theme's foreground; no black or
+// white of its own) in small steps until it reaches `target` on every
+// surface, as "#rrggbb". `surfaces` is one colour or a list; each is taken
+// as opaque. When even `toward` does not reach the target (a theme whose
+// own foreground is that weak), `toward` itself: the best the theme has.
+function textOn(colour, surfaces, target, toward) {
+  var c = colourRgba(colour)
+  if (!c) return ""
+  var to = colourRgba(toward === undefined ? colour : toward) || c
+  var list = (Array.isArray(surfaces) ? surfaces : [surfaces]).map(colourRgba).filter(function(s) { return s !== null })
+  for (var i = 0; i <= TONE_STEPS; i++) {
+    // judged as drawn: the 8-bit colour, not the exact mix
+    var t = colourHex(mixColour(c, to, i / TONE_STEPS))
+    var ok = true
+    for (var j = 0; ok && j < list.length; j++) ok = contrastRatio(t, list[j]) >= target
+    if (ok) return t
+  }
+  return colourHex(to)
+}
+
+var deskTonesMemo = { key: "", value: null }
+var deskTonesBuilds = 0
+
+// The desk's tones for one theme, computed once per theme change (the last
+// result is kept while the input is the same; components/Tone.qml shares it
+// through Tones.js). `theme`: the five roles as the desk draws them
+// (foreground = Color.popups.text, background = Color.popups.background,
+// accent, urgent, muted) and Style's fills under rows and controls
+// (`normal`, `hover`, `selected`, each with its alpha) and the focus border
+// (`focusBorder` with its alpha, `focusBorderWidth`).
+//
+// The surface is the popups background, taken as opaque: with a
+// `popups.background-alpha` below 1 the wallpaper shows through and no
+// contrast can be computed, so the colour itself stands in for it. Text
+// sits on that background, Style's three fills over it and the role tints
+// (accent and urgent at the selected alpha, a notice or a chip); every text
+// tone reaches TONE_TEXT_TARGET on all of them, every UI tone
+// TONE_UI_TARGET. Only text and UI parts are mixed: stripes, bars of state,
+// charts and the pill keep the raw role colours.
+//
+//   text        the foreground itself
+//   dim         secondary text (meta lines, captions, labels): from muted
+//   accentText  text in the accent (links, hints, "proposed")
+//   urgentText  text in the urgent colour (errors, crisis titles)
+//   accentUi    the selection's accent bar and a selected chip's bar
+//   ui          a line or ring that must be seen: from 40 % foreground
+//   focusRing   Seldon's ring on its own controls: the theme's focus border
+//               where it reaches TONE_FOCUS_MIN (themeFocus true), else ui
+//   divider     the hairlines, foreground at TONE_DIVIDER_ALPHA
+//   limited     the tones that did not reach their target because the
+//               theme's own foreground does not (A9: no fallback colour)
+function deskTones(theme) {
+  var t = isObject(theme) ? theme : {}
+  var role = function(c, fallback) { return colourRgba(c) || colourRgba(fallback) }
+  var fg = role(t.foreground, "#cacccc")
+  var bg = role(t.background, "#101315")
+  var accent = role(t.accent, colourHex(fg))
+  var urgent = role(t.urgent, "#a55555")
+  var muted = role(t.muted, colourHex(fg))
+  var fill = function(c, alpha) { var f = colourRgba(c); return f || { r: fg.r, g: fg.g, b: fg.b, a: alpha } }
+  var normal = fill(t.normal, 0.04)
+  var hover = fill(t.hover, 0.08)
+  var selected = fill(t.selected, 0.18)
+  var focus = fill(t.focusBorder, 0.25)
+  var focusWidth = typeof t.focusBorderWidth === "number" ? t.focusBorderWidth : 1
+  var key = [fg, bg, accent, urgent, muted].map(function(c) { return colourHex(c) })
+    .concat([normal, hover, selected, focus].map(function(c) { return colourHex(c, c.a) }), [focusWidth]).join(" ")
+  if (deskTonesMemo.key === key) return deskTonesMemo.value
+  deskTonesBuilds++
+
+  // each surface as drawn: 8 bits a channel
+  var drawn = function(c) { return colourRgba(colourHex(c)) }
+  var base = drawn(bg)
+  var plain = [base, drawn(overColour(normal, base)), drawn(overColour(hover, base)), drawn(overColour(selected, base))]
+  var tint = function(c) { return drawn(overColour({ r: c.r, g: c.g, b: c.b, a: selected.a }, base)) }
+  var accentTint = tint(accent)
+  var urgentTint = tint(urgent)
+  var fgHex = colourHex(fg)
+  var limited = []
+  var derive = function(name, from, surfaces, target) {
+    var out = textOn(colourHex(from), surfaces, target, fgHex)
+    for (var i = 0; i < surfaces.length; i++) {
+      if (contrastRatio(out, surfaces[i]) < target) {
+        limited.push(name)
+        break
+      }
+    }
+    return out
+  }
+  var focusOn = drawn(overColour(focus, base))
+  var focusRatio = Math.min(contrastRatio(focusOn, base), contrastRatio(focusOn, plain[1]))
+  var themeFocus = focusWidth >= 1 && focusRatio >= TONE_FOCUS_MIN
+  var tones = {
+    text: fgHex,
+    dim: derive("dim", muted, plain.concat([accentTint, urgentTint]), TONE_TEXT_TARGET),
+    accentText: derive("accentText", accent, plain.concat([accentTint]), TONE_TEXT_TARGET),
+    urgentText: derive("urgentText", urgent, plain.concat([urgentTint]), TONE_TEXT_TARGET),
+    accentUi: derive("accentUi", accent, plain, TONE_UI_TARGET),
+    ui: derive("ui", mixColour(base, fg, TONE_LINE_START), plain.slice(0, 3), TONE_UI_TARGET),
+    focusRing: "",
+    themeFocus: themeFocus,
+    focusRatio: Math.round(focusRatio * 100) / 100,
+    divider: colourHex(fg, TONE_DIVIDER_ALPHA),
+    limited: limited
+  }
+  tones.focusRing = themeFocus ? colourHex(focusOn) : tones.ui
+  deskTonesMemo = { key: key, value: tones }
+  return tones
+}
