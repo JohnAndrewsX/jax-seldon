@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# The sed mutants below are literal workflow text with `$` and `${{ }}` on
+# purpose: they must not expand (SC2016 is the point, not a bug).
+# shellcheck disable=SC2016
 # The GitHub workflows run pinned code, and cargo audit gates the release
 # (packaging/README.md, "Pinned actions and image"). Runs in
 # `just check-packaging`; reads the YAML as text, no network.
