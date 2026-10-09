@@ -4149,7 +4149,7 @@ function checkTheme(name, r, reports) {
     ["dim", r.muted, tintBoth, M.TONE_TEXT_TARGET],
     ["accentText", r.accent, s.plain.concat([s.accentTint]), M.TONE_TEXT_TARGET],
     ["urgentText", r.urgent, s.plain.concat([s.urgentTint]), M.TONE_TEXT_TARGET],
-    ["accentUi", r.accent, s.plain, M.TONE_UI_TARGET]
+    ["accentUi", r.accent, s.plain.concat([s.accentTint]), M.TONE_UI_TARGET]
   ]
   for (const [key, from, surfaces, target] of cases) {
     const worst = Math.min(...surfaces.map((x) => M.contrastRatio(t[key], x)))
