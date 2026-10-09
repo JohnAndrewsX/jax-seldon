@@ -442,6 +442,29 @@ mod tests {
         assert_eq!(h.paths(&config), ["~/.config/hypr/hyprland.lua"]);
     }
 
+    /// The path rules run before the cut: ten newer files the redaction
+    /// would change do not push older ones out of the 80.
+    #[test]
+    fn refused_paths_take_no_place_in_the_eighty() {
+        let h = Home::new("keepcut");
+        for i in 0..10u64 {
+            h.file(
+                &format!(".config/app/sekrit-{i}.conf"),
+                Duration::from_secs(60 + i),
+            );
+        }
+        for i in 0..85u64 {
+            h.file(
+                &format!(".config/many/f{i:02}.conf"),
+                HOUR + Duration::from_secs(60 * i),
+            );
+        }
+        let redactor = Redactor::with_patterns(&["sekrit".into()]).unwrap();
+        let scan = scan(&h.dirs, &Config::default(), &redactor, &[], h.now);
+        assert_eq!(scan.files.len(), MAX_FILES);
+        assert_eq!(scan.files[0].0, "~/.config/many/f00.conf");
+    }
+
     #[test]
     fn the_newest_eighty() {
         let h = Home::new("eighty");

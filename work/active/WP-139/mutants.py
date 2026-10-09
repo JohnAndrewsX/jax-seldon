@@ -1,53 +1,64 @@
 #!/usr/bin/env python3
 """WP-139 manual mutants: each change must make a test fail.
 
-Engine mutants run `cargo test --lib collectors::recent` plus the
-integration tests `recent_config` and `index` in a target dir of their own;
-plugin mutants run `node tests/plugin/model.test.js`. Every file is
-restored after its run. Arguments, if any, keep only the mutants whose name
-contains one of them. Service.qml and System.qml are covered by the desk
-harness (`desk-view.sh` system, system-watch, system-watch-locked), too
-slow to run per mutant.
+Run in a scratch copy, never the worktree (round 2b rule): the committed
+HEAD is exported with `git archive` into MUTANT_ROOT (default the private
+gates folder, on disk), and every mutant is applied and undone there.
+Engine mutants run `cargo test --lib` plus the integration tests
+`recent_config`, `index` and `preview` with a target dir on disk
+(MUTANT_TARGET); plugin mutants run `node tests/plugin/model.test.js`.
+Arguments, if any, keep only the mutants whose name contains one of them.
+Service.qml and System.qml are covered by the desk harness (`desk-view.sh`
+system, system-watch, system-watch-last, system-watch-locked,
+system-partial), too slow to run per mutant.
 """
 import os, subprocess, sys
 from pathlib import Path
 
 # the checkout this script lives in: work/active/WP-139/mutants.py
 WT = str(Path(__file__).resolve().parents[3])
-# a target dir of its own: a mutated binary must never reach another run
-TARGET = f"{WT}/engine/target/mutants-wp139"
+GATES = "/home/eandres/Work/johnandrewsx/jax-seldon-private/gates"
+ROOT = os.environ.get("MUTANT_ROOT", f"{GATES}/wp139-mutant-root")
+TARGET = os.environ.get("MUTANT_TARGET", f"{GATES}/target-wp139")
 RECENT = "engine/src/collectors/recent.rs"
+SCAN = "engine/src/config_scan.rs"
 CMD = "engine/src/commands/config_cmd.rs"
 MODEL = "plugin/Model.js"
 ENGINE = [
-    # the walk
-    ("watch paths not left out", RECENT,
-     "        self.watched.iter().any(|w| path.starts_with(w))\n            || self.excluded",
-     "        false\n            || self.excluded"),
-    ("own and plugin folders entered", RECENT,
-     "            || self.excluded.iter().any(|x| path.starts_with(x))\n", ""),
-    ("skipPaths ignored by the walk", RECENT, "            || self.skip.matches(path)\n", ""),
+    # the walk (config_scan, the one walker)
+    ("breadth-first lost", SCAN, "queue.pop_front()", "queue.pop_back()"),
+    ("file links not listed", SCAN, "} else if kind.is_file() || kind.is_symlink() {", "} else if kind.is_file() {"),
+    ("folder links entered", SCAN, "            if kind.is_dir() {",
+     "            if kind.is_dir() || (kind.is_symlink() && std::fs::metadata(&path).is_ok_and(|m| m.is_dir())) {"),
+    ("exclusions ignored", SCAN, "if skip.matches(&path) || excluded(&path) {", "if skip.matches(&path) {"),
+    ("skipPaths ignored", SCAN, "if skip.matches(&path) || excluded(&path) {", "if excluded(&path) {"),
+    ("keep not asked for folders", SCAN, "if ignored_dir(&name) || !keep(&path) {", "if ignored_dir(&name) {"),
+    ("keep not asked before the cut", SCAN, "if modified >= limits.since && keep(&path) {", "if modified >= limits.since {"),
+    ("cache folders entered", SCAN, 'lower.contains("cache") ||', ""),
+    ("node_modules entered", SCAN, '\n    "node_modules",\n', '\n    "node_modulez",\n'),
+    ("history folders entered", SCAN, '\n    "history",\n', '\n    "historz",\n'),
+    ("browser profiles entered", SCAN, "PROFILE_MARKERS.iter().any(|m| name == *m)", "false"),
+    ("shell.json listed", SCAN, '        || lower == "shell.json"\n', ""),
+    ("history.json listed", SCAN, '        || lower == "history.json"\n', ""),
+    ("rotated logs listed", SCAN, '        || lower.contains(".log.")\n', ""),
+    ("temp files listed", SCAN, '        || lower.contains(".tmp-")\n', ""),
+    ("key stores listed", SCAN, '\n    "kdbx",\n', '\n    "kdbz",\n'),
+    ("files older than 7 days listed", RECENT, "since: SystemTime::from(now - chrono::Duration::days(DAYS)),",
+     "since: SystemTime::UNIX_EPOCH,"),
+    ("more than 80 kept", RECENT, "        max_files: MAX_FILES,\n", "        max_files: usize::MAX,\n"),
+    ("entry budget ignored", SCAN, "out.entries > limits.max_entries", "false"),
+    ("deadline ignored", SCAN, "|| limits.deadline.is_some_and(|d| Instant::now() >= d)", ""),
+    ("depth unbounded", SCAN, "if depth + 1 > MAX_DEPTH {", "if false {"),
+    ("partial lost on the way", RECENT, "        partial: walked.partial,\n", "        partial: false,\n"),
+    ("watch paths not excluded", RECENT, "    let mut out = watched(dirs, config);", "    let mut out = Vec::new();"),
     ("plugin folder not built in", RECENT, "        dirs.home.join(super::plugins::PLUGINS_DIR),\n", ""),
     ("seldon config folder not built in", RECENT,
      '        dirs.home.join(ROOT).join("seldon"),\n        dirs.config_dir(),\n', ""),
-    ("cache folders entered", RECENT, ' || lower.contains("cache")', ""),
-    ("named folders entered", RECENT, "DIR_NAMES.contains(&lower.as_str()) ||", "false ||"),
-    ("browser profiles entered", RECENT, ".any(|e| PROFILE_MARKS.iter().any(|m| e.file_name() == *m))",
-     ".any(|_| false)"),
-    ("ignored endings listed", RECENT, "        || FILE_ENDINGS.iter().any(|e| lower.ends_with(e))\n", "\n"),
-    ("shell.json listed", RECENT, '    lower == "shell.json"\n        ||', "    false\n        ||"),
-    ("rotated logs listed", RECENT, '        || lower.contains(".log.")\n', ""),
-    ("files older than 7 days listed", RECENT, "                    && t >= self.since\n", ""),
-    ("more than 80 kept", RECENT, "    found.truncate(MAX_FILES);\n", ""),
-    ("oldest first", RECENT, "Reverse(a.0).cmp(&Reverse(b.0))", "a.0.cmp(&b.0)"),
-    ("entry budget ignored", RECENT, "if self.entries >= self.max_entries || Instant::now()", "if Instant::now()"),
-    ("depth unbounded", RECENT, "        if depth >= MAX_DEPTH {\n", "        if false {\n"),
-    ("directory links followed", RECENT, "            if kind.is_dir() {",
-     "            if kind.is_dir() || std::fs::metadata(&path).is_ok_and(|m| m.is_dir()) {"),
-    ("links to files not followed", RECENT, "(kind.is_file() || kind.is_symlink())", "kind.is_file()"),
-    ("a time after the scan kept", RECENT, "self.found.push((t.min(SystemTime::from(self.now)), key));",
-     "self.found.push((t, key));"),
-    ("times not whole seconds", RECENT, "    t.with_nanosecond(0).unwrap_or(t)\n", "    t\n"),
+    ("a time after the scan kept", RECENT, "    t.with_nanosecond(0).unwrap_or(t).min(now)\n", "    t.with_nanosecond(0).unwrap_or(t)\n"),
+    ("times not whole seconds", RECENT, "    t.with_nanosecond(0).unwrap_or(t).min(now)\n", "    t.min(now)\n"),
+    ("preview walks $XDG_CONFIG_HOME", "engine/src/commands/preview.rs",
+     "config_scan::scan(&ctx.dirs.home.join(config_scan::ROOT), &skip, &limits)",
+     "config_scan::scan(&ctx.dirs.xdg_config_home, &skip, &limits)"),
     # the path rules
     ("redaction not asked", RECENT, "        && redactor.redact(&key) == key;", ";"),
     ("format characters pass", RECENT,
@@ -92,14 +103,9 @@ ENGINE = [
     ("the defaults hint lost", CMD, '.is_ok_and(|t| t.contains_key("watchPaths"))', ".is_ok()"),
     ("empty array refused", "engine/src/config.rs", "    let at = last_end.unwrap_or(open + 1);", "    let at = last_end?;"),
     # round 2 (stage-1 review B1–B3, N1, N4)
-    ("r2 a name that is not UTF-8 walked lossily", RECENT,
-     "            let Some(name) = name.to_str() else {\n                continue;\n            };",
-     "            let name = &*name.to_string_lossy();"),
     ("r2 shown_path takes a lossy path", RECENT, "    path.to_str()?;\n", ""),
     ("r2 state file read unbounded", RECENT, "match sys::read_small_file(&path, sys::STATE_FILE_MAX) {",
      "match std::fs::read_to_string(&path).map(Some).map_err(|e| e.to_string()) {"),
-    ("r2 deadline ignored", RECENT, " || Instant::now() >= self.deadline", ""),
-    ("r2 depth not partial", RECENT, "            self.partial |= !subdirs.is_empty();\n", ""),
     ("r2 partial not saved", RECENT, "            partial: scan.partial,\n", "            partial: false,\n"),
     ("r2 partial not in the index", RECENT, "        partial: saved.partial,\n", "        partial: false,\n"),
     ("r2 logbook walked", "engine/src/commands/capture.rs", "            logbook.root.clone(),\n", ""),
@@ -131,14 +137,20 @@ PLUGIN = [
     ("no Scanned row", MODEL, '    rows: isFinite(scanned) ? [["Scanned", relativeAge(scanned, nowMs)]] : [],', "    rows: [],"),
 ]
 CARGO = ["cargo", "test", "--manifest-path", "engine/Cargo.toml", "--locked", "--lib",
-         "--test", "recent_config", "--test", "index"]
+         "--test", "recent_config", "--test", "index", "--test", "preview"]
 env = dict(os.environ, CARGO_TARGET_DIR=TARGET)
+# a fresh export of HEAD; the scratch root is this script's own folder
+if os.path.isdir(ROOT):
+    subprocess.run(["rm", "-rf", "--", ROOT], check=True)
+os.makedirs(ROOT)
+archive = subprocess.run(["git", "-C", WT, "archive", "HEAD"], check=True, capture_output=True).stdout
+subprocess.run(["tar", "-x", "-C", ROOT], input=archive, check=True)
 results = []
 for kind, mutants, cmd in (("engine", ENGINE, CARGO), ("plugin", PLUGIN, ["node", "tests/plugin/model.test.js"])):
     for name, rel, a, b, *own in mutants:
         if sys.argv[1:] and not any(w in name for w in sys.argv[1:]):
             continue
-        path = os.path.join(WT, rel)
+        path = os.path.join(ROOT, rel)
         orig = open(path, encoding="utf-8").read()
         if orig.count(a) != 1:
             results.append((kind, name, f"PATTERN COUNT {orig.count(a)}"))
@@ -146,7 +158,7 @@ for kind, mutants, cmd in (("engine", ENGINE, CARGO), ("plugin", PLUGIN, ["node"
             continue
         try:
             open(path, "w", encoding="utf-8").write(orig.replace(a, b))
-            r = subprocess.run(own[0] if own else cmd, cwd=WT, env=env, capture_output=True, text=True)
+            r = subprocess.run(own[0] if own else cmd, cwd=ROOT, env=env, capture_output=True, text=True)
         finally:
             open(path, "w", encoding="utf-8").write(orig)
         out = r.stdout + r.stderr
