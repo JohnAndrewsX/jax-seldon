@@ -50,13 +50,22 @@
 # `next`, clean, HEAD equals origin/next, next's check log, the same
 # refusals; SELDON_BUILD=next.<short sha> (version 0.2.0+next.<sha>). When
 # the host does not run a next build yet (its plugin marker), the deploy
-# first copies ~/.config/omarchy/shell.json, ~/.local/state/seldon, the
-# engine and the plugin dir (whichever exist) to
-# ~/.local/state/seldon-dev/backup-before-next-<UTC stamp>/ (shell.json,
-# state-seldon/, seldon.engine, plugin-jax.seldon/; the layout of the
-# orchestrator's backup by hand, 2026-10-07): the way back from next, whose state may not
-# load in main. A failed backup stops the deploy before the engine swap.
-# A main deploy onto a host that runs next warns and names that backup.
+# first copies, whichever exist, ~/.config/omarchy/shell.json,
+# ~/.config/seldon, ~/.local/state/seldon, the host's logbook (the path
+# its engine's `seldon doctor --json` names), the engine and the plugin
+# dir to ~/.local/state/seldon-dev/backup-before-next-<UTC stamp>/
+# (shell.json, config-seldon/, state-seldon/, logbook/, seldon.engine,
+# plugin-jax.seldon/; the layout of the orchestrator's backup by hand,
+# 2026-10-07) with a RESTORE.txt, which the summary prints too: the way
+# back from next, whose state and ledger lines main cannot read. An active
+# seldon-watch.service is stopped for the copy and started again. Refused
+# before anything changes: a logbook that is not a directory below the
+# home (/, the home, a parent of it, outside it, a link out of it) or that
+# holds seldon-dev (the backup would copy itself), and a backup larger
+# than SELDON_DEPLOY_BACKUP_MAX_MB (default 1024). The install step checks
+# the logbook path again before the copy; a failed backup stops the
+# deploy before the engine swap. A main deploy onto a host that runs next
+# warns and names RESTORE.txt.
 #
 # --release vX.Y.Z: installs that release on the host with its install.sh
 # (checked against the release's SHA256SUMS, run with --force because the
@@ -82,7 +91,8 @@
 # this machine's id, SELDON_DEPLOY_PINS scripts/deploy-hosts.local,
 # SELDON_DEPLOY_SETTLE the seconds the shell gets after
 # the sync before a restart (default 5), SELDON_DEPLOY_WAIT the seconds the
-# smoke waits for the service (default 60). Stubs first on PATH stand in for
+# smoke waits for the service (default 60), SELDON_DEPLOY_BACKUP_MAX_MB the
+# cap of the next backup (default 1024). Stubs first on PATH stand in for
 # cargo and ssh.
 #
 # shellcheck disable=SC2016 # the remote scripts are single-quoted on purpose: they expand on the host
@@ -214,6 +224,13 @@ plugin_dir=.config/omarchy/plugins/jax.seldon
 dev_dir=.local/state/seldon-dev
 marker=.seldon-dev-build
 '"$(declare -f plugin_hash)"'
+# logbook_safe <real path> — a directory strictly below the home that does
+# not hold seldon-dev: the next backup copies it into seldon-dev
+logbook_safe() {
+  local hm dd
+  hm=$(realpath -- "$HOME") && dd=$(realpath -m -- "$HOME/$dev_dir") || return 1
+  [[ $1 == "$hm"/?* && "$dd/" != "$1"/* ]]
+}
 # neither locked nor secure; an unreadable status counts as locked
 lock_free() { omarchy-shell lock status 2>/dev/null | jq -e "(.locked or .sessionLocked or .secure) | not" >/dev/null 2>&1; }
 # Move a plugin dir that is not a dev copy out of the plugins dir (the shell
@@ -242,10 +259,11 @@ value() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2)
 
 if [[ $mode != release ]]; then
   tools="rsync jq tar mktemp install sha256sum find xargs omarchy omarchy-shell omarchy-restart-shell"
+  [[ $mode != next ]] || tools+=" realpath du"
 else
   tools="curl git jq sha256sum find xargs omarchy omarchy-shell omarchy-restart-shell"
 fi
-probe=$(rsh "tools='$tools'"'
+probe=$(rsh "tools='$tools' mode=$mode"'
 echo "id=$(cat /etc/machine-id 2>/dev/null || cat /proc/sys/kernel/hostname)"
 missing=""
 for t in $tools; do command -v "$t" >/dev/null 2>&1 || missing+=" $t"; done
@@ -259,7 +277,32 @@ echo "hash=$(plugin_hash "$plugin_dir")"
 echo "deployed=$(sed -n "s/^build=//p" "$plugin_dir/$marker" 2>/dev/null)"
 echo "engine=$(seldon --version --json 2>/dev/null | jq -r ".version // empty" 2>/dev/null)"
 echo "pending=$([[ -f $dev_dir/restart-pending ]] && echo 1 || echo 0)"
-echo "lock=$(lock_free && echo free || echo held)"' </dev/null) \
+echo "lock=$(lock_free && echo free || echo held)"
+# next: what a backup would hold; the logbook as the installed engine resolves it
+if [[ $mode == next ]]; then
+  echo "home=$HOME"
+  [[ ! -f .config/omarchy/shell.json ]] || echo has_shell=1
+  [[ ! -d .config/seldon ]] || echo has_config=1
+  [[ ! -d .local/state/seldon ]] || echo has_state=1
+  lb=$(seldon doctor --json 2>/dev/null | jq -r ".logbook // empty" 2>/dev/null)
+  unsafe=""
+  if [[ -n $lb && -d $lb ]]; then
+    lb=$(realpath -- "$lb")
+    echo "logbook=$lb"
+    logbook_safe "$lb" || { unsafe=1; echo logbook_unsafe=1; }
+  else
+    lb=""
+  fi
+  # what the backup would copy, in KiB; an unsafe logbook is not even measured
+  items=()
+  for p in .config/omarchy/shell.json .config/seldon .local/state/seldon .local/bin/seldon "$plugin_dir"; do
+    [[ ! -e $p ]] || items+=("$p")
+  done
+  [[ -z $lb || -n $unsafe ]] || items+=("$lb")
+  kb=0
+  if ((${#items[@]})); then kb=$(du -sck -- "${items[@]}" 2>/dev/null | tail -n 1 | cut -f1); fi
+  echo "backup_kb=$kb"
+fi' </dev/null) \
   || refuse "cannot reach $host over ssh"
 local_id=${SELDON_DEPLOY_LOCAL_ID:-$(cat /etc/machine-id 2>/dev/null || cat /proc/sys/kernel/hostname)}
 remote_id=$(value id "$probe")
@@ -305,13 +348,42 @@ fi
 
 # next: the way back is a backup taken before the host first runs next
 deployed=$(value deployed "$probe")
-backup_plan=""
-if [[ $mode == next && $deployed != next.* ]]; then backup_plan=yes; fi
+backup_plan="" logbook="" restore=""
+if [[ $mode == next && $deployed != next.* ]]; then
+  logbook=$(value logbook "$probe")
+  [[ $(value logbook_unsafe "$probe") != 1 ]] \
+    || refuse "$host's logbook $logbook is not a directory below the home, or holds ~/.local/state/seldon-dev; not copying it"
+  max_mb=${SELDON_DEPLOY_BACKUP_MAX_MB:-1024}
+  [[ $max_mb =~ ^[0-9]+$ ]] || refuse "SELDON_DEPLOY_BACKUP_MAX_MB wants a number of MiB, not '$max_mb'"
+  kb=$(value backup_kb "$probe")
+  [[ $kb =~ ^[0-9]+$ ]] || refuse "cannot tell how large the backup on $host would be"
+  ((kb <= max_mb * 1024)) \
+    || refuse "the backup on $host would copy $(((kb + 1023) / 1024)) MiB (logbook ${logbook:-none}, ~/.config/seldon, ~/.local/state/seldon, engine, plugin); the cap is $max_mb MiB (SELDON_DEPLOY_BACKUP_MAX_MB)"
+  backup_plan=.local/state/seldon-dev/backup-before-next-$(date -u +%Y%m%dT%H%M%SZ)
+  t='~' # printed, expands on the host
+  # restore_line <has> <what> <backup entry> — move the next copy aside, put the backup back
+  restore_line() {
+    [[ -n $1 ]] || return 0
+    printf '  mv %s %s.next && cp -a %s %s\n' "$2" "$2" "$t/$backup_plan/$3" "$2"
+  }
+  restore=$(
+    echo "To go back from next: deploy main (or --release vX.Y.Z) first, then on $host:"
+    echo "  systemctl --user stop seldon-watch.service   # if it runs"
+    restore_line "$(value has_state "$probe")" "$t/.local/state/seldon" state-seldon
+    restore_line "$(value has_config "$probe")" "$t/.config/seldon" config-seldon
+    restore_line "$logbook" "$(printf '%q' "$logbook")" logbook
+    [[ -z $(value has_shell "$probe") ]] || echo "  cp -p ~/$backup_plan/shell.json ~/.config/omarchy/shell.json"
+    echo "  systemctl --user start seldon-watch.service  # if it ran"
+    echo "  omarchy-restart-shell"
+    echo "The deploy brings back the engine and the plugin; seldon.engine and"
+    echo "plugin-jax.seldon/ here are the ones from before next."
+  )
+fi
 
 if [[ $mode == release ]]; then
   warn "state written by a newer build may not load in $release: move ~/.local/state/seldon aside on $host first (mv ~/.local/state/seldon ~/.local/state/seldon.main-\$(date +%F))"
 elif [[ $mode == main && $deployed == next.* ]]; then
-  warn "$host runs a next build ($deployed); state written by next may not load in main: put back ~/.local/state/seldon from the newest ~/.local/state/seldon-dev/backup-before-next-*/state-seldon on $host first"
+  warn "$host runs a next build ($deployed); main cannot read next's state and ledger lines: after this deploy follow RESTORE.txt in the newest ~/.local/state/seldon-dev/backup-before-next-* on $host"
 fi
 
 if [[ $dry == 1 ]]; then
@@ -320,7 +392,9 @@ if [[ $dry == 1 ]]; then
   engine_now=$(value engine "$probe")
   say "  now      engine ${engine_now:-not installed or not answering}, plugin dir $(value plugin "$probe")${deployed:+ ($deployed)}"
   if [[ -n $backup_plan ]]; then
-    say "  backup   shell.json, ~/.local/state/seldon, the engine and the plugin dir to ~/.local/state/seldon-dev/backup-before-next-<stamp>/"
+    say "  backup   shell.json, ~/.config/seldon, ~/.local/state/seldon, the logbook (${logbook:-none found}), the engine and"
+    say "           the plugin dir to ~/$backup_plan/, with RESTORE.txt;"
+    say "           seldon-watch.service stopped for the copy if it runs"
   elif [[ $mode == next ]]; then
     say "  backup   none: the host runs next already ($deployed)"
   fi
@@ -381,21 +455,39 @@ abort() { failures+=("$1"); smoke="not run"; log_line; fail "$1"; }
 
 if [[ $mode != release ]]; then
   say "== install on $host"
-  install_out=$(tar -C "$work/stage" -cf - plugin seldon build-info | rsh "backup=$backup_plan"'
+  install_out=$(tar -C "$work/stage" -cf - plugin seldon build-info | rsh "backup=$(printf '%q' "$backup_plan") logbook=$(printf '%q' "$logbook") restore=$(printf '%q' "$restore")"'
 mkdir -p .cache && tmp=$(mktemp -d "$HOME/.cache/seldon-dev-deploy.XXXXXX") || { echo "error=temp dir"; exit 2; }
 trap "rm -rf \"\$tmp\"" EXIT
 tar -x -C "$tmp" || { echo "error=unpack" ; exit 2; }
 [[ ! -L $plugin_dir ]] || { echo "error=plugin dir is a symlink"; exit 2; }
 # next (WP-155): before the first change, what the way back needs
 if [[ -n $backup ]]; then
-  b=$dev_dir/backup-before-next-$(date -u +%Y%m%dT%H%M%SZ)
+  b=$backup
+  # again, right before the copy: never a logbook outside the home
+  if [[ -n $logbook ]]; then
+    logbook_safe "$(realpath -- "$logbook")" || { echo "error=backup: the logbook $logbook is not below the home"; exit 2; }
+  fi
   mkdir -p "$dev_dir" && mkdir "$b" || { echo "error=backup: cannot create $b"; exit 2; }
   echo "backup=$b"
+  # the watcher writes the state dir and the logbook: stopped for the copy
+  paused=""
+  if systemctl --user is-active --quiet seldon-watch.service 2>/dev/null; then
+    systemctl --user stop seldon-watch.service >/dev/null 2>&1 || { echo "error=backup: cannot stop seldon-watch.service"; exit 2; }
+    paused=1
+  fi
+  copied=1
   { [[ ! -e .config/omarchy/shell.json ]] || cp -p .config/omarchy/shell.json "$b/shell.json"; } \
+    && { [[ ! -e .config/seldon ]] || cp -a .config/seldon "$b/config-seldon"; } \
     && { [[ ! -e .local/state/seldon ]] || cp -a .local/state/seldon "$b/state-seldon"; } \
+    && { [[ -z $logbook || ! -d $logbook ]] || cp -a -- "$logbook" "$b/logbook"; } \
     && { [[ ! -e .local/bin/seldon ]] || cp -p .local/bin/seldon "$b/seldon.engine"; } \
     && { [[ ! -e $plugin_dir ]] || cp -a "$plugin_dir" "$b/plugin-jax.seldon"; } \
-    || { echo "error=backup to $b"; exit 2; }
+    && printf "%s\n" "$restore" >"$b/RESTORE.txt" \
+    || copied=""
+  if [[ -n $paused ]] && ! systemctl --user start seldon-watch.service >/dev/null 2>&1; then
+    echo "error=backup: seldon-watch.service did not start again"; exit 2
+  fi
+  [[ -n $copied ]] || { echo "error=backup to $b"; exit 2; }
 fi
 mkdir -p .local/bin "$dev_dir" .config/omarchy/plugins
 # engine: the previous one stays as seldon.prev; mv keeps the swap atomic
@@ -511,7 +603,10 @@ if [[ -n $engine_was ]]; then
 else
   say "  engine   ~/.local/bin/seldon (there was none before)"
 fi
-[[ -z $backup ]] || say "  backup   ~/$backup (shell.json, state, engine, plugin as they were before next)"
+if [[ -n $backup ]]; then
+  say "  backup   ~/$backup (as it was before next)"
+  say "$restore" | sed 's/^/           /'
+fi
 say "  plugin   files changed: $plugin_change${moved:+; moved aside to ~/$moved}"
 case $watch in
   restarted) say "  watch    seldon-watch.service restarted on the new binary" ;;
