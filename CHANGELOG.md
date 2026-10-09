@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Old ledger lines are not rewritten and still index. A 0.1.x engine
   skips the new kinds as unreadable lines: going back is not supported
   (WP-120).
+- **Linked logbook folders refuse writes (WP-168).** A folder of the
+  logbook that the engine writes into (`ledger/`, `journal/`,
+  `decisions/`, `work/queued|active|completed/`, `areas/<area>/`,
+  `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/`, …) must be a
+  real folder inside the logbook. When it is a symbolic link or a file,
+  every command that would write there stops with exit 1 and names it
+  ("ledger is a symbolic link, not a folder of the logbook; make it a
+  folder and run the command again"), and nothing is written; before,
+  the write went through the link to wherever it pointed. With a linked
+  `ledger/` that includes `seldon log`, `index` and `status` (the
+  plugin's refresh shows the error). Fix: make it a real folder again —
+  move the link's contents into a folder of that name; a logbook kept on
+  another disk goes there whole (the logbook folder itself may be a
+  link, or a bind mount). Reading through a
+  link is unchanged, and the logbook folder itself may still be a link.
+  A `.seldon` that is a file now means "not initialised" (exit 3).
 
 ### Engine
 

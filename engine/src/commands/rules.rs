@@ -160,7 +160,7 @@ fn update(ctx: &Context, replace: bool) -> Result<Output> {
 /// Writes `bytes` to `archive/AGENTS-<date>.md`, or `-2`, `-3`, … when that
 /// name is taken; never overwrites. Returns the path relative to the root.
 fn archive(logbook: &Logbook, today: chrono::NaiveDate, bytes: &[u8]) -> Result<String> {
-    let dir = logbook.path("archive");
+    let dir = logbook.checked_dir("archive")?;
     sys::create_dir_private(&dir)
         .map_err(|e| anyhow::Error::new(e).context(format!("cannot create {}", dir.display())))?;
     let mut n = 1u32;

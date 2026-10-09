@@ -74,6 +74,9 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
     let text = redactor.redact(&text);
     let tags: Vec<String> = args.tags.iter().map(|t| redactor.redact(t)).collect();
     let lock = ctx.lock()?;
+    if args.case_id.is_some() {
+        cases::checked_folders(&logbook)?;
+    }
     let mut case_file = args
         .case_id
         .as_deref()
