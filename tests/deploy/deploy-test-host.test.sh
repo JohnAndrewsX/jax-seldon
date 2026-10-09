@@ -123,7 +123,9 @@ for t in bash sh cat chmod mkdir mv rm install touch date sed awk grep find sort
   ln -s "$p" "$R/bin/$t"
 done
 # cp and du only inside the test dir: every path argument must resolve
-# below $work, else the call fails and lands in trap.log
+# below $work, else the call fails and lands in trap.log. Switches, which
+# work as root too (CI): $R/cp_fail names a substring; a cp whose source
+# contains it fails. $R/du_empty: du prints nothing.
 for t in cp du; do
   p=$(command -v "$t") || { echo "deploy-test-host.test: needs $t on PATH" >&2; exit 1; }
   cat >"$R/bin/$t" <<EOF
@@ -133,6 +135,17 @@ for a; do
   r=\$(realpath -m -- "\$a")
   [[ \$r == "$work"/* ]] || { echo "$t outside the test dir: \$a" >>"$work/trap.log"; exit 1; }
 done
+if [[ $t == cp && -f "$R/cp_fail" ]]; then
+  f=\$(cat "$R/cp_fail") n=0
+  for a; do [[ \$a == -* ]] || n=\$((n + 1)); done
+  i=0
+  for a; do
+    [[ \$a == -* ]] && continue
+    i=\$((i + 1))
+    ((i < n)) && [[ \$a == *"\$f"* ]] && { echo "cp \$a: failed (cp_fail)" >&2; exit 1; }
+  done
+fi
+[[ $t != du || ! -f "$R/du_empty" ]] || exit 0
 exec "$p" "\$@"
 EOF
   chmod 755 "$R/bin/$t"
@@ -232,7 +245,8 @@ make_release v0.1.2
 reset_remote() {
   rm -rf "${R:?}/home" "${R:?}/calls" "${R:?}/lock.json" "${R:?}/restart_rc" "${R:?}/doctor_rc" "${R:?}/validate_rc" \
     "${R:?}/service_version" "${R:?}/restart_notice" "${R:?}/capture_rc" "${R:?}/no_session" "${R:?}/watch_active" \
-    "${R:?}/watch_restart_rc" "${R:?}/watch_stop_rc" "${R:?}/watch_start_rc" "${R:?}/logbook_path"
+    "${R:?}/watch_restart_rc" "${R:?}/watch_stop_rc" "${R:?}/watch_start_rc" "${R:?}/logbook_path" \
+    "${R:?}/cp_fail" "${R:?}/du_empty"
   mkdir -p "$R/home/.local/bin" "$R/home/.config/omarchy/plugins/jax.seldon/.git"
   fake_seldon 0.1.3 >"$R/home/.local/bin/seldon"
   chmod 755 "$R/home/.local/bin/seldon"
@@ -796,7 +810,14 @@ check "next: RESTORE.txt puts back the state dir" grep -qxF "  mv ~/.local/state
 check "next: RESTORE.txt puts back ~/.config/seldon" grep -qxF "  mv ~/.config/seldon ~/.config/seldon.next && cp -a $b/config-seldon ~/.config/seldon" "$bk/RESTORE.txt"
 check "next: RESTORE.txt puts back the logbook" grep -qxF "  mv $R/home/Seldon $R/home/Seldon.next && cp -a $b/logbook $R/home/Seldon" "$bk/RESTORE.txt"
 check "next: RESTORE.txt puts back shell.json" grep -qxF "  cp -p $b/shell.json ~/.config/omarchy/shell.json" "$bk/RESTORE.txt"
-check "next: RESTORE.txt says deploy main first" grep -qF "deploy main (or --release vX.Y.Z) first" "$bk/RESTORE.txt"
+# the order: logbook, config and state back first, then deploy main
+line_of() { grep -nF -m1 -- "$1" "$bk/RESTORE.txt" | cut -d: -f1; }
+check "next: RESTORE.txt puts back first, then deploys main" \
+  test "$(line_of "$b/logbook")" -lt "$(line_of "$b/state-seldon")" \
+  -a "$(line_of "$b/state-seldon")" -lt "$(line_of "then, right away, from the dev host: deploy main (or --release vX.Y.Z)")" \
+  -a "$(line_of "then, right away")" -lt "$(line_of "systemctl --user start seldon-watch.service")" \
+  -a "$(line_of "systemctl --user stop seldon-watch.service")" -lt "$(line_of "$b/logbook")"
+check "next: RESTORE.txt says first" grep -qF "To go back from next, first put back on $host what next writes" "$bk/RESTORE.txt"
 check "next: the summary prints RESTORE.txt" has "             mv $R/home/Seldon $R/home/Seldon.next && cp -a $b/logbook $R/home/Seldon"
 check "next: an inactive watcher is neither stopped nor started" test "$(count "watch st")" = 0
 check "next: the backup has the engine before the swap (main)" grep -q "\"version\":\"0.1.3+main.$main_short\"" "$bk/seldon.engine"
@@ -818,17 +839,24 @@ check "next onto next: still one backup" test "$(find "$R/home/.local/state/seld
 check "next onto next: logged without a backup" jqe -s '.[-1].mode == "next" and .[-1].backup == ""' "$jsonl"
 check "next onto next: no backup line" test -z "$(grep -F "backup   ~" <<<"$out")"
 
+# a release onto next: the same pointer (dry run, the host stays on next)
+deploy --release v0.1.2 --dry-run
+check "release onto next: warns about next's state" has "runs a next build (next."
+check "release onto next: names RESTORE.txt" has "v0.1.2 cannot read next's state and ledger lines: before this deploy put back what RESTORE.txt in the newest ~/.local/state/seldon-dev/backup-before-next-*"
+
 # back to main from next: a warning that names the backup
 on main
 deploy --branch main "$log"
 check "main onto next: exit 0" test "$rc" = 0
 check "main onto next: warns about next's state" has "runs a next build (next."
-check "main onto next: names RESTORE.txt" has "follow RESTORE.txt in the newest ~/.local/state/seldon-dev/backup-before-next-*"
+check "main onto next: names RESTORE.txt" has "main cannot read next's state and ledger lines: before this deploy put back what RESTORE.txt in the newest ~/.local/state/seldon-dev/backup-before-next-*"
 check "main onto next: the main build" grep -q "\"version\":\"0.1.3+main.$short\"" "$R/home/.local/bin/seldon"
 
 # from a release host: the backup holds what exists (no shell.json, no state)
 reset_remote
 on next
+deploy --dry-run --branch next "$log"
+check "next onto a release, dry run: the logbook named, absent" has "the logbook ($R/home/Seldon, absent)"
 deploy --branch next "$log"
 check "next onto a release: exit 0" test "$rc" = 0
 bk=$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'backup-before-next-*')
@@ -907,6 +935,28 @@ BACKUP_MAX_MB=1 deploy --branch next "$log"
 check "backup over the cap: refused" test "$rc" = 1
 check "backup over the cap: says how large and the cap" grep -qE "the backup on $host would copy [23] MiB \(logbook $R/home/Seldon, .*the cap is 1 MiB \(SELDON_DEPLOY_BACKUP_MAX_MB\)" <<<"$out"
 check "backup over the cap: no build, the host unchanged" test ! -e "$work/cargo.log" -a "$(remote_fingerprint)" = "$before"
+# du tells nothing: the size is unknown, refused
+reset_remote
+touch "$R/du_empty"
+before=$(remote_fingerprint)
+rm -f "$work/cargo.log"
+deploy --branch next "$log"
+check "the host's du prints nothing: refused" test "$rc" = 1
+check "the host's du prints nothing: named" has "cannot tell how large the backup on $host would be"
+check "the host's du prints nothing: no build, the host unchanged" test ! -e "$work/cargo.log" -a "$(remote_fingerprint)" = "$before"
+rm "$R/du_empty"
+# an engine that names no logbook, or no engine: refused, with the fix
+for case in "no engine" "an engine that names no logbook"; do
+  reset_remote
+  if [[ $case == "no engine" ]]; then rm "$R/home/.local/bin/seldon"; else : >"$R/logbook_path"; fi
+  before=$(remote_fingerprint)
+  rm -f "$work/cargo.log"
+  deploy --branch next "$log"
+  check "$case: refused" test "$rc" = 1
+  check "$case: named, with the fix" has "engine does not name a logbook (seldon doctor --json, .logbook), so the backup would miss it; install or fix the engine there (a main deploy, or install.sh) until \`seldon doctor --json\` names the logbook, then deploy next again"
+  check "$case: no build, the host unchanged" test ! -e "$work/cargo.log" -a "$(remote_fingerprint)" = "$before"
+done
+reset_remote
 BACKUP_MAX_MB=lots deploy --branch next "$log"
 check "a cap that is not a number: refused" has "SELDON_DEPLOY_BACKUP_MAX_MB wants a number of MiB, not 'lots'"
 deploy --branch next "$log"
@@ -926,13 +976,16 @@ check "logbook moved out after the probe: named" has "failed: install: backup: t
 check "logbook moved out after the probe: nothing copied, engine unchanged" \
   test -z "$(find "$R/home/.local/state/seldon-dev" -path '*backup-before-next-*' 2>/dev/null)" -a "$(grep -c '"version":"0.1.3"}' "$R/home/.local/bin/seldon")" = 1
 
-# the backup fails: nothing changed but the partial backup and the log line;
-# the watcher runs again
+# the backup fails (the fake cp fails on the state dir, as root too):
+# nothing changed but the partial backup and the log line; the watcher
+# runs again
 reset_remote
 touch "$R/watch_active"
 mkdir -p "$R/home/.local/state/seldon"
-echo secret >"$R/home/.local/state/seldon/unreadable"
-chmod 000 "$R/home/.local/state/seldon/unreadable"
+echo '{}' >"$R/home/.local/state/seldon/index.json"
+mkdir -p "$R/home/.config/seldon"
+echo 'x = 1' >"$R/home/.config/seldon/config.toml"
+echo .local/state/seldon >"$R/cp_fail"
 before=$(host_fingerprint)
 deploy --branch next "$log"
 check "backup fails: exit 2" test "$rc" = 2
@@ -942,7 +995,10 @@ check "backup fails: logged with the partial backup" \
   jqe -s '(.[-1].failures[0] | startswith("install: backup to")) and (.[-1].backup | test("backup-before-next-"))' "$jsonl"
 check "backup fails: no restart" test "$(count restart)" = 0
 check "backup fails: the watcher started again" test -f "$R/watch_active" -a "$(count "watch start")" = 1
-chmod 600 "$R/home/.local/state/seldon/unreadable"
+check "backup fails: only the state dir failed (the config before it was copied into seldon-dev)" \
+  test "$(find "$R/home/.local/state/seldon-dev" -name config.toml | wc -l)" = 1 \
+  -a "$(find "$R/home/.local/state/seldon-dev" -name state-seldon | wc -l)" = 0
+rm "$R/cp_fail"
 sleep 1 # a new stamp
 deploy --branch next "$log"
 check "backup fixed: the retry takes a new backup and deploys" \

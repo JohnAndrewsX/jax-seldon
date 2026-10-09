@@ -20,10 +20,11 @@
 # HEAD or an ancestor, and nothing under engine/, plugin/, schema/ (the
 # engine compiles the schemas in) or this script changed between that sha
 # and HEAD (bookkeeping commits after the check pass), and the log does not
-# say the Quickshell harnesses were skipped (WP-161). Before the first change the host must have the tools the install
-# step uses. Then it builds the static engine as a release does
-# (`--features watch`) with SELDON_BUILD=main.<short sha> (version
-# 0.1.3+main.<sha>), and on the host:
+# say the Quickshell harnesses were skipped (WP-161). Before the first
+# change the host must have the tools the install step uses. Then it
+# builds the static engine as a release does (`--features watch`) with
+# SELDON_BUILD=main.<short sha> (version X.Y.Z+main.<sha>, X.Y.Z from
+# engine/Cargo.toml), and on the host:
 #   - with --branch next, first the backup below;
 #   - copies it to ~/.local/bin/seldon, the previous one kept as seldon.prev;
 #   - syncs HEAD's plugin/ into ~/.config/omarchy/plugins/jax.seldon. A
@@ -48,7 +49,7 @@
 #
 # --branch next (WP-155): the same with `next` for `main` everywhere: on
 # `next`, clean, HEAD equals origin/next, next's check log, the same
-# refusals; SELDON_BUILD=next.<short sha> (version 0.2.0+next.<sha>). When
+# refusals; SELDON_BUILD=next.<short sha> (version X.Y.Z+next.<sha>). When
 # the host does not run a next build yet (its plugin marker), the deploy
 # first copies, whichever exist, ~/.config/omarchy/shell.json,
 # ~/.config/seldon, ~/.local/state/seldon, the host's logbook (the path
@@ -57,15 +58,19 @@
 # (shell.json, config-seldon/, state-seldon/, logbook/, seldon.engine,
 # plugin-jax.seldon/; the layout of the orchestrator's backup by hand,
 # 2026-10-07) with a RESTORE.txt, which the summary prints too: the way
-# back from next, whose state and ledger lines main cannot read. An active
-# seldon-watch.service is stopped for the copy and started again. Refused
-# before anything changes: a logbook that is not a directory below the
-# home (/, the home, a parent of it, outside it, a link out of it) or that
-# holds seldon-dev (the backup would copy itself), and a backup larger
-# than SELDON_DEPLOY_BACKUP_MAX_MB (default 1024). The install step checks
+# back from next, whose state and ledger lines main cannot read (put the
+# logbook, ~/.config/seldon and the state dir back first, then deploy main
+# or a release, so main's smoke never writes into next's logbook). An
+# active seldon-watch.service is stopped for the copy and started again.
+# Refused before anything changes: an engine on the host that does not
+# name a logbook, a logbook that is not a directory below the home (/,
+# the home, a parent of it, outside it, a link out of it) or that holds
+# seldon-dev (the backup would copy itself), a backup whose size the host
+# does not tell, and one larger than SELDON_DEPLOY_BACKUP_MAX_MB (default
+# 1024). The install step checks
 # the logbook path again before the copy; a failed backup stops the
-# deploy before the engine swap. A main deploy onto a host that runs next
-# warns and names RESTORE.txt.
+# deploy before the engine swap. A main or release deploy onto a host that
+# runs next warns and names RESTORE.txt.
 #
 # --release vX.Y.Z: installs that release on the host with its install.sh
 # (checked against the release's SHA256SUMS, run with --force because the
@@ -280,11 +285,11 @@ echo "pending=$([[ -f $dev_dir/restart-pending ]] && echo 1 || echo 0)"
 echo "lock=$(lock_free && echo free || echo held)"
 # next: what a backup would hold; the logbook as the installed engine resolves it
 if [[ $mode == next ]]; then
-  echo "home=$HOME"
   [[ ! -f .config/omarchy/shell.json ]] || echo has_shell=1
   [[ ! -d .config/seldon ]] || echo has_config=1
   [[ ! -d .local/state/seldon ]] || echo has_state=1
   lb=$(seldon doctor --json 2>/dev/null | jq -r ".logbook // empty" 2>/dev/null)
+  [[ -z $lb ]] || echo "logbook_named=$lb"
   unsafe=""
   if [[ -n $lb && -d $lb ]]; then
     lb=$(realpath -- "$lb")
@@ -350,6 +355,8 @@ fi
 deployed=$(value deployed "$probe")
 backup_plan="" logbook="" restore=""
 if [[ $mode == next && $deployed != next.* ]]; then
+  [[ -n $(value logbook_named "$probe") ]] \
+    || refuse "$host's engine does not name a logbook (seldon doctor --json, .logbook), so the backup would miss it; install or fix the engine there (a main deploy, or install.sh) until \`seldon doctor --json\` names the logbook, then deploy next again"
   logbook=$(value logbook "$probe")
   [[ $(value logbook_unsafe "$probe") != 1 ]] \
     || refuse "$host's logbook $logbook is not a directory below the home, or holds ~/.local/state/seldon-dev; not copying it"
@@ -358,7 +365,7 @@ if [[ $mode == next && $deployed != next.* ]]; then
   kb=$(value backup_kb "$probe")
   [[ $kb =~ ^[0-9]+$ ]] || refuse "cannot tell how large the backup on $host would be"
   ((kb <= max_mb * 1024)) \
-    || refuse "the backup on $host would copy $(((kb + 1023) / 1024)) MiB (logbook ${logbook:-none}, ~/.config/seldon, ~/.local/state/seldon, engine, plugin); the cap is $max_mb MiB (SELDON_DEPLOY_BACKUP_MAX_MB)"
+    || refuse "the backup on $host would copy $(((kb + 1023) / 1024)) MiB (logbook ${logbook:-absent}, ~/.config/seldon, ~/.local/state/seldon, engine, plugin); the cap is $max_mb MiB (SELDON_DEPLOY_BACKUP_MAX_MB)"
   backup_plan=.local/state/seldon-dev/backup-before-next-$(date -u +%Y%m%dT%H%M%SZ)
   t='~' # printed, expands on the host
   # restore_line <has> <what> <backup entry> — move the next copy aside, put the backup back
@@ -367,23 +374,24 @@ if [[ $mode == next && $deployed != next.* ]]; then
     printf '  mv %s %s.next && cp -a %s %s\n' "$2" "$2" "$t/$backup_plan/$3" "$2"
   }
   restore=$(
-    echo "To go back from next: deploy main (or --release vX.Y.Z) first, then on $host:"
+    echo "To go back from next, first put back on $host what next writes (next's copies move aside):"
     echo "  systemctl --user stop seldon-watch.service   # if it runs"
-    restore_line "$(value has_state "$probe")" "$t/.local/state/seldon" state-seldon
-    restore_line "$(value has_config "$probe")" "$t/.config/seldon" config-seldon
     restore_line "$logbook" "$(printf '%q' "$logbook")" logbook
+    restore_line "$(value has_config "$probe")" "$t/.config/seldon" config-seldon
+    restore_line "$(value has_state "$probe")" "$t/.local/state/seldon" state-seldon
     [[ -z $(value has_shell "$probe") ]] || echo "  cp -p ~/$backup_plan/shell.json ~/.config/omarchy/shell.json"
+    echo "then, right away, from the dev host: deploy main (or --release vX.Y.Z); it brings back"
+    echo "the engine and the plugin and restarts the shell, and its smoke writes into this logbook,"
+    echo "not next's. Afterwards, on $host:"
     echo "  systemctl --user start seldon-watch.service  # if it ran"
-    echo "  omarchy-restart-shell"
-    echo "The deploy brings back the engine and the plugin; seldon.engine and"
-    echo "plugin-jax.seldon/ here are the ones from before next."
+    echo "seldon.engine and plugin-jax.seldon/ here are the ones from before next."
   )
 fi
 
-if [[ $mode == release ]]; then
+if [[ $mode != next && $deployed == next.* ]]; then
+  warn "$host runs a next build ($deployed); ${release:-main} cannot read next's state and ledger lines: before this deploy put back what RESTORE.txt in the newest ~/.local/state/seldon-dev/backup-before-next-* on $host names (done already: go on)"
+elif [[ $mode == release ]]; then
   warn "state written by a newer build may not load in $release: move ~/.local/state/seldon aside on $host first (mv ~/.local/state/seldon ~/.local/state/seldon.main-\$(date +%F))"
-elif [[ $mode == main && $deployed == next.* ]]; then
-  warn "$host runs a next build ($deployed); main cannot read next's state and ledger lines: after this deploy follow RESTORE.txt in the newest ~/.local/state/seldon-dev/backup-before-next-* on $host"
 fi
 
 if [[ $dry == 1 ]]; then
@@ -392,7 +400,7 @@ if [[ $dry == 1 ]]; then
   engine_now=$(value engine "$probe")
   say "  now      engine ${engine_now:-not installed or not answering}, plugin dir $(value plugin "$probe")${deployed:+ ($deployed)}"
   if [[ -n $backup_plan ]]; then
-    say "  backup   shell.json, ~/.config/seldon, ~/.local/state/seldon, the logbook (${logbook:-none found}), the engine and"
+    say "  backup   shell.json, ~/.config/seldon, ~/.local/state/seldon, the logbook (${logbook:-$(value logbook_named "$probe"), absent}), the engine and"
     say "           the plugin dir to ~/$backup_plan/, with RESTORE.txt;"
     say "           seldon-watch.service stopped for the copy if it runs"
   elif [[ $mode == next ]]; then
