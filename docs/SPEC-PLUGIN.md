@@ -337,6 +337,31 @@ decision; §5.4) and the one-Enter fields (the note, the intents, the
 new-case sheet, Import tasks…) alike. No field acts on Qt's `accepted`,
 which a repeat emits too (WP-173).
 
+House rules for every key, now and later (WP-183; the checklist
+`docs/skills/omarchy-ux/SKILL.md` points here):
+
+- **The selection is the cursor.** The pointer and the keys move one
+  highlight; nothing else marks a row. A focus ring is drawn only on real
+  `activeFocus` (a field, a control the keys reached), never as a second
+  marker in a list.
+- **Digits are the desk's.** `Desk.qml` dispatches the section digits
+  before `Section.textKey`, so a section key on a digit is shadowed as
+  soon as a section takes that digit. No new section key uses a digit;
+  the Graph's `0` predates this rule, and WP-181's key registry decides
+  it with a uniqueness test.
+- **A letter means one thing** in every section that has the action
+  (ADR-0034 §2: `e` editor, `a` agent, `r` reopen, `x` drop). Super is
+  Hyprland's; no key inside the desk uses it.
+- **No undo key without a true inverse.** A key that takes something
+  back is bound only where the contract has the opposite verb. `plan
+  reopen` is not one: it makes a new active case "Reopen: <title>"
+  (`engine/src/commands/plan.rs`, `reopen`). Where there is no inverse,
+  the action arms (above) and its result line names the real way back.
+- **Copying copies the id.** A key or button that copies a record copies
+  its id, never logbook text, as ADR-0036 §1 does for agent prompts.
+- **Every hinted key is a click too**, and a primary action is always a
+  visible button, never only a key.
+
 ### 5.4 Sections
 
 `sections/*.qml` extend `components/desk/Section.qml`. A section is made
@@ -1304,6 +1329,52 @@ area is a foreground ring, a decision a foreground square, a change a
 foreground dot (shape and opacity tell them apart, as the Timeline's A12
 markers do); a case is accent, a crisis urgent. Font from the bar. Test with
 at least three Omarchy themes incl. a light one.
+
+The house rules below (WP-183) hold for every surface; the checklist
+`docs/skills/omarchy-ux/SKILL.md` points here.
+
+**Colour.** Only the theme's five roles in `Color` (`foreground`,
+`background`, `accent`, `urgent`, `muted`;
+`$OMARCHY_PATH/shell/Commons/Color.qml`) and its surface groups; the
+desk draws on `Color.popups.*`, so contrast is judged against that
+surface. No hex literal, no colour read from a theme file. There is no
+warn or success role: a surface that needs a fourth hue adds
+`Color.pick("seldon.<key>", <role>)` in its own WP, with one line here.
+A state never reads by colour alone; a glyph or a word goes with it
+(WP-178), and a selection fill gets a second cue such as an accent bar
+or bold text (WP-177).
+
+**Geometry.** Rows and `qs.Ui` controls take `Style.cornerRadius`
+(Hyprland's `decoration:rounding`, 0 by default), as Omarchy's own
+`Ui/CursorSurface.qml` does. Only stripes, accent bars and heatmap cells
+are square (radius 0); a progress bar counts as a bar. Three shapes
+differ until WP-126's sweep: the list row's stripe and the progress bars
+are capsules (`components/desk/ListRow.qml`, `components/desk/Progress.qml`,
+`radius: height / 2`), and the banner card takes `Style.spacing.labelGap`
+(`components/Banner.qml`) instead of `Style.cornerRadius`. Spacing and sizes come from
+`Style.spacing.*` where a name exists (`controlHeight`, `rowPaddingX`,
+`panelPadding`, …) and from `Style.space(N)` otherwise, so they scale
+with the font; type sizes from `Style.font.*`, the family
+`Style.font.family`. A control keeps its size in every state: the
+widest border is reserved up front.
+
+**States.** Interaction fills and borders come from Omarchy's state
+tokens (`Style.*Fill`, `Style.*FillFor`, `Border.controlSpec`), never a
+literal alpha. The defaults (`Commons/Style.qml`; a theme's `shell.toml`
+may change them): fill normal 0.04, hover/cursor 0.08, selected 0.18,
+pressed 0.22, selection 0.35; border normal 0.4, hover/cursor 0.25,
+selected 1.0; focus follows hover (fill 0.08, border 0.25).
+
+**Motion.** Omarchy's values where the plugin animates at all: 140 ms
+`Easing.OutCubic` for moves and fades (`Ui/PopupCard.qml`,
+`Ui/KeyboardPanel.qml`), 60–120 ms for colour (`Ui/CursorSurface.qml`,
+`Ui/Button.qml`). The desk has no animation today.
+
+**Glyphs.** Only glyphs that Omarchy's `monospace` font (JetBrainsMono
+Nerd Font) covers, or the plugin's `components/MaskIcon.qml`. `⏸ ↺ ↻ ⏰`
+are not in that font (`fc-list ':charset=23F8'`, and likewise 21BA, 21BB
+and 23F0, lists no JetBrainsMono face) and fall back to another font;
+`↻` in `Model.js` (`TX_GLYPHS`) is replaced in WP-178.
 
 ## 8. Keybinding and IPC
 
