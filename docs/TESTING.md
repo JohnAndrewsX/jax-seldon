@@ -21,7 +21,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | Omarchy's plugin validator on `plugin/`: `omarchy plugin validate plugin/` where the omarchy CLI is installed (a notice when `$OMARCHY_PATH/bin/omarchy-plugin-validate` is not the pinned one); without it `packaging/omarchy-validate.sh plugin/`, the validator at the commit of `packaging/omarchy-pin`, fetched over HTTPS and refused unless its sha256 matches (WP-190; it is bash and jq, no Omarchy install needed) | yes (the pinned validator) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | the node and bash parts yes (WP-190; the bench with `SELDON_BENCH_BUDGET_SCALE=3`); the Quickshell harnesses **no** (dev host; WP-191) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, `bash tests/plugin/check-tokens.test.sh` and `python3 tests/plugin/check-tokens.py --rules` on every plugin QML file (SPEC-PLUGIN §7's house rules, WP-177), then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | the node and bash parts yes (WP-190; the bench with `SELDON_BENCH_BUDGET_SCALE=3`); the Quickshell harnesses **no** (dev host; WP-191) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`, not in CI, required before the handover
@@ -424,7 +424,13 @@ Never set `SELDON_SKIP_HOST_CHECKS` on the dev host.
   any member the plugin references that they do not declare (it passes the
   first-party clock, agents and media plugins without a false positive). It
   does not replace the runtime smoke test: it knows nothing about other
-  types.
+  types. It also holds SPEC-PLUGIN §7's two house rules (WP-177), which need
+  no shell and run with `--rules` in `plugin-test` everywhere: no
+  `Color.muted` as the colour of a Text (nor through a colour property set
+  to it), and `Util.alpha(…, <number>)` only where its `ALPHA_ALLOWED` lists
+  the file and the number (the charts' and the graph's data colours);
+  `tests/plugin/check-tokens.test.sh` proves each rule catches its
+  violation.
 
 ## The session's runtime dir
 
@@ -516,7 +522,15 @@ command forms of CONTRACT.md (free text one non-empty argument after `--`,
 the tab helpers against the fixture: 62 Changelog rows, one "+2" group (3 members), 7
 folded resolution details, 6 snapshot rows, the source filter, the crisis
 strip text, the snapper banner, the Today view ("1 event today") and the
-System sections with every field optional. The banners' terminal scripts
+System sections with every field optional. The theme tones (WP-177,
+SPEC-PLUGIN §7 "Text tones"): `textOn` and `deskTones` reach 4.7:1 (text)
+and 3.2:1 (UI parts) on every surface, as mixes of the theme's own colours,
+on the three themes of `fixtures/themes/roles.json` and on every theme
+under `$OMARCHY_PATH/themes/` when it exists (read as `Color.qml` reads
+`colors.toml`); a theme whose own foreground cannot reach a target is
+printed as a `theme report`, not failed. `SELDON_TONE_REPORT=1` prints one
+`tone-report` line per host theme with the contrast of Omarchy's default
+focus border. The banners' terminal scripts
 (WP-117) are pinned verbatim; each shows its command as Copy copies it and
 runs it, bash parses each, and a hostile index (quotes, `$(…)`, `rm -rf`
 in the snapper message and the contract version) changes none of them.

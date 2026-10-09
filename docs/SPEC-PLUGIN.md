@@ -1341,8 +1341,35 @@ surface. No hex literal, no colour read from a theme file. There is no
 warn or success role: a surface that needs a fourth hue adds
 `Color.pick("seldon.<key>", <role>)` in its own WP, with one line here.
 A state never reads by colour alone; a glyph or a word goes with it
-(WP-178), and a selection fill gets a second cue such as an accent bar
-or bold text (WP-177).
+(WP-178), and a selection fill gets a second cue: an accent bar of at
+least 3:1 and, on a row, a bold title (WP-177).
+
+**Text tones** (WP-177). Text never takes a role colour as it is, and
+`Color.muted` is never a text colour. Secondary text, text in the accent
+and text in the urgent colour take the tones `Model.deskTones` derives
+from the active theme (`components/Tone.qml`: `dim`, `accentText`,
+`urgentText`); a UI part that must be seen takes `accentUi` (the
+selection bar) or `ui` (a ring, a line). The rule: the role is mixed
+towards the theme's own foreground, in steps of 2 %, until it reaches
+**4.7:1** for text and **3.2:1** for a UI part on every surface it sits
+on. Mixing never adds a colour the theme lacks: no black, no white, no
+fallback. The surfaces are the desk's, `Color.popups.background` (not
+`Color.background`), with Style's normal, hover and selected fills over
+it and the accent and urgent tints at the selected alpha (a notice, a
+chip, the sidebar's current section). A `popups.background-alpha` below
+1 is taken as opaque: the wallpaper behind it cannot be measured. Where
+the theme's own foreground does not reach a target on a surface, the
+tone is that foreground and the tests report the theme instead of
+failing it. Only text and UI parts are mixed: stripes, pictograms, the
+bars of state, charts and the pill keep the raw roles. The hairlines
+between header, notices, list and detail are `Tone.divider` (the
+foreground at 12 %). The tones are derived once per theme change
+(`Tones.js`, a shared library) and checked in `tests/plugin/model.test.js`
+on three committed themes (`fixtures/themes/roles.json`) and on every
+theme under `$OMARCHY_PATH/themes/`; `tests/plugin/check-tokens.py`
+fails on `Color.muted` as a Text colour and on a literal
+`Util.alpha(…, <number>)` outside its allow-list (the data colours of the
+charts and the graph).
 
 **Geometry.** Rows and `qs.Ui` controls take `Style.cornerRadius`
 (Hyprland's `decoration:rounding`, 0 by default), as Omarchy's own
@@ -1359,11 +1386,15 @@ with the font; type sizes from `Style.font.*`, the family
 widest border is reserved up front.
 
 **States.** Interaction fills and borders come from Omarchy's state
-tokens (`Style.*Fill`, `Style.*FillFor`, `Border.controlSpec`), never a
-literal alpha. The defaults (`Commons/Style.qml`; a theme's `shell.toml`
+tokens (`Style.*Fill`, `Style.*FillFor`, `Style.*BorderFor`,
+`Border.controlSpec`), never a literal alpha. The defaults (`Commons/Style.qml`; a theme's `shell.toml`
 may change them): fill normal 0.04, hover/cursor 0.08, selected 0.18,
 pressed 0.22, selection 0.35; border normal 0.4, hover/cursor 0.25,
-selected 1.0; focus follows hover (fill 0.08, border 0.25).
+selected 1.0; focus follows hover (fill 0.08, border 0.25). With that
+default, Omarchy's focus border (the foreground at 0.25, 1 px) reaches
+1.4–2.0:1 on the 22 shipped themes, below WCAG 1.4.11's 3:1, so
+Seldon's own controls draw their own ring (§5.3) and yield to a theme
+whose focus border reaches 3:1.
 
 **Motion.** Omarchy's values where the plugin animates at all: 140 ms
 `Easing.OutCubic` for moves and fades (`Ui/PopupCard.qml`,
