@@ -217,3 +217,76 @@ Brief: Fable stage 2, SEND BACK (small). Done on f53cf048:
   equivalent (a lone `\r` is a dropped control now too). The full check
   runs in round 3b, after WP-159 lands in `next` and `drop_format`
   switches to `redact::without_invisible` (finding 1).
+
+## Round 3b
+
+Brief: WP-159 and WP-168 landed in `next` (44febeae), then WP-138
+(b4a11dba) and the WP-164 completion (59ea37d4). Merged `next` three
+times (7e5a5010, daad4c88, 87a9e8d1); conflicts only in CHANGELOG.md and
+docs/TESTING.md (both sides kept; next's redaction row, then the inbox
+row).
+
+### Done
+
+- **Finding 1 — WP-159's helpers, redaction before stripping** (as
+  WP-159's Fable packet, note 6). `drop_format` and
+  `import::is_direction_or_format` are gone from `inbox.rs`:
+  - title: `Scrubber::text_dropping_invisible` (redact, drop
+    `redact::is_invisible`, home paths), then `one_line`, then every
+    control character dropped;
+  - text: CRLF as LF, `Scrubber::text_dropping_invisible`, then every
+    control character but tab and newline dropped (round 3a), then the
+    outer blank lines;
+  - `droppedCharacters` counts the invisible and control characters of
+    the title and the text as given (as `import task` counts).
+  So `x<U+200B>sk-…` (the boundary an invisible character makes) is
+  masked in title and text, and `/ho<U+200B>me/alice` is still a home
+  path (test `redaction_reads_the_text_before_its_invisible_characters_go`).
+  The redactor reads past lone control characters too (WP-159), so
+  `to\x08ken=` is masked before the control is dropped.
+- **WP-168:** `checked_inbox` replaced by `logbook.checked_dir(INBOX)`;
+  the message tests assert its wording ("inbox is a symbolic link / is no
+  directory, not a folder of the logbook").
+- SPEC-ENGINE §3 (the order: scrubber with the invisible set, then the
+  controls; `Logbook::checked_dir`), CHANGELOG ("invisible and control
+  characters"), TESTING.md (round 3b sentence).
+- `next` at b4a11dba failed `fmt-check` in `engine/src/commands/preview.rs`;
+  fixed here in its own commit (ab572658). `next` has the same fix since
+  66257638, so the later merge took it without a conflict.
+- `de/05-cli-reference.md`'s source line now points at daad4c88. WP-138
+  had already translated `seldon preview`; only its source line stayed
+  at 3721c641. docs-check now passes with no warning.
+- WP-171 (the doctor `layout` row) is not on `next` yet. Whichever lands
+  second adds `inbox/` to that row's folder list, with a test.
+- Residual (accepted): a home path split by a control character
+  (`/ho\x01me/alice`) keeps its user name; the control drop follows the
+  scrubber, whose home-path rewrite is private to it. Not a secret
+  (§7 covers home paths as privacy only).
+
+### How it was verified
+
+- **`flock /tmp/seldon-check.lock just check` on ab572658: exit 0**
+  (`check: ok`; log `engine/target/check-wp166-r7.log`). Run with a private
+  `XDG_RUNTIME_DIR` (removed afterwards), `SELDON_FULL_CHECK=1`, and
+  `JUST_TEMPDIR` and every target on disk (`engine/target/`):
+  - 102 test binaries, 2626 tests passed, 0 failed;
+  - desk-view 1808/0, bar-view 196/0, ipc-restart 44/0;
+  - the real-home guards ok (service-states notes the operator's live
+    engine, "not a leak");
+  - `/run/user/<uid>` 2 % before and after.
+  From ab572658 to the head only `AGENTS.md`, `STATUS.md`, work files and
+  the `de/05` source line changed (the last merge of `next`); docs-check
+  was re-run on the head: no warning.
+- Two earlier runs, for the record:
+  - r4 on 7e5a5010 failed one desk-view timing budget (`graph-big
+    ticksOver <= 5`) while my mutant run loaded the host. r5 on the same
+    commit, without that load: exit 0, desk-view 1785/0.
+  - r6 on daad4c88 stopped at `fmt-check` (`preview.rs`, above).
+- **Mutants:** `mutants.py` was rewritten for the new code: the stale
+  patterns replaced, three round-3b mutants added (the text stripped
+  before its redaction, the same for the title, the text's invisible
+  characters not counted), and the WP-168 code dropped as not ours. The
+  target dir can now be set (`MUTANTS_TARGET`), so it stays on disk.
+  Run from a `git archive` copy of 7e5a5010 under `engine/target/`:
+  **49/50 killed**; the survivor is the equivalent `CRLF kept`. The copy
+  has been removed.
