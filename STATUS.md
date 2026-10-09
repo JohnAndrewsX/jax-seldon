@@ -661,6 +661,11 @@ submission). (see `work/queued/`)
   released plugin would misread. E43 ADR-0048 accepted (redaction reads the
   original and the visible copy) → WP-159. E44 the way back of
   `deploy-test-host --branch next` is tested on the test host now.
+- E45 ADR-0046 accepted (recently edited files under `~/.config`, paths
+  and times only; a linked `~/.config` is read where it leads) → WP-139.
+  E46 ADR-0049 accepted (a logbook file is never written through a link;
+  doctor's `layout` row) → WP-171. E47 ADR-0050 accepted (adding or
+  enabling Seldon's own plugin is routine `seldon-self`) → WP-172.
 
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).

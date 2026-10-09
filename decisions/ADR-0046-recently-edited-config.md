@@ -1,6 +1,6 @@
 # ADR-0046 — The index lists recently edited files under ~/.config outside the watch paths; one click watches one
 
-**Status:** proposed (WP-139)
+**Status:** accepted 2026-10-09 (operator, E45; WP-139)
 **Date:** 2026-10-08
 
 > Amends ADR-0038 and **amends ADR-0047 §3** (the preview's walk: its

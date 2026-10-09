@@ -1,6 +1,6 @@
 # ADR-0049 — A file of the logbook is never written through a symbolic link
 
-**Status:** proposed
+**Status:** accepted 2026-10-09 (operator, E46; WP-171)
 **Date:** 2026-10-09
 
 > One rule for the folders (WP-168) and the files of the logbook, before

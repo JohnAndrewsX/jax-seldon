@@ -1,6 +1,6 @@
 # ADR-0050 — ADR-0028 amended: installing Seldon's own plugin is routine
 
-**Status:** proposed (WP-172, from the fresh-host test T1 of 0.1.4)
+**Status:** accepted 2026-10-09 (operator, E47; WP-172, from the fresh-host test T1 of 0.1.4)
 **Date:** 2026-10-09
 
 > Amends [ADR-0028](ADR-0028-attention-by-consequence.md) §2 by one row
