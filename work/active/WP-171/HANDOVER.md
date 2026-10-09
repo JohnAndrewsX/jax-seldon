@@ -289,3 +289,44 @@ calls on F1–F5 and Q2–Q4.
 - Copy, target dir, temp dirs and `/tmp/r171` deleted (explicit paths,
   looked at first). No guard-hook block; never run against a real
   logbook.
+
+## Round 3 (Fable stage 2: APPROVE WITH NITS)
+
+Packet: `review-0.1.1/handovers/WP-171-stage2-fable.md`.
+
+- **N2a.** The setup kit's copy no longer uses `std::fs::copy` after the
+  check: `setup::copy_new` makes each file with `O_CREAT|O_EXCL` and the
+  kit file's mode (exact, umask ignored), removes a half-written copy, and
+  a file made since the check (a link included) counts as kept. Unit test
+  `copy_new_never_follows_a_link` calls it with no check in front (link,
+  dangling link: `AlreadyExists`, nothing written where they point; a new
+  file 0750 like its source). So ADR-0049 §4's "Files are closed" holds;
+  §4 now names the three mechanisms (rename, `O_NOFOLLOW` append,
+  `O_EXCL` for new files).
+- **N2b.** ADR-0049 §3: the kit's files under `.claude/` are refused by
+  `setup` itself and not listed in the row (it checks the folder).
+- **N2c.** §4 starts "For folders, the check is `lstat`-then-create …".
+- **N3.** `linked_files::only_files_outside_the_logbook_are_written_through_a_link`
+  counts every call of `write_atomic`/`write_generated` (and
+  `_mode`/`_replace`) per file of `engine/src` against a list of files
+  outside the logbook, each with what it writes. The five layer-2
+  mutants are now killed by it. SPEC-ENGINE §2 and TESTING say so.
+- **N1** (readers that open a FIFO or read `/dev/zero` at a ledger month,
+  `AGENTS.md`, `STATUS.md`, `DECISIONS.md`) is not this WP; the
+  orchestrator queues it.
+- **Merge of `next`** (8e78f356, 80e29750): no conflict, new WP files
+  only.
+
+### Verification (round 3)
+
+- **`just check` at 80e29750** (runtime dir 0700, made and removed; temp
+  and target on disk; `SELDON_FULL_CHECK=1`): **exit 0, `check: ok`**,
+  102 test binaries, 2658 passed, 0 failed; real-home-guard 40/0,
+  service-states 344/0, desk-view 1808/0, bar-view 196/0, ipc-restart
+  44/0, docs-check ok. Log: `gates/check-wp171-dev-r6.log`.
+- **Mutants** (77, round 2's plus the copy), copy at 80e29750, target
+  `gates/target-wp171`: **77/77 killed**, the five layer-2 mutants by the
+  call-site list; no time limit hit. Log: `gates/mutants-wp171-dev-r4.log`.
+- Copy, target, temp dirs and `/tmp/r171` deleted (explicit paths,
+  looked at first: empty). No guard-hook block; never run against a real
+  logbook.
