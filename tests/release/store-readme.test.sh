@@ -17,6 +17,8 @@
 # Runs in `just check-packaging`; no network, no host tools.
 #
 # Usage: bash tests/release/store-readme.test.sh
+# Markdown fixtures in printf formats spell `$(…)` and backticks literally.
+# shellcheck disable=SC2016
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
