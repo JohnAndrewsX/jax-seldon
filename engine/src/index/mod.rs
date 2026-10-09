@@ -193,6 +193,15 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
     })
 }
 
+/// The load warning of a logbook git refuses to run in
+/// ([`git::check_files`]: `.git` or `HEAD` no regular file), where
+/// [`git_info`] leaves `logbook.git` out; said once per command, also
+/// when its autocommit met the refusal first (WP-175).
+pub fn git_refused(root: &Path) -> Option<String> {
+    let e = git::check_files(root).err()?;
+    git::say_refusal().then(|| format!("git: {e}"))
+}
+
 /// `logbook.git` without running git: the 7-character HEAD from
 /// `.git/HEAD`, a loose ref or `packed-refs` (`head` absent on an unborn
 /// branch), `dirty` unknown and left out. `None` when the logbook is not a
@@ -396,7 +405,10 @@ fn try_rebuild(ctx: &Context, probe: GitProbe) -> Result<Vec<String>> {
     let logbook = Logbook::open(&root)?;
     let mut built = derive(ctx, &config, &logbook)?;
     built.index.logbook.git = match probe {
-        GitProbe::Full => git_info(&logbook.root),
+        GitProbe::Full => {
+            built.warnings.extend(git_refused(&logbook.root));
+            git_info(&logbook.root)
+        }
         GitProbe::HeadOnly => git_head_fast(&logbook.root),
     };
     built.warnings.extend(autocommit::attach(

@@ -27,7 +27,11 @@ const REMEDY: &str = "not read: make it a regular file and run the command again
 unsafe extern "C" {
     fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32;
     fn setrlimit(resource: i32, limit: *const [u64; 2]) -> i32;
+    fn kill(pid: i32, sig: i32) -> i32;
 }
+
+/// `SIGKILL`.
+const SIGKILL: i32 = 9;
 
 /// `RLIMIT_AS` on Linux.
 const RLIMIT_AS: i32 = 9;
@@ -79,7 +83,9 @@ fn swap(root: &Path, rel: &str, how: Swap) {
 /// the collectors pointed at nothing. A command that has not finished
 /// after 30 s (a FIFO opened) is killed and the test fails; its address
 /// space is capped at 2 GiB, so a read of `/dev/zero` fails fast instead
-/// of filling the host's memory.
+/// of filling the host's memory. It runs in a process group of its own,
+/// killed whole: a `git` it started and that waits on a FIFO goes too
+/// (WP-175).
 fn within(env: &Env, root: &Path, args: &[&str], what: &str) -> Output {
     let mut cmd: Command = env.command(args);
     cmd.env("SELDON_LOGBOOK", root)
@@ -90,7 +96,8 @@ fn within(env: &Env, root: &Path, args: &[&str], what: &str) -> Output {
         .env("SELDON_OMARCHY_PLUGINS_DIR", env.tmp.path().join("plugins"))
         .env("SELDON_THEME_FILE", env.tmp.path().join("theme.name"))
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .process_group(0);
     unsafe {
         cmd.pre_exec(|| {
             let limit = [2 << 30, 2 << 30];
@@ -104,7 +111,7 @@ fn within(env: &Env, root: &Path, args: &[&str], what: &str) -> Output {
     let deadline = Instant::now() + Duration::from_secs(30);
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
-            let _ = child.kill();
+            unsafe { kill(-(child.id() as i32), SIGKILL) };
             let _ = child.wait();
             panic!("{what}: still running after 30 s (a FIFO opened?)");
         }
@@ -253,6 +260,59 @@ fn an_agents_md_that_is_no_regular_file_is_not_read() {
             .unwrap()
             .file_type();
         assert!(!kind.is_file(), "{what}: AGENTS.md was replaced");
+    }
+}
+
+/// A `.git/HEAD` or a `.git` that is no regular file holds no command
+/// for git's timeouts (WP-175, review F7: `status` took 40 s, `doctor`
+/// 30 s): no git runs, the commands end well within one git timeout
+/// (10 s), say once which file it is and what to do, and doctor's `git`
+/// row names it with a fix.
+#[test]
+fn a_git_head_that_is_no_regular_file_holds_no_command() {
+    for (rel, how) in [
+        (".git/HEAD", Swap::Fifo),
+        (".git/HEAD", Swap::Zero),
+        (".git", Swap::Fifo),
+    ] {
+        let env = Env::new(Snapper::Missing);
+        if !env.has_git {
+            return;
+        }
+        let root = env.init_logbook();
+        assert!(root.join(".git/HEAD").is_file(), "init made no repository");
+        if rel == ".git" {
+            std::fs::remove_dir_all(root.join(".git")).unwrap();
+        }
+        swap(&root, rel, how);
+        let said = format!(
+            "{}: {}, not a regular file; git is not run in the logbook: make it a regular file and run the command again",
+            root.join(rel).display(),
+            &how.what()[..how.what().find(',').unwrap()]
+        );
+        for args in [&["status"][..], &["index"], &["capture"]] {
+            let what = format!("{args:?} {rel} {how:?}");
+            let start = Instant::now();
+            let out = within(&env, &root, args, &what);
+            let took = start.elapsed();
+            // a warning on stderr (the autocommit's) or in the output
+            let err = format!("{}{}", String::from_utf8_lossy(&out.stdout), stderr(&out));
+            assert_eq!(out.status.code(), Some(0), "{what}: {err}");
+            assert!(took < Duration::from_secs(8), "{what}: {took:?}");
+            assert_eq!(err.matches(&said).count(), 1, "{what}: {err}");
+            assert_eq!(err.matches("git is not run").count(), 1, "{what}: {err}");
+        }
+        let what = format!("doctor {rel} {how:?}");
+        let start = Instant::now();
+        let (rows, _) = doctor(&env, &root, &what);
+        assert!(start.elapsed() < Duration::from_secs(8), "{what}");
+        let git = &rows["git"];
+        assert!(git.starts_with("degraded "), "{what}: {git}");
+        assert!(git.contains(&said), "{what}: {git}");
+        assert!(
+            git.contains(" fix: replace the file the git row names"),
+            "{what}: {git}"
+        );
     }
 }
 

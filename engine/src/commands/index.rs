@@ -102,6 +102,7 @@ pub(crate) fn rebuild_with<T>(
         }
     }
     let extra = before_index(&config, &logbook, &files);
+    built.warnings.extend(index::git_refused(&logbook.root));
     built.index.logbook.git = index::git_info(&logbook.root);
     built.warnings.extend(index::autocommit::attach(
         &mut built.index.logbook.git,

@@ -217,18 +217,25 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
     }
     let commit = match git::commit_all(&logbook.root, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
-        Err(e) => {
-            let e = redacted_git_error(config, &e);
-            // not eprintln!: a closed stderr must not abort the command
-            let _ = writeln!(
-                std::io::stderr(),
-                "seldon: warning: git: not committed: {e}"
-            );
-            Commit::Warned(e)
-        }
+        Err(e) => warned(config, logbook, &e),
     };
     commit.record(ctx, config, logbook);
     commit
+}
+
+/// A failed autocommit: its warning on stderr and [`Commit::Warned`]. A
+/// `.git` or `HEAD` that is no regular file ([`git::check_files`]) is
+/// said once per command (WP-175): the index rebuild may have said it.
+fn warned(config: &Config, logbook: &Logbook, error: &str) -> Commit {
+    let e = redacted_git_error(config, error);
+    if git::check_files(&logbook.root).is_ok() || git::say_refusal() {
+        // not eprintln!: a closed stderr must not abort the command
+        let _ = writeln!(
+            std::io::stderr(),
+            "seldon: warning: git: not committed: {e}"
+        );
+    }
+    Commit::Warned(e)
 }
 
 /// A git error as the engine shows it — on stderr, in `--json` `git.error`
@@ -259,14 +266,7 @@ pub fn autocommit_paths(
     }
     let commit = match git::commit_paths(&logbook.root, paths, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
-        Err(e) => {
-            let e = redacted_git_error(config, &e);
-            let _ = writeln!(
-                std::io::stderr(),
-                "seldon: warning: git: not committed: {e}"
-            );
-            Commit::Warned(e)
-        }
+        Err(e) => warned(config, logbook, &e),
     };
     commit.record(ctx, config, logbook);
     commit
