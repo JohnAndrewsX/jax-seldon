@@ -1919,3 +1919,17 @@ fn doctor_names_linked_folders_and_files() {
         "{human}"
     );
 }
+
+/// The `layout` row shows a name of the user's with every control and
+/// direction character as `?` (as the `workpieces` row).
+#[test]
+fn the_layout_row_shows_no_control_character() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    std::os::unix::fs::symlink("nowhere", root.join("memory/a\u{7}b\u{202e}c.md")).unwrap();
+    let v = json(&env.seldon(&["doctor", "--json"]));
+    assert_eq!(
+        check(&v, "layout")["message"],
+        "1 where Seldon writes, so commands that write there refuse: memory/a?b?c.md (symbolic link)"
+    );
+}
