@@ -47,6 +47,14 @@ on.* It covers `index.json` and the files it points to (the triage
 proposal), as `contractVersion` does (AGENTS.md §3). Absent means
 `contractVersion`, today's strict rule.
 
+A reader **misreads** when a field it reads is absent, renamed or of
+another type; when a value's meaning changed; when a closed set it keys
+on (`state.status`, `cases[].status`, `drift[].resolution`,
+`meta.risk`) holds a value it does not know; or when a count it reads
+is **incomplete** — something the engine classifies as a crisis or as
+open drift that is not counted where the reader counts it. An omission
+is a misread of the count.
+
 Engine 0.2.0 writes `contractReadableFrom: 2` on every index, the
 `notInitialised` one included; `seldon index --check` validates it
 (`schema/index.schema.json`: integer, minimum 1, maximum 2 while
@@ -73,13 +81,16 @@ notice in the neutral tone: **"The engine writes index v`V`; this
 plugin reads v`P` — update the plugin."** with *Update* (Omarchy's
 `omarchy plugin update jax.seldon` in the presentation terminal: the
 fixed argument list of the plugin's update script, the same as the
-mismatch banner's) and *Copy*. The bar shows no extra mark: the pill's
+mismatch banner's) and *Copy*; not while the engine is missing (its
+banner comes first, and the index is a leftover). The bar shows no extra mark: the pill's
 job is the logbook's state, and the plugin still reads it correctly.
 
 The preview's own check (`seldon preview --json`, ADR-0047) is another
 schema and stays strict: it is read only before `init`, from the same
 engine the plugin just probed, and a mismatch there costs a preview, not
-the crisis signal.
+the crisis signal. A 0.2.0 plugin under a later engine therefore shows
+"The engine's preview could not be read." on the setup card; *Set up
+Seldon* works (ADR-0047 §7).
 
 ### 3. What a later bump owes the released plugins
 
@@ -88,14 +99,21 @@ ADR that bumps to `V` lists, **per added or changed field**, why a
 plugin of contract `R` does not misread it. Allowed for a reader of `R`
 are only:
 
-- new top-level keys and new optional fields the reader does not read;
+- new keys — required or optional in `V` — and new sections the reader
+  does not read;
 - new values of an open set the reader already falls back on: a
   `source` (default glyph), a timeline `kind` (filtered), an event
   `kind` the reader shows as a plain row;
 - nothing removed, renamed or changed in meaning among the fields the
-  reader reads; `summary`'s counts keep their meaning (the pill is drawn
-  from them); a crisis stays a crisis (ADR-0028), and nothing that is
-  not a crisis is written where the reader counts or colours crises;
+  reader reads; `summary`'s counts keep their meaning and stay
+  **complete**: every item the engine classifies as a crisis (ADR-0028)
+  is counted in `summary.crisis` and listed in `drift[]` (crises first,
+  rule 4), every open drift item in `summary.openDrift`; a crisis class
+  carried anywhere else, or counted in a field of its own, keeps
+  `R = V`. Nothing that is not a crisis is written where the reader
+  counts or colours crises;
+- the bounds of CONTRACT.md rules 4 and 5 (rows, texts, the 1 MB index)
+  hold for the whole index: the reader parses it on the shell thread;
 - the commands of CONTRACT.md's list that a plugin of contract `R` runs,
   with their argument lists and the `--json` it reads, keep working with
   the same meaning (E42): a reader in `ok` runs them.
@@ -105,11 +123,19 @@ plugins show the mismatch banner as today. The bump's ADR decides `R`
 once; the engine writes it as a constant beside `CONTRACT_VERSION`, and
 a test holds the index to it.
 
+The bump's ADR lists the fields as a table — field, change, where a
+reader of `R` reads it (or "not read"), its fallback — and its PR runs
+the released plugin of contract `R` (`Model.js` at its tag:
+`parseIndex`, `counts`, `pillTone`, `deriveStatus`) against the new
+`fixtures/index.sample.json`, asserting the same status, counts and
+tone the new plugin computes. The table is the argument; the test is
+the evidence.
+
 A reader of contract 2 parses the triage proposal strictly (unknown keys
 make the proposal unreadable, and the desk shows none). A later contract
-that adds keys to the proposal file either leaves them out of the file a
-v2 reader may be pointed at, or says in its ADR that v2 plugins lose the
-proposal (never misread it) until they update.
+that adds keys to the proposal file says in its ADR that a plugin of
+contract 2 shows the index's `triage` head and counts but no items (the
+file is unreadable to it, never misread) until the plugin updates.
 
 ### 4. What it does not do
 

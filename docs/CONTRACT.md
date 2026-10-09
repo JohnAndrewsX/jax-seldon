@@ -39,7 +39,8 @@ exists (ADR-0047). This file explains it; the schema decides.
    both numbers and the update command. The engine writes a value below
    `contractVersion` only when the ADR of that bump lists, per added or
    changed field, why a reader of that contract does not misread it
-   (ADR-0051 §3). The output of `seldon preview --json` keeps its own
+   (ADR-0051 §3) — including that `summary.crisis` and
+   `summary.openDrift` stay complete. The output of `seldon preview --json` keeps its own
    strict check.
 4. The index is a **view**, not a database: newest 500 events, last 50
    completed cases, 366 heatmap days, 10 snapshots, and the newest 200 open
@@ -176,7 +177,14 @@ engine and plugin → one coordinated merge → `seldon contract-version` and
 `manifest.json.seldon.contractVersion` agree. The bump's ADR also sets
 `contractReadableFrom` (rule 3, ADR-0051 §3): the new number unless it
 lists, per field, why a plugin of an older contract does not misread the
-index; the engine's `CONTRACT_READABLE_FROM` follows it.
+index — a field absent, renamed or of another type, a changed meaning, an
+unknown value of a closed set it keys on, or an incomplete count are
+misreads; `summary.crisis` and `summary.openDrift` stay complete and the
+bounds of rules 4 and 5 hold — as a table (field, change, where that
+reader reads it or "not read", its fallback), and its PR runs the
+released plugin's `Model.js` at its tag against the new sample with the
+same status, counts and tone. The engine's `CONTRACT_READABLE_FROM`
+follows it.
 
 ## Commands the plugin may run (fixed argument lists)
 
