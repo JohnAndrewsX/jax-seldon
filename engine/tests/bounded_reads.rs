@@ -285,8 +285,13 @@ fn a_git_head_that_is_no_regular_file_holds_no_command() {
             std::fs::remove_dir_all(root.join(".git")).unwrap();
         }
         swap(&root, rel, how);
+        let be = if rel == ".git" {
+            "a directory or a `gitdir:` file"
+        } else {
+            "a regular file"
+        };
         let said = format!(
-            "{}: {}, not a regular file; git is not run in the logbook: make it a regular file and run the command again",
+            "{}: {}, not a regular file; git is not run in the logbook: make it {be} and run the command again",
             root.join(rel).display(),
             &how.what()[..how.what().find(',').unwrap()]
         );
@@ -314,6 +319,45 @@ fn a_git_head_that_is_no_regular_file_holds_no_command() {
             "{what}: {git}"
         );
     }
+}
+
+/// `import --apply` on a logbook whose `.git/HEAD` is a FIFO is refused
+/// before it writes anything, exit 1 like the other refusals (WP-175
+/// round 2): it cannot commit the pending changes, so its undo would not
+/// be safe.
+#[test]
+fn an_import_into_a_logbook_with_a_fifo_head_is_refused() {
+    let env = Env::new(Snapper::Missing);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    let vault = env.home.join("omarchy-agent-vault");
+    common::copy_dir(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/vaults/omarchy-agent"),
+        &vault,
+    );
+    swap(&root, ".git/HEAD", Swap::Fifo);
+    let args = [
+        "--json",
+        "import",
+        "omarchy-agent",
+        vault.to_str().unwrap(),
+        "--apply",
+    ];
+    let start = Instant::now();
+    let out = within(&env, &root, &args, "import --apply");
+    assert!(start.elapsed() < Duration::from_secs(8), "import --apply");
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+    assert!(
+        message.starts_with(&format!(
+            "{}: a FIFO, not a regular file; git is not run in the logbook: make it a regular file",
+            root.join(".git/HEAD").display()
+        )),
+        "{message}"
+    );
+    assert!(!root.join(".seldon/imports/omarchy-agent.json").exists());
 }
 
 /// A `.seldon/logbook.toml` that is no regular file is named, with what

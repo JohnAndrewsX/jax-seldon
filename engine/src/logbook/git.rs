@@ -147,9 +147,9 @@ fn refused(root: Option<&Path>) -> Option<Run> {
 /// what it is and what to do. Only file metadata and, for a `.git` file,
 /// its first bounded read; nothing is opened that could block.
 pub fn check_files(root: &Path) -> Result<(), String> {
-    let refusal = |path: &Path, what: &str| {
+    let refusal = |path: &Path, what: &str, be: &str| {
         Err(format!(
-            "{}: {what}, not a regular file; git is not run in the logbook: make it a regular file and run the command again",
+            "{}: {what}, not a regular file; git is not run in the logbook: make it {be} and run the command again",
             path.display()
         ))
     };
@@ -160,7 +160,7 @@ pub fn check_files(root: &Path) -> Result<(), String> {
     let git_dir = if meta.is_dir() {
         dot
     } else if let Some(what) = sys::irregular(&meta) {
-        return refusal(&dot, what);
+        return refusal(&dot, what, "a directory or a `gitdir:` file");
     } else {
         // `gitdir: <path>`, relative to the logbook (git's reading:
         // index::git_head_fast)
@@ -178,14 +178,13 @@ pub fn check_files(root: &Path) -> Result<(), String> {
         dir
     };
     let head = git_dir.join("HEAD");
-    match std::fs::metadata(&head)
-        .ok()
-        .as_ref()
-        .and_then(sys::irregular)
-    {
+    match std::fs::metadata(&head) {
         // a directory blocks no read: git answers at once that this is
         // no repository
-        Some(what) if what != "a directory" => refusal(&head, what),
+        Ok(meta) if !meta.is_dir() => match sys::irregular(&meta) {
+            Some(what) => refusal(&head, what, "a regular file"),
+            None => Ok(()),
+        },
         _ => Ok(()),
     }
 }
@@ -752,7 +751,8 @@ mod tests {
     /// A `.git` or `HEAD` that is no regular file stops every git call
     /// before git runs (WP-175): a FIFO and a link to `/dev/zero`, for a
     /// `.git` directory and for a `.git` file, and `.git` a FIFO; a
-    /// regular, a linked and a missing `HEAD` let git run. In a thread
+    /// regular, a linked, a missing `HEAD` and one that is a directory let
+    /// git run. In a thread
     /// with a time limit: a regression that spawns git waits for its
     /// timeout.
     #[test]
@@ -778,10 +778,15 @@ mod tests {
         let checks = std::thread::spawn(move || {
             let stops = |root: &Path, path: &Path, what: &str| {
                 let e = check_files(root).unwrap_err();
+                let be = if path.ends_with("HEAD") {
+                    "a regular file"
+                } else {
+                    "a directory or a `gitdir:` file"
+                };
                 assert_eq!(
                     e,
                     format!(
-                        "{}: {what}, not a regular file; git is not run in the logbook: make it a regular file and run the command again",
+                        "{}: {what}, not a regular file; git is not run in the logbook: make it {be} and run the command again",
                         path.display()
                     )
                 );
@@ -801,6 +806,11 @@ mod tests {
             std::fs::rename(&head, base.join("HEAD.real")).unwrap();
             std::os::unix::fs::symlink(base.join("HEAD.real"), &head).unwrap();
             assert_eq!(check_files(&root), Ok(()));
+            // a directory: no refusal, git says at once what is wrong
+            std::fs::remove_file(&head).unwrap();
+            std::fs::create_dir(&head).unwrap();
+            assert_eq!(check_files(&root), Ok(()));
+            std::fs::remove_dir(&head).unwrap();
             fifo(&head);
             stops(&root, &head, "a FIFO");
             zero(&head);

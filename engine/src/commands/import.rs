@@ -298,6 +298,9 @@ fn commit_pending(ctx: &Context, config: &Config, logbook: &Logbook) -> Result<(
     if !git::is_repo(&logbook.root) {
         return Ok(());
     }
+    // a `.git` or `HEAD` git would wait on: refused like any file of the
+    // logbook that is no regular file, exit 1 (WP-175)
+    git::check_files(&logbook.root).map_err(Error::user)?;
     let dirty = || {
         git::is_dirty(&logbook.root)
             .map_err(|e| Error::from(anyhow::anyhow!("cannot read the logbook's git status: {e}")))
