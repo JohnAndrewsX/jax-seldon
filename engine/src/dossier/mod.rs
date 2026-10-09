@@ -320,7 +320,7 @@ impl Files {
             if f.old.as_deref() == Some(f.text.as_str()) {
                 continue;
             }
-            sys::write_atomic(&f.path, f.text.as_bytes())?;
+            sys::write_atomic_nofollow(&f.path, f.text.as_bytes())?;
             written.push(format!("system/{}", f.name));
         }
         Ok(written)

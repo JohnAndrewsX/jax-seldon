@@ -122,6 +122,8 @@ pub fn read_small_file(path: &Path, max: u64) -> Result<Option<String>, String> 
 /// link stays. The target keeps its permission bits; a new file gets
 /// [`NEW_FILE_MODE`] and new directories [`NEW_DIR_MODE`]. File and
 /// directory are synced; the temp file is removed when anything fails.
+/// For files outside the logbook (config, state, settings); a file of the
+/// logbook goes through [`write_atomic_nofollow`] (ADR-0049).
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     write_atomic_with(path, bytes, None, true)
 }
@@ -144,6 +146,100 @@ pub fn write_atomic_replace(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Res
 /// again.
 pub fn write_generated(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     write_atomic_with(path, bytes, None, false)
+}
+
+/// [`write_atomic`] for a file of the logbook (ADR-0049): a symbolic link
+/// at `path` is never followed. A link or anything but a regular file
+/// there is an error (the command's `logbook::checked_file` names it for
+/// the user first); one that appears after this check is replaced by the
+/// rename, never its target. A regular file keeps its permission bits.
+pub fn write_atomic_nofollow(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    write_nofollow(path, bytes, true)
+}
+
+/// [`write_generated`] that never follows a link, as
+/// [`write_atomic_nofollow`]: the logbook's `STATUS.md`, ledger views and
+/// `outputs/REBUILD.md`.
+pub fn write_generated_nofollow(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    write_nofollow(path, bytes, false)
+}
+
+fn write_nofollow(path: &Path, bytes: &[u8], sync: bool) -> anyhow::Result<()> {
+    let mode = regular_or_missing(path)?.map_or(NEW_FILE_MODE, |m| m.permissions().mode() & 0o777);
+    write_atomic_at(path.to_path_buf(), bytes, Some(mode), sync)
+}
+
+/// `O_NOFOLLOW` of open(2) on Linux: the generic value; arm, aarch64 and
+/// powerpc number it differently (std has `custom_flags`, not the
+/// constant; as [`SIGKILL`] below).
+#[cfg(any(
+    target_arch = "arm",
+    target_arch = "aarch64",
+    target_arch = "powerpc",
+    target_arch = "powerpc64"
+))]
+pub const O_NOFOLLOW: i32 = 0o100000;
+#[cfg(not(any(
+    target_arch = "arm",
+    target_arch = "aarch64",
+    target_arch = "powerpc",
+    target_arch = "powerpc64"
+)))]
+pub const O_NOFOLLOW: i32 = 0o400000;
+
+/// `ELOOP` on Linux: what open(2) with [`O_NOFOLLOW`] says of a link.
+const ELOOP: i32 = 40;
+
+/// The file of the logbook at `path`, opened to read and append, made
+/// with [`NEW_FILE_MODE`] when missing (the ledger's month files,
+/// ADR-0049 §4): never through a symbolic link, also one swapped in after
+/// the caller's check (`O_NOFOLLOW`: the open fails, nothing is made
+/// where the link points), and only a regular file (checked on the open
+/// file).
+pub fn open_append_nofollow(path: &Path) -> anyhow::Result<File> {
+    let opened = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .append(true)
+        .mode(NEW_FILE_MODE)
+        .custom_flags(O_NOFOLLOW)
+        .open(path);
+    let file = match opened {
+        Ok(f) => f,
+        Err(e) if e.raw_os_error() == Some(ELOOP) => anyhow::bail!(
+            "{} is a symbolic link, not a file of the logbook; nothing written",
+            path.display()
+        ),
+        Err(e) => return Err(e).with_context(|| format!("cannot open {}", path.display())),
+    };
+    if !file.metadata()?.is_file() {
+        anyhow::bail!(
+            "{} is no regular file, not a file of the logbook; nothing written",
+            path.display()
+        );
+    }
+    Ok(file)
+}
+
+/// The metadata of the regular file at `path`, without following a link;
+/// `None` when nothing is there. A symbolic link or anything else that is
+/// no regular file is an error: a file of the logbook is never written
+/// through one (ADR-0049).
+pub fn regular_or_missing(path: &Path) -> anyhow::Result<Option<std::fs::Metadata>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_file() => Ok(Some(m)),
+        Ok(m) => anyhow::bail!(
+            "{} is {}, not a file of the logbook; nothing written",
+            path.display(),
+            if m.file_type().is_symlink() {
+                "a symbolic link"
+            } else {
+                "no regular file"
+            }
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("cannot read {}", path.display())),
+    }
 }
 
 fn write_atomic_with(
@@ -787,6 +883,143 @@ mod tests {
     }
 
     use super::*;
+
+    /// WP-171, ADR-0049: the logbook's writers never follow a link at the
+    /// path, and refuse one (dangling too) or anything but a regular file;
+    /// the link and its target stay as they were.
+    #[test]
+    fn nofollow_writes_refuse_a_link_and_a_non_regular_file() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = crate::logbook::scratch::scratch("seldon-nofollow");
+        std::fs::write(dir.join("outside.md"), "outside\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("outside.md"), dir.join("linked.md")).unwrap();
+        std::os::unix::fs::symlink("missing.md", dir.join("dangling.md")).unwrap();
+        std::fs::create_dir(dir.join("folder.md")).unwrap();
+        type Write = fn(&Path, &[u8]) -> anyhow::Result<()>;
+        let writers: [(&str, Write); 2] = [
+            ("atomic", write_atomic_nofollow),
+            ("generated", write_generated_nofollow),
+        ];
+        for (name, write) in writers {
+            for (file, what) in [
+                ("linked.md", "a symbolic link"),
+                ("dangling.md", "a symbolic link"),
+                ("folder.md", "no regular file"),
+            ] {
+                let path = dir.join(file);
+                let e = write(&path, b"new\n").unwrap_err().to_string();
+                assert_eq!(
+                    e,
+                    format!(
+                        "{} is {what}, not a file of the logbook; nothing written",
+                        path.display()
+                    ),
+                    "{name} {file}"
+                );
+            }
+            assert_eq!(
+                std::fs::read_to_string(dir.join("outside.md")).unwrap(),
+                "outside\n"
+            );
+            assert!(!dir.join("missing.md").exists());
+            assert!(
+                dir.join("linked.md")
+                    .symlink_metadata()
+                    .unwrap()
+                    .is_symlink()
+            );
+            assert!(
+                dir.join("dangling.md")
+                    .symlink_metadata()
+                    .unwrap()
+                    .is_symlink()
+            );
+            assert!(dir.join("folder.md").is_dir());
+            // a regular file keeps its mode; a new one is 0600; no temp
+            // file is left
+            let kept = dir.join(format!("kept-{name}.md"));
+            std::fs::write(&kept, "old\n").unwrap();
+            std::fs::set_permissions(&kept, std::fs::Permissions::from_mode(0o640)).unwrap();
+            write(&kept, b"new\n").unwrap();
+            assert_eq!(std::fs::read_to_string(&kept).unwrap(), "new\n");
+            let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(&kept), 0o640, "{name}");
+            let new = dir.join(format!("sub-{name}/new.md"));
+            write(&new, b"x\n").unwrap();
+            assert_eq!(std::fs::read_to_string(&new).unwrap(), "x\n");
+            assert_eq!(mode(&new), NEW_FILE_MODE, "{name}");
+        }
+        let left: Vec<_> = std::fs::read_dir(&*dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".tmp-"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        // write_atomic itself still follows the link (config, settings)
+        write_atomic(&dir.join("linked.md"), b"through\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("outside.md")).unwrap(),
+            "through\n"
+        );
+    }
+
+    /// ADR-0049 §4: the ledger's open itself never follows a link (no
+    /// check before it here: the race the check cannot close) and takes
+    /// only a regular file; a FIFO is opened without blocking and refused.
+    #[test]
+    fn the_append_open_never_follows_a_link() {
+        unsafe extern "C" {
+            fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32;
+        }
+        let dir = crate::logbook::scratch::scratch("seldon-append-open");
+        std::fs::write(dir.join("outside"), "kept\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("outside"), dir.join("linked")).unwrap();
+        std::os::unix::fs::symlink(dir.join("missing"), dir.join("dangling")).unwrap();
+        for name in ["linked", "dangling"] {
+            let path = dir.join(name);
+            let e = open_append_nofollow(&path).unwrap_err().to_string();
+            assert_eq!(
+                e,
+                format!(
+                    "{} is a symbolic link, not a file of the logbook; nothing written",
+                    path.display()
+                )
+            );
+        }
+        assert_eq!(
+            std::fs::read_to_string(dir.join("outside")).unwrap(),
+            "kept\n"
+        );
+        assert!(!dir.join("missing").exists());
+        let fifo = dir.join("fifo");
+        let c = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { mkfifo(c.as_ptr(), 0o600) }, 0);
+        let e = open_append_nofollow(&fifo).unwrap_err().to_string();
+        assert!(
+            e.ends_with("fifo is no regular file, not a file of the logbook; nothing written"),
+            "{e}"
+        );
+        // a regular file and a new one open for appending
+        let mut f = open_append_nofollow(&dir.join("new")).unwrap();
+        std::io::Write::write_all(&mut f, b"a\n").unwrap();
+        let mut f = open_append_nofollow(&dir.join("new")).unwrap();
+        std::io::Write::write_all(&mut f, b"b\n").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("new")).unwrap(), "a\nb\n");
+    }
+
+    #[test]
+    fn regular_or_missing_says_which() {
+        let dir = crate::logbook::scratch::scratch("seldon-regular");
+        std::fs::write(dir.join("a"), "abc").unwrap();
+        assert_eq!(
+            regular_or_missing(&dir.join("a")).unwrap().unwrap().len(),
+            3
+        );
+        assert!(regular_or_missing(&dir.join("b")).unwrap().is_none());
+        // below a file: neither missing nor a file
+        let e = regular_or_missing(&dir.join("a/b")).unwrap_err();
+        assert!(format!("{e:#}").starts_with("cannot read "), "{e:#}");
+    }
 
     #[test]
     fn a_capped_run_keeps_the_head_of_a_flood_and_reads_the_rest() {

@@ -12,9 +12,7 @@
 //! once per command; the `&Lock` parameter proves it is held.
 
 use std::collections::BTreeMap;
-use std::fs::OpenOptions;
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
-use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
@@ -228,8 +226,14 @@ impl Ledger {
             text.push_str(&e.to_line());
             text.push('\n');
         }
+        // the folder and every month file, before the first line (WP-168,
+        // WP-171)
         if let Some(root) = &self.root {
             crate::logbook::checked_dir(root, Path::new(LEDGER_DIR))?;
+            for month in by_month.keys() {
+                let file = Path::new(LEDGER_DIR).join(format!("{month}.jsonl"));
+                crate::logbook::checked_file(root, &file)?;
+            }
         }
         crate::sys::create_dir_private(&self.dir)
             .with_context(|| format!("cannot create {}", self.dir.display()))?;
@@ -255,15 +259,15 @@ fn next_id(ids: &mut Generator) -> Ulid {
 }
 
 /// Appends `bytes` to `path`. If the file does not end in a newline (a torn
-/// earlier write), a newline goes first so the new lines stay whole.
+/// earlier write), a newline goes first so the new lines stay whole. A
+/// symbolic link or anything but a regular file at `path` is refused, not
+/// followed (ADR-0049; `Ledger::append` names it for the user first), also
+/// one that appears after the check (`sys::open_append_nofollow`).
 fn append_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .append(true)
-        .mode(crate::sys::NEW_FILE_MODE)
-        .open(path)
-        .with_context(|| format!("cannot open {}", path.display()))?;
+    // the check names a link or a folder first; the open refuses one
+    // swapped in after it (ADR-0049 §4)
+    crate::sys::regular_or_missing(path)?;
+    let mut file = crate::sys::open_append_nofollow(path)?;
     let len = file.metadata()?.len();
     let mut out = Vec::with_capacity(bytes.len() + 1);
     if len > 0 {
@@ -331,6 +335,7 @@ mod tests {
     use super::*;
     use crate::logbook::lock;
     use crate::model::event::{Kind, Meta, Source};
+    use std::fs::OpenOptions;
 
     fn tmp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("seldon-ledger-{tag}-{}", std::process::id()));
@@ -341,6 +346,59 @@ mod tests {
 
     fn ts(s: &str) -> DateTime<FixedOffset> {
         DateTime::parse_from_rfc3339(s).unwrap()
+    }
+
+    /// WP-171: a month file that is a link (dangling too) or no regular
+    /// file is refused before it is opened, also by a ledger without a
+    /// logbook root (`Ledger::at`); nothing is written anywhere.
+    #[test]
+    fn append_never_follows_a_link_at_a_month_file() {
+        let dir = crate::logbook::scratch::scratch("seldon-ledger-link");
+        let lock = lock::acquire(&dir.join("lock")).unwrap();
+        let ledger = Ledger::at(dir.join("ledger"), Redactor::builtin());
+        std::fs::create_dir_all(dir.join("ledger")).unwrap();
+        std::fs::write(dir.join("outside.jsonl"), "kept\n").unwrap();
+        let event = || {
+            vec![Event::new(
+                ts("2026-10-01T10:00:00+02:00"),
+                Source::Snapper,
+                Kind::Snapshot,
+                "1",
+            )]
+        };
+        let month = ledger.month_file("2026-10");
+        for (target, what) in [
+            (dir.join("outside.jsonl"), "a symbolic link"),
+            (dir.join("missing.jsonl"), "a symbolic link"),
+        ] {
+            std::os::unix::fs::symlink(&target, &month).unwrap();
+            let e = ledger.append(&lock, event()).unwrap_err().to_string();
+            assert!(
+                e.ends_with(&format!(
+                    "2026-10.jsonl is {what}, not a file of the logbook; nothing written"
+                )),
+                "{e}"
+            );
+            assert!(month.symlink_metadata().unwrap().is_symlink());
+            std::fs::remove_file(&month).unwrap();
+        }
+        assert_eq!(
+            std::fs::read_to_string(dir.join("outside.jsonl")).unwrap(),
+            "kept\n"
+        );
+        assert!(!dir.join("missing.jsonl").exists());
+        std::fs::create_dir(&month).unwrap();
+        let e = ledger.append(&lock, event()).unwrap_err().to_string();
+        assert!(
+            e.ends_with(
+                "2026-10.jsonl is no regular file, not a file of the logbook; nothing written"
+            ),
+            "{e}"
+        );
+        std::fs::remove_dir(&month).unwrap();
+        // a real file is appended to as before
+        ledger.append(&lock, event()).unwrap();
+        assert_eq!(ledger.read_month("2026-10").unwrap().events.len(), 1);
     }
 
     #[test]

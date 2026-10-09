@@ -38,6 +38,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   link, or a bind mount). Reading through a
   link is unchanged, and the logbook folder itself may still be a link.
   A `.seldon` that is a file now means "not initialised" (exit 3).
+- **Linked logbook files refuse writes (WP-171, ADR-0049).** The same
+  rule for the files the engine writes in the logbook (a journal day, a
+  case file, `STATUS.md`, `DECISIONS.md`, `AGENTS.md`, `ledger/*.jsonl`
+  and the views, `system/*.md`, `outputs/*.md`, `.seldon/active-case`,
+  …): when one is a symbolic link (or a directory or FIFO in a file's
+  place), every command that would write it stops with exit 1 and names
+  it ("journal/2026/2026-10-09.md is a symbolic link, not a file of the
+  logbook; make it a file and run the command again"), and nothing is
+  written; before, the write replaced the file the link pointed to,
+  wherever it was, and a dangling link created its target. A capture
+  that would update the rules in a linked `AGENTS.md` only warns; a
+  linked generated view (`STATUS.md`, `DECISIONS.md`, `ledger/<month>.md`)
+  is skipped with a warning, and `status` still refreshes `index.json`. Fix:
+  replace the link with the file it points to. Outside the logbook
+  (`config.toml`, Claude Code's `settings.json`) links are followed as
+  before. `seldon doctor` has a new `layout` row that names every linked
+  folder and file where Seldon writes, so you see them before a write is
+  refused (`error`; `degraded` for what is only skipped).
 
 ### Engine
 

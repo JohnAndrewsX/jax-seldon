@@ -185,6 +185,9 @@ fn accept(ctx: &Context, args: AcceptArgs) -> Result<Output> {
             )));
         }
     };
+    // the file itself too: a link there would take the rewrite outside
+    // (WP-171)
+    logbook.checked_file(&path)?;
     let rel = cases::relative(&logbook, &path);
     let (mut decision, mut doc) =
         model::load::<Decision>(&path).map_err(|e| Error::user(format!("{e:#}")))?;
@@ -216,7 +219,7 @@ fn accept(ctx: &Context, args: AcceptArgs) -> Result<Output> {
         .actor(&actor)
         .detail(format!("accepted: {}", decision.title));
     let event = emit_one(&lock, &config, &logbook, event)?;
-    crate::sys::write_atomic(&path, doc.render().as_bytes())?;
+    crate::sys::write_atomic_nofollow(&path, doc.render().as_bytes())?;
     let warnings = fill_index(&logbook);
     let commit = autocommit(ctx, &config, &logbook, &format!("{id} accepted"));
     crate::index::rebuild_if_initialised(ctx);

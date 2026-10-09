@@ -90,7 +90,7 @@ impl CaseFile {
         let target = self.checked(logbook)?;
         let text = self.doc.render();
         if target == self.path {
-            sys::write_atomic(&self.path, text.as_bytes())?;
+            sys::write_atomic_nofollow(&self.path, text.as_bytes())?;
             return Ok(None);
         }
         if let Some(dir) = target.parent() {
@@ -105,7 +105,7 @@ impl CaseFile {
                 target.display()
             )
         })?;
-        sys::write_atomic(&target, text.as_bytes())?;
+        sys::write_atomic_nofollow(&target, text.as_bytes())?;
         Ok(Some(std::mem::replace(&mut self.path, target)))
     }
 
@@ -830,7 +830,7 @@ pub fn active_case(logbook: &Logbook) -> Option<String> {
 
 /// Writes `.seldon/active-case`.
 pub fn set_active_case(logbook: &Logbook, id: &str) -> Result<()> {
-    sys::write_atomic(
+    sys::write_atomic_nofollow(
         &logbook.checked_file(ACTIVE_CASE_FILE)?,
         format!("{id}\n").as_bytes(),
     )?;
@@ -866,7 +866,7 @@ pub fn ensure_area(logbook: &Logbook, area: &str) -> Result<Option<String>> {
         description: None,
     };
     let text = model::render_new(&record, &format!("# {area}\n"));
-    sys::write_atomic(&path, text.as_bytes())?;
+    sys::write_atomic_nofollow(&path, text.as_bytes())?;
     Ok(Some(rel))
 }
 

@@ -10,7 +10,7 @@ exit codes and the most common problems.
 seldon doctor
 ```
 
-It checks twelve things and prints a fix for each one that is not `ok`.
+It checks thirteen things and prints a fix for each one that is not `ok`.
 It only reads: it changes no file, takes no lock and runs nothing with
 `sudo`.
 
@@ -24,6 +24,7 @@ It only reads: it changes no file, takes no lock and runs nothing with
 | `fences` | the generated parts of `STATUS.md` and `DECISIONS.md` have their marker lines | `degraded`: a marker line is missing, so `seldon status` leaves the file alone; or an end marker closes no fence. `error`: the file cannot be read |
 | `workpieces` | always ok, information only: how many `work/<case-id>/` folders no case owns (orphaned) or a closed case left over 10 MiB (oversized), their size, the oldest | (never; move or delete such a folder yourself when you no longer need it — git keeps its history) |
 | `collectors` | the last capture of every enabled collector succeeded | `degraded`: the row lists each failing collector with its message and fix |
+| `layout` | no folder or file where Seldon writes is a symbolic link, and none is a file where a folder belongs or the other way round | `error`: the row names what a command refuses (the first five); every command that writes there stops with exit 1, a linked `ledger/` stops `status` and `capture`. Fix: replace each link with the real folder or file it points to (move it into its place). `degraded`: only what no command refuses — a linked `STATUS.md`, `DECISIONS.md` or `ledger/<month>.md`, which `status` skips with a warning, or a link beside Seldon's files in `decisions/`, `work/…/`, `ledger/`, `system/` or `memory/`. Links elsewhere (a case template under `.seldon/templates/`, a note in an area, your own report in `outputs/`) are not named. The logbook folder itself may be a link |
 | `state` | `cursors.json`, `manifest.json` and `owned.json` in `~/.local/state/seldon` can be read | `error`: the file is corrupt or unreadable; the row says what that breaks; the fix moves a corrupt file away or makes an unreadable one readable. `degraded`: the next capture will record a state reset, see [doctor says the next capture will record a state reset](#doctor-says-the-next-capture-will-record-a-state-reset); or the last capture recorded one, see [A state reset was recorded](#a-state-reset-was-recorded); or a collector waits for its baseline since a state reset (degraded or not run): run `seldon capture --source <name>` once it can run |
 | `omarchy` | `omarchy-version` answered | the Omarchy collector cannot read the version |
 | `snapper` | snapshots can be listed, or read from `/.snapshots` | `degraded`: your user may neither list snapshots nor read `/.snapshots`; see [Snapshots are not recorded](#snapshots-are-not-recorded). An `ok` row with a fix: your user is still in the old snapper opt-in; see [doctor suggests reverting the snapper opt-in](#doctor-suggests-reverting-the-snapper-opt-in) |

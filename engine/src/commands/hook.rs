@@ -1605,7 +1605,11 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
 /// (each only when its text changed).
 fn write_views(logbook: &Logbook, built: &crate::index::Built) -> Result<()> {
     use crate::index::views;
-    views::write_ledger_views(logbook, built)?;
+    let mut warnings = Vec::new();
+    views::write_ledger_views(logbook, built, &mut warnings)?;
+    for w in warnings {
+        eprintln!("seldon: warning: {w}");
+    }
     if let views::Fill::Skipped(w) = views::write_status(logbook, built)? {
         eprintln!("seldon: warning: {w}");
     }

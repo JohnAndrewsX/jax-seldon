@@ -244,12 +244,12 @@ fn write_plan(
     }
     for d in &plan.days {
         undo.note(&d.path);
-        sys::write_atomic(&logbook.path(&d.path), d.text.as_bytes())?;
+        sys::write_atomic_nofollow(&logbook.path(&d.path), d.text.as_bytes())?;
         files.push(d.path.clone());
     }
     for m in &plan.memory {
         undo.note(&m.path);
-        sys::write_atomic(&logbook.path(&m.path), m.text.as_bytes())?;
+        sys::write_atomic_nofollow(&logbook.path(&m.path), m.text.as_bytes())?;
         files.push(m.path.clone());
     }
     if let Some(dossier) = &plan.dossier {
@@ -272,7 +272,7 @@ fn write_plan(
         "cases": plan.id_map(),
         "counts": report::counts(plan),
     });
-    sys::write_atomic(
+    sys::write_atomic_nofollow(
         &logbook.path(&marker_rel),
         format!("{}\n", serde_json::to_string_pretty(&marker).expect("json")).as_bytes(),
     )?;
@@ -461,7 +461,7 @@ fn after_failure(logbook: &Logbook, undo: &Undo, e: Error) -> Error {
         undo_file.note(&undo_path());
         // best effort: the hint below is the undo either way
         let _ = serde_json::to_string_pretty(&undo_file).map(|text| {
-            sys::write_atomic(&logbook.path(undo_path()), format!("{text}\n").as_bytes())
+            sys::write_atomic_nofollow(&logbook.path(undo_path()), format!("{text}\n").as_bytes())
         });
         format!(
             "the import stopped half way and nothing was committed; undo it with `{}` in {} (it touches only the files the import wrote), then run it again",
@@ -533,7 +533,8 @@ fn note(c: &omarchy_agent::PlannedCase) -> Event {
 /// the import is never run twice and never reported done when it is not.
 fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
     let rel = marker_path(SOURCE);
-    match std::fs::read_to_string(logbook.path(&rel)) {
+    // a link there is not read as "imported", a FIFO not opened (WP-171)
+    match std::fs::read_to_string(logbook.checked_file(&rel)?) {
         Ok(text) => {
             let marker: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
             return Ok(Some(json!({
@@ -593,7 +594,7 @@ fn write_report(logbook: &Logbook, plan: &Plan, mode: &Mode) -> Result<bool> {
     if existing.as_deref() == Some(text.as_str()) {
         return Ok(false);
     }
-    sys::write_atomic(&path, text.as_bytes())?;
+    sys::write_atomic_nofollow(&path, text.as_bytes())?;
     Ok(true)
 }
 

@@ -150,7 +150,10 @@ where Seldon's Claude Code hooks are: user-wide (`ok`), in the logbook's
 `.claude/settings.json` only (`degraded`: sessions Seldon starts in
 `~/Work` are not recorded; the fix installs them user-wide), both (`ok`,
 with an optional tidy-up), or none (`ok` unless you chose the Claude Code
-harness). Each line says `ok`, `degraded` or `error`, and a
+harness). The `layout` row names every folder or file where Seldon
+writes that is a symbolic link (or a file where a folder belongs, or the
+other way round): `error` when commands that write there refuse,
+`degraded` for a linked view that `status` skips. Each line says `ok`, `degraded` or `error`, and a
 broken check prints the command that fixes it. Exit 0 when nothing is an
 error, 1 when a check is an error (also when `config.toml` cannot be read
 or parsed), 3 when the logbook is not initialised. `--only rules` checks

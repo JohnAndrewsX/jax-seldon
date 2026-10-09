@@ -1847,3 +1847,143 @@ fn doctor_reports_leftover_workpiece_folders() {
          case, over 10.0 MiB), ≥ 11.0 MiB in all; the oldest: work/C-2024-900-a?b?c?d/"
     );
 }
+
+/// WP-171, ADR-0049 §3: the `layout` row names every linked folder and
+/// file where Seldon writes (and a folder or file of the wrong kind
+/// there), the first five, as an error with the fix; doctor follows none
+/// and writes nothing.
+#[test]
+fn doctor_names_linked_folders_and_files() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    let row = || {
+        let out = env.seldon(&["doctor", "--json"]);
+        let v = json(&out);
+        (out.status.code(), check(&v, "layout").clone())
+    };
+    let (_, ok) = row();
+    assert_eq!(ok["status"], "ok", "{ok}");
+    assert_eq!(
+        ok["message"],
+        "no linked folders or files where Seldon writes"
+    );
+    assert!(ok.get("fix").is_none(), "{ok}");
+
+    let outside = env.tmp.path().join("outside");
+    std::fs::create_dir_all(outside.join("ledger")).unwrap();
+    std::fs::write(outside.join("day.md"), "outside\n").unwrap();
+    std::fs::remove_dir_all(root.join("ledger")).unwrap();
+    std::os::unix::fs::symlink(outside.join("ledger"), root.join("ledger")).unwrap();
+    std::fs::create_dir_all(root.join("journal/2026")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.join("day.md"),
+        root.join("journal/2026/2026-10-09.md"),
+    )
+    .unwrap();
+    let before = snapshot(&outside);
+    let (code, row1) = row();
+    assert_eq!(code, Some(1), "{row1}");
+    assert_eq!(row1["status"], "error", "{row1}");
+    assert_eq!(
+        row1["message"],
+        "2 where Seldon writes, so commands that write there refuse: journal/2026/2026-10-09.md (symbolic link), ledger (symbolic link)"
+    );
+    assert_eq!(
+        row1["fix"],
+        "replace each with a real folder or file (move what the link points to into its place), then run the command again"
+    );
+    assert_eq!(snapshot(&outside), before);
+
+    // more than five: the first five and a count; a folder in a file's
+    // place and a file in a folder's place; a view (skipped, not refused)
+    // named apart
+    let _ = std::fs::remove_file(root.join("STATUS.md"));
+    std::fs::create_dir(root.join("STATUS.md")).unwrap();
+    std::fs::remove_dir_all(root.join("system")).unwrap();
+    std::fs::write(root.join("system"), "").unwrap();
+    for n in 1..=3 {
+        std::os::unix::fs::symlink(
+            outside.join("day.md"),
+            root.join(format!("decisions/ADR-000{n}-x.md")),
+        )
+        .unwrap();
+    }
+    let (_, row2) = row();
+    assert_eq!(
+        row2["message"],
+        "6 where Seldon writes, so commands that write there refuse: decisions/ADR-0001-x.md (symbolic link), decisions/ADR-0002-x.md (symbolic link), decisions/ADR-0003-x.md (symbolic link), journal/2026/2026-10-09.md (symbolic link), ledger (symbolic link), and 1 more; also 1 where Seldon writes but refuses nothing (a view is not updated, another file is left alone): STATUS.md (no regular file)"
+    );
+    // the human line
+    let human = stdout(&env.seldon(&["doctor"]));
+    assert!(
+        human.contains("error     layout   6 where Seldon writes,"),
+        "{human}"
+    );
+}
+
+/// WP-171 round 2 (F1, Q3): links Seldon never writes through are not
+/// named (a case template kept in a dotfiles repository, a note in an area,
+/// a report of the user's in `outputs/`, attachments beside a journal
+/// day); a linked view, which `status` skips with a warning, is
+/// `degraded`, and doctor exits 0.
+#[test]
+fn the_layout_row_names_only_what_seldon_writes() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    let outside = env.tmp.path().join("dots");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("file.md"), "mine\n").unwrap();
+    let link = |rel: &str| {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let _ = std::fs::remove_file(&path);
+        std::os::unix::fs::symlink(outside.join("file.md"), &path).unwrap();
+    };
+    for rel in [
+        ".seldon/templates/case.md",
+        "areas/hyprland/notes.md",
+        "outputs/my-report.md",
+        "journal/2026/attachments",
+    ] {
+        link(rel);
+    }
+    let out = env.seldon(&["doctor", "--json"]);
+    let v = json(&out);
+    assert_eq!(check(&v, "layout")["status"], "ok", "{v}");
+    for rel in ["STATUS.md", "ledger/2026-10.md"] {
+        link(rel);
+    }
+    let out = env.seldon(&["doctor", "--json"]);
+    let v = json(&out);
+    let row = check(&v, "layout");
+    assert_eq!(
+        (
+            row["status"].as_str(),
+            row["message"].as_str(),
+            row["fix"].as_str()
+        ),
+        (
+            Some("degraded"),
+            Some(
+                "2 where Seldon writes but refuses nothing (a view is not updated, another file is left alone): ledger/2026-10.md (symbolic link), STATUS.md (symbolic link)"
+            ),
+            Some("replace each with a real file, or move it out of the folder")
+        ),
+        "{v}"
+    );
+    assert_eq!(out.status.code(), Some(0), "{v}");
+}
+
+/// The `layout` row shows a name of the user's with every control and
+/// direction character as `?` (as the `workpieces` row).
+#[test]
+fn the_layout_row_shows_no_control_character() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    std::os::unix::fs::symlink("nowhere", root.join("memory/a\u{7}b\u{202e}c.md")).unwrap();
+    let v = json(&env.seldon(&["doctor", "--json"]));
+    assert_eq!(
+        check(&v, "layout")["message"],
+        "1 where Seldon writes, so commands that write there refuse: memory/a?b?c.md (symbolic link)"
+    );
+}
