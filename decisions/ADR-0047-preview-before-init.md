@@ -1,6 +1,6 @@
 # ADR-0047 — Before the logbook exists, the desk shows what the machine remembers on its own (`seldon preview --json`): one plugin-command row and its output schema
 
-**Status:** proposed (WP-138; the orchestrator or the operator accepts)
+**Status:** accepted 2026-10-09 (operator, E40)
 **Date:** 2026-10-08
 
 > Adds one row to CONTRACT.md's "Commands the plugin may run" and fixes
