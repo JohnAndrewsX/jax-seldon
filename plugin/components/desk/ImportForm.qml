@@ -76,6 +76,18 @@ FocusScope {
     return sent
   }
 
+  // Return or Enter in a field runs the dry run, once per press (WP-173):
+  // a held key's auto-repeat (Omarchy's Hyprland, after 250 ms) does nothing.
+  // `keyEvents` counts the calls (the harness's key guard read-out).
+  readonly property string keyGuard: "import"
+  property int keyEvents: 0
+
+  function keyPressed(event) {
+    root.keyEvents++
+    event.accepted = true
+    if (!event.isAutoRepeat) root.dryRun()
+  }
+
   function dryRun() {
     return root.send(true)
   }
@@ -130,7 +142,8 @@ FocusScope {
       accent: root.accent
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
-      onAccepted: root.dryRun()
+      Keys.onReturnPressed: function(event) { root.keyPressed(event) }
+      Keys.onEnterPressed: function(event) { root.keyPressed(event) }
     }
 
     Text {
@@ -170,7 +183,8 @@ FocusScope {
         accent: root.accent
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
-        onAccepted: root.dryRun()
+        Keys.onReturnPressed: function(event) { root.keyPressed(event) }
+        Keys.onEnterPressed: function(event) { root.keyPressed(event) }
       }
     }
 
@@ -188,13 +202,13 @@ FocusScope {
     Row {
       spacing: Style.spacing.sm
 
-      Button {
+      KeyButton {
+        objectName: "importDryRun"
         text: root.pending && root.result.dryRun ? "Reading" : "Dry run"
         iconText: root.pending && root.result.dryRun ? "󰦖" : ""
         iconSpinning: root.pending && root.result.dryRun
         iconSize: Style.font.caption
         enabled: root.canDryRun
-        focusable: true
         selected: !root.canImport
         bordered: true
         foreground: root.foreground
@@ -206,14 +220,14 @@ FocusScope {
         onClicked: root.dryRun()
       }
 
-      Button {
+      KeyButton {
+        objectName: "importNow"
         text: root.pending && !root.result.dryRun ? "Importing"
           : root.toCreate > 0 ? "Import " + Model.plural(root.toCreate, "case", "cases") : "Import"
         iconText: root.pending && !root.result.dryRun ? "󰦖" : ""
         iconSpinning: root.pending && !root.result.dryRun
         iconSize: Style.font.caption
         enabled: root.canImport
-        focusable: true
         selected: root.canImport
         bordered: true
         foreground: root.foreground

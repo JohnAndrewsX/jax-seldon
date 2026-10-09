@@ -280,6 +280,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **A held key acts once (WP-173).** Omarchy's Hyprland repeats a key
+  held for a quarter second, and the repeat confirmed what the first
+  press armed: holding `x` dropped a case, holding `a` started an agent,
+  holding Enter in the new decision's title created it; keys that write
+  at once (`r`, `c`, Enter in the note field, Space on *Import*) acted
+  again on every repeat. Now only the keys that move repeat (arrows,
+  page keys, `j`/`k`, `h`/`l`, `-`/`=`); every other repeat is dropped
+  on the desk, in the forms and on their buttons. An armed action stays
+  armed with its hint until the key is released and pressed again.
 - **Before init, a preview without memory (WP-138).** Until the logbook
   exists, Today lists the last 7 days' pacman transactions and the files
   edited under `~/.config` — "This is without memory: no who, no why,

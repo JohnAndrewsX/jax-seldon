@@ -133,7 +133,7 @@ expected_warnings='jax\.seldon: seldon (rules exit 1: AGENTS\.md is not UTF-8 te
 # (also allow the warnings the regex matches).
 clean_log() {
   local bad
-  bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop|HARNESS error|nothing to (click|drag|hover|wheel)|wait timed out" \
+  bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop|HARNESS error|nothing to (click|drag|hover|wheel|repeat|focus)|wait timed out" \
     | grep -a -v -E "WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" \
     | grep -a -v -E "$expected_warnings" | grep -a -v -E "${2:-^$}" || true)
   if [[ -z $bad ]]; then
@@ -1088,6 +1088,140 @@ refusal='C-2026-004 is queued; start it first: `seldon plan start C-2026-004`'
 expect work-agent 16 "[$tv.result, $tv.resultOk, .view.lastError, .view.opened] | map(tostring) | join(\",\")" "$refusal,false,,true"
 argv_check work-agent "$work/home-agent" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" "$(q agent start C-2026-004 --json)")"
 clean_log work-agent
+
+# 8d'. A held key never acts twice (WP-173). Hyprland repeats a held key
+#      (Omarchy: repeat_delay 250 ms, repeat_rate 40); QtTest makes no
+#      auto-repeat, so `keyRepeat:` hands the event a repeat is to the key
+#      guard the focus is in (the desk's keyPressed, a form's, a field's, a
+#      KeyButton's). That the real keys reach the same guard is shown by its
+#      counter: every report's `keyGuard` { name, events }, raised by a real
+#      `keyDown:` through the Keys handler under test. Work: a repeat alone
+#      arms nothing; `x` down arms Drop, two seconds of repeats (70) and the
+#      release leave it armed with its hint and run nothing, a real second
+#      `x` drops; the same for Enter (Start) and `a` (Hand to agent).
+#      Repeated `j`, ↓ and `k` still move, and disarm as any other key.
+#      Repeats of `r` (Reopen runs at once), `e`, `c`, Enter, Space and Esc
+#      do nothing; a real `r` reopens. The engine sees one call per real
+#      press.
+mkdir -p "$work/home-held"
+run held-key "" 1920x1080 \
+  "summon:$wk;select:C-2026-004;keyRepeat:x*5;keyDown:x;keyRepeat:x*70;keyUp:x;settle;keyDown:x;keyUp:x;settle;wait:sectionView.case.status=dropped;select:C-2026-005;keyDown:Return;keyRepeat:Return*10;keyUp:Return;key:Return;settle;wait:sectionView.case.status=active;select:C-2026-003;keyDown:a;keyRepeat:a*10;keyUp:a;text:a;settle;summon:$wk;select:C-2026-003;keyDown:x;keyRepeat:j;keyRepeat:j;keyRepeat:Down;keyRepeat:k;select:C-2026-002;keyRepeat:r*3;keyRepeat:e*3;keyRepeat:c*3;keyRepeat:Return*3;keyRepeat:Space*3;keyRepeat:Escape*3;settle;keyDown:r;keyUp:r;settle" \
+  HOME="$work/home-held" FAKE_SELDON_FIXTURE="$sample"
+kg='[.keyGuard.name, .keyGuard.events] | map(tostring) | join(",")'
+expect held-key 3 "[$tv.selected, $tc.armed, .view.arm.armed] | join(\",\")" "C-2026-004,,"
+expect held-key 3 "$kg" desk,5
+drop_hint="Drop C-2026-004? Press x again or click Confirm. This is final."
+for i in 4 5 6 7; do
+  expect held-key $i "[$tc.status, $tc.armed, $tc.hint, .view.arm.armed] | join(\",\")" "active,drop,$drop_hint,case:C-2026-004:drop"
+done
+# the real x went through keyCatcher's Keys.onPressed into Desk.keyPressed
+expect held-key 4 "$kg" desk,6
+expect held-key 5 "$kg" desk,76
+shows held-key 5 "Confirm drop"
+shows held-key 7 "$drop_hint"
+expect held-key 8 "[$tc.armed, .keyGuard.events] | map(tostring) | join(\",\")" ",77"
+expect held-key 10 "$tc.status" dropped
+start_hint="Start C-2026-005? Press Enter again or click Confirm."
+for i in 13 14 15; do expect held-key $i "[$tc.status, $tc.armed, $tc.hint] | join(\",\")" "queued,start,$start_hint"; done
+expect held-key 13 "$kg" desk,78
+expect held-key 17 "[$tc.status, $tc.armed] | join(\",\")" "active,"
+agent_hint="Hand to agent C-2026-003? Press a again or click Confirm."
+for i in 20 21 22; do expect held-key $i "[$tc.armed, $tc.hint, .view.opened] | map(tostring) | join(\",\")" "agent,$agent_hint,true"; done
+expect held-key 20 "$kg" desk,90
+# the agent launched: the desk stepped aside (WP-156)
+expect held-key 24 .view.opened false
+expect held-key 27 "[$tv.selected, $tc.armed] | join(\",\")" "C-2026-003,drop"
+expect held-key 28 "[$tv.selected, $tc.armed, .view.arm.armed] | join(\",\")" "C-2026-005,,"
+expect held-key 29 "$tv.selected" C-2026-008
+expect held-key 30 "$tv.selected" C-2026-006
+expect held-key 31 "[$tv.selected, $tc.armed] | join(\",\")" "C-2026-008,"
+expect held-key 39 "[.view.opened, $tv.selected, $tc.status, .view.section, .keyGuard.events] | map(tostring) | join(\",\")" "true,C-2026-002,completed,work,23"
+expect held-key 40 "$kg" desk,24
+argv_check held-key "$work/home-held" "$(printf '%s\n' "$startup" \
+  "$(q plan drop C-2026-004 --json)" "$(q plan start C-2026-005 --json)" "$(q agent start C-2026-003 --json)" \
+  "$(q plan reopen C-2026-002 --json)")"
+clean_log held-key
+
+# The forms that arm on Enter (§5.4): a held Enter in the new decision's
+# title neither arms nor creates, a held Enter on an open drift row opens
+# the form and stops there (before, its repeats armed and linked); a real
+# press arms, the next runs; each real Return counts at the form's guard.
+mkdir -p "$work/home-held-forms"
+run held-forms "" 1920x1080 \
+  "summon;text:4;text:d;type:Held;keyRepeat:Return*3;keyDown:Return;keyRepeat:Return*10;keyUp:Return;key:Return;settle;summon:$cl;keyDown:Return;keyRepeat:Return;keyRepeat:Return*10;keyUp:Return;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle" \
+  HOME="$work/home-held-forms" FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/held-forms.record"
+expect held-forms 5 '[.view.sectionView.form.open, .view.sectionView.form.armed, .view.sectionView.form.title] | map(tostring) | join(",")' "true,false,Held"
+expect held-forms 5 "$kg" decision,3
+for i in 6 7 8; do
+  expect held-forms $i '[.view.sectionView.form.armed, .view.sectionView.form.hint] | map(tostring) | join(",")' "true,Press Enter again: create the decision “Held”"
+done
+# the real Return went through the title's Keys.onReturnPressed
+expect held-forms 6 "$kg" decision,4
+# created: the desk steps aside for its editor (WP-156)
+expect held-forms 10 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+for i in 12 13 14 15; do expect held-forms $i "[$tf.shown, $tf.armed, $tf.result] | map(tostring) | join(\",\")" "true,false,"; done
+expect held-forms 15 "$kg" drift,11
+expect held-forms 16 "[$tf.armed, $tf.hint] | map(tostring) | join(\",\")" "true,Press Enter again: Link tokyo-night to C-2026-005"
+expect held-forms 16 "$kg" drift,12
+expect held-forms 18 "[$tf.isOpen, $tf.result] | map(tostring) | join(\",\")" "false,Linked 1 event to C-2026-005"
+argv_check held-forms "$work/home-held-forms" "$(printf '%s\n' "$startup" \
+  "$(q decide --no-edit --json -- Held)" "$(q open ADR-0005 --editor --json)" "$(q drift link $THEME C-2026-005 --json)")"
+clean_log held-forms
+
+# The fields and buttons that write at once: Today's note and intent, the
+# new-case sheet's title and its Create (a KeyButton), Work's intent. A
+# held Enter (or Space on the button) sends nothing; the real press sends
+# once and counts at that guard.
+mkdir -p "$work/home-held-fields"
+run held-fields "" 1920x1080 \
+  "summon;text:n;type:Hi;keyRepeat:Return*3;keyDown:Return;keyUp:Return;settle;key:Escape;text:i;type:Go;keyRepeat:Return*3;keyDown:Return;keyUp:Return;settle;summon:$wk;text:+;type:Held case;keyRepeat:Return*3;focusName:caseCreate;keyRepeat:Return*3;keyRepeat:Space*3;keyDown:Space;keyUp:Space;settle;text:i;type:Go work;keyRepeat:Return*3;keyDown:Return;keyUp:Return;settle" \
+  HOME="$work/home-held-fields" FAKE_SELDON_FIXTURE="$sample"
+expect held-fields 4 "[.keyGuard.name, .keyGuard.events, $tv.journal.text] | map(tostring) | join(\",\")" "journal,3,Hi"
+expect held-fields 5 "$kg" journal,4
+expect held-fields 11 "[.keyGuard.name, .keyGuard.events, $tv.intent] | map(tostring) | join(\",\")" "intent,3,Go"
+expect held-fields 12 "$kg" intent,4
+# the agent started: the desk stepped aside (WP-156)
+expect held-fields 14 .view.opened false
+expect held-fields 18 "[.keyGuard.name, .keyGuard.events, $ts.open, $ts.title] | map(tostring) | join(\",\")" "sheet,3,true,Held case"
+expect held-fields 21 "[.keyGuard.name, .keyGuard.events, $ts.open] | map(tostring) | join(\",\")" "button,6,true"
+expect held-fields 27 "[.keyGuard.name, .keyGuard.events, $tv.intent] | map(tostring) | join(\",\")" "intent,3,Go work"
+expect held-fields 28 "$kg" intent,4
+argv_check held-fields "$work/home-held-fields" "$(printf '%s\n' "$startup" \
+  "$(q log --json -- Hi)" "$(q agent start --new --json -- Go)" \
+  "$(q plan new --zone yellow --risk R1 --json -- "Held case")" "$(q agent start --new --json -- "Go work")")"
+clean_log held-fields
+
+# Import tasks…: a held Enter in the path field runs one dry run, a held
+# Enter on Dry run none more; held Return or Space on Import imports
+# nothing, a real Space imports once.
+mkdir -p "$work/home-held-import/projects"
+printf '%s\n' "# Desk" "- [ ] Fix the bar flicker" "- [ ] Try a lighter theme" >"$work/home-held-import/projects/TODO.md"
+run held-import "" 1920x1080 \
+  "summon:$wk;click:Import tasks…;type:~/projects/TODO.md;keyRepeat:Return*3;keyDown:Return;keyUp:Return;settle;focusName:importDryRun;keyRepeat:Return*3;focusName:importNow;keyRepeat:Return*3;keyRepeat:Space*3;keyDown:Space;keyUp:Space;settle" \
+  HOME="$work/home-held-import" FAKE_SELDON_FIXTURE="$sample"
+expect held-import 4 "[.keyGuard.name, .keyGuard.events, $tv.import.result] | map(tostring) | join(\",\")" "import,3,"
+expect held-import 5 "[.keyGuard.name, .keyGuard.events, $tv.import.result] | map(tostring) | join(\",\")" "import,4,Reading the task file…"
+expect held-import 9 "[.keyGuard.name, .keyGuard.events, $tv.import.result] | map(tostring) | join(\",\")" "button,3,Would create 2 cases"
+expect held-import 12 "[.keyGuard.name, .keyGuard.events, $tv.import.result] | map(tostring) | join(\",\")" "button,6,Would create 2 cases"
+expect held-import 15 "$tv.importLine" "Imported 2 cases: C-2026-009, C-2026-010"
+argv_check held-import "$work/home-held-import" "$(printf '%s\n' "$startup" \
+  "$(q import task --json --dry-run -- "~/projects/TODO.md")" "$(q import task --json -- "~/projects/TODO.md")" \
+  "$(q plan show C-2026-009 --json)")"
+clean_log held-import
+
+# The routing the cases above do not press by a real key, by reading the
+# plugin: no field acts on Qt's `accepted` (a repeat emits it too), every
+# Return, Enter and Space handler goes to a key guard (the search field's
+# only leaves the field), the desk's key handler is Desk.keyPressed, and
+# the focusable qs.Ui Buttons (which click on every repeat) are the
+# Cancel buttons only.
+check "held keys: no onAccepted in plugin/" "$(grep -rn 'onAccepted' "$root/plugin" --include=*.qml | wc -l)" 0
+check "held keys: every Return/Enter/Space handler goes to keyPressed" \
+  "$(grep -rnE 'Keys\.on(Return|Enter|Space)Pressed' "$root/plugin" --include=*.qml | grep -v 'keyPressed(event) }$' | grep -vc 'components/desk/Search.qml' || true)" 0
+check "held keys: the desk's keys go to Desk.keyPressed" \
+  "$(grep -c 'Keys.onPressed: function(event) { root.keyPressed(event) }' "$root/plugin/Desk.qml")" 1
+check "held keys: only the Cancel buttons are focusable qs.Ui Buttons" \
+  "$(grep -rn 'focusable: true' "$root/plugin" --include=*.qml | wc -l)" "$(grep -rn 'text: "Cancel"' "$root/plugin" --include=*.qml | wc -l)"
 
 # WP-102b, Import tasks…: the form in the detail, a dry run first (the list
 # of what would be created and what is skipped), then one click imports;

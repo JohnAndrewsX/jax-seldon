@@ -62,6 +62,21 @@ import qs.Ui
 //                       key:[Alt+]<Name> a key (Up, Down, Left, Right,
 //                                        Return, Space, Escape, Tab, Backtab)
 //                       text:<char>      a typed character
+//                       keyDown:<Name|char>  press a key (Up, …, or a
+//                                        character) and keep it down
+//                       keyRepeat:<Name|char>  one auto-repeated press of
+//                                        that key, as Hyprland sends while
+//                                        it is held (QtTest makes none):
+//                                        an event object with isAutoRepeat
+//                                        handed to keyPressed(event) of the
+//                                        key guard the focus is in (below)
+//                       keyUp:<Name|char>  release it
+//                       focusName:<objectName>  give that item the focus
+//                       (every report: `keyGuard`, the key guard the focus
+//                       is in — the nearest item up from the focus with a
+//                       keyPressed(event) and a `keyGuard` name, else the
+//                       desk — as { name, events }: a real key that counts
+//                       there went through that guard's Keys handler)
 //                       type:<text>      each character of text, typed
 //                       click:<text>     click the first visible item whose
 //                                        text is <text>
@@ -335,7 +350,7 @@ ShellRoot {
 
   function report(tag) {
     console.log("HARNESS step " + String(tag).replace(/\s/g, "_") + " " + JSON.stringify({
-      view: root.viewObject(), calls: fakeShell.calls, writes: fakeShell.writes, entry: root.entry,
+      view: root.viewObject(), calls: fakeShell.calls, keyGuard: root.keyGuardView(), writes: fakeShell.writes, entry: root.entry,
       call: root.lastCall, bare: root.bare, firstFrame: root.firstFrame,
       graphBuilds: root.service ? root.service.graphBuilds : null,
       graphDirty: root.service ? root.service.graphDirty : null,
@@ -362,6 +377,37 @@ ShellRoot {
     for (var i = 0; i < list.length; i++)
       if (list[i] && list[i].target === "jax.seldon.panel") return list[i]
     return null
+  }
+
+  // One auto-repeated press (keyRepeat:): what keyPressed(event) reads of
+  // a KeyEvent. Accepted, the key stops there, as a real one would.
+  function keyRepeat(name) {
+    var named = root.keys[name] !== undefined
+    var event = {
+      key: named ? root.keys[name] : name.toUpperCase().charCodeAt(0),
+      text: named ? (name === "Return" ? "\r" : name === "Space" ? " " : "") : name,
+      modifiers: Qt.NoModifier,
+      isAutoRepeat: true,
+      count: 1,
+      accepted: false
+    }
+    var guard = root.keyGuardItem()
+    if (guard) guard.keyPressed(event)
+    else console.log("HARNESS nothing to repeat: " + name)
+  }
+
+  // The key guard the focus is in (WP-173): the nearest item up from the
+  // focus with keyPressed(event) and a keyGuard name, else the desk.
+  function keyGuardView() {
+    var g = root.keyGuardItem()
+    return g ? { name: g.keyGuard, events: g.keyEvents } : null
+  }
+
+  function keyGuardItem() {
+    for (var it = win.activeFocusItem; it; it = it.parent) {
+      if (typeof it.keyPressed === "function" && typeof it.keyGuard === "string") return it
+    }
+    return root.desk
   }
 
   function act(spec) {
@@ -480,6 +526,18 @@ ShellRoot {
         name = name.slice(4)
       }
       driver.keyClick(root.keys[name], mods)
+    } else if (verb === "keyDown") {
+      if (root.keys[arg] !== undefined) driver.keyPress(root.keys[arg])
+      else driver.keyPress(arg)
+    } else if (verb === "keyUp") {
+      if (root.keys[arg] !== undefined) driver.keyRelease(root.keys[arg])
+      else driver.keyRelease(arg)
+    } else if (verb === "keyRepeat") {
+      root.keyRepeat(arg)
+    } else if (verb === "focusName") {
+      var focused = root.findName(arg)
+      if (focused) focused.forceActiveFocus()
+      else console.log("HARNESS nothing to focus: " + arg)
     } else if (verb === "text") {
       driver.keyClick(arg)
     } else if (verb === "type") {

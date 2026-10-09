@@ -50,6 +50,18 @@ FocusScope {
     picker.value = id
   }
 
+  // Return or Enter in the note field (WP-173): once per press; a held key's
+  // auto-repeat (Omarchy's Hyprland, after 250 ms) does nothing.
+  // `keyEvents` counts the calls (the harness's key guard read-out).
+  readonly property string keyGuard: "journal"
+  property int keyEvents: 0
+
+  function keyPressed(event) {
+    root.keyEvents++
+    event.accepted = true
+    if (!event.isAutoRepeat) root.submit()
+  }
+
   function submit() {
     if (!root.service || root.pending) return false
     var text = field.text
@@ -92,7 +104,8 @@ FocusScope {
       foreground: root.foreground
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
-      onAccepted: root.submit()
+      Keys.onReturnPressed: function(event) { root.keyPressed(event) }
+      Keys.onEnterPressed: function(event) { root.keyPressed(event) }
       Keys.onEscapePressed: function(event) {
         root.leave()
         event.accepted = true

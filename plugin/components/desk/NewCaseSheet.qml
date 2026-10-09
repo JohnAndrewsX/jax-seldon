@@ -59,6 +59,18 @@ FocusScope {
     titleField.forceActiveFocus()
   }
 
+  // Return or Enter in a field (WP-173): once per press; a held key's
+  // auto-repeat (Omarchy's Hyprland, after 250 ms) does nothing.
+  // `keyEvents` counts the calls (the harness's key guard read-out).
+  readonly property string keyGuard: "sheet"
+  property int keyEvents: 0
+
+  function keyPressed(event) {
+    root.keyEvents++
+    event.accepted = true
+    if (!event.isAutoRepeat) root.submit()
+  }
+
   function submit() {
     if (!root.service || root.pending) return false
     var refusals = root.service.busyRefusals
@@ -142,7 +154,8 @@ FocusScope {
       accent: root.accent
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
-      onAccepted: root.submit()
+      Keys.onReturnPressed: function(event) { root.keyPressed(event) }
+      Keys.onEnterPressed: function(event) { root.keyPressed(event) }
     }
 
     FormRow {
@@ -218,7 +231,8 @@ FocusScope {
         accent: root.accent
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
-        onAccepted: root.submit()
+        Keys.onReturnPressed: function(event) { root.keyPressed(event) }
+        Keys.onEnterPressed: function(event) { root.keyPressed(event) }
       }
     }
 
@@ -236,13 +250,13 @@ FocusScope {
     Row {
       spacing: Style.spacing.sm
 
-      Button {
+      KeyButton {
+        objectName: "caseCreate"
         text: root.pending ? "Creating" : "Create"
         iconText: root.pending ? "󰦖" : ""
         iconSpinning: root.pending
         iconSize: Style.font.caption
         enabled: root.enabledHere && !root.pending
-        focusable: true
         selected: true
         bordered: true
         foreground: root.foreground

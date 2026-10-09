@@ -37,7 +37,7 @@ import "Model.js" as Model
 // goes to Today and `+` to Work with the key. A focused field keeps every
 // key (Esc in it is the field's). Tab does nothing: the desk is not a bar
 // popup. Writing actions arm on the first press (Arm.qml): any other key
-// disarms.
+// disarms. A held key repeats only where it moves (keyPressed).
 //
 // Settings writes (§1): Settings › Appearance and the sidebar's fold button
 // call writeSetting(), which sends the whole shell.json entry with the one
@@ -80,6 +80,9 @@ Item {
   property var writes: []
 
   readonly property Arm arm: Arm {}
+  // Desk.keyPressed's calls (the harness's key guard read-out, WP-173).
+  readonly property string keyGuard: "desk"
+  property int keyEvents: 0
 
   readonly property string pluginId: root.manifest && root.manifest.id ? String(root.manifest.id) : "jax.seldon"
   // The index only when its contents mean something in this status.
@@ -269,6 +272,26 @@ Item {
       return true
     }
     return false
+  }
+
+  // Every key the desk gets (keyCatcher's Keys.onPressed). A held key
+  // repeats its press (Omarchy's Hyprland: after 250 ms, 40 a second); a
+  // repeat of a key that does not move (Model.deskKeyRepeats) is dropped
+  // here and changes nothing: it neither arms, confirms, writes nor
+  // disarms, so a held `x` keeps its arm and hint until it is released and
+  // pressed again. `keyEvents` counts the calls, so a test can tell a real
+  // key event comes through here (WP-173).
+  function keyPressed(event) {
+    root.keyEvents++
+    if (root.editing) return
+    if (event.isAutoRepeat && !Model.deskKeyRepeats(event.key, event.text)) {
+      event.accepted = true
+      return
+    }
+    root.arm.touched = false
+    var used = root.key(event)
+    if (!root.arm.touched) root.arm.disarm()
+    if (used) event.accepted = true
   }
 
   function key(event) {
@@ -544,13 +567,7 @@ Item {
           height: card.height - card.contentTopInset - card.contentBottomInset
           focus: true
           Keys.priority: Keys.BeforeItem
-          Keys.onPressed: function(event) {
-            if (root.editing) return
-            root.arm.touched = false
-            var used = root.key(event)
-            if (!root.arm.touched) root.arm.disarm()
-            if (used) event.accepted = true
-          }
+          Keys.onPressed: function(event) { root.keyPressed(event) }
 
           Header {
             id: header

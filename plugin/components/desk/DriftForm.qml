@@ -211,6 +211,19 @@ FocusScope {
     root.notice = ""
   }
 
+  // Return, Enter (and Space on the button) in the form: a held key
+  // repeats its press (Omarchy's Hyprland: repeat_delay 250 ms), and the
+  // repeat neither arms nor runs (SPEC-PLUGIN §5.3). `keyEvents` counts
+  // the calls (the harness's key guard read-out).
+  readonly property string keyGuard: "drift"
+  property int keyEvents: 0
+
+  function keyPressed(event) {
+    root.keyEvents++
+    event.accepted = true
+    if (!event.isAutoRepeat) root.enterKey()
+  }
+
   // Enter in a text field or on the action button: arm, then run.
   function enterKey() {
     if (!root.isOpen || root.pending || !root.canWrite) return false
@@ -443,7 +456,8 @@ FocusScope {
         accent: root.accent
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
-        onAccepted: root.enterKey()
+        Keys.onReturnPressed: function(event) { root.keyPressed(event) }
+        Keys.onEnterPressed: function(event) { root.keyPressed(event) }
       }
 
       FormRow {
@@ -503,7 +517,8 @@ FocusScope {
           accent: root.accent
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
-          onAccepted: root.enterKey()
+          Keys.onReturnPressed: function(event) { root.keyPressed(event) }
+          Keys.onEnterPressed: function(event) { root.keyPressed(event) }
         }
       }
 
@@ -517,7 +532,8 @@ FocusScope {
         accent: root.accent
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
-        onAccepted: root.enterKey()
+        Keys.onReturnPressed: function(event) { root.keyPressed(event) }
+        Keys.onEnterPressed: function(event) { root.keyPressed(event) }
       }
 
       Row {
@@ -530,9 +546,9 @@ FocusScope {
           activeFocusOnTab: true
           implicitWidth: submitButton.implicitWidth
           implicitHeight: submitButton.implicitHeight
-          Keys.onReturnPressed: root.enterKey()
-          Keys.onEnterPressed: root.enterKey()
-          Keys.onSpacePressed: root.enterKey()
+          Keys.onReturnPressed: function(event) { root.keyPressed(event) }
+          Keys.onEnterPressed: function(event) { root.keyPressed(event) }
+          Keys.onSpacePressed: function(event) { root.keyPressed(event) }
 
           Button {
             id: submitButton

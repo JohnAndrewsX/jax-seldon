@@ -2131,6 +2131,20 @@ test("DESK_SECTIONS: nine targets, digits 1–8 and `,`, wrap with deskCycle", (
   for (const s of M.DESK_SECTIONS) assert.ok(/^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]+$/.test(s.icon), s.id)
 })
 
+test("deskKeyRepeats: only the keys that move repeat (WP-173)", () => {
+  // Qt.Key_Home, End, Left, Up, Right, Down, PageUp, PageDown
+  for (const k of [0x01000010, 0x01000011, 0x01000012, 0x01000013, 0x01000014, 0x01000015, 0x01000016, 0x01000017])
+    assert.strictEqual(M.deskKeyRepeats(k, ""), true)
+  for (const t of ["j", "k", "h", "l", "-", "="]) assert.strictEqual(M.deskKeyRepeats(t.toUpperCase().charCodeAt(0), t), true)
+  // Return, Enter, Space, Escape, Tab, Backspace
+  for (const k of [0x01000004, 0x01000005, 0x20, 0x01000000, 0x01000001, 0x01000003])
+    assert.strictEqual(M.deskKeyRepeats(k, k === 0x20 ? " " : ""), false)
+  // the writing, launching and confirming letters, the section keys, search, the new-case key
+  for (const t of ["x", "a", "r", "c", "e", "o", "i", "n", "d", "p", "0", "f", "F", "J", "1", "8", ",", "/", "+", ""])
+    assert.strictEqual(M.deskKeyRepeats(t === "" ? 0 : t.toUpperCase().charCodeAt(0), t), false)
+  assert.strictEqual(M.deskKeyRepeats(0, undefined), false)
+})
+
 test("clampDeskWidth and deskSidebarMode take bad shell.json values to the defaults", () => {
   for (const [v, want] of [[undefined, 100], [null, 100], ["", 100], ["x", 100], [NaN, 100], [49, 50], [10, 50], [50, 50],
     [67, 67], [74.6, 75], ["80", 80], [100, 100], [150, 100]])
