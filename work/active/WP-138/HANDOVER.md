@@ -234,3 +234,19 @@ budget, an 8 MiB tail, package fields one line and bounded (WP-138 round
   `/tmp/r138c` (removed afterwards), on `36af71f3`: **check: ok**,
   exit 0.
 - The merge waits for the operator to accept ADR-0047.
+
+## Ready (ADR-0047 accepted, E40)
+
+- ADR-0047 status: "accepted 2026-10-09 (operator, E40)". Its DECISIONS.md
+  row now says accepted.
+- `next` (48924e49) merged. The one text conflict was CHANGELOG Engine,
+  where both entries are kept (WP-164 boot configuration, then WP-138
+  `seldon preview`). There was one semantic conflict: WP-160 changed
+  `pacman::parse` to take a `LockState`. `seldon preview` now uses the
+  collector's own `pacman::lock_state`, so a `db.lck` older than the boot
+  holds nothing back, as it does in capture. The unit tests pass
+  `LockState::Absent`.
+- Check: full, `SELDON_FULL_CHECK=1`, private runtime dir `/tmp/r138d`
+  (removed afterwards). The target dir (`engine/target`) and
+  `JUST_TEMPDIR` (`engine/target/just-tmp`) were on disk. Result on the
+  merge commit `ddf4935c`: **check: ok**, exit 0.
