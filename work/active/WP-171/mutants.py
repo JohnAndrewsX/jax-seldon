@@ -154,7 +154,7 @@ runs = [
     cargo + ["--lib", "--", "logbook::", "sys::tests::nofollow", "sys::tests::regular", "ledger::", "commands::setup", "--test-threads=4"],
     cargo + ["--test", "linked_files", "--", "--test-threads=4"],
     cargo + ["--test", "linked_folders", "--", "--test-threads=4"],
-    cargo + ["--test", "doctor", "--", "layout", "--test-threads=4"],
+    cargo + ["--test", "doctor", "--", "layout", "linked_folders_and_files", "--test-threads=4"],
     cargo + ["--test", "rules", "--", "through_a_link", "--test-threads=4"],
 ]
 results = []

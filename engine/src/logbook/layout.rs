@@ -288,6 +288,10 @@ mod tests {
     use crate::logbook::scratch::scratch;
     use std::os::unix::fs::symlink;
 
+    unsafe extern "C" {
+        fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32;
+    }
+
     fn found(root: &Path) -> Vec<(String, &'static str)> {
         misplaced(root)
             .into_iter()
@@ -317,6 +321,8 @@ mod tests {
         let outside = scratch("seldon-layout-outside");
         std::fs::create_dir_all(outside.join("dir")).unwrap();
         std::fs::write(outside.join("file"), "").unwrap();
+        // what a linked folder holds is not looked into
+        symlink("nowhere", outside.join("dir/inner.md")).unwrap();
         for dir in [
             "decisions",
             "journal/2026",
@@ -344,6 +350,12 @@ mod tests {
         symlink(outside.join("file"), root.join("areas/editors/README.md")).unwrap();
         symlink(outside.join("file"), root.join(".seldon/active-case")).unwrap();
         symlink(outside.join("file"), root.join(".seldon/imports/task.json")).unwrap();
+        // a FIFO in a folder: neither a folder nor a regular file
+        std::fs::create_dir_all(root.join("memory")).unwrap();
+        let fifo =
+            std::ffi::CString::new(root.join("memory/pipe.md").as_os_str().as_encoded_bytes())
+                .unwrap();
+        assert_eq!(unsafe { mkfifo(fifo.as_ptr(), 0o600) }, 0);
         // the user's places: not looked into
         symlink(
             outside.join("file"),
@@ -370,6 +382,7 @@ mod tests {
                 ("ledger".to_string(), "symbolic link"),
                 ("areas/editors/README.md".to_string(), "symbolic link"),
                 ("system".to_string(), "no directory"),
+                ("memory/pipe.md".to_string(), "no regular file"),
                 (".seldon/active-case".to_string(), "symbolic link"),
                 (".seldon/imports/task.json".to_string(), "symbolic link"),
                 ("STATUS.md".to_string(), "symbolic link"),
