@@ -47,5 +47,6 @@
 | ADR-0043 | A pacman transaction that did not complete says so: `meta.txStatus` `failed`/`interrupted`/`unfinished` (optional, contract 2) | accepted; its Consequence on a stale lock is resolved by WP-160 (rule in SPEC-ENGINE §4 pacman, "Stale lock") |
 | ADR-0044 | The desk reads a case's whole Intent (`plan show --json` `intent {text, lines, truncated, hidden}`) and imports task files (`import task`): two plugin-command rows; an imported Intent fits the desk, nothing invisible reaches it | accepted |
 | ADR-0045 | EASY \| PRO: one desk, two views; the mode is the plugin setting `deskMode`, a fresh install starts in EASY | proposed |
+| ADR-0049 | A file of the logbook is never written through a symbolic link: a linked or non-regular file is refused like a linked folder (WP-168), the logbook's write primitives never follow a link, `doctor` gets a `layout` row; records the lstat-then-create residual | proposed |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
