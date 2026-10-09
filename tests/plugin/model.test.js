@@ -14,6 +14,9 @@ vm.runInContext(fs.readFileSync(path.join(root, "plugin/Model.js"), "utf8"), M, 
 const sample = fs.readFileSync(path.join(root, "fixtures/index.sample.json"), "utf8")
 const notInit = fs.readFileSync(path.join(root, "fixtures/index-variants/not-initialised.json"), "utf8")
 const v3 = fs.readFileSync(path.join(root, "fixtures/invalid/index.contract-v3.json"), "utf8")
+// ADR-0051: a contract-3 index a contract-2 plugin may read (the sample with
+// unknown keys, a source, kinds and a timeline kind; fixtures/README.md)
+const forward = fs.readFileSync(path.join(root, "fixtures/forward/index.contract-v3-readable.json"), "utf8")
 // a contract-1 index (a 0.1.x engine): the sample as v1 wrote it
 const v1 = JSON.stringify(Object.assign(JSON.parse(sample), { contractVersion: 1 }))
 
@@ -137,6 +140,95 @@ test("parseIndex rejects empty, broken and non-object input", () => {
   assert.strictEqual(M.parseIndex("{").error, "parse")
   assert.strictEqual(M.parseIndex("[1]").error, "shape")
   assert.strictEqual(M.parseIndex('{"contractVersion":2}').error, "shape")
+})
+
+// ADR-0051: a newer index that says a contract-2 plugin can read it is
+// read; the pill keeps its counts and the crisis colour, the unknown
+// parts fall back or are left out, and the desk asks for a plugin update.
+test("parseIndex reads a newer index that says this plugin can read it (ADR-0051)", () => {
+  const own = M.parseIndex(sample)
+  assert.strictEqual(own.readableFrom, 2)
+  assert.strictEqual(own.newer, false)
+  assert.strictEqual(M.contractNewerNotice(own), null)
+  const r = M.parseIndex(forward)
+  assert.strictEqual(r.ok, true, r.error)
+  assert.strictEqual(r.contractVersion, 3)
+  assert.strictEqual(r.readableFrom, 2)
+  assert.strictEqual(r.newer, true)
+  const ix = r.index
+  // what the forward fixture adds: unknown top-level and summary keys, an
+  // event and a drift row of an unknown source and kind, a timeline kind
+  assert.ok(Array.isArray(ix.crashes) && Array.isArray(ix.reports) && ix.summary.crashes === 1)
+  same(ix.events.slice(0, 2).map((e) => e.source + "/" + e.kind), ["journal/crash", "journal/boot-error"])
+  same([ix.drift[0].source, ix.drift[0].kind], ["journal", "boot-error"])
+  assert.strictEqual(ix.series.timeline[0].kind, "crash")
+  const base = M.parseIndex(sample).index
+  const st = M.deriveStatus({ engine: "present", file: "loaded", parse: r, engineNotInitialised: false, nowMs: gen })
+  assert.strictEqual(st, "ok")
+  assert.ok(M.showsCounts(st))
+  same(M.counts(ix), M.counts(base))
+  assert.strictEqual(M.pillTone(M.counts(ix)), "urgent", "the fixture's crises colour the pill")
+  assert.strictEqual(M.pillText(M.counts(ix), "crisis"), M.pillText(M.counts(base), "crisis"))
+  assert.strictEqual(M.tooltipText(st, M.counts(ix), M.lastCapture(ix), gen),
+    M.tooltipText(st, M.counts(base), M.lastCapture(base), gen))
+  assert.strictEqual(M.crisisText(ix), M.crisisText(base))
+  // an unknown source gets the default glyph; an unknown timeline kind is left out
+  assert.strictEqual(M.sourceGlyph("journal"), "•")
+  const rows = (t) => t.periods["30"].slots.map((x) => x.id + "=" + x.rows).join(",")
+  assert.strictEqual(rows(M.periodTable(ix)), rows(M.periodTable(base)))
+  // the desk's builders take the unknown rows without throwing
+  const log = M.deskChangelog(ix)
+  M.deskToday(ix, log)
+  M.deskWork(ix)
+  M.deskKpis(ix)
+  M.graphBuild(ix)
+  // the quiet notice: both versions, Omarchy's plugin update as the fixed script
+  const n = M.contractNewerNotice(r)
+  assert.strictEqual(n.tone, "neutral")
+  assert.strictEqual(n.detail, "The engine writes index v3; this plugin reads v2 — update the plugin.")
+  assert.strictEqual(n.command, "omarchy plugin update jax.seldon")
+  same(M.terminalArgv(n), ["omarchy-launch-floating-terminal-with-presentation", M.UPDATE_PLUGIN_SCRIPT])
+  same(n.actions.map((a) => a.id), ["terminal", "copy"])
+})
+
+test("parseIndex refuses a newer index that a contract-2 plugin cannot read (ADR-0051)", () => {
+  const mk = (over) => {
+    const d = JSON.parse(forward)
+    for (const k of Object.keys(over)) {
+      if (over[k] === undefined) delete d[k]
+      else d[k] = over[k]
+    }
+    return M.parseIndex(JSON.stringify(d))
+  }
+  const st = (p) => M.deriveStatus({ engine: "present", file: "loaded", parse: p, engineNotInitialised: false, nowMs: gen })
+  const three = mk({ contractReadableFrom: 3 })
+  assert.strictEqual(three.error, "contract")
+  assert.strictEqual(three.index, null)
+  assert.strictEqual(st(three), "contractMismatch")
+  assert.strictEqual(M.contractNewerNotice(three), null)
+  const banner = M.bannerFor("contractMismatch", { indexContractVersion: three.contractVersion })
+  assert.strictEqual(banner.command, M.UPDATE_PLUGIN_COMMAND)
+  // without the field, or with a value that is no integer in 1 ..= version,
+  // the strict rule of today
+  for (const bad of [undefined, null, "2", 2.5, 0, -1, 4, true, [2]]) {
+    assert.strictEqual(mk({ contractReadableFrom: bad }).error, "contract", JSON.stringify(bad))
+  }
+  assert.strictEqual(mk({ contractReadableFrom: 1 }).ok, true)
+  // a version that is no integer is never newer
+  assert.strictEqual(mk({ contractVersion: 2.5 }).error, "contract")
+  assert.strictEqual(M.parseIndex(forward.replace('"contractVersion": 3', '"contractVersion": 1e400')).error, "contract")
+  // an older index stays a mismatch whatever it says (the engine to update)
+  const old = JSON.parse(sample)
+  old.contractVersion = 1
+  old.contractReadableFrom = 1
+  assert.strictEqual(M.parseIndex(JSON.stringify(old)).error, "contract")
+  // the plugin's own version reads whatever the field says
+  const own = JSON.parse(sample)
+  own.contractReadableFrom = 7
+  const p = M.parseIndex(JSON.stringify(own))
+  assert.strictEqual(p.ok, true)
+  assert.strictEqual(p.newer, false)
+  assert.strictEqual(p.readableFrom, 2)
 })
 
 const ok = M.parseIndex(sample)

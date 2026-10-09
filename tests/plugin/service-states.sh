@@ -191,6 +191,28 @@ expect contract-older .indexContractVersion 1
 expect contract-older .bannerDetail "The index uses contract v1 and this plugin reads v2: update the engine."
 clean_log contract-older
 
+# 7a. ADR-0051: a newer index that says a contract-2 plugin can read it
+# (fixtures/forward): read, the pill keeps its counts and the crisis colour,
+# the quiet notice asks for a plugin update; with contractReadableFrom 3
+# the mismatch banner as above.
+run contract-newer 2500 PATH="$fake_path" SELDON_INDEX="$fx/forward/index.contract-v3-readable.json"
+expect contract-newer .status ok
+expect contract-newer .indexContractVersion 3
+expect contract-newer .indexReadableFrom 2
+expect contract-newer .banner ""
+expect contract-newer .pill "2 · 2"
+expect contract-newer .tone urgent
+expect contract-newer .contractNotice "The engine writes index v3; this plugin reads v2 — update the plugin."
+expect contract-newer '.contractActions | join(",")' "terminal:Update,copy:Copy"
+clean_log contract-newer
+jq '.contractReadableFrom = 3' "$fx/forward/index.contract-v3-readable.json" >"$work/index.contract-v3-unreadable.json"
+run contract-unreadable 2500 PATH="$fake_path" SELDON_INDEX="$work/index.contract-v3-unreadable.json"
+expect contract-unreadable .status contractMismatch
+expect contract-unreadable .bannerDetail "The index uses contract v3 and this plugin reads v2: update the plugin."
+expect contract-unreadable .contractNotice ""
+expect contract-unreadable .pill ""
+clean_log contract-unreadable
+
 # 7b. WP-120 (ADR-0035): a 0.1.x plugin against a contract-2 index shows the
 # mismatch banner with both numbers. The plugin of the v0.1.3 tag; without
 # the tag (a shallow clone) this plugin with its contract set back to 1.

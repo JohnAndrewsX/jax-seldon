@@ -95,7 +95,10 @@ zeigt nichts. Starte die Shell deshalb nach jedem Plugin-Update neu.
 
 Plugin und Engine einigen sich über die Version des Index-Formats. Ist
 eines zu alt, meldet das Panel „Index format mismatch“ und nennt das, was
-du aktualisieren musst. Nach einem Update sollte `seldon doctor` nur `ok`
+du aktualisieren musst. Ist die Engine neuer und sagt ihr Index, dass
+dieses Plugin ihn noch lesen kann, arbeitet das Plugin weiter und bittet
+nur in einem leisen Hinweis um sein eigenes Update („The engine is newer
+than the plugin“). Nach einem Update sollte `seldon doctor` nur `ok`
 zeigen.
 
 ## Der optionale Watcher

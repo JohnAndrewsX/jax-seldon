@@ -69,7 +69,8 @@ plugin/
 ## 3. Service.qml
 
 - `FileView` on `~/.local/state/seldon/index.json` with `watchChanges: true`;
-  on change parse JSON (try/catch), validate `contractVersion`, publish
+  on change parse JSON (try/catch), validate `contractVersion` (with
+  `contractReadableFrom`, CONTRACT.md rule 3, ADR-0051), publish
   `index` property. Parsing happens on the shell thread — the index is
   small (< 1 MB by contract); if it grows, move parsing to a `Process`
   that emits a trimmed view.
@@ -988,7 +989,8 @@ Four groups in the list; Appearance is selected first.
 
 The notices under the header are the 0.1 panel's banners with their
 one-click fixes, in this order: the restart notice after a plugin update,
-the status banner, snapshots not readable, the outdated agent rules,
+the status banner, the engine newer than the plugin, snapshots not
+readable, the outdated agent rules,
 what their update did, the capture warnings. Each is `Banner.qml` on the
 service's object; a fix goes to `Service.fix(action, banner)`. Their
 texts and fixes:
@@ -1003,7 +1005,15 @@ first setup step, "Install the engine" in the accent tone, with an index
 tone; contract
 mismatch → `omarchy plugin update jax.seldon` when the plugin is older
 than the index, the GitHub installer one-liner when the engine is older (until the
-AUR package is live, ADR-0024), with *Update* and *Copy*; engine older than the manifest's
+AUR package is live, ADR-0024), with *Update* and *Copy*; an index
+of a newer contract that says this plugin can read it (`contractVersion`
+above the plugin's, `contractReadableFrom` at most the plugin's,
+ADR-0051) → no status banner (the status is what the index says; the
+pill keeps its counts and colour) but the neutral notice "The engine is
+newer than the plugin", "The engine writes index vN; this plugin reads
+v2 — update the plugin.", `omarchy plugin update jax.seldon` with
+*Update* (the plugin update's terminal script, as the mismatch banner's)
+and *Copy*; engine older than the manifest's
 `engineMin` (§3; in place of every status banner but engine missing and
 contract mismatch) → "Engine too old", "This plugin needs engine X or
 newer and seldon reports Y.", the same installer one-liner with *Update*, *Copy* and

@@ -74,6 +74,9 @@ Item {
   property var parsed: null
   readonly property var index: parsed && parsed.ok ? parsed.index : null
   readonly property int indexContractVersion: parsed ? parsed.contractVersion : 0
+  // A newer contract this plugin still reads (ADR-0051): the quiet notice
+  // that asks for a plugin update; null otherwise.
+  readonly property var contractNotice: Model.contractNewerNotice(parsed)
   readonly property bool ready: fileState !== "loading" && engineState !== "unknown"
 
   // ---- Derived state.
@@ -1069,7 +1072,8 @@ Item {
 
   // ---- Banner fixes (AGENTS.md §7: every non-ok state has a one-click fix).
   // bannerId picks the banner whose constants copy and terminal use:
-  // "status" (default) or "snapper" (ADR-0026). Copy puts the plain command
+  // "status" (default), "snapper" (ADR-0026) or "contract" (the newer
+  // contract's notice, ADR-0051). Copy puts the plain command
   // on the clipboard; terminal opens the banner's terminal script (WP-117),
   // only one of Model.TERMINAL_SCRIPTS (Model.terminalArgv). "restart" is the restart
   // notice's own action (WP-090): the fixed argv, only while it shows, and
@@ -1088,7 +1092,9 @@ Item {
       root.rulesResult = { ok: true, pending: true, text: "Updating the rules…" }
       return true
     }
-    var source = bannerId === "snapper" ? root.snapperBanner : root.banner
+    var source = bannerId === "snapper" ? root.snapperBanner
+      : bannerId === "contract" ? root.contractNotice
+      : root.banner
     var command = source ? source.command : ""
     var terminal = Model.terminalArgv(source)
     if (actionId === "copy" && command !== "") {
@@ -1121,6 +1127,9 @@ Item {
       indexPath: root.indexPath,
       fileState: root.fileState,
       indexContractVersion: root.indexContractVersion,
+      indexReadableFrom: root.parsed ? root.parsed.readableFrom : 0,
+      contractNotice: root.contractNotice ? root.contractNotice.detail : "",
+      contractActions: root.contractNotice ? root.contractNotice.actions.map(function(a) { return a.id + ":" + a.label }) : [],
       engine: root.engineState,
       engineVersion: root.engineVersion,
       engineDetail: root.engineDetail,

@@ -221,13 +221,33 @@ function count(value) {
 
 // ---- Index ------------------------------------------------------------------
 
-// Parse index.json text. Returns { ok, error, detail, contractVersion, index }.
-// error: "" | "empty" | "parse" | "shape" | "contract". Only a matching
-// contractVersion yields an index; a mismatch still reports the version found
-// so the banner can show both numbers (CONTRACT.md rule 3).
+// The oldest plugin contract that can read an index (ADR-0051): its
+// `contractReadableFrom` when that is an integer from 1 to the index's own
+// version, else the version itself (the strict rule of an index without
+// the field).
+function readableFrom(data, version) {
+  var r = isObject(data) ? data.contractReadableFrom : undefined
+  return typeof r === "number" && Math.floor(r) === r && r >= 1 && r <= version ? r : version
+}
+
+// Whether this plugin reads an index of `version` that says `from`
+// (CONTRACT.md rule 3, ADR-0051): its own contract, or a newer one that
+// a plugin of this contract can read without misreading a field.
+function readsContract(version, from) {
+  if (version === CONTRACT_VERSION) return true
+  return isFinite(version) && Math.floor(version) === version && version > CONTRACT_VERSION && from <= CONTRACT_VERSION
+}
+
+// Parse index.json text. Returns { ok, error, detail, contractVersion,
+// readableFrom, newer, index }. error: "" | "empty" | "parse" | "shape" |
+// "contract". Only a contractVersion this plugin reads yields an index: its
+// own, or a newer one whose contractReadableFrom is at most its own
+// (ADR-0051; `newer` is then true and the desk asks for a plugin update).
+// A mismatch still reports the version found so the banner can show both
+// numbers (CONTRACT.md rule 3).
 function parseIndex(text) {
   var raw = text === undefined || text === null ? "" : String(text)
-  var result = { ok: false, error: "", detail: "", contractVersion: 0, index: null }
+  var result = { ok: false, error: "", detail: "", contractVersion: 0, readableFrom: 0, newer: false, index: null }
   if (raw.trim() === "") {
     result.error = "empty"
     return result
@@ -246,10 +266,12 @@ function parseIndex(text) {
     return result
   }
   result.contractVersion = typeof data.contractVersion === "number" ? data.contractVersion : 0
-  if (result.contractVersion !== CONTRACT_VERSION) {
+  result.readableFrom = readableFrom(data, result.contractVersion)
+  if (!readsContract(result.contractVersion, result.readableFrom)) {
     result.error = "contract"
     return result
   }
+  result.newer = result.contractVersion > CONTRACT_VERSION
   if (!isObject(data.summary) || !isObject(data.state) || typeof data.generatedAt !== "string") {
     result.error = "shape"
     result.detail = "summary, state or generatedAt missing"
@@ -599,6 +621,27 @@ function bannerFor(status, ctx) {
     }
   }
   return null
+}
+
+// The quiet notice when the index is of a newer contract that this plugin
+// still reads (ADR-0051): the bar keeps its counts and colour, the desk
+// says that the plugin is behind and offers Omarchy's plugin update, the
+// mismatch banner's own fix (UPDATE_PLUGIN_SCRIPT). null otherwise.
+function contractNewerNotice(parsed) {
+  if (!isObject(parsed) || !parsed.ok || !parsed.newer) return null
+  var found = Number(parsed.contractVersion) || 0
+  return {
+    status: "contractNewer",
+    tone: "neutral",
+    title: "The engine is newer than the plugin",
+    detail: "The engine writes index v" + found + "; this plugin reads v" + CONTRACT_VERSION + " — update the plugin.",
+    command: UPDATE_PLUGIN_COMMAND,
+    script: UPDATE_PLUGIN_SCRIPT,
+    actions: [
+      { id: "terminal", label: "Update" },
+      { id: "copy", label: "Copy" }
+    ]
+  }
 }
 
 // ---- Engine calls -----------------------------------------------------------
