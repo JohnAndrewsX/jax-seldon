@@ -1345,8 +1345,11 @@ git itself is killed, with the same bounded pipe wait. Rules:
   the transaction is held back as under a held lock (round 2). pacman's
   own `[PACMAN] Running` line does not count: pacman logs it before it
   takes the lock, so a retry after the boot that failed on the lock
-  logs one; with no open transaction, such a line from this boot is read
-  again next time like one under a held lock, an older one is passed.
+  logs one. A Running line without a transaction is read again while any
+  lock is present, held or stale (it has no events, so nothing is held
+  back; a newer Running line replaces it; once the lock is gone it is
+  passed), so a transaction whose download phase a capture meets under a
+  stale-looking lock keeps its `meta.command`.
   `pacman.log`'s mtime is not used for the same reason. A lock from this
   boot, or one whose age cannot be told (no `/proc/stat`, no `btime`, no
   mtime), counts as held (the rule before WP-160); a symbolic link at the
@@ -1362,8 +1365,11 @@ git itself is killed, with the same bounded pipe wait. Rules:
   the lines pacman writes after that, up to `transaction completed`,
   arrive as package lines outside any transaction, with no `txId`, no
   `meta.command`, no status and no group (rare: pacman running before
-  time sync, a capture between the jump and its next line; the status is
-  final, ADR-0043). `SELDON_PACMAN_DB_LOCK` names the lock and
+  time sync, a capture between the jump and its next libalpm line, that
+  is inside a long silent hook or scriptlet; the other shape, the
+  download phase before `transaction started`, is closed by the Running
+  rule above, as it has no transaction yet; the status is final,
+  ADR-0043). `SELDON_PACMAN_DB_LOCK` names the lock and
   `SELDON_PACMAN_LOG` the log; under `SELDON_TEST_GUARD` without them
   `<guard>/db.lck` and `<guard>/pacman.log`, so a guarded run reads none
   of the host's. **Status** (ADR-0043): a

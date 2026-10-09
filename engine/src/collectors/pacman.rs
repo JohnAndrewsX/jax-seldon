@@ -215,6 +215,24 @@ pub fn boot_time(proc_stat: &str) -> Option<SystemTime> {
     UNIX_EPOCH.checked_add(Duration::from_secs(secs))
 }
 
+/// A Running line whose transaction has not started yet (pacman is still
+/// downloading) is read again next time while any lock is there, held or
+/// stale, or the transaction would lose its command line (WP-160 stage 2:
+/// under a stale-looking lock this is the download phase after a forward
+/// clock jump). Nothing is held back by it: it has no events. Once the
+/// lock is gone it is passed, and a newer Running line replaces it.
+fn hold_running(
+    resume: &mut u64,
+    command: Option<&(u64, DateTime<FixedOffset>, String)>,
+    lock: LockState,
+) {
+    if let Some((off, ..)) = command
+        && lock != LockState::Absent
+    {
+        *resume = *off;
+    }
+}
+
 /// Whether `ts` (whole seconds) lies before `boot`.
 fn before_boot(ts: DateTime<FixedOffset>, boot: SystemTime) -> bool {
     boot.duration_since(UNIX_EPOCH)
@@ -629,17 +647,9 @@ pub fn parse(bytes: &[u8], base: u64, lock: LockState, tz: Tz) -> Parsed {
         Some(mut o) => {
             o.tx.status = Some(TxStatus::Unfinished);
             txs.push(o.tx);
+            hold_running(&mut resume, command.as_ref(), lock);
         }
-        // a Running line whose transaction has not started yet (pacman is
-        // still downloading): read it again next time, or the transaction
-        // would lose its command line
-        None => {
-            if let Some((off, ts, _)) = command
-                && held(ts)
-            {
-                resume = off;
-            }
-        }
+        None => hold_running(&mut resume, command.as_ref(), lock),
     }
     txs.retain(|t| !t.lines.is_empty() || !t.left.is_empty());
     Parsed { txs, resume }
@@ -902,13 +912,23 @@ mod tests {
             p.txs.iter().map(|t| t.status).collect::<Vec<_>>()
         };
         assert_eq!(emitted(open), [Some(TxStatus::Unfinished)]);
-        // a retry after the boot that failed on the lock
+        // a retry after the boot that failed on the lock: the dead
+        // transaction is emitted, its Running line is read again while the
+        // lock is there (stage 2 N1)
+        let retry = format!("{open}[2026-10-01T10:31:00+0200] [PACMAN] Running 'pacman -S zed'\n");
+        let p = parse(&lines(&retry), 0, stale, tz());
         assert_eq!(
-            emitted(&format!(
-                "{open}[2026-10-01T10:31:00+0200] [PACMAN] Running 'pacman -S zed'\n"
-            )),
+            p.txs.iter().map(|t| t.status).collect::<Vec<_>>(),
             [Some(TxStatus::Unfinished)]
         );
+        assert_eq!(
+            p.resume as usize,
+            open.len(),
+            "the Running line is read again"
+        );
+        // the lock gone: passed
+        let p = parse(&lines(&retry), 0, LockState::Absent, tz());
+        assert_eq!(p.resume as usize, retry.len());
         // pacman wrote since the boot: a package line, a hook, a scriptlet
         for later in [
             "[2026-10-01T10:30:00+0200] [ALPM] upgraded linux (6.16.9-1 -> 6.16.10-1)\n",
@@ -925,13 +945,15 @@ mod tests {
             )),
             [Some(TxStatus::Unfinished)]
         );
-        // only a Running line (no transaction yet): kept for the next
-        // capture when it is from this boot, else passed
+        // only a Running line (no transaction yet): read again while any
+        // lock is there, from this boot or older (the download phase after
+        // a forward clock jump, stage 2 N1); passed once the lock is gone
         let running = "[2026-10-01T10:31:00+0200] [PACMAN] Running 'pacman -Syu'\n";
         assert_eq!(parse(&lines(running), 7, stale, tz()).resume, 7);
         let old = "[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -Syu'\n";
+        assert_eq!(parse(&lines(old), 7, stale, tz()).resume, 7);
         assert_eq!(
-            parse(&lines(old), 7, stale, tz()).resume,
+            parse(&lines(old), 7, LockState::Absent, tz()).resume,
             7 + old.len() as u64
         );
     }
