@@ -20,6 +20,7 @@ use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use common::{Env, Snapper, copy_dir, find_file, fixture_logbook, hardware_root, stderr};
+use seldon::logbook::layout::{self, Misplaced};
 
 const T0: &str = "2026-10-09T09:00:00+02:00";
 const T1: &str = "2026-10-09T10:00:00+02:00";
@@ -185,6 +186,7 @@ fn refused_with(
         before(&env, &root);
         let rel = rel(&root);
         swap(&env, &root, &rel, how);
+        named_by_doctor(&root, &rel, how, true);
         let inside = snapshot(&root);
         let beside = snapshot(&env.tmp.path().join("outside"));
 
@@ -216,6 +218,22 @@ fn refused_with(
             "{rel} {how:?} {args:?}: a file outside changed"
         );
     }
+}
+
+/// What ties the writers to doctor's `layout` row (ADR-0049 §3): the file
+/// a writer refuses (`refused`) or skips is named, as a refusal or not.
+fn named_by_doctor(root: &Path, rel: &str, how: Swap, refused: bool) {
+    let what = match how {
+        Swap::Link | Swap::Dangling => Misplaced::Link,
+        Swap::Dir | Swap::Fifo => Misplaced::NoRegularFile,
+    };
+    let found = layout::misplaced(root);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.rel == rel && f.what == what && f.refused == refused),
+        "{rel} {how:?}: doctor's layout row does not name it (refused: {refused}): {found:?}"
+    );
 }
 
 /// `args` at `T0`, exit 0.
@@ -397,6 +415,7 @@ fn the_views_are_skipped() {
             let root = env.init_logbook();
             status(&env, &root);
             swap(&env, &root, file, how);
+            named_by_doctor(&root, file, how, false);
             let view = snapshot(&root).get(file).cloned();
             let beside = snapshot(&env.tmp.path().join("outside"));
             let warning = format!(

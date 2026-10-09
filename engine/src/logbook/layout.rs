@@ -152,29 +152,127 @@ fn write_new(root: &Path, rel: &str, text: &str, written: &mut Vec<PathBuf>) -> 
 }
 
 /// The folders of the logbook the engine writes in (SPEC-ENGINE §2,
-/// "Linked folders and files"), and how many folder levels below each
-/// [`misplaced`] looks into for entries: `None` checks the folder only
-/// (workpiece folders under `work/`, the archives, the setup kit are the
-/// user's or written with `O_EXCL`).
-const WRITTEN_FOLDERS: &[(&str, Option<u8>)] = &[
-    ("decisions", Some(0)),
-    ("work", None),
-    ("work/queued", Some(0)),
-    ("work/active", Some(0)),
-    ("work/completed", Some(0)),
-    ("journal", Some(1)),
-    ("ledger", Some(0)),
-    ("areas", Some(1)),
-    ("system", Some(0)),
-    ("outputs", Some(0)),
-    ("archive", None),
-    ("memory", Some(0)),
-    (".seldon", Some(1)),
-    (".claude", None),
+/// "Linked folders and files"), in the order [`misplaced`] reports them.
+/// Each is refused by the commands that write there when it, or a part of
+/// it, is a link or no directory. The year folders `journal/<YYYY>/` and
+/// the area folders `areas/<area>/` are found in `journal/` and `areas/`.
+const WRITTEN_FOLDERS: &[&str] = &[
+    "decisions",
+    "work",
+    "work/queued",
+    "work/active",
+    "work/completed",
+    "journal",
+    "ledger",
+    "areas",
+    "system",
+    "outputs",
+    "archive",
+    "memory",
+    ".seldon",
+    ".seldon/imports",
+    ".claude",
 ];
 
-/// The files directly in the root the engine writes.
-const WRITTEN_ROOT_FILES: &[&str] = &["AGENTS.md", "STATUS.md", "DECISIONS.md"];
+/// The folders whose every entry [`misplaced`] names when it is a link or
+/// neither a folder nor a regular file (a link there is the same escape,
+/// even under a name the engine does not write yet). In the other folders
+/// it names only the files the engine writes ([`written`]); workpieces
+/// (`work/C-…/`), the archives and the setup kit are not looked into.
+const EVERY_ENTRY: &[&str] = &[
+    "decisions",
+    "work/queued",
+    "work/active",
+    "work/completed",
+    "ledger",
+    "system",
+    "memory",
+];
+
+/// What a writer does with a file of its own that is a link or no regular
+/// file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Written {
+    /// It refuses, exit 1 (ADR-0049 §1).
+    Refused,
+    /// A generated view: skipped with a warning (`STATUS.md`,
+    /// `DECISIONS.md`, `ledger/<month>.md`; WP-171 round 2).
+    Skipped,
+}
+
+/// Whether the engine writes the file `rel` (relative to the root, `/`
+/// separated), and what it does when it cannot: the list of every writer
+/// of a logbook file (SPEC-ENGINE §2), tied to them by
+/// `tests/linked_files.rs`, where every refused or skipped file of a
+/// writer must be named here.
+pub fn written(rel: &str) -> Option<Written> {
+    use crate::model::is_slug;
+    let parts: Vec<&str> = rel.split('/').collect();
+    let md = |n: &str, prefix: &str| n.starts_with(prefix) && n.ends_with(".md");
+    let month = |n: &str, ext: &str| {
+        n.strip_suffix(ext)
+            .is_some_and(|m| NaiveDate::parse_from_str(&format!("{m}-01"), "%Y-%m-%d").is_ok())
+    };
+    let refused = match parts.as_slice() {
+        // rules update and the capture's rules upgrade
+        [file] if *file == super::rules::FILE => true,
+        // `status`, `index`, `decide`'s fill: views, skipped
+        ["STATUS.md" | "DECISIONS.md"] => false,
+        ["ledger", n] if month(n, ".jsonl") => true,
+        ["ledger", n] if month(n, ".md") => false,
+        // `journal::prepare`, `ensure_day`, the import's days
+        ["journal", year, day] => {
+            return day
+                .strip_suffix(".md")
+                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                .filter(|d| d.format("%Y").to_string() == *year)
+                .map(|_| Written::Refused);
+        }
+        // case files: `write_new`, `CaseFile::save`
+        ["work", "queued" | "active" | "completed", n] if md(n, "C-") => true,
+        // `decide`, `decide accept`
+        ["decisions", n] if md(n, "ADR-") => true,
+        // `cases::ensure_area`
+        ["areas", area, "README.md"] if is_slug(area) => true,
+        // `dossier` and the import's dossier rows
+        ["system", n] if crate::dossier::FENCES.iter().any(|f| f.file == *n) => true,
+        // the import's memory files
+        ["memory", n] if md(n, "") => true,
+        // `rebuild`, the import's report
+        ["outputs", n] if *n == "REBUILD.md" || md(n, "IMPORT-") => true,
+        // `plan start|done|drop`
+        [".seldon", "active-case"] => true,
+        // the import's marker and undo file, the task import's marker
+        [".seldon", "imports", n] => {
+            let agent = crate::import::omarchy_agent::SOURCE;
+            let names = [
+                format!("{agent}.json"),
+                format!("{agent}.undo.json"),
+                "tasks.json".to_string(),
+            ];
+            if !names.iter().any(|m| m == n) {
+                return None;
+            }
+            true
+        }
+        _ => return None,
+    };
+    Some(if refused {
+        Written::Refused
+    } else {
+        Written::Skipped
+    })
+}
+
+/// A year folder `journal/<YYYY>` or an area folder `areas/<area>`: a
+/// folder the engine writes in, found inside another.
+fn is_subfolder(rel: &str) -> bool {
+    match rel.split('/').collect::<Vec<_>>().as_slice() {
+        ["journal", y] => y.len() == 4 && y.bytes().all(|b| b.is_ascii_digit()),
+        ["areas", a] => crate::model::is_slug(a),
+        _ => false,
+    }
+}
 
 /// What [`misplaced`] found in a place the engine writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,23 +295,29 @@ impl Misplaced {
     }
 }
 
-/// Every place where the engine writes and would refuse to (WP-168,
-/// WP-171): a part of a [`WRITTEN_FOLDERS`] folder that is a link or no
-/// directory, an entry in one of them that is a link or neither a folder
-/// nor a regular file, and a [`WRITTEN_ROOT_FILES`] file that is a link or
-/// no regular file; relative to `root`, in the order found. Nothing is
-/// followed; what cannot be read is left out (`doctor`'s other rows say
-/// so).
-pub fn misplaced(root: &Path) -> Vec<(String, Misplaced)> {
-    // `work` once, for `work/queued`, `work/active` and `work/completed`
-    fn note(rel: &Path, what: Misplaced, out: &mut Vec<(String, Misplaced)>) {
-        let rel = rel.to_string_lossy().into_owned();
-        if !out.iter().any(|(r, _)| *r == rel) {
-            out.push((rel, what));
-        }
-    }
-    let mut out: Vec<(String, Misplaced)> = Vec::new();
-    for &(folder, depth) in WRITTEN_FOLDERS {
+/// One place [`misplaced`] names, relative to the root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub rel: String,
+    pub what: Misplaced,
+    /// Whether a command refuses it (exit 1); else a writer skips it with
+    /// a warning, or none writes it (a link in a folder of [`EVERY_ENTRY`]
+    /// under another name).
+    pub refused: bool,
+}
+
+/// Every place where the engine writes and would refuse to, or skip
+/// (WP-168, WP-171): a part of a [`WRITTEN_FOLDERS`] folder or a year or
+/// area folder that is a link or no directory (refused); a file the engine
+/// writes ([`written`]) that is a link or no regular file, a directory
+/// included (refused or skipped as its writer does); in the folders of
+/// [`EVERY_ENTRY`] also any other entry that is a link or neither a folder
+/// nor a regular file (not refused). Folder by folder, by name within a
+/// folder, then the root files. Nothing is followed; what cannot be read
+/// is left out (`doctor`'s other rows say so).
+pub fn misplaced(root: &Path) -> Vec<Found> {
+    let mut out: Vec<Found> = Vec::new();
+    for folder in WRITTEN_FOLDERS {
         let mut rel = PathBuf::new();
         let mut real = true;
         for part in Path::new(folder) {
@@ -226,7 +330,7 @@ pub fn misplaced(root: &Path) -> Vec<(String, Misplaced)> {
                     } else {
                         Misplaced::NoDirectory
                     };
-                    note(&rel, what, &mut out);
+                    note(&mut out, &rel.to_string_lossy(), what, true);
                     real = false;
                     break;
                 }
@@ -236,48 +340,74 @@ pub fn misplaced(root: &Path) -> Vec<(String, Misplaced)> {
                 }
             }
         }
-        if let (true, Some(depth)) = (real, depth) {
-            entries(root, &rel, depth, &mut |rel, what| {
-                note(rel, what, &mut out)
-            });
+        if real {
+            entries(root, folder, &mut out);
         }
     }
-    for file in WRITTEN_ROOT_FILES {
+    for file in ["AGENTS.md", "STATUS.md", "DECISIONS.md"] {
         if let Ok(m) = std::fs::symlink_metadata(root.join(file)) {
             let kind = m.file_type();
+            let refused = written(file) == Some(Written::Refused);
             if kind.is_symlink() {
-                note(Path::new(file), Misplaced::Link, &mut out);
+                note(&mut out, file, Misplaced::Link, refused);
             } else if !kind.is_file() {
-                note(Path::new(file), Misplaced::NoRegularFile, &mut out);
+                note(&mut out, file, Misplaced::NoRegularFile, refused);
             }
         }
     }
     out
 }
 
-/// The entries of the real folder `root/rel` that are links or neither a
-/// folder nor a regular file, sorted; `depth` more levels of real folders
-/// below it the same way.
-fn entries(root: &Path, rel: &Path, depth: u8, found: &mut dyn FnMut(&Path, Misplaced)) {
-    let Ok(read) = std::fs::read_dir(root.join(rel)) else {
+/// `rel` once (`work` for its three status folders).
+fn note(out: &mut Vec<Found>, rel: &str, what: Misplaced, refused: bool) {
+    if !out.iter().any(|f| f.rel == rel) {
+        out.push(Found {
+            rel: rel.to_string(),
+            what,
+            refused,
+        });
+    }
+}
+
+/// The entries of the real folder `root/folder` [`misplaced`] names,
+/// sorted; a real year or area folder in it the same way, in place.
+fn entries(root: &Path, folder: &str, out: &mut Vec<Found>) {
+    let Ok(read) = std::fs::read_dir(root.join(folder)) else {
         return;
     };
-    let mut names: Vec<_> = read.filter_map(|e| e.ok().map(|e| e.file_name())).collect();
+    let mut names: Vec<String> = read
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .collect();
     names.sort();
+    let every = EVERY_ENTRY.contains(&folder);
     for name in names {
-        let rel = rel.join(name);
+        let rel = format!("{folder}/{name}");
         let Ok(m) = std::fs::symlink_metadata(root.join(&rel)) else {
             continue;
         };
         let kind = m.file_type();
-        if kind.is_symlink() {
-            found(&rel, Misplaced::Link);
-        } else if kind.is_dir() {
-            if depth > 0 {
-                entries(root, &rel, depth - 1, found);
+        let file = written(&rel);
+        let refused = file == Some(Written::Refused);
+        if is_subfolder(&rel) {
+            if kind.is_symlink() {
+                note(out, &rel, Misplaced::Link, true);
+            } else if kind.is_dir() {
+                entries(root, &rel, out);
+            } else {
+                note(out, &rel, Misplaced::NoDirectory, true);
             }
-        } else if !kind.is_file() {
-            found(&rel, Misplaced::NoRegularFile);
+        } else if file.is_some() || every {
+            if kind.is_symlink() {
+                note(out, &rel, Misplaced::Link, refused);
+            } else if kind.is_dir() {
+                // a folder where the engine writes a file; another
+                // folder there is not looked into
+                if file.is_some() {
+                    note(out, &rel, Misplaced::NoRegularFile, refused);
+                }
+            } else if !kind.is_file() {
+                note(out, &rel, Misplaced::NoRegularFile, refused);
+            }
         }
     }
 }
@@ -292,10 +422,15 @@ mod tests {
         fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32;
     }
 
-    fn found(root: &Path) -> Vec<(String, &'static str)> {
+    fn fifo(path: &Path) {
+        let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { mkfifo(c.as_ptr(), 0o600) }, 0);
+    }
+
+    fn found(root: &Path) -> Vec<(String, &'static str, bool)> {
         misplaced(root)
             .into_iter()
-            .map(|(rel, what)| (rel, what.as_str()))
+            .map(|f| (f.rel, f.what.as_str(), f.refused))
             .collect()
     }
 
@@ -316,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn links_and_things_in_the_wrong_place_are_named() {
+    fn what_is_named_and_whether_it_is_refused() {
         let root = scratch("seldon-layout-misplaced");
         let outside = scratch("seldon-layout-outside");
         std::fs::create_dir_all(outside.join("dir")).unwrap();
@@ -324,82 +459,158 @@ mod tests {
         // what a linked folder holds is not looked into
         symlink("nowhere", outside.join("dir/inner.md")).unwrap();
         for dir in [
-            "decisions",
+            "decisions/old",
+            "work/queued",
+            "work/C-2026-001-x",
             "journal/2026",
             "areas/editors",
-            ".seldon/imports",
-            "work/C-2026-001-x",
+            "outputs",
             "archive",
+            "memory",
+            ".seldon/imports",
             ".claude",
         ] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
         }
-        // folders: a link, a file in its place, `work` once for three
+        let link = |rel: &str| symlink(outside.join("file"), root.join(rel)).unwrap();
+        let dir = |rel: &str| std::fs::create_dir(root.join(rel)).unwrap();
+        // folders: a link, a file in a folder's place
         symlink(outside.join("dir"), root.join("ledger")).unwrap();
         std::fs::write(root.join("system"), "").unwrap();
-        // files in folders Seldon writes in, one and two levels down
-        symlink(outside.join("file"), root.join("decisions/ADR-0001-x.md")).unwrap();
-        symlink("nowhere", root.join("journal/2026/2026-10-09.md")).unwrap();
-        std::fs::create_dir(root.join("journal/2026/sub")).unwrap();
-        symlink(
-            outside.join("file"),
-            root.join("journal/2026/sub/deeper.md"),
-        )
-        .unwrap();
         symlink(outside.join("dir"), root.join("journal/2027")).unwrap();
-        symlink(outside.join("file"), root.join("areas/editors/README.md")).unwrap();
-        symlink(outside.join("file"), root.join(".seldon/active-case")).unwrap();
-        symlink(outside.join("file"), root.join(".seldon/imports/task.json")).unwrap();
-        // a FIFO in a folder: neither a folder nor a regular file
-        std::fs::create_dir_all(root.join("memory")).unwrap();
-        let fifo =
-            std::ffi::CString::new(root.join("memory/pipe.md").as_os_str().as_encoded_bytes())
-                .unwrap();
-        assert_eq!(unsafe { mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        symlink(outside.join("dir"), root.join("areas/hyprland")).unwrap();
+        // every entry of decisions/, the status folders, memory/
+        link("decisions/ADR-0001-x.md");
+        dir("decisions/ADR-0002-y.md");
+        link("decisions/notes.md");
+        link("work/queued/C-2026-001-x.md");
+        link("work/queued/README");
+        fifo(&root.join("memory/pipe"));
+        fifo(&root.join("memory/pipe.md"));
+        // only the files the engine writes elsewhere
+        symlink("nowhere", root.join("journal/2026/2026-10-09.md")).unwrap();
+        dir("journal/2026/2026-10-10.md");
+        link("journal/2026/attachments");
+        link("journal/notes.md");
+        link("areas/editors/README.md");
+        link("areas/editors/notes.md");
+        dir("outputs/IMPORT-x.md");
+        link("outputs/REBUILD.md");
+        link("outputs/my-report.md");
+        link(".seldon/active-case");
+        std::fs::create_dir(root.join(".seldon/templates")).unwrap();
+        link(".seldon/templates/case.md");
+        link(".seldon/imports/tasks.json");
+        link(".seldon/imports/other.json");
         // the user's places: not looked into
-        symlink(
-            outside.join("file"),
-            root.join("work/C-2026-001-x/notes.md"),
-        )
-        .unwrap();
-        symlink(
-            outside.join("file"),
-            root.join("archive/AGENTS-2026-10-09.md"),
-        )
-        .unwrap();
-        symlink(outside.join("file"), root.join(".claude/settings.json")).unwrap();
-        symlink(outside.join("dir"), root.join("resources")).unwrap();
-        // root files: a link, a folder in a file's place
-        symlink(outside.join("file"), root.join("STATUS.md")).unwrap();
-        std::fs::create_dir(root.join("DECISIONS.md")).unwrap();
-        std::fs::write(root.join("AGENTS.md"), "").unwrap();
+        link("work/C-2026-001-x/notes.md");
+        link("archive/AGENTS-2026-10-09.md");
+        link(".claude/settings.json");
+        // root files: a link refused, the views skipped
+        link("AGENTS.md");
+        link("STATUS.md");
+        dir("DECISIONS.md");
+        let named = |rel: &str, what, refused| (rel.to_string(), what, refused);
+        let (link, nodir, nofile) = ("symbolic link", "no directory", "no regular file");
         assert_eq!(
             found(&root),
             [
-                ("decisions/ADR-0001-x.md".to_string(), "symbolic link"),
-                ("journal/2026/2026-10-09.md".to_string(), "symbolic link"),
-                ("journal/2027".to_string(), "symbolic link"),
-                ("ledger".to_string(), "symbolic link"),
-                ("areas/editors/README.md".to_string(), "symbolic link"),
-                ("system".to_string(), "no directory"),
-                ("memory/pipe.md".to_string(), "no regular file"),
-                (".seldon/active-case".to_string(), "symbolic link"),
-                (".seldon/imports/task.json".to_string(), "symbolic link"),
-                ("STATUS.md".to_string(), "symbolic link"),
-                ("DECISIONS.md".to_string(), "no regular file"),
+                named("decisions/ADR-0001-x.md", link, true),
+                named("decisions/ADR-0002-y.md", nofile, true),
+                named("decisions/notes.md", link, false),
+                named("work/queued/C-2026-001-x.md", link, true),
+                named("work/queued/README", link, false),
+                named("journal/2026/2026-10-09.md", link, true),
+                named("journal/2026/2026-10-10.md", nofile, true),
+                named("journal/2027", link, true),
+                named("ledger", link, true),
+                named("areas/editors/README.md", link, true),
+                named("areas/hyprland", link, true),
+                named("system", nodir, true),
+                named("outputs/IMPORT-x.md", nofile, true),
+                named("outputs/REBUILD.md", link, true),
+                named("memory/pipe", nofile, false),
+                named("memory/pipe.md", nofile, true),
+                named(".seldon/active-case", link, true),
+                named(".seldon/imports/tasks.json", link, true),
+                named("AGENTS.md", link, true),
+                named("STATUS.md", link, false),
+                named("DECISIONS.md", nofile, false),
             ]
         );
-        // a linked `work`, `archive` and `.claude` are named once each
-        std::fs::remove_dir_all(root.join("work")).unwrap();
-        symlink(outside.join("dir"), root.join("work")).unwrap();
-        std::fs::remove_dir_all(root.join("archive")).unwrap();
-        symlink(outside.join("dir"), root.join("archive")).unwrap();
-        std::fs::remove_dir_all(root.join(".claude")).unwrap();
+    }
+
+    #[test]
+    fn the_ledger_and_folders_named_once() {
+        let root = scratch("seldon-layout-ledger");
+        let outside = scratch("seldon-layout-ledger-outside");
+        std::fs::create_dir_all(root.join("ledger")).unwrap();
+        std::fs::create_dir(root.join("ledger/2026-10.jsonl")).unwrap();
+        symlink(outside.join("x"), root.join("ledger/2026-10.md")).unwrap();
+        symlink(outside.join("x"), root.join("ledger/2026-13.md")).unwrap();
+        std::fs::create_dir(root.join("journal")).unwrap();
+        std::fs::write(root.join("journal/2026"), "").unwrap();
+        // a linked `work`, `archive`, `.seldon/imports` and a `.claude`
+        // file are named once each
+        symlink(&*outside, root.join("work")).unwrap();
+        symlink(&*outside, root.join("archive")).unwrap();
+        std::fs::create_dir(root.join(".seldon")).unwrap();
+        symlink(&*outside, root.join(".seldon/imports")).unwrap();
         std::fs::write(root.join(".claude"), "").unwrap();
-        let names: Vec<String> = found(&root).into_iter().map(|(rel, _)| rel).collect();
-        assert_eq!(names.iter().filter(|n| *n == "work").count(), 1);
-        assert!(names.contains(&"archive".to_string()));
-        assert!(names.contains(&".claude".to_string()));
-        assert!(!names.iter().any(|n| n.starts_with("work/")));
+        let names: Vec<(String, &str, bool)> = found(&root);
+        assert_eq!(
+            names,
+            [
+                ("work".to_string(), "symbolic link", true),
+                ("journal/2026".to_string(), "no directory", true),
+                ("ledger/2026-10.jsonl".to_string(), "no regular file", true),
+                ("ledger/2026-10.md".to_string(), "symbolic link", false),
+                // not a month: no view, but every entry of ledger/ counts
+                ("ledger/2026-13.md".to_string(), "symbolic link", false),
+                ("archive".to_string(), "symbolic link", true),
+                (".seldon/imports".to_string(), "symbolic link", true),
+                (".claude".to_string(), "no directory", true),
+            ]
+        );
+    }
+
+    #[test]
+    fn written_names_the_files_of_the_writers() {
+        for (rel, w) in [
+            ("AGENTS.md", Some(Written::Refused)),
+            ("STATUS.md", Some(Written::Skipped)),
+            ("DECISIONS.md", Some(Written::Skipped)),
+            ("PROJECT.md", None),
+            ("ledger/2026-10.jsonl", Some(Written::Refused)),
+            ("ledger/2026-10.md", Some(Written::Skipped)),
+            ("ledger/notes.md", None),
+            ("journal/2026/2026-10-09.md", Some(Written::Refused)),
+            ("journal/2025/2026-10-09.md", None),
+            ("journal/2026/notes.md", None),
+            ("work/active/C-2026-001-zed.md", Some(Written::Refused)),
+            ("work/C-2026-001/notes.md", None),
+            ("decisions/ADR-0001-zed.md", Some(Written::Refused)),
+            ("decisions/notes.md", None),
+            ("areas/editors/README.md", Some(Written::Refused)),
+            ("areas/Editors/README.md", None),
+            ("system/hardware.md", Some(Written::Refused)),
+            ("system/notes.md", None),
+            ("memory/lessons.md", Some(Written::Refused)),
+            ("outputs/REBUILD.md", Some(Written::Refused)),
+            ("outputs/IMPORT-omarchy-agent.md", Some(Written::Refused)),
+            ("outputs/report.md", None),
+            (".seldon/active-case", Some(Written::Refused)),
+            (".seldon/logbook.toml", None),
+            (".seldon/imports/omarchy-agent.json", Some(Written::Refused)),
+            (
+                ".seldon/imports/omarchy-agent.undo.json",
+                Some(Written::Refused),
+            ),
+            (".seldon/imports/tasks.json", Some(Written::Refused)),
+            (".seldon/imports/other.json", None),
+            (".seldon/templates/case.md", None),
+        ] {
+            assert_eq!(written(rel), w, "{rel}");
+        }
     }
 }
