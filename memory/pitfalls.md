@@ -2297,3 +2297,21 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   leak.** Other Quickshell programs on the host add their own (read the
   entry's `log.log`, "Launching config"). Compare counts around your own
   run only.
+
+## 2026-10-09 · WP-155 (deploy next, backup before next)
+
+- **A hand mutant that removes a guard runs the code the guard stops.**
+  Mutant `no-root-check` dropped the `/` check of the next backup's
+  logbook path; its test row (logbook `/`, a refusal expected) then ran
+  `cp -a -- / <fake home>/…/logbook` and copied the root filesystem into
+  a test dir under `/tmp` (13 GB of RAM, user quota full; the orchestrator
+  killed it by PID). A test of a guard around a copy, delete or measure
+  must make that action harmless on its own: the deploy test runs under
+  the checkout's `target/` (disk), and on the fake host `cp` and `du`
+  refuse every path outside the test dir; the script checks the path
+  twice (probe and right before the copy) and caps the backup's size.
+  Before a mutant run, ask of every mutant: if this guard is gone, what
+  does the test run next, and against which real path?
+- **Mutant runners on disk, one at a time.** Copies under the worktree's
+  `target/mutants` with a `flock`, `timeout` per mutant, never in the
+  scratchpad (`/tmp`).

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# deploy-test-host.sh — put the main build of engine and plugin on the test
-# host, or bring the test host back to a release (WP-098).
+# deploy-test-host.sh — put the main (or next) build of engine and plugin on
+# the test host, or bring the test host back to a release (WP-098, WP-155).
 #
-#   scripts/deploy-test-host.sh [--dry-run] CHECK_LOG
+#   scripts/deploy-test-host.sh [--dry-run] [--branch main|next] CHECK_LOG
 #   scripts/deploy-test-host.sh [--dry-run] --release vX.Y.Z
 #
 # The test host follows main so the operator can watch development live;
@@ -20,10 +20,12 @@
 # HEAD or an ancestor, and nothing under engine/, plugin/, schema/ (the
 # engine compiles the schemas in) or this script changed between that sha
 # and HEAD (bookkeeping commits after the check pass), and the log does not
-# say the Quickshell harnesses were skipped (WP-161). Before the first change the host must have the tools the install
-# step uses. Then it builds the static engine as a release does
-# (`--features watch`) with SELDON_BUILD=main.<short sha> (version
-# 0.1.3+main.<sha>), and on the host:
+# say the Quickshell harnesses were skipped (WP-161). Before the first
+# change the host must have the tools the install step uses. Then it
+# builds the static engine as a release does (`--features watch`) with
+# SELDON_BUILD=main.<short sha> (version X.Y.Z+main.<sha>, X.Y.Z from
+# engine/Cargo.toml), and on the host:
+#   - with --branch next, first the backup below;
 #   - copies it to ~/.local/bin/seldon, the previous one kept as seldon.prev;
 #   - syncs HEAD's plugin/ into ~/.config/omarchy/plugins/jax.seldon. A
 #     plugin dir that is not a dev copy yet (the release git clone) is moved
@@ -44,6 +46,33 @@
 #     answer) the smoke fails and says so;
 #   - appends one JSON line to ~/.local/state/seldon-dev/deploy.jsonl and
 #     prints a summary.
+#
+# --branch next (WP-155): the same with `next` for `main` everywhere: on
+# `next`, clean, HEAD equals origin/next, next's check log, the same
+# refusals; SELDON_BUILD=next.<short sha> (version X.Y.Z+next.<sha>).
+# While the host does not run a next build yet (neither its plugin marker
+# nor its engine says next), the deploy first copies, whichever exist,
+# ~/.config/omarchy/shell.json, ~/.config/seldon, ~/.local/state/seldon,
+# the host's logbook (the path its engine's `seldon doctor --json` names),
+# the engine and the plugin dir to
+# ~/.local/state/seldon-dev/backup-before-next-<UTC stamp>/ (shell.json,
+# config-seldon/, state-seldon/, logbook/, seldon.engine,
+# plugin-jax.seldon/; the layout of the orchestrator's backup by hand,
+# 2026-10-07; links are copied as links) with a RESTORE.txt, which the
+# summary prints too: the way back from next, whose state and ledger lines
+# main cannot read (put the engine, the logbook, ~/.config/seldon, the
+# state dir and shell.json back first, then deploy main or a release, so
+# main's smoke never writes into next's logbook). An active
+# seldon-watch.service is stopped for the copy and started again. Refused
+# before anything changes: an engine on the host that does not name a
+# logbook, a logbook that is not a directory below the home (/, the home,
+# a parent of it, outside it, a link out of it, a newline in its path) or
+# that holds seldon-dev (the backup would copy itself), a backup whose
+# size the host does not tell, and one larger than
+# SELDON_DEPLOY_BACKUP_MAX_MB (default 1024). The install step checks the
+# logbook path again before the copy; a failed backup stops the deploy
+# before the engine swap. A main or release deploy onto a host that runs
+# next warns and names RESTORE.txt.
 #
 # --release vX.Y.Z: installs that release on the host with its install.sh
 # (checked against the release's SHA256SUMS, run with --force because the
@@ -69,7 +98,8 @@
 # this machine's id, SELDON_DEPLOY_PINS scripts/deploy-hosts.local,
 # SELDON_DEPLOY_SETTLE the seconds the shell gets after
 # the sync before a restart (default 5), SELDON_DEPLOY_WAIT the seconds the
-# smoke waits for the service (default 60). Stubs first on PATH stand in for
+# smoke waits for the service (default 60), SELDON_DEPLOY_BACKUP_MAX_MB the
+# cap of the next backup (default 1024). Stubs first on PATH stand in for
 # cargo and ssh.
 #
 # shellcheck disable=SC2016 # the remote scripts are single-quoted on purpose: they expand on the host
@@ -93,12 +123,16 @@ usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' 
 dry=0
 release=""
 check_log=""
+track=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dry-run) dry=1; shift ;;
     --release)
       [[ $# -ge 2 ]] || refuse "--release needs vX.Y.Z"
       release=$2; shift 2 ;;
+    --branch)
+      [[ $# -ge 2 ]] || refuse "--branch needs main or next"
+      track=$2; shift 2 ;;
     -h | --help) usage; exit 0 ;;
     -*) refuse "unknown option '$1'" ;;
     *)
@@ -108,9 +142,12 @@ while [[ $# -gt 0 ]]; do
 done
 if [[ -n $release ]]; then
   [[ -z $check_log ]] || refuse "--release takes no check log"
+  [[ -z $track ]] || refuse "--release takes no --branch"
   [[ $release =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || refuse "--release wants vX.Y.Z, not '$release'"
 else
-  [[ -n $check_log ]] || refuse "usage: deploy-test-host.sh [--dry-run] CHECK_LOG | [--dry-run] --release vX.Y.Z"
+  [[ -n $check_log ]] || refuse "usage: deploy-test-host.sh [--dry-run] [--branch main|next] CHECK_LOG | [--dry-run] --release vX.Y.Z"
+  track=${track:-main}
+  [[ $track == main || $track == next ]] || refuse "--branch wants main or next, not '$track'"
 fi
 for tool in git jq ssh tar base64 sha256sum; do
   command -v "$tool" >/dev/null || refuse "needs '$tool'"
@@ -132,24 +169,24 @@ while IFS= read -r line || [[ -n $line ]]; do
 done <"$hosts_file"
 [[ $listed == 1 ]] || refuse "'$host' is not listed in $hosts_file; productive machines are never a target"
 
-# ---- main: clean, pushed, checked ----------------------------------------------
+# ---- main or next: clean, pushed, checked ---------------------------------------
 
 git_() { git -C "$root" "$@"; }
 if [[ -z $release ]]; then
   branch=$(git_ symbolic-ref --quiet --short HEAD || echo "(detached)")
-  [[ $branch == main ]] || refuse "not on main (on $branch)"
+  [[ $branch == "$track" ]] || refuse "not on $track (on $branch)"
   [[ -z $(git_ status --porcelain) ]] || refuse "the working tree is not clean (git status)"
   head=$(git_ rev-parse HEAD)
-  upstream=$(git_ rev-parse --verify --quiet origin/main) || refuse "no origin/main"
-  [[ $head == "$upstream" ]] || refuse "HEAD ${head:0:12} is not origin/main ${upstream:0:12}; push first"
+  upstream=$(git_ rev-parse --verify --quiet "origin/$track") || refuse "no origin/$track"
+  [[ $head == "$upstream" ]] || refuse "HEAD ${head:0:12} is not origin/$track ${upstream:0:12}; push first"
   [[ -f $check_log && -r $check_log ]] || refuse "check log '$check_log' not found"
   ! grep -q $'\r' "$check_log" || refuse "the check log has Windows line endings (CRLF); use the log the check wrote"
   last=$(awk 'NF { l = $0 } END { print l }' "$check_log")
   [[ $last == "exit 0" ]] || refuse "the check log does not end in 'exit 0' (last line: '$last')"
   # WP-161: a check that skipped the plugin harnesses (E29) proves nothing
-  # about the plugin; main's check runs them
+  # about the plugin; a full check runs them
   ! grep -q 'Quickshell harnesses skipped' "$check_log" \
-    || refuse "the check log skipped the Quickshell harnesses; run SELDON_FULL_CHECK=1 just check on main"
+    || refuse "the check log skipped the Quickshell harnesses; run SELDON_FULL_CHECK=1 just check on $track"
   # the commit the check ran on: the log's first line `head <full sha>`
   checked=$(sed -n '1s/^head \([0-9a-f]\{40\}\)$/\1/p' "$check_log")
   [[ -n $checked ]] || refuse "the check log does not start with 'head <full sha>'; which tree it checked is unknown"
@@ -159,8 +196,8 @@ if [[ -z $release ]]; then
   git_ diff --quiet "$checked" HEAD -- engine plugin schema scripts/deploy-test-host.sh \
     || refuse "engine/, plugin/, schema/ or the deploy script changed since the checked commit ${checked:0:12}; run the check on this HEAD"
   short=$(git_ rev-parse --short HEAD)
-  version="$(awk -F'"' '/^version *=/ { print $2; exit }' "$root/engine/Cargo.toml")+main.$short"
-  mode=main
+  version="$(awk -F'"' '/^version *=/ { print $2; exit }' "$root/engine/Cargo.toml")+$track.$short"
+  mode=$track
 else
   head="" short=""
   version=${release#v}
@@ -194,6 +231,15 @@ plugin_dir=.config/omarchy/plugins/jax.seldon
 dev_dir=.local/state/seldon-dev
 marker=.seldon-dev-build
 '"$(declare -f plugin_hash)"'
+# logbook_safe <real path> — a directory strictly below the home that does
+# not hold seldon-dev: the next backup copies it into seldon-dev. No
+# control character (a newline: the key=value lines would carry only its
+# first line).
+logbook_safe() {
+  local hm dd
+  hm=$(realpath -- "$HOME") && dd=$(realpath -m -- "$HOME/$dev_dir") || return 1
+  [[ $1 != *[[:cntrl:]]* && $1 == "$hm"/?* && "$dd/" != "$1"/* ]]
+}
 # neither locked nor secure; an unreadable status counts as locked
 lock_free() { omarchy-shell lock status 2>/dev/null | jq -e "(.locked or .sessionLocked or .secure) | not" >/dev/null 2>&1; }
 # Move a plugin dir that is not a dev copy out of the plugins dir (the shell
@@ -220,12 +266,13 @@ value() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2)
 
 # ---- look at the host (read-only) ----------------------------------------------
 
-if [[ $mode == main ]]; then
+if [[ $mode != release ]]; then
   tools="rsync jq tar mktemp install sha256sum find xargs omarchy omarchy-shell omarchy-restart-shell"
+  [[ $mode != next ]] || tools+=" realpath du"
 else
   tools="curl git jq sha256sum find xargs omarchy omarchy-shell omarchy-restart-shell"
 fi
-probe=$(rsh "tools='$tools'"'
+probe=$(rsh "tools='$tools' mode=$mode"'
 echo "id=$(cat /etc/machine-id 2>/dev/null || cat /proc/sys/kernel/hostname)"
 missing=""
 for t in $tools; do command -v "$t" >/dev/null 2>&1 || missing+=" $t"; done
@@ -239,7 +286,33 @@ echo "hash=$(plugin_hash "$plugin_dir")"
 echo "deployed=$(sed -n "s/^build=//p" "$plugin_dir/$marker" 2>/dev/null)"
 echo "engine=$(seldon --version --json 2>/dev/null | jq -r ".version // empty" 2>/dev/null)"
 echo "pending=$([[ -f $dev_dir/restart-pending ]] && echo 1 || echo 0)"
-echo "lock=$(lock_free && echo free || echo held)"' </dev/null) \
+echo "lock=$(lock_free && echo free || echo held)"
+# next: what a backup would hold; the logbook as the installed engine resolves it
+if [[ $mode == next ]]; then
+  [[ ! -e .config/omarchy/shell.json && ! -L .config/omarchy/shell.json ]] || echo has_shell=1
+  [[ ! -e .local/bin/seldon && ! -L .local/bin/seldon ]] || echo has_engine=1
+  [[ ! -d .config/seldon ]] || echo has_config=1
+  [[ ! -d .local/state/seldon ]] || echo has_state=1
+  lb=$(seldon doctor --json 2>/dev/null | jq -r ".logbook // empty" 2>/dev/null)
+  [[ -z $lb ]] || echo "logbook_named=$lb"
+  unsafe=""
+  if [[ -n $lb && -d $lb ]]; then
+    lb=$(realpath -- "$lb")
+    echo "logbook=$lb"
+    logbook_safe "$lb" || { unsafe=1; echo logbook_unsafe=1; }
+  else
+    lb=""
+  fi
+  # what the backup would copy, in KiB; an unsafe logbook is not even measured
+  items=()
+  for p in .config/omarchy/shell.json .config/seldon .local/state/seldon .local/bin/seldon "$plugin_dir"; do
+    [[ ! -e $p && ! -L $p ]] || items+=("$p")
+  done
+  [[ -z $lb || -n $unsafe ]] || items+=("$lb")
+  kb=0
+  if ((${#items[@]})); then kb=$(du -sck -- "${items[@]}" 2>/dev/null | tail -n 1 | cut -f1); fi
+  echo "backup_kb=$kb"
+fi' </dev/null) \
   || refuse "cannot reach $host over ssh"
 local_id=${SELDON_DEPLOY_LOCAL_ID:-$(cat /etc/machine-id 2>/dev/null || cat /proc/sys/kernel/hostname)}
 remote_id=$(value id "$probe")
@@ -269,7 +342,7 @@ missing=$(value missing "$probe")
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-if [[ $mode == main ]]; then
+if [[ $mode != release ]]; then
   # HEAD's plugin/, not the working tree: no ignored files (.qmlls.ini) go out
   mkdir -p "$work/stage"
   git_ archive --format=tar HEAD plugin | tar -x -C "$work/stage"
@@ -283,18 +356,70 @@ if [[ $plugin_change != no || $(value pending "$probe") == 1 ]]; then
   if [[ $(value lock "$probe") == free ]]; then restart_plan="restart the shell"; else restart_plan="restart pending (session locked)"; fi
 fi
 
-if [[ $mode == release ]]; then
+# next: the way back is a backup taken before the host first runs next.
+# The host runs next when its plugin marker or its engine says so: a first
+# next deploy that failed after the engine swap left the engine, not yet
+# the marker, and its retry takes no second backup.
+deployed=$(value deployed "$probe")
+engine_now=$(value engine "$probe")
+runs_next=""
+if [[ $deployed == next.* || $engine_now == *+next.* ]]; then runs_next="plugin ${deployed:-unmarked}, engine ${engine_now:-?}"; fi
+backup_plan="" logbook="" restore=""
+if [[ $mode == next && -z $runs_next ]]; then
+  [[ -n $(value logbook_named "$probe") ]] \
+    || refuse "$host's engine does not name a logbook (seldon doctor --json, .logbook), so the backup would miss it; install or fix the engine there (a main deploy, or install.sh) until \`seldon doctor --json\` names the logbook, then deploy next again"
+  logbook=$(value logbook "$probe")
+  [[ $(value logbook_unsafe "$probe") != 1 ]] \
+    || refuse "$host's logbook $logbook is not a directory below the home, or holds ~/.local/state/seldon-dev; not copying it"
+  max_mb=${SELDON_DEPLOY_BACKUP_MAX_MB:-1024}
+  [[ $max_mb =~ ^[0-9]+$ ]] || refuse "SELDON_DEPLOY_BACKUP_MAX_MB wants a number of MiB, not '$max_mb'"
+  kb=$(value backup_kb "$probe")
+  [[ $kb =~ ^[0-9]+$ ]] || refuse "cannot tell how large the backup on $host would be"
+  ((kb <= max_mb * 1024)) \
+    || refuse "the backup on $host would copy $(((kb + 1023) / 1024)) MiB (logbook ${logbook:-absent}, ~/.config/seldon, ~/.local/state/seldon, engine, plugin); the cap is $max_mb MiB (SELDON_DEPLOY_BACKUP_MAX_MB)"
+  backup_plan=.local/state/seldon-dev/backup-before-next-$(date -u +%Y%m%dT%H%M%SZ)
+  t='~' # printed, expands on the host
+  # restore_line <has> <what> <backup entry> — move the next copy aside, put the backup back
+  # restore_line <has> <what> <backup entry> <cp flags>
+  restore_line() {
+    [[ -n $1 ]] || return 0
+    printf '  mv %s %s.next && cp %s %s %s\n' "$2" "$2" "$4" "$t/$backup_plan/$3" "$2"
+  }
+  restore=$(
+    echo "To go back from next, first put back on $host what next writes (next's copies move aside):"
+    echo "  systemctl --user stop seldon-watch.service   # if it runs"
+    restore_line "$(value has_engine "$probe")" "$t/.local/bin/seldon" seldon.engine -pP
+    restore_line "$logbook" "$(printf '%q' "$logbook")" logbook -a
+    restore_line "$(value has_config "$probe")" "$t/.config/seldon" config-seldon -a
+    restore_line "$(value has_state "$probe")" "$t/.local/state/seldon" state-seldon -a
+    restore_line "$(value has_shell "$probe")" "$t/.config/omarchy/shell.json" shell.json -pP
+    echo "then, right away, from the dev host: deploy main (or --release vX.Y.Z); it puts the"
+    echo "engine and the plugin of that build in place and restarts the shell, and its smoke"
+    echo "writes into this logbook, not next's. Afterwards, on $host:"
+    echo "  systemctl --user start seldon-watch.service  # if it ran"
+    echo "plugin-jax.seldon/ here is the plugin from before next."
+  )
+fi
+
+if [[ $mode != next && -n $runs_next ]]; then
+  warn "$host runs a next build ($runs_next); ${release:-main} cannot read next's state and ledger lines: before this deploy put back what RESTORE.txt in the newest ~/.local/state/seldon-dev/backup-before-next-* on $host names (done already: go on)"
+elif [[ $mode == release ]]; then
   warn "state written by a newer build may not load in $release: move ~/.local/state/seldon aside on $host first (mv ~/.local/state/seldon ~/.local/state/seldon.main-\$(date +%F))"
 fi
 
 if [[ $dry == 1 ]]; then
   resolved=$(ssh -G -- "$host" 2>/dev/null | awk '$1 == "hostname" { print $2; exit }' || true)
   say "deploy-test-host (dry run): $host (ssh resolves it to ${resolved:-?}, $pin_note)"
-  deployed=$(value deployed "$probe")
-  engine_now=$(value engine "$probe")
   say "  now      engine ${engine_now:-not installed or not answering}, plugin dir $(value plugin "$probe")${deployed:+ ($deployed)}"
-  if [[ $mode == main ]]; then
-    say "  build    SELDON_BUILD=main.$short cargo build --release --features watch --target $target  → $version"
+  if [[ -n $backup_plan ]]; then
+    say "  backup   shell.json, ~/.config/seldon, ~/.local/state/seldon, the logbook (${logbook:-$(value logbook_named "$probe"), absent}), the engine and"
+    say "           the plugin dir to ~/$backup_plan/, with RESTORE.txt;"
+    say "           seldon-watch.service stopped for the copy if it runs"
+  elif [[ $mode == next ]]; then
+    say "  backup   none: the host runs next already ($runs_next)"
+  fi
+  if [[ $mode != release ]]; then
+    say "  build    SELDON_BUILD=$mode.$short cargo build --release --features watch --target $target  → $version"
     say "  engine   copy to ~/.local/bin/seldon (previous → seldon.prev)"
   else
     say "  engine   install.sh --version $release --force (checked against the release's SHA256SUMS)"
@@ -302,7 +427,7 @@ if [[ $dry == 1 ]]; then
   case $(value plugin "$probe") in
     git | copy) say "  plugin   move the $(value plugin "$probe") dir aside to ~/.local/state/seldon-dev/, then install" ;;
   esac
-  if [[ $mode == main ]]; then
+  if [[ $mode != release ]]; then
     say "  plugin   sync HEAD's plugin/ into ~/.config/omarchy/plugins/jax.seldon; files change: $plugin_change"
   else
     say "  plugin   clone jax-seldon-plugin at $release into ~/.config/omarchy/plugins/jax.seldon"
@@ -314,47 +439,77 @@ if [[ $dry == 1 ]]; then
   exit 0
 fi
 
-# ---- build (main) -----------------------------------------------------------------
+# ---- build (main or next) ------------------------------------------------------------
 
-if [[ $mode == main ]]; then
+if [[ $mode != release ]]; then
   say "== build $version"
   # as release.yml and the PKGBUILD build it; --target-dir so that an
   # exported CARGO_TARGET_DIR cannot leave an older binary at $bin
-  SELDON_BUILD=main.$short cargo build --manifest-path "$root/engine/Cargo.toml" --locked --release \
+  SELDON_BUILD=$mode.$short cargo build --manifest-path "$root/engine/Cargo.toml" --locked --release \
     --features watch --target "$target" --target-dir "$root/engine/target" --quiet \
     || fail "the release build"
   bin=$root/engine/target/$target/release/seldon
   got=$("$bin" --version --json | jq -r .version) || fail "the new binary does not run"
   [[ $got == "$version" ]] || fail "the new binary reports '$got', not $version"
   cp -- "$bin" "$work/stage/seldon"
-  printf 'build=main.%s\ncommit=%s\ndeployed=%s\n' "$short" "$head" "$(date -u +%FT%TZ)" >"$work/stage/build-info"
+  printf 'build=%s.%s\ncommit=%s\ndeployed=%s\n' "$mode" "$short" "$head" "$(date -u +%FT%TZ)" >"$work/stage/build-info"
 fi
 
 # ---- install on the host --------------------------------------------------------
 
-moved="" install_out="" watch="not run" restart="none" smoke="not run" failures=()
+moved="" backup="" install_out="" watch="not run" restart="none" smoke="not run" failures=()
 
 # log_line — one JSON line per deploy on the host, whatever the outcome.
 log_line() {
   local line
   line=$(jq -cn --arg ts "$(date -u +%FT%TZ)" --arg mode "$mode" --arg version "$version" \
-    --arg commit "$head" --arg change "$plugin_change" --arg moved "$moved" --arg restart "$restart" \
-    --arg watch "$watch" --arg smoke "$smoke" --args '{ts: $ts, mode: $mode, version: $version, commit: $commit,
-      pluginChanged: ($change != "no"), movedAside: $moved, watch: $watch, restart: $restart, smoke: $smoke,
-      failures: $ARGS.positional}' "${failures[@]+"${failures[@]}"}")
+    --arg commit "$head" --arg change "$plugin_change" --arg moved "$moved" --arg backup "$backup" \
+    --arg restart "$restart" --arg watch "$watch" --arg smoke "$smoke" --args '{ts: $ts, mode: $mode,
+      version: $version, commit: $commit, pluginChanged: ($change != "no"), movedAside: $moved, backup: $backup,
+      watch: $watch, restart: $restart, smoke: $smoke, failures: $ARGS.positional}' "${failures[@]+"${failures[@]}"}")
   rsh "mkdir -p \"\$dev_dir\" && printf '%s\n' $(printf '%q' "$line") >>\"\$dev_dir/deploy.jsonl\"" </dev/null \
     || warn "could not append to the deploy log on $host"
 }
 # abort <what> — a failure after the first change: log it, exit 2.
 abort() { failures+=("$1"); smoke="not run"; log_line; fail "$1"; }
 
-if [[ $mode == main ]]; then
+if [[ $mode != release ]]; then
   say "== install on $host"
-  install_out=$(tar -C "$work/stage" -cf - plugin seldon build-info | rsh '
+  install_out=$(tar -C "$work/stage" -cf - plugin seldon build-info | rsh "backup=$(printf '%q' "$backup_plan") logbook=$(printf '%q' "$logbook") restore=$(printf '%q' "$restore")"'
 mkdir -p .cache && tmp=$(mktemp -d "$HOME/.cache/seldon-dev-deploy.XXXXXX") || { echo "error=temp dir"; exit 2; }
 trap "rm -rf \"\$tmp\"" EXIT
 tar -x -C "$tmp" || { echo "error=unpack" ; exit 2; }
 [[ ! -L $plugin_dir ]] || { echo "error=plugin dir is a symlink"; exit 2; }
+# next (WP-155): before the first change, what the way back needs
+if [[ -n $backup ]]; then
+  b=$backup
+  # again, right before the copy: never a logbook outside the home
+  if [[ -n $logbook ]]; then
+    logbook_safe "$(realpath -- "$logbook")" || { echo "error=backup: the logbook $logbook is not below the home"; exit 2; }
+  fi
+  mkdir -p "$dev_dir" && mkdir "$b" || { echo "error=backup: cannot create $b"; exit 2; }
+  echo "backup=$b"
+  # the watcher writes the state dir and the logbook: stopped for the copy
+  paused=""
+  if systemctl --user is-active --quiet seldon-watch.service 2>/dev/null; then
+    systemctl --user stop seldon-watch.service >/dev/null 2>&1 || { echo "error=backup: cannot stop seldon-watch.service"; exit 2; }
+    paused=1
+  fi
+  copied=1
+  # -P: a link is copied as a link, never what it points to (the probe measured the link)
+  { [[ ! -e .config/omarchy/shell.json && ! -L .config/omarchy/shell.json ]] || cp -pP .config/omarchy/shell.json "$b/shell.json"; } \
+    && { [[ ! -e .config/seldon ]] || cp -a .config/seldon "$b/config-seldon"; } \
+    && { [[ ! -e .local/state/seldon ]] || cp -a .local/state/seldon "$b/state-seldon"; } \
+    && { [[ -z $logbook || ! -d $logbook ]] || cp -a -- "$logbook" "$b/logbook"; } \
+    && { [[ ! -e .local/bin/seldon && ! -L .local/bin/seldon ]] || cp -pP .local/bin/seldon "$b/seldon.engine"; } \
+    && { [[ ! -e $plugin_dir ]] || cp -a "$plugin_dir" "$b/plugin-jax.seldon"; } \
+    && printf "%s\n" "$restore" >"$b/RESTORE.txt" \
+    || copied=""
+  if [[ -n $paused ]] && ! systemctl --user start seldon-watch.service >/dev/null 2>&1; then
+    echo "error=backup: seldon-watch.service did not start again"; exit 2
+  fi
+  [[ -n $copied ]] || { echo "error=backup to $b"; exit 2; }
+fi
 mkdir -p .local/bin "$dev_dir" .config/omarchy/plugins
 # engine: the previous one stays as seldon.prev; mv keeps the swap atomic
 install -m 755 "$tmp/seldon" .local/bin/seldon.new || { echo "error=copy engine"; exit 2; }
@@ -370,7 +525,7 @@ cp "$tmp/build-info" "$plugin_dir/$marker"
 # restart, and the next deploy that validates restarts
 if [[ $(plugin_hash "$plugin_dir") != "$before" ]]; then touch "$dev_dir/restart-pending"; echo changed=yes; else echo changed=no; fi
 omarchy plugin validate "$plugin_dir" >/dev/null 2>&1 || { echo "error=omarchy plugin validate"; exit 2; }') \
-    || { moved=$(value moved "$install_out"); abort "install: $(value error "$install_out")"; }
+    || { moved=$(value moved "$install_out"); backup=$(value backup "$install_out"); abort "install: $(value error "$install_out")"; }
 else
   say "== install $release on $host"
   install_out=$(rsh "v=$(printf '%q' "$release") plugin_repo=$(printf '%q' "$plugin_repo") base=$(printf '%q' "$release_repo/releases/download")"'
@@ -392,6 +547,7 @@ if [[ $(plugin_hash "$plugin_dir") != "$before" ]]; then touch "$dev_dir/restart
     || { moved=$(value moved "$install_out"); abort "install: $(value error "$install_out")"; }
 fi
 moved=$(value moved "$install_out")
+backup=$(value backup "$install_out")
 plugin_change=$(value changed "$install_out")
 
 # ---- the watcher (seldon-watch.service runs ~/.local/bin/seldon watch) --------------
@@ -467,6 +623,10 @@ if [[ -n $engine_was ]]; then
   say "  engine   ~/.local/bin/seldon (previous kept as seldon.prev; was $engine_was)"
 else
   say "  engine   ~/.local/bin/seldon (there was none before)"
+fi
+if [[ -n $backup ]]; then
+  say "  backup   ~/$backup (as it was before next)"
+  say "$restore" | sed 's/^/           /'
 fi
 say "  plugin   files changed: $plugin_change${moved:+; moved aside to ~/$moved}"
 case $watch in
