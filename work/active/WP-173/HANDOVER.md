@@ -1,107 +1,135 @@
-# WP-173 — Handover
+# WP-173 — Handover (round 2)
 
 Branch `wp/173-held-key` from `next` (07740c35). Not pushed (the
-orchestrator pushes).
+orchestrator pushes). Round 1 ended at 38411ecc; review 1 (APPROVE WITH
+NITS) asked for N1, N2 and N3 in this WP and kept the form fix (Q3).
 
 ## What was done
 
-**The rule, in one place for the desk** (`plugin/components/desk/Arm.qml`,
-`plugin/Desk.qml`): the key handler's body moved from `keyCatcher`'s
-`Keys.onPressed` into `Desk.keyPressed(event)`. It sets `arm.held =
-event.isAutoRepeat` around `root.key(event)` (reset in a `finally`, so a
-click never sees it). `Arm.press` with `held` set marks the key as
-touched and returns false: it neither arms nor confirms, and since the
-key "pressed", the desk does not disarm — the arm and the hint stay in
-the sticky bar while the key is held. Every caller of `arm.press` (Work's
-Start/Verify/Done/Drop/Hand to agent via keys and Enter, Decisions'
-Accept, the triage Discard) follows without change; clicks go through
-`press` with `held` false, unchanged. Keys that never reach `press`
-(j/k, arrows, Alt+arrows, section keys, the graph's `-`/`=`, `h`/`l`)
-repeat as before, and disarm as any other key.
+### The rule (N3: no repeat triggers any writing key, armed or not)
 
-**Also fixed, same class (beyond the WP's file list — please check the
-scope):** the two forms with their own Enter-twice arm,
-`DriftForm.qml` (Link, Explain, Dismiss) and `NewDecisionForm.qml`
-(New decision). Their text fields handled Enter by `onAccepted`, and
-Qt's TextInput emits `accepted` for an auto-repeated Return too: holding
-Enter in the decision title created the decision; holding Enter on an
-open drift row opened the form, then armed and ran Link. Return/Enter in
-the fields and Return/Enter/Space on the submit item now go through the
-form's `keyPressed(event)`: accept the key, call `enterKey()` only when
-it is not an auto-repeat. `enterKey()` itself is unchanged (service-states
-still calls it directly).
+**The desk** (`plugin/Desk.qml`, `plugin/Model.js`): keyCatcher's
+`Keys.onPressed` calls `Desk.keyPressed(event)`. It drops every
+auto-repeat before `root.key` unless the key moves:
+`Model.deskKeyRepeats(key, text)` — the arrows (with or without Alt),
+PageUp/PageDown, Home, End (Qt key codes), `j`/`k`, the Prime Radiant's
+`h`/`l` and the graph's `-`/`=`. A dropped repeat is accepted and
+changes nothing: no arm, no confirm, no write, no launch, no disarm — so
+a held `x` keeps its arm and hint until it is released and pressed
+again. This replaces round 1's `Arm.held` (Arm.qml is back to `next`'s
+version): the filter now sits before `root.key`, the WP's second
+option, and covers `r` (Reopen), `c`, `e`/`o`, Enter/Space (activate,
+the graph's play), `p`, `0`, `f`/`F`, the section keys, `/`, `+`, `n`,
+`i`, `d` and Esc as well. A whitelist, so a writing key added later is
+covered without a change here.
 
-**Tests** (`tests/plugin/desk-view.sh`, section 8d'; harness
-`tests/plugin/harness/desk.qml`): new steps `keyDown:`, `keyUp:` (real
-QtTest press/release) and `keyRepeat:<Name|char>`. QtTest cannot make an
-auto-repeated event, so `keyRepeat` builds the event object a repeat is
-(`key`, `text`, `modifiers`, `isAutoRepeat: true`) and hands it to
-`keyPressed(event)` of the focused item's nearest ancestor that has one
-(a form), else the desk's.
+**The forms and fields** (no field acts on Qt's `accepted` any more,
+which a repeat emits too): Return and Enter go through the owner's
+`keyPressed(event)`, which accepts the key and acts only when it is not
+an auto-repeat —
+- the arm-twice forms (round 1): `DriftForm` (Link, Explain, Dismiss),
+  `NewDecisionForm`;
+- the one-Enter fields: `JournalField` (the note), `NewCaseSheet` (both
+  fields), `ImportForm` (both fields: the dry run), the intent fields of
+  Work and Today (the guard on the `TextField` itself).
 
-- `held-key` (live, fake engine): on an active case, repeats alone arm
-  nothing; `x` down arms Drop, 70 repeats (two seconds at rate 40) and the
-  release leave it armed, hint and "Confirm drop" shown, case still
-  active; a real `x` drops. Same for Enter (Start, 10 repeats) and `a`
-  (Hand to agent). Armed Drop, then repeated `j`, `j`, ↓, `k` move the
-  selection and disarm. Engine argv: exactly one `plan drop`, one `plan
-  start`, one `agent start`.
-- `held-forms` (live): New decision — repeated Enter in the title arms
-  nothing, Enter down arms, 10 repeats and release keep it armed, a real
-  Enter creates (argv: one `decide`). Changelog — Enter down on an open
-  drift row opens the Link form, 11 repeats leave it unarmed, two real
-  Enters arm and link (argv: one `drift link`).
-- Against `next`'s plugin (with only a `keyPressed` shim added to the old
-  Desk so `keyRepeat` can reach it), `held-key` fails 11 checks: the held
-  `x` drops the case at once, held Enter and `a` arm then disarm/confirm.
-  `held-forms` cannot show the old form bug this way (the old fields'
-  `onAccepted` comes from Qt's TextInput, which the synthetic event does
-  not pass through); the new routing is covered, the old failure is by
-  reading Qt's behaviour.
+**The writing buttons** (`plugin/components/desk/KeyButton.qml`, new): a
+focusable qs.Ui Button clicks on every Return/Enter/Space press, repeats
+included (`$OMARCHY_PATH/shell/Ui/Button.qml:66-68`), so a held Space on
+*Import* imported again on every repeat (pending was the only guard).
+KeyButton is the arm-twice forms' `submitKey` pattern made reusable: a
+Tab stop around a non-focusable Button, the key presses it once per
+press, a click is a click, `enabled: false` makes it no Tab stop.
+NewCaseSheet's *Create* and ImportForm's *Dry run* and *Import* use it.
+The remaining focusable qs.Ui Buttons are the four *Cancel* buttons
+(harmless: they close a form).
 
-**Docs:** SPEC-PLUGIN §5.3 (the sentence "A held key does not confirm",
-plus the forms), plugin/README.md (two-press arming), docs/TESTING.md
-(the new harness steps), CHANGELOG (Unreleased › Plugin).
+### The routing proven by real keys (N1)
+
+Every guard has `keyGuard` (a name) and `keyEvents` (its call count). The
+harness reports `keyGuard: { name, events }` of the guard the focus is in
+(the nearest item up from the focus with `keyPressed` and a `keyGuard`,
+else the desk) after every step. A real QtTest `keyDown:` must raise that
+count, which proves the Keys handler under test routes into the guard;
+`keyRepeat:` hands the same guard the event an auto-repeat is. New step
+`focusName:<objectName>` focuses a KeyButton. A static check in
+desk-view.sh covers the fields no case presses: no `onAccepted` in
+`plugin/`, every Return/Enter/Space handler ends in `keyPressed(event)`
+(except the search field's, which only leaves the field), the desk's
+handler is `root.keyPressed(event)`, and the focusable qs.Ui Buttons are
+as many as the *Cancel* buttons.
+
+Cases (`tests/plugin/desk-view.sh` 8d'):
+- `held-key`: as round 1 (Drop with 70 repeats, Start, Hand to agent,
+  j/k/↓ repeat and disarm), plus the real keys counted at the desk, plus
+  repeats of `r`, `e`, `c`, Return, Space, Esc on a completed case doing
+  nothing (desk open, case completed, no engine call), then a real `r`
+  reopens. Argv: exactly drop, start, agent start, reopen.
+- `held-forms`: as round 1, plus the real Return counted at the
+  decision's and the drift form's guard.
+- `held-fields` (new): the note, Today's intent, the new-case sheet's
+  title and *Create* (Return and Space repeats), Work's intent — repeats
+  send nothing, the real press sends once and counts. Argv: one `log`,
+  one `agent start --new` each, one `plan new`.
+- `held-import` (new): repeats in the path field run no dry run, the real
+  Return runs one; repeats on *Dry run* none more; Return/Space repeats
+  on *Import* import nothing, a real Space imports once. Argv compared.
+- `model.test.js`: `deskKeyRepeats` (moving keys yes; Return, Enter,
+  Space, Esc, Tab, Backspace, the writing/launching letters, section
+  keys, `/`, `+`, `f`/`F` no).
+
+Mutations, each in a scratch copy (deleted after), the 8d' block alone:
+- M5 the decision title back to `onAccepted: root.enterKey()`: 2 FAIL
+  (held-forms #6, static check);
+- M6 keyCatcher's old inline body: 8 FAIL;
+- M7 the desk filter off: 16 FAIL;
+- M8 KeyButton ignores `isAutoRepeat`: 4 FAIL;
+- M9 *Import* back to a focusable qs.Ui Button: 2 FAIL;
+- M10 Work's intent back to `onAccepted`: 2 FAIL.
+
+### Docs (N2 and the rest)
+
+SPEC-PLUGIN §5.3 (the rule as built now, replacing round 1's `Arm.held`
+paragraph) and §2 (KeyButton in the file list); docs/KEYBINDINGS.md;
+docs/user/en/03-daily-use.md and docs/user/de/03-daily-use.md (one
+sentence each; the German source line moved to the English commit
+d49a6794, so docs-check sees it in sync); plugin/README.md;
+docs/TESTING.md (the new steps and `keyGuard`); CHANGELOG (the entry now
+"A held key acts once").
 
 ## What was not done
 
 - **The live check on the test host** (hold `x` on a queued case for two
-  seconds → armed, not dropped) is not done: it needs a dev build of the
-  plugin deployed to pbbau-lnx-tstr, which is the orchestrator's
-  deploy step. The harness case above is its offline equivalent.
-- Held keys that run **without** arming are unchanged (out of the WP's
-  scope): `r` (Reopen runs at once), `e`/`o` (open in the editor, guarded
-  by the 2 s repeat window), `c` (capture), Enter in the one-Enter fields
-  (Today's note, the Work intent field, the new-case sheet, the import
-  form's dry run). Each is guarded by a pending state or the step-aside,
-  but a held key still sends its first repeat if that guard is not yet
-  up. Worth a look before 0.2.0 if the operator wants "a held key never
-  writes" rather than "never confirms".
+  seconds → armed, not dropped): needs a dev build deployed to
+  pbbau-lnx-tstr, the orchestrator's deploy step. Worth adding there:
+  hold Space on *Import* after a dry run → one import.
+- QtTest still cannot make a real auto-repeated QKeyEvent (Qt 6.11's
+  `QTest::sendKeyEvent` always passes `repeat = false`), so the repeat
+  itself stays synthetic; the real-key counters and the static check
+  close the routing gap the review found.
 
 ## How it was verified
 
-- `SELDON_FULL_CHECK=1 just check` — result below; TMPDIR
-  and XDG_RUNTIME_DIR on disk under the private `gates/` folder (0700,
-  removed after). The harnesses' own Quickshell runtime dir stays
-  `mktemp -d /tmp/seldon-rt.*` as the repo designs it (socket path
-  length, WP-161); not changed here.
-- The two new cases alone, iterated in a scratch copy of the script (40
-  checks, 0 failed), and once against `next`'s plugin (fails, see above).
-- `omarchy plugin validate plugin/` and `just qmllint` clean (no new
-  warning in the changed files).
+- `SELDON_FULL_CHECK=1 just check` on 3a3e121e: `check: ok`, exit 0 —
+  desk-view 1878 passed / 0 failed (70 of them the 8d' held-key checks),
+  service-states 344/0, bar-view 196/0, ipc-restart 44/0,
+  terminal-scripts 65/0; the real `~/.local/state/seldon` and
+  `~/.config/seldon` untouched, no leftover in either runtime dir.
+  docs-check prints one existing warning (the German CLI reference is
+  behind the English page), not from this WP.
 
-Result of `SELDON_FULL_CHECK=1 just check` on 615bb747+docs (e61b67b4):
-`check: ok`, exit 0 — desk-view 1845 passed / 0 failed (37 of them the
-new held-key and held-forms checks), service-states 344/0, bar-view
-196/0, ipc-restart 44/0, terminal-scripts 65/0; the real
-`~/.local/state/seldon` and `~/.config/seldon` untouched, no leftover in
-either runtime dir. docs-check prints one existing warning (the German
-CLI reference is behind the English page), not from this WP.
+- The four 8d' cases alone in a scratch copy of the script: 73 passed,
+  0 failed; the mutations above.
+- `node tests/plugin/model.test.js`: 192 passed. `just plugin-validate`
+  ok, `just qmllint` ok (49 files; no new warning in the changed files).
+- TMPDIR, the cargo target (the worktree's `engine/target`) and
+  XDG_RUNTIME_DIR (0700, removed after) on disk under the private
+  `gates/` folder; the harnesses' own Quickshell runtime dir stays
+  `mktemp -d /tmp/seldon-rt.*` as the repo designs it (WP-161).
 
 ## Open questions
 
-1. Scope: the form fix (DriftForm, NewDecisionForm) goes beyond the WP's
-   input list but is the same bug and the same rule. Keep, or split into
-   its own WP?
-2. The held keys that write without arming (above): a follow-up WP, or
-   accepted as is for 0.2.0?
+1. `f`/`F` (the Changelog's source filter) and the section keys no longer
+   repeat: they do not write, but they do not move a selection either.
+   If the operator wants them to repeat, they go into
+   `Model.deskKeyRepeats` (one line and the unit test).
