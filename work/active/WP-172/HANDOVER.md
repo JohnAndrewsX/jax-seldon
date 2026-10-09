@@ -185,3 +185,25 @@ form.
 - Same form as round 1: `env -i` per command, private 0700 runtime dir
   and temp homes on disk, stub `omarchy` for `plugin list` only, the
   plugin folder copied from `plugin/` (no network); temp homes deleted.
+
+## Round 3 (Fable stage 2: APPROVE engine and rules v5; ADR wording)
+
+Applied verbatim from the stage-2 packet, docs only:
+
+- ADR-0050 Consequences, first bullet: the class is computed at index
+  time, so an open `plugin-add jax.seldon` of an earlier version becomes
+  routine at the next capture; a resolution written for it stays.
+- ADR-0050 Consequences, "Residual risk, accepted": the engine-only and
+  after-removal cases, `omarchy-plugin-add` refusing a known id or an
+  existing `plugins/<id>`, and why an attention item would not have told
+  the user more (Omarchy's warning, the README URL, the tree hash).
+- ADR-0050 Alternatives: the origin-URL alternative restated (would show
+  a fork's URL; a collector change for every third-party add with its own
+  operator decision and redaction; a follow-up if wanted), and a new
+  rejected alternative: a known manifest or tree hash of the plugin.
+- CHANGELOG, "Installing Seldon's plugin is no drift": the retroactivity
+  sentence.
+
+Left as it was: the "first add only" alternative still ends "A reviewer
+may choose it"; stage 2 rejected it in its packet, the ADR text was not
+part of the drafted edits. `docs-check --seldon`: ok. No code changed.

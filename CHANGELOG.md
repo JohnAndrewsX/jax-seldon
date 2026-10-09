@@ -66,7 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Changelog and `seldon drift --all`, never open drift. It is in the
   default `[drift] routine` list and in `seldon doctor`'s `drift` line;
   left out of your own list, the add is attention again. No reason is
-  recorded for it, and removing the plugin stays drift.
+  recorded for it, and removing the plugin stays drift. This reaches
+  earlier captures too: an open `plugin-add jax.seldon` item from a 0.1.x
+  logbook is routine after the first capture (or `seldon index`) on this
+  version — gone from `seldon drift` and the panel's Today list, still in
+  `drift --all`; a link, explanation or dismissal you gave it stays.
 - **The crash inbox in the logbook's `AGENTS.md` (WP-172).** The rules
   block is v5: an agent that diagnosed a crash files the report with
   `seldon inbox add` and asks you whether it becomes a case. An unedited

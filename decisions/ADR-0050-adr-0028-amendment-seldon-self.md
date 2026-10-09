@@ -70,11 +70,22 @@ class row `plugin-toggle` makes it routine anyway.
 
 - A fresh install by the README leaves `seldon drift` at 0 open items
   after the plugin is added (WP-172 acceptance; the `shell.json` change is
-  routine `routine-paths`).
+  routine `routine-paths`). The class is computed at index time, so an
+  open `plugin-add jax.seldon` of an earlier version becomes routine at
+  the next capture; a resolution written for it stays (a resolution wins
+  over any class).
 - **Residual risk, accepted.** Nothing checks where a plugin with the id
   `jax.seldon` came from. Code that names itself `jax.seldon` on a machine
-  without Seldon's plugin is now routine, not attention: it is not listed
-  to agent sessions as an attention item. The gain for an attacker is
+  without Seldon's plugin is now routine, not attention — an engine-only
+  install, or a machine after a `plugin-remove` (attention). On a machine
+  that has the plugin there is no add to spoof: `omarchy-plugin-add`
+  refuses an id the catalog knows or a folder already at
+  `plugins/<id>`, so a swap starts with a removal. An attention item
+  would not have told the user more: whoever ran the add believes it is
+  Seldon; what distinguishes a fork is Omarchy's own warning before the
+  clone and the URL in the README, and any later in-place change is a
+  `plugin-update` by tree hash (WP-113, WP-136). Such an add is not
+  listed to agent sessions as an attention item. The gain for an attacker is
   small: whoever can run `omarchy plugin add` as the user can already
   change any third-party plugin in place, and an in-place change of the
   installed `jax.seldon` tree is a `plugin-update`, which rule 8 explains
@@ -99,8 +110,20 @@ class row `plugin-toggle` makes it routine anyway.
   path (remove, add again) would ask twice. A reviewer may choose it; the
   row's rule id stays the same.
 - **Check the clone's `origin` URL against the plugin repository.** Not
-  taken: the URL is the attacker's to write, so it proves nothing, and the
-  collector would read `.git/config` for a check that only looks like one.
+  taken here. Against a fork a user was talked into adding, the URL would
+  differ from the README's, so recording it (`meta.origin`, no verdict)
+  would let the Changelog show where the code came from; it proves
+  nothing against a local attacker. It is a change of the plugins
+  collector for every third-party add, not of this rule: it records a
+  value of `.git/config` under `~/.config` (hashes only today, operator
+  2026-10-06; the commit subjects of WP-136 are the only recorded clone
+  content) and a remote URL can carry credentials, so it needs an
+  operator decision and its own redaction. A follow-up if wanted.
+- **Routine only when the folder matches the plugin this engine knows**
+  (a manifest or tree hash). Rejected: engine and plugin are released
+  separately; the engine cannot know the hash of a plugin released after
+  it, so a legitimate install of a newer plugin would be attention
+  again — the T1 finding.
 - **Reorder the README** (plugin before `seldon init`, so the add falls
   into the init baseline). Rejected: without a logbook the plugin shows
   only its *not initialised* banner, so engine, init, plugin stays the
