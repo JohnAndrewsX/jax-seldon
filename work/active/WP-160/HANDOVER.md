@@ -212,3 +212,32 @@ ADR-0013 §5 and ADR-0043.
   between the jump and pacman's next libalpm line. A pacman that logs
   nothing for a long time after the jump (a long scriptlet or hook
   without output, for example) could still be cut there.
+
+## Stage 2 (Fable approved; notes folded in)
+
+- **Merged `next`** (`ad891a6f`, WP-170 queued); no conflict.
+- **N1.** A Running line without a transaction is read again while any
+  lock is present, held or stale (`hold_running`, called from both tail
+  branches of `parse`: after an emitted `unfinished` transaction, and
+  with no open transaction). Under a stale-looking lock the download
+  phase after a forward clock jump therefore keeps its `meta.command`;
+  once the lock is gone the line is passed as before. The assertions of
+  `a_stale_lock_and_the_last_line` were flipped as the packet says, with
+  one correction: in the retry case the cursor stands at the Running
+  line (`open.len()`), not at 0, because the dead transaction before it
+  is emitted. Added: the same logs with the lock gone are passed.
+- **N2.** SPEC-ENGINE §4 names the window that is left (a capture
+  between the jump and pacman's next libalpm line, i.e. inside a long
+  silent hook or scriptlet) and says the other shape, the download phase
+  before `transaction started`, is closed by the Running rule. I did not
+  list it as still open, because after N1 it is not.
+- **N3.** Both DECISIONS.md rows point at "SPEC-ENGINE §4 pacman, 'Stale
+  lock'" besides the WP.
+- **Verified.** Hand mutants for N1, 2 of 2 killed (no hold after an
+  emitted transaction; only a held lock holds a Running line), the source
+  restored and `git status` clean. `cargo fmt --check`, clippy `-D
+  warnings` clean. **`just check`** on `afc9f836` (this commit adds only
+  this section), `SELDON_FULL_CHECK=1`, private `XDG_RUNTIME_DIR`,
+  `CARGO_TARGET_DIR` the worktree's `engine/target` on disk, scratch
+  `JUST_TEMPDIR`, under `flock`: **ok**, exit 0; the one docs-check
+  warning is the known German getting-started page.
