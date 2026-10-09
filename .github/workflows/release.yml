@@ -11,6 +11,11 @@
 #            (packaging/omarchy-pin, WP-190);
 #            a build-provenance attestation for every release asset
 #            (WP-080; install.sh verifies it with `gh attestation verify`).
+#   split    (tag and dry run)  recomputes the plugin split where the
+#            plugin job will (same runner, no container) and refuses
+#            unless it is the split build validated; release, and with it
+#            aur, bump and plugin, wait for it, so a mismatch stops the
+#            release before anything is published (WP-190).
 #   release  (tag only)  GitHub release with the assets; its notes are the
 #            version's CHANGELOG.md section (packaging/release-notes.sh).
 #   bump     (tag only)  the updated PKGBUILD/.SRCINFO committed to main;
@@ -19,11 +24,12 @@
 #   aur      (tag only)  push PKGBUILD/.SRCINFO to the AUR; skipped with a
 #            notice when the AUR_SSH_PRIVATE_KEY secret is absent.
 #   plugin   (tag only)  push the plugin split to jax-seldon-plugin (main
-#            and the tag), refused unless it is the split build validated;
+#            and the tag, atomically), refused unless it is the split
+#            build validated;
 #            skipped when PLUGIN_REPO_TOKEN is absent.
 #
 # Dry run: start the workflow by hand (Actions → release → Run workflow,
-# or `gh workflow run release.yml --ref <branch>`). Only `build` runs;
+# or `gh workflow run release.yml --ref <branch>`). Only `build` and `split` run;
 # nothing is pushed or published. Its summary and the `dist` and
 # `package` artifacts show what a tag would publish. packaging/README.md.
 # The attestation step runs in a dry run too, so it is exercised before a
@@ -284,8 +290,32 @@ jobs:
           path: package/
           if-no-files-found: error
 
-  release:
+  # The split the plugin job will push, recomputed on the plugin job's
+  # runner (ubuntu-latest, no container: its git, not the Arch image's)
+  # and compared with the one build validated, before anything is
+  # published; runs in a dry run too, so `gh workflow run` exercises it.
+  split:
     needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compare the plugin split
+        env:
+          VALIDATED: ${{ needs.build.outputs.plugin_split }}
+        run: |
+          split=$(git subtree split --prefix=plugin)
+          if [[ $split != "$VALIDATED" ]]; then
+            echo "::error::plugin split $split on this runner is not the one the build job validated (${VALIDATED:-none})"
+            exit 1
+          fi
+          echo "plugin split: $split, as validated"
+
+  release:
+    needs: [build, split]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -432,7 +462,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false  # the push below authenticates with its own token
 
-      # the split the build job validated, or nothing
+      # the split the build job validated (the split job compared it on
+      # this runner before the release), or nothing; main and the tag
+      # together or neither
       - name: Push the plugin split
         if: steps.token.outputs.present == 'true'
         env:
@@ -446,4 +478,4 @@ jobs:
           auth=$(printf 'x-access-token:%s' "$PLUGIN_REPO_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
           git -c http.extraheader="AUTHORIZATION: basic $auth" \
-            push "$PLUGIN_REPO" "$split:refs/heads/main" "$split:refs/tags/$GITHUB_REF_NAME"
+            push --atomic "$PLUGIN_REPO" "$split:refs/heads/main" "$split:refs/tags/$GITHUB_REF_NAME"

@@ -23,8 +23,12 @@
 #     unconditional `Validate the plugin split` step after `Plugin split`
 #     (which outputs the split) and before `Summary` extracts the split
 #     with `git archive` and ends with packaging/omarchy-validate.sh on
-#     it, ignoring no failure; the build job outputs the split, and the
-#     plugin job refuses to push any other.
+#     it, ignoring no failure; the build job outputs the split; a `split`
+#     job (needs build, no `if:`, the plugin job's runner and container)
+#     recomputes it and refuses (`exit 1` ending the `if` block) any
+#     other, and release needs [build, split], so a mismatch stops the
+#     release before anything is published; the plugin job refuses the
+#     same way before its push, and the push is `--atomic`.
 #
 # Limit: a SHA is not checked against its version comment (that needs
 # the network); the refresh steps in packaging/README.md resolve both.
@@ -69,6 +73,19 @@ run_block() {
     on && /^[[:space:]]*$/ { next }
     on { on = 0 }
   ' <<< "$1"
+}
+
+# refuses < RUN-BLOCK: "<fi> <push>": the line of the `fi` that ends
+# `if [[ $split != "$VALIDATED" ]]; then` with `exit 1` as the block's
+# last line (0 when there is none) and of the first `push "$PLUGIN_REPO"`
+# (0 when there is none)
+refuses() {
+  awk '
+    $0 == "if [[ $split != \"$VALIDATED\" ]]; then" && !open && !fi { open = 1; next }
+    open && $0 == "fi" { if (prev == "  exit 1") fi = NR; open = 0 }
+    open { prev = $0 }
+    /push (--atomic )?"\$PLUGIN_REPO"/ && !at { at = NR }
+    END { print fi + 0, at + 0 }'
 }
 
 # problems DIR: one line per problem in the workflows of DIR; none = ok
@@ -135,8 +152,8 @@ problems() {
     grep -E -q '^cargo audit --file engine/Cargo\.lock --deny warnings "\$\{args\[@\]\}"$' <<< "$(tail -n 1 <<< "$block")" \
       || echo "$release: cargo audit is not the last line of its step"
   fi
-  grep -E -q '^    needs:[[:space:]]*(build|\[[[:space:]]*build[[:space:]]*\])[[:space:]]*$' <<< "$(job "$release" release)" \
-    || echo "$release: the release job does not need build"
+  grep -E -q '^    needs:[[:space:]]*\[[[:space:]]*build[[:space:]]*,[[:space:]]*split[[:space:]]*\][[:space:]]*$' <<< "$(job "$release" release)" \
+    || echo "$release: the release job does not need [build, split]"
   # build provenance (WP-080): only the build job may sign, and it reads
   # the repository only
   local top perms want attest subject
@@ -198,14 +215,33 @@ problems() {
     order=$(grep -E '^      - name: (Plugin split|Validate the plugin split|Summary)$' <<< "$build" | sed 's/^      - name: //' | paste -sd '|')
     [[ $order == 'Plugin split|Validate the plugin split|Summary' ]] \
       || echo "$release: the build job's order is not Plugin split, Validate the plugin split, Summary ($order)"
-    # the comparison's line, then the push's: "<if> <push>", both present
-    push=$(run_block "$(step "$(job "$release" plugin)" "Push the plugin split")" | awk '
-      $0 == "if [[ $split != \"$VALIDATED\" ]]; then" && !cmp { cmp = NR }
-      /push "\$PLUGIN_REPO"/ && !at { at = NR }
-      END { print cmp + 0, at + 0 }')
+    # the split job: before release, on the plugin job's runner, a dry run too
+    local sj cmp
+    sj=$(job "$release" split)
+    if [[ -z $sj ]]; then
+      echo "$release: no split job"
+    else
+      grep -x -q '    needs: build' <<< "$sj" || echo "$release: the split job does not need build"
+      ! grep -E -q '^    if:' <<< "$sj" || echo "$release: the split job has an if: condition"
+      [[ $(grep -E '^    (runs-on|container):' <<< "$sj") == "$(grep -E '^    (runs-on|container):' <<< "$(job "$release" plugin)")" ]] \
+        || echo "$release: the split job does not run on the plugin job's runner and container"
+      cmp=$(step "$sj" "Compare the plugin split")
+      ! grep -E -q '^        (if|shell):' <<< "$cmp" \
+        || echo "$release: the split job's comparison has an if: or a shell: of its own"
+      grep -x -q -F '          VALIDATED: ${{ needs.build.outputs.plugin_split }}' <<< "$cmp" \
+        && grep -x -q -F 'split=$(git subtree split --prefix=plugin)' <<< "$(run_block "$cmp")" \
+        && [[ $(refuses <<< "$(run_block "$cmp")") =~ ^[1-9] ]] \
+        || echo "$release: the split job does not refuse a split other than the validated one"
+      ! grep -E -q '\|\||set \+[eo]' <<< "$(run_block "$cmp")" \
+        || echo "$release: the split job's comparison ignores a failure (|| or set +e)"
+    fi
+    # the plugin job: the same refusal before the push, which is atomic
+    push=$(run_block "$(step "$(job "$release" plugin)" "Push the plugin split")")
     grep -x -q -F '          VALIDATED: ${{ needs.build.outputs.plugin_split }}' <<< "$(job "$release" plugin)" \
-      && [[ $push =~ ^([1-9][0-9]*)\ ([1-9][0-9]*)$ ]] && ((BASH_REMATCH[1] < BASH_REMATCH[2])) \
+      && [[ $(refuses <<< "$push") =~ ^([1-9][0-9]*)\ ([1-9][0-9]*)$ ]] && ((BASH_REMATCH[1] < BASH_REMATCH[2])) \
       || echo "$release: the plugin job does not refuse a split other than the validated one before the push"
+    grep -E -q '^  push --atomic "\$PLUGIN_REPO" ' <<< "$push" \
+      || echo "$release: the plugin push is not --atomic"
   }
   # only build signs: no other job may ask for an OIDC token or attestations
   local j
@@ -277,8 +313,10 @@ expect_problem "cargo-audit not installed" "does not install cargo-audit" \
   's/ cargo-audit( |$)/\1/'
 expect_problem "cargo audit after just check" "before just check" \
   's/^(      - name: cargo audit)$/      - name: early\n        run: just check\n\n\1/'
-expect_problem "release job without build" "does not need build" \
-  '0,/^    needs: build$/{/^    needs: build$/d}'
+expect_problem "release job without build" "does not need \[build, split\]" \
+  's/^    needs: \[build, split\]$/    needs: split/'
+expect_problem "release job without split" "does not need \[build, split\]" \
+  's/^    needs: \[build, split\]$/    needs: build/'
 expect_problem "cargo audit step with if: false" "has an if: condition" \
   's/^(      - name: cargo audit)$/\1\n        if: false/'
 expect_problem "cargo audit step with its own shell" "sets its own shell" \
@@ -337,6 +375,26 @@ expect_problem "plugin push without the comparison" "does not refuse a split" \
   '/^          if \[\[ \$split != "\$VALIDATED" \]\]; then$/,/^          fi$/d'
 expect_problem "plugin push compares after the push" "does not refuse a split" \
   '/^          if \[\[ \$split != "\$VALIDATED" \]\]; then$/,/^          fi$/d; s/^(            push "\$PLUGIN_REPO" .*)$/\1\n          if [[ $split != "$VALIDATED" ]]; then exit 1; fi/'
+expect_problem "no split job" "no split job" \
+  's/^  split:$/  splitcheck:/'
+expect_problem "split job without needs" "split job does not need build" \
+  '/^  split:$/,/^    needs:/{/^    needs:/d}'
+expect_problem "split job on tags only" "split job has an if:" \
+  's/^(  split:)$/\1\n    if: github.event_name == '"'push'"'/'
+expect_problem "split job in the Arch container" "plugin job's runner and container" \
+  '/^  split:$/,/^    steps:$/s/^(    runs-on: ubuntu-latest)$/\1\n    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689/'
+expect_problem "split job without exit 1" "split job does not refuse" \
+  '/^  split:$/,/^  release:$/{/^            exit 1$/d}'
+expect_problem "split job compares || true" "split job's comparison ignores a failure" \
+  '/^  split:$/,/^  release:$/s/^(          split=\$\(git subtree split --prefix=plugin\))$/\1 || true/'
+expect_problem "split job compares another value" "split job does not refuse" \
+  '/^  split:$/,/^  release:$/s/^(          VALIDATED: ).*/\1HEAD/'
+expect_problem "plugin push without exit 1" "plugin job does not refuse" \
+  '/^  plugin:$/,${/^            exit 1$/d}'
+expect_problem "plugin push exits 0 on a mismatch" "plugin job does not refuse" \
+  '/^  plugin:$/,${s/^            exit 1$/            exit 0/}'
+expect_problem "plugin push not atomic" "not --atomic" \
+  's/push --atomic "\$PLUGIN_REPO"/push "$PLUGIN_REPO"/'
 
 if ((fails > 0)); then
   echo "workflow-pins.test: $fails failure(s)" >&2
