@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ ecdb430 -->
+<!-- source: en/03-daily-use.md @ d49a679 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar, das Panel mit seinen sechs Tabs, die Tasten und das
