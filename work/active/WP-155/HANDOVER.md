@@ -399,3 +399,14 @@ BACK, F1–F5, all done. Commits be577f68 (script, test) and 4d0d3fad
 Not run, no ssh this round; the live protocol of the stage-2 packet
 (dry run, deploy, read the backup, second dry run, the way back once
 via RESTORE.txt, next again) applies after the merge into `next`.
+
+## Round 5
+
+CI on PR #10 was red only from shellcheck: SC2088 (tilde in double
+quotes) on the "dangling shell.json link" row, whose grep pattern
+`~/.config/omarchy/shell.json.next && cp -pP` is meant literally. The
+pattern is now in single quotes. A search for `"~` at the start of a
+double-quoted string in the test and the script found no other case
+(`'logbook = "~/Seldon"'` is inside single quotes). `bash
+tests/deploy/deploy-test-host.test.sh`: 324 passed, 0 failed. shellcheck
+is still not installed here; CI confirms.

@@ -1000,7 +1000,7 @@ on next
 deploy --branch next "$log"
 bk=$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'backup-before-next-*')
 check "a dangling shell.json link: backed up as the link" test -L "$bk/shell.json"
-check "a dangling shell.json link: RESTORE.txt puts it back" grep -qF "~/.config/omarchy/shell.json.next && cp -pP" "$bk/RESTORE.txt"
+check "a dangling shell.json link: RESTORE.txt puts it back" grep -qF '~/.config/omarchy/shell.json.next && cp -pP' "$bk/RESTORE.txt"
 
 # the engine and shell.json are links (to files in the test dir, outside the
 # fake home): the backup copies the links, never what they point to
