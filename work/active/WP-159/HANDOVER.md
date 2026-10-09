@@ -307,3 +307,19 @@ U+110CD, U+13430–U+1343F). ADR-0048 names them.
 ### Guard
 
 No guard-hook block.
+
+## Ready (2026-10-09)
+
+- ADR-0048 accepted by the operator (E43): status line and DECISIONS.md
+  rows updated (690a3b80); ADR-0038's row reads "accepted; §2/§3 amended
+  by ADR-0048".
+- `next` at 48924e49 merged as b82d3523. CHANGELOG conflict: both
+  entries kept (WP-159's and next's WP-164 entries). de guide 06 source
+  line conflict: set to the merge, e0644048.
+- **`XDG_RUNTIME_DIR=<private /tmp/r159h, 0700, removed after>
+  SELDON_FULL_CHECK=1 JUST_TEMPDIR=<disk> TMPDIR=<disk> flock
+  /tmp/seldon-check.lock just check` on e0644048: exit 0** (`check: ok`,
+  log `engine/target/check-wp159-r3.log`). 2538 tests passed, 0 failed;
+  ipc-restart 44/0; docs-check ok (no warnings); plugin-test ok. Cargo
+  target and temp dirs were on disk; `/run/user/$UID` was at 2 % and
+  `/tmp` at 2 %.
