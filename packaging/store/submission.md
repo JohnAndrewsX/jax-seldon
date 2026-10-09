@@ -104,6 +104,35 @@ labels are capitalised (`Quickshell`, `Power management`), the CLI guide's
 values are lower-case (`quickshell`, `power-management`); this draft uses
 the CLI guide's values, as it would be filed with `gh issue create`.
 
+## Operator decisions at filing time (open)
+
+From the stage-2 review (Fable). None of these is decided here.
+
+- [ ] **Tags** (1-3 from the store's list). Draft: `system, bar, ai`;
+      stage 2 recommends `system, bar, quickshell` (`ai` describes the
+      engine's agent use, not the plugin); the study proposed
+      `quickshell, system`. All are valid.
+- [ ] **Attestation 3** (ownership of the plugin and its preview assets):
+      the operator's own confirmation; "For the operator" above names the
+      sources.
+- [ ] **Attestation 4** (no overwrite of user configuration without
+      explicit consent): the plugin changes only its own settings entry
+      in `~/.config/omarchy/shell.json`, on the user's click or slider
+      release, through the shell, which rewrites the whole file; stage 2
+      would tick it. The operator signs.
+- [ ] **Review risk #8407** (`baseline.md`, "A review risk the scan
+      cannot show"): file while `Model.js:64` still pipes
+      `releases/latest/download/install.sh` to `bash` (ADR-0024), with the
+      maintainer notes as they are (stage 2's recommendation), or wait for
+      the AUR package and its flip, then file.
+- [ ] **Exact-SHA binding**: freeze the `jax-seldon-plugin` commit, rerun
+      the baseline on it, record the validated 40-hex SHA, answer the bot
+      on the one issue; later updates through the store's verification
+      form.
+- [ ] **Re-read the store form** (`SUBMISSION.md`, `SECURITY.md`, the
+      issue template) at its then-current commit and compare with
+      `5d22a9f`.
+
 ## When filing (not WP-042)
 
 - Search the store's issues for the repository URL and `jax.seldon` first;
