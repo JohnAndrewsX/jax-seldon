@@ -511,3 +511,42 @@ fn always_red_paths_make_a_boot_file_a_crisis() {
         "attention config"
     );
 }
+
+/// WP-164 round 3: a drop-in that is a symlink into `/usr/` gets no
+/// evidence mark. ADR-0037 §2 gives `system-link` to links under the home
+/// directory only; a boot file linked to a shipped file is a boot change
+/// like any other: `config-add`, hash only, attention.
+#[test]
+fn a_boot_symlink_into_usr_is_no_system_link() {
+    let Some(target) = [
+        "/usr/share/zoneinfo/UTC",
+        "/usr/lib/os-release",
+        "/usr/share/licenses/glibc/LICENSE",
+    ]
+    .into_iter()
+    .map(Path::new)
+    .find(|p| {
+        std::fs::canonicalize(p).is_ok_and(|t| t.starts_with("/usr/")) && std::fs::read(p).is_ok()
+    }) else {
+        eprintln!("skipped: no readable file under /usr/ on this host");
+        return;
+    };
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    omarchy_boot(&env);
+    capture_config(&env); // baseline
+    let link = etc(&env).join("mkinitcpio.conf.d/zz-shipped.conf");
+    std::os::unix::fs::symlink(target, &link).unwrap();
+    capture_config(&env);
+    let events = config_events(&env);
+    assert_eq!(kinds(&events), [pair("config-add", &key(&link))]);
+    let meta = &events[0].2;
+    assert!(meta.get("matches").is_none(), "{meta}");
+    assert_eq!(meta["hashTo"].as_str().unwrap().len(), 64, "{meta}");
+    assert_eq!(
+        class_of(&env, &key(&link), "config-add"),
+        "attention config"
+    );
+    capture_config(&env);
+    assert_eq!(config_events(&env).len(), 1);
+}

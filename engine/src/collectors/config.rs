@@ -1107,8 +1107,9 @@ fn diff(ctx: &Ctx, base: &Generation, scan: &Scan, since: DateTime<FixedOffset>)
 
 /// ADR-0028 §5: the capture-time evidence of a new `config-add` or
 /// `config-change`, as `meta.matches` (the boolean fact, never the target
-/// or the content): `system-link` for a symlink whose target lies under
-/// `/usr/` (`systemctl --user enable`, Omarchy's migrations),
+/// or the content): `system-link` for a symlink under the home directory
+/// whose target lies under `/usr/` (`systemctl --user enable`, Omarchy's
+/// migrations; never a boot file, WP-164),
 /// `omarchy-default` for content equal to Omarchy's shipped copy (its
 /// hash), `theme-repo` for a file of a theme directory with a `.git`
 /// directory (`omarchy theme install`, which strips a theme's code).
@@ -1233,7 +1234,12 @@ pub fn evidence(
 ) -> Option<&'static str> {
     let path = key_path(dirs, key);
     let is_link = std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink());
-    if is_link && std::fs::canonicalize(&path).is_ok_and(|t| t.starts_with("/usr/")) {
+    // a file under the home directory only: a boot file linked into
+    // `/usr/` is a boot change like any other (ADR-0037 §2, WP-164)
+    if is_link
+        && key.starts_with("~/")
+        && std::fs::canonicalize(&path).is_ok_and(|t| t.starts_with("/usr/"))
+    {
         return Some(MATCHES_SYSTEM_LINK);
     }
     if let Some(hash) = hash
