@@ -59,6 +59,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Crash analyses go into the logbook (WP-166, E28 step 1).** `seldon
+  inbox add --title T --file F|-` files a text into the logbook's
+  `inbox/` as `<date>-<title>.md`, in a commit of its own. It is redacted
+  as `import task` redacts a task file: secrets, a private key over several
+  lines, home paths as `~`, invisible and control characters dropped. The same
+  text again changes nothing; another text under a taken name gets `-2`.
+  The agent skill tells an agent that diagnosed a crash with Omarchy's
+  `diagnose-crash` to file its report there and ask you whether it
+  becomes a case.
 - **No secret hides behind an invisible or control character
   (WP-159, ADR-0048).** Every redaction now reads the text twice: without
   its invisible characters and lone control characters (so

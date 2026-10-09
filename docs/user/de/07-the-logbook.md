@@ -1,6 +1,6 @@
 # Das Logbuch
 
-<!-- source: en/07-the-logbook.md @ 391f7a7 -->
+<!-- source: en/07-the-logbook.md @ 4d58d386 -->
 
 Diese Seite geht durch den Ordner des Logbuchs: was jeder Ordner und
 jede Datei enthält, welche Teile der Engine gehören und welche dir, wie
@@ -42,7 +42,7 @@ Seldon/
 | `PROJECT.md` | wofür die Maschine da ist, was auf ihr nicht passieren darf | du |
 | `STATUS.md` | aktive Cases, offene Drift, letzte Ereignisse | die Engine (`seldon status`) |
 | `DECISIONS.md` | die Einstiegsseite für `decisions/`; die Engine füllt die Tabelle zwischen ihren Markierungen bei jedem `seldon decide` und `seldon status` | du, außerhalb der Markierungen |
-| `inbox/` | alles, was du später einsortieren willst | du |
+| `inbox/` | alles, was du später einsortieren willst, auch die Absturzanalyse eines Agenten | du; die Engine bei `seldon inbox add` |
 | `journal/` | eine Datei pro Tag; Einträge sind Überschriften `## HH:MM · actor · case` | die Engine hängt an, du ergänzt Text |
 | `ledger/*.jsonl` | die Ereignisse; wird nur ergänzt | nur die Engine |
 | `ledger/*.md` | eine lesbare Ansicht jedes Monats, mit Links zu Cases | die Engine (erzeugt) |

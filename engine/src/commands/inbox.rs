@@ -1,0 +1,352 @@
+//! `seldon inbox add --title T --file F|- [--tag T]… [--actor A]`
+//! (SPEC-ENGINE §3, WP-166, E28 step 1): files a text — an agent's crash
+//! analysis, a finding — into the logbook's `inbox/`, so the engine stays
+//! the only writer of the logbook (AGENTS.md §3).
+//!
+//! The text is untrusted. One rule orders its cleaning: nothing is removed
+//! after the last redaction that the redactor's reading copy kept (WP-166
+//! round 3c). The rules read a CR, VT, FF or NEL as white space, so a
+//! control character can hide a secret either way: kept, it splits one
+//! (`to<VT>ken=`); dropped, it glues one to the word before it, where no
+//! rule finds it (`done<CR>sk-…`). So the text is redacted as given
+//! ([`Scrubber::text`]), then its control characters go — every one but
+//! tab and newline in the text, every one but the line ends in the title,
+//! which `one_line` then refuses — then it is redacted again with the
+//! invisible characters dropped after it and `/home/<user>` → `~`
+//! ([`Scrubber::text_dropping_invisible`], as `import task`; WP-102b,
+//! WP-140, WP-159). Redaction leaves its own markers alone (WP-140), so
+//! the second pass changes only what the drop joined.
+//!
+//! The file is `inbox/<date>-<slug>.md`, created, never overwritten. A
+//! text whose `# title` and body an inbox file already holds is "already
+//! filed": nothing is written, so a retry never files twice. Another text
+//! under a title whose name is taken gets `-2`, `-3`, … One commit of the
+//! new file alone; no ledger event (the `crash` kind is E28 step 2).
+
+use std::io::{IsTerminal as _, Read as _, Write as _};
+use std::path::{Path, PathBuf};
+
+use anyhow::Context as _;
+use clap::{Args, Subcommand};
+use serde_json::json;
+
+use super::event::{actor_or_env, clip, parse_person};
+use super::log::parse_tag;
+use super::{Commit, Context, Output, autocommit_paths, one_line};
+use crate::error::{Error, Result};
+use crate::frontmatter::{Document, FmValue, Frontmatter};
+use crate::import::{Scrubber, trim_blank_lines};
+use crate::logbook::{Logbook, cases};
+use crate::model::event::{ACTOR_HUMAN, format_ts};
+use crate::redact::{Redactor, is_invisible};
+use crate::sys;
+
+/// The logbook folder the command writes into.
+pub const INBOX: &str = "inbox";
+
+/// The largest text read, in bytes.
+pub const MAX_TEXT_BYTES: u64 = 1024 * 1024;
+
+/// The longest title, in characters (after the redaction).
+pub const MAX_TITLE_CHARS: usize = 120;
+
+/// The highest number a taken file name gets (`-2` … `-99`).
+const MAX_SUFFIX: u32 = 99;
+
+/// The file name stem of a title without letters or digits.
+const FALLBACK_SLUG: &str = "note";
+
+#[derive(Debug, Clone, Args)]
+pub struct InboxArgs {
+    #[command(subcommand)]
+    pub action: InboxAction,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum InboxAction {
+    /// File a text into the logbook's inbox/, redacted; the same text
+    /// again changes nothing
+    #[command(after_help = "Examples:
+  seldon inbox add --title \"Crash: waybar (SIGSEGV)\" --tag crash --file report.md
+  printf '%s\\n' \"Zed ignores the theme\" | seldon inbox add --title \"Zed theme\" --file -")]
+    Add(AddArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct AddArgs {
+    /// The title: one line, the file's `# heading` and name
+    #[arg(long, value_name = "TITLE", allow_hyphen_values = true)]
+    pub title: String,
+
+    /// The text: a Markdown file, or `-` for stdin (at most 1 MiB, UTF-8)
+    #[arg(long, value_name = "FILE")]
+    pub file: PathBuf,
+
+    /// Tag the text (repeatable): `tags` in the file's frontmatter
+    #[arg(long = "tag", value_name = "TAG", value_parser = parse_tag)]
+    pub tags: Vec<String>,
+
+    /// Who files it: human or agent:NAME (default: $SELDON_ACTOR, else human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
+}
+
+pub fn run(ctx: &Context, args: InboxArgs) -> Result<Output> {
+    match args.action {
+        InboxAction::Add(a) => add(ctx, a),
+    }
+}
+
+/// A control character the text drops: every one but tab and newline.
+fn is_text_control(c: char) -> bool {
+    c.is_control() && c != '\n' && c != '\t'
+}
+
+/// A control character the title drops before its redaction: every one
+/// but the line ends, which `one_line` refuses after it.
+fn is_title_control(c: char) -> bool {
+    c.is_control() && c != '\n' && c != '\r'
+}
+
+/// `text` without the characters `drop` names, and how many there were.
+fn drop_chars(text: &str, drop: fn(char) -> bool) -> (String, usize) {
+    let kept: String = text.chars().filter(|c| !drop(*c)).collect();
+    let dropped = text.chars().count() - kept.chars().count();
+    (kept, dropped)
+}
+
+fn add(ctx: &Context, args: AddArgs) -> Result<Output> {
+    let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
+    let (config, logbook) = ctx.open_logbook()?;
+    let redactor = Redactor::for_config(&config)?;
+    let mut scrubber = Scrubber::new(redactor.clone());
+
+    // redacted as given, then without its control characters (an ESC
+    // would reach the terminal line that names it) but the line ends,
+    // which `one_line` refuses, redacted again (module doc); the counts
+    // are of the title as given
+    let title_dropped = args
+        .title
+        .chars()
+        .filter(|c| is_invisible(*c) || is_title_control(*c))
+        .count();
+    let title = scrubber.text("title", &args.title);
+    let (title, _) = drop_chars(&title, is_title_control);
+    let title = scrubber.text_dropping_invisible("title", &title);
+    let title = one_line("the title", &title)?;
+    if title.chars().count() > MAX_TITLE_CHARS {
+        return Err(Error::user(format!(
+            "the title is longer than {MAX_TITLE_CHARS} characters; put the rest in the text"
+        )));
+    }
+
+    let raw = read_text(&args.file)?;
+    let text = raw.replace("\r\n", "\n");
+    // the same way, keeping the lines: every control character but tab
+    // and newline (an ESC colour sequence, a lone CR of a progress line)
+    // goes between the two passes
+    let text_dropped = text
+        .chars()
+        .filter(|c| is_invisible(*c) || is_text_control(*c))
+        .count();
+    let text = scrubber.text("text", &text);
+    let (text, _) = drop_chars(&text, is_text_control);
+    let text = scrubber.text_dropping_invisible("text", &text);
+    let text = trim_blank_lines(&text);
+    if text.is_empty() {
+        return Err(Error::user("the text must not be empty"));
+    }
+    let redacted = changed_lines(&scrubber);
+    let tags: Vec<String> = args.tags.iter().map(|t| redactor.redact(t)).collect();
+    let body = format!("# {title}\n\n{text}");
+
+    let lock = ctx.lock()?;
+    // a linked `inbox` or one that is no folder is refused (WP-168)
+    logbook.checked_dir(INBOX)?;
+    let (path, filed) = match already_filed(&logbook, &body) {
+        Some(path) => (path, false),
+        None => {
+            let file = render(ctx, &actor, &tags, &body);
+            (create_free(ctx, &logbook, &title, &file)?, true)
+        }
+    };
+    let commit = if filed {
+        let commit = autocommit_paths(ctx, &config, &logbook, &[&path], "inbox add");
+        crate::index::rebuild_if_initialised(ctx);
+        commit
+    } else {
+        Commit::Skipped("nothing changed")
+    };
+    drop(lock);
+
+    let mut human = if filed {
+        format!("Filed {path}: {}", clip(&title, 60))
+    } else {
+        format!("Already filed as {path}: {}", clip(&title, 60))
+    };
+    if redacted > 0 {
+        human.push_str(&format!(" ({redacted} line(s) redacted)"));
+    }
+    human.push_str(&commit.human());
+    Ok(Output::ok(
+        human,
+        json!({
+            "filed": filed,
+            "path": path,
+            "title": title,
+            "actor": actor,
+            "tags": tags,
+            "redactedLines": redacted,
+            "privatePaths": scrubber.private_paths,
+            "droppedCharacters": title_dropped + text_dropped,
+            "git": commit.json(),
+        }),
+    ))
+}
+
+/// The lines the scrubber's redaction changed so far, per source.
+fn changed_lines(scrubber: &Scrubber) -> usize {
+    let lines: std::collections::BTreeSet<(&str, usize)> = scrubber
+        .hits
+        .iter()
+        .map(|h| (h.file.as_str(), h.line))
+        .collect();
+    lines.len()
+}
+
+/// The text of `--file`: stdin for `-` (never a terminal), else a regular
+/// file (no symbolic link, FIFO or device) of at most [`MAX_TEXT_BYTES`],
+/// UTF-8.
+fn read_text(file: &Path) -> Result<String> {
+    if file == Path::new("-") {
+        let stdin = std::io::stdin();
+        if stdin.is_terminal() {
+            return Err(Error::user(
+                "pipe the text on stdin (`--file -`), or name a file with --file",
+            ));
+        }
+        let mut bytes = Vec::new();
+        stdin
+            .lock()
+            .take(MAX_TEXT_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| Error::user(format!("cannot read stdin: {e}")))?;
+        if bytes.len() as u64 > MAX_TEXT_BYTES {
+            return Err(Error::user(format!(
+                "the text is larger than {} KiB",
+                MAX_TEXT_BYTES / 1024
+            )));
+        }
+        return String::from_utf8(bytes).map_err(|_| Error::user("the text on stdin is not UTF-8"));
+    }
+    let shown = file.display();
+    match sys::read_small_file(file, MAX_TEXT_BYTES) {
+        // a file the kernel sizes 0 that holds data is a /proc view
+        // (`/proc/self/environ`): live process state, never a report
+        Ok(Some(text))
+            if !text.is_empty() && std::fs::symlink_metadata(file).is_ok_and(|m| m.len() == 0) =>
+        {
+            Err(Error::user(format!(
+                "{shown}: cannot file it: a file of size 0 that holds data (a /proc view); copy what the report needs into a file"
+            )))
+        }
+        Ok(Some(text)) => Ok(text),
+        Ok(None) => Err(Error::user(format!("{shown}: no such file"))),
+        Err(why) => Err(Error::user(format!(
+            "{shown}: cannot file it: {why} (a regular file of at most {} KiB, UTF-8; or pipe it with `--file -`)",
+            MAX_TEXT_BYTES / 1024
+        ))),
+    }
+}
+
+/// The file as written: frontmatter, then `body`.
+fn render(ctx: &Context, actor: &str, tags: &[String], body: &str) -> String {
+    let fm = Frontmatter::canonical(&[
+        ("type", FmValue::str(INBOX)),
+        ("created", FmValue::str(format_ts(&ctx.now))),
+        ("actor", FmValue::str(actor)),
+        ("tags", FmValue::list(tags)),
+    ]);
+    format!("{}{body}", fm.render())
+}
+
+/// The inbox file (`inbox/<name>.md`, top level) whose body is `body`.
+fn already_filed(logbook: &Logbook, body: &str) -> Option<String> {
+    let entries = std::fs::read_dir(logbook.path(INBOX)).ok()?;
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| n.ends_with(".md"))
+        .collect();
+    names.sort();
+    names.into_iter().find_map(|name| {
+        let path = logbook.path(format!("{INBOX}/{name}"));
+        // a link, a large or unreadable file is not this text
+        let text = sys::read_small_file(&path, 2 * MAX_TEXT_BYTES).ok()??;
+        let doc = Document::parse(&text).ok()?;
+        (doc.body == body).then(|| format!("{INBOX}/{name}"))
+    })
+}
+
+/// Creates `inbox/<date>-<slug>.md` (or the first free `-N` of it) with
+/// `text`; its path relative to the logbook.
+fn create_free(ctx: &Context, logbook: &Logbook, title: &str, text: &str) -> Result<String> {
+    let dir = logbook.path(INBOX);
+    sys::create_dir_private(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    let stem = format!(
+        "{}-{}",
+        ctx.now.format("%Y-%m-%d"),
+        cases::slug(title, FALLBACK_SLUG)
+    );
+    for n in 1..=MAX_SUFFIX {
+        let name = match n {
+            1 => format!("{stem}.md"),
+            n => format!("{stem}-{n}.md"),
+        };
+        if create_new(&dir.join(&name), text)? {
+            return Ok(format!("{INBOX}/{name}"));
+        }
+    }
+    Err(Error::user(format!(
+        "{INBOX}/{stem}.md and {} more of that name are taken; file it under another title",
+        MAX_SUFFIX - 1
+    )))
+}
+
+/// Writes `text` to the new file `path`; `false` when something (a file,
+/// a link) is there already. A failed write removes the file it began.
+fn create_new(path: &Path, text: &str) -> Result<bool> {
+    let mut file = match sys::create_new_private(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(e) => {
+            return Err(anyhow::Error::new(e)
+                .context(format!("cannot create {}", path.display()))
+                .into());
+        }
+    };
+    let written = file
+        .write_all(text.as_bytes())
+        .and_then(|()| file.sync_all());
+    if let Err(e) = written {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(anyhow::Error::new(e)
+            .context(format!("cannot write {}", path.display()))
+            .into());
+    }
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn controls_are_dropped_and_counted() {
+        assert_eq!(
+            drop_chars("a\u{1b}[31mb\u{7}\u{9b}c\td", char::is_control),
+            ("a[31mbcd".to_string(), 4)
+        );
+    }
+}
