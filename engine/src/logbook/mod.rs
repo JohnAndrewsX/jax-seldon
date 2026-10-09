@@ -52,13 +52,19 @@ pub struct Logbook {
 }
 
 impl Logbook {
-    /// Whether `root` holds `.seldon/logbook.toml`.
+    /// Whether `root` holds `.seldon/logbook.toml`, of any type (links
+    /// followed): one that is no regular file is a logbook [`open`]
+    /// refuses with what to do, not one to `init` (WP-175).
+    ///
+    /// [`open`]: Logbook::open
     pub fn is_initialised(root: &Path) -> bool {
-        root.join(META_FILE).is_file()
+        root.join(META_FILE).exists()
     }
 
     /// Opens the logbook at `root`. Exit 3 if it is not initialised; a
-    /// malformed or newer `logbook.toml` is an engine error.
+    /// `logbook.toml` that is no regular file or is too large is refused
+    /// with exit 1 (the fix is the user's, WP-174/WP-175); a malformed or
+    /// newer one is an engine error.
     pub fn open(root: &Path) -> Result<Logbook> {
         let meta_path = root.join(META_FILE);
         let text = match crate::sys::read_regular_string(&meta_path, crate::sys::LOGBOOK_FILE_MAX) {
@@ -71,6 +77,14 @@ impl Logbook {
                 ) =>
             {
                 return Err(Error::NotInitialised(root.to_path_buf()));
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::InvalidInput | std::io::ErrorKind::FileTooLarge
+                ) =>
+            {
+                return Err(Error::user(format!("{}: {e}", meta_path.display())));
             }
             Err(e) => {
                 return Err(anyhow::Error::new(e)

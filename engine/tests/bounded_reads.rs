@@ -256,6 +256,54 @@ fn an_agents_md_that_is_no_regular_file_is_not_read() {
     }
 }
 
+/// A `.seldon/logbook.toml` that is no regular file is named, with what
+/// to do, exit 1 (WP-175, review S2): not "not initialised; run `seldon
+/// init`", which would not help. `init` does not write over it, doctor's
+/// `logbook` row names it.
+#[test]
+fn a_logbook_toml_that_is_no_regular_file_is_named() {
+    const META: &str = ".seldon/logbook.toml";
+    for &how in BOTH {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        swap(&root, META, how);
+        let said = format!("{}: {}", root.join(META).display(), how.what());
+
+        let what = format!("status {how:?}");
+        let out = within(&env, &root, &["status"], &what);
+        let err = stderr(&out);
+        assert_eq!(out.status.code(), Some(1), "{what}: {err}");
+        assert!(err.contains(&said), "{what}: {err}");
+        assert!(!err.contains("seldon init"), "{what}: {err}");
+
+        let what = format!("init {how:?}");
+        let path = root.to_str().unwrap();
+        let args = ["init", "--non-interactive", "--no-capture", "--path", path];
+        let out = within(&env, &root, &args, &what);
+        let err = stderr(&out);
+        assert_eq!(out.status.code(), Some(1), "{what}: {err}");
+        assert!(
+            err.contains(&format!(
+                "{}: not a regular file; init does not write over it",
+                root.join(META).display()
+            )),
+            "{what}: {err}"
+        );
+        assert!(
+            root.join(META)
+                .symlink_metadata()
+                .is_ok_and(|m| !m.is_file()),
+            "{what}"
+        );
+
+        let what = format!("doctor {how:?}");
+        let (rows, _) = doctor(&env, &root, &what);
+        let logbook = &rows["logbook"];
+        assert!(logbook.starts_with("error "), "{what}: {logbook}");
+        assert!(logbook.contains(&said), "{what}: {logbook}");
+    }
+}
+
 #[test]
 fn a_status_or_decisions_md_that_is_no_regular_file_is_not_read() {
     for rel in ["STATUS.md", "DECISIONS.md"] {
