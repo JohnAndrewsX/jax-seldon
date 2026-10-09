@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 83ec84fb -->
+<!-- source: en/06-configuration.md @ 51759fb3 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -205,8 +205,9 @@ hat: eine Änderung von Hand, `omarchy hibernation setup`, eine Migration,
 ein `omarchy-settings`-Update, das eine Datei geändert hat. Aufgezeichnet
 werden nur Hashes, nie der Inhalt (eine Kernel-Befehlszeile nennt deine
 Platten). Einem Symlink in einem dieser Ordner folgt Seldon zu seiner
-Datei und zeichnet nur deren Hash auf. Sonst liest Seldon nichts unter
-`/etc`. Die `.pacnew`-Dateien,
+Datei und zeichnet nur deren Hash auf; ein Link auf eine Datei, die ein
+Paket mitbringt, zählt dort wie jede andere Änderung. Sonst liest Seldon
+nichts unter `/etc`. Die `.pacnew`-Dateien,
 die pacman dort hinterlässt, werden nicht gehasht: Der Pacman-Collector
 listet jede schon auf, und wenn du sie mit `pacdiff` zusammenführst, wird
 die Änderung der Datei selbst aufgezeichnet.
