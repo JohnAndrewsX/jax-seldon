@@ -18,6 +18,16 @@ TARGET = os.environ.get("MUTANTS_TARGET", f"{WT}/engine/target/mutants-wp166")
 INBOX = "engine/src/commands/inbox.rs"
 
 
+def both(*pairs):
+    """Every (a, b) of `pairs` replaced, each once."""
+    def apply(src):
+        for a, b in pairs:
+            assert src.count(a) == 1, (a, src.count(a))
+            src = src.replace(a, b)
+        return src
+    return apply
+
+
 def plain(a, b, count=1):
     def apply(src):
         assert src.count(a) == count, (a, src.count(a))
@@ -38,9 +48,9 @@ MUTANTS = [
     ("text: stdin not UTF-8 accepted", INBOX, plain('return String::from_utf8(bytes).map_err(|_| Error::user("the text on stdin is not UTF-8"));', "return Ok(String::from_utf8_lossy(&bytes).into_owned());")),
     ("text: a file read through its link", INBOX, plain("match sys::read_small_file(file, MAX_TEXT_BYTES) {", "match std::fs::read_to_string(file).map(Some).map_err(|e| e.to_string()) {")),
     # the title
-    ("title: format characters kept", INBOX, plain('scrubber.text_dropping_invisible("title", &args.title)', 'scrubber.text("title", &args.title)')),
+    ("title: format characters kept", INBOX, plain('scrubber.text_dropping_invisible("title", &title)', 'scrubber.text("title", &title)')),
     ("title: several lines", INBOX, plain('let title = one_line("the title", &title)?;', 'let title = super::required_text("the title", &title)?;')),
-    ("title: not scrubbed", INBOX, plain('scrubber.text_dropping_invisible("title", &args.title)', 'crate::redact::without_invisible(&args.title).into_owned()')),
+    ("title: not scrubbed", INBOX, both(('let title = scrubber.text("title", &args.title);', "let title = args.title.clone();"), ('scrubber.text_dropping_invisible("title", &title)', "crate::redact::without_invisible(&title).into_owned()"))),
     ("title: no length limit", INBOX, plain("if title.chars().count() > MAX_TITLE_CHARS {", "if false {")),
     ("title: length off by one", INBOX, plain("if title.chars().count() > MAX_TITLE_CHARS {", "if title.chars().count() >= MAX_TITLE_CHARS {")),
     ("title: the fallback slug", INBOX, plain('const FALLBACK_SLUG: &str = "note";', 'const FALLBACK_SLUG: &str = "";')),
@@ -70,10 +80,9 @@ MUTANTS = [
     # round 2
     ("r2: a linked inbox written through", INBOX, plain("    logbook.checked_dir(INBOX)?;\n", "")),
     ("r2: the filed scan reads through links", INBOX, plain("let text = sys::read_small_file(&path, 2 * MAX_TEXT_BYTES).ok()??;", "let text = std::fs::read_to_string(&path).ok()?;")),
-    ("r2: title controls kept", INBOX, plain("let (title, _) = drop_chars(&title, char::is_control);", "let title = title.clone();")),
-    ("r2: title controls not counted", INBOX, plain(".filter(|c| is_invisible(*c) || c.is_control())", ".filter(|c| is_invisible(*c))")),
+    ("r2: title controls kept", INBOX, plain("let (title, _) = drop_chars(&title, is_title_control);", "let (title, _) = (title.clone(), 0);")),
+    ("r2: title controls not counted", INBOX, plain(".filter(|c| is_invisible(*c) || is_title_control(*c))", ".filter(|c| is_invisible(*c))")),
     ("r2: the title's drops not counted", INBOX, plain('"droppedCharacters": title_dropped + text_dropped,', '"droppedCharacters": text_dropped,')),
-    ("r2: a title of controls is filed", INBOX, plain('    let title = super::required_text("the title", &title)?;\n', "")),
     ("r2: a proc view filed", INBOX, plain("&& std::fs::symlink_metadata(file).is_ok_and(|m| m.len() == 0) =>", "&& false =>")),
     ("r2: an empty file is a view", INBOX, plain("if !text.is_empty() && std::fs::symlink_metadata", "if true && std::fs::symlink_metadata")),
     ("r2: a terminal is read", INBOX, plain("        if stdin.is_terminal() {", "        if false && stdin.is_terminal() {")),
@@ -82,8 +91,14 @@ MUTANTS = [
     ("r3: text controls not counted", INBOX, plain(".filter(|c| is_invisible(*c) || is_text_control(*c))", ".filter(|c| is_invisible(*c))")),
     # round 3b: redaction before the invisible characters go (WP-159)
     ("r3b: the text stripped before its redaction", INBOX, plain('scrubber.text_dropping_invisible("text", &text)', 'scrubber.text_dropping_invisible("text", &crate::redact::without_invisible(&text))')),
-    ("r3b: the title stripped before its redaction", INBOX, plain('scrubber.text_dropping_invisible("title", &args.title)', 'scrubber.text_dropping_invisible("title", &crate::redact::without_invisible(&args.title))')),
+    ("r3b: the title stripped before its redaction", INBOX, plain('scrubber.text_dropping_invisible("title", &title)', 'scrubber.text_dropping_invisible("title", &crate::redact::without_invisible(&title))')),
     ("r3b: the text's invisible ones not counted", INBOX, plain(".filter(|c| is_invisible(*c) || is_text_control(*c))", ".filter(|c| is_text_control(*c))")),
+    # round 3c: two passes, the controls dropped between them
+    ("r3c: no first pass over the text", INBOX, plain('    let text = scrubber.text("text", &text);\n', "")),
+    ("r3c: no first pass over the title", INBOX, plain('let title = scrubber.text("title", &args.title);', "let title = args.title.clone();")),
+    ("r3c: the text's controls dropped after the scrubber", INBOX, plain('    let (text, _) = drop_chars(&text, is_text_control);\n    let text = scrubber.text_dropping_invisible("text", &text);\n', '    let text = scrubber.text_dropping_invisible("text", &text);\n    let (text, _) = drop_chars(&text, is_text_control);\n')),
+    ("r3c: the title's controls dropped after the scrubber", INBOX, plain('    let (title, _) = drop_chars(&title, is_title_control);\n    let title = scrubber.text_dropping_invisible("title", &title);\n', '    let title = scrubber.text_dropping_invisible("title", &title);\n    let (title, _) = drop_chars(&title, is_title_control);\n')),
+    ("r3c: the title keeps its white-space controls", INBOX, plain("c.is_control() && c != '\\n' && c != '\\r'", "c.is_control() && !c.is_whitespace()")),
     ("r3: a tab dropped", INBOX, plain("c.is_control() && c != '\\n' && c != '\\t'", "c.is_control() && c != '\\n'")),
 ]
 

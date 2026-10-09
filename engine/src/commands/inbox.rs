@@ -3,10 +3,19 @@
 //! analysis, a finding — into the logbook's `inbox/`, so the engine stays
 //! the only writer of the logbook (AGENTS.md §3).
 //!
-//! The text is untrusted and treated as `import task` treats a task file
-//! (WP-102b, WP-140): CRLF as LF, direction and format characters dropped,
-//! then the whole text through the logbook's redaction keeping its lines
-//! and `/home/<user>` → `~` ([`Scrubber::text`]). The title gets the same.
+//! The text is untrusted. One rule orders its cleaning: nothing is removed
+//! after the last redaction that the redactor's reading copy kept (WP-166
+//! round 3c). The rules read a CR, VT, FF or NEL as white space, so a
+//! control character can hide a secret either way: kept, it splits one
+//! (`to<VT>ken=`); dropped, it glues one to the word before it, where no
+//! rule finds it (`done<CR>sk-…`). So the text is redacted as given
+//! ([`Scrubber::text`]), then its control characters go — every one but
+//! tab and newline in the text, every one but the line ends in the title,
+//! which `one_line` then refuses — then it is redacted again with the
+//! invisible characters dropped after it and `/home/<user>` → `~`
+//! ([`Scrubber::text_dropping_invisible`], as `import task`; WP-102b,
+//! WP-140, WP-159). Redaction leaves its own markers alone (WP-140), so
+//! the second pass changes only what the drop joined.
 //!
 //! The file is `inbox/<date>-<slug>.md`, created, never overwritten. A
 //! text whose `# title` and body an inbox file already holds is "already
@@ -93,6 +102,12 @@ fn is_text_control(c: char) -> bool {
     c.is_control() && c != '\n' && c != '\t'
 }
 
+/// A control character the title drops before its redaction: every one
+/// but the line ends, which `one_line` refuses after it.
+fn is_title_control(c: char) -> bool {
+    c.is_control() && c != '\n' && c != '\r'
+}
+
 /// `text` without the characters `drop` names, and how many there were.
 fn drop_chars(text: &str, drop: fn(char) -> bool) -> (String, usize) {
     let kept: String = text.chars().filter(|c| !drop(*c)).collect();
@@ -106,20 +121,19 @@ fn add(ctx: &Context, args: AddArgs) -> Result<Output> {
     let redactor = Redactor::for_config(&config)?;
     let mut scrubber = Scrubber::new(redactor.clone());
 
-    // redaction first, then the invisible characters out (WP-159): the
-    // rules read the text as given and without them, so neither a
-    // `to<U+200B>ken=` nor the boundary an invisible one makes hides a
-    // secret; then one line, then no control character in the title (an
-    // ESC would reach the terminal line that names it)
+    // redacted as given, then without its control characters (an ESC
+    // would reach the terminal line that names it) but the line ends,
+    // which `one_line` refuses, redacted again (module doc); the counts
+    // are of the title as given
     let title_dropped = args
         .title
         .chars()
-        .filter(|c| is_invisible(*c) || c.is_control())
+        .filter(|c| is_invisible(*c) || is_title_control(*c))
         .count();
-    let title = scrubber.text_dropping_invisible("title", &args.title);
+    let title = scrubber.text("title", &args.title);
+    let (title, _) = drop_chars(&title, is_title_control);
+    let title = scrubber.text_dropping_invisible("title", &title);
     let title = one_line("the title", &title)?;
-    let (title, _) = drop_chars(&title, char::is_control);
-    let title = super::required_text("the title", &title)?;
     if title.chars().count() > MAX_TITLE_CHARS {
         return Err(Error::user(format!(
             "the title is longer than {MAX_TITLE_CHARS} characters; put the rest in the text"
@@ -128,16 +142,16 @@ fn add(ctx: &Context, args: AddArgs) -> Result<Output> {
 
     let raw = read_text(&args.file)?;
     let text = raw.replace("\r\n", "\n");
-    // the text the same way, keeping its lines (`Scrubber`, as `import
-    // task`), then every control character but tab and newline (an ESC
-    // colour sequence, a backspace inside `to\x08ken=`), as `hook` and
-    // `plan` drop them; the counts are of the text as given
+    // the same way, keeping the lines: every control character but tab
+    // and newline (an ESC colour sequence, a lone CR of a progress line)
+    // goes between the two passes
     let text_dropped = text
         .chars()
         .filter(|c| is_invisible(*c) || is_text_control(*c))
         .count();
-    let text = scrubber.text_dropping_invisible("text", &text);
+    let text = scrubber.text("text", &text);
     let (text, _) = drop_chars(&text, is_text_control);
+    let text = scrubber.text_dropping_invisible("text", &text);
     let text = trim_blank_lines(&text);
     if text.is_empty() {
         return Err(Error::user("the text must not be empty"));

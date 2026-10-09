@@ -201,7 +201,9 @@ Brief: Fable stage 2, SEND BACK (small). Done on f53cf048:
 - **Finding 2 — the text's controls.** In `add()`, after the CRLF step
   and the format characters, every control character but tab and newline
   is dropped (`is_text_control`: `c.is_control() && c != '\n' && c !=
-  '\t'`, as `hook` and `plan` do) and counted in `droppedCharacters`.
+  '\t'`, the predicate `hook` and `plan` use — *corrected in round 3c:*
+  they turn such characters into a space or U+FFFD before the redaction,
+  they do not drop them) and counted in `droppedCharacters`.
   So `to\x08ken=hunter2abc` is masked, an ESC colour sequence loses its
   ESC. Test `the_text_s_controls_are_dropped_but_tab_and_newline`. The
   claims that WP-159 takes C0/C1 are gone from the comment, SPEC §3 and
@@ -243,7 +245,10 @@ row).
   masked in title and text, and `/ho<U+200B>me/alice` is still a home
   path (test `redaction_reads_the_text_before_its_invisible_characters_go`).
   The redactor reads past lone control characters too (WP-159), so
-  `to\x08ken=` is masked before the control is dropped.
+  `to\x08ken=` is masked before the control is dropped. *Corrected in
+  round 3c:* only past the controls that are no white space; a CR, VT,
+  FF or NEL it reads as a space, and dropping it after the redaction
+  glued the secret (review 3b, B1).
 - **WP-168:** `checked_inbox` replaced by `logbook.checked_dir(INBOX)`;
   the message tests assert its wording ("inbox is a symbolic link / is no
   directory, not a folder of the logbook").
@@ -258,8 +263,8 @@ row).
   at 3721c641. docs-check now passes with no warning.
 - WP-171 (the doctor `layout` row) is not on `next` yet. Whichever lands
   second adds `inbox/` to that row's folder list, with a test.
-- Residual (accepted): a home path split by a control character
-  (`/ho\x01me/alice`) keeps its user name; the control drop follows the
+- Residual (accepted; *closed in round 3c*): a home path split by a
+  control character (`/ho\x01me/alice`) kept its user name; the control drop follows the
   scrubber, whose home-path rewrite is private to it. Not a secret
   (§7 covers home paths as privacy only).
 

@@ -886,3 +886,111 @@ fn redaction_reads_the_text_before_its_invisible_characters_go() {
     assert!(filed.contains("~/notes"), "{filed}");
     assert_eq!(v["droppedCharacters"], 3, "{v}");
 }
+
+/// Every control code point: C0, DEL and C1 (NEL included).
+fn controls() -> Vec<char> {
+    (0u32..=0x9F)
+        .filter_map(char::from_u32)
+        .filter(|c| c.is_control())
+        .collect()
+}
+
+#[test]
+fn no_control_character_glues_a_secret_after_the_redaction() {
+    // nothing is removed after the last redaction that its reading copy
+    // kept (round 3c): a CR, VT, FF or NEL is white space to the rules, so
+    // kept it splits `to<c>ken=`, dropped it glues `done<c>sk-…`
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let ghp_tail = "abcdefghijklmnopqrstuvwxyzAB";
+    let redactor = seldon::redact::Redactor::builtin();
+
+    // the text: one line per control but tab and newline
+    let splitters: Vec<char> = controls()
+        .into_iter()
+        .filter(|c| *c != '\t' && *c != '\n')
+        .collect();
+    assert_eq!(splitters.len(), 63, "{splitters:?}");
+    let mut text = String::new();
+    for (i, c) in splitters.iter().enumerate() {
+        text.push_str(&format!(
+            "{i}: to{c}ken=hunter2abc ghp_0123456789{c}{ghp_tail} /ho{c}me/alice/x done{c}sk-ABCDEFGHIJKLMNOPQRSTUVWX\n"
+        ));
+    }
+    let v = add(&env, T0, "All controls", &text, &[]);
+    let path = v["path"].as_str().unwrap().to_string();
+    let filed = read(&root.join(&path));
+    let body = filed.split_once("\n---\n").unwrap().1;
+    for (i, c) in splitters.iter().enumerate() {
+        let line = body
+            .lines()
+            .find(|l| l.starts_with(&format!("{i}: ")))
+            .unwrap_or_else(|| panic!("{c:?}: line {i} missing in {body:?}"));
+        assert_eq!(
+            line,
+            format!("{i}: token=‹redacted› ‹redacted› ~/x done‹redacted›"),
+            "{c:?}"
+        );
+    }
+    assert!(
+        !body.chars().any(|c| c.is_control() && c != '\n'),
+        "{body:?}"
+    );
+    // the filed text holds nothing the redaction would still mask
+    assert_eq!(redactor.redact(body), body);
+    assert_eq!(v["redactedLines"], 63, "{v}");
+    assert_eq!(v["droppedCharacters"], 4 * 63, "{v}");
+
+    // the title: each control but the line ends, which are refused (and
+    // NUL, which no argv carries)
+    for c in controls().into_iter().filter(|c| *c != '\0') {
+        let title = format!(
+            "Probe to{c}ken=hunter2xyz ghp_0123456789{c}{ghp_tail} x{c}sk-ABCDEFGHIJKLMNOPQRSTUVWX"
+        );
+        let mut args = vec!["inbox", "add", "--json", "--title", &title, "--file", "-"];
+        args.push("--tag");
+        args.push("probe");
+        let out = run(
+            &env,
+            T0,
+            &args,
+            Some(&format!("title probe {}\n", c as u32)),
+        );
+        if c == '\n' || c == '\r' {
+            assert_eq!(out.status.code(), Some(1), "{c:?}: {}", stderr(&out));
+            // `--json` reports the error on stdout
+            let said = format!("{}{}", stdout(&out), stderr(&out));
+            assert!(said.contains("must be one line"), "{c:?}: {said}");
+            continue;
+        }
+        assert_eq!(out.status.code(), Some(0), "{c:?}: {}", stderr(&out));
+        let shown = stdout(&out);
+        let v = json(&out);
+        assert_eq!(
+            v["title"], "Probe token=‹redacted› ‹redacted› x‹redacted›",
+            "{c:?}: {shown}"
+        );
+        let path = v["path"].as_str().unwrap();
+        for secret in ["hunter2xyz", ghp_tail, "ABCDEFGHIJKLMNOPQRSTUVWX"] {
+            assert!(!shown.contains(secret), "{c:?}: {shown}");
+            assert!(!path.contains(&secret.to_lowercase()), "{c:?}: {path}");
+            assert!(!read(&root.join(path)).contains(secret), "{c:?}");
+        }
+    }
+    let names: Vec<String> = inbox(&root).into_iter().map(|(n, _)| n).collect();
+    for secret in ["hunter2", "abcdefghij"] {
+        assert!(!names.iter().any(|n| n.contains(secret)), "{names:?}");
+    }
+    if env.has_git {
+        let log = git_out(&env, &root, &["log", "-p"]);
+        for secret in [
+            "hunter2abc",
+            "hunter2xyz",
+            ghp_tail,
+            "alice",
+            "ABCDEFGHIJKLMNOPQRSTUVWX",
+        ] {
+            assert!(!log.contains(secret), "{secret} in git log -p");
+        }
+    }
+}

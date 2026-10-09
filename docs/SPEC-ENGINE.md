@@ -545,19 +545,26 @@ seldon inbox add --title T --file FILE|- [--tag T]… [--actor A] [--json]
                                                # recorded) of at most 1 MiB; UTF-8 either way (exit 1 otherwise). A file
                                                # the kernel sizes 0 that holds data (a /proc view such as
                                                # `/proc/self/environ`) is refused, exit 1 (round 2). The
-                                               # text as `import task` treats a task file: CRLF as LF, then the
-                                               # import's scrubber with the invisible characters (`redact::is_invisible`,
-                                               # WP-159): the whole text through §7 with the config's patterns keeping
-                                               # its lines (`redact_keeping_lines`, so a PEM key's line breaks follow its
-                                               # marker; the rules read the text as given and without its invisible and
-                                               # control characters), then the invisible characters dropped, then
-                                               # `/home/<user>` → `~` (`Scrubber::text_dropping_invisible`); then every
-                                               # control character but tab and newline dropped (round 3); both counted
-                                               # in the text as given; leading and trailing blank lines dropped; blank
-                                               # after that → exit 1. Title: the same scrubber, then one line
-                                               # (`one_line`), then every control character (C0, DEL, C1) dropped, so no
-                                               # ESC reaches the human line (round 2); at most 120 characters (exit 1);
-                                               # both counted. Tags: `log`'s `--tag`,
+                                               # text, CRLF as LF, is cleaned by one rule (round 3c): nothing is removed
+                                               # after the last redaction that its reading copy kept. The rules read the
+                                               # text as given and without its invisible characters and the control
+                                               # characters that are no white space (§7, WP-159); a CR, VT, FF or NEL is
+                                               # white space to them, so kept it splits a secret (`to<VT>ken=`) and
+                                               # dropped it glues one to the word before it (`done<CR>sk-…`). So: the
+                                               # import's scrubber over the text as given (`Scrubber::text`: the whole
+                                               # text through §7 with the config's patterns keeping its lines,
+                                               # `redact_keeping_lines`, so a PEM key's line breaks follow its marker;
+                                               # `/home/<user>` → `~`), then every control character but tab and
+                                               # newline dropped, then the scrubber again with the invisible characters
+                                               # (`redact::is_invisible`) dropped after its redaction
+                                               # (`Scrubber::text_dropping_invisible`, as `import task`); the second pass
+                                               # changes only what the drop joined (§7 leaves its markers alone). Both
+                                               # drops counted in the text as given; leading and trailing blank lines
+                                               # dropped; blank after that → exit 1. Title: the same two passes, the
+                                               # drop between them taking every control character (C0, DEL, C1) but the
+                                               # line ends, which `one_line` then refuses, so no ESC reaches the human
+                                               # line; at most 120 characters (exit 1); both counted. Tags: `log`'s
+                                               # `--tag`,
                                                # redacted. Actor: --actor, else $SELDON_ACTOR, else human. The file
                                                # `inbox/<YYYY-MM-DD>-<slug>.md` (local date, `cases::slug` of the
                                                # title, `note` without letters), frontmatter `type: inbox`, `created`,
