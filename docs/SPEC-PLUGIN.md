@@ -340,10 +340,25 @@ which a repeat emits too (WP-173).
 House rules for every key, now and later (WP-183; the checklist
 `docs/skills/omarchy-ux/SKILL.md` points here):
 
-- **The selection is the cursor.** The pointer and the keys move one
-  highlight; nothing else marks a row. A focus ring is drawn only on real
-  `activeFocus` (a field, a control the keys reached), never as a second
-  marker in a list.
+- **The selection is the cursor.** One cursor highlight at a time; the
+  selection has its own look. Rows follow Omarchy's
+  `Ui/CursorSurface.qml` and read no hover of their own: the row under
+  the pointer gets Omarchy's hover look only after the pointer really
+  moved (`Ui/PointerMoveGate.qml`; rows that move under a still pointer
+  do not count), and any key, a scroll or the pointer leaving clears it,
+  so a keyboard move under a still pointer leaves one highlight. A click
+  selects. The selection is Omarchy's selected fill plus a second cue
+  that is not a fill: an accent bar of at least 3:1 and a bold title
+  (`components/desk/ListRow.qml`, `ListColumn.hoverIndex`); the sidebar
+  does the same with its current section. A focus ring is drawn only on
+  real `activeFocus` (a field, a control the keys reached) or on an armed
+  writing button, never as a second marker in a list. Seldon's own
+  controls (`KeyButton.qml`, the forms' submit keys, an armed action-bar
+  button) wear `components/desk/FocusRing.qml`: the theme's focus border
+  where it reaches 3:1 on the popup surface, else the `ui` tone (§7) at
+  2 px, drawn over the control's own border (one frame); the chosen
+  Changelog chip has an accent bar. `qs.Ui` fields keep Omarchy's focus
+  look and get no second frame.
 - **Digits are the desk's.** `Desk.qml` dispatches the section digits
   before `Section.textKey`, so a section key on a digit is shadowed as
   soon as a section takes that digit. No new section key uses a digit;
