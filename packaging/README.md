@@ -18,6 +18,8 @@ publishes both through `.github/workflows/release.yml`.
 | `expected-files.txt` | the exact file list of the built package (`tar tf`, dot files left out) |
 | `audit-ignore.txt` | RustSec advisories accepted for `engine/Cargo.lock`, each with an expiry and a reason (CONTRIBUTING.md, "Dependency advisories") |
 | `audit-ignore.sh [FILE [TODAY]]` | checks that list and prints its ids for `cargo audit --ignore`; exit 1 on an expired or malformed entry (`tests/release/`) |
+| `store/baseline.md` | the plugin store's security baseline predicted for the plugin split: each capability with the README line and the scanner line behind it (WP-042) |
+| `store/submission.md` | the store submission issue, drafted for the operator; filed only on the operator's go (WP-042) |
 
 ## What the package contains
 
