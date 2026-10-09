@@ -68,8 +68,8 @@ pub fn parse<R: Record>(text: &str) -> Result<(R, Document), FrontmatterError> {
 
 /// Reads a record from a file; errors name the file.
 pub fn load<R: Record>(path: &Path) -> anyhow::Result<(R, Document)> {
-    let text =
-        std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let text = crate::sys::read_regular_string(path, crate::sys::LOGBOOK_FILE_MAX)
+        .with_context(|| format!("cannot read {}", path.display()))?;
     parse(&text).with_context(|| format!("{}: invalid frontmatter", path.display()))
 }
 

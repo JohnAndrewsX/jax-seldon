@@ -929,7 +929,9 @@ fn check_ledger(logbook: &Logbook) -> Check {
 /// the writer takes the text up to that stray one as the fence body and
 /// replaces it. Doctor cannot tell a removed end marker followed by a
 /// stray one from an intact fence, and says so. A file that cannot be read
-/// as text stops `status` (exit 2): an error.
+/// as text stops `status` (exit 2): an error. One that is no regular file
+/// (a FIFO, a device behind a link) is not read (WP-174); `status` skips
+/// it as a view, so it is degraded, and the `layout` row names it too.
 fn check_fences(logbook: &Logbook) -> Check {
     let mut unreadable: Vec<String> = Vec::new();
     let mut damaged: Vec<(String, String)> = Vec::new();
@@ -938,9 +940,16 @@ fn check_fences(logbook: &Logbook) -> Check {
         ("STATUS.md", STATUS_FENCE),
         ("DECISIONS.md", DECISIONS_FENCE),
     ] {
-        let text = match std::fs::read_to_string(logbook.path(rel)) {
+        let text = match sys::read_regular_string(&logbook.path(rel), sys::LOGBOOK_FILE_MAX) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
+                damaged.push((
+                    format!("{rel}: not checked ({e}); `seldon status` leaves it as it is"),
+                    format!("replace {rel} by a regular file; `seldon status` writes it again"),
+                ));
+                continue;
+            }
             Err(e) => {
                 unreadable.push(format!("{rel}: cannot read ({e})"));
                 continue;

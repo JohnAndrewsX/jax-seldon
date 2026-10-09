@@ -118,7 +118,7 @@ impl Ledger {
     /// counted in [`MonthFile::bad_lines`] instead of failing the month.
     pub fn read_month(&self, month: &str) -> anyhow::Result<MonthFile> {
         let path = self.month_file(month);
-        let bytes = match std::fs::read(&path) {
+        let bytes = match crate::sys::read_regular(&path, crate::sys::LEDGER_MONTH_MAX) {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(MonthFile::default()),
             Err(e) => {

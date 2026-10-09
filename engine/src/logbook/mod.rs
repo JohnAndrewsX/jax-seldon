@@ -61,7 +61,7 @@ impl Logbook {
     /// malformed or newer `logbook.toml` is an engine error.
     pub fn open(root: &Path) -> Result<Logbook> {
         let meta_path = root.join(META_FILE);
-        let text = match std::fs::read_to_string(&meta_path) {
+        let text = match crate::sys::read_regular_string(&meta_path, crate::sys::LOGBOOK_FILE_MAX) {
             Ok(t) => t,
             // `.seldon` a file (or the root one): no logbook either (WP-168)
             Err(e)

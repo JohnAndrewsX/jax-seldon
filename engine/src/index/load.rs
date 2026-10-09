@@ -224,7 +224,8 @@ pub fn bad_lines_warning(month: &str, lines: &[usize]) -> Option<String> {
 }
 
 fn read(path: &Path) -> Result<String, String> {
-    std::fs::read_to_string(path).map_err(|e| format!("cannot read: {e}"))
+    crate::sys::read_regular_string(path, crate::sys::LOGBOOK_FILE_MAX)
+        .map_err(|e| format!("cannot read: {e}"))
 }
 
 /// `*.md` directly in `dir`, sorted.
