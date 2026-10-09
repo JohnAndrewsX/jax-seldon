@@ -201,3 +201,58 @@ cargo target on disk (`engine/target`).
 - The pacman/Claude Code hooks with a linked `ledger/`: the capture exits
   1 with the reason (hooks report on stderr and record nothing), as for
   any other refused write.
+
+## Round 2
+
+From the stage-1 review (SEND BACK small, head `43ddfa1d`).
+
+- **B1, CHANGELOG.** An entry under Unreleased › Breaking: a logbook
+  folder that is a symbolic link or a file now refuses writes (exit 1,
+  nothing written), with the reason as the engine prints it, what that
+  means for `log`, `index` and `status` with a linked `ledger/`, and the
+  fix (make it a real folder again: move the link's contents into a
+  folder of that name). Reading through a link, and a linked logbook
+  folder, are unchanged; a `.seldon` file is "not initialised" (exit 3).
+- **N2, the socket case.** `checked_dir_refuses_a_link_and_a_non_directory`
+  binds its socket only when the path is at most 107 bytes (`sun_path`
+  less its NUL); a longer `TMPDIR` skips the two socket cases with a
+  note on stderr and keeps the link and file cases. Checked both ways:
+  with a 138-byte `TMPDIR` the note shows and the test passes; with a
+  short on-disk `TMPDIR` the socket cases run. (`std::os::unix::fs::mkfifo`
+  would avoid the limit but is still unstable.)
+- **N2, cleanup.** A `#[cfg(test)]` helper `logbook::scratch` makes the
+  temp dir and removes it in `Drop`, so a failed test cleans up too. All
+  unit tests this WP wrote or extended use it: `logbook::tests` (6),
+  `commands::tests::write_new_refuses_a_linked_folder`,
+  `skills::tests::the_archive_refuses_…`,
+  `setup::tests::copy_tree_keeps_existing_files_and_modes`. The
+  integration tests already used `common::TempDir`, which cleans up in
+  `Drop`. Other WPs' unit tests that use `temp_dir()` are unchanged.
+- **N2, leftovers in /tmp.** I listed all 111 of
+  `/tmp/seldon-checked-dir-*`, `/tmp/seldon-write-new-*` and
+  `/tmp/seldon-skill-archive-*`. All were mine (my user, today, names from
+  my tests, left by the round-1 mutant runs). **39 were empty and were
+  removed**, each with `rmdir` and its explicit path. **72 are not empty**
+  and were kept, as the brief allows empty ones only. Together they hold
+  32 KB: 73 folders, 49 empty test files, 79 symbolic links (to sibling
+  `…-outside-<pid>` folders or `nowhere`) and 14 sockets. Open question:
+  may they go? Removing them would be `rm -r` by explicit path, which
+  does not follow the links.
+- **N4, SPEC.** SPEC-ENGINE §2 "Linked folders" now ends: `hook
+  install|uninstall claude-code --settings <file>` writes the file where
+  the user names it, also through a linked `.claude/` of the logbook,
+  and that path is not checked.
+- N1 (links at files) and N3 (a `doctor` row) are follow-ups, not done
+  here. WP-168 merges before WP-166; WP-166 then switches its
+  `checked_inbox` to `logbook.checked_dir("inbox")`.
+
+**Check** at `8532526b`. Command: `TMPDIR=<short dir in the private
+gates folder, on disk> XDG_RUNTIME_DIR=<private 0700 dir>
+SELDON_FULL_CHECK=1 JUST_TEMPDIR=<on disk> flock /tmp/seldon-check.lock
+just check`, with the cargo target in `engine/target`.
+
+- `check: ok`, exit 0, every recipe, `plugin-test` included.
+- 98 test binaries, 0 failed. The socket case ran (no skip note).
+- `/tmp` and `/run/user/1000` stayed at 2 %.
+- The runtime dir and the scratch dirs were removed afterwards.
+- After the check, only this file changed.
