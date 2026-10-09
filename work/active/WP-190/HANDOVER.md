@@ -187,3 +187,25 @@ changed last digit in `packaging/omarchy-pin`. Then run
 - CI now also fetches from `raw.githubusercontent.com` for
   `plugin-validate` (before, only the pacman toolchain and the checkout).
   An outage there turns CI red (curl `--retry 3`).
+
+## Round 3 (stage 2, residual A)
+
+- `split` and `plugin` both run on `runs-on: ubuntu-24.04` instead of
+  `ubuntu-latest`. The other jobs are unchanged. GitHub still updates
+  the image behind a fixed label from time to time, but a fixed label
+  never moves to another Ubuntu release, which a `-latest` rollout does.
+- `workflow-pins.test.sh` checks that both jobs name the same
+  `runs-on`/`container` (the plugin job's trailing comment is ignored).
+  Both must be a fixed `ubuntu-NN.NN` label. New mutants, each caught:
+  both jobs back on `ubuntu-latest`, and the plugin job alone on
+  `ubuntu-22.04`. The "Arch container" mutant was updated to the new
+  label. 57 cases.
+- `packaging/README.md` (the `split` row) and the release.yml comment
+  name the label.
+
+| Check (round 3) | Where | Result |
+|---|---|---|
+| `bash tests/release/workflow-pins.test.sh` | fixture | 57 ok |
+| `bash tests/release/omarchy-pin.test.sh` | fixture | ok (20) |
+| `audit-ignore`, `plugin-version`, `release-notes` tests | fixture | ok |
+| The two jobs on `ubuntu-24.04` on GitHub (dry run) | **not run** (CI) | — |

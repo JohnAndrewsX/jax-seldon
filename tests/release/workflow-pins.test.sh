@@ -24,7 +24,8 @@
 #     (which outputs the split) and before `Summary` extracts the split
 #     with `git archive` and ends with packaging/omarchy-validate.sh on
 #     it, ignoring no failure; the build job outputs the split; a `split`
-#     job (needs build, no `if:`, the plugin job's runner and container)
+#     job (needs build, no `if:`, the plugin job's runner image, both a
+#     fixed `ubuntu-NN.NN` label, never `-latest`, and container)
 #     recomputes it and refuses (`exit 1` ending the `if` block) any
 #     other, and release needs [build, split], so a mismatch stops the
 #     release before anything is published; the plugin job refuses the
@@ -223,8 +224,13 @@ problems() {
     else
       grep -x -q '    needs: build' <<< "$sj" || echo "$release: the split job does not need build"
       ! grep -E -q '^    if:' <<< "$sj" || echo "$release: the split job has an if: condition"
-      [[ $(grep -E '^    (runs-on|container):' <<< "$sj") == "$(grep -E '^    (runs-on|container):' <<< "$(job "$release" plugin)")" ]] \
+      [[ $(grep -E '^    (runs-on|container):' <<< "$sj") == "$(grep -E '^    (runs-on|container):' <<< "$(job "$release" plugin)" | sed 's/[[:space:]]*#.*//')" ]] \
         || echo "$release: the split job does not run on the plugin job's runner and container"
+      local image
+      for image in "$(grep -E '^    runs-on:' <<< "$sj")" "$(grep -E '^    runs-on:' <<< "$(job "$release" plugin)")"; do
+        [[ $image =~ ^\ {4}runs-on:\ ubuntu-[0-9]{2}\.[0-9]{2}([[:space:]]+#.*)?$ ]] \
+          || echo "$release: the split and plugin jobs must name a fixed runner image (ubuntu-NN.NN, not -latest): ${image:-none}"
+      done
       cmp=$(step "$sj" "Compare the plugin split")
       ! grep -E -q '^        (if|shell):' <<< "$cmp" \
         || echo "$release: the split job's comparison has an if: or a shell: of its own"
@@ -382,7 +388,11 @@ expect_problem "split job without needs" "split job does not need build" \
 expect_problem "split job on tags only" "split job has an if:" \
   's/^(  split:)$/\1\n    if: github.event_name == '"'push'"'/'
 expect_problem "split job in the Arch container" "plugin job's runner and container" \
-  '/^  split:$/,/^    steps:$/s/^(    runs-on: ubuntu-latest)$/\1\n    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689/'
+  '/^  split:$/,/^    steps:$/s/^(    runs-on: ubuntu-24.04)$/\1\n    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689/'
+expect_problem "split job on ubuntu-latest" "fixed runner image" \
+  '/^  split:$/,/^    steps:$/s/^    runs-on: ubuntu-24.04$/    runs-on: ubuntu-latest/; /^  plugin:$/,/^    steps:$/s/^    runs-on: ubuntu-24.04 .*/    runs-on: ubuntu-latest/'
+expect_problem "plugin job on another image" "plugin job's runner and container" \
+  '/^  plugin:$/,/^    steps:$/s/^    runs-on: ubuntu-24.04 /    runs-on: ubuntu-22.04 /'
 expect_problem "split job without exit 1" "split job does not refuse" \
   '/^  split:$/,/^  release:$/{/^            exit 1$/d}'
 expect_problem "split job compares || true" "split job's comparison ignores a failure" \

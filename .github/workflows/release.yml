@@ -291,12 +291,15 @@ jobs:
           if-no-files-found: error
 
   # The split the plugin job will push, recomputed on the plugin job's
-  # runner (ubuntu-latest, no container: its git, not the Arch image's)
+  # runner (ubuntu-24.04, no container: its git, not the Arch image's)
   # and compared with the one build validated, before anything is
   # published; runs in a dry run too, so `gh workflow run` exercises it.
+  # Both jobs name the same fixed image label, not ubuntu-latest, so a
+  # runner-image rollout cannot put them on two releases
+  # (tests/release/workflow-pins.test.sh).
   split:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -441,7 +444,7 @@ jobs:
   plugin:
     needs: [build, release]
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # the split job's image (see there)
     env:
       PLUGIN_REPO_TOKEN: ${{ secrets.PLUGIN_REPO_TOKEN }}
       PLUGIN_REPO: https://github.com/JohnAndrewsX/jax-seldon-plugin.git
