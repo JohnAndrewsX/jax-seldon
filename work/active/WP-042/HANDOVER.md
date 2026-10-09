@@ -111,3 +111,31 @@ the test host was removed afterwards (checked).
    the operator decides whether to tick it as is.
 3. The baseline must be rerun on the exact `jax-seldon-plugin` commit
    that is filed (after `v0.2.0`; later WPs change `plugin/`).
+
+## Round 2 (review 1: SEND BACK)
+
+- **B1**: `tests/release/store-readme.test.sh` gets a file-level
+  `# shellcheck disable=SC2016` with its reason (the Markdown fixtures in
+  `printf` formats spell `$(…)` and backticks literally), as
+  `tests/plugin/runtime-dir.test.sh:3` does (`165e7ebc`).
+- **N1**: the README's privilege bullet now says one button asks for a
+  password (the ADR-0026 grant) and that installing, updating or removing
+  the engine's AUR package asks too, because pacman runs through sudo.
+- **N2**: both "download, read, verify, run" fences gain an optional
+  `gh attestation verify install.sh --repo JohnAndrewsX/jax-seldon
+  --signer-workflow …/release.yml` line, and the paragraph after the
+  install fence says what the checksum shows and what the attestation
+  adds. `baseline.md` names the store-review risk (#8407, quoted from
+  T. Ballard's notes, not re-read at the store); `submission.md`'s
+  maintainer notes mention the attested `install.sh`.
+- `baseline.md` README line numbers moved to `3b951145`.
+
+| Check | Where | Result |
+|---|---|---|
+| `bash tests/release/store-readme.test.sh` | *fixture* | 22 ok |
+| `bash -n` on the test | *fixture* | ok |
+| shellcheck on the test | *not run* | not installed on the dev host or the test host (installing needs sudo or a download); CI runs it once the branch is pushed |
+| `bash scripts/docs-check.sh` | *fixture* | ok (476 links) |
+| `omarchy plugin validate` on the new split `4374707833cc6ee4431e4beb6055e9c1f538c3ff` | *fixture* | exit 0 |
+| The store's baseline on that split, as in round 1 | *test host* | `review-required`, no findings, capabilities `privilege`, `package-manager`; scan folder removed afterwards |
+| `just check-packaging` | *fixture* | `check-packaging: ok` (shellcheck absent: `bash -n` only) |
