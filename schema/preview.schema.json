@@ -68,7 +68,7 @@
         "ok":      { "type": "boolean", "description": "false: withheld (config.toml or its [redaction] patterns cannot be used); message says so, items is empty" },
         "message": { "type": "string", "maxLength": 1024 },
         "partial": { "type": "boolean", "description": "the walk stopped early (time or entry budget, depth): files it did not reach are missing" },
-        "root":    { "type": "string", "minLength": 1, "maxLength": 1024, "description": "the folder walked, ~/.config or $XDG_CONFIG_HOME, as ~/… when under the home" },
+        "root":    { "type": "string", "minLength": 1, "maxLength": 1024, "description": "the folder walked, ~/.config (ADR-0046 §5), as ~/…" },
         "items": {
           "type": "array", "maxItems": 80,
           "description": "newest first; never a file under a [redaction] skipPaths pattern, never content",

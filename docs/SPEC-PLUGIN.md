@@ -797,18 +797,38 @@ and no action runs.
   or a click on a decision, leaves it with the title kept; `d` brings it
   back; once the index lists the new decision it is selected and the list
   head says "Created ADR-NNNN · title".
-- **System (5).** Five tiles from `Model.systemTiles`, each with a big
+- **System (5).** Six tiles from `Model.systemTiles`, each with a big
   value: Omarchy (version; theme, last update, checkout, plugins),
   Packages (installed; explicit, AUR), Snapshots (the newest number; the
   index's list, at most 10), Deviations (the count; the list is in
   STATUS.md), Collectors ("ok/enabled"; each collector, then machine,
-  engine, index time and the logbook's areas). Every field of
-  `index.system` is optional: a tile without its data shows "—" and "Not
-  in the index"; a failing collector stripes the Collectors tile and its
-  lead says so. The detail: the big value and unit, the lead, the
+  engine, index time and the logbook's areas), Recently edited (WP-139,
+  ADR-0046: the count of `system.recentConfig.files`; Scanned). Every
+  field of `index.system` is optional: a tile without its data shows "—"
+  and "Not in the index"; a failing collector stripes the Collectors tile
+  and its lead says so. The detail: the big value and unit, the lead, the
   key/value rows, "From the dossier; rebuilt on every capture." Sticky
   bar: *Open in editor* (`seldon open status --editor --json`, the full
   report); `e` the same.
+  Recently edited's detail lists the files as the engine wrote them,
+  newest first (`Model.recentFiles`; a row whose path is not a plain
+  `~/.config/…` path without control, direction or invisible characters
+  and `.`/`..` folders is left out): the path as plain text (elided in
+  the middle), "<age> · not watched", and *Watch*, which runs `seldon
+  config watch --json -- <path>` (`Service.watchPath`; the path one
+  argument after `--`, `Model.watchArgs`; one at a time, the busy text of
+  §3 otherwise; disabled while nothing can write). The engine's answer
+  ("Watching <path> from the next capture on; it is taken as it is,
+  without an event", "<path> is watched already" or its refusal, a held
+  lock included: no retry) shows above the list while the tile is
+  current, also after the last row went; the row goes with the index the
+  engine rebuilds. Its footer: "From the last capture's scan of
+  ~/.config: paths and times only, never content. Seldon keeps no record
+  of these edits until a path is watched." With no file in 7 days the
+  lead says so — unless the scan stopped early (`partial`, ADR-0046 §2):
+  then it reads "The scan stopped early; the list may be incomplete.",
+  which a non-empty list's lead also ends with. An index without the
+  field shows "—".
 - **Memory (6).** Rows from `Model.memoryRows`: the `## ` headings of
   memory/lessons.md, then the memory topics with path and `updated`
   (`summary` "3 lessons · 2 topics" above them). The detail: "Lesson" or

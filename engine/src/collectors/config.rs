@@ -436,6 +436,66 @@ impl OwnWrites {
     }
 }
 
+/// Why a path must not be opened or hashed although its own name passes
+/// (WP-139 round 3, B1, B2): a link on the way leads into Seldon's own
+/// files, to a path `ignored` refuses (`[redaction] skipPaths`, the
+/// excluded folders; the path or a folder above it below the home), or —
+/// with `outside_home` — out of the home directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkRefusal {
+    OutsideHome,
+    Own,
+    Ignored,
+}
+
+/// [`LinkRefusal`] for `path`, `None` when it may be read: no link on the
+/// way, or one whose canonical target passes. `own` holds Seldon's own
+/// files, canonical. A target below the canonical `~/.config` counts as
+/// below `~/.config`, also when `~/.config` itself leads out of the home. A path whose target cannot be resolved is the
+/// caller's (as before: not readable, not hashed).
+pub fn link_refusal(
+    home: &Path,
+    path: &Path,
+    own: &[PathBuf],
+    ignored: &dyn Fn(&Path) -> bool,
+    outside_home: bool,
+) -> Option<LinkRefusal> {
+    let canonical = std::fs::canonicalize(path).ok()?;
+    if canonical == path {
+        return None;
+    }
+    if own
+        .iter()
+        .any(|o| canonical.starts_with(o) || o.starts_with(&canonical))
+    {
+        return Some(LinkRefusal::Own);
+    }
+    let canonical_home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    // `~/.config` may itself be a link out of the home (a dotfile setup
+    // such as /mnt/dotfiles): its canonical folder counts as `~/.config`
+    // (orchestrator decision, WP-139 round 3b)
+    let dot_config = home.join(crate::config_scan::ROOT);
+    let under_dot_config = std::fs::canonicalize(&dot_config).ok().and_then(|c| {
+        canonical
+            .strip_prefix(c)
+            .ok()
+            .map(|rest| dot_config.join(rest))
+    });
+    let under_home = canonical
+        .strip_prefix(&canonical_home)
+        .map(|rest| home.join(rest));
+    match under_dot_config.ok_or(()).or(under_home.map_err(|_| ())) {
+        // the target as the patterns spell it: under the home as given
+        Ok(shown) => shown
+            .ancestors()
+            .take_while(|p| *p != home && p.starts_with(home))
+            .any(ignored)
+            .then_some(LinkRefusal::Ignored),
+        Err(_) if outside_home => Some(LinkRefusal::OutsideHome),
+        Err(_) => ignored(&canonical).then_some(LinkRefusal::Ignored),
+    }
+}
+
 /// Whether the config collector hashes `path`: it lies under a watch path
 /// and matches no `[redaction] skipPaths` pattern.
 pub fn is_watched(dirs: &Dirs, config: &Config, path: &Path) -> bool {
@@ -677,6 +737,10 @@ struct Scan {
     loops: usize,
     /// Links not followed because they lead into Seldon's own files.
     own: usize,
+    /// Links not followed because they lead to a path the walk leaves out
+    /// or, for a watch path that is itself a link, out of the home
+    /// directory (WP-139 round 3).
+    refused: usize,
     /// Files under a persistence path that could not be read: their last
     /// hash is kept (WP-113 round 2, N1).
     unreadable: usize,
@@ -738,7 +802,28 @@ impl Walker<'_> {
             if self.ignored(root) {
                 continue;
             }
-            // a watch path may itself be a symlink (dotfile managers)
+            // a watch path may itself be a symlink (dotfile managers): what
+            // it leads to is checked before it is opened (WP-139 round 3)
+            if !self.system.contains(root) {
+                let itself = std::fs::symlink_metadata(root).is_ok_and(|m| m.is_symlink());
+                match link_refusal(
+                    &self.dirs.home,
+                    root,
+                    self.own,
+                    &|p| self.ignored(p),
+                    itself,
+                ) {
+                    Some(LinkRefusal::Own) => {
+                        scan.own += 1;
+                        continue;
+                    }
+                    Some(_) => {
+                        scan.refused += 1;
+                        continue;
+                    }
+                    None => {}
+                }
+            }
             match std::fs::metadata(root) {
                 Ok(m) if m.is_dir() => {
                     follow.visited.insert((m.dev(), m.ino()));
@@ -795,6 +880,24 @@ impl Walker<'_> {
         std::fs::canonicalize(path).is_ok_and(|t| self.own.iter().any(|o| t.starts_with(o)))
     }
 
+    /// Below a followed directory link, why `path` must not be read where
+    /// it really lies: in Seldon's own files ([`Self::leads_into_own`]; a
+    /// folder that only holds them is walked beside them, WP-113), or
+    /// skipped or excluded there ([`link_refusal`], WP-139 stage 2). `None`
+    /// outside links.
+    fn refused_below_link(&self, path: &Path, follow: &Follow) -> Option<LinkRefusal> {
+        if !follow.inside {
+            return None;
+        }
+        if self.leads_into_own(path) {
+            return Some(LinkRefusal::Own);
+        }
+        match link_refusal(&self.dirs.home, path, self.own, &|p| self.ignored(p), false) {
+            Some(LinkRefusal::Own) => None,
+            other => other,
+        }
+    }
+
     fn walk(&self, dir: &Path, depth: usize, scan: &mut Scan, follow: &mut Follow) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -820,9 +923,27 @@ impl Walker<'_> {
             if meta.file_type().is_symlink() {
                 // follow links to files; into directories only where
                 // something that runs at login may lie (WP-113)
+                let refusal = link_refusal(
+                    &self.dirs.home,
+                    &path,
+                    self.own,
+                    &|p| self.ignored(p),
+                    false,
+                );
                 match std::fs::metadata(&path) {
                     Ok(_) if self.leads_into_own(&path) => scan.own += 1,
+                    // a file behind the link that the walk leaves out
+                    // (skipPaths, the excluded folders) is not read either
+                    Ok(target) if target.is_file() && refusal.is_some() => scan.refused += 1,
                     Ok(target) if target.is_file() => self.file(&path, &target, scan),
+                    // a folder behind the link that the walk leaves out is
+                    // not entered either (WP-139 stage 2, B1); one that
+                    // holds Seldon's own files is walked beside them
+                    Ok(target)
+                        if target.is_dir() && refusal.is_some_and(|r| r != LinkRefusal::Own) =>
+                    {
+                        scan.refused += 1
+                    }
                     Ok(target) if target.is_dir() && self.may_persist(&path) => {
                         dirs.push((path, true, (target.dev(), target.ino())));
                     }
@@ -831,7 +952,13 @@ impl Walker<'_> {
             } else if meta.is_dir() {
                 dirs.push((path, false, (meta.dev(), meta.ino())));
             } else if meta.is_file() {
-                self.file(&path, &meta, scan);
+                // below a followed link the spelled path is not the real
+                // one: the checks go by where it lies (WP-139 stage 2, B1)
+                match self.refused_below_link(&path, follow) {
+                    Some(LinkRefusal::Own) => scan.own += 1,
+                    Some(_) => scan.refused += 1,
+                    None => self.file(&path, &meta, scan),
+                }
             }
         }
         if depth >= MAX_DEPTH {
@@ -850,9 +977,13 @@ impl Walker<'_> {
                 } else {
                     scan.loops += 1;
                 }
-            } else if follow.inside && self.leads_into_own(&path) {
-                // below a link to an ancestor of Seldon's own directories
-                scan.own += 1;
+            } else if let Some(why) = self.refused_below_link(&path, follow) {
+                // below a link: Seldon's own directories, or a folder the
+                // walk leaves out where it really lies
+                match why {
+                    LinkRefusal::Own => scan.own += 1,
+                    _ => scan.refused += 1,
+                }
             } else if first || !follow.inside {
                 self.walk(&path, depth + 1, scan, follow);
             }
@@ -1717,6 +1848,12 @@ impl ConfigFiles {
             notes.push(format!(
                 "{} link(s) into Seldon's own files not followed",
                 scan.own
+            ));
+        }
+        if scan.refused > 0 {
+            notes.push(format!(
+                "{} link(s) not followed: they lead to a skipped or excluded file, or a watch path out of the home directory",
+                scan.refused
             ));
         }
         if scan.unreadable > 0 {

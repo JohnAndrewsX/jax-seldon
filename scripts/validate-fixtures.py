@@ -52,6 +52,16 @@ PROPOSAL = ID + "proposal.schema.json"
 PREVIEW = ID + "preview.schema.json"
 # ADR-0035 §6: the triage proposals the sample's `triage` points at (the engine's state dir)
 PROPOSALS = os.path.join(FIX, "proposals")
+# ADR-0046: the last scan of recently edited files under ~/.config (the engine's state dir)
+RECENT_CONFIG = os.path.join(FIX, "state", "recent-config.json")
+# engine: config::DEFAULT_WATCH_PATHS, DEFAULT_SKIP_PATHS (the golden test runs without a config)
+WATCH_PATHS = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc",
+               "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart",
+               "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile",
+               "~/.local/state/omarchy/toggles"]
+SKIP_PATHS = ["~/.config/omarchy/**/history.json", "~/.config/omarchy/**/history/",
+              "~/.config/omarchy/**/state.json", "~/.config/omarchy/**/cache/", "~/.config/omarchy/**/*.log"]
+RECENT_DAYS, RECENT_MAX = 7, 80
 EXT = {
     "snapper": ID + "external/snapper-list.schema.json",
     "plugin-list": ID + "external/omarchy-plugin-list.schema.json",
@@ -1618,6 +1628,43 @@ def derive_triage(logbook_path, problems):
     return None
 
 
+def derive_recent_config(generated_at, problems):
+    """engine: collectors::recent::shown — `system.recentConfig` from the saved scan
+    (fixtures/state/, the engine's state dir) at `generated_at` (ADR-0046): the files modified in
+    the 7 days before it, under no watch path, matching no skipPath (a folder's name too), at most
+    80, in the file's order (newest first). The sample's scan lists one file under a watch path
+    (watched since the scan) and one older than 7 days; both drop out. None without the file."""
+    if not os.path.exists(RECENT_CONFIG):
+        return None
+    with open(RECENT_CONFIG, encoding="utf-8") as fh:
+        saved = json.load(fh)
+    since = instant(generated_at) - dt.timedelta(days=RECENT_DAYS)
+    skip = path_globs(SKIP_PATHS)
+
+    def under(path, root):
+        return path == root or path.startswith(root.rstrip("/") + "/")
+
+    def skipped(path):
+        parts = path.split("/")
+        return any(path_match(skip, "/".join(parts[:i])) for i in range(2, len(parts) + 1))
+
+    files = []
+    for f in saved["files"]:
+        if not f["path"].startswith("~/.config/"):
+            problems.append(f"{rel(RECENT_CONFIG)}: {f['path']} is not under ~/.config/")
+            continue
+        if instant(f["mtime"]) < since or any(under(f["path"], w) for w in WATCH_PATHS) or skipped(f["path"]):
+            continue
+        files.append({"path": f["path"], "mtime": f["mtime"]})
+    times = [instant(f["mtime"]) for f in saved["files"]]
+    if times != sorted(times, reverse=True):
+        problems.append(f"{rel(RECENT_CONFIG)}: files are not newest first")
+    out = {"scannedAt": saved["scannedAt"], "files": files[:RECENT_MAX]}
+    if saved.get("partial") is True:
+        out["partial"] = True
+    return out
+
+
 def check_proposals(sample):
     """Every fixture proposal proposes for open drift items of the sample: `eventId` an item's
     eventId, `crisis` its crisis, a link's case an open case, at least one item of each action
@@ -1726,6 +1773,13 @@ VARIANTS = {
         {"op": "test", "path": "/state/collectors/3/name", "value": "plugins"},
         {"op": "replace", "path": "/state/collectors/3/ok", "value": False},
         {"op": "add", "path": "/state/collectors/3/message", "value": "omarchy plugin list --json: timed out"},
+    ],
+    # ADR-0046 §2: the scan of ~/.config stopped early (entry budget, deadline or depth) and found no
+    # recent file before it did: the desk says the list may be incomplete, not "nothing edited".
+    "recent-partial": [
+        {"op": "test", "path": "/system/recentConfig/scannedAt", "value": "2026-10-01T17:05:00+02:00"},
+        {"op": "replace", "path": "/system/recentConfig/files", "value": []},
+        {"op": "add", "path": "/system/recentConfig/partial", "value": True},
     ],
     # Omarchy run from a git checkout of $OMARCHY_PATH: the dossier carries its HEAD (short hash).
     "omarchy-git-checkout": [
@@ -2262,6 +2316,10 @@ def collect_instances():
             sid, bad = PROPOSAL, False
         elif r == "preview.sample.json":
             sid, bad = PREVIEW, False
+        elif r == "state/recent-config.json":
+            # engine state, not contract: its shape is `system.recentConfig`'s, checked through the
+            # derived sample (derive_recent_config)
+            continue
         elif re.fullmatch(r"invalid/(index|event|case|proposal|preview)\.[a-z0-9-]+\.json", r):
             sid, bad = ID + r.split("/")[1].split(".")[0] + ".schema.json", True
         else:
@@ -2305,6 +2363,7 @@ def main():
 
     derived_all, _, _ = derive(LOGBOOK, today, problems, legacy=True)
     triage = derive_triage(sample["logbook"]["path"], problems)
+    recent = derive_recent_config(sample["generatedAt"], problems)
 
     def as_sample(d):
         out = {k: sample[k] for k in ("contractVersion", "generatedAt", "engineVersion")}
@@ -2314,6 +2373,8 @@ def main():
         out["state"] = sample["state"]
         for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
             out[k] = d[k]
+        if recent is not None:
+            out["system"] = {**d["system"], "recentConfig": recent}
         if triage is not None:
             out["triage"] = triage
         return out
@@ -2351,9 +2412,11 @@ def main():
         else:
             ok += 1
 
-    # 2. the sample index derives from the sample logbook
+    # 2. the sample index derives from the sample logbook (and `system.recentConfig` from the
+    # saved scan, ADR-0046)
+    want = as_sample(derived)
     for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
-        problems += [f"index.sample.json /{k}{d}" for d in diff(sample.get(k), derived[k])]
+        problems += [f"index.sample.json /{k}{d}" for d in diff(sample.get(k), want[k])]
     for k in ("language", "machine"):
         if sample["logbook"].get(k) != derived["logbook"][k]:
             problems.append(f"index.sample.json /logbook/{k}: != PROJECT.md")

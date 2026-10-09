@@ -31,6 +31,7 @@ pub mod config;
 pub mod omarchy;
 pub mod pacman;
 pub mod plugins;
+pub mod recent;
 pub mod snapper;
 pub mod theme;
 

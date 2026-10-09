@@ -311,6 +311,30 @@ pub struct System {
     pub plugins: Option<PluginCounts>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub areas: Option<Vec<AreaRow>>,
+    /// Recently edited files under `~/.config` outside the watch paths
+    /// (ADR-0046).
+    #[serde(rename = "recentConfig", skip_serializing_if = "Option::is_none")]
+    pub recent_config: Option<RecentConfig>,
+}
+
+/// `system.recentConfig` (ADR-0046): the last scan's time and its files,
+/// newest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentConfig {
+    pub scanned_at: String,
+    pub files: Vec<RecentFile>,
+    /// The scan stopped early or left deep folders out: the list may be
+    /// incomplete (ADR-0046 §2). Written only when true.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
+}
+
+/// One recently edited file: its `~`-path and modification time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct RecentFile {
+    pub path: String,
+    pub mtime: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

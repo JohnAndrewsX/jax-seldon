@@ -115,7 +115,7 @@ pub fn run(ctx: &Context, args: PreviewArgs) -> Result<Output> {
         "since": since.to_rfc3339(),
         "days": args.days,
         "pacman": pacman,
-        "files": section_json(&files.state, json!(ctx.dirs.display(&ctx.dirs.xdg_config_home)), &files.items),
+        "files": section_json(&files.state, json!(ctx.dirs.display(&ctx.dirs.home.join(config_scan::ROOT))), &files.items),
         "truncated": truncated,
         "elapsedMs": elapsed,
     });
@@ -358,11 +358,19 @@ fn scan_files(
         max_entries: SCAN_ENTRIES,
         // the shell's own: plugins and its settings file
         exclude: vec![
-            ctx.dirs.xdg_config_home.join("omarchy").join("plugins"),
-            ctx.dirs.xdg_config_home.join("omarchy").join("shell.json"),
+            ctx.dirs
+                .home
+                .join(config_scan::ROOT)
+                .join("omarchy")
+                .join("plugins"),
+            ctx.dirs
+                .home
+                .join(config_scan::ROOT)
+                .join("omarchy")
+                .join("shell.json"),
         ],
     };
-    let scan = config_scan::scan(&ctx.dirs.xdg_config_home, &skip, &limits);
+    let scan = config_scan::scan(&ctx.dirs.home.join(config_scan::ROOT), &skip, &limits);
     let offset = *ctx.now.offset();
     let items = scan
         .files
@@ -422,7 +430,7 @@ fn human(ctx: &Context, days: u32, pacman: &Value, files: &Section) -> String {
     let _ = writeln!(
         h,
         "\nEdited under {}",
-        ctx.dirs.display(&ctx.dirs.xdg_config_home)
+        ctx.dirs.display(&ctx.dirs.home.join(config_scan::ROOT))
     );
     if let Some(m) = files.state.message.as_deref() {
         let _ = writeln!(h, "  {m}");

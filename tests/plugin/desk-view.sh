@@ -2339,16 +2339,18 @@ want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)"
 check "decisions-locked: engine argv" "$(grep -v '^doctor' "$work/home-decisions-locked/argv.log" 2>/dev/null || true)" "$want"
 clean_log decisions-locked "seldon decide exit 4: the logbook is locked by another seldon"
 
-# 10e. System on the sample (panel scenarios 1 and 6): `5` lists the five
+# 10e. System on the sample (panel scenarios 1 and 6): `5` lists the six
 #      tiles with their big values; the detail shows the big value, the lead,
 #      the rows and where they come from; ↓ walks the tiles; `e` and Open in
 #      editor ask for STATUS.md (refused in dev mode). Every system field is
 #      optional: an empty `system` and a sparse one give "—" tiles that say
 #      so, and the Collectors tile keeps machine, engine and index time; a
-#      failing collector stripes its tile.
-run system "$sample" 1920x1080 "summon;text:5;key:Down;key:Down;key:Down;key:Down;text:e;click:Open in editor"
+#      failing collector stripes its tile. The sixth, Recently edited
+#      (WP-139), lists the files with their age, "not watched" and Watch;
+#      Watch is refused in dev mode.
+run system "$sample" 1920x1080 "summon;text:5;key:Down;key:Down;key:Down;key:Down;text:e;click:Open in editor;key:Down;click:Watch"
 expect system 2 .view.section system
-expect system 2 '.view.sectionView.tiles | join(",")' "omarchy 4.0.7-1,packages 2009 installed,snapshots 115 newest,deviations 5 files,collectors 6/6 ok"
+expect system 2 '.view.sectionView.tiles | join(",")' "omarchy 4.0.7-1,packages 2009 installed,snapshots 115 newest,deviations 5 files,collectors 6/6 ok,recent 4 files"
 expect system 2 '[.view.sectionView.cursor, .view.sectionView.big, .view.sectionView.actionMeta] | join(",")' "omarchy,4.0.7-1,STATUS.md"
 for text in "SYSTEM" "Omarchy" "Packages" "Snapshots" "Deviations" "Collectors" "2009 installed" "6/6 ok" \
   "OMARCHY" "4.0.7-1" "theme tokyo-night · updated 7 h ago" "Theme" "tokyo-night" "Plugins" "33 of 40 enabled" \
@@ -2366,17 +2368,72 @@ expect system 6 '.view.sectionView.detailRows | join(",")' "pacman,snapper,omarc
 shows system 6 "1 case · AGENTS.md"
 expect system 7 .view.sectionView.openResult "dev mode (SELDON_INDEX): engine calls are disabled"
 expect system 8 .view.sectionView.openResult "dev mode (SELDON_INDEX): engine calls are disabled"
-for i in 2 3 4 5 6; do expect system $i '.overflow | join(" | ")' ""; done
+expect system 9 '[.view.sectionView.cursor, .view.sectionView.big, (.view.sectionView.detailRows | join(","))] | join("|")' "recent|4|Scanned"
+expect system 9 '.view.sectionView.files | join(",")' \
+  "~/.config/zed/settings.json 6 h ago,~/.config/git/config 19 h ago,~/.config/starship.toml 2 days ago,~/.config/alacritty/alacritty.toml 3 days ago"
+for text in "Recently edited" "4 files" "~/.config/zed/settings.json" "6 h ago · not watched" "~/.config/alacritty/alacritty.toml" \
+  "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed" "Watch" \
+  "From the last capture's scan of ~/.config: paths and times only, never content. Seldon keeps no record of these edits until a path is watched."; do
+  shows system 9 "$text"
+done
+expect system 9 '[.texts[] | select(. == "Watch")] | length' 4
+expect system 10 .view.sectionView.watchResult ""
+for i in 2 3 4 5 6 9; do expect system $i '.overflow | join(" | ")' ""; done
 clean_log system
+
+# 10e'. Watch, live (WP-139, ADR-0046): each click runs `config watch --json
+#       -- <path>` with the row's path as one argument; the row goes with the
+#       index the engine rebuilds and the answer shows above the list. A held
+#       lock is the engine's message in place, no retry, no lastError.
+mkdir -p "$work/home-system-watch"
+run system-watch "" 1920x1080 "summon;text:5;key:Down*5;click:Watch;settle;click:Watch;settle" \
+  HOME="$work/home-system-watch" FAKE_SELDON_FIXTURE="$sample"
+expect system-watch 3 '.view.sectionView.files | length' 4
+expect system-watch 5 '.view.sectionView.files | map(split(" ")[0]) | join(",")' \
+  "~/.config/git/config,~/.config/starship.toml,~/.config/alacritty/alacritty.toml"
+expect system-watch 5 .view.sectionView.watchResult \
+  "Watching ~/.config/zed/settings.json from the next capture on; it is taken as it is, without an event"
+shows system-watch 5 "Watching ~/.config/zed/settings.json from the next capture on; it is taken as it is, without an event"
+expect system-watch 7 '[.view.sectionView.big, (.view.sectionView.files | map(split(" ")[0]) | join(","))] | join("|")' \
+  "2|~/.config/starship.toml,~/.config/alacritty/alacritty.toml"
+expect system-watch 7 .view.lastError ""
+argv_check system-watch "$work/home-system-watch" "$(printf '%s\n' "$startup" \
+  "$(q config watch --json -- "~/.config/zed/settings.json")" "$(q config watch --json -- "~/.config/git/config")")"
+clean_log system-watch
+mkdir -p "$work/home-system-watch-locked"
+run system-watch-locked "" 1920x1080 "summon;text:5;key:Down*5;click:Watch;settle" \
+  HOME="$work/home-system-watch-locked" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_LOCKED=1
+expect system-watch-locked 5 '[.view.sectionView.watchResult, (.view.sectionView.files | length), .view.lastError] | map(tostring) | join("|")' \
+  "the logbook is locked by another seldon (pid 4242)|4|"
+argv_check system-watch-locked "$work/home-system-watch-locked" "$(printf '%s\n' "$startup" \
+  "$(q config watch --json -- "~/.config/zed/settings.json")")"
+clean_log system-watch-locked "seldon config exit 4: the logbook is locked by another seldon"
+# 10e''. The last row watched (WP-139 round 2, N3): the answer stays while
+#        the tile is current, beside "Nothing … was edited". A scan that
+#        stopped early (ADR-0046 §2, `partial`) says the list may be
+#        incomplete instead.
+jq '.system.recentConfig.files |= .[:1]' "$sample" >"$work/system-one.json"
+mkdir -p "$work/home-system-watch-last"
+run system-watch-last "" 1920x1080 "summon;text:5;key:Down*5;click:Watch;settle" \
+  HOME="$work/home-system-watch-last" FAKE_SELDON_FIXTURE="$work/system-one.json"
+expect system-watch-last 5 '[(.view.sectionView.files | length), .view.sectionView.big] | map(tostring) | join("|")' "0|0"
+shows system-watch-last 5 "Watching ~/.config/zed/settings.json from the next capture on; it is taken as it is, without an event"
+shows system-watch-last 5 "Nothing under ~/.config was edited outside the watched paths in the last 7 days"
+clean_log system-watch-last
+run system-partial "$fx/index-variants/recent-partial.json" 1920x1080 "summon;text:5;key:Down*5"
+expect system-partial 3 '[.view.sectionView.cursor, .view.sectionView.big, (.view.sectionView.files | length)] | map(tostring) | join("|")' "recent|0|0"
+shows system-partial 3 "The scan stopped early; the list may be incomplete."
+expect system-partial 3 '[.texts[] | select(startswith("Nothing under"))] | length' 0
+clean_log system-partial
 jq '.system = {} | del(.state.collectors)' "$sample" >"$work/system-empty.json"
 run system-empty "$work/system-empty.json" 1920x1080 "summon;text:5;key:Down*4"
-expect system-empty 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations —,collectors —"
+expect system-empty 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations —,collectors —,recent —"
 shows system-empty 2 "Not in the index"
 expect system-empty 3 '.view.sectionView.detailRows | join(",")' "Machine,Engine,Index written"
 clean_log system-empty
 jq '.system = {packages: {aur: 3}, deviations: 1} | del(.state.collectors)' "$sample" >"$work/system-sparse.json"
 run system-sparse "$work/system-sparse.json" 1920x1080 "summon;text:5;key:Down"
-expect system-sparse 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations 1 file,collectors —"
+expect system-sparse 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations 1 file,collectors —,recent —"
 expect system-sparse 3 '.view.sectionView.detailRows | join(",")' "AUR"
 shows system-sparse 3 "3 from the AUR"
 clean_log system-sparse
@@ -2417,7 +2474,7 @@ clean_log memory
 run search-sections "$sample" 1920x1080 \
   "summon;text:5;text:/;type:aur;key:Return;key:Escape;text:/;type:installed;key:Return;key:Escape;text:6;text:/;type:hyprland;key:Return;text:j;text:k;key:Escape;text:/;type:memory/hyp;key:Return"
 expect search-sections 5 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "packages|packages|true"
-expect search-sections 6 '[(.view.sectionView.rows | length), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "5|omarchy|false"
+expect search-sections 6 '[(.view.sectionView.rows | length), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "6|omarchy|false"
 expect search-sections 9 '.view.sectionView.rows | join(",")' "packages"
 expect search-sections 14 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor] | join("|")' "lesson:Hyprland reload nach bindings.conf,topic:hyprland|lesson:Hyprland reload nach bindings.conf"
 expect search-sections 14 .view.selected 'lesson:`omarchy pkg add` statt yay direkt'

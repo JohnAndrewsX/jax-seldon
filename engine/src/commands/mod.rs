@@ -3,6 +3,7 @@
 
 pub mod agent;
 pub mod capture;
+pub mod config_cmd;
 pub mod decide;
 pub mod doctor;
 pub mod dossier;

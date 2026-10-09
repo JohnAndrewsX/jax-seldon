@@ -11,6 +11,13 @@
 //! `authorized_keys`; and 8 third-party plugins of 41 files plus one
 //! 2 MiB image each. Everything lives in a temp dir; nothing
 //! reads the real home (AGENTS.md §6).
+//!
+//! The scan of recently edited files under `~/.config` (ADR-0046, WP-139)
+//! is the capture-cost delta of that WP: the same home plus 40 programs'
+//! config folders, a browser profile, an Electron app and a cache, every
+//! file modified within the last 7 days (the list's worst case); and, at
+//! its entry budget, a `~/.config` of 20 000 recent files in one folder
+//! (WP-139 round 2, N1).
 
 mod common;
 
@@ -23,6 +30,7 @@ use serde_json::{Value, json};
 use common::TempDir;
 use seldon::collectors::config::ConfigFiles;
 use seldon::collectors::plugins::Plugins;
+use seldon::collectors::recent;
 use seldon::collectors::{Ctx, Outcome, Sources, Tz};
 use seldon::config::{Config, Dirs};
 use seldon::ledger::Ledger;
@@ -300,4 +308,116 @@ fn capture_cost_of_the_watched_files_and_plugin_trees() {
         let out = home.plugins(Some(&cold));
         assert!(out.ok && out.events.is_empty(), "{:?}", out.message);
     });
+}
+
+#[test]
+#[ignore = "release timing: `just check-perf`"]
+fn capture_cost_of_the_recent_config_scan() {
+    common::assert_optimised();
+    let home = Home::new();
+    let h = |rel: &str| home.dirs.home.join(rel);
+    for a in 0..40 {
+        for i in 0..8 {
+            write(
+                &h(&format!(".config/app{a}/conf{i}.toml")),
+                text(2000 + a * 8 + i, 512),
+            );
+        }
+    }
+    // entered only to its first level: the profile marks and the cache
+    write(&h(".config/chromium/Local State"), text(1, 64));
+    write(&h(".config/Code/Cookies"), binary(2, 64));
+    for i in 0..1500 {
+        write(
+            &h(&format!(".config/chromium/Default/f{}/x{i}", i % 30)),
+            text(i, 64),
+        );
+        write(
+            &h(&format!(".config/Code/User/f{}/y{i}", i % 30)),
+            text(i, 64),
+        );
+        write(&h(&format!(".config/app0/Cache/z{i}")), text(i, 64));
+    }
+    let recent = std::time::SystemTime::now() - Duration::from_secs(3600);
+    set_mtimes(&h(".config"), recent);
+    let now = DateTime::parse_from_rfc3339(&chrono::Local::now().to_rfc3339()).unwrap();
+    let redactor = Redactor::builtin();
+    let excluded = [home.plugins_dir.clone()];
+    let scan = recent::scan(&home.dirs, &home.config, &redactor, &excluded, now);
+    assert_eq!(scan.files.len(), recent::MAX_FILES);
+    assert!(!scan.partial);
+    eprintln!("recent-config scan: {} entries read", scan.entries);
+    common::assert_within_budget(
+        "recent-config scan and save (the capture-cost delta)",
+        Duration::from_millis(10),
+        RUNS,
+        || {
+            let scan = recent::scan(&home.dirs, &home.config, &redactor, &excluded, now);
+            recent::Saved::of(&scan, now).save(&home.dirs).unwrap();
+        },
+    );
+    // what every index build adds: the saved 80 filtered once more
+    common::assert_within_budget(
+        "recent-config in the index build (80 files)",
+        Duration::from_millis(2),
+        RUNS,
+        || {
+            let mut warnings = Vec::new();
+            let shown = recent::shown(
+                &home.dirs,
+                &home.config,
+                Some(&redactor),
+                now,
+                &mut warnings,
+            );
+            assert_eq!(shown.unwrap().files.len(), recent::MAX_FILES);
+        },
+    );
+}
+
+/// N1 (WP-139 round 2): the scan at its entry budget — 200 folders of 100
+/// recent files each under one program's folder, so the walk stops at
+/// [`recent::MAX_ENTRIES`] (or [`recent::DEADLINE`] on a slow host) and
+/// says `partial`. The budget is the deadline plus the state file.
+#[test]
+#[ignore = "release timing: `just check-perf`"]
+fn capture_cost_of_the_recent_config_scan_at_its_entry_budget() {
+    common::assert_optimised();
+    let tmp = TempDir::new("recent-budget");
+    let home = tmp.path().join("home");
+    let dirs = Dirs {
+        xdg_config_home: home.join(".config"),
+        state_dir: home.join(".local/state/seldon"),
+        home: home.clone(),
+    };
+    for d in 0..200 {
+        for f in 0..100 {
+            write(
+                &home.join(format!(".config/heavy/d{d:03}/f{f:03}.json")),
+                b"{}",
+            );
+        }
+    }
+    let recent = std::time::SystemTime::now() - Duration::from_secs(3600);
+    set_mtimes(&home.join(".config"), recent);
+    let now = DateTime::parse_from_rfc3339(&chrono::Local::now().to_rfc3339()).unwrap();
+    let redactor = Redactor::builtin();
+    let config = Config::default();
+    let scan = recent::scan(&dirs, &config, &redactor, &[], now);
+    assert!(scan.partial);
+    assert_eq!(scan.files.len(), recent::MAX_FILES);
+    eprintln!(
+        "recent-config scan at the budget: {} entries read",
+        scan.entries
+    );
+    common::assert_within_budget(
+        "recent-config scan and save at the 20 000-entry budget",
+        recent::DEADLINE + Duration::from_millis(100),
+        RUNS,
+        || {
+            let scan = recent::scan(&dirs, &config, &redactor, &[], now);
+            assert!(scan.partial);
+            recent::Saved::of(&scan, now).save(&dirs).unwrap();
+        },
+    );
 }

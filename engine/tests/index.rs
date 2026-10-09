@@ -122,6 +122,18 @@ fn write_proposals(env: &Env, logbook: &Path) {
     }
 }
 
+/// `fixtures/state/recent-config.json` in the state directory (the
+/// sample's `system.recentConfig`, ADR-0046).
+fn write_recent_config(env: &Env) {
+    let state = env.home.join(".local/state/seldon");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::copy(
+        repo("fixtures/state/recent-config.json"),
+        state.join("recent-config.json"),
+    )
+    .unwrap();
+}
+
 /// A copy of the fixture logbook in `env` (changed by `prepare`), indexed
 /// at the sample's time.
 fn golden_run(
@@ -134,6 +146,7 @@ fn golden_run(
     prepare(&lb);
     write_cursors(env, &lb, degraded);
     write_proposals(env, &lb);
+    write_recent_config(env);
     let out = env.at(
         GENERATED_AT,
         &[
@@ -233,6 +246,38 @@ fn snapper_degraded_equals_the_variant() {
         json_file(&repo("fixtures/index-variants/snapper-degraded.json")),
         index,
         "snapper-degraded",
+    );
+}
+
+/// ADR-0046 §2: a scan that stopped early and found nothing recent before
+/// it did; the index marks the list `partial`.
+#[test]
+fn recent_partial_equals_the_variant() {
+    let env = Env::new(Snapper::Missing);
+    let (lb, _, _) = golden_run(&env, None, |_| {});
+    let state = env.home.join(".local/state/seldon/recent-config.json");
+    std::fs::write(
+        &state,
+        json!({"scannedAt": "2026-10-01T17:05:00+02:00", "files": [], "partial": true}).to_string(),
+    )
+    .unwrap();
+    let out = env.at(
+        GENERATED_AT,
+        &[
+            "--logbook",
+            lb.to_str().unwrap(),
+            "index",
+            "--check",
+            "--json",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let index = json_file(&env.home.join(".local/state/seldon/index.json"));
+    common::assert_valid_index(&index);
+    assert_same(
+        json_file(&repo("fixtures/index-variants/recent-partial.json")),
+        index,
+        "recent-partial",
     );
 }
 

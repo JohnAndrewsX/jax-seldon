@@ -290,6 +290,41 @@ fn a_config_that_cannot_be_used_withholds_files_and_commands() {
     }
 }
 
+/// WP-139 round 2b (ADR-0046 §5): the walk is `~/.config` whatever
+/// `$XDG_CONFIG_HOME` says, as the capture's recently edited list.
+#[test]
+fn the_root_is_dot_config_whatever_xdg_config_home_says() {
+    let env = Env::new(Snapper::Missing);
+    fixture_home(&env);
+    file(
+        &env.home,
+        "xdg/elsewhere/app.conf",
+        "2026-10-07T23:00:00+02:00",
+    );
+    let out = env
+        .command(&["preview", "--json"])
+        .env("SELDON_NOW", NOW)
+        .env("SELDON_PACMAN_LOG", preview_log())
+        .env("SELDON_PACMAN_DB_LOCK", env.tmp.path().join("no-db.lck"))
+        .env("TZ", "Europe/Berlin")
+        .env("XDG_CONFIG_HOME", env.home.join("xdg"))
+        .output()
+        .expect("run seldon preview");
+    let v = json(&out);
+    assert_eq!(v["files"]["root"], "~/.config");
+    let files: Vec<&str> = v["files"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert!(
+        files.contains(&"~/.config/alacritty/alacritty.toml"),
+        "{files:?}"
+    );
+    assert!(!files.iter().any(|f| f.contains("xdg")), "{files:?}");
+}
+
 #[test]
 fn skip_paths_and_redaction_patterns_of_the_config_hold() {
     let env = Env::new(Snapper::Missing);
@@ -317,7 +352,8 @@ fn skip_paths_and_redaction_patterns_of_the_config_hold() {
     assert!(!text.contains("secret-app"), "{text}");
     assert!(!text.contains("starship"), "{text}");
     assert!(!text.contains("noconfirm"), "{text}");
-    // the user's skipPaths replace the defaults: Omarchy's history.json shows
+    // Omarchy's history.json stays out whatever skipPaths say: it is on the
+    // walker's own list since the one walker of WP-139 round 2
     let files: Vec<&str> = v["files"]["items"]
         .as_array()
         .unwrap()
@@ -328,7 +364,6 @@ fn skip_paths_and_redaction_patterns_of_the_config_hold() {
         files,
         [
             "~/.config/alacritty/alacritty.toml",
-            "~/.config/omarchy/current/history.json",
             "~/.config/hypr/bindings.conf",
             "~/.config/git/config",
             "~/.config/‹redacted›.toml",

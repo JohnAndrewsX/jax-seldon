@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 8bd7f5ff -->
+<!-- source: en/05-cli-reference.md @ f03f9383 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -47,6 +47,7 @@ Commands:
   dossier           Refresh the generated fences of system/*.md from read-only queries
   import            Import an earlier logbook (dry run unless --apply) or your Markdown task files as cases
   rules             The agent rules in the logbook's AGENTS.md: update
+  config            Edit config.toml: watch one more path (the desk's Watch on a recently edited file)
   completions       Print a shell completion script for bash, zsh or fish
   mangen            Print the man page seldon(1), generated from this help
   help              Print this message or the help of the given subcommand(s)
@@ -221,6 +222,59 @@ Print the engine/plugin contract version
 Usage: seldon contract-version [OPTIONS]
 
 Options:
+```
+<!-- /help -->
+
+### seldon config
+
+Deine `config.toml`.
+
+<!-- help: seldon config -->
+```text
+Edit config.toml: watch one more path (the desk's Watch on a recently edited file)
+
+Usage: seldon config [OPTIONS] <COMMAND>
+
+Commands:
+  watch  Add a path under your home directory to watchPaths; the rest of config.toml stays as it is
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+```
+<!-- /help -->
+
+### seldon config watch
+
+Nimmt einen Pfad unter deinem Home-Verzeichnis in `watchPaths` der
+`config.toml` auf: das *Watch* des Desks bei einer kürzlich bearbeiteten
+Datei (System › Recently edited). Nur die Liste `watchPaths` ändert sich;
+deine Kommentare und die Reihenfolge der Datei bleiben. Die nächste
+Erfassung nimmt die Dateien unter dem Pfad, wie sie sind, ohne Ereignis
+auf; eine spätere Änderung ist eine Konfigurationsänderung wie jede
+andere. Ein Pfad, der schon beobachtet wird, ändert nichts (Exit 0).
+Abgewiesen, mit Exit 1 und ohne Schreiben: ein Pfad außerhalb deines
+Home-Verzeichnisses, einer in oder um Seldons eigene Dateien (das
+Logbuch, `~/.local/state/seldon`, `~/.config/seldon`), einer, den es
+nicht gibt, einer unter `[redaction] skipPaths`, einer, der über einen
+Link aus deinem Home-Verzeichnis, in Seldons eigene Dateien oder unter
+`skipPaths` führt, und eine `config.toml`,
+deren Liste sich nicht erweitern lässt, ohne die Datei neu zu schreiben
+(die Meldung nennt die Zeile, die du von Hand ergänzt).
+
+<!-- help: seldon config watch -->
+```text
+Add a path under your home directory to watchPaths; the rest of config.toml stays as it is
+
+Usage: seldon config watch [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>  The file or folder (`~/…`; a relative path lies under the home directory)
+
+Options:
+
+Examples:
+  seldon config watch ~/.config/alacritty/alacritty.toml
+  seldon config watch --json -- ~/.config/starship.toml
 ```
 <!-- /help -->
 
