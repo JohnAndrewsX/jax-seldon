@@ -104,7 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `HEAD` before it runs git in the logbook; if one is not what git needs,
   no git runs, the command says once which file it is and what to do
   (`import --apply` stops with exit 1), and doctor's `git` row names it
-  with a fix. Other files git opens (`.git/config`, a loose ref) are not
+  with a fix. Other files git opens (`.git/config`, a loose ref, a linked work tree's `commondir`) are not
   checked: a FIFO there still costs a git timeout. A FIFO at
   `.seldon/logbook.toml` is named the same way (exit 1) instead of
   "not initialised; run `seldon init`", and the hook's fast index

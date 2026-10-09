@@ -1050,7 +1050,7 @@ commit the pending changes first). Doctor's `git` row is `degraded`
 with that message and a fix (what `HEAD` holds, where the branch names
 are, also for a linked work tree). A missing `HEAD`, or
 one that is a directory, is no refusal: git says at once that this is
-no repository. Other files git opens (`.git/config`, a loose ref) are
+no repository. Other files git opens (`.git/config`, a loose ref, a linked work tree's `commondir`) are
 not checked.
 
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
