@@ -133,3 +133,13 @@ docs/TESTING.md (the new steps and `keyGuard`); CHANGELOG (the entry now
    repeat: they do not write, but they do not move a selection either.
    If the operator wants them to repeat, they go into
    `Model.deskKeyRepeats` (one line and the unit test).
+
+## Live check (orchestrator, 2026-10-09, test host, 0.1.4+next.61c896fb)
+
+Desk open on Work, queued case selected; `wtype -P x -s 2000 -p x`
+(x held two seconds, Qt's client-side repeat at Omarchy's 250 ms delay)
+→ the view reports `arm.armed = case:<id>:drop` with the hint "Press x
+again or click Confirm. This is final."; the case stayed `queued`. PASS.
+A single Esc afterwards closed the whole desk instead of only disarming
+(the Esc-while-armed layer the debate found; planned in the key-registry
+WP, not a safety issue: nothing ran).
