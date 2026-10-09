@@ -436,6 +436,55 @@ impl OwnWrites {
     }
 }
 
+/// Why a path must not be opened or hashed although its own name passes
+/// (WP-139 round 3, B1, B2): a link on the way leads into Seldon's own
+/// files, to a path `ignored` refuses (`[redaction] skipPaths`, the
+/// excluded folders; the path or a folder above it below the home), or —
+/// with `outside_home` — out of the home directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkRefusal {
+    OutsideHome,
+    Own,
+    Ignored,
+}
+
+/// [`LinkRefusal`] for `path`, `None` when it may be read: no link on the
+/// way, or one whose canonical target passes. `own` holds Seldon's own
+/// files, canonical. A path whose target cannot be resolved is the
+/// caller's (as before: not readable, not hashed).
+pub fn link_refusal(
+    home: &Path,
+    path: &Path,
+    own: &[PathBuf],
+    ignored: &dyn Fn(&Path) -> bool,
+    outside_home: bool,
+) -> Option<LinkRefusal> {
+    let canonical = std::fs::canonicalize(path).ok()?;
+    if canonical == path {
+        return None;
+    }
+    if own
+        .iter()
+        .any(|o| canonical.starts_with(o) || o.starts_with(&canonical))
+    {
+        return Some(LinkRefusal::Own);
+    }
+    let canonical_home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    match canonical.strip_prefix(&canonical_home) {
+        // the target as the patterns spell it: under the home as given
+        Ok(rest) => {
+            let shown = home.join(rest);
+            shown
+                .ancestors()
+                .take_while(|p| *p != home && p.starts_with(home))
+                .any(ignored)
+                .then_some(LinkRefusal::Ignored)
+        }
+        Err(_) if outside_home => Some(LinkRefusal::OutsideHome),
+        Err(_) => ignored(&canonical).then_some(LinkRefusal::Ignored),
+    }
+}
+
 /// Whether the config collector hashes `path`: it lies under a watch path
 /// and matches no `[redaction] skipPaths` pattern.
 pub fn is_watched(dirs: &Dirs, config: &Config, path: &Path) -> bool {
@@ -677,6 +726,10 @@ struct Scan {
     loops: usize,
     /// Links not followed because they lead into Seldon's own files.
     own: usize,
+    /// Links not followed because they lead to a path the walk leaves out
+    /// or, for a watch path that is itself a link, out of the home
+    /// directory (WP-139 round 3).
+    refused: usize,
     /// Files under a persistence path that could not be read: their last
     /// hash is kept (WP-113 round 2, N1).
     unreadable: usize,
@@ -738,7 +791,28 @@ impl Walker<'_> {
             if self.ignored(root) {
                 continue;
             }
-            // a watch path may itself be a symlink (dotfile managers)
+            // a watch path may itself be a symlink (dotfile managers): what
+            // it leads to is checked before it is opened (WP-139 round 3)
+            if !self.system.contains(root) {
+                let itself = std::fs::symlink_metadata(root).is_ok_and(|m| m.is_symlink());
+                match link_refusal(
+                    &self.dirs.home,
+                    root,
+                    self.own,
+                    &|p| self.ignored(p),
+                    itself,
+                ) {
+                    Some(LinkRefusal::Own) => {
+                        scan.own += 1;
+                        continue;
+                    }
+                    Some(_) => {
+                        scan.refused += 1;
+                        continue;
+                    }
+                    None => {}
+                }
+            }
             match std::fs::metadata(root) {
                 Ok(m) if m.is_dir() => {
                     follow.visited.insert((m.dev(), m.ino()));
@@ -820,8 +894,18 @@ impl Walker<'_> {
             if meta.file_type().is_symlink() {
                 // follow links to files; into directories only where
                 // something that runs at login may lie (WP-113)
+                let refusal = link_refusal(
+                    &self.dirs.home,
+                    &path,
+                    self.own,
+                    &|p| self.ignored(p),
+                    false,
+                );
                 match std::fs::metadata(&path) {
                     Ok(_) if self.leads_into_own(&path) => scan.own += 1,
+                    // a file behind the link that the walk leaves out
+                    // (skipPaths, the excluded folders) is not read either
+                    Ok(target) if target.is_file() && refusal.is_some() => scan.refused += 1,
                     Ok(target) if target.is_file() => self.file(&path, &target, scan),
                     Ok(target) if target.is_dir() && self.may_persist(&path) => {
                         dirs.push((path, true, (target.dev(), target.ino())));
@@ -1717,6 +1801,12 @@ impl ConfigFiles {
             notes.push(format!(
                 "{} link(s) into Seldon's own files not followed",
                 scan.own
+            ));
+        }
+        if scan.refused > 0 {
+            notes.push(format!(
+                "{} link(s) not followed: they lead to a skipped or excluded file, or a watch path out of the home directory",
+                scan.refused
             ));
         }
         if scan.unreadable > 0 {

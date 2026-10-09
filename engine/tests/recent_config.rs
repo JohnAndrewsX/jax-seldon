@@ -138,6 +138,108 @@ fn a_logbook_under_dot_config_is_not_listed() {
     assert_eq!(recent_paths(&index(&env)), ["~/.config/git/config"]);
 }
 
+fn link(to: &Path, at: &Path) {
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(to, at).unwrap();
+}
+
+fn add_watch_path(env: &Env, path: &str) {
+    edit_config(env, |c| c.watch_paths.push(path.into()));
+}
+
+fn config_events(lb: &Path, subject: &str) -> usize {
+    common::ledger(lb)
+        .iter()
+        .filter(|e| e["source"] == json!("config") && e["subject"] == json!(subject))
+        .count()
+}
+
+/// WP-139 round 3, B1: a link to a skipped secret is neither listed nor
+/// watchable, and a watch path written by hand that is such a link is
+/// never opened or hashed; nor is a link to it inside a watched folder.
+#[test]
+fn a_link_to_a_skipped_secret_is_never_listed_watched_or_hashed() {
+    let (env, lb) = setup();
+    edit_config(&env, |c| c.redaction.skip_paths.push("~/secrets/".into()));
+    let secret = file(&env, "secrets/token", HOUR);
+    link(&secret, &env.home.join(".config/app/token.conf"));
+    link(&secret, &env.home.join(".config/hypr/token.conf"));
+    file(&env, ".config/git/config", HOUR);
+    let out = ok(&env.seldon(&["capture", "--json"]));
+    assert_eq!(recent_paths(&index(&env)), ["~/.config/git/config"]);
+    let refused = env.seldon(&[
+        "config",
+        "watch",
+        "--json",
+        "--",
+        "~/.config/app/token.conf",
+    ]);
+    assert_eq!(refused.status.code(), Some(1));
+    let message = common::json(&refused)["error"]["message"].to_string();
+    assert!(
+        message.contains("leads through a link to a path under [redaction] skipPaths"),
+        "{message}"
+    );
+    // written by hand: the collector does not follow it
+    add_watch_path(&env, "~/.config/app/token.conf");
+    ok(&env.seldon(&["capture", "--json"]));
+    std::fs::write(&secret, "token=changed\n").unwrap();
+    let out2 = ok(&env.seldon(&["capture", "--json"]));
+    assert_eq!(config_events(&lb, "~/.config/app/token.conf"), 0);
+    assert_eq!(config_events(&lb, "~/.config/hypr/token.conf"), 0);
+    let messages = format!("{out}{out2}");
+    assert!(messages.contains("link(s) not followed"), "{messages}");
+    // neither hashed nor listed as skipped: never opened
+    let manifest = json_file(&env.home.join(".local/state/seldon/manifest.json"));
+    let held = format!("{}{}", manifest["files"], manifest["skipped"]);
+    assert!(!held.contains("token.conf"), "{held}");
+}
+
+/// WP-139 round 3, B2: a link into Seldon's own state is neither listed
+/// nor watchable; written by hand into watchPaths, it is not followed, so
+/// captures stay idempotent: three in a row, nothing after the first.
+#[test]
+fn a_link_into_seldons_state_keeps_captures_idempotent() {
+    let (env, lb) = setup();
+    let index_json = env.home.join(".local/state/seldon/index.json");
+    link(&index_json, &env.home.join(".config/ownlink.json"));
+    ok(&env.seldon(&["capture", "--json"]));
+    assert!(recent_paths(&index(&env)).is_empty());
+    let refused = env.seldon(&["config", "watch", "--json", "--", "~/.config/ownlink.json"]);
+    assert_eq!(refused.status.code(), Some(1));
+    let message = common::json(&refused)["error"]["message"].to_string();
+    assert!(message.contains("into Seldon's own files"), "{message}");
+    add_watch_path(&env, "~/.config/ownlink.json");
+    let first = ok(&env.seldon(&["capture", "--json"]));
+    for _ in 0..2 {
+        let again = ok(&env.seldon(&["capture", "--json"]));
+        assert_eq!(again["written"], json!(0), "{again}");
+    }
+    assert_eq!(config_events(&lb, "~/.config/ownlink.json"), 0, "{first}");
+}
+
+/// WP-139 round 3, N1: a link out of `~/.config` is not listed; `config
+/// watch` refuses one out of the home directory.
+#[test]
+fn a_link_out_of_the_home_is_not_listed_and_not_watchable() {
+    let (env, _) = setup();
+    let outside = env.tmp.path().join("outside/app.conf");
+    std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
+    std::fs::write(&outside, "x\n").unwrap();
+    link(&outside, &env.home.join(".config/out.conf"));
+    let dotfile = file(&env, "dotfiles/foot.ini", HOUR);
+    link(&dotfile, &env.home.join(".config/foot/foot.ini"));
+    ok(&env.seldon(&["capture", "--json"]));
+    assert!(recent_paths(&index(&env)).is_empty());
+    let refused = env.seldon(&["config", "watch", "--json", "--", "~/.config/out.conf"]);
+    assert_eq!(refused.status.code(), Some(1));
+    let message = common::json(&refused)["error"]["message"].to_string();
+    assert!(message.contains("outside your home directory"), "{message}");
+    // inside the home but outside ~/.config: watchable, not listed
+    let added = ok(&env.seldon(&["config", "watch", "--json", "--", "~/.config/foot/foot.ini"]));
+    assert_eq!(added["added"], json!(true));
+}
+
 #[test]
 fn only_a_capture_that_runs_the_config_collector_scans() {
     let (env, _) = setup();
@@ -280,8 +382,9 @@ fn watch_refuses_and_writes_nothing() {
     let text = read(&env.config_file());
     let control = "~/.config/a\u{1b}b";
     let bidi = "~/.config/a\u{202e}b";
+    let separator = "~/.config/a\u{2028}b";
     let long = format!("~/.config/{}", "x".repeat(510));
-    let cases: [(&str, &str); 13] = [
+    let cases: [(&str, &str); 14] = [
         ("/etc/pacman.conf", "is not below your home directory"),
         ("~/.config/nope.conf", "does not exist"),
         ("~", "is not below your home directory"),
@@ -300,6 +403,7 @@ fn watch_refuses_and_writes_nothing() {
         ("Seldon", "Seldon's own files"),
         (control, "cannot be a watch path"),
         (bidi, "cannot be a watch path"),
+        (separator, "cannot be a watch path"),
         (&long, "cannot be a watch path"),
     ];
     for (path, says) in cases {

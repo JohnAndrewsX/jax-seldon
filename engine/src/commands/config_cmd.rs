@@ -9,7 +9,7 @@ use clap::{Args, Subcommand};
 use serde_json::json;
 
 use super::{Context, Output};
-use crate::collectors::config::SkipPaths;
+use crate::collectors::config::{LinkRefusal, SkipPaths, link_refusal};
 use crate::collectors::recent;
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -47,13 +47,9 @@ fn watch(ctx: &Context, value: &str) -> Result<Output> {
         return Err(Error::user("config watch: the path is empty"));
     };
     let key = dirs.display(&path);
-    if key
-        .chars()
-        .any(|c| c.is_control() || crate::redact::is_invisible(c))
-        || key.chars().count() > SUBJECT_MAX
-    {
+    if key.chars().any(crate::import::bad_path_char) || key.chars().count() > SUBJECT_MAX {
         return Err(Error::user(format!(
-            "config watch: `{shown_value}` cannot be a watch path (a control or format character, \
+            "config watch: `{shown_value}` cannot be a watch path (a control, invisible or line-separator character, \
              or longer than {SUBJECT_MAX} characters)"
         )));
     }
@@ -96,6 +92,35 @@ fn watch(ctx: &Context, value: &str) -> Result<Output> {
         return Err(Error::user(format!(
             "config watch: `{key}` matches [redaction] skipPaths, so it is never opened or \
              hashed; remove the pattern from config.toml first"
+        )));
+    }
+    // what the path really is, through every link on the way: the same
+    // checks on it (WP-139 round 3, B1, B2)
+    let own_canonical: Vec<_> = own
+        .iter()
+        .filter_map(|o| std::fs::canonicalize(o).ok())
+        .collect();
+    let refusal = link_refusal(
+        &dirs.home,
+        &path,
+        &own_canonical,
+        &|p| skip.matches(p),
+        true,
+    );
+    if let Some(why) = refusal {
+        let target = std::fs::canonicalize(&path)
+            .map(|t| dirs.display(&t))
+            .unwrap_or_default();
+        let why = match why {
+            LinkRefusal::OutsideHome => "outside your home directory",
+            LinkRefusal::Own => "into Seldon's own files, which are never watched",
+            LinkRefusal::Ignored => {
+                "to a path under [redaction] skipPaths, which is never opened or hashed"
+            }
+        };
+        return Err(Error::user(format!(
+            "config watch: `{key}` leads through a link {why} ({})",
+            target.escape_debug()
         )));
     }
     let covered = config
