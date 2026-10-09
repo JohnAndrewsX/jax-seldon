@@ -1,10 +1,16 @@
-# CI runs `just check` in an Arch Linux container.
+# CI runs `just check` in an Arch Linux container (docs/TESTING.md, "What
+# CI runs").
 #
-# What does NOT run here (see docs/TESTING.md):
-#   - `omarchy plugin validate plugin/`  needs the omarchy CLI (an Omarchy install)
+# What runs here for the plugin (WP-190):
+#   - Omarchy's plugin validator on plugin/: the validator of
+#     packaging/omarchy-pin, fetched over HTTPS and refused unless its
+#     sha256 matches (packaging/omarchy-validate.sh)
+#   - node tests/plugin/model.test.js, model.bench.js (budgets x3),
+#     terminal-scripts.sh, real-home-guard.test.sh
+# What does NOT run here; SELDON_SKIP_HOST_CHECKS=1 skips it with a notice,
+# the dev host runs it with `just check` before every handover:
 #   - qmllint against the shell          needs $OMARCHY_PATH/shell and Quickshell's QML modules
-# Both are skipped via SELDON_SKIP_HOST_CHECKS=1 and run on the dev host
-# with `just check` before every handover.
+#   - the Quickshell harnesses           need quickshell and the installed shell (WP-191)
 name: ci
 
 on:
@@ -25,9 +31,10 @@ jobs:
       SELDON_SKIP_HOST_CHECKS: "1"
       CARGO_TERM_COLOR: always
     steps:
-      # Arch's `rust` package ships cargo, clippy and rustfmt.
+      # Arch's `rust` package ships cargo, clippy and rustfmt; `nodejs` runs
+      # the plugin's node tests.
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed git rust just jq shellcheck rsync
+        run: pacman -Syu --noconfirm --needed git rust just jq shellcheck rsync nodejs
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
