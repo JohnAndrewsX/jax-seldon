@@ -69,9 +69,14 @@ import qs.Ui
 //                                        it is held (QtTest makes none):
 //                                        an event object with isAutoRepeat
 //                                        handed to keyPressed(event) of the
-//                                        focused item's nearest ancestor
-//                                        that has one, else the desk's
+//                                        key guard the focus is in (below)
 //                       keyUp:<Name|char>  release it
+//                       focusName:<objectName>  give that item the focus
+//                       (every report: `keyGuard`, the key guard the focus
+//                       is in — the nearest item up from the focus with a
+//                       keyPressed(event) and a `keyGuard` name, else the
+//                       desk — as { name, events }: a real key that counts
+//                       there went through that guard's Keys handler)
 //                       type:<text>      each character of text, typed
 //                       click:<text>     click the first visible item whose
 //                                        text is <text>
@@ -345,7 +350,7 @@ ShellRoot {
 
   function report(tag) {
     console.log("HARNESS step " + String(tag).replace(/\s/g, "_") + " " + JSON.stringify({
-      view: root.viewObject(), calls: fakeShell.calls, writes: fakeShell.writes, entry: root.entry,
+      view: root.viewObject(), calls: fakeShell.calls, keyGuard: root.keyGuardView(), writes: fakeShell.writes, entry: root.entry,
       call: root.lastCall, bare: root.bare, firstFrame: root.firstFrame,
       graphBuilds: root.service ? root.service.graphBuilds : null,
       graphDirty: root.service ? root.service.graphDirty : null,
@@ -386,14 +391,23 @@ ShellRoot {
       count: 1,
       accepted: false
     }
-    for (var it = win.activeFocusItem; it; it = it.parent) {
-      if (typeof it.keyPressed === "function") {
-        it.keyPressed(event)
-        return
-      }
-    }
-    if (root.desk) root.desk.keyPressed(event)
+    var guard = root.keyGuardItem()
+    if (guard) guard.keyPressed(event)
     else console.log("HARNESS nothing to repeat: " + name)
+  }
+
+  // The key guard the focus is in (WP-173): the nearest item up from the
+  // focus with keyPressed(event) and a keyGuard name, else the desk.
+  function keyGuardView() {
+    var g = root.keyGuardItem()
+    return g ? { name: g.keyGuard, events: g.keyEvents } : null
+  }
+
+  function keyGuardItem() {
+    for (var it = win.activeFocusItem; it; it = it.parent) {
+      if (typeof it.keyPressed === "function" && typeof it.keyGuard === "string") return it
+    }
+    return root.desk
   }
 
   function act(spec) {
@@ -520,6 +534,10 @@ ShellRoot {
       else driver.keyRelease(arg)
     } else if (verb === "keyRepeat") {
       root.keyRepeat(arg)
+    } else if (verb === "focusName") {
+      var focused = root.findName(arg)
+      if (focused) focused.forceActiveFocus()
+      else console.log("HARNESS nothing to focus: " + arg)
     } else if (verb === "text") {
       driver.keyClick(arg)
     } else if (verb === "type") {
