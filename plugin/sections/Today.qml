@@ -538,7 +538,17 @@ Section {
           foreground: root.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
-          onAccepted: root.runIntent()
+          // Return or Enter (WP-173): once per press, a held key's repeat
+          // does nothing; `keyEvents` for the harness's key guard read-out.
+          readonly property string keyGuard: "intent"
+          property int keyEvents: 0
+          function keyPressed(event) {
+            intentField.keyEvents++
+            event.accepted = true
+            if (!event.isAutoRepeat) root.runIntent()
+          }
+          Keys.onReturnPressed: function(event) { intentField.keyPressed(event) }
+          Keys.onEnterPressed: function(event) { intentField.keyPressed(event) }
           Keys.onEscapePressed: function(event) {
             if (root.desk) root.desk.takeKeys()
             event.accepted = true

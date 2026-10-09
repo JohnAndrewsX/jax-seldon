@@ -74,8 +74,13 @@ FocusScope {
 
   // Return, Enter (and Space on the button) in the form: a held key
   // repeats its press (Omarchy's Hyprland: repeat_delay 250 ms), and the
-  // repeat neither arms nor runs (SPEC-PLUGIN §5.3).
+  // repeat neither arms nor runs (SPEC-PLUGIN §5.3). `keyEvents` counts
+  // the calls (the harness's key guard read-out).
+  readonly property string keyGuard: "decision"
+  property int keyEvents: 0
+
   function keyPressed(event) {
+    root.keyEvents++
     event.accepted = true
     if (!event.isAutoRepeat) root.enterKey()
   }

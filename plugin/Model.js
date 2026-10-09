@@ -3597,6 +3597,19 @@ function deskSectionForKey(text) {
   return ""
 }
 
+// A held key (WP-173): Omarchy's Hyprland repeats it after 250 ms, 40 a
+// second. Only the keys that move repeat on the desk: the arrows (with or
+// without Alt), the page keys, Home and End (Qt key codes), `j`/`k`, the
+// Prime Radiant's `h`/`l` and the graph's zoom `-`/`=`. Every other
+// repeat is dropped by Desk.keyPressed, so no key that writes, launches
+// or confirms ever acts twice from one press.
+var DESK_REPEAT_KEYS = [0x01000010, 0x01000011, 0x01000012, 0x01000013, 0x01000014, 0x01000015, 0x01000016, 0x01000017]
+var DESK_REPEAT_TEXT = ["j", "k", "h", "l", "-", "="]
+
+function deskKeyRepeats(key, text) {
+  return DESK_REPEAT_KEYS.indexOf(key) !== -1 || DESK_REPEAT_TEXT.indexOf(String(text)) !== -1
+}
+
 // Alt+↑/↓: the previous or next of the nine targets, wrapping.
 function deskCycle(id, delta) {
   var n = DESK_SECTIONS.length
