@@ -33,12 +33,13 @@ use crate::commands::plan::{SHOW_INTENT_MAX, Spec, case_json, create};
 use crate::commands::{Commit, Context, Output, autocommit};
 use crate::error::{Error, Result};
 use crate::import::task::{Tasks, parse};
-use crate::import::{Scrubber, bad_path_char, case_source, is_direction_or_format, marker_path};
+use crate::import::{Scrubber, bad_path_char, case_source, marker_path};
 use crate::logbook::Logbook;
 use crate::logbook::cases;
 use crate::model::event::ACTOR_HUMAN;
 use crate::model::{Priority, Risk, Zone, is_agent, is_slug};
 use crate::redact::Redactor;
+use crate::redact::is_invisible;
 use crate::sys;
 
 /// The tag of an imported case (CONTRACT.md rule 8).
@@ -164,7 +165,7 @@ struct Source {
     stem: String,
     /// Lines the redaction changed.
     redacted: usize,
-    /// Direction and format characters dropped (WP-102b round 2, B2).
+    /// Invisible characters dropped (WP-102b round 2, B2; the set WP-159).
     dropped: usize,
 }
 
@@ -253,6 +254,10 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
         Some(ctx.lock()?)
     };
     let marker_rel = marker_path(MARKER);
+    if lock.is_some() {
+        // the marker's folder, before anything is written (WP-168)
+        logbook.checked_file(&marker_rel)?;
+    }
     let mut marker = read_marker(&logbook.path(&marker_rel))?;
     // what an earlier run left pending: settled in the file only when this
     // run writes (never in a dry run)
@@ -597,20 +602,16 @@ fn read_source(
     // a CRLF file already imported is not imported again; the line count
     // does not change
     let text = text.replace("\r\n", "\n");
-    // direction and format characters out (WP-102b round 2, B2): an
+    // invisible characters out (WP-102b round 2, B2; the set WP-159): an
     // invisible instruction would reach the case, its title and an agent
-    // while the desk's review drops it; out before the redaction, so a
-    // zero-width space cannot split a secret from its rule here either
-    let before = text.chars().count();
-    let text: String = text
-        .chars()
-        .filter(|c| !is_direction_or_format(*c))
-        .collect();
-    let dropped = before - text.chars().count();
+    // while the desk's review drops it. The count is of the file's
+    let dropped = text.chars().filter(|c| is_invisible(*c)).count();
     // the scrubber redacts the whole text, as a note's, keeping its line
-    // breaks (WP-140), then rewrites home paths line by line
+    // breaks (WP-140), then drops the invisible characters (after the
+    // redaction, so the rules read the boundary one makes, WP-159 round
+    // 2) and rewrites home paths line by line
     let first_hit = scrubber.hits.len();
-    let text = scrubber.text(&shown, &text);
+    let text = scrubber.text_dropping_invisible(&shown, &text);
     let changed: BTreeSet<usize> = scrubber.hits[first_hit..].iter().map(|h| h.line).collect();
     let stem = path
         .file_stem()

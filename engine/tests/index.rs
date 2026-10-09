@@ -376,6 +376,18 @@ fn the_engine_checker_agrees_with_jsonschema() {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let schema = format!("{}.schema.json", name.split('.').next().unwrap());
         let x = json_file(&path);
+        // `seldon preview`'s output (ADR-0047) is no file the engine
+        // checks: jsonschema alone (engine/tests/preview.rs)
+        if schema == "preview.schema.json" {
+            let text = std::fs::read_to_string(repo("schema/preview.schema.json")).unwrap();
+            let compiled = jsonschema::options()
+                .should_validate_formats(true)
+                .build(&serde_json::from_str(&text).unwrap())
+                .unwrap();
+            assert!(!compiled.is_valid(&x), "{name} must fail jsonschema");
+            n += 1;
+            continue;
+        }
         assert!(
             !v.validate(&x, &schema).is_empty(),
             "{name} must fail the engine checker"
@@ -1752,7 +1764,7 @@ fn clip_probes() -> Vec<String> {
 /// WP-140 round 2: the reference's set of direction and format
 /// characters (`scripts/validate-fixtures.py`, `DIRECTION_OR_FORMAT` and
 /// `BAD_PATH` without the control characters) is the engine's
-/// `import::is_direction_or_format`, code point for code point.
+/// `redact::is_invisible`, code point for code point (WP-159).
 #[test]
 fn the_reference_drops_the_engines_format_characters() {
     let python = ["python3", "python"].into_iter().find(|p| {
@@ -1793,7 +1805,7 @@ for name, rx in (("format", vf.DIRECTION_OR_FORMAT), ("path", vf.BAD_PATH)):
     let stdout = String::from_utf8(out.stdout).unwrap();
     let engine: Vec<u32> = (0..=0x10FFFF)
         .filter_map(char::from_u32)
-        .filter(|c| seldon::import::is_direction_or_format(*c))
+        .filter(|c| seldon::redact::is_invisible(*c))
         .map(u32::from)
         .collect();
     assert!(engine.len() > 150, "{}", engine.len());
@@ -2036,7 +2048,7 @@ fn a_ledger_truncated_mark_is_dropped() {
 // --------------------------------------------------------------------------
 
 /// `seldon status` at the scale of the budget (`scale::stated_scale`:
-/// 10 788 ledger lines, 304 cases, 365 journal files): median wall time of
+/// 11 656 ledger lines, 304 cases, 365 journal files): median wall time of
 /// 11 runs, process start included, < 100 ms (`assert_within_budget`).
 #[test]
 #[ignore = "release timing at scale: `just check-perf`"]
@@ -2046,7 +2058,7 @@ fn status_at_10_000_ledger_lines_is_under_100_ms() {
     let env = Env::new(Snapper::Missing);
     let root = env.tmp.path().join("logbook");
     let lines = common::scale::stated_scale(&fixture_logbook(), &root);
-    assert_eq!(lines, 10_788);
+    assert_eq!(lines, 11_656);
     let args = ["--logbook", root.to_str().unwrap(), "status", "--json"];
     let out = env.at(GENERATED_AT, &args);
     assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));

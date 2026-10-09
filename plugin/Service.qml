@@ -152,6 +152,12 @@ Item {
   // Model.SESSIONS_POLL_MS while the desk is open.
   property var agentSessions: ({})
   property bool sessionsAgain: false
+  // WP-138: before the logbook exists, what the machine remembers on its
+  // own (`seldon preview --json`, Model.previewResult): asked in its own
+  // read-only process when the status becomes notInitialised and when the
+  // desk opens, at most every Model.PREVIEW_REFRESH_MS; null otherwise.
+  property var preview: null
+  property double previewAtMs: 0
   // The last successful `open` ({ what, atMs }): the same target is not
   // sent again within Model.OPEN_REPEAT_MS.
   property var lastOpen: null
@@ -521,6 +527,32 @@ Item {
     root.sessionsAgain = false
     sessionsCall.launch(["seldon"].concat(args))
     return true
+  }
+
+  // WP-138: ask the engine for the preview (read-only, its own process,
+  // never the queue). Only while the logbook is not initialised, with an
+  // engine, outside dev mode; within Model.PREVIEW_REFRESH_MS of the last
+  // only when `force`d. The last answer stays on screen while it runs.
+  function refreshPreview(force) {
+    if (root.devMode || root.engineState !== "present" || root.status !== "notInitialised" || previewCall.running)
+      return false
+    if (force !== true && root.previewAtMs > 0 && Date.now() - root.previewAtMs < Model.PREVIEW_REFRESH_MS) return false
+    if (Model.validateArgs(Model.PREVIEW_ARGS) !== "") return false
+    root.previewAtMs = Date.now()
+    if (!root.preview) root.preview = { ok: false, pending: true, text: "" }
+    previewCall.launch(["seldon"].concat(Model.PREVIEW_ARGS))
+    return true
+  }
+
+  function previewDone(exitCode, out, err) {
+    if (exitCode !== 0) root.warnFailure(["preview"], exitCode, out, err)
+    // the logbook appeared meanwhile: the answer is no longer shown
+    root.preview = root.status === "notInitialised" ? Model.previewResult(exitCode, out, err) : null
+  }
+
+  onStatusChanged: {
+    if (root.status === "notInitialised") root.refreshPreview(true)
+    else root.preview = null
   }
 
   function sessionsDone(exitCode, out, err) {
@@ -1093,6 +1125,7 @@ Item {
       engineVersion: root.engineVersion,
       engineDetail: root.engineDetail,
       busy: root.busy,
+      preview: root.preview ? Model.previewSummary(root.preview) : "",
       capturing: root.capturing,
       lockRetries: root.lockRetries,
       engineMin: root.engineMin,
@@ -1223,6 +1256,12 @@ Item {
   }
 
   EngineCall {
+    id: previewCall
+    onDone: function(exitCode, out, err) { root.previewDone(exitCode, out, err) }
+    onFailedToStart: root.preview = null
+  }
+
+  EngineCall {
     id: sessionsCall
     onDone: function(exitCode, out, err) { root.sessionsDone(exitCode, out, err) }
   }
@@ -1289,8 +1328,15 @@ Item {
     running: root.deskOpen && root.engineState === "present"
     onTriggered: root.refreshSessions()
   }
-  onDeskOpenChanged: if (root.deskOpen) root.refreshSessions()
-  onEngineStateChanged: if (root.deskOpen) root.refreshSessions()
+  onDeskOpenChanged: if (root.deskOpen) {
+    root.refreshSessions()
+    root.refreshPreview(false)
+  }
+  onEngineStateChanged: {
+    if (root.deskOpen) root.refreshSessions()
+    // the index may have said notInitialised before the probe answered
+    root.refreshPreview(true)
+  }
 
   // The retry of a capture or status that found the lock held.
   Timer {

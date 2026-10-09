@@ -66,6 +66,7 @@
 //! [`HTTPIE_GAP`], `db-client-password`) reads both, so a text edited on
 //! Windows keeps no secret on a continued line (WP-128).
 
+use std::borrow::Cow;
 use std::sync::{LazyLock, OnceLock};
 
 use regex::{Captures, Regex};
@@ -386,8 +387,9 @@ impl Rule {
     }
 
     /// `text` with every match this rule applies to replaced.
+    #[cfg(test)]
     fn replace(&self, text: &str) -> String {
-        self.replace_with(text, false)
+        self.replace_with(text, false, None)
     }
 
     /// [`Rule::replace`]; with `keep_lines`, every line break a replaced
@@ -399,14 +401,32 @@ impl Rule {
     /// A user pattern's match is replaced whole, a `\r` in it too: a
     /// pattern that matches a bare `\r` would otherwise find it again in
     /// the second pass of a note (the command's, then the ledger's).
-    fn replace_with(&self, text: &str, keep_lines: bool) -> String {
+    ///
+    /// With `origin` (one entry per byte of `text`: the byte of the
+    /// visible copy it came from, or [`NO_ORIGIN`]), the map is carried
+    /// over to the result: a copied byte keeps its entry, a replacement's
+    /// bytes, the groups it keeps included, have none ([`restore`]).
+    fn replace_with(
+        &self,
+        text: &str,
+        keep_lines: bool,
+        origin: Option<&mut Vec<usize>>,
+    ) -> String {
         let markers = markers(text);
         let mut out = String::with_capacity(text.len());
+        let mut map = origin.as_ref().map(|_| Vec::with_capacity(text.len()));
+        // `text[from..to]` as it was, with its map entries
+        let copy = |out: &mut String, map: &mut Option<Vec<usize>>, from: usize, to: usize| {
+            out.push_str(&text[from..to]);
+            if let (Some(map), Some(origin)) = (map.as_mut(), origin.as_deref()) {
+                map.extend_from_slice(&origin[from..to]);
+            }
+        };
         let mut last = 0;
         let all = self.matches(text);
         for (i, found) in all.iter().enumerate() {
             let (start, end) = found.range();
-            out.push_str(&text[last..start]);
+            copy(&mut out, &mut map, last, start);
             if self.applies(found, all.get(i + 1), text, &markers) {
                 let at = out.len();
                 found.caps.expand(&self.replacement, &mut out);
@@ -427,14 +447,147 @@ impl Rule {
                 if matched.ends_with('\r') && self.name != USER_PATTERN {
                     out.push('\r');
                 }
+                if let Some(map) = map.as_mut() {
+                    map.resize(out.len(), NO_ORIGIN);
+                }
             } else {
-                out.push_str(&text[start..end]);
+                copy(&mut out, &mut map, start, end);
             }
             last = end;
         }
-        out.push_str(&text[last..]);
+        copy(&mut out, &mut map, last, text.len());
+        if let (Some(map), Some(origin)) = (map, origin) {
+            *origin = map;
+        }
         out
     }
+}
+
+/// A byte of a redaction's result that no byte of the text it read was
+/// copied to: a replacement's ([`Rule::replace_with`]).
+const NO_ORIGIN: usize = usize::MAX;
+
+/// An invisible character (WP-159): one that turns the direction of the
+/// text around it (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069),
+/// an invisible format character (U+00AD, U+0600–U+0605, U+180E,
+/// U+200B–U+200D, U+2060–U+2065, U+206A–U+206F, U+FEFF, U+FFF9–U+FFFB,
+/// U+1BCA0–U+1BCA3, U+1D173–U+1D17A, the tags U+E0000–U+E007F), a filler
+/// that draws nothing (U+034F, U+115F, U+1160, U+17B4, U+17B5, U+3164,
+/// U+FFA0) or a variation selector (U+180B–U+180D, U+180F, U+FE00–U+FE0F,
+/// U+E0100–U+E01EF). With it, every assigned default-ignorable code point
+/// of Unicode. Each can split a token from its rule without showing
+/// (ADR-0038 §2 and its amendments, WP-140, WP-159), so redaction reads a
+/// text without them ([`Redactor::redact`]), and the one-line texts, the
+/// index's texts and a path drop or refuse them
+/// ([`without_invisible`], `import::bad_path_char`).
+pub fn is_invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{034F}'
+            | '\u{0600}'..='\u{0605}'
+            | '\u{061C}'
+            | '\u{115F}'..='\u{1160}'
+            | '\u{17B4}'..='\u{17B5}'
+            | '\u{180B}'..='\u{180F}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FEFF}'
+            | '\u{FFA0}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
+            | '\u{E0000}'..='\u{E007F}'
+            | '\u{E0100}'..='\u{E01EF}'
+    )
+}
+
+/// `text` without its [`is_invisible`] characters; borrowed when it holds
+/// none. The one helper for every text that drops them (WP-159).
+pub fn without_invisible(text: &str) -> Cow<'_, str> {
+    if text.is_ascii() || !text.chars().any(is_invisible) {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(text.chars().filter(|c| !is_invisible(*c)).collect())
+}
+
+/// A character the rules read past (WP-159 round 2): an invisible one
+/// ([`is_invisible`]) or a control character that is no white space
+/// (`\0`, BS, BEL, ESC, CSI, …; `\t`, `\n`, `\r`, VT, FF and NEL stay,
+/// as the CRLF rules and [`GAP`] read them). For the redaction's copy only:
+/// the shared set of paths and the index does not change.
+fn hides_from_rules(c: char) -> bool {
+    is_invisible(c) || (c.is_control() && !c.is_whitespace())
+}
+
+/// The copy of `text` the rules read first: without the characters
+/// [`hides_from_rules`] names; borrowed when it holds none.
+fn reading_copy(text: &str) -> Cow<'_, str> {
+    let hides = if text.is_ascii() {
+        text.bytes().any(|b| hides_from_rules(char::from(b)))
+    } else {
+        text.chars().any(hides_from_rules)
+    };
+    if !hides {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(text.chars().filter(|c| !hides_from_rules(*c)).collect())
+}
+
+/// The result of a redaction of `text`'s reading copy (`out`, with its
+/// `origin` map, [`Rule::replace_with`]) with the characters the copy left
+/// out put back: each run of them stands where it stood when the
+/// characters on both sides of it were copied as they were. A run inside
+/// a masked match, or at its edge, is gone with it: the masked span is
+/// the original one.
+fn restore(text: &str, out: &str, origin: &[usize]) -> String {
+    // each run of left-out characters, by the copy's byte it stands before
+    let mut runs: Vec<(usize, &str)> = Vec::new();
+    let mut copied = 0;
+    let mut run = None;
+    for (i, c) in text.char_indices() {
+        if hides_from_rules(c) {
+            run.get_or_insert(i);
+        } else {
+            if let Some(from) = run.take() {
+                runs.push((copied, &text[from..i]));
+            }
+            copied += c.len_utf8();
+        }
+    }
+    if let Some(from) = run {
+        runs.push((copied, &text[from..]));
+    }
+    // copied bytes keep their order, so one walk over the runs finds them
+    let mut runs = runs.into_iter().peekable();
+    let mut run_at = |at: usize| {
+        while runs.next_if(|&(v, _)| v < at).is_some() {}
+        runs.next_if(|&(v, _)| v == at).map(|(_, run)| run)
+    };
+    let mut result = String::with_capacity(text.len());
+    // the copy's byte after the last character copied, none after a
+    // replacement's; the start of the text counts as copied
+    let mut next = Some(0);
+    for (i, c) in out.char_indices() {
+        let from = origin[i];
+        if next == Some(from)
+            && let Some(run) = run_at(from)
+        {
+            result.push_str(run);
+        }
+        result.push(c);
+        let last = origin[i + c.len_utf8() - 1];
+        next = (last != NO_ORIGIN).then(|| last + 1);
+    }
+    if next == Some(copied)
+        && let Some(run) = run_at(copied)
+    {
+        result.push_str(run);
+    }
+    result
 }
 
 /// Where [`REDACTED`] already stands in `text`: ascending and without
@@ -1133,16 +1286,19 @@ impl Redactor {
     }
 
     /// `text` with every secret replaced by [`REDACTED`].
+    ///
+    /// The rules read the text twice (WP-159). First without the
+    /// characters [`hides_from_rules`] names, so `to<U+200B>ken=…`,
+    /// `ghp_0123<U+FE0F>4567…` or `to<BS>ken=…` hides nothing; the masked
+    /// spans are the original ones and the left-out characters elsewhere go
+    /// back where they stood ([`restore`]). Then as given (round 2): there
+    /// an invisible character is a boundary, so `x<U+200B>sk-…` or
+    /// `a<U+200B>mysql … -p…`, which the copy glues to the word before it,
+    /// is masked too. A text in which neither reading finds anything comes
+    /// back as it was, its invisible characters included (a note keeps its
+    /// joiners, WP-140).
     pub fn redact(&self, text: &str) -> String {
-        let mut out = text.to_string();
-        let lower = trigger_text(text);
-        for rule in self.rules() {
-            if !rule.triggered(text, &lower) || !rule.regex().is_match(&out) {
-                continue;
-            }
-            out = rule.replace(&out);
-        }
-        out
+        self.redact_visible(text, false)
     }
 
     /// [`Redactor::redact`] that keeps `text`'s line count: a match that
@@ -1150,40 +1306,119 @@ impl Redactor {
     /// next line) leaves its line breaks behind the marker. For text whose
     /// line numbers are cited afterwards (`seldon import task`, WP-102).
     pub fn redact_keeping_lines(&self, text: &str) -> String {
+        self.redact_visible(text, true)
+    }
+
+    /// [`Redactor::redact`] or, with `keep_lines`,
+    /// [`Redactor::redact_keeping_lines`].
+    fn redact_visible(&self, text: &str, keep_lines: bool) -> String {
+        let Cow::Owned(copy) = reading_copy(text) else {
+            return self.passes(text, keep_lines, None);
+        };
+        let mut origin: Vec<usize> = (0..copy.len()).collect();
+        let out = self.passes(&copy, keep_lines, Some(&mut origin));
+        let restored = if out == copy {
+            text.to_string()
+        } else {
+            restore(text, &out, &origin)
+        };
+        // the text as given: a rule anchored at a word boundary finds what
+        // the copy glued to the word before it (round 2, B1)
+        self.passes(&restored, keep_lines, None)
+    }
+
+    /// Redacted ([`Redactor::redact`]), then without its invisible
+    /// characters ([`without_invisible`]): for the one-line and shown
+    /// texts that drop them (closing summaries, commit subjects, the
+    /// index's texts, a hook's command line). Redaction first, so the
+    /// rules read the boundary an invisible character makes (round 2, B1b).
+    pub fn redact_dropping_invisible(&self, text: &str) -> String {
+        without_invisible(&self.redact(text)).into_owned()
+    }
+
+    /// Every rule over `text`, in order; `origin` follows the bytes
+    /// ([`Rule::replace_with`]).
+    fn passes(&self, text: &str, keep_lines: bool, mut origin: Option<&mut Vec<usize>>) -> String {
         let mut out = text.to_string();
         let lower = trigger_text(text);
         for rule in self.rules() {
             if !rule.triggered(text, &lower) || !rule.regex().is_match(&out) {
                 continue;
             }
-            out = rule.replace_with(&out, true);
+            out = rule.replace_with(&out, keep_lines, origin.as_deref_mut());
         }
         out
     }
 
     /// Names of the rules that would replace something in `text`
-    /// (diagnostics, tests, the import report).
+    /// (diagnostics, tests, the import report): in either reading of
+    /// [`Redactor::redact`], the copy without the characters it reads past
+    /// and the text as given, in the order the rules run.
     pub fn matching_rules(&self, text: &str) -> Vec<&'static str> {
+        let copy = reading_copy(text);
+        let mut found = self.applying(&copy);
+        if let Cow::Owned(_) = copy {
+            for (f, given) in found.iter_mut().zip(self.applying(text)) {
+                *f |= given;
+            }
+        }
+        self.rules()
+            .zip(found)
+            .filter(|(_, f)| *f)
+            .map(|(r, _)| r.name)
+            .collect()
+    }
+
+    /// For each rule, whether it would replace something in `text` read as
+    /// it is.
+    fn applying(&self, text: &str) -> Vec<bool> {
         let markers = markers(text);
         let lower = trigger_text(text);
         self.rules()
-            .filter(|r| {
+            .map(|r| {
                 if !r.triggered(text, &lower) {
                     return false;
                 }
                 let all = r.matches(text);
                 (0..all.len()).any(|i| r.applies(&all[i], all.get(i + 1), text, &markers))
             })
-            .map(|r| r.name)
             .collect()
     }
 
     /// [`Redactor::matching_rules`] for each line of `text` (split at
     /// `\n`): the rules with a match that would be replaced and that
-    /// touches the line, in the order the rules run. A match over several
-    /// lines (a PEM private key, a continued `mysql … -p`) counts on each
-    /// of them (the vault import's report, WP-140).
+    /// touches the line, in either reading, in the order the rules run. A
+    /// match over several lines (a PEM private key, a continued `mysql …
+    /// -p`) counts on each of them (the vault import's report, WP-140).
     pub fn matching_rules_by_line(&self, text: &str) -> Vec<Vec<&'static str>> {
+        // no character the copy leaves out breaks a line: the lines stay
+        let copy = reading_copy(text);
+        let mut found = self.applying_by_line(&copy);
+        if let Cow::Owned(_) = copy {
+            for (line, given) in found.iter_mut().zip(self.applying_by_line(text)) {
+                line.extend(given);
+                line.sort_unstable();
+                line.dedup();
+            }
+        }
+        let names: Vec<&'static str> = self.rules().map(|r| r.name).collect();
+        found
+            .into_iter()
+            .map(|line| {
+                let mut out: Vec<&'static str> = Vec::new();
+                for i in line {
+                    if out.last() != Some(&names[i]) {
+                        out.push(names[i]);
+                    }
+                }
+                out
+            })
+            .collect()
+    }
+
+    /// For each line of `text`, the indices of the rules with a match
+    /// that would be replaced and that touches it, ascending.
+    fn applying_by_line(&self, text: &str) -> Vec<Vec<usize>> {
         let starts: Vec<usize> = std::iter::once(0)
             .chain(text.match_indices('\n').map(|(i, _)| i + 1))
             .collect();
@@ -1191,7 +1426,10 @@ impl Redactor {
         let mut out = vec![Vec::new(); starts.len()];
         let markers = markers(text);
         let lower = trigger_text(text);
-        for r in self.rules().filter(|r| r.triggered(text, &lower)) {
+        for (n, r) in self.rules().enumerate() {
+            if !r.triggered(text, &lower) {
+                continue;
+            }
             let all = r.matches(text);
             for (i, found) in all.iter().enumerate() {
                 if !r.applies(found, all.get(i + 1), text, &markers) {
@@ -1199,8 +1437,8 @@ impl Redactor {
                 }
                 let (start, end) = found.range();
                 for line in &mut out[line_of(start)..=line_of(end.max(start + 1) - 1)] {
-                    if line.last() != Some(&r.name) {
-                        line.push(r.name);
+                    if line.last() != Some(&n) {
+                        line.push(n);
                     }
                 }
             }
@@ -1309,5 +1547,285 @@ mod tests {
             .replace("set -e; curl -fsSL -u a:fakeA1 https://h.example/i.sh && git commit -am x");
         assert!(!out.contains("fake"), "{out}");
         assert!(rule.next_re.get().is_none());
+    }
+
+    /// WP-159: the code points that split the examples in the tests below:
+    /// every one WP-159 added (fillers and variation selectors, each range
+    /// at both ends) and some of the earlier set.
+    const SPLITTERS: [char; 24] = [
+        '\u{034F}',
+        '\u{115F}',
+        '\u{1160}',
+        '\u{17B4}',
+        '\u{17B5}',
+        '\u{180B}',
+        '\u{180D}',
+        '\u{180F}',
+        '\u{2065}',
+        '\u{3164}',
+        '\u{FE00}',
+        '\u{FE0F}',
+        '\u{FFA0}',
+        '\u{E0100}',
+        '\u{E01EF}',
+        '\u{200B}',
+        '\u{200D}',
+        '\u{202E}',
+        '\u{2060}',
+        '\u{FEFF}',
+        '\u{00AD}',
+        '\u{E0041}',
+        '\u{1D173}',
+        '\u{0600}',
+    ];
+
+    /// The three examples of WP-159 (WP-102b review 1, N5), split by `c`,
+    /// with what each becomes.
+    fn split_secrets(c: char) -> [(String, &'static str); 3] {
+        [
+            (format!("a to{c}ken=hunter2abc b"), "a token=‹redacted› b"),
+            (
+                format!("Authorization: Bearer{c} tokABC123secret"),
+                "Authorization: ‹redacted›",
+            ),
+            (
+                format!("x ghp_0123{c}456789abcdefghijABCDEFGHIJ012345 y"),
+                "x ‹redacted› y",
+            ),
+        ]
+    }
+
+    /// WP-159: a secret split by an invisible character is masked, in
+    /// every path through the redactor, and the split character goes with
+    /// it.
+    #[test]
+    fn a_secret_split_by_an_invisible_character_is_masked() {
+        let r = Redactor::builtin();
+        for c in SPLITTERS {
+            for (text, want) in split_secrets(c) {
+                assert_eq!(r.redact(&text), want, "U+{:04X}", c as u32);
+                assert_eq!(r.redact_keeping_lines(&text), want, "U+{:04X}", c as u32);
+                assert!(!r.matching_rules(&text).is_empty(), "U+{:04X}", c as u32);
+                let lines = r.matching_rules_by_line(&format!("ok\n{text}\nok"));
+                assert!(
+                    lines[0].is_empty() && !lines[1].is_empty() && lines[2].is_empty(),
+                    "U+{:04X}: {lines:?}",
+                    c as u32
+                );
+            }
+        }
+        // a user pattern reads the same text
+        let user = Redactor::with_patterns(&["hunter[0-9]".to_string()]).unwrap();
+        assert_eq!(user.redact("x hun\u{FE0F}ter2 y"), "x ‹redacted› y");
+        assert_eq!(user.matching_rules("hun\u{034F}ter2"), ["user-pattern"]);
+    }
+
+    /// WP-159, WP-140's promise: a text in which nothing is masked comes
+    /// back byte for byte, its invisible characters included; where
+    /// something is masked, the invisible characters away from the match
+    /// stay where they were, also at the start and the end of the text,
+    /// and those at its edges go with it.
+    #[test]
+    fn invisible_characters_away_from_a_secret_stay() {
+        let r = Redactor::builtin();
+        for text in [
+            "क्\u{200D}ष note",
+            "\u{200E}\u{FEFF}👍\u{FE0F} ok\u{E0100}ä\u{200B}\u{200C}",
+            "\u{3164}",
+            "<!--\u{200B} seldon:end -->",
+        ] {
+            assert_eq!(r.redact(text), text);
+            assert_eq!(r.redact_keeping_lines(text), text);
+            assert!(r.matching_rules(text).is_empty());
+        }
+        let cases = [
+            (
+                "\u{200E}ä\u{200D}ö to\u{200B}ken=hunter2abc ü\u{FE0F}ß\u{200F}",
+                "\u{200E}ä\u{200D}ö token=‹redacted› ü\u{FE0F}ß\u{200F}",
+            ),
+            // at the edges of the match: gone with it
+            (
+                "x \u{200D}token=hunter2abc\u{200B} y",
+                "x token=‹redacted› y",
+            ),
+            // two secrets, two rules, a run between them and one after
+            (
+                "Authorization: Bearer\u{200B} t0kABC123\nghp_0123\u{FE0F}456789abcdefghijABCDEFGHIJ012345 a\u{200C}b\u{2060}",
+                "Authorization: ‹redacted›\n‹redacted› a\u{200C}b\u{2060}",
+            ),
+        ];
+        for (text, want) in cases {
+            let once = r.redact(text);
+            assert_eq!(once, want);
+            assert_eq!(r.redact_keeping_lines(text), want);
+            assert_eq!(r.redact(&once), once, "twice is once");
+        }
+    }
+
+    /// WP-159: the redaction that keeps lines keeps them with an invisible
+    /// character in a continued command, and puts back the runs after it.
+    #[test]
+    fn keeping_lines_over_an_invisible_character() {
+        let r = Redactor::builtin();
+        let text = "a\u{200D}b\nmysql -u root \\\n  -p\u{200B}hunter2secret \\\n  --host db\nz\u{FE0F}\r\n";
+        let kept = r.redact_keeping_lines(text);
+        assert!(!kept.contains("hunter2secret"), "{kept}");
+        assert_eq!(kept.lines().count(), text.lines().count(), "{kept:?}");
+        assert!(
+            kept.starts_with("a\u{200D}b\n") && kept.ends_with("\nz\u{FE0F}\r\n"),
+            "{kept:?}"
+        );
+        let by_line = r.matching_rules_by_line(text);
+        assert!(
+            by_line[0].is_empty() && !by_line[2].is_empty(),
+            "{by_line:?}"
+        );
+    }
+
+    /// WP-159: the shared helper drops exactly the set and borrows a text
+    /// without it.
+    #[test]
+    fn without_invisible_drops_the_set() {
+        assert!(matches!(without_invisible("plain ascii"), Cow::Borrowed(_)));
+        assert!(matches!(without_invisible("äöü 👍"), Cow::Borrowed(_)));
+        assert_eq!(
+            without_invisible("a\u{FE0F}b\u{E0100}c\u{3164}d\u{200B}"),
+            "abcd"
+        );
+        let all: String = (0..=0x10FFFF).filter_map(char::from_u32).collect();
+        let kept = without_invisible(&all);
+        assert!(kept.chars().all(|c| !is_invisible(c)));
+        assert_eq!(
+            all.chars().count() - kept.chars().count(),
+            all.chars().filter(|c| is_invisible(*c)).count()
+        );
+    }
+
+    /// WP-159 round 2, B1: one example per rule anchored at a word
+    /// boundary, each with a secret in it (`hunter2…`, or the `sk-` key's
+    /// letters), and the rule's name.
+    const BOUNDARY_RULES: [(&str, &str); 17] = [
+        ("sk-key", "sk-ABCDEFGHIJKLMNOPQRSTUVWX y"),
+        ("db-client-password", "mysql -u root -phunter2secret"),
+        ("db-client-password", "psql -U bob -p hunter2secret"),
+        (
+            "db-client-password",
+            "smbclient //h/s -U bob -p hunter2secret",
+        ),
+        ("curl-user", "curl -u alice:hunter2abc https://h.example"),
+        (
+            "proxy-option",
+            "curl -U bob:hunter2abc -x p.example https://h.example",
+        ),
+        ("cookie-option", "curl -b sid=hunter2abc https://h.example"),
+        (
+            "cert-password",
+            "curl -E cert.pem:hunter2abc https://h.example",
+        ),
+        ("sshpass-password", "sshpass -p hunter2abc ssh h.example"),
+        ("cookie-header", "cookie: sid=hunter2abc"),
+        ("secret-header", "x-auth-token: hunter2abcdef"),
+        (
+            "registry-login-password",
+            "docker login -u bob -p hunter2abc r.example",
+        ),
+        (
+            "registry-login-password",
+            "podman login -u bob -p hunter2abc r.example",
+        ),
+        ("nmcli-secret", "nmcli con mod Home wifi-sec.psk hunter2abc"),
+        ("httpie-auth", "http -a bob:hunter2abc h.example"),
+        ("url-userinfo", "https://bob:hunter2abc@h.example/x"),
+        ("email", "hunter2abc@h.example"),
+    ];
+
+    /// WP-159 round 2, B1: an invisible character before a rule's word is
+    /// the boundary the rule needs; the copy without it glues the word to
+    /// the one before, so the redaction reads the text as given too. Every
+    /// path through the redactor masks it, the character stays where it
+    /// was (outside the match), and a second pass changes nothing.
+    #[test]
+    fn an_invisible_character_before_a_secret_is_a_boundary() {
+        let r = Redactor::builtin();
+        let secret = |t: &str| t.contains("hunter2") || t.contains("ABCDEFGHIJ");
+        for (rule, plain) in BOUNDARY_RULES {
+            assert!(!secret(&r.redact(&format!("x {plain}"))), "{plain}");
+            for c in ['\u{200B}', '\u{FE0F}', '\u{3164}', '\u{E0041}'] {
+                let text = format!("x{c}{plain}");
+                let shown = format!("U+{:04X} {plain}", c as u32);
+                let once = r.redact(&text);
+                assert!(!secret(&once), "{shown}: {once}");
+                // the copy alone misses it, but for the two rules whose
+                // match starts at any word (the copy masks `xhttps://…` and
+                // `xhunter2…@…` whole, the character with it)
+                let copy = r.passes(&reading_copy(&text), false, None);
+                if matches!(rule, "url-userinfo" | "email") {
+                    assert!(!secret(&copy), "{shown}: {copy}");
+                } else {
+                    assert!(secret(&copy), "{shown}: {copy}");
+                    assert!(once.starts_with(&format!("x{c}")), "{shown}: {once}");
+                }
+                assert_eq!(r.redact(&once), once, "{shown}");
+                let kept = r.redact_keeping_lines(&format!("{text}\nok"));
+                assert!(!secret(&kept) && kept.ends_with("\nok"), "{shown}: {kept}");
+                assert!(r.matching_rules(&text).contains(&rule), "{shown}");
+                let lines = r.matching_rules_by_line(&format!("ok\n{text}"));
+                assert!(
+                    lines[0].is_empty() && lines[1].contains(&rule),
+                    "{shown}: {lines:?}"
+                );
+            }
+        }
+    }
+
+    /// WP-159 round 2, N1: a run at the very start of the text, right
+    /// before a masked match, goes with the match.
+    #[test]
+    fn a_run_at_the_start_before_a_match_goes_with_it() {
+        let r = Redactor::builtin();
+        assert_eq!(r.redact("\u{200B}token=abc"), "token=‹redacted›");
+        assert_eq!(
+            r.redact("\u{200B}\u{FE0F}token=abc x\u{200D}"),
+            "token=‹redacted› x\u{200D}"
+        );
+    }
+
+    /// WP-159 round 2: a control character that is no white space splits
+    /// no secret either (`to<BS>ken=`, `ghp_0123<ESC>4567…`); the copy the
+    /// rules read leaves it out, and a text without a secret keeps it. Tab,
+    /// line ends, VT, FF and NEL stay in the copy: the rules read them as
+    /// white space.
+    #[test]
+    fn a_control_character_splits_no_secret() {
+        let r = Redactor::builtin();
+        for c in [
+            '\u{8}', '\u{0}', '\u{7}', '\u{9B}', '\u{1B}', '\u{7F}', '\u{1F}',
+        ] {
+            let shown = format!("U+{:04X}", c as u32);
+            assert_eq!(
+                r.redact(&format!("a to{c}ken=hunter2abc b")),
+                "a token=‹redacted› b",
+                "{shown}"
+            );
+            assert_eq!(
+                r.redact(&format!("x ghp_0123{c}456789abcdefghijABCDEFGHIJ012345 y")),
+                "x ‹redacted› y",
+                "{shown}"
+            );
+            let plain = format!("a{c}b \u{1B}[0m ok");
+            assert_eq!(r.redact(&plain), plain, "{shown}");
+            assert_eq!(
+                r.matching_rules(&format!("to{c}ken=hunter2abc")),
+                ["token-assignment"],
+                "{shown}"
+            );
+        }
+        for c in ['\t', '\n', '\r', '\u{B}', '\u{C}', '\u{85}'] {
+            assert!(!hides_from_rules(c), "U+{:04X}", c as u32);
+        }
+        // a CRLF line continued by `\`: the `\r` is read
+        let crlf = "mysql -u root \\\r\n  -phunter2secret\r\nok";
+        assert!(!r.redact(crlf).contains("hunter2"));
+        assert!(!r.redact(&format!("\u{7}{crlf}")).contains("hunter2"));
     }
 }

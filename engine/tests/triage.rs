@@ -430,6 +430,49 @@ fn edit(env: &Env, id: &str, change: impl FnOnce(&mut Value)) {
     std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap()).unwrap();
 }
 
+/// A case folder or the ledger that is a link or a file is refused before
+/// the first item is written (WP-168): exit 1, nothing written in the
+/// logbook or through the link, the proposal not applied.
+#[test]
+fn apply_refuses_a_linked_case_folder_or_ledger() {
+    for (rel, file) in [
+        ("work/completed", false),
+        ("work/completed", true),
+        ("ledger", false),
+        ("ledger", true),
+    ] {
+        let env = Env::new(Snapper::Missing);
+        let lb = fixture_copy(&env);
+        let id = stored(&env, &lb, &three_items());
+        let folder = lb.join(rel);
+        let outside = env.tmp.path().join("outside-folder");
+        copy_dir(&folder, &outside);
+        std::fs::remove_dir_all(&folder).unwrap();
+        if file {
+            std::fs::write(&folder, "not a folder\n").unwrap();
+        } else {
+            std::os::unix::fs::symlink(&outside, &folder).unwrap();
+        }
+        let before = common::tree(&lb);
+        let outside_before = common::tree(&outside);
+        let stored_text = read(&file_of(&env, &id));
+
+        let v = run(&env, &lb, &["drift", "apply", &id], 1);
+        let what = if file {
+            "no directory"
+        } else {
+            "a symbolic link"
+        };
+        assert!(
+            message(&v).starts_with(&format!("{rel} is {what}, not a folder of the logbook")),
+            "{rel}: {v}"
+        );
+        assert!(common::tree(&lb) == before, "{rel}");
+        assert!(common::tree(&outside) == outside_before, "{rel}");
+        assert_eq!(read(&file_of(&env, &id)), stored_text);
+    }
+}
+
 #[test]
 fn apply_resolves_as_the_user_holds_crises_back_and_is_idempotent() {
     let env = Env::new(Snapper::Missing);

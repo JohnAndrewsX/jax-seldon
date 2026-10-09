@@ -49,7 +49,7 @@ fn watch(ctx: &Context, value: &str) -> Result<Output> {
     let key = dirs.display(&path);
     if key
         .chars()
-        .any(|c| c.is_control() || crate::import::is_direction_or_format(c))
+        .any(|c| c.is_control() || crate::redact::is_invisible(c))
         || key.chars().count() > SUBJECT_MAX
     {
         return Err(Error::user(format!(

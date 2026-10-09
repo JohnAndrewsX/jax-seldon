@@ -51,7 +51,7 @@ ENGINE = [
     # the path rules
     ("redaction not asked", RECENT, "        && redactor.redact(&key) == key;", ";"),
     ("format characters pass", RECENT,
-     ".any(|c| c.is_control() || crate::import::is_direction_or_format(c))", ".any(|c| c.is_control())"),
+     ".any(|c| c.is_control() || crate::redact::is_invisible(c))", ".any(|c| c.is_control())"),
     ("dot folders pass", RECENT, '.all(|c| !c.is_empty() && c != "." && c != "..")', ".all(|_| true)"),
     ("paths outside ~/.config pass", RECENT, 'let ok = key.starts_with("~/.config/")', 'let ok = key.starts_with("~/")'),
     # the index side
@@ -83,7 +83,7 @@ ENGINE = [
     ("skipPaths accepted", CMD, "if recent::skipped(&skip, &dirs.home, &path) {", "if false {"),
     ("covered not seen", CMD, ".find(|w| dirs.expand_config(w).is_some_and(|w| path.starts_with(w)))", ".find(|_| false)"),
     ("format characters accepted", CMD,
-     ".any(|c| c.is_control() || crate::import::is_direction_or_format(c))", ".any(|c| c.is_control())"),
+     ".any(|c| c.is_control() || crate::redact::is_invisible(c))", ".any(|c| c.is_control())"),
     ("long paths accepted", CMD, "        || key.chars().count() > SUBJECT_MAX\n", "\n"),
     ("no rebuild", CMD, "    crate::index::rebuild_if_initialised(ctx);\n", ""),
     ("no lock", CMD, "    let lock = ctx.lock()?;", "    let lock = ();"),

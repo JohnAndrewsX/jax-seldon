@@ -27,6 +27,13 @@ import "../Model.js" as Model
 // move, Enter opens the yesterday row or a crisis's default form, `n` the
 // journal field, `i` the New case field, `e` today's journal in the
 // editor, Esc a shown form.
+//
+// Before the logbook exists (status notInitialised, WP-138) the list shows
+// what the machine remembers on its own (Service.preview, `seldon preview
+// --json`): PACKAGES, one row per pacman transaction, and EDITED CONFIG
+// FILES, one row per file under ~/.config; the overview's setup slot holds the card
+// that says what that is without memory and **Set up Seldon**, the
+// notInitialised banner's terminal fix (WP-119's setup card replaces it).
 Section {
   id: root
 
@@ -36,7 +43,13 @@ Section {
   property string sentIntent: ""
 
   readonly property var today: root.service ? root.service.deskToday : null
-  readonly property var rows: Model.todayRows(root.today, root.yesterdayOpen, root.searchText)
+  // WP-138: the preview while the logbook is not initialised (null in dev
+  // mode, where the engine never runs)
+  readonly property var preview: root.service && root.service.status === "notInitialised" ? root.service.preview : null
+  readonly property bool setupFixable: !!root.service && !!root.service.banner
+    && root.service.banner.status === "notInitialised"
+  readonly property var rows: root.preview ? Model.previewRows(root.preview, root.searchText)
+    : Model.todayRows(root.today, root.yesterdayOpen, root.searchText)
   readonly property int cursor: root.rowIndex(root.selectedId)
   readonly property var current: root.cursor >= 0 ? root.rows[root.cursor] : null
   // A crisis stays shown once resolved here (it leaves NEEDS YOU), with the
@@ -116,6 +129,11 @@ Section {
     return true
   }
 
+  // Set up Seldon (WP-138): the notInitialised banner's terminal fix.
+  function setUp() {
+    return root.setupFixable && root.service.fix("terminal", "status")
+  }
+
   function back() {
     return root.eventShown && eventDetail.back()
   }
@@ -142,6 +160,13 @@ Section {
       headline: root.today ? root.today.headline : "",
       cases: root.today ? root.today.cases.map(function(c) { return c.id }) : [],
       setupSlot: setupSlot.visible,
+      preview: {
+        shown: previewCard.visible,
+        summary: root.preview ? Model.previewSummary(root.preview) : "",
+        setUp: setupButton.enabled,
+        groups: root.rows.filter(function(r, i) { return i === 0 || root.rows[i - 1].group !== r.group })
+          .map(function(r) { return r.groupTitle || "" })
+      },
       journal: {
         enabled: journal.enabledHere,
         cases: journal.options.length,
@@ -183,7 +208,7 @@ Section {
     title: "Today"
     model: root.rows
     currentIndex: root.cursor
-    emptyText: root.index ? "" : "No index to show"
+    emptyText: root.preview ? Model.previewSummary(root.preview) : root.index ? "" : "No index to show"
 
     // The date beside the day's state; *Open in editor* follows it on the
     // same line when there is room, else under it.
@@ -306,7 +331,8 @@ Section {
 
       width: ListView.view.width
       header: index === 0 || (root.rows[index - 1] || {}).group !== modelData.group
-        ? (modelData.group === "needs" ? "Needs you" : "Journal") : ""
+        ? (modelData.groupTitle !== undefined ? modelData.groupTitle : modelData.group === "needs" ? "Needs you" : "Journal")
+        : ""
       title: modelData.title
       meta: modelData.meta
       aside: modelData.aside
@@ -346,17 +372,72 @@ Section {
     onBackRequested: if (root.desk) root.desk.back()
 
     // WP-119's setup card (engine → logbook → snapshots) takes this slot
-    // while Seldon is not recording; empty until then.
+    // while Seldon is not recording; until then it holds the preview card
+    // before the logbook exists (WP-138).
     Item {
       id: setupSlot
       objectName: "todaySetupSlot"
       width: parent.width
-      visible: children.length > 0
-      implicitHeight: childrenRect.height
+      visible: !!root.preview
+      implicitHeight: root.preview ? previewCard.implicitHeight : 0
+
+      Column {
+        id: previewCard
+        objectName: "todayPreview"
+        width: parent.width
+        spacing: Style.spacing.md
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: Model.PREVIEW_TITLE
+          color: root.foreground
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.title
+          font.bold: true
+        }
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: Model.PREVIEW_LEAD
+          color: root.foreground
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: root.preview ? Model.previewSummary(root.preview) : ""
+          color: root.preview && root.preview.ok === false && root.preview.pending !== true ? Color.urgent : Color.muted
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        Button {
+          id: setupButton
+          objectName: "todaySetUp"
+          text: Model.PREVIEW_SETUP
+          tooltipText: "Opens a terminal that creates your logbook and starts recording"
+          enabled: root.setupFixable
+          selected: true
+          bordered: true
+          foreground: root.foreground
+          fontFamily: Style.font.family
+          fontSize: Style.font.caption
+          verticalPadding: Style.spacing.xs
+          onClicked: root.setUp()
+        }
+      }
     }
 
     Text {
       width: parent.width
+      visible: !root.preview
       textFormat: Text.PlainText
       text: root.today ? root.today.headline : ""
       color: root.foreground

@@ -1,6 +1,6 @@
 //! `seldon doctor`: engine, config, logbook, cases, ledger, fences, rules,
 //! rollbacks, workpieces, collectors, state, skills, hooks, omarchy,
-//! snapper and git checks (SPEC-ENGINE §3).
+//! snapper, pacman and git checks (SPEC-ENGINE §3).
 //! Read-only: no lock, no write; never runs anything with privileges.
 //!
 //! Every check is `ok`, `degraded` (works with less, e.g. snapper without
@@ -19,6 +19,7 @@ use super::capture::{Binding, PendingReset, pending_reset};
 use super::index::duplicate_cases;
 use super::{Context, Output};
 use crate::collectors::config::{Manifest, OwnWrites};
+use crate::collectors::pacman::{LockState, lock_state};
 use crate::collectors::{Cursors, Lost, ShownMessages, Sources, cursors_file, snapper};
 use crate::config::{Config, LogbookSource};
 use crate::error::{Error, Exit, Result};
@@ -239,6 +240,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     checks.push(hooks_check);
     checks.push(check_omarchy(&effective, &shown));
     checks.push(check_snapper(&effective, &shown));
+    checks.push(check_pacman(&effective));
     checks.push(check_git(&effective, logbook.as_ref()));
     // ADR-0028 §4c, §4d: rows of config.toml, last (earlier rows keep
     // their places)
@@ -1590,6 +1592,51 @@ pub fn check_snapper(config: &Config, shown: &ShownMessages) -> Check {
             Status::Degraded,
             format!("snapper failed: {}", shown.show(&describe(other))),
         ),
+    }
+}
+
+/// pacman's `db.lck` (WP-160): absent or from this boot → ok; older than
+/// the current boot → degraded, with how to remove it. Looks at the lock's
+/// metadata and the boot time only; the fix is text, never run.
+fn check_pacman(config: &Config) -> Check {
+    if !config.collectors.pacman {
+        return Check::new("pacman", Status::Ok, "collector disabled in config.toml");
+    }
+    let sources = Sources::from_env();
+    let lock = &sources.pacman_db_lock;
+    match lock_state(lock, &sources.proc_stat) {
+        LockState::Absent => Check::new("pacman", Status::Ok, "no db.lck: pacman is not running"),
+        LockState::Held { boot: Some(_) } => Check::new(
+            "pacman",
+            Status::Ok,
+            "db.lck from this boot: taken as a running pacman; its transaction is recorded when it ends",
+        ),
+        LockState::Held { boot: None } => Check::new(
+            "pacman",
+            Status::Ok,
+            "db.lck present, boot time not known: taken as a running pacman; its transaction is recorded when the lock is gone",
+        ),
+        LockState::Stale { modified, boot } => {
+            let at = |t: std::time::SystemTime| {
+                chrono::DateTime::<chrono::Local>::from(t)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            };
+            Check::new(
+                "pacman",
+                Status::Degraded,
+                format!(
+                    "stale {} from {}, before this boot ({}): a pacman was killed or lost its power. pacman refuses to run until the lock is gone; Seldon records a transaction it left open as unfinished",
+                    lock.display(),
+                    at(modified),
+                    at(boot),
+                ),
+            )
+            .fix(format!(
+                "make sure no pacman, yay or omarchy update is running, then: sudo rm {}",
+                lock.display()
+            ))
+        }
     }
 }
 

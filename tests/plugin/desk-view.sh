@@ -485,6 +485,8 @@ expect uninit 2 .view.noticesFolded true
 expect uninit 2 '[.texts[] | select(. == "Sets up your logbook and starts recording; the terminal asks a few questions, no password.")] | length' 0
 shows uninit 2 "▸ Create your logbook"
 expect uninit 3 .view.noticesFolded false
+# dev mode runs no engine: no preview (WP-138)
+expect uninit 1 '[.view.sectionView.preview.shown, .view.sectionView.preview.summary] | map(tostring) | join(",")' "false,"
 clean_log uninit
 
 # 7c. A plugin updated under a running shell (WP-090): the restart notice
@@ -2364,6 +2366,57 @@ expect uninit-sections 7 '.view.sectionView.rows | length' 0
 shows uninit-sections 7 "No index to show"
 check "uninit-sections: no open, no decide" "$(grep -c -E '^(open|decide) ' "$work/home-uninit-sections/argv.log" 2>/dev/null || true)" 0
 clean_log uninit-sections "seldon capture exit 3: logbook not initialised"
+
+# 10g2. Before init (WP-138): Today lists what the machine remembers on its
+#       own — `seldon preview --json`, in its own process beside the queue —
+#       one row per pacman transaction and per file edited under ~/.config,
+#       and the card says what that is without memory; Set up Seldon opens
+#       the init terminal (the notInitialised banner's fix) and steps aside.
+#       The state index already says notInitialised before the engine has
+#       answered anything.
+mkdir -p "$work/home-preview/.local/state/seldon"
+cp "$fx/index-variants/not-initialised.json" "$work/home-preview/.local/state/seldon/index.json"
+run preview-uninit "" 1920x1080 "summon;wait:sectionView.preview.summary^=The last;clickName:todaySetUp" \
+  HOME="$work/home-preview" FAKE_SELDON_MODE=uninit FAKE_SELDON_PREVIEW="$fx/preview.sample.json" \
+  HARNESS_RECORD="$work/preview.record"
+expect preview-uninit 2 "[.view.status, .view.section, $tv.preview.shown, $tv.preview.setUp, $tv.rows] | map(tostring) | join(\",\")" \
+  "notInitialised,today,true,true,10"
+expect preview-uninit 2 "$tv.preview.groups | join(\",\")" "Packages · last 7 days,Edited config files"
+expect preview-uninit 2 "$tv.preview.summary" "The last 7 days: 6 pacman transactions and 4 files edited under ~/.config. The newest are shown."
+for text in "Before Seldon" "This is without memory: no who, no why, gone when the logs rotate. Set up Seldon?" \
+  "Set up Seldon" "PACKAGES · LAST 7 DAYS" "Upgraded linux, linux-headers, mesa and 11 more" \
+  "Installed qt6-websockets, obs-studio" "failed" "Mon 5 Oct 21:14 · pacman -Syu --noconfirm" \
+  "EDITED CONFIG FILES" "~/.config/alacritty/alacritty.toml" "Yesterday 21:15"; do
+  shows preview-uninit 2 "$text"
+done
+expect preview-uninit 2 '[.texts[] | select(. == "No index to show")] | length' 0
+expect preview-uninit 3 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+init_script=$(node -e '
+  const fs = require("fs"), vm = require("vm"), M = {}
+  vm.createContext(M)
+  vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), M)
+  process.stdout.write(M.INIT_SCRIPT)' "$root/plugin/Model.js")
+deadline=$((SECONDS + 15))
+until [[ -s $work/preview.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
+check "preview-uninit: Set up Seldon opened the init terminal" \
+  "$(cat "$work/preview.record" 2>/dev/null || true)" \
+  "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$init_script" --)"
+check "preview-uninit: preview ran in its own process, with the fixed argv" \
+  "$(sort -u "$work/home-preview/preview.log")|$(grep -c '^preview' "$work/home-preview/argv.log" || true)" "preview --json |0"
+clean_log preview-uninit "seldon (capture|agent) exit 3: logbook not initialised"
+
+# 10g3. A preview that fails says so in the list and on the card; Set up
+#       Seldon stays. No state index, and the probe held 3 s
+#       (FAKE_SELDON_VERSION_DELAY; the harness waits for it), so the desk
+#       opens while the first capture still runs: the status becomes
+#       notInitialised only at its exit 3, which asks for the preview.
+mkdir -p "$work/home-preview-failed"
+run preview-failed "" 1920x1080 "summon;wait:sectionView.preview.summary=cannot read the preview" \
+  HOME="$work/home-preview-failed" FAKE_SELDON_MODE=uninit FAKE_SELDON_PREVIEW_EXIT=2 FAKE_SELDON_VERSION_DELAY=3
+expect preview-failed 2 "[$tv.preview.shown, $tv.preview.setUp, $tv.rows] | map(tostring) | join(\",\")" "true,true,0"
+expect preview-failed 2 '[.texts[] | select(. == "cannot read the preview")] | length' 2
+# the desk asks for the agent sessions before it knows the logbook is missing
+clean_log preview-failed "seldon (capture|agent) exit 3: logbook not initialised|seldon preview exit 2: cannot read the preview"
 
 # 10h. The stacked layout (a window under 770 px; WP-121's case 6 for these
 #      sections): the list; Enter shows the detail with its back row and the

@@ -121,6 +121,7 @@ impl Bench {
         let sources = Sources {
             pacman_log: fixture("logs/pacman.log"),
             pacman_db_lock: scratch.path("db.lck"),
+            proc_stat: scratch.path("proc-stat"),
             snapper: scratch.stub_cat("snapper", &fixture("logs/snapper.json")),
             snapshots: scratch.path("no-snapshots"),
             omarchy_version: scratch.stub("omarchy-version", "echo 4.0.4-1"),
@@ -129,6 +130,7 @@ impl Bench {
             plugins_dir: Some(scratch.path("plugins")),
             theme_file: Some(scratch.path("theme.name")),
             omarchy_path: scratch.path("omarchy"),
+            etc_dir: scratch.path("etc"),
         };
         Bench {
             ledger: Ledger::at(scratch.path("logbook/ledger"), Redactor::builtin()),

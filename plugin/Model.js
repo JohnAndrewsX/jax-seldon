@@ -656,6 +656,9 @@ function validateArgs(args) {
   var withText = free !== null
   var only = function(i) { return n === i + 1 && a[i] === "--only" }
   switch (a[0]) {
+  case "preview":
+    // WP-138, ADR-0047: read-only, before the logbook exists; nothing else
+    return n === 1 && json && !withText ? "" : "preview must be: preview --json"
   case "--version":
   case "status":
   case "rebuild":
@@ -1645,11 +1648,11 @@ function agentNewArgs(intent) {
 
 var IMPORT_PATH_MAX = 4096
 // The engine's `bad_path_char`, one set (WP-102b round 2): control
-// characters, direction and format characters (the engine's
-// `is_direction_or_format`, WP-140's set with the tags) and the line and
-// paragraph separators. Both sides are tested against
+// characters, invisible characters (the engine's `redact::is_invisible`:
+// WP-140's set with the tags, WP-159's fillers and variation selectors)
+// and the line and paragraph separators. Both sides are tested against
 // fixtures/bad-path-chars.txt.
-var BAD_PATH_CHARS = /[\u0000-\u001f\u007f-\u009f\u00ad\u0600-\u0605\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e007f}]/u
+var BAD_PATH_CHARS = /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff9-\ufffb\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u
 
 // "" when `path` may go to the engine, else why not (plain text).
 function importPathError(path) {
@@ -5990,4 +5993,148 @@ function withSession(detail, sessions) {
     : "working now" + (s.actor !== "" ? " · " + s.actor : "") + (s.workspace !== "" ? " · workspace " + s.workspace : "")
   out.kv = detail.kv.map(function(kv) { return kv[0] === "Agent" ? ["Agent", line] : kv })
   return out
+}
+
+// ---- Before init: the preview (WP-138, ADR-0047) -------------------------
+
+// `seldon preview --json`: read-only, its own process beside the queue (as
+// `doctor` and `agent sessions`), run while the logbook is not initialised:
+// when that status begins and when the desk opens, at most every
+// PREVIEW_REFRESH_MS. Its JSON is schema/preview.schema.json.
+var PREVIEW_ARGS = ["preview", "--json"]
+var PREVIEW_REFRESH_MS = 5 * 60 * 1000
+var PREVIEW_ROWS = 200
+var PREVIEW_FILES = 80
+var PREVIEW_PACKAGES = 10
+var PREVIEW_TITLE = "Before Seldon"
+var PREVIEW_LEAD = "This is without memory: no who, no why, gone when the logs rotate. Set up Seldon?"
+var PREVIEW_SETUP = "Set up Seldon"
+var PREVIEW_KINDS = { install: "Installed", remove: "Removed", upgrade: "Upgraded", downgrade: "Downgraded",
+  reinstall: "Reinstalled" }
+var PREVIEW_STATUSES = ["failed", "interrupted", "unfinished"]
+
+function previewEmpty(ok, text) {
+  return { ok: ok, pending: false, text: text, days: 0, generatedAt: "", root: "", transactions: [], files: [],
+    truncated: false, pacmanNote: "", filesNote: "" }
+}
+
+// One line of user content (names, paths, a command line): a string of at
+// most `max` characters, else "".
+function previewText(value, max) {
+  return typeof value === "string" && value !== "" && value.length <= max ? value : ""
+}
+
+function previewPackage(p) {
+  if (!isObject(p) || PREVIEW_KINDS[p.kind] === undefined) return null
+  var name = previewText(p.name, 512)
+  if (name === "") return null
+  return { kind: p.kind, name: name }
+}
+
+function previewTransaction(t) {
+  if (!isObject(t) || typeof t.at !== "string" || !DATE_TIME.test(t.at)) return null
+  var total = Number(t.count)
+  if (!isFinite(total) || total < 1 || Math.floor(total) !== total) return null
+  var kinds = Array.isArray(t.kinds) ? t.kinds.filter(function(k) { return PREVIEW_KINDS[k] !== undefined }) : []
+  var packages = Array.isArray(t.packages) ? t.packages.slice(0, PREVIEW_PACKAGES).map(previewPackage)
+    .filter(function(p) { return p !== null }) : []
+  if (kinds.length === 0 || packages.length === 0) return null
+  return { at: t.at, count: total, kinds: kinds, packages: packages, command: previewText(t.command, 256),
+    status: PREVIEW_STATUSES.indexOf(t.status) !== -1 ? t.status : "" }
+}
+
+function previewFile(f) {
+  if (!isObject(f) || typeof f.modified !== "string" || !DATE_TIME.test(f.modified)) return null
+  var p = previewText(f.path, 4096)
+  return p === "" ? null : { path: p, modified: f.modified }
+}
+
+// The answer, checked: only what the schema allows is kept, the bounds are
+// applied again (200 rows, files first at most 80, 10 packages listed), a
+// row the plugin cannot read is dropped. { ok, pending, text, days,
+// generatedAt, root, transactions, files, truncated, pacmanNote, filesNote }.
+function previewResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return previewEmpty(false, engineError(stdoutText, stderrText, exitCode))
+  var d = parseJson(stdoutText)
+  if (!d || d.contractVersion !== CONTRACT_VERSION || !isObject(d.pacman) || !isObject(d.files))
+    return previewEmpty(false, "The engine's preview could not be read.")
+  var days = Number(d.days)
+  var out = previewEmpty(true, "")
+  out.days = isFinite(days) && days >= 1 && days <= 7 ? Math.floor(days) : 7
+  out.generatedAt = typeof d.generatedAt === "string" && DATE_TIME.test(d.generatedAt) ? d.generatedAt : ""
+  out.root = previewText(d.files.root, 1024) || "~/.config"
+  var files = d.files.ok === true && Array.isArray(d.files.items) ? d.files.items.map(previewFile)
+    .filter(function(f) { return f !== null }) : []
+  out.files = files.slice(0, PREVIEW_FILES)
+  var txs = d.pacman.ok === true && Array.isArray(d.pacman.transactions) ? d.pacman.transactions.map(previewTransaction)
+    .filter(function(t) { return t !== null }) : []
+  out.transactions = txs.slice(0, PREVIEW_ROWS - out.files.length)
+  out.truncated = d.truncated === true || files.length > out.files.length || txs.length > out.transactions.length
+  out.pacmanNote = d.pacman.ok !== true ? (previewText(d.pacman.message, 1024) || "pacman's log could not be read.")
+    : d.pacman.partial === true ? "pacman's log was read only part of the way back." : ""
+  out.filesNote = d.files.ok !== true ? (previewText(d.files.message, 1024) || "The files could not be listed.")
+    : d.files.partial === true ? "The search stopped early: some files may be missing." : ""
+  return out
+}
+
+// "Upgraded linux, linux-headers, mesa and 11 more"; "Changed …" for a
+// transaction of several kinds.
+function previewTxTitle(t) {
+  var verb = t.kinds.length === 1 ? PREVIEW_KINDS[t.kinds[0]] : "Changed"
+  var names = t.packages.slice(0, 3).map(function(p) { return p.name })
+  var more = t.count - names.length
+  return verb + " " + names.join(", ") + (more > 0 ? " and " + more + " more" : "")
+}
+
+// "Mon 5 Oct 21:14", "Today 09:30", from the preview's own date.
+function previewWhen(ts, today) {
+  return (dayLabel(dayOf(ts), today) + " " + clockTime(ts)).trim()
+}
+
+// The Today list while the logbook is not initialised: PACKAGES (one row
+// per transaction, newest first) and EDITED CONFIG FILES (one row per file
+// under ~/.config); a group without rows says so, a note says what was not read. The
+// search filters the transactions and files.
+function previewRows(p, search) {
+  if (!isObject(p) || p.ok !== true) return []
+  var today = dayOf(p.generatedAt)
+  var pkgTitle = "Packages · last " + plural(p.days, "day", "days")
+  // the header is shown in capitals (GroupedRow): no path in it
+  var fileTitle = "Edited config files"
+  var rows = []
+  var i
+  var row = function(id, type, group, groupTitle, title, meta, aside) {
+    return { id: id, type: type, title: title, meta: meta, aside: aside, stripe: "", group: group, groupTitle: groupTitle,
+      search: title + " " + meta }
+  }
+  for (i = 0; i < p.transactions.length; i++) {
+    var t = p.transactions[i]
+    var r = row("tx:" + i, "preview-tx", "packages", pkgTitle, previewTxTitle(t),
+      [previewWhen(t.at, today), t.command].filter(function(x) { return x !== "" }).join(" · "), t.status)
+    // every listed package is found, not only the title's three
+    r.search += " " + t.packages.map(function(pk) { return pk.name }).join(" ")
+    rows.push(r)
+  }
+  if (p.pacmanNote !== "") rows.push(row("note:packages", "note", "packages", pkgTitle, p.pacmanNote, "", ""))
+  else if (p.transactions.length === 0) rows.push(row("empty:packages", "empty", "packages", pkgTitle,
+    "No package changed in these days.", "", ""))
+  for (i = 0; i < p.files.length; i++)
+    rows.push(row("file:" + i, "preview-file", "files", fileTitle, p.files[i].path, previewWhen(p.files[i].modified, today), ""))
+  if (p.filesNote !== "") rows.push(row("note:files", "note", "files", fileTitle, p.filesNote, "", ""))
+  else if (p.files.length === 0) rows.push(row("empty:files", "empty", "files", fileTitle,
+    "No file edited in these days.", "", ""))
+  var q = String(search || "").trim().toLowerCase()
+  if (q === "") return rows
+  return rows.filter(function(r) {
+    return (r.type === "preview-tx" || r.type === "preview-file") && r.search.toLowerCase().indexOf(q) !== -1
+  })
+}
+
+// The card's line under the lead: what was found, or why nothing is shown.
+function previewSummary(p) {
+  if (!isObject(p) || (p.pending === true && p.ok !== true)) return "Reading what this machine remembers…"
+  if (p.ok !== true) return p.text
+  return "The last " + plural(p.days, "day", "days") + ": " + plural(p.transactions.length, "pacman transaction",
+    "pacman transactions") + " and " + plural(p.files.length, "file", "files") + " edited under " + p.root + "."
+    + (p.truncated ? " The newest are shown." : "")
 }

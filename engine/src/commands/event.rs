@@ -266,6 +266,9 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
         meta.to.get_or_insert_with(|| subject.to_string());
         meta.from = Some(from);
     }
+    if args.case_id.is_some() {
+        cases::checked_folders(&logbook)?;
+    }
     let mut case_file: Option<CaseFile> = args
         .case_id
         .as_deref()

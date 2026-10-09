@@ -366,7 +366,7 @@ pub fn shown_path(dirs: &Dirs, redactor: &Redactor, path: &Path) -> Option<Strin
         && key.chars().count() <= SUBJECT_MAX
         && !key
             .chars()
-            .any(|c| c.is_control() || crate::import::is_direction_or_format(c))
+            .any(|c| c.is_control() || crate::redact::is_invisible(c))
         && redactor.redact(&key) == key;
     ok.then_some(key)
 }

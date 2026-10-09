@@ -502,6 +502,18 @@ fn resolve(
     // the new case and the ledger get the redacted intent or reason
     let action = action.redacted(&Redactor::for_config(&config)?);
     let lock = ctx.lock()?;
+    // the folders a resolution writes into, before the index reads them
+    // (WP-168)
+    logbook.checked_dir(crate::ledger::LEDGER_DIR)?;
+    if !matches!(action, Action::Dismiss { .. }) {
+        cases::checked_folders(&logbook)?;
+    }
+    if let Action::Explain(Explain {
+        area: Some(area), ..
+    }) = &action
+    {
+        logbook.checked_dir(format!("areas/{area}"))?;
+    }
     let built = index::derive(ctx, &config, &logbook)?;
     warn(&built);
     // a link names an existing case, also when there is nothing to resolve
@@ -707,7 +719,7 @@ pub(super) fn write_resolution(
                         .transpose()?
                         .flatten();
                     let text = crate::model::render_new(&file.case, &file.doc.body);
-                    write_new(&file.path, &text)?;
+                    write_new(logbook, &file.path, &text)?;
                 }
                 _ => {
                     file.save(logbook)?;

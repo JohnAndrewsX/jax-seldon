@@ -22,9 +22,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Old ledger lines are not rewritten and still index. A 0.1.x engine
   skips the new kinds as unreadable lines: going back is not supported
   (WP-120).
+- **Linked logbook folders refuse writes (WP-168).** A folder of the
+  logbook that the engine writes into (`ledger/`, `journal/`,
+  `decisions/`, `work/queued|active|completed/`, `areas/<area>/`,
+  `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/`, …) must be a
+  real folder inside the logbook. When it is a symbolic link or a file,
+  every command that would write there stops with exit 1 and names it
+  ("ledger is a symbolic link, not a folder of the logbook; make it a
+  folder and run the command again"), and nothing is written; before,
+  the write went through the link to wherever it pointed. With a linked
+  `ledger/` that includes `seldon log`, `index` and `status` (the
+  plugin's refresh shows the error). Fix: make it a real folder again —
+  move the link's contents into a folder of that name; a logbook kept on
+  another disk goes there whole (the logbook folder itself may be a
+  link, or a bind mount). Reading through a
+  link is unchanged, and the logbook folder itself may still be a link.
+  A `.seldon` that is a file now means "not initialised" (exit 3).
 
 ### Engine
 
+- **No secret hides behind an invisible or control character
+  (WP-159, ADR-0048).** Every redaction now reads the text twice: without
+  its invisible characters and lone control characters (so
+  `to<U+200B>ken=…`, `Authorization: Bearer<U+3164> …`, `to<BS>ken=…` or
+  a GitHub token split by a variation selector is masked), and as given
+  (so `x<U+200B>sk-…` is masked too), in a note, an imported task, a
+  closing commit, `plan show` and every event, as its plain form is. A
+  text with no secret is written as it was, its joiners and emoji
+  selectors included. The invisible set grows by the fillers (U+034F, U+115F,
+  U+1160, U+17B4, U+17B5, U+3164, U+FFA0), the variation selectors
+  (U+180B–U+180D, U+180F, U+FE00–U+FE0F, U+E0100–U+E01EF) and U+2065:
+  a task file's path may not hold them, the desk's texts drop them, and
+  `plan show --json` marks them. A `[redaction] patterns` entry that
+  names one of them matches only the text as given now.
+- **Start stays off for a hand-edited emoji (WP-159).** An imported case
+  whose Intent you edited by hand with an emoji and its U+FE0F (or that
+  was imported before this release with one) now counts the selector as
+  a hidden character: the desk keeps Start off and points to the
+  terminal. It fails safe; start such a case with `seldon plan start`.
+- **Boot configuration (WP-164).** The config collector now hashes the
+  boot configuration, whatever `watchPaths` says:
+  `/etc/mkinitcpio.conf`, the files in `/etc/mkinitcpio.conf.d/` and
+  `/etc/mkinitcpio.d/`, `/etc/default/limine`,
+  `/etc/limine-entry-tool.conf` and the files in
+  `/etc/limine-entry-tool.d/`. A change shows up at the next capture,
+  also when no agent made it; only hashes are recorded, never the
+  content. It is quiet attention, not a crisis (add the paths to
+  `[drift] alwaysRedPaths` for one). A file that cannot be read is
+  hashed from its size, times and inode (`meta.hashBasis = "stat"`).
+  `/boot/limine*.conf` is left out: only root can open `/boot` on
+  Omarchy, and the Limine tools rewrite it on every snapshot and kernel
+  update. The `.pacnew` files pacman leaves there are not hashed (the
+  pacman note covers them). The first capture after the update takes the
+  files in without events. Opt out with `[redaction] skipPaths`.
+- **`seldon preview` (WP-138, ADR-0047).** Before you set up Seldon:
+  what your machine remembers of the last 7 days on its own — pacman's
+  transactions and the files edited under `~/.config`, by modification
+  time only (no content; caches, browser profiles, databases, logs and
+  your `skipPaths` left out). Read-only: it needs no logbook and writes
+  nothing. `--days` 1–7, `--json` for the desk.
 - **Recently edited, not watched (WP-139, ADR-0046).** Each capture that
   runs the config collector also looks at `~/.config` for files modified
   in the last 7 days outside your watch paths — a terminal's config,
@@ -67,6 +123,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lost), each of its package events records `meta.txStatus`; the month's
   ledger view adds `· transaction interrupted`. Lines written before keep
   none. `seldon event --meta txStatus=…` is refused.
+- **A lock left by a dead pacman no longer hides its transaction
+  (WP-160).** After a power loss or a killed pacman,
+  `/var/lib/pacman/db.lck` stays. A lock older than the current boot is
+  now known as stale: the transaction it left open is recorded at once,
+  marked `unfinished`, instead of waiting until you delete the lock.
+  `seldon doctor` has a `pacman` row that names a stale lock and how to
+  remove it. Seldon only looks at the lock, never removes it.
 - **`seldon decide accept ADR-NNNN` (ADR-0040).** Accepts a proposed
   decision: `status: accepted` and today's date in its frontmatter, a
   `seldon` note in the ledger, `DECISIONS.md`, the commit and the index.
@@ -214,6 +277,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **Before init, a preview without memory (WP-138).** Until the logbook
+  exists, Today lists the last 7 days' pacman transactions and the files
+  edited under `~/.config` — "This is without memory: no who, no why,
+  gone when the logs rotate. Set up Seldon?" — and **Set up Seldon**
+  opens the setup in a terminal.
 - **Recently edited (WP-139).** System has a sixth tile: the files under
   `~/.config` edited in the last 7 days that Seldon does not watch, each
   with its age, "not watched" and *Watch*, which adds it to `watchPaths`

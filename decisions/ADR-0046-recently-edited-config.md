@@ -53,7 +53,7 @@ before the scan:
 - **Never masked**: a name that is not UTF-8 (shown, it would become
   U+FFFD: two real files would merge into one path that does not exist),
   and a `~`-path with a control, direction or format character (the set
-  of `import::is_direction_or_format`), longer than 512 characters, or
+  of `redact::is_invisible`, ADR-0048), longer than 512 characters, or
   one the logbook's redaction would change is left out. The list's only
   action needs the real path; a masked one would watch nothing, so the
   click (§3) also refuses a path that does not exist.

@@ -385,6 +385,24 @@ shares; the field keeps its text until the engine has made the case). A
 selected crisis shows the event (`EventDetail.qml`, as in the Changelog);
 resolved here, it leaves NEEDS YOU and stays shown with the engine's answer.
 
+Before the logbook exists (status `notInitialised`, WP-138, ADR-0047) the
+list shows what the machine remembers on its own, from `seldon preview
+--json` (read-only, its own process beside the queue; asked when the
+status becomes `notInitialised`, when the engine probe answers, and when
+the desk opens if the last answer is older than 5 minutes; never in dev
+mode): **PACKAGES · LAST 7 DAYS**, one row per pacman transaction
+("Upgraded linux, linux-headers, mesa and 11 more", the day and time and
+the command line, `failed`/`interrupted`/`unfinished` aside), and
+**EDITED CONFIG FILES**, one row per file under `~/.config` (path, day and
+time); a group
+without rows says so, a source not read says why. The search finds any
+listed package. The overview's setup slot holds the card *Before Seldon*:
+"This is without memory: no who, no why, gone when the logs rotate. Set up
+Seldon?", one line of what was found ("The last 7 days: 6 pacman
+transactions and 4 files edited under ~/.config.") or why nothing is, and
+**Set up Seldon**, the notInitialised notice's terminal fix (the init
+script; the desk steps aside). WP-119's setup card takes the slot over.
+
 #### Changelog (2)
 
 The list: the triage slot (`triageSlot`, WP-124b; ADR-0034 §6,
