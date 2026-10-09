@@ -43,6 +43,12 @@ anything. It is changed only on the operator's explicit instruction.
 - A change to a schema needs: an ADR, a bump of `contractVersion`, updated
   fixtures in `fixtures/`, and both sides updated in the same PR or in two
   PRs that are merged together. No exceptions.
+- `contractVersion` versions `index.json` and the files it points to. The
+  `--json` output of a command the plugin runs is contract too (an ADR, a
+  schema or a CONTRACT.md row, fixtures, both sides in one PR) and bumps
+  `contractVersion` only when a released plugin would misread what it
+  already reads (operator decision 2026-10-09, E42; ADR-0040, ADR-0044,
+  ADR-0047).
 - `fixtures/index.sample.json` must always validate against the schema and
   must always be rich enough to render every plugin surface. The plugin team
   develops against the fixture; the engine team keeps it true.
@@ -103,7 +109,9 @@ dev agents in parallel on independent WPs.
   `/etc/default/limine`, `/etc/limine-entry-tool.conf`,
   `/etc/limine-entry-tool.d/*` and `/boot/limine*.conf`, and (names only,
   S9) the `IgnorePkg` and `IgnoreGroup` values of `/etc/pacman.conf` and
-  its includes.
+  its includes, and (paths and modification times only, no content, no
+  hashes; operator decision 2026-10-09, E41, WP-138/WP-139) the files
+  under `~/.config`, also before `init` (`seldon preview`).
 - **Test harnesses never write into the user's live session:** every
   process a test starts gets its own `HOME` and its own private
   `XDG_RUNTIME_DIR` (0700, removed afterwards), never the real
