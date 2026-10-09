@@ -68,11 +68,16 @@ cd "$(mktemp -d)"
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
 less install.sh                                    # read what it does
+gh attestation verify install.sh --repo JohnAndrewsX/jax-seldon \
+  --signer-workflow JohnAndrewsX/jax-seldon/.github/workflows/release.yml  # optional, needs gh
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
 ```
 
-The checksum line checks that `install.sh` arrived as the release
-published it; `install.sh` then checks the engine it downloads. The
+The checksum line checks that `install.sh` matches the release's
+`SHA256SUMS`; it does not show who built either. With the GitHub CLI
+(`gh`) logged in, the optional `gh attestation verify` line does: it
+passes only for a file that this project's release workflow built.
+`install.sh` then checks the engine it downloads. The
 panel's *Install* button (see [States](#states)) runs the same script
 without that first check: it downloads `install.sh` with `curl` and
 pipes it to `bash`, in a terminal you see; `install.sh` still checks the
@@ -481,11 +486,13 @@ shell plugin. This is everything it does outside its own window:
   the plugin never installs it.
 - **Privileges.** The plugin runs as your user.
   No sudo or pkexec is required to use it.
-  Two steps ask for your password, and only when you start them: the
+  One button asks for your password, and only when you press it: the
   optional snapshot grant (*Grant* on the snapshot banner, above) runs
   `sudo setfacl -m u:$USER:rx /.snapshots` in a terminal you see
-  (ADR-0026), and removing the AUR package with `omarchy pkg drop`
-  runs `sudo pacman -Rns` (see [Remove](#remove)).
+  (ADR-0026). Outside the plugin, installing, updating or removing the
+  engine's AUR package asks too, because pacman runs through sudo
+  (`omarchy pkg drop` runs `sudo pacman -Rns`; see [Install](#install)
+  and [Remove](#remove)).
 - **Dev mode is read-only:** with `SELDON_INDEX` set, the plugin only
   probes `seldon --version --json`; it never runs capture, status or any
   writing command.
@@ -537,6 +544,8 @@ cd "$(mktemp -d)"
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
 less install.sh                                    # read what it does
+gh attestation verify install.sh --repo JohnAndrewsX/jax-seldon \
+  --signer-workflow JohnAndrewsX/jax-seldon/.github/workflows/release.yml  # optional, needs gh
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh --uninstall
 ```
 
