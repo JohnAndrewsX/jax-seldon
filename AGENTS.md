@@ -83,6 +83,10 @@ goal, inputs, outputs, acceptance tests, assigned role, dependencies.
    cannot run on your machine, say so explicitly in the handover.
 5. Handover = a PR (or a `work/active/WP-NNN/HANDOVER.md` if no remote):
    what was done, what was not, how it was verified, open questions.
+   "How it was verified" names where each check ran, with one of these
+   words: *fixture*, *headless* (offscreen Quickshell), *CI*, *test host*,
+   *desktop*, or *not run*. "Not run" is never "passed" (operator decision
+   2026-10-09, E73).
 6. The reviewer role approves or sends it back. Only the orchestrator moves a
    WP to `completed`.
 
