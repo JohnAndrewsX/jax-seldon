@@ -880,6 +880,24 @@ impl Walker<'_> {
         std::fs::canonicalize(path).is_ok_and(|t| self.own.iter().any(|o| t.starts_with(o)))
     }
 
+    /// Below a followed directory link, why `path` must not be read where
+    /// it really lies: in Seldon's own files ([`Self::leads_into_own`]; a
+    /// folder that only holds them is walked beside them, WP-113), or
+    /// skipped or excluded there ([`link_refusal`], WP-139 stage 2). `None`
+    /// outside links.
+    fn refused_below_link(&self, path: &Path, follow: &Follow) -> Option<LinkRefusal> {
+        if !follow.inside {
+            return None;
+        }
+        if self.leads_into_own(path) {
+            return Some(LinkRefusal::Own);
+        }
+        match link_refusal(&self.dirs.home, path, self.own, &|p| self.ignored(p), false) {
+            Some(LinkRefusal::Own) => None,
+            other => other,
+        }
+    }
+
     fn walk(&self, dir: &Path, depth: usize, scan: &mut Scan, follow: &mut Follow) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -918,6 +936,14 @@ impl Walker<'_> {
                     // (skipPaths, the excluded folders) is not read either
                     Ok(target) if target.is_file() && refusal.is_some() => scan.refused += 1,
                     Ok(target) if target.is_file() => self.file(&path, &target, scan),
+                    // a folder behind the link that the walk leaves out is
+                    // not entered either (WP-139 stage 2, B1); one that
+                    // holds Seldon's own files is walked beside them
+                    Ok(target)
+                        if target.is_dir() && refusal.is_some_and(|r| r != LinkRefusal::Own) =>
+                    {
+                        scan.refused += 1
+                    }
                     Ok(target) if target.is_dir() && self.may_persist(&path) => {
                         dirs.push((path, true, (target.dev(), target.ino())));
                     }
@@ -926,7 +952,13 @@ impl Walker<'_> {
             } else if meta.is_dir() {
                 dirs.push((path, false, (meta.dev(), meta.ino())));
             } else if meta.is_file() {
-                self.file(&path, &meta, scan);
+                // below a followed link the spelled path is not the real
+                // one: the checks go by where it lies (WP-139 stage 2, B1)
+                match self.refused_below_link(&path, follow) {
+                    Some(LinkRefusal::Own) => scan.own += 1,
+                    Some(_) => scan.refused += 1,
+                    None => self.file(&path, &meta, scan),
+                }
             }
         }
         if depth >= MAX_DEPTH {
@@ -945,9 +977,13 @@ impl Walker<'_> {
                 } else {
                     scan.loops += 1;
                 }
-            } else if follow.inside && self.leads_into_own(&path) {
-                // below a link to an ancestor of Seldon's own directories
-                scan.own += 1;
+            } else if let Some(why) = self.refused_below_link(&path, follow) {
+                // below a link: Seldon's own directories, or a folder the
+                // walk leaves out where it really lies
+                match why {
+                    LinkRefusal::Own => scan.own += 1,
+                    _ => scan.refused += 1,
+                }
             } else if first || !follow.inside {
                 self.walk(&path, depth + 1, scan, follow);
             }

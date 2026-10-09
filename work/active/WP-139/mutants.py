@@ -125,6 +125,16 @@ ENGINE = [
      "if key.chars().any(|c| c.is_control() || crate::redact::is_invisible(c))"),
     ("r3b a linked ~/.config is outside the home", "engine/src/collectors/config.rs",
      "match under_dot_config.ok_or(()).or(under_home.map_err(|_| ())) {", "match under_home.map_err(|_| ()) {"),
+    # stage 2 (Fable B1, N1)
+    ("s2 a folder link to a skipped folder entered", "engine/src/collectors/config.rs",
+     "&& refusal.is_some_and(|r| r != LinkRefusal::Own) =>",
+     "&& false =>"),
+    ("s2 a file below a followed link read by its spelling", "engine/src/collectors/config.rs",
+     "                match self.refused_below_link(&path, follow) {", "                match None::<LinkRefusal> {"),
+    ("s2 a folder below a followed link entered by its spelling", "engine/src/collectors/config.rs",
+     "            } else if let Some(why) = self.refused_below_link(&path, follow) {",
+     "            } else if let Some(why) = None::<LinkRefusal> {"),
+    ("s2 the state directory listed", RECENT, "        dirs.state_dir.clone(),\n", ""),
     # round 2 (stage-1 review B1–B3, N1, N4)
     ("r2 shown_path takes a lossy path", RECENT, "    path.to_str()?;\n", ""),
     ("r2 state file read unbounded", RECENT, "match sys::read_small_file(&path, sys::STATE_FILE_MAX) {",

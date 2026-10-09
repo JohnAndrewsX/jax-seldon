@@ -195,6 +195,61 @@ fn a_link_to_a_skipped_secret_is_never_listed_watched_or_hashed() {
     assert!(!held.contains("token.conf"), "{held}");
 }
 
+/// WP-139 stage 2, B1: a folder link at a persistence path (the default
+/// watch path `~/.config/systemd/user`) to a skipped folder is not
+/// entered (A), and below a followed link a skipped folder where it really
+/// lies is not read (B): no event, nothing in the manifest.
+#[test]
+fn a_folder_link_in_a_watched_folder_never_reads_a_skipped_file() {
+    let (env, lb) = setup();
+    edit_config(&env, |c| {
+        c.redaction.skip_paths.extend([
+            "~/secrets/".into(),
+            "~/units/private/".into(),
+            "~/units/top.secret".into(),
+        ])
+    });
+    // one refusal per layer, so each counts: the link to a skipped folder
+    // (not entered, though it holds two files), a skipped folder below a
+    // followed link (not entered, two files), a skipped file directly
+    // below it
+    let token = file(&env, "secrets/token", HOUR);
+    file(&env, "secrets/key", HOUR);
+    let pw = file(&env, "units/private/pw.conf", HOUR);
+    file(&env, "units/private/pin.conf", HOUR);
+    let top = file(&env, "units/top.secret", HOUR);
+    file(&env, "units/ok.service", HOUR);
+    let user = env.home.join(".config/systemd/user");
+    link(&env.home.join("secrets"), &user.join("foo.d"));
+    link(&env.home.join("units"), &user.join("bar.d"));
+    let first = ok(&env.seldon(&["capture", "--json"]));
+    std::fs::write(&token, "token=changed\n").unwrap();
+    std::fs::write(&pw, "pw=changed\n").unwrap();
+    std::fs::write(&top, "top=changed\n").unwrap();
+    let second = ok(&env.seldon(&["capture", "--json"]));
+    for subject in [
+        "~/.config/systemd/user/foo.d/token",
+        "~/.config/systemd/user/bar.d/private/pw.conf",
+        "~/.config/systemd/user/bar.d/top.secret",
+    ] {
+        assert_eq!(config_events(&lb, subject), 0, "{subject}");
+    }
+    // the allowed part of B is watched
+    assert_eq!(
+        config_events(&lb, "~/.config/systemd/user/bar.d/ok.service"),
+        1
+    );
+    let manifest = json_file(&env.home.join(".local/state/seldon/manifest.json"));
+    let held = format!("{}{}", manifest["files"], manifest["skipped"]);
+    assert!(!held.contains("foo.d"), "{held}");
+    assert!(!held.contains("private"), "{held}");
+    assert!(!held.contains("top.secret"), "{held}");
+    for out in [&first, &second] {
+        let text = out.to_string();
+        assert!(text.contains("3 link(s) not followed"), "{text}");
+    }
+}
+
 /// WP-139 round 3, B2: a link into Seldon's own state is neither listed
 /// nor watchable; written by hand into watchPaths, it is not followed, so
 /// captures stay idempotent: three in a row, nothing after the first.

@@ -112,7 +112,9 @@ collector, round 3b), and a file the minimal edit cannot
 extend (the message names the line to add by hand). A path already under
 a watch path is exit 0, `added: false`, nothing written. Without a
 `config.toml` the defaults plus the path are written. The index is
-rebuilt at once.
+rebuilt at once. `--json` answers `{added, path, coveredBy, config}`:
+whether it was added, the path as written (`~/…`), the watch path that
+covers it already (else `null`) and the config file.
 
 The next capture takes the files the new path brings in as they are,
 without events (WP-069's scope change). Their later edits are
@@ -144,7 +146,10 @@ any other link, a loop and a dangling link are left out; a link to a
 folder is never entered; the exclusions of §1 apply before a
 folder is entered (`Limits.exclude`); the depth is 16; and the root is
 `~/.config` for both callers, whatever `$XDG_CONFIG_HOME` says (the
-index's paths start with `~/.config/`). For the preview this changes
+index's paths start with `~/.config/`). When `~/.config` is itself a
+link (a dotfile setup), the walk reads the folder it leads to and lists
+it as `~/.config/…`; E41's "under `~/.config`" means that folder (round
+3b) — also for `seldon preview` before `init`. For the preview this changes
 ADR-0047 §3 on two points — file links are now listed, and the root no
 longer follows `$XDG_CONFIG_HOME` — and adds to its ignore list; nothing
 in its JSON shape changes.
@@ -154,10 +159,12 @@ a watch path that is itself a link, or lies behind one, is checked on
 its canonical target before it is opened or hashed — out of the home
 directory (for a watch path that is itself a link), into Seldon's own
 files, or under skipPaths or an excluded folder, it is left out and
-counted (`N link(s) not followed: …`); a link to a file inside a watched
-folder is left out when its target is skipped or excluded (a target
-outside the home stays allowed there: `systemctl --user enable` links to
-`/usr`, the `system-link` evidence of ADR-0028 §5).
+counted (`N link(s) not followed: …`); a link to a file or a folder
+inside a watched folder, and every entry below a followed folder link,
+is checked on its canonical path and left out when it is skipped or
+excluded (stage 2, B1; a target outside the home stays allowed there:
+`systemctl --user enable` links to `/usr`, the `system-link` evidence of
+ADR-0028 §5).
 
 ## Consequences
 

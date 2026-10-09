@@ -133,13 +133,17 @@ fn watched(dirs: &Dirs, config: &Config) -> Vec<PathBuf> {
 
 /// What the walk never enters or lists: the watch paths (the config
 /// collector's), Omarchy's plugin folder (the plugins collector's),
-/// Seldon's own config (the *Watch* click edits it), and `extra`.
+/// Seldon's own config (the *Watch* click edits it) and state directory,
+/// and `extra`.
 fn exclusions(dirs: &Dirs, config: &Config, extra: &[PathBuf]) -> Vec<PathBuf> {
     let mut out = watched(dirs, config);
     out.extend([
         dirs.home.join(super::plugins::PLUGINS_DIR),
         dirs.home.join(ROOT).join("seldon"),
         dirs.config_dir(),
+        // `$XDG_STATE_HOME` under `~/.config`: `index.json` changes with
+        // every capture (WP-139 stage 2, N1)
+        dirs.state_dir.clone(),
     ]);
     out.extend(extra.iter().cloned());
     out
@@ -465,6 +469,16 @@ mod tests {
         let scan = scan(&h.dirs, &Config::default(), &redactor, &[], h.now);
         assert_eq!(scan.files.len(), MAX_FILES);
         assert_eq!(scan.files[0].0, "~/.config/many/f00.conf");
+    }
+
+    /// N1 (stage 2): a state directory under `~/.config` is not listed.
+    #[test]
+    fn a_state_directory_under_dot_config_is_not_listed() {
+        let mut h = Home::new("state");
+        h.dirs.state_dir = h.dirs.home.join(".config/seldon-state");
+        h.file(".config/seldon-state/index.json", HOUR);
+        h.file(".config/app/a.conf", HOUR);
+        assert_eq!(h.paths(&Config::default()), ["~/.config/app/a.conf"]);
     }
 
     #[test]

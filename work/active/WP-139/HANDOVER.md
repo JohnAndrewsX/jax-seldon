@@ -352,3 +352,38 @@ WP-138 on `next`. AGENTS.md §6 needs the operator's line for the
   without the change (mutant `r3b …` added to `mutants.py`, run once by
   hand, killed). `recent_config` 17/17 and the lib tests 379/379 pass,
   clippy clean. The full check is the orchestrator's (gate w139r3).
+
+## Round 4 (Fable stage 2: B1, N1–N3)
+
+- **B1:** the config collector checks folder links too. A folder link in
+  a watched folder whose canonical target is skipped or excluded is not
+  entered (`scan.refused`); below a followed folder link every file and
+  folder is checked where it really lies (`Walker::refused_below_link`:
+  Seldon's own files as before — a folder that only holds them is still
+  walked beside them, WP-113 — then `link_refusal` for skipPaths and the
+  excluded folders). Test
+  `a_folder_link_in_a_watched_folder_never_reads_a_skipped_file`: Fable's
+  scenarios A (`~/.config/systemd/user/foo.d → ~/secrets`) and B (`bar.d →
+  ~/units`, `~/units/private/` and `~/units/top.secret` skipped): no event
+  for any of them, nothing in the manifest's files/skipped,
+  `bar.d/ok.service` watched, and exactly `3 link(s) not followed` per
+  capture — one per layer, so each of the three arms is caught alone
+  (checked by hand: each one-off mutant fails the test; the three are in
+  `mutants.py` as `s2 …`).
+- **N1:** `recent::exclusions` holds `dirs.state_dir` (unit test with a
+  state directory under `~/.config`).
+- **N2:** the ADR-0047 row in DECISIONS.md says "§3 amended by ADR-0046,
+  proposed".
+- **N3:** CONTRACT.md's `config watch --json` row and ADR-0046 §3 name
+  `{added, path, coveredBy, config}`.
+- ADR-0046 §5: Fable's two edits (the collector paragraph; the sentence
+  that a `~/.config` which is itself a link is read where it leads, also
+  by `seldon preview` before `init`). SPEC-ENGINE §4 follows.
+- A folder link to a folder that only *holds* Seldon's files (e.g. a
+  link to `~/.local`) is still entered and walked beside them, as WP-113
+  decided: the new folder arm refuses only skipped or excluded targets.
+  The first engine run caught this (`collector_hashes`
+  `a_link_to_an_ancestor_of_seldons_dirs_stays_out_of_them`); fixed.
+- Verified: `cargo test -j 4` (engine, default features): 1326 passed, 0
+  failed, 10 ignored; clippy and fmt clean. No full check (the
+  orchestrator gates).

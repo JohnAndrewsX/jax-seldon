@@ -190,7 +190,7 @@ seldon rebuild --json
 seldon update-impact --json
 seldon doctor --only rules --json               # WP-101: read-only, on panel open (own process, not the queue); runs no probe
 seldon rules update --json                      # WP-101: the rules banner's one click; rewrites only the engine's block
-seldon config watch --json -- <path>           # WP-139, ADR-0046: Watch on a row of system.recentConfig; the path one argument after `--`; only config.toml's watchPaths changes
+seldon config watch --json -- <path>           # WP-139, ADR-0046: Watch on a row of system.recentConfig; the path one argument after `--`; only config.toml's watchPaths changes; answers {added, path, coveredBy, config}
 ```
 
 The plugin never runs `seldon drift propose` (the agent's command; ADR-0036

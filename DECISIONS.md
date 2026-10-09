@@ -48,7 +48,7 @@
 | ADR-0044 | The desk reads a case's whole Intent (`plan show --json` `intent {text, lines, truncated, hidden}`) and imports task files (`import task`): two plugin-command rows; an imported Intent fits the desk, nothing invisible reaches it | accepted |
 | ADR-0045 | EASY \| PRO: one desk, two views; the mode is the plugin setting `deskMode`, a fresh install starts in EASY | accepted |
 | ADR-0046 | Recently edited files under `~/.config` outside the watch paths in the index (`system.recentConfig`, optional, contract 2); `seldon config watch` adds one to `watchPaths` (the desk's *Watch*); amends ADR-0047 §3 (one walker: root `~/.config`, file links inside it) | proposed |
-| ADR-0047 | Before the logbook exists, the desk shows what the machine remembers on its own: `seldon preview --json` (pacman transactions, files edited under `~/.config`, 7 days, read-only), one plugin-command row and `preview.schema.json` | accepted |
+| ADR-0047 | Before the logbook exists, the desk shows what the machine remembers on its own: `seldon preview --json` (pacman transactions, files edited under `~/.config`, 7 days, read-only), one plugin-command row and `preview.schema.json` (§3 amended by ADR-0046, proposed) | accepted |
 | ADR-0048 | ADR-0038 amended: the invisible set is every default-ignorable code point; redaction reads the text without invisible and control characters and as given | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

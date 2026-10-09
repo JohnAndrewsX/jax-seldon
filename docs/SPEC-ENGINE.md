@@ -1883,9 +1883,11 @@ git itself is killed, with the same bounded pipe wait. Rules:
   folder above it below the home), or — when the watch path is itself
   the link — out of the home directory, it is not followed (counted:
   `N link(s) not followed: they lead to a skipped or excluded file, or a
-  watch path out of the home directory`); so is a link to a file inside
-  a watched folder whose target is skipped or excluded (one to `/usr`
-  stays: `system-link`). A cut stays with its link: the walk above it and
+  watch path out of the home directory`); so is a link to a file or a
+  folder inside a watched folder whose target is skipped or excluded
+  (one to `/usr` stays: `system-link`), and below a followed folder link
+  every file and folder is checked where it really lies (its canonical
+  path), not by the link's spelling (WP-139 stage 2). A cut stays with its link: the walk above it and
   the later watch paths go on. `~/.config/omarchy/plugins/` and
   `~/.local/share/applications/mimeinfo.cache` are excluded wherever the
   watch paths reach them. Known secret-bearing
