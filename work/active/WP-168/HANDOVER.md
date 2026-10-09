@@ -66,11 +66,11 @@ before a file, or reads a folder before it writes, also before that.
 | `index/views.rs` `write_if_changed` (`ledger/*.md`; `STATUS.md`, `DECISIONS.md` in the root) | `ledger` | `checked_file(rel)` inside; `write_ledger_views` now returns `crate::error::Result` so the refusal stays exit 1 |
 | `commands/decide.rs` new (`write_new`) and accept (`write_atomic`, after the ledger note) | `decisions` | `checked_dir("decisions")` right after the lock, before the next id is read / the note is written |
 | `commands/plan.rs` `create` (new, reopen, import task) | `work/*`, `areas/<area>`, `.seldon` | `checked_folders` + area + `.seldon` (when it points) before the next id and the ledger |
-| `plan` start/verify/done/drop | `work/*`, from and to, `.seldon` | `checked_folders` after the lock, before `find`; from/to and `.seldon` again before the ledger |
+| `plan` start/verify/done/drop | `work/*`, `.seldon` | `checked_folders` after the lock, before `find`; `.seldon` before the ledger |
 | `plan set`, `plan snapshot`, `plan reopen` | `work/*` | `checked_folders` after the lock; then `prepare`/`save` |
 | `commands/log.rs` with `--case`, `commands/event.rs` with `--case` | `work/*` | `checked_folders` after the lock; `prepare` before the ledger |
 | `commands/drift.rs` `run` (link, explain, dismiss) | `ledger`; `work/*` (link, explain); `areas/<area>` (explain) | after the lock, before `index::derive` reads them |
-| `drift.rs` `write_resolution` (also `drift apply`, WP-124) | the new case's folder, `areas/<area>` | before the ledger (explain); link: `prepare` |
+| `commands/triage.rs` `apply` (`drift apply` → `write_resolution`) | `ledger`, `work/*` | after the lock, before `index::derive` and the first item (a proposal has no area) |
 | `commands/dossier.rs` → `dossier::Files::write` | `system` | `checked_dir("system")` before `Files::read` |
 | `commands/rebuild.rs` (`write_generated`) | `outputs` | `checked_file(REL_PATH)` before the read |
 | `commands/import.rs` apply (`write_new`, days, memory, dossier, marker, undo, report) | `ledger work/* journal memory system outputs .seldon/imports` | `IMPORT_FOLDERS` before the plan reads them (after the half-done check, whose message stays first); every planned path (`check_folders`) before the ledger |
@@ -105,7 +105,7 @@ links never touched, WP-094), `setup.rs:669` (theme hook script).
   `checked_file` relative, absolute, root file, outside the logbook.
 - Unit (`setup::tests::copy_tree_keeps_existing_files_and_modes`): a
   linked `.claude/skills` stops the copy, nothing written through it.
-- Integration `engine/tests/linked_folders.rs` (19 tests), each folder
+- Integration `engine/tests/linked_folders.rs` (25 tests), each folder
   with a link to a copy outside the logbook and with a file in its place:
   exit 1, the reason names the folder, the logbook tree (through the link
   included) and the ledger unchanged: `decisions` (new, accept), `work`
@@ -119,7 +119,15 @@ links never touched, WP-094), `setup.rs:669` (theme hook script).
   (`import omarchy-agent --apply`), `drift explain` (`work`,
   `work/completed`, `areas`, `areas/dev-env`, `ledger`), `drift link`
   (`work/queued`, `work/active`, `ledger`), `event --case` (`work/queued`,
-  `ledger`). `inbox` has no writer on `next` (WP-166's).
+  `ledger`); the import's year folder (`journal/2026`, link) and its dry
+  run (`outputs`). In `tests/triage.rs`: `drift apply` with
+  `work/completed` a link and a file. A module `primitives` calls the
+  write primitives on their own (case save and move, active case set and
+  clear, `ensure_area`, `journal::append`/`ensure_day`), as `capture`
+  and the hooks do with no command check in front. `inbox` has no writer
+  on `next` (WP-166's).
+- Unit: `commands::tests::write_new_refuses_a_linked_folder`,
+  `skills::tests::the_archive_refuses_a_linked_or_non_directory_archive_folder`.
 
 ## Mutants
 
