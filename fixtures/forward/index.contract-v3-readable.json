@@ -62,10 +62,10 @@
   "summary": {
     "activeCases": 2,
     "queuedCases": 3,
-    "openDrift": 6,
+    "openDrift": 7,
     "crisis": 2,
-    "eventsToday": 33,
-    "events7d": 54,
+    "eventsToday": 35,
+    "events7d": 56,
     "crashes": 1
   },
   "today": {
@@ -3288,7 +3288,7 @@
       },
       {
         "date": "2026-10-01",
-        "total": 33,
+        "total": 35,
         "bySource": {
           "agent": 6,
           "config": 2,
@@ -3298,7 +3298,8 @@
           "plugins": 1,
           "seldon": 8,
           "snapper": 4,
-          "theme": 1
+          "theme": 1,
+          "journal": 2
         }
       }
     ],
@@ -3342,7 +3343,7 @@
       },
       {
         "week": "2026-W40",
-        "opened": 6,
+        "opened": 7,
         "resolved": 2
       }
     ],

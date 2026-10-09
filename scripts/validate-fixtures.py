@@ -1849,8 +1849,10 @@ VARIANTS = {
 # the same clock for its clock-driven stale case.
 # ADR-0051: what a later contract may add that a contract-2 reader must not misread: the version
 # and the field that lets a v2 plugin read it, unknown top-level and summary keys, an event of an
-# unknown source and kind, a drift row of an unknown source and kind (no crisis; the summary's
-# counts stay the sample's), an unknown timeline kind. Not a v2 index: it must fail the v2 schema.
+# unknown source and kind, a drift row of an unknown source and kind (no crisis), an unknown
+# timeline kind. The counts follow the rows (ADR-0051 §3: complete): openDrift +1, the day's and
+# the week's events +2 (summary, heatmap), the week's opened drift +1; crisis and the cases stay.
+# Not a v2 index: it must fail the v2 schema.
 # plugin model.test.js reads it; the orchestrator points SELDON_INDEX at it for the live check.
 FORWARD_OPS = [
     {"op": "replace", "path": "/contractVersion", "value": 3},
@@ -1859,6 +1861,19 @@ FORWARD_OPS = [
         {"id": "01M3VZXA00J0VRNA0000000001", "exe": "/usr/bin/example", "status": "new", "count": 1}]},
     {"op": "add", "path": "/reports", "value": []},
     {"op": "add", "path": "/summary/crashes", "value": 1},
+    {"op": "test", "path": "/summary/openDrift", "value": 6},
+    {"op": "replace", "path": "/summary/openDrift", "value": 7},
+    {"op": "test", "path": "/summary/eventsToday", "value": 33},
+    {"op": "replace", "path": "/summary/eventsToday", "value": 35},
+    {"op": "test", "path": "/summary/events7d", "value": 54},
+    {"op": "replace", "path": "/summary/events7d", "value": 56},
+    {"op": "test", "path": "/series/heatmap/365/date", "value": "2026-10-01"},
+    {"op": "test", "path": "/series/heatmap/365/total", "value": 33},
+    {"op": "replace", "path": "/series/heatmap/365/total", "value": 35},
+    {"op": "add", "path": "/series/heatmap/365/bySource/journal", "value": 2},
+    {"op": "test", "path": "/series/drift/4/week", "value": "2026-W40"},
+    {"op": "test", "path": "/series/drift/4/opened", "value": 6},
+    {"op": "replace", "path": "/series/drift/4/opened", "value": 7},
     {"op": "add", "path": "/events/0", "value": {
         "id": "01M3VZXA00J0VRNA0000000001", "ts": "2026-10-01T17:02:00+02:00", "source": "journal",
         "kind": "crash", "subject": "example", "detail": "example crashed (SIGSEGV)", "actor": "system"}},

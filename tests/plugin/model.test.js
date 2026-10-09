@@ -166,11 +166,15 @@ test("parseIndex reads a newer index that says this plugin can read it (ADR-0051
   const st = M.deriveStatus({ engine: "present", file: "loaded", parse: r, engineNotInitialised: false, nowMs: gen })
   assert.strictEqual(st, "ok")
   assert.ok(M.showsCounts(st))
-  same(M.counts(ix), M.counts(base))
+  // the pill reads the fixture's own summary, which counts its new drift row
+  // (ADR-0051 §3: complete): one more open change than the sample, the same crises
+  same(M.counts(ix), { active: 2, queued: 3, drift: 7, crisis: 2, attention: 5 })
+  assert.strictEqual(M.counts(ix).drift, M.counts(base).drift + 1)
   assert.strictEqual(M.pillTone(M.counts(ix)), "urgent", "the fixture's crises colour the pill")
-  assert.strictEqual(M.pillText(M.counts(ix), "crisis"), M.pillText(M.counts(base), "crisis"))
+  assert.strictEqual(M.pillText(M.counts(ix), "crisis"), "2 · 2")
+  assert.strictEqual(M.pillText(M.counts(ix), "all"), "2 · 7")
   assert.strictEqual(M.tooltipText(st, M.counts(ix), M.lastCapture(ix), gen),
-    M.tooltipText(st, M.counts(base), M.lastCapture(base), gen))
+    "Seldon — 2 active cases, 2 crises, 5 changes without a case, last capture just now")
   assert.strictEqual(M.crisisText(ix), M.crisisText(base))
   // an unknown source gets the default glyph; an unknown timeline kind is left out
   assert.strictEqual(M.sourceGlyph("journal"), "•")
@@ -183,7 +187,10 @@ test("parseIndex reads a newer index that says this plugin can read it (ADR-0051
   M.deskKpis(ix)
   M.graphBuild(ix)
   // the quiet notice: both versions, Omarchy's plugin update as the fixed script
-  const n = M.contractNewerNotice(r)
+  const n = M.contractNewerNotice(r, st)
+  // without an engine its own banner speaks; the index is a leftover
+  assert.strictEqual(M.contractNewerNotice(r, "engineMissing"), null)
+  assert.notStrictEqual(M.contractNewerNotice(r, "indexStale"), null)
   assert.strictEqual(n.tone, "neutral")
   assert.strictEqual(n.detail, "The engine writes index v3; this plugin reads v2 — update the plugin.")
   assert.strictEqual(n.command, "omarchy plugin update jax.seldon")
