@@ -1013,7 +1013,7 @@ pill keeps its counts and colour) but the neutral notice "The engine is
 newer than the plugin", "The engine writes index vN; this plugin reads
 v2 — update the plugin.", `omarchy plugin update jax.seldon` with
 *Update* (the plugin update's terminal script, as the mismatch banner's)
-and *Copy*; engine older than the manifest's
+and *Copy*, not while the engine is missing; engine older than the manifest's
 `engineMin` (§3; in place of every status banner but engine missing and
 contract mismatch) → "Engine too old", "This plugin needs engine X or
 newer and seldon reports Y.", the same installer one-liner with *Update*, *Copy* and

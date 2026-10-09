@@ -626,8 +626,11 @@ function bannerFor(status, ctx) {
 // The quiet notice when the index is of a newer contract that this plugin
 // still reads (ADR-0051): the bar keeps its counts and colour, the desk
 // says that the plugin is behind and offers Omarchy's plugin update, the
-// mismatch banner's own fix (UPDATE_PLUGIN_SCRIPT). null otherwise.
-function contractNewerNotice(parsed) {
+// mismatch banner's own fix (UPDATE_PLUGIN_SCRIPT). null otherwise, and
+// while the engine is missing: its banner comes first, and the index is a
+// leftover of the engine that is gone.
+function contractNewerNotice(parsed, status) {
+  if (status === "engineMissing") return null
   if (!isObject(parsed) || !parsed.ok || !parsed.newer) return null
   var found = Number(parsed.contractVersion) || 0
   return {

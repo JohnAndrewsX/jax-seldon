@@ -74,9 +74,6 @@ Item {
   property var parsed: null
   readonly property var index: parsed && parsed.ok ? parsed.index : null
   readonly property int indexContractVersion: parsed ? parsed.contractVersion : 0
-  // A newer contract this plugin still reads (ADR-0051): the quiet notice
-  // that asks for a plugin update; null otherwise.
-  readonly property var contractNotice: Model.contractNewerNotice(parsed)
   readonly property bool ready: fileState !== "loading" && engineState !== "unknown"
 
   // ---- Derived state.
@@ -89,6 +86,9 @@ Item {
     engineNotInitialised: engineNotInitialised,
     nowMs: nowMs
   })
+  // A newer contract this plugin still reads (ADR-0051): the quiet notice
+  // that asks for a plugin update; null otherwise and without an engine.
+  readonly property var contractNotice: Model.contractNewerNotice(parsed, status)
   readonly property var counts: Model.counts(index)
   readonly property string lastCapture: Model.lastCapture(index)
   readonly property var banner: Model.engineOutdatedBanner(status, engineVersion, engineMin)
