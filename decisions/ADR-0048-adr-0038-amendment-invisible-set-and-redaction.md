@@ -1,6 +1,6 @@
 # ADR-0048 — ADR-0038 amended: the invisible set and the redaction model
 
-**Status:** proposed (WP-159 round 2; Opus stage 1, Fable stage 2 to follow)
+**Status:** accepted 2026-10-09 (operator, E43)
 **Date:** 2026-10-08
 
 > Amends [ADR-0038](ADR-0038-index-details.md) §2 (the dropped direction
