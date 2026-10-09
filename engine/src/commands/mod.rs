@@ -323,6 +323,38 @@ pub(crate) fn write_new(logbook: &Logbook, path: &Path, text: &str) -> Result<()
 mod tests {
     use super::*;
 
+    /// `write_new` refuses a linked folder on its own, whatever its caller
+    /// checked first (WP-168).
+    #[test]
+    fn write_new_refuses_a_linked_folder() {
+        let base = std::env::temp_dir().join(format!("seldon-write-new-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (root, outside) = (base.join("logbook"), base.join("outside"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("decisions")).unwrap();
+        let logbook = Logbook {
+            root: root.clone(),
+            meta: crate::logbook::LogbookMeta {
+                schema_version: 1,
+                created: "2026-09-01T19:00:42+02:00".parse().unwrap(),
+                machine_id: "workstation-7f3a".into(),
+                language: crate::model::Language::En,
+            },
+        };
+        match write_new(&logbook, &root.join("decisions/ADR-0001-x.md"), "x\n") {
+            Err(Error::User(m)) => assert!(m.starts_with("decisions is a symbolic link,"), "{m}"),
+            other => panic!("expected a user error, got {other:?}"),
+        }
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        write_new(&logbook, &root.join("memory/x.md"), "x\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("memory/x.md")).unwrap(),
+            "x\n"
+        );
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
     #[test]
     fn one_line_refuses_separators_and_bidi_controls() {
         assert_eq!(one_line("t", " a b ").unwrap(), "a b");

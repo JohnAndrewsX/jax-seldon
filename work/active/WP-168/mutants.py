@@ -121,7 +121,7 @@ only = [a for a in sys.argv[1:] if a != "--check"]
 env = dict(os.environ, CARGO_TARGET_DIR=TARGET)
 cargo = ["cargo", "test", "--manifest-path", "engine/Cargo.toml", "--locked", "--no-fail-fast"]
 runs = [
-    cargo + ["--lib", "--", "logbook::", "commands::setup", "commands::skills", "--test-threads=4"],
+    cargo + ["--lib", "--", "logbook::", "commands::setup", "commands::skills", "commands::tests::write_new", "--test-threads=4"],
     cargo + ["--test", "linked_folders", "--", "--test-threads=4"],
 ]
 results = []

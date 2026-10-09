@@ -423,3 +423,102 @@ fn ledger_views() {
         &["index"],
     );
 }
+
+/// The write primitives on their own, without the checks a command makes
+/// first: `capture` saves cases (reconcile, case notes) and the hooks
+/// write the journal with nothing in front of them.
+mod primitives {
+    use super::*;
+    use seldon::error::Error;
+    use seldon::logbook::{Logbook, cases, journal};
+    use seldon::model::CaseStatus;
+
+    /// A logbook with C-2026-001 queued, `rel` then a link to a copy of
+    /// itself outside the logbook.
+    fn linked(rel: &str) -> (Env, Logbook) {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        queued(&env, &root);
+        swap(&env, &root, rel, Swap::Link);
+        let logbook = Logbook::open(&root).unwrap();
+        (env, logbook)
+    }
+
+    fn refused<T: std::fmt::Debug>(r: Result<T, Error>, shown: &str) {
+        match r {
+            Err(Error::User(m)) => assert!(
+                m.starts_with(&format!(
+                    "{shown} is a symbolic link, not a folder of the logbook"
+                )),
+                "{m}"
+            ),
+            other => panic!("{shown}: expected a user error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_case_is_not_saved_in_a_linked_folder() {
+        let (env, logbook) = linked("work/queued");
+        let snapshot = tree(&logbook.root);
+        let mut file = cases::find(&logbook, "C-2026-001").unwrap();
+        refused(file.save(&logbook), "work/queued");
+        refused(file.prepare(&logbook, |_| {}), "work/queued");
+        assert!(tree(&logbook.root) == snapshot);
+        drop(env);
+    }
+
+    #[test]
+    fn a_case_is_not_moved_into_a_linked_folder() {
+        let (env, logbook) = linked("work/active");
+        let snapshot = tree(&logbook.root);
+        let mut file = cases::find(&logbook, "C-2026-001").unwrap();
+        file.case.status = CaseStatus::Active;
+        refused(file.save(&logbook), "work/active");
+        assert!(tree(&logbook.root) == snapshot);
+        drop(env);
+    }
+
+    #[test]
+    fn the_active_case_is_not_written_through_a_link() {
+        let (env, logbook) = linked(".seldon");
+        let snapshot = tree(&logbook.root);
+        refused(cases::set_active_case(&logbook, "C-2026-001"), ".seldon");
+        assert!(tree(&logbook.root) == snapshot);
+        drop(env);
+    }
+
+    #[test]
+    fn the_active_case_is_not_removed_through_a_link() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        active(&env, &root);
+        swap(&env, &root, ".seldon", Swap::Link);
+        let logbook = Logbook::open(&root).unwrap();
+        let snapshot = tree(&root);
+        refused(cases::clear_active_case(&logbook, "C-2026-001"), ".seldon");
+        assert!(tree(&root) == snapshot);
+    }
+
+    #[test]
+    fn an_area_is_not_made_in_a_linked_folder() {
+        let (env, logbook) = linked("areas");
+        let snapshot = tree(&logbook.root);
+        refused(cases::ensure_area(&logbook, "editors"), "areas");
+        assert!(tree(&logbook.root) == snapshot);
+        drop(env);
+    }
+
+    #[test]
+    fn the_journal_is_not_written_through_a_link() {
+        let (env, logbook) = linked("journal");
+        let snapshot = tree(&logbook.root);
+        let now = chrono::DateTime::parse_from_rfc3339(T1).unwrap();
+        refused(
+            journal::append(&logbook, &now, "human", None, "x"),
+            "journal",
+        );
+        refused(journal::ensure_day(&logbook, &now), "journal");
+        assert!(tree(&logbook.root) == snapshot);
+        drop(env);
+    }
+}
