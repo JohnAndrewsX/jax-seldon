@@ -749,9 +749,9 @@ bk=$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'backup-before-nex
 check "next: one backup dir, named backup-before-next-<UTC stamp>" \
   grep -qxE '.*/backup-before-next-[0-9]{8}T[0-9]{6}Z' <<<"$bk"
 check "next: the backup has shell.json" cmp -s "$bk/shell.json" "$R/home/.config/omarchy/shell.json"
-check "next: the backup has the state dir" cmp -s "$bk/state/index.json" "$R/home/.local/state/seldon/index.json"
-check "next: the backup has the engine before the swap (main)" grep -q "\"version\":\"0.1.3+main.$main_short\"" "$bk/seldon"
-check "next: the backup has the plugin before the sync (main)" grep -qx "build=main.$main_short" "$bk/plugin/.seldon-dev-build"
+check "next: the backup has the state dir" cmp -s "$bk/state-seldon/index.json" "$R/home/.local/state/seldon/index.json"
+check "next: the backup has the engine before the swap (main)" grep -q "\"version\":\"0.1.3+main.$main_short\"" "$bk/seldon.engine"
+check "next: the backup has the plugin before the sync (main)" grep -qx "build=main.$main_short" "$bk/plugin-jax.seldon/.seldon-dev-build"
 check "next: the backup is outside the plugins dir" test "$(find "$R/home/.config/omarchy/plugins" -mindepth 1 -maxdepth 1 | wc -l)" = 1
 check "next: the summary names the backup" has "backup   ~/.local/state/seldon-dev/backup-before-next-"
 check "next: smoke ok" has "smoke    ok"
@@ -774,7 +774,7 @@ on main
 deploy --branch main "$log"
 check "main onto next: exit 0" test "$rc" = 0
 check "main onto next: warns about next's state" has "runs a next build (next."
-check "main onto next: names the backup" has "backup-before-next-*/state"
+check "main onto next: names the backup" has "backup-before-next-*/state-seldon"
 check "main onto next: the main build" grep -q "\"version\":\"0.1.3+main.$short\"" "$R/home/.local/bin/seldon"
 
 # from a release host: the backup holds what exists (no shell.json, no state)
@@ -784,8 +784,8 @@ deploy --branch next "$log"
 check "next onto a release: exit 0" test "$rc" = 0
 bk=$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'backup-before-next-*')
 check "next onto a release: the release engine and clone backed up" \
-  test -d "$bk/plugin/.git" -a "$(grep -c '"version":"0.1.3"}' "$bk/seldon")" = 1
-check "next onto a release: no shell.json or state in the backup" test ! -e "$bk/shell.json" -a ! -e "$bk/state"
+  test -d "$bk/plugin-jax.seldon/.git" -a "$(grep -c '"version":"0.1.3"}' "$bk/seldon.engine")" = 1
+check "next onto a release: no shell.json or state in the backup" test ! -e "$bk/shell.json" -a ! -e "$bk/state-seldon"
 
 # the backup fails: nothing changed but the partial backup and the log line
 reset_remote

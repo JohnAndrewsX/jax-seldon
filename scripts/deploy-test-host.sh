@@ -53,7 +53,8 @@
 # first copies ~/.config/omarchy/shell.json, ~/.local/state/seldon, the
 # engine and the plugin dir (whichever exist) to
 # ~/.local/state/seldon-dev/backup-before-next-<UTC stamp>/ (shell.json,
-# state/, seldon, plugin/): the way back from next, whose state may not
+# state-seldon/, seldon.engine, plugin-jax.seldon/; the layout of the
+# orchestrator's backup by hand, 2026-10-07): the way back from next, whose state may not
 # load in main. A failed backup stops the deploy before the engine swap.
 # A main deploy onto a host that runs next warns and names that backup.
 #
@@ -310,7 +311,7 @@ if [[ $mode == next && $deployed != next.* ]]; then backup_plan=yes; fi
 if [[ $mode == release ]]; then
   warn "state written by a newer build may not load in $release: move ~/.local/state/seldon aside on $host first (mv ~/.local/state/seldon ~/.local/state/seldon.main-\$(date +%F))"
 elif [[ $mode == main && $deployed == next.* ]]; then
-  warn "$host runs a next build ($deployed); state written by next may not load in main: put back ~/.local/state/seldon from the newest ~/.local/state/seldon-dev/backup-before-next-*/state on $host first"
+  warn "$host runs a next build ($deployed); state written by next may not load in main: put back ~/.local/state/seldon from the newest ~/.local/state/seldon-dev/backup-before-next-*/state-seldon on $host first"
 fi
 
 if [[ $dry == 1 ]]; then
@@ -391,9 +392,9 @@ if [[ -n $backup ]]; then
   mkdir -p "$dev_dir" && mkdir "$b" || { echo "error=backup: cannot create $b"; exit 2; }
   echo "backup=$b"
   { [[ ! -e .config/omarchy/shell.json ]] || cp -p .config/omarchy/shell.json "$b/shell.json"; } \
-    && { [[ ! -e .local/state/seldon ]] || cp -a .local/state/seldon "$b/state"; } \
-    && { [[ ! -e .local/bin/seldon ]] || cp -p .local/bin/seldon "$b/seldon"; } \
-    && { [[ ! -e $plugin_dir ]] || cp -a "$plugin_dir" "$b/plugin"; } \
+    && { [[ ! -e .local/state/seldon ]] || cp -a .local/state/seldon "$b/state-seldon"; } \
+    && { [[ ! -e .local/bin/seldon ]] || cp -p .local/bin/seldon "$b/seldon.engine"; } \
+    && { [[ ! -e $plugin_dir ]] || cp -a "$plugin_dir" "$b/plugin-jax.seldon"; } \
     || { echo "error=backup to $b"; exit 2; }
 fi
 mkdir -p .local/bin "$dev_dir" .config/omarchy/plugins

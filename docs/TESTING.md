@@ -1426,7 +1426,9 @@ does not run a next build yet (its marker), the deploy copies
 `~/.config/omarchy/shell.json`, `~/.local/state/seldon`, the engine and
 the plugin dir (whichever exist) to
 `~/.local/state/seldon-dev/backup-before-next-<UTC stamp>/`
-(`shell.json`, `state/`, `seldon`, `plugin/`) before the engine swap;
+(`shell.json`, `state-seldon/`, `seldon.engine`, `plugin-jax.seldon/`,
+as in the orchestrator's backup by hand of 2026-10-07) before the engine
+swap;
 state written by next may not load in main, and this is the way back. A
 failed backup stops the deploy before any other change (exit 2, logged).
 The summary and the log line (`backup`) name it; a deploy from next to
