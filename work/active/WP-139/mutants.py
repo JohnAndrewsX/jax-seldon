@@ -123,6 +123,8 @@ ENGINE = [
      "!key.chars().any(|c| c.is_control() || crate::redact::is_invisible(c))"),
     ("r3 config watch misses U+2028", CMD, "if key.chars().any(crate::import::bad_path_char)",
      "if key.chars().any(|c| c.is_control() || crate::redact::is_invisible(c))"),
+    ("r3b a linked ~/.config is outside the home", "engine/src/collectors/config.rs",
+     "match under_dot_config.ok_or(()).or(under_home.map_err(|_| ())) {", "match under_home.map_err(|_| ()) {"),
     # round 2 (stage-1 review B1–B3, N1, N4)
     ("r2 shown_path takes a lossy path", RECENT, "    path.to_str()?;\n", ""),
     ("r2 state file read unbounded", RECENT, "match sys::read_small_file(&path, sys::STATE_FILE_MAX) {",

@@ -670,7 +670,9 @@ seldon config watch <PATH> [--json]           # ADR-0046, WP-139: appends PATH (
                                                # may not hold (import::bad_path_char: control, invisible,
                                                # U+2028, U+2029), over 512 characters, leading through a
                                                # link out of the home, into Seldon's own files or under a
-                                               # skipPath (its canonical path, WP-139 round 3), or a file
+                                               # skipPath (its canonical path, WP-139 round 3; the
+                                               # canonical ~/.config counts as ~/.config when it is
+                                               # itself a link out of the home, round 3b), or a file
                                                # the edit cannot extend (the message names the line to
                                                # add). Already under
                                                # a watch path: exit 0, nothing written. Rebuilds the index

@@ -450,7 +450,8 @@ pub enum LinkRefusal {
 
 /// [`LinkRefusal`] for `path`, `None` when it may be read: no link on the
 /// way, or one whose canonical target passes. `own` holds Seldon's own
-/// files, canonical. A path whose target cannot be resolved is the
+/// files, canonical. A target below the canonical `~/.config` counts as
+/// below `~/.config`, also when `~/.config` itself leads out of the home. A path whose target cannot be resolved is the
 /// caller's (as before: not readable, not hashed).
 pub fn link_refusal(
     home: &Path,
@@ -470,16 +471,26 @@ pub fn link_refusal(
         return Some(LinkRefusal::Own);
     }
     let canonical_home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
-    match canonical.strip_prefix(&canonical_home) {
+    // `~/.config` may itself be a link out of the home (a dotfile setup
+    // such as /mnt/dotfiles): its canonical folder counts as `~/.config`
+    // (orchestrator decision, WP-139 round 3b)
+    let dot_config = home.join(crate::config_scan::ROOT);
+    let under_dot_config = std::fs::canonicalize(&dot_config).ok().and_then(|c| {
+        canonical
+            .strip_prefix(c)
+            .ok()
+            .map(|rest| dot_config.join(rest))
+    });
+    let under_home = canonical
+        .strip_prefix(&canonical_home)
+        .map(|rest| home.join(rest));
+    match under_dot_config.ok_or(()).or(under_home.map_err(|_| ())) {
         // the target as the patterns spell it: under the home as given
-        Ok(rest) => {
-            let shown = home.join(rest);
-            shown
-                .ancestors()
-                .take_while(|p| *p != home && p.starts_with(home))
-                .any(ignored)
-                .then_some(LinkRefusal::Ignored)
-        }
+        Ok(shown) => shown
+            .ancestors()
+            .take_while(|p| *p != home && p.starts_with(home))
+            .any(ignored)
+            .then_some(LinkRefusal::Ignored),
         Err(_) if outside_home => Some(LinkRefusal::OutsideHome),
         Err(_) => ignored(&canonical).then_some(LinkRefusal::Ignored),
     }

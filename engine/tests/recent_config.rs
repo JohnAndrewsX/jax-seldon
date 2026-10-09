@@ -240,6 +240,42 @@ fn a_link_out_of_the_home_is_not_listed_and_not_watchable() {
     assert_eq!(added["added"], json!(true));
 }
 
+/// WP-139 round 3b (orchestrator decision): `~/.config` itself a link to a
+/// folder outside the home (a dotfile setup): that folder counts as
+/// `~/.config`, so `config watch` takes a path there, as the collector
+/// does; skipPaths, Seldon's own files and a link out of it still refuse.
+#[test]
+fn a_dot_config_that_links_out_of_the_home_counts_as_dot_config() {
+    let env = Env::new(Snapper::Missing);
+    let dots = env.tmp.path().join("dotfiles");
+    std::fs::create_dir_all(&dots).unwrap();
+    link(&dots, &env.home.join(".config"));
+    file(&env, ".config/app/x.conf", HOUR);
+    file(&env, ".config/secret/token", HOUR);
+    let elsewhere = env.tmp.path().join("elsewhere/y.conf");
+    std::fs::create_dir_all(elsewhere.parent().unwrap()).unwrap();
+    std::fs::write(&elsewhere, "y\n").unwrap();
+    link(&elsewhere, &env.home.join(".config/app/out.conf"));
+    std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
+    std::fs::write(
+        env.config_file(),
+        "watchPaths = [\"~/.config/hypr\"]\n\n[redaction]\nskipPaths = [\"~/.config/secret/\"]\n",
+    )
+    .unwrap();
+    let added = ok(&env.seldon(&["config", "watch", "--json", "--", "~/.config/app/x.conf"]));
+    assert_eq!(added["added"], json!(true));
+    for (path, says) in [
+        ("~/.config/secret/token", "matches [redaction] skipPaths"),
+        ("~/.config/seldon/config.toml", "Seldon's own files"),
+        ("~/.config/app/out.conf", "outside your home directory"),
+    ] {
+        let out = env.seldon(&["config", "watch", "--json", "--", path]);
+        assert_eq!(out.status.code(), Some(1), "{path}");
+        let message = common::json(&out)["error"]["message"].to_string();
+        assert!(message.contains(says), "{path}: {message}");
+    }
+}
+
 #[test]
 fn only_a_capture_that_runs_the_config_collector_scans() {
     let (env, _) = setup();

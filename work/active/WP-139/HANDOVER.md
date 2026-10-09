@@ -338,3 +338,17 @@ WP-138 on `next`. AGENTS.md §6 needs the operator's line for the
   low-memory reaper** while it ran (not a failure of the check; log
   `gates/check-wp139-r3.log`, unfinished). Not restarted on my own; it
   needs the orchestrator's go.
+
+## Round 3b (orchestrator decision on the open question)
+
+- A `~/.config` that is itself a link to a folder outside the home (a
+  dotfile setup such as `/mnt/dotfiles`) counts as `~/.config`:
+  `collectors::config::link_refusal` maps a target below the canonical
+  `~/.config` to `~/.config/…` before the skipPaths check, so `config
+  watch` accepts paths there, as the collector does; skipPaths, Seldon's
+  own files and links that leave that root are still refused. Test
+  `a_dot_config_that_links_out_of_the_home_counts_as_dot_config`
+  (accepted path; refused skipPath, own config, link out); checked to fail
+  without the change (mutant `r3b …` added to `mutants.py`, run once by
+  hand, killed). `recent_config` 17/17 and the lib tests 379/379 pass,
+  clippy clean. The full check is the orchestrator's (gate w139r3).

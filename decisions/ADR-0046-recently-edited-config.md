@@ -106,7 +106,9 @@ Seldon's config), one under a skipPath, one with a character a path may
 not hold (`import::bad_path_char`, WP-159: control, invisible, U+2028,
 U+2029) or over 512 characters, one that leads through a link out of
 the home directory, into Seldon's own files or under a skipPath (the
-same checks on its canonical path; WP-139 round 3), and a file the minimal edit cannot
+same checks on its canonical path; WP-139 round 3 — a `~/.config` that
+is itself a link out of the home counts as `~/.config`, as for the
+collector, round 3b), and a file the minimal edit cannot
 extend (the message names the line to add by hand). A path already under
 a watch path is exit 0, `added: false`, nothing written. Without a
 `config.toml` the defaults plus the path are written. The index is
