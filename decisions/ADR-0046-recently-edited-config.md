@@ -36,7 +36,8 @@ before the scan:
   collector's.
 - **`[redaction] skipPaths` honoured**: a skipped folder is not entered, a
   skipped file not listed (a name pattern matches a folder's name too).
-- **Its own ignore list**: `.git`; folders whose name holds `cache`; the
+- **An ignore list** (since §5 the union with the preview's, plus
+  `node_modules`): `.git`; folders whose name holds `cache`; the
   folders `state`, `log`, `logs`, `history`, `databases`, `IndexedDB`,
   `leveldb`, `Local Storage`, `Session Storage`, `blob_storage`; every
   folder that holds `Cookies` or `Local State` (a browser or Electron
@@ -44,8 +45,8 @@ before the scan:
   database, key-store and image files and editor temp files by name;
   `shell.json`; Omarchy's plugin folder; Seldon's own config folder and
   config file (the click below edits it) and the logbook.
-- **Bounded**: at most 20 000 directory entries read, 12 levels below
-  `~/.config` and 500 ms of wall time; directory links are never
+- **Bounded**: at most 20 000 directory entries read, 16 levels below
+  `~/.config` and 500 ms of wall time (§5); directory links are never
   followed, a link to a file counts by its target's time. A walk that
   reaches the entry budget or the deadline stops, one that leaves folders
   below the depth unread goes no deeper; either way the result is marked
@@ -116,6 +117,22 @@ path: a path no row names is *attention* by the total row; a path under
 field, its command form joins the plugin's fixed forms. An index without
 the field (an earlier v2 build) is valid: the desk shows the System
 section without the tile.
+
+### 5. One walker (WP-139 round 2)
+
+The walk of §1 is the engine's one walker, `config_scan` (WP-138's,
+shared with `seldon preview`). The two lists became one: it walks
+breadth-first (each folder's entries by name), so one heavy folder
+cannot spend the entry budget before shallow config files elsewhere are
+read; it ignores the union of both lists plus `node_modules`; a link to
+a file is listed under its own path with the target's time (stat only),
+a link to a folder never entered; the exclusions of §1 apply before a
+folder is entered (`Limits.exclude`); the depth is 16; and the root is
+`~/.config` for both callers, whatever `$XDG_CONFIG_HOME` says (the
+index's paths start with `~/.config/`). For the preview this changes
+ADR-0047 §3 on two points — file links are now listed, and the root no
+longer follows `$XDG_CONFIG_HOME` — and adds to its ignore list; nothing
+in its JSON shape changes.
 
 ## Consequences
 

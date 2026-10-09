@@ -700,13 +700,16 @@ seldon preview [--days N] [--json]
 # newest first; `at` its Running line (else `transaction started`), or its
 # first line in the window; `command` redacted, one line, ≤ 256 characters;
 # `status` as ADR-0043; a missing log is `pacman.ok: false` with the error.
-# files: `config_scan` (engine/src/config_scan.rs, shared with WP-139) walks
-# $XDG_CONFIG_HOME by mtime, never content: regular files only, symlinks
-# never followed, ≤ 16 folders deep; skips caches (`*cache*`), profiles (a
-# folder holding `Cookies` or `Local State`), state, log(s), crash folders,
-# databases (sqlite, *.db, LevelDB, IndexedDB, Local/Session Storage,
-# dconf), images, locks, pid and swap files, `*~`, `*.bak.*`, `.git`,
-# omarchy/plugins, omarchy/shell.json and every [redaction] skipPaths match;
+# files: `config_scan` (engine/src/config_scan.rs, the one walker, shared
+# with the capture's recently edited list, §4) walks ~/.config (whatever
+# $XDG_CONFIG_HOME says; WP-139 round 2) by mtime, never content,
+# breadth-first: regular files and links to them (the target stat'ed,
+# never opened; the link's path listed), a link to a folder never entered,
+# ≤ 16 folders deep; skips the ignore list of §4 (caches, node_modules,
+# profiles — a folder holding `Cookies` or `Local State` —, state,
+# history, log(s), crash folders, databases, key stores, images, locks,
+# pid, swap and temp files, `*~`, `*.bak.*`, `.git`, `shell.json`),
+# omarchy/plugins and every [redaction] skipPaths match;
 # the walk runs first and stops 0.25 s after it started or after 200 000
 # entries (`partial`); names, versions and the command line through the
 # same one-line rule, clipped to 512/256/256 characters. Together under 0.5 s
@@ -1927,42 +1930,49 @@ git itself is killed, with the same bounded pipe wait. Rules:
 
 **Recently edited, not watched (ADR-0046, WP-139; no collector, no
 event).** A capture that runs the config collector also walks
-`~/.config` (`collectors::recent::scan`) and keeps the `~`-paths and
-modification times — never content — of the newest 80 regular files
+`~/.config` (`collectors::recent::scan` over the engine's one walker,
+`config_scan`, which `seldon preview` uses too) and keeps the `~`-paths
+and modification times — never content — of the newest 80 files
 modified in the 7 days before the scan, in the capture's offset, whole
-seconds, never after the capture, newest first. Left out: everything
-under a watch path; everything matching `[redaction] skipPaths` (a
-skipped folder is not entered; a name pattern matches a folder's name
-too); Omarchy's plugin folder (as the plugins collector finds it),
-`~/.config/seldon`, the config directory, the config file and the
-logbook; the
-ignore list — the folders `.git`, any whose name holds `cache` (any
-case), `state`, `log`, `logs`, `history`, `databases`, `IndexedDB`,
-`leveldb`, `Local Storage`, `Session Storage`, `blob_storage`, and every
-folder holding an entry `Cookies` or `Local State` (a browser or
-Electron profile: none of its files), and the files `shell.json`,
-`state`, `lock`, `*state.json`, `*.state`, `history.json`,
-`Singleton*`, `*.log.*`, `*.tmp-*`, `.#*`, `#*#`, `.goutputstream-*` and
-the endings `.log`, `.lock`, `.lck`, `.pid`, `.db`, `.db-journal`,
-`.db-wal`, `.db-shm`, `.sqlite`, `.sqlite3`, `.sqlite-journal`,
-`.sqlite-wal`, `.sqlite-shm`, `.ldb`, `.kdbx`, `.png`, `.jpg`, `.jpeg`,
-`.gif`, `.webp`, `.bmp`, `.ico`, `.svg`, `.avif`, `.tif`, `.tiff`,
-`.heic`, `.jxl`, `.xpm`, `.swp`, `.swo`, `.swx`, `.tmp`, `~` (all
-case-insensitive); anything that is no regular file (a directory link is
-never followed; a link to a file counts by its target's time); a name
-that is not UTF-8, and a `~`-path with a control, direction or format
-character, longer than 512 characters, or one the logbook's redaction
-would change (never shown masked). Bounded: at most 20 000 directory
-entries read and 500 ms of wall time (a walk that reaches either stops)
-and 12 levels below `~/.config` (deeper folders are not read); any of the
-three marks the result `partial: true`. The result goes to
-`recent-config.json` (§2), atomically; a failed write is a capture
-warning. The capture's ledger, cursors and JSON are unchanged. Cost
-(bench profile, `capture_cost.rs`, 2026-10-08, dev host): 2.3 ms per
-capture on a synthetic lived-in `~/.config` (370 entries read; 80 files
-listed), 0.5 ms per index build (§6); at the entry budget (20 000 recent
-files in one folder) 120 ms at rest, about 400 ms measured on a loaded
-host (load ≈ 3.9, WP-139 review), capped by the deadline.
+seconds, never after the capture, newest first (equal times by path).
+The walk (`config_scan`): breadth-first, each folder's entries by name,
+so every file one level down is read before any two levels down;
+regular files, and links to regular files listed under the link's path
+with the target's time (stat only, never opened: stow-style dotfiles); a
+link to a folder is never entered. Ignored: the folders `.git`,
+`node_modules`, any whose name holds `cache` (any case), `state`,
+`history`, `log`, `logs`, `crashpad`, `crash reports`, `IndexedDB`,
+`Local Storage`, `Session Storage`, `databases`, `blob_storage`,
+`leveldb`, `dconf`, `sentry`, `WebStorage`, and every folder below the
+root holding an entry `Cookies` or `Local State` (a browser or Electron
+profile: none of its files); the files `lock`, `state`, `shell.json`,
+`history.json`, `*state.json`, `Singleton*`, `*~`, `*.bak.*`,
+`*.log.*`, `*.tmp-*`, `.#*`, `#*#`, `.goutputstream-*` and the
+extensions `log`, `lock`, `lck`, `pid`, `state`, `db`, `db-wal`,
+`db-shm`, `db-journal`, `sqlite`, `sqlite3`, `sqlite-wal`, `sqlite-shm`,
+`sqlite-journal`, `ldb`, `kdbx`, `png`, `jpg`, `jpeg`, `gif`, `webp`,
+`svg`, `ico`, `bmp`, `tif`, `tiff`, `avif`, `heic`, `jxl`, `xpm`, `swp`,
+`swo`, `swx`, `tmp` (all case-insensitive); everything matching
+`[redaction] skipPaths` (a skipped folder is not entered; a name pattern
+matches a folder's name too). Excluded before a folder is entered
+(`Limits.exclude`): every watch path, Omarchy's plugin folder (as the
+plugins collector finds it), `~/.config/seldon`, the config directory,
+the config file and the logbook. Before the cut to 80, and a folder so
+named is not entered: a name that is not UTF-8, and a `~`-path with a
+control or invisible character (`redact::is_invisible`, ADR-0048),
+longer than 512 characters, with a `.`, `..` or empty folder, or one the
+logbook's redaction would change (never shown masked). Bounded: at most
+20 000 directory entries read and 500 ms of wall time (a walk that
+reaches either stops) and 16 levels below `~/.config` (deeper folders
+are not read); any of the three marks the result `partial: true`. The
+result goes to `recent-config.json` (§2), atomically; a failed write is
+a capture warning. The capture's ledger, cursors and JSON are unchanged.
+Cost (bench profile, `capture_cost.rs`, dev host): 2.3 ms per capture on
+a synthetic lived-in `~/.config` (370 entries read; 80 files listed;
+2.7 ms at load ≈ 3 after the walker became one, 2026-10-09), 0.5 ms per
+index build (§6); at the entry budget (20 000 recent files in one
+folder) 120–130 ms, about 400 ms measured on a loaded host (load ≈ 3.9,
+WP-139 review, the earlier depth-first walk), capped by the deadline.
 
 All events get `actor: system` unless the collector can prove otherwise.
 Proof is an agent hook `command` event that (a) named the subject
