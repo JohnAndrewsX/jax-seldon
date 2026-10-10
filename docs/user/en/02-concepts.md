@@ -1,8 +1,9 @@
 # Concepts
 
 This page explains the ideas behind Seldon: the logbook, cases, zones,
-risk, drift, the baseline, crises, decisions and memory. Read it once.
-The other pages use these words without explaining them again.
+risk, drift, the baseline, crises, decisions and memory, and where the
+desk shows each of them. Read it once. The other pages use these words
+without explaining them again.
 
 ## The idea
 
@@ -32,7 +33,7 @@ the Plan predicts, and a crisis is where reality leaves the Plan.
 |---|---|---|
 | Logbook | a folder, `~/Seldon` by default | holds the record as Markdown and JSON lines; a git repository |
 | Engine | the program `seldon` | the only writer of the logbook; you and your agents call it |
-| Plugin | `jax.seldon` in the Omarchy bar | shows the logbook; every action calls the engine |
+| Plugin | `jax.seldon`: the pill in the Omarchy bar and the desk it opens | shows the logbook; every action calls the engine |
 
 The plugin reads one file, the index
 (`~/.local/state/seldon/index.json`). The engine rebuilds it after every
@@ -157,14 +158,14 @@ who made it:
 | Class | Examples | What happens |
 |---|---|---|
 | routine | a theme switch, a plugin toggle, adding Seldon's own plugin, a plain full upgrade (`pacman -Syu`, `omarchy update`, kernels included), Omarchy's own copy of a file, `shell.json` | history in the Changelog, not drift; nobody is asked |
-| attention | a package installed or removed by name, a third-party plugin added or updated, an override under a watched path, a removed file | open drift, quietly: the panel lists it, the bar does not count it |
+| attention | a package installed or removed by name, a third-party plugin added or updated, an override under a watched path, a removed file | open drift, quietly: the desk lists it, the bar does not count it |
 | crisis | an `alwaysRed` package installed or removed by name, a new file in a persistence path such as `~/.config/systemd/user` or Omarchy's hooks | see [Crisis](#crisis) |
 
 Your own changes in the terminal are recorded like any other: a
 collector sees that a package came in, not that you meant it for a case.
 If an open case names the changed package, path or theme in its *Plan*,
-Seldon proposes that case (the *proposed case*), and the panel shows it
-preselected, also for a routine change.
+Seldon proposes that case (the *proposed case*), and the desk's *Link
+to case…* form has it preselected, also for a routine change.
 
 You may resolve drift, you never have to. There are three ways:
 
@@ -185,13 +186,27 @@ with lists the crises and attention items of the last seven days. An
 agent explains or links an item only when its own *Log*, a hook event or
 your words prove why it happened; otherwise it leaves the item open.
 
+## Triage
+
+When many changes are open, an agent can sort them for you. *Agent sorts
+N open changes* in the desk's Changelog (or `seldon agent ask triage`)
+starts your agent with that one task. The agent writes nothing into the
+logbook. It stores a *proposal*: for each change it can prove, a link to
+a case or an explanation, with the evidence the engine can look up. A
+change nobody can explain stays open. You read the proposal in the desk
+and apply it, as yourself, in one click; each crisis on its own. The agent
+proposes, you apply.
+[Working with agents](04-working-with-agents.md#let-an-agent-sort-the-open-changes)
+shows the steps.
+
 ## Crisis
 
 A crisis is a change that can break boot, login, the shell or security,
 and that nobody asked for in a case. It is the one change Seldon makes
-loud: the pill counts it in your theme's error colour, and the panel
-shows the line "N changes that can affect boot, login or the shell have
-no case". You are told once. Nothing else is required of you.
+loud: the pill counts it in your theme's error colour, the desk's header
+counts it under *crises* in the same colour, and Today lists it under
+NEEDS YOU. In the Changelog its detail says why it is loud. You are told
+once. Nothing else is required of you.
 
 It has the same three actions. An agent may not explain or dismiss a
 crisis; it may link one only to its own active case, and otherwise tells
@@ -258,11 +273,28 @@ It happens:
 
 - when you run `seldon capture`;
 - every 15 minutes while the plugin runs, and when the shell starts;
-- when you press *Capture now* in the panel or right-click the pill;
+- when you press `c` or *Capture now* in the desk, or right-click the pill;
 - at the end of an agent session that has Seldon's hooks.
 
 Running it twice in a row writes nothing the second time. Each collector
 remembers how far it read.
+
+## The concepts in the desk
+
+The desk shows each idea on this page in one place:
+
+| Concept | Where the desk shows it |
+|---|---|
+| routine | Changelog (`2`), chip *routine*: history, no stripe; neither the bar nor the header counts it |
+| attention | Changelog, chips *open* and *attention*, with an accent stripe; the header's *attention* figure |
+| crisis | Today (`1`) under NEEDS YOU; Changelog, chip *crisis*, with an urgent stripe and *Why loud?*; the header's *crises* figure |
+| triage | the head of the Changelog: *Agent sorts N open changes*, then the proposal as a row |
+| case | Work (`3`), in the groups ACTIVE, VERIFICATION, QUEUED and COMPLETED; Today shows the active cases as tiles |
+| trace | Work, the case's detail: LOG and LINKED CHANGES |
+| decision | Decisions (`4`); a proposed decision has a stripe, and the sidebar counts "N new" |
+| dossier | System (`5`) |
+| memory | Memory (`6`): the lessons and the topic files |
+| the whole ledger | Prime Radiant (`7`) as charts, Graph (`8`) as the cases, areas and decisions with their changes over time |
 
 ---
 

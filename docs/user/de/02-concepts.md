@@ -3,9 +3,9 @@
 <!-- source: en/02-concepts.md @ a5ae8924 -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
-Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory. Lies sie
-einmal. Die anderen Seiten verwenden diese Wörter, ohne sie noch einmal
-zu erklären.
+Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory, und wo
+der Desk sie jeweils zeigt. Lies sie einmal. Die anderen Seiten verwenden
+diese Wörter, ohne sie noch einmal zu erklären.
 
 ## Die Idee
 
@@ -39,7 +39,7 @@ den Plan verlässt.
 |---|---|---|
 | Logbuch | ein Ordner, standardmäßig `~/Seldon` | hält die Aufzeichnung als Markdown und JSON-Zeilen; ein git-Repository |
 | Engine | das Programm `seldon` | schreibt als einziges ins Logbuch; du und deine Agenten rufen es auf |
-| Plugin | `jax.seldon` in der Omarchy-Bar | zeigt das Logbuch; jede Aktion ruft die Engine auf |
+| Plugin | `jax.seldon`: die Pill in der Omarchy-Bar und der Desk, den sie öffnet | zeigt das Logbuch; jede Aktion ruft die Engine auf |
 
 Das Plugin liest eine einzige Datei, den Index
 (`~/.local/state/seldon/index.json`). Die Engine baut ihn nach jedem
@@ -171,15 +171,15 @@ würde, nicht danach, wer sie gemacht hat:
 | Klasse | Beispiele | Was passiert |
 |---|---|---|
 | Routine | ein Theme-Wechsel, ein Plugin-Schalter, das Hinzufügen von Seldons eigenem Plugin, ein einfaches System-Upgrade (`pacman -Syu`, `omarchy update`, Kernel eingeschlossen), Omarchys eigene Kopie einer Datei, `shell.json` | Geschichte im Changelog, keine Drift; niemand wird gefragt |
-| zur Kenntnis | ein Paket, mit Namen installiert oder entfernt, ein Plugin eines Dritten, hinzugefügt oder aktualisiert, eine Überschreibung unter einem beobachteten Pfad, eine entfernte Datei | offene Drift, leise: das Panel listet sie, die Pill zählt sie nicht |
+| zur Kenntnis | ein Paket, mit Namen installiert oder entfernt, ein Plugin eines Dritten, hinzugefügt oder aktualisiert, eine Überschreibung unter einem beobachteten Pfad, eine entfernte Datei | offene Drift, leise: der Desk listet sie, die Pill zählt sie nicht |
 | Krise | ein Paket aus `alwaysRed`, mit Namen installiert oder entfernt, eine neue Datei in einem Persistenzpfad wie `~/.config/systemd/user` oder Omarchys Hooks | siehe [Krise](#krise) |
 
 Deine eigenen Änderungen im Terminal werden aufgezeichnet wie alle
 anderen: Ein Collector sieht, dass ein Paket dazugekommen ist, aber
 nicht, dass du es für einen Case gemeint hast. Nennt ein offener Case das
 geänderte Paket, den Pfad oder das Theme in seinem *Plan*, schlägt Seldon
-diesen Case vor (der *vorgeschlagene Case*), und das Panel wählt ihn vor,
-auch für eine Routine-Änderung.
+diesen Case vor (der *vorgeschlagene Case*), und das Formular *Link to
+case…* im Desk wählt ihn vor, auch für eine Routine-Änderung.
 
 Du darfst Drift auflösen, du musst es nie. Es gibt drei Arten:
 
@@ -201,13 +201,28 @@ letzten sieben Tage. Ein Agent erklärt oder verknüpft einen Punkt nur,
 wenn sein eigenes *Log*, ein Hook-Ereignis oder deine Worte belegen,
 warum es passiert ist; sonst lässt er den Punkt offen.
 
+## Triage
+
+Sind viele Änderungen offen, kann ein Agent sie für dich sortieren.
+*Agent sorts N open changes* im Changelog des Desks (oder `seldon agent
+ask triage`) startet deinen Agenten mit genau dieser Aufgabe. Der Agent
+schreibt nichts ins Logbuch. Er legt einen *Vorschlag* ab: für jede
+Änderung, die er belegen kann, eine Verknüpfung mit einem Case oder eine
+Erklärung, mit Belegen, die die Engine nachschlagen kann. Eine Änderung,
+die niemand erklären kann, bleibt offen. Du liest den Vorschlag im Desk
+und wendest ihn als du selbst mit einem Klick an; jede Krise einzeln. Der
+Agent schlägt vor, du wendest an.
+[Mit Agenten arbeiten](04-working-with-agents.md#einen-agenten-die-offenen-änderungen-sortieren-lassen)
+zeigt die Schritte.
+
 ## Krise
 
 Eine Krise ist eine Änderung, die Boot, Anmeldung, die Shell oder die
 Sicherheit brechen kann und um die niemand in einem Case gebeten hat. Sie
 ist die eine Änderung, die Seldon laut macht: Die Pill zählt sie in der
-Fehlerfarbe deines Themes, und das Panel zeigt die Zeile „N changes that
-can affect boot, login or the shell have no case“. Du wirst einmal
+Fehlerfarbe deines Themes, die Kopfzeile des Desks zählt sie unter
+*crises* in derselben Farbe, und Today listet sie unter NEEDS YOU. Im
+Changelog sagt ihr Detail, warum sie laut ist. Du wirst einmal
 informiert. Mehr wird von dir nicht verlangt.
 
 Sie hat dieselben drei Aktionen. Ein Agent darf eine Krise nicht
@@ -250,11 +265,11 @@ Eine Entscheidung ist eine kurze Aufzeichnung einer Wahl, die die
 Maschine prägt, im ADR-Format (Architecture Decision Record): Kontext,
 Entscheidung, Folgen. `seldon decide -- "<titel>"` legt
 `decisions/ADR-NNNN-<slug>.md` mit dem Status *proposed* an und öffnet
-sie in deinem Editor. *Accept* im Bereich Decisions des Desks (zweimal:
+sie in deinem Editor. *Accept* im Abschnitt Decisions des Desks (zweimal:
 der erste Klick macht scharf) oder `seldon decide accept ADR-NNNN` setzt
 sie auf *accepted* mit dem heutigen Datum und vermerkt das im Ledger.
 Annehmen ist deine Sache: ein Agent darf eine Entscheidung vorschlagen,
-nie annehmen. *Superseded* setzt du in der Datei. Der Bereich Decisions
+nie annehmen. *Superseded* setzt du in der Datei. Der Abschnitt Decisions
 listet sie auf.
 
 ## Memory
@@ -282,12 +297,29 @@ Ereignisse ans Ledger an. Das passiert:
 
 - wenn du `seldon capture` ausführst;
 - alle 15 Minuten, solange das Plugin läuft, und beim Start der Shell;
-- wenn du im Panel *Capture now* drückst oder mit rechts auf die Pill
-  klickst;
+- wenn du im Desk `c` oder *Capture now* drückst oder mit rechts auf
+  die Pill klickst;
 - am Ende einer Agenten-Sitzung, die Seldons Hooks hat.
 
 Zweimal hintereinander ausgeführt, schreibt sie beim zweiten Mal nichts.
 Jeder Collector merkt sich, wie weit er gelesen hat.
+
+## Die Konzepte im Desk
+
+Der Desk zeigt jede Idee dieser Seite an einer Stelle:
+
+| Konzept | Wo der Desk es zeigt |
+|---|---|
+| Routine | Changelog (`2`), Chip *routine*: Geschichte, kein Streifen; weder die Bar noch die Kopfzeile zählt sie |
+| zur Kenntnis | Changelog, Chips *open* und *attention*, mit einem Streifen in der Akzentfarbe; die Zahl *attention* in der Kopfzeile |
+| Krise | Today (`1`) unter NEEDS YOU; Changelog, Chip *crisis*, mit einem Streifen in der Warnfarbe und *Why loud?*; die Zahl *crises* in der Kopfzeile |
+| Triage | der Kopf des Changelogs: *Agent sorts N open changes*, danach der Vorschlag als Zeile |
+| Case | Work (`3`), in den Gruppen ACTIVE, VERIFICATION, QUEUED und COMPLETED; Today zeigt die aktiven Cases als Kacheln |
+| Spur | Work, das Detail des Case: LOG und LINKED CHANGES |
+| Entscheidung | Decisions (`4`); eine vorgeschlagene Entscheidung hat einen Streifen, und die Seitenleiste zählt „N new“ |
+| Dossier | System (`5`) |
+| Memory | Memory (`6`): die Lektionen und die Themendateien |
+| das ganze Ledger | Prime Radiant (`7`) als Diagramme, Graph (`8`) als die Cases, Bereiche und Entscheidungen mit ihren Änderungen über die Zeit |
 
 ---
 

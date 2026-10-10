@@ -1,7 +1,7 @@
 # Troubleshooting
 
 This page helps when something looks wrong: it starts with
-`seldon doctor`, then goes through the panel's banners, the engine's
+`seldon doctor`, then goes through the desk's notices, the engine's
 exit codes and the most common problems.
 
 ## Start with doctor
@@ -30,34 +30,48 @@ It only reads: it changes no file, takes no lock and runs nothing with
 | `snapper` | snapshots can be listed, or read from `/.snapshots` | `degraded`: your user may neither list snapshots nor read `/.snapshots`; see [Snapshots are not recorded](#snapshots-are-not-recorded). An `ok` row with a fix: your user is still in the old snapper opt-in; see [doctor suggests reverting the snapper opt-in](#doctor-suggests-reverting-the-snapper-opt-in) |
 | `git` | git is there; the logbook is a repository | git is missing, or the logbook is not a repository; autocommit is off then. `degraded`: something keeps every autocommit from committing (a stale `.git/index.lock`, a detached HEAD, …); the fix says what to do |
 
-`doctor --json` prints the same as JSON. The plugin does not run
-`doctor`: it chooses its banner from the index and from its own engine
-calls.
+`doctor --json` prints the same as JSON. The plugin runs only
+`seldon doctor --only rules`, for the agent rules notice; it chooses its
+other notices from the index and from its own engine calls.
 
-## Banners in the panel
+## Notices on the desk
 
-Until Seldon is set up, Today shows the setup card instead of a banner:
+Until Seldon is set up, Today shows the setup card in place of notices:
 install the engine, create the logbook, read snapshots (optional), each
 with its button ([Getting started](01-getting-started.md#step-2-set-up-seldon-on-the-card)).
-The first three rows below are its steps. For everything else the panel
-shows one banner at the top, with a button that fixes it.
+The header's status chip shows the card's headline, such as
+"Set up Seldon · 2 of 3 steps to go", and a click on it leads to the
+card. After each step's terminal the card looks again by itself and
+moves on. The first three rows below are its steps.
 
-| Banner | Cause | Fix |
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-setup.png; the desk's Today with the setup card, step 1 done and step 2 with Create logbook -->
+
+For everything else the desk shows a notice under the header, with a
+button that fixes it. The status chip in the header shows the first
+notice's title, and "+N" when there are more; a click on the chip folds
+the notices. An urgent notice always takes the chip, also from the setup
+card. The notices come in this order: the restart notice, the status
+notice (one of the index and engine rows below), the engine newer than
+the plugin, snapshots, the agent rules, the capture warnings.
+
+| Notice | Cause | Fix |
 |---|---|---|
-| Install the engine (step 1 of the setup card); Seldon engine missing, in red, when the engine was there before | the plugin cannot run `seldon` | *Install* opens a terminal that says what it does and runs the GitHub installer; or install it yourself ([Getting started](01-getting-started.md#install-the-engine)); the panel finds the engine by itself, or press *Check again* on the red banner |
-| Create your logbook (step 2 of the setup card) | there is no logbook yet | *Create logbook* opens a terminal that runs `seldon init --defaults` (no question); the panel updates by itself when the logbook is there. When that folder already holds other files, the step says so and *Choose a folder* runs `seldon init`, which asks where |
-| No index yet / Index unreadable | `~/.local/state/seldon/index.json` is missing or broken | *Build index* runs `seldon status` |
-| Index is stale | the index is more than two hours old | *Capture now* |
-| Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`, then `omarchy-restart-shell`. Engine: *Update* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
-| The engine is newer than the plugin | the engine writes a newer index format that, as the index says, this plugin can still read; the bar keeps its numbers and colour | update the plugin: *Update* runs `omarchy plugin update jax.seldon`, then `omarchy-restart-shell` |
-| Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest) | *Update* runs the installer again in a terminal (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
+| Install the engine (step 1 of the setup card); "Seldon engine missing", in the urgent colour, when an index shows that the engine was there before | the plugin cannot run `seldon` | *Install* opens a terminal that says what it does and runs the GitHub installer; *Copy* copies that one-liner; or install it yourself ([Getting started](01-getting-started.md#install-the-engine)). The card finds the engine by itself; the urgent notice also has *Check again* |
+| Create the logbook (step 2 of the setup card) | there is no logbook yet | *Create logbook* opens a terminal that runs `seldon init --defaults` (no question); the card moves on by itself when the logbook is there. When that folder already holds other files, the step says so and *Choose a folder* runs `seldon init`, which asks where |
 | Read snapshots (optional, step 3 of the setup card) | snapper refuses your user and `/.snapshots` is not readable | *Grant* opens a terminal that says what the grant allows, runs the one-time read grant (you type your password there) and records the snapshots; the card then moves on by itself. *Not now* puts the step away for good; Settings › Capture offers it again. Seldon works without snapshots |
-| Restart the shell to finish the update | the plugin was updated, but the shell still runs the code it loaded before (it loads new plugin code only when it restarts) | *Restart shell* runs `omarchy-restart-shell`; the bar and panels come back within seconds. See [Update the plugin](11-update-and-uninstall.md#update-the-plugin) |
+| No index yet | the engine has not written `~/.local/state/seldon/index.json` yet | *Build index* runs `seldon status`, which writes it |
+| Index unreadable | `index.json` is broken, or it is 1 MB or more; then the detail names its size: "index.json is 1.2 MB, over the 1 MB the plugin reads; rebuild it from the logbook." | *Build index* runs `seldon status`, which writes the index again from the logbook |
+| Index is stale | the index is more than two hours old; the detail says when it was last updated | *Capture now* |
+| Index format mismatch | the plugin and the engine speak different versions of the index; the detail names both versions and the side to update | *Update* opens a terminal that updates the older one: the plugin with `omarchy plugin update jax.seldon` (then restart the shell), the engine with the installer (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)). *Copy* copies the command |
+| The engine is newer than the plugin | the engine writes a newer index format that, as the index says, this plugin can still read; the bar keeps its numbers and colour | update the plugin: *Update* runs `omarchy plugin update jax.seldon`, then restart the shell |
+| Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest); the detail names both versions | *Update* runs the installer again in a terminal (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
+| The logbook's agent rules are outdated (vN) | the rules block in the logbook's `AGENTS.md` is older than the engine's | *Update rules* runs `seldon rules update`, which rewrites only Seldon's block; your own rules stay. A damaged or newer block shows the fix as text, without a button |
+| Restart the shell to finish the update | the plugin was updated, but the shell still runs the code it loaded before (it loads new plugin code only when it restarts); the detail names both versions | *Restart shell* runs `omarchy-restart-shell`; the bar comes back within seconds. See [Update the plugin](11-update-and-uninstall.md#update-the-plugin) |
 | Capture warned | a capture the plugin ran finished with a warning, such as [a state reset](#a-state-reset-was-recorded); the notice shows the first line of each warning, the pointer over it shows all of it | no button: do what the warning says. The notice goes away after the next capture without warnings |
 
 The plugin looks for the engine when the shell starts, when you open the
 desk while it is missing, every few seconds after the card's *Install*,
-and when you press *Check again*.
+and when you press *Check again* on a notice.
 
 An index goes stale when no capture ran for two hours, for example after
 the machine slept. The next timed capture fixes it on its own.
@@ -130,15 +144,15 @@ way.
 - Changes by a program the hooks do not see (a GUI, a script) appear at
   the next capture, as drift without an agent name.
 
-### The panel shows old data
+### The desk shows old data
 
 The plugin reads the index, and the engine rewrites it after every
 command. If you edited files in an editor, the index catches up with the
-next command or capture. Press `c` in the panel, or run `seldon status`.
+next command or capture. Press `c` on the desk, or run `seldon status`.
 For edits to show at once, use the
 [watcher](11-update-and-uninstall.md#the-optional-watcher).
 
-If an action in the panel says the index is behind your logbook, you
+If an action on the desk says the index is behind your logbook, you
 changed the logbook elsewhere in the meantime. Capture, then try again.
 
 ### A lot of drift after a backfill
@@ -242,7 +256,7 @@ and miss little, the other collectors miss every change made in between.
 The capture wrote a `state-loss` line with the subject `state-reset`
 (a note in 0.1.x) to the ledger,
 so the gap stays visible, and `seldon doctor` shows a `degraded` `state`
-row until the next capture. When the plugin ran that capture, the panel
+row until the next capture. When the plugin ran that capture, the desk
 shows the warning as a "Capture warned" notice until a capture without
 warnings.
 
@@ -278,7 +292,7 @@ desktop session catches up.
 | plugin warnings | `journalctl --user -t omarchy-shell` |
 | agent launcher errors | `~/.local/state/seldon/agent-launch.log` |
 | the watcher, if you run it | `journalctl --user -u seldon-watch` |
-| what the plugin sees | `omarchy-shell jax.seldon.service status` and `omarchy-shell jax.seldon.panel view` (JSON) |
+| what the plugin sees | `omarchy-shell jax.seldon.service status`, and `omarchy-shell shell call jax.seldon view ""` while the desk is open (JSON) |
 
 ## Reporting a bug
 

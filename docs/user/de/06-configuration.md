@@ -567,18 +567,23 @@ omarchy bar set jax.seldon captureIntervalMin 30 --json
 
 Die Pill verschieben: `omarchy bar move jax.seldon --section right`.
 
-## Eine Taste für den Prime Radiant
+## Eine Taste für den Desk
 
-Das Plugin richtet keine Tastenbelegung ein. Füg diese Zeile zu deinen
-Hyprland-Bindings hinzu, um den Prime Radiant mit Super+Shift+S zu
-öffnen:
+Das Plugin richtet keine Tastenbelegung ein. Füg diese Zeilen zu deinen
+Hyprland-Bindings hinzu (`~/.config/hypr/bindings.lua`), um den Desk mit
+Super+Shift+S zu öffnen und zu schließen. Omarchy belegt diese Taste mit
+seiner Google-Maps-Web-App, deshalb gibt die erste Zeile sie frei; mit
+einer eigenen freien Taste lässt du sie weg:
 
 ```text
+hl.unbind("SUPER + SHIFT + S")
 o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
-Das Panel hat ein eigenes Ziel. Um es über eine Taste oder ein Skript
-umzuschalten: `omarchy-shell jax.seldon.panel toggle`.
+`omarchy-shell shell summon jax.seldon '{"section":"radiant"}'` öffnet den
+Desk beim Prime Radiant. Das Ziel des 0.1-Panels,
+`omarchy-shell jax.seldon.panel toggle`, leitet bis 0.3.0 an den Desk
+weiter.
 
 ---
 

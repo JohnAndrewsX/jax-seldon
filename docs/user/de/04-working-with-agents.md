@@ -5,7 +5,8 @@
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
 jeder andere Agent. Sie behandelt die Hooks, den aktiven Case,
-`seldon agent start` und wie du das Ergebnis prüfst.
+`seldon agent start`, wie der Desk einen Case an einen Agenten übergibt
+und wie du das Ergebnis prüfst.
 
 ## Was Seldon tut und was nicht
 
@@ -99,8 +100,8 @@ das:
                      fix: seldon rules update (archives your copy)
 ```
 
-Das Panel prüft das, wenn du es öffnest, und zeigt „The logbook's agent
-rules are outdated (v1)“ mit *Update rules*; ein Klick führt die Lösung
+Der Desk prüft das, wenn du ihn öffnest, und zeigt den Hinweis „The
+logbook's agent rules are outdated (v1)“ mit *Update rules*; ein Klick führt die Lösung
 aus und sagt in einer Zeile, was er getan hat, zum Beispiel „Agent rules
 updated to v4; your old copy is in archive/AGENTS-2026-10-06.md“.
 Schlägt das Update fehl, sagt die Zeile, warum. Im Terminal führst du
@@ -139,13 +140,15 @@ sagt, was fehlt. Die Engine hält ihn daran: Das `plan done` eines
 Agenten wird abgelehnt, solange *Result* des Case leer ist oder der
 *Plan* keinen Text unter `Verification:` hat, auch wenn der Agent
 `--actor` weglässt. Abschließen kannst du jeden Case weiterhin selbst:
-*Done* im Tab Work oder `seldon plan done`.
+*To verification*, dann *Complete* beim Case im Abschnitt Work des Desks
+(jeweils zweimal: der erste Druck schaltet scharf), oder `seldon plan
+verify` und `seldon plan done`.
 
 Ein Case, den ein Agent abgeschlossen hat, bekommt den Tag
-`closed-by-agent`. Der Tab Work markiert ihn mit „by agent“, und *By
-agent* listet nur diese Cases, für eine Stichprobe, wann immer du willst.
-Stimmt etwas nicht, startet *Reopen* auf seiner Karte (oder
-`seldon plan reopen <ID>`) einen neuen Case mit demselben *Intent*, den
+`closed-by-agent`. Seine Zeile in Work sagt „closed by agent“, und *By
+agent* beschränkt die Gruppe COMPLETED auf diese Cases, für eine
+Stichprobe, wann immer du willst. Stimmt etwas nicht, startet *Reopen* in
+seinem Detail (Taste `r`, oder `seldon plan reopen <ID>`) einen neuen Case mit demselben *Intent*, den
 ein Agent wie gewohnt übernehmen kann; der alte Case bleibt, wie er ist.
 
 ## Claude Code
@@ -175,8 +178,8 @@ Datei stehen. Ein zweiter Aufruf ändert nichts.
 
 Claude Code führt diese Hooks in jeder Sitzung aus, aber Seldon zeichnet
 nur zwei Arten auf: eine Sitzung im Ordner des Logbuchs und eine
-Sitzung, die Seldon für dich gestartet hat (*Run* oder *Start agent* im
-Panel, `seldon agent start`), wo immer sie arbeitet. Jede andere
+Sitzung, die Seldon für dich gestartet hat (*Run* oder *Hand to agent*
+im Desk, `seldon agent start`), wo immer sie arbeitet. Jede andere
 Claude-Code-Sitzung — deine anderen Projekte — wird nicht aufgezeichnet:
 Die Hooks kehren sofort zurück und schreiben nichts.
 
@@ -209,7 +212,7 @@ Geheimnisse aus dem Logbuch heraus.
    ```
 
    Bestätige die Frage, ob du dem Ordner vertraust. Oder starte ihn aus
-   dem Panel ([ein Satz und *Run*](#einen-agenten-aus-dem-panel-starten));
+   dem Desk ([ein Satz und *Run*](#einen-agenten-aus-dem-desk-starten));
    dann startet er in `~/Work`, wie Omarchys eigener Agent.
 
 2. Sag ihm in einem Satz, was du willst, zum Beispiel: „Mach die Abstände
@@ -228,17 +231,17 @@ Geheimnisse aus dem Logbuch heraus.
    Journal-Zeile hinzu, erfasst und committet.
 
 Du kannst den Case auch zuerst selbst anlegen und starten, mit eigener
-Zone, eigenem Risiko, Bereich und Plan, im Panel oder im Terminal, und
-ihn dann übergeben:
+Zone, eigenem Risiko, Bereich und Plan, im Desk (*New case* in Work,
+Taste `+`) oder im Terminal, und ihn dann übergeben:
 
 ```sh
 seldon plan new --zone yellow --risk R1 --area hyprland -- "Größere Abstände zwischen Fenstern"
 seldon plan start C-2026-003
 ```
 
-Sag dem Agenten dann „Bearbeite Case C-2026-003“, oder drück *Start
-agent* auf der Karte des Case (siehe
-[Einen Agenten aus dem Panel starten](#einen-agenten-aus-dem-panel-starten)).
+Sag dem Agenten dann „Bearbeite Case C-2026-003“, oder drück *Hand to
+agent* beim Case in Work (siehe
+[Einen Agenten aus dem Desk starten](#einen-agenten-aus-dem-desk-starten)).
 
 Eine Claude-Code-Sitzung, die du von Hand außerhalb des Logbuch-Ordners
 startest, wird nicht aufgezeichnet. Damit jede Claude-Code-Sitzung auf
@@ -338,11 +341,12 @@ sehen ihre Wirkung trotzdem bei der nächsten Erfassung, aber ohne den
 Namen des Agenten und ohne Case. Sag deinem Agenten, Änderungen als
 einfache Befehle auszuführen.
 
-## Einen Agenten aus dem Panel starten
+## Einen Agenten aus dem Desk starten
 
-Am schnellsten geht es mit einem Satz. Schreib in das Feld oben im Tab
-Work, was erledigt werden soll, und drück Enter oder *Run*. Das Panel
-führt aus:
+Am schnellsten geht es mit einem Satz. Schreib in das Feld oben in Work
+(Taste `i`), was erledigt werden soll, und drück Enter oder *Run*; das
+Feld *New case* in der Übersicht von Today tut dasselbe. Der Desk führt
+aus:
 
 ```sh
 seldon agent start --new -- "Install tool X, it ships a PKGBUILD"
@@ -354,21 +358,30 @@ Case (gelb, R1; der Agent stuft Zone und Risiko hoch, wenn die Arbeit es
 braucht) und startet den Agenten darauf, genau wie unten. Das ist ein
 Klick und ein Satz; der Agent fragt dich nur nach einem Passwort, einem
 R3-Schritt oder etwas außerhalb deines Satzes. Hat Omarchy noch keinen
-Standard-Agenten, wird nichts angelegt, und das Panel sagt: Führ
+Standard-Agenten, wird nichts angelegt, und der Desk sagt: Führ
 `omarchy default agent <name>` aus (zum Beispiel `claude`), oder nenne
 einen Launcher in der Konfiguration.
 
-Für einen Case, den du selbst angelegt hast, führt *Start agent* auf der
-Karte eines aktiven Case (oder zweimal `a` im Tab Work) aus:
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-work.png; Work with an active case selected, the action bar with Hand to agent, To verification and Drop -->
+
+Für einen Case, den du selbst angelegt hast, führt *Hand to agent* bei
+einem aktiven Case in Work den Befehl unten aus. Der erste Klick oder
+`a` schaltet es scharf, der zweite führt es aus; die Aktionsleiste sagt
+„Hand to agent C-2026-003? Press a again or click Confirm.“ Enter startet
+nie einen Agenten.
 
 ```sh
 seldon agent start C-2026-003
 ```
 
+Der Desk tritt zur Seite: Sobald die Engine den Agenten gestartet hat,
+schließt sich der Desk, damit das Fenster des Agenten vorne liegt. Wenn
+du den Desk das nächste Mal öffnest, ist der Case noch gewählt.
+
 Die Engine macht den Case zum aktiven Case und startet einen Agenten
 dort, wo Omarchy seinen eigenen startet (`omarchy agent prompt`): im
 Ordner, in dem du den Befehl aufrufst, und in `~/Work`, wenn dieser
-Ordner dein Home oder `/` ist — wie aus dem Panel (dein Home, wenn es
+Ordner dein Home oder `/` ist — wie aus dem Desk (dein Home, wenn es
 kein `~/Work` gibt). Agenten vertrauen `~/Work`, es gibt also keine
 Vertrauensfrage. Der erste Prompt des Agenten nennt den Case und das
 Logbuch, verweist auf den Skill `seldon` (oder, für einen Agenten ohne
@@ -377,8 +390,8 @@ Skills, auf die `AGENTS.md` des Logbuchs) und sagt ihm,
 auszuführen; er enthält keinen Text aus deinem Logbuch. Der Prompt ist ein Kommandozeilenargument: Solange der
 Agent läuft, ist er in der Prozessliste (`ps`) sichtbar, und ein
 Sitzungsjournal, das Programmstarts protokolliert, behält ihn. Sobald der
-erste Befehl des Agenten aufgezeichnet ist, zeigt die Karte seinen
-Namen.
+erste Befehl des Agenten aufgezeichnet ist, nennt ihn das Detail des
+Case in Work in der Zeile *Agent*.
 
 Der Agent bekommt außerdem drei Umgebungsvariablen. `SELDON_ACTOR` ist
 `agent:` und der Name des Launchers (`agent:default` für den
@@ -439,12 +452,40 @@ Scheitert der Launcher, steht sein Fehler in
 `agent start` lehnt einen Case ab, der nicht aktiv ist. Starte ihn
 vorher.
 
+### Ein Agent pro Case
+
+Solange ein Agent an einem Case arbeitet, ist sein Fenster die Sitzung
+des Case. Der Desk fragt die Engine, welche Cases eine haben (`seldon
+agent sessions`), wenn er sich öffnet, und alle 15 Sekunden, solange er
+offen ist. Bei so einem Case:
+
+- sagen die Kachel des Case in Today und seine Zeile in Work „agent
+  working“;
+- zeigt die Zeile *Agent* im Detail „working now“, den Namen des Agenten
+  und seinen Workspace, oder „starting · its window is not open yet“;
+- steht *Focus* (Taste `a`, einmal) an der Stelle von *Hand to agent*: Es
+  holt das Fenster des Agenten nach vorne und schreibt nichts. Der Desk
+  tritt wieder zur Seite.
+
+Einen zweiten Agenten auf demselben Case lehnt die Engine ab: `seldon
+agent start` nennt das Fenster und startet nichts. Hol das Fenster
+zurück, oder starte bewusst einen zweiten Agenten:
+
+```sh
+seldon agent focus C-2026-003
+seldon agent start C-2026-003 --again
+```
+
+Dafür braucht es Hyprland, das der Engine die Fenster nennt. Ohne
+Hyprland wird nichts verfolgt: Der Desk behält *Hand to agent*, und
+`agent start` lehnt nie ab.
+
 ## Einen Agenten die offenen Änderungen sortieren lassen
 
 Änderungen ohne Case warten im Changelog. Erklären musst du sie nie,
 aber ein Agent kann sie für dich sortieren, mit Belegen, und du wendest
-das Ergebnis mit einem Klick an. *Agent sorts N open changes* im Panel
-führt aus:
+das Ergebnis mit einem Klick an. *Agent sorts N open changes*, oben im
+Changelog des Desks, solange etwas offen ist, führt aus:
 
 ```sh
 seldon agent ask triage
@@ -468,7 +509,25 @@ seine eigenen Notizen, Ereignisse, Cases oder Pläne. Ins Logbuch wird noch
 nichts geschrieben. Am Ende nennt dir der Agent die Id des
 Vorschlags.
 
-Du wendest ihn an, als du selbst:
+Du wendest ihn an, als du selbst. Im Desk ist der Vorschlag eine Zeile
+oben im Changelog: „Proposal · 12 items proposed by agent:default at …,
+1 crisis held back — apply each below“ (deine Zahlen weichen ab). Wähl
+sie aus. Das Detail listet jeden Eintrag: die Änderung, die Verknüpfung
+oder die Erklärung und jeden Beleg mit dem, der ihn geschrieben hat. Ein
+Eintrag mit Belegen von einem Agenten oder von unbekannter Hand sagt
+„Read twice: some evidence names an agent or an unknown author.“
+
+- *Apply proposals (N)* wendet jeden Eintrag außer den Krisen mit einem
+  Klick an. Die Zeile unter der Leiste sagt, was geschehen ist: „Applied
+  N · skipped S · refused R“.
+- Unter CRISES — EACH ON ITS OWN hat jede Krise ihr eigenes *Apply this
+  crisis*.
+- *Discard* verwirft den Vorschlag. Es schaltet zuerst scharf (*Confirm
+  discard*); das Logbuch ändert sich nicht.
+
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-triage.png; the Changelog with an agent's proposal selected: Apply proposals, Discard, the crisis held back and the evidence with its authors -->
+
+Im Terminal:
 
 ```sh
 seldon drift apply <PROPOSAL>
@@ -490,10 +549,12 @@ darfst nur du: Die Engine lehnt einen Agenten ab, der sich als Agent
 ausweist, wie es ein von Seldon gestarteter tut (`SELDON_ACTOR`). Das
 schützt vor einem Versehen, ist aber kein Schloss: Jedes Programm, das du
 als du selbst startest, kann die Variable weglassen, so wie es Drift auch
-direkt auflösen könnte; *Apply* im Desk läuft aus der Shell, nie aus der
-Sitzung eines Agenten.
+direkt auflösen könnte; *Apply proposals* im Desk läuft aus der Shell,
+nie aus der Sitzung eines Agenten.
 
-Um stattdessen nach einer einzelnen Änderung oder einem Case zu fragen:
+Um stattdessen nach einer einzelnen Änderung oder einem Case zu fragen,
+drück *Ask agent* in ihrem Detail im Desk (eine offene Änderung in Today
+oder im Changelog, ein Case in Work), oder führ aus:
 
 ```sh
 seldon agent ask drift <EVENT>
@@ -503,7 +564,8 @@ seldon agent ask case C-2026-003
 Der Agent sagt dir in seinem Fenster, was die Aufzeichnung zeigt und was
 er vorschlägt; er löst nichts auf, solange du es ihm dort nicht sagst.
 Eine Frage gibt dem Agenten nie einen Case zum Bearbeiten: Das tut
-`agent start`. Ohne Omarchy-Standard-Agent oder ohne den Skill `seldon`
+`agent start`. Wie nach *Hand to agent* schließt sich der Desk, sobald
+der Agent gestartet ist. Ohne Omarchy-Standard-Agent oder ohne den Skill `seldon`
 (`seldon hook install skills`) startet nichts, und die Meldung nennt die
 Lösung.
 
@@ -663,12 +725,13 @@ und bei einem Agenten seinen Namen:
 seldon open ledger --editor
 ```
 
-Im Panel:
+Im Desk:
 
-- Changelog, Filter `agent`: die Befehle, die Agenten ausgeführt haben,
-  mit ihrem Case.
+- Changelog: wähl den Chip *all* und such nach `agent` (Taste `/`): die
+  Befehle, die Agenten ausgeführt haben, mit ihrem Case.
 - Today: die Journal-Notizen des Agenten und die Zeile „session ended“.
-- Work: die Karte des Case mit ihren Schritten.
+- Work: das Detail des Case mit seinen Schritten, seinem LOG und seinen
+  LINKED CHANGES.
 
 Jeder Schritt der Engine ist ein git-Commit im Logbuch.
 `git -C ~/Seldon log -p` zeigt, was sich in jeder Datei geändert hat,
@@ -691,8 +754,8 @@ haben, erscheint dort.
 - Schreib eigene Grenzen unter `## Your rules` in `AGENTS.md`, zum
   Beispiel „nie aus dem AUR installieren“.
 - Lies das *Result* eines Case und seine Spur, wenn du die Arbeit des
-  Agenten prüfen willst; der Filter `agent` im Changelog zeigt, was
-  Agenten ausgeführt haben.
+  Agenten prüfen willst; im Changelog zeigt eine Suche nach `agent` auf
+  dem Chip *all*, was Agenten ausgeführt haben.
 
 ---
 

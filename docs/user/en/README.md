@@ -12,7 +12,7 @@ about fifteen minutes.
 |---|---|
 | [1. Getting started](01-getting-started.md) | you install Seldon and want a first result |
 | [2. Concepts](02-concepts.md) | you want to know what cases, zones, risk and drift mean |
-| [3. Daily use](03-daily-use.md) | you work with the pill, the panel and the Prime Radiant |
+| [3. Daily use](03-daily-use.md) | you work with the pill and the desk: its sections, the Prime Radiant and the graph |
 | [4. Working with agents](04-working-with-agents.md) | Claude Code or another agent should work a case |
 | [5. CLI reference](05-cli-reference.md) | you need a command or an option |
 | [6. Configuration](06-configuration.md) | you change collectors, watched paths, redaction or the agent launcher |

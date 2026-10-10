@@ -83,30 +83,88 @@ installiert die Engine stattdessen aus dem GitHub-Release.
 Das Update holt die neuen Plugin-Dateien und bittet die Shell, ihre
 Plugins neu zu laden. Die Shell führt aber den Plugin-Code, den sie
 zuerst geladen hat, weiter aus, bis sie neu startet. Starte sie mit
-`omarchy-restart-shell` neu: Leiste, Panels und Overlays sind nach
-wenigen Sekunden wieder da, deine Programme laufen weiter. Bei
+`omarchy-restart-shell` neu: Die Leiste und die anderen Flächen der
+Shell sind nach wenigen Sekunden wieder da, deine Programme laufen
+weiter. Bei
 gesperrtem Bildschirm verweigert der Befehl den Neustart.
 
-Merkt das Panel, dass das installierte Plugin nicht das laufende ist,
-zeigt es über den anderen Bannern „Restart the shell to finish the
-update“ mit einem Knopf *Restart shell*, der `omarchy-restart-shell`
-ausführt. Eine Plugin-Version, die diesen Hinweis noch nicht kennt,
-zeigt nichts. Starte die Shell deshalb nach jedem Plugin-Update neu.
+Merkt das Plugin, dass das installierte Plugin nicht das laufende ist,
+zeigt der Desk über den anderen Hinweisen „Restart the shell to finish
+the update“ mit einem Knopf *Restart shell*, der `omarchy-restart-shell`
+ausführt. Eine Plugin-Version, die diesen Hinweis noch nicht kennt (vor
+0.1.4), zeigt nichts. Starte die Shell deshalb nach jedem Plugin-Update
+neu.
 
 Plugin und Engine einigen sich über die Version des Index-Formats. Ist
-eines zu alt, meldet das Panel „Index format mismatch“ und nennt das, was
+eines zu alt, meldet der Desk „Index format mismatch“ und nennt das, was
 du aktualisieren musst. Ist die Engine neuer und sagt ihr Index, dass
 dieses Plugin ihn noch lesen kann, arbeitet das Plugin weiter und bittet
 nur in einem leisen Hinweis um sein eigenes Update („The engine is newer
 than the plugin“). Nach einem Update sollte `seldon doctor` nur `ok`
 zeigen.
 
+## Was sich gegenüber 0.1.x geändert hat
+
+0.2.0 ändert die Oberfläche des Plugins und das Index-Format.
+Aktualisiere deshalb Engine und Plugin zusammen und starte danach die
+Shell neu:
+
+```sh
+curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
+omarchy plugin update jax.seldon
+omarchy-restart-shell
+seldon doctor
+```
+
+Zwischen den ersten beiden Befehlen zeigt das Plugin 0.1.x womöglich
+„Index format mismatch“: Die neue Engine schreibt schon das neue Format.
+Nach `omarchy plugin update` zeigt ein Plugin 0.1.4 einmal „Restart the
+shell to finish the update“ mit *Restart shell*; ein älteres zeigt
+nichts. Starte die Shell in beiden Fällen neu. Was sich für dich ändert:
+
+- Der Desk ersetzt Panel und Overlay. Das Popup-Panel der Leiste mit
+  seinen sechs Tabs und das bildschirmfüllende Overlay des Prime Radiant
+  gibt es nicht mehr. Der Desk hat einen Header mit dem Status-Chip und
+  der KPI-Leiste, darunter die Hinweise, eine Seitenleiste mit neun
+  Zielen sowie eine Liste und ein Detail. Today, Changelog, Work,
+  Decisions, System und Memory sind die Abschnitte 1 bis 6, der Prime
+  Radiant ist Abschnitt 7, der neue Graph Abschnitt 8, und Settings ist
+  `,`. Ein Linksklick auf die Pill öffnet den Desk, ein Mittelklick
+  öffnet ihn beim Prime Radiant.
+- `1` bis `8` wählen jetzt einen Abschnitt. Die Zeiträume, die im
+  Overlay von 0.1 auf `1` bis `4` lagen, sind in Abschnitt 7 `←`/`→`
+  oder `h`/`l`. Tab und Shift+Tab tun nichts, denn der Desk ist kein
+  Popup der Leiste. Die ganze Tabelle der Tasten steht in
+  [Alltag](03-daily-use.md#tasten).
+- `omarchy-shell shell toggle jax.seldon` öffnet und schließt den Desk;
+  leg deine Taste darauf. Das Ziel des Panels von 0.1,
+  `omarchy-shell jax.seldon.panel …`, funktioniert weiter und leitet bis
+  0.3.0 an den Desk weiter; 0.3.0 entfernt es.
+- Das Index-Format hat die Version 2. Ein Plugin 0.1.x zeigt gegen eine
+  Engine 0.2.0 „Index format mismatch“, ein Plugin 0.2.0 ebenso gegen
+  eine Engine 0.1.x; beide nennen die Seite, die du aktualisieren musst.
+  Zurück zu einer Engine 0.1.x geht nicht: Sie überspringt die neuen
+  Arten von Ledger-Zeilen als unlesbar.
+- Deine Einstellungen des Plugins behalten ihre Werte. Die zwei neuen
+  beginnen mit ihren Vorgaben: `deskWidth` 100 (Prozent der
+  Bildschirmbreite) und `deskSidebar` `open`. Du änderst sie auf dem Desk
+  unter Settings › Appearance oder in Omarchys Einstellungen der Leiste
+  ([Konfiguration](06-configuration.md#einstellungen-des-plugins)).
+- Verlinkte Ordner und Dateien im Logbuch verweigern das Schreiben. Ein
+  Ordner oder eine Datei des Logbuchs, in die die Engine schreibt, muss
+  echt sein, kein symbolischer Link. Ist es ein Link, bricht jeder
+  Befehl, der dort schreiben würde, mit Exit 1 ab, nennt ihn und schreibt
+  nichts; vor 0.2.0 ging das Schreiben durch den Link hindurch. Die Zeile
+  `layout` von `seldon doctor` nennt jeden solchen Link. Ersetze jeden
+  Link durch den Ordner oder die Datei, auf die er zeigt. Der
+  Logbuch-Ordner selbst darf weiter ein Link sein.
+
 ## Der optionale Watcher
 
 Ohne den Watcher sieht das Plugin deine Änderungen beim nächsten Befehl
 der Engine oder bei der nächsten Erfassung. Der Watcher baut den Index
 zwei Sekunden nach jeder Änderung im Logbuch neu, sodass eine Änderung in
-deinem Editor oder in Obsidian sofort im Panel erscheint. Er erfasst
+deinem Editor oder in Obsidian sofort auf dem Desk erscheint. Er erfasst
 nicht und committet nicht. Er ist standardmäßig aus; du entscheidest, ob
 du ihn willst.
 

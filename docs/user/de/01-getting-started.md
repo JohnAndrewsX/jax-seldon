@@ -36,8 +36,8 @@ omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enabl
 ```
 
 Rechts in der Bar erscheint eine kleine Pill mit dem Seldon-Zeichen. Klick
-sie an. Der Seldon-Desk öffnet sich bei Today, und seine Übersicht zeigt
-die Einrichtungskarte:
+sie an. Der Seldon-Desk öffnet sich bei Today, über die volle Breite des
+Bildschirms, und seine Übersicht zeigt die Einrichtungskarte:
 
 ```text
 Set up Seldon · 3 of 3 steps to go
@@ -46,8 +46,12 @@ Set up Seldon · 3 of 3 steps to go
   3  Read snapshots (optional)
 ```
 
-Die Kopfzeile zeigt dieselbe Zeile. Ein Klick darauf bringt dich von
-überall im Desk zur Karte zurück.
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-setup.png; the desk on Today with the setup card "Set up Seldon · 3 of 3 steps to go" -->
+
+Der Status-Chip in der Kopfzeile zeigt dieselbe Zeile. Ein Klick darauf
+bringt dich von überall im Desk zur Karte zurück. Der Desk ist das eine
+Fenster des Plugins: [Im Desk zurechtfinden](#im-desk-zurechtfinden)
+zeigt seine Teile und Tasten und wie du ihn schmaler machst.
 
 Keine Pill? Prüf, ob `omarchy plugin list` das Plugin `jax.seldon` als
 aktiviert zeigt (sonst `omarchy plugin enable jax.seldon`), und starte
@@ -70,7 +74,7 @@ paar Sekunden nach.
    `~/.local/bin`. Das Installationsskript prüft sie gegen die Prüfsummen
    des Release. Es läuft als dein Benutzer und fragt nach keinem
    Passwort. Das Terminal endet mit „The engine is installed. The Seldon
-   panel finds it by itself.“ Die Karte sagt nun „2 of 3 steps to go“.
+   desk finds it by itself.“ Die Karte sagt nun „2 of 3 steps to go“.
    Das AUR-Paket kommt bald; bis dahin ist das der Weg.
 
 2. **Create the logbook.** Bevor du klickst, zeigt die Liste links, was
@@ -118,6 +122,65 @@ Ist nichts mehr offen, macht die Karte Platz für „Seldon is recording.
 Nothing to do.“ Routine bleibt still im Changelog; nur eine Änderung
 ohne Case, die Boot, Anmeldung oder die Shell treffen kann, färbt die
 Bar.
+
+## Im Desk zurechtfinden
+
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-today.png; the desk on Today with the sample logbook: header with KPI strip, sidebar with the nine sections, list and detail -->
+
+Der Desk hat vier Teile:
+
+- Die Kopfzeile: das Seldon-Zeichen, die Maschine, die Omarchy-Version
+  und die Zeit der letzten Erfassung; ein Status-Chip, solange ein
+  Hinweis ansteht; fünf Zahlen (aktive, in Prüfung stehende und geplante
+  Cases, Krisen, Punkte zur Kenntnis). Ein Klick auf eine Zahl öffnet
+  ihren Abschnitt.
+- Hinweise unter der Kopfzeile, jeder mit seiner Abhilfe per Klick.
+- Die Seitenleiste links: die neun Abschnitte mit ihren Zahlen und unten
+  das Suchfeld.
+- Der Abschnitt selbst: eine Liste und rechts das Detail der gewählten
+  Zeile, oben mit seiner Aktionsleiste.
+
+Alles geht mit der Maus und mit der Tastatur:
+
+| Taste | Wirkung |
+|---|---|
+| `1` bis `8` | Today, Changelog, Work, Decisions, System, Memory, Prime Radiant, Graph |
+| `,` | Settings |
+| `/` | die Suche: filtert die aktuelle Liste; Enter behält den Filter, Esc leert ihn |
+| `↑`/`↓`, `k`/`j` | in der Liste bewegen; das Detail folgt der Auswahl |
+| `Enter` | die erste Aktion des Details, die kein Programm startet, zum Beispiel das Formular einer offenen Änderung |
+| `Esc` | schließt ein Formular, leert dann die Suche, schließt dann den Desk |
+| `c` | jetzt erfassen |
+
+Eine Aktion, die ins Logbuch schreibt, braucht einen zweiten Druck: Der
+erste Druck (oder Klick) schaltet sie scharf, und die Aktionsleiste sagt,
+was der zweite tut. Jede andere Taste entschärft sie. Enter startet nie
+einen Agenten. Alle Tasten stehen in [Alltag](03-daily-use.md).
+
+Der Desk öffnet sich mit 100 % der Bildschirmbreite. Willst du ihn
+schmaler, drück `,` und wähl unter Settings › Appearance eine Breite: von
+50 bis 100 %, mit Vorgaben für 50 %, 67 %, 75 % und Full. Die Seite zeigt,
+wie viele Pixel das auf diesem Bildschirm sind. *Sidebar* schaltet dort
+zwischen Open (Namen und Zahlen) und Collapsed (nur Symbole). Omarchys
+Bar-Einstellungen zeigen dieselben zwei Einstellungen beim Seldon-Widget:
+`deskWidth` (50 bis 100) und `deskSidebar` (`open` oder `collapsed`). Der
+Desk wird nie schmaler als 960 Pixel, außer der Bildschirm ist es.
+
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-50.png; the desk at 50 % width on a 1920 px screen, centred under the bar -->
+
+Um den Desk mit einer Taste zu öffnen, trag eine Tastenbelegung in
+`~/.config/hypr/bindings.lua` ein. Seldon richtet sie nie für dich ein.
+Vorgeschlagen ist Super+Shift+S. Omarchy belegt diese Taste mit seiner
+Web-App Google Maps, also geben diese zwei Zeilen sie zuerst frei und
+belegen sie dann neu:
+
+```lua
+hl.unbind("SUPER + SHIFT + S")
+o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+```
+
+Jede andere freie Taste geht genauso; `omarchy menu keybindings --print`
+listet die belegten Tasten.
 
 ## Schritt 3: Eine ungeplante Änderung aufzeichnen
 
@@ -173,9 +236,10 @@ Routine ist Geschichte, keine Drift.)
    die Ereignis-ID (deine sieht anders aus).
 
    Sie ist keine Krise, also bleibt die Pill in der Bar, wie sie war: Die
-   Zahl hinter dem Zeichen zählt standardmäßig nur Krisen. Der Tab Today
-   des Panels (Taste `1`) zeigt die Änderung unter *without a case*, der
-   Tooltip der Pill ebenso. Sollen alle Änderungen ohne Case auch in der
+   Zahl hinter dem Zeichen zählt standardmäßig nur Krisen. Der Desk
+   listet die Änderung im Changelog (Taste `2`) unter dem Chip *open*,
+   und seine Kopfzeile zählt sie unter *attention*. Der Tooltip der Pill
+   sagt „1 change without a case“. Sollen alle Änderungen ohne Case auch in der
    Bar zählen, setz die Plugin-Einstellung `driftInBar` auf `all`
    ([Konfiguration](06-configuration.md#einstellungen-des-plugins)).
 
@@ -188,6 +252,7 @@ Routine ist Geschichte, keine Drift.)
    ```
 
    Ersetze `<EVENT>` durch die ID aus deiner Ausgabe von `seldon drift`.
+   Im Desk ist das *Explain…* bei der Änderung im Changelog.
 
    ```text
    Explained 1 event(s) with the new completed case C-2026-001
@@ -293,10 +358,10 @@ Index: ~/.local/state/seldon/index.json
 Die Zeile `snapper degraded` steht dort, bis du die Leseberechtigung aus
 Schritt 2 erteilst. Deine Zahlen weichen ab.
 
-Öffne das Panel des Plugins und drück `2` für den Changelog. Du siehst
-beide Änderungen an `~/.bashrc`, die Installation des Plugins, die Notiz
-und die Schritte der Cases. Drück `3` für Work: Beide Cases stehen in der
-Spalte Completed.
+Öffne den Desk und drück `2` für den Changelog. Der Chip *open* ist jetzt
+leer; klick auf *all*. Du siehst beide Änderungen an `~/.bashrc`, die
+Installation des Plugins, die Notiz und die Schritte der Cases. Drück `3`
+für Work: Beide Cases stehen in der Gruppe COMPLETED.
 
 Das Logbuch ist reines Markdown, und jeder Schritt war ein git-Commit:
 
@@ -375,7 +440,7 @@ seldon --version
 ```
 
 ```text
-seldon 0.1.4
+seldon 0.2.0
 ```
 
 Meldet deine Shell `command not found`, liegt `~/.local/bin` noch nicht
@@ -440,7 +505,7 @@ seldon doctor
 
 ```text
 seldon doctor · ~/Seldon
-  ok        engine   seldon 0.1.4, contract 2
+  ok        engine   seldon 0.2.0, contract 2
   ok        config   ~/.config/seldon/config.toml
   ok        logbook  ~/Seldon · machine <machine> · de · 0 cases, 0 decisions, 0 journal days
   ok        cases    every case id has one file
@@ -474,7 +539,7 @@ die `doctor` ausgibt: dieselbe Freigabe wie Schritt 3 der Karte.
 ## Wie es weitergeht
 
 - [Konzepte](02-concepts.md): was Cases, Zonen, Risiko und Drift bedeuten.
-- [Alltag](03-daily-use.md): die Pill, das Panel und der Prime Radiant.
+- [Alltag](03-daily-use.md): die Pill und jeder Abschnitt des Desks.
 - [Mit Agenten arbeiten](04-working-with-agents.md): Claude Code oder
   einen anderen Agenten einen Case bearbeiten lassen, während Seldon
   aufzeichnet, was er tut.

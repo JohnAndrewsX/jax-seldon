@@ -77,29 +77,80 @@ from the GitHub release instead.
 
 The update fetches the new plugin files and asks the shell to reload its
 plugins, but the shell keeps running the plugin code it loaded first
-until it restarts. Restart it with `omarchy-restart-shell`: the bar,
-panels and overlays come back within seconds, your applications keep
-running. It refuses while the screen is locked.
+until it restarts. Restart it with `omarchy-restart-shell`: the bar and
+the shell's other surfaces come back within seconds, your applications
+keep running. It refuses while the screen is locked.
 
-When the panel sees that the installed plugin is not the one running, it
-shows "Restart the shell to finish the update" above the other banners,
-with a *Restart shell* button that runs `omarchy-restart-shell`. A plugin
-version that does not know this notice yet shows nothing, so restart the
-shell after every plugin update.
+When the plugin sees that the installed plugin is not the one running,
+the desk shows "Restart the shell to finish the update" above the other
+notices, with a *Restart shell* button that runs `omarchy-restart-shell`.
+A plugin version that does not know this notice yet (before 0.1.4) shows
+nothing, so restart the shell after every plugin update.
 
 The plugin and the engine agree on the index format by its version. If
-one is too old, the panel says "Index format mismatch" and names the one
+one is too old, the desk says "Index format mismatch" and names the one
 to update. When the engine is newer and its index says this plugin can
 still read it, the plugin keeps working and only asks, in a quiet
 notice, for its own update ("The engine is newer than the plugin").
 After an update, `seldon doctor` should show only `ok`.
 
+## What changed from 0.1.x
+
+0.2.0 changes the plugin's surface and the index format, so update the
+engine and the plugin together, then restart the shell:
+
+```sh
+curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
+omarchy plugin update jax.seldon
+omarchy-restart-shell
+seldon doctor
+```
+
+Between the first two commands the 0.1.x plugin may show "Index format
+mismatch": the new engine already writes the new format. After
+`omarchy plugin update` a 0.1.4 plugin shows "Restart the shell to finish
+the update" once, with *Restart shell*; an older one shows nothing.
+Restart the shell either way. What changes for you:
+
+- The desk replaces the panel and the overlay. The bar popup panel with
+  its six tabs and the fullscreen Prime Radiant overlay are gone. The
+  desk has a header with the status chip and the KPI strip, the notices
+  under it, a sidebar with nine targets, and a list and a detail. Today,
+  Changelog, Work, Decisions, System and Memory are sections 1 to 6, the
+  Prime Radiant is section 7, the new graph is section 8, and Settings
+  is `,`. A left click on the pill opens the desk, a middle click opens
+  it at the Prime Radiant.
+- `1` to `8` choose a section now. The 0.1 overlay's periods on `1` to
+  `4` are `←`/`→` or `h`/`l` in section 7. Tab and Shift+Tab do nothing,
+  because the desk is not a bar popup. The full table of keys is in
+  [Daily use](03-daily-use.md#keys).
+- `omarchy-shell shell toggle jax.seldon` opens and closes the desk;
+  bind your key to it. The 0.1 panel's target,
+  `omarchy-shell jax.seldon.panel …`, still works and forwards to the
+  desk until 0.3.0, which removes it.
+- The index format is version 2. A 0.1.x plugin shows "Index format
+  mismatch" against a 0.2.0 engine, and a 0.2.0 plugin against a 0.1.x
+  engine; each names the side to update. Going back to a 0.1.x engine
+  is not supported: it skips the new kinds of ledger lines as unreadable.
+- Your plugin settings keep their values. The two new ones start at
+  their defaults: `deskWidth` 100 (per cent of the screen's width) and
+  `deskSidebar` `open`. Change them on the desk under Settings ›
+  Appearance or in Omarchy's bar settings
+  ([Configuration](06-configuration.md#plugin-settings)).
+- Linked folders and files in the logbook refuse writes. A folder or
+  file of the logbook that the engine writes into must be a real one,
+  not a symbolic link. When it is a link, every command that would write
+  there stops with exit 1, names it and writes nothing; before 0.2.0 the
+  write went through the link. The `layout` row of `seldon doctor` names
+  every such link. Replace each link with the folder or file it points
+  to. The logbook folder itself may still be a link.
+
 ## The optional watcher
 
 Without the watcher, the plugin sees your changes at the next engine
 command or capture. The watcher rebuilds the index two seconds after any
-change in the logbook, so an edit in your editor or in Obsidian shows in
-the panel at once. It does not capture and does not commit. It is off by
+change in the logbook, so an edit in your editor or in Obsidian shows on
+the desk at once. It does not capture and does not commit. It is off by
 default; you decide whether you want it.
 
 Try it in a terminal first. Stop it with Ctrl-C:

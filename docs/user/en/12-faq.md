@@ -51,15 +51,15 @@ Most of your own changes are routine and never drift: a theme switch, a
 toggle, a system upgrade. For the others, a collector sees that something
 changed, but not who did it or why. Only an agent's command, recorded by
 a hook, carries the active case. Link your
-own change with `seldon drift link <EVENT> <CASE>`, or with *Link* in the
-drift sheet. See [Concepts](02-concepts.md#drift).
+own change with `seldon drift link <EVENT> <CASE>`, or on the desk with
+*Link to case…* in the change's detail in the Changelog (section 2). See [Concepts](02-concepts.md#drift).
 
 ## Is every package upgrade a crisis?
 
 No. A full system upgrade is routine: history in the Changelog, not
 drift, even when it brings a new kernel. A package you install or remove
-by name without a case is drift, quietly: the panel lists it, the bar
-does not count it. Only a package on the always-red list (kernel,
+by name without a case is drift, quietly: the desk's Changelog lists
+it, the bar does not count it. Only a package on the always-red list (kernel,
 systemd, glibc, Hyprland, Omarchy, Quickshell) installed or removed by
 name outside a case is a crisis.
 

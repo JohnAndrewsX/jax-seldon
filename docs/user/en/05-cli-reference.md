@@ -173,7 +173,7 @@ broken check prints the command that fixes it. Exit 0 when nothing is an
 error, 1 when a check is an error (also when `config.toml` cannot be read
 or parsed), 3 when the logbook is not initialised. `--only rules` checks
 just the agent rules in `AGENTS.md` and starts no other program; the
-panel asks this when it opens.
+desk asks this when it opens.
 
 <!-- help: seldon doctor -->
 ```text

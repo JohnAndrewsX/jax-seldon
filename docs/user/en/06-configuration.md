@@ -527,17 +527,22 @@ omarchy bar set jax.seldon captureIntervalMin 30 --json
 
 To move the pill: `omarchy bar move jax.seldon --section right`.
 
-## A key for the Prime Radiant
+## A key for the desk
 
-The plugin does not install a key binding. Add this line to your
-Hyprland bindings to open the Prime Radiant with Super+Shift+S:
+The plugin does not install a key binding. Add these lines to your
+Hyprland bindings (`~/.config/hypr/bindings.lua`) to open and close the
+desk with Super+Shift+S. Omarchy gives that key to its Google Maps web
+app, so the first line frees it; with a free key of your own, leave it
+out:
 
 ```text
+hl.unbind("SUPER + SHIFT + S")
 o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
-The panel has its own target. To toggle it from a key or a script:
-`omarchy-shell jax.seldon.panel toggle`.
+`omarchy-shell shell summon jax.seldon '{"section":"radiant"}'` opens the
+desk at the Prime Radiant. The 0.1 panel's target,
+`omarchy-shell jax.seldon.panel toggle`, forwards to the desk until 0.3.0.
 
 ---
 
