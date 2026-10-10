@@ -22,7 +22,7 @@ snapshot or the R3 stop.
 
 | File | What it is |
 |---|---|
-| `AGENTS.md` (logbook root) | The rules, short form, in the logbook's language. Seldon's part sits in a block between the marker lines `<!-- seldon:begin rules v3 -->` and `<!-- seldon:end -->`, which `seldon rules update` rewrites (and every capture, while nobody edited it); the user's own rules follow it under `## Your rules`. **It wins** over this guide. |
+| `AGENTS.md` (logbook root) | The rules, short form, in the logbook's language. Seldon's part sits in a block between the marker lines `<!-- seldon:begin rules v5 -->` and `<!-- seldon:end -->`, which `seldon rules update` rewrites (and every capture, while nobody edited it); the user's own rules follow it under `## Your rules`. **It wins** over this guide. |
 | `areas/<area>/AGENTS.md` | Extra rules for one area, where the user wrote some. |
 | `memory/lessons.md` | What earlier sessions learned on this machine. One `## ` heading per lesson. |
 | `PROJECT.md` | What the machine is for, what must not happen on it, who works here. |
@@ -115,7 +115,14 @@ more, and `.seldon/active-case` names the one started last.
    the affected paths, the rollback and the verification as you go. Name
    packages and paths exactly as they will appear: Seldon proposes
    linking an unexplained change to an open case whose *Plan* names its
-   subject. The *Plan* never widens the *Intent*.
+   subject. The *Plan* never widens the *Intent*. Before the first change
+   fill two of its lines (WP-143): `Persists:` — how long the change
+   holds: `survives reboot and update`, `reboot only` (an update
+   overwrites it) or `lost at reboot`; and `Stop if:` — what makes you
+   stop, e.g. `the binding is taken by another app`. When *Stop if*
+   holds, stop and ask (*When to ask first*, below). A subject named
+   only on the `Stop if:` line is not one the *Plan* plans: Seldon does
+   not link a change to the case by it.
 4. **Preview line.** Before the first privileged step print one line, in
    the terminal and in the case's *Log*, and go on without waiting:
 
@@ -138,8 +145,8 @@ yourself.
 
 ### When to ask first
 
-Ask in the terminal before the step, and wait for the answer, only when
-the step is:
+Ask in the terminal before the step, and wait for the answer, only in
+these four cases:
 
 - **outside the Intent**: another package or area, a change the user did
   not ask for. Dependencies the named software documents are inside.
@@ -150,6 +157,8 @@ the step is:
   others depend on, overwriting a config that no snapshot and no git
   holds.
 - **R3** (§4).
+- **your own *Stop if***: the condition you wrote in the *Plan* holds.
+  Say so in the *Log* too.
 
 In an unattended session you change nothing at all, so there is nothing
 to ask. Everything else: do it, and say in the *Log* what you did.
@@ -168,9 +177,10 @@ short: `R0` reversible in seconds; `R1` by hand in minutes, with a named
 rollback; `R2` needs a snapshot or backup; `R3` can break boot, login or
 the shell. The engine stores the risk and does not enforce it.
 
-### R3: the one stop
+### R3: always the user's go
 
-R3 is the one step that keeps the user's explicit go (ADR-0027 §2c): a
+R3 always keeps the user's explicit go, whatever the *Plan* says
+(ADR-0027 §2c): a
 machine that no longer boots, logs in or starts its shell cannot be
 repaired from the desktop, and a snapshot helps only while the boot menu
 still comes up. R3 subjects: kernels, the boot loader, the initramfs,
@@ -331,8 +341,9 @@ Pass `--actor agent:<name>` wherever a command takes it (`log`, `event`,
 | `seldon plan new … -- "<title>"` | the user asked for work and no case exists (§3) |
 | `seldon plan start\|verify\|done\|drop <ID>` | the case steps of §3 and §8 |
 | `seldon log --case <ID> --actor agent:<name> -- "<text>"` | a journal note: what you did, found or decided |
+| `seldon inbox add --title "<title>" --tag crash --actor agent:<name> --file -` | after a crash analysis (Omarchy's `diagnose-crash`): the report on stdin goes into `inbox/`, redacted; then ask the user whether it becomes a case |
 | `seldon event <source> <kind> --subject S --actor agent:<name>` | to record something no hook or collector sees, e.g. a change made through a GUI |
-| `seldon decide --no-edit --case <ID> -- "<title>"` | a decision that shapes the machine; then fill in *Context*, *Decision*, *Consequences* of the new `decisions/ADR-NNNN-*.md` |
+| `seldon decide --no-edit --case <ID> -- "<title>"` | a decision that shapes the machine; then fill in *Context*, *Decision*, *Consequences* of the new `decisions/ADR-NNNN-*.md`. It stays *proposed*: accepting it is the user's (`seldon decide accept` refuses an agent, ADR-0040) |
 | `seldon drift link\|explain\|dismiss …` | §7, only when you know the reason |
 | `seldon capture --all`, `seldon status` | to bring the ledger, `STATUS.md` and the index up to date |
 | `seldon hook session-stop --actor agent:<name>` | at the end of a session, if no hook does it (§8) |
@@ -436,7 +447,13 @@ is left for the user afterwards:
 1. Fill *Result* with the evidence: what you ran and what it showed.
    Include one check that is not your own artefact — the real use case's
    exit status, `pacman -Q <package>`, `systemctl is-active <unit>` — not
-   only a file you wrote yourself.
+   only a file you wrote yourself. Verify the effect, not the setting: a
+   key binding is proven when you press it and the app opens, not when
+   the line is in `~/.config/hypr/bindings.lua`. Label each claim
+   `measured` (you ran it and saw it), `documented` (a named source says
+   so) or `inferred` (you concluded it). The first line of *Result* goes
+   into the closing commit, `seldon: <ID> completed — <title>: <first
+   line>`: make it the outcome.
 2. `seldon plan verify <ID> --actor agent:<name>`, then
    `seldon plan done <ID> --actor agent:<name>`, in one go.
 
@@ -464,7 +481,8 @@ to the user.
 Then end the session:
 
 1. Write what you learned into `memory/` — `memory/lessons.md`, one `## `
-   heading per lesson: what happened, what to do next time. Not into the
+   heading per lesson: what happened, what to do next time, each claim
+   labelled `measured`, `documented` or `inferred`. Not into the
    chat.
 2. A last journal note: `seldon log --case <ID> --actor agent:<name> --
    "<summary>"`.

@@ -13,12 +13,14 @@
 
 pub mod omarchy_agent;
 pub mod report;
+pub mod task;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use regex::Regex;
 
-use crate::redact::Redactor;
+use crate::redact::{Redactor, is_invisible, without_invisible};
 
 /// `outputs/IMPORT-<source>.md`, relative to the logbook root.
 pub fn report_path(source: &str) -> String {
@@ -29,6 +31,44 @@ pub fn report_path(source: &str) -> String {
 /// makes a second apply a no-op.
 pub fn marker_path(source: &str) -> String {
     format!(".seldon/imports/{source}.json")
+}
+
+/// A character a path may not hold: a control character, an invisible one
+/// ([`is_invisible`]: one that turns the direction of the text around it,
+/// a zero-width space, joiner, BOM, filler or variation selector, …), or a
+/// line or paragraph separator (U+2028, U+2029, which Qt draws as a line
+/// break): a path is shown in the Log, the report and the desk (WP-102,
+/// ADR-0038 §3; the separators WP-102b round 2; the fillers and variation
+/// selectors WP-159). The plugin's `BAD_PATH_CHARS` is the same
+/// set; `fixtures/bad-path-chars.txt` holds it, and both sides are tested
+/// against it.
+pub fn bad_path_char(c: char) -> bool {
+    c.is_control() || is_invisible(c) || matches!(c, '\u{2028}' | '\u{2029}')
+}
+
+/// The most bytes (UTF-8) of a case's `source`, so also the most
+/// characters (ADR-0038 §3).
+pub const SOURCE_MAX: usize = 512;
+
+/// `source` as `import task` writes it into a case's frontmatter: as it
+/// is when it has at most [`SOURCE_MAX`] bytes, else `~/…` and as many of
+/// its last characters as fit, so the file name and the line survive.
+pub fn case_source(source: &str) -> String {
+    if source.len() <= SOURCE_MAX {
+        return source.to_string();
+    }
+    let room = SOURCE_MAX - "~/…".len();
+    let mut start = source.len() - room;
+    while !source.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("~/…{}", &source[start..])
+}
+
+/// Whether `source` has the shape a case's `source` must have (ADR-0038
+/// §3): `~/…`, at most [`SOURCE_MAX`] bytes, no [`bad_path_char`].
+pub fn is_case_source(source: &str) -> bool {
+    source.starts_with("~/") && source.len() <= SOURCE_MAX && !source.chars().any(bad_path_char)
 }
 
 /// One redacted line of a source file (the report names the rule, never
@@ -69,12 +109,65 @@ impl Scrubber {
 
     /// `text` (a whole source file) with every line scrubbed; `file` and
     /// the line numbers go into [`Scrubber::hits`]. Line endings are kept.
+    ///
+    /// The whole text is redacted, keeping its lines
+    /// ([`Redactor::redact_keeping_lines`]), so a secret over several
+    /// lines (a PEM private key, a continued `mysql … -p`, a JSON value on
+    /// the next line) is masked whole, as `import task` masks it (WP-140).
+    /// A changed line counts under every rule with a match that touches it
+    /// ([`Redactor::matching_rules_by_line`]).
     pub fn text(&mut self, file: &str, text: &str) -> String {
-        let mut out = String::with_capacity(text.len());
-        for (n, line) in text.split_inclusive('\n').enumerate() {
-            let (content, ending) = line.split_at(line.trim_end_matches(['\n', '\r']).len());
-            out.push_str(&self.line(file, n + 1, content));
+        self.text_with(file, text, false)
+    }
+
+    /// [`Scrubber::text`] that also drops the invisible characters
+    /// ([`without_invisible`]) after the redaction and before the home
+    /// paths are rewritten: the rules read the boundary one makes
+    /// (`x<U+200B>sk-…`), and `/ho<U+200B>me/alice` is still a home path
+    /// (`seldon import task`, WP-159 round 2).
+    pub fn text_dropping_invisible(&mut self, file: &str, text: &str) -> String {
+        self.text_with(file, text, true)
+    }
+
+    fn text_with(&mut self, file: &str, text: &str, drop_invisible: bool) -> String {
+        let whole = self.redactor.redact_keeping_lines(text);
+        let lines: Vec<&str> = text.split('\n').collect();
+        let done: Vec<&str> = whole.split('\n').collect();
+        if lines.len() != done.len() {
+            // never: the redaction keeps the line breaks
+            debug_assert!(false, "{file}: the redaction changed the number of lines");
+            let mut out = String::with_capacity(text.len());
+            for (n, line) in text.split_inclusive('\n').enumerate() {
+                let (content, ending) = line.split_at(line.trim_end_matches(['\n', '\r']).len());
+                out.push_str(&self.line(file, n + 1, content));
+                out.push_str(ending);
+            }
+            return out;
+        }
+        let rules = self.redactor.matching_rules_by_line(text);
+        let mut out = String::with_capacity(whole.len());
+        for (n, (line, done)) in lines.iter().zip(&done).enumerate() {
+            if line != done {
+                for &rule in &rules[n] {
+                    self.hits.push(Hit {
+                        file: file.to_string(),
+                        line: n + 1,
+                        rule,
+                    });
+                }
+            }
+            let content = done.trim_end_matches('\r');
+            let ending = &done[content.len()..];
+            let content = if drop_invisible {
+                without_invisible(content)
+            } else {
+                Cow::Borrowed(content)
+            };
+            out.push_str(&self.home_paths(&content));
             out.push_str(ending);
+            if n + 1 < lines.len() {
+                out.push('\n');
+            }
         }
         out
     }
@@ -93,12 +186,18 @@ impl Scrubber {
                 });
             }
         }
-        let found = self.home.find_iter(&out).count();
-        if found > 0 {
-            self.private_paths += found;
-            out = self.home.replace_all(&out, "${1}~").into_owned();
+        self.home_paths(&out)
+    }
+
+    /// `text` with every home path at the start of a path as `~`
+    /// ([`Scrubber::private_paths`] counts them).
+    fn home_paths(&mut self, text: &str) -> String {
+        let found = self.home.find_iter(text).count();
+        if found == 0 {
+            return text.to_string();
         }
-        out
+        self.private_paths += found;
+        self.home.replace_all(text, "${1}~").into_owned()
     }
 
     /// Redacted lines per rule, sorted by rule name.
@@ -347,7 +446,177 @@ pub fn cell(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// `bad_path_char` is exactly `fixtures/bad-path-chars.txt`, the list
+    /// the plugin's `Model.BAD_PATH_CHARS` is tested against too (WP-102b
+    /// round 2, N3): one set on both sides.
+    #[test]
+    fn bad_path_char_is_the_shared_list() {
+        let ranges: Vec<(u32, u32)> = include_str!("../../../fixtures/bad-path-chars.txt")
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+            .map(|l| {
+                let (a, b) = l.split_once(' ').unwrap();
+                let n = |h: &str| u32::from_str_radix(h.trim(), 16).unwrap();
+                (n(a), n(b))
+            })
+            .collect();
+        assert!(ranges.len() > 10);
+        for c in (0..=0x10FFFF).filter_map(char::from_u32) {
+            let listed = ranges.iter().any(|&(a, b)| (a..=b).contains(&(c as u32)));
+            assert_eq!(super::bad_path_char(c), listed, "U+{:04X}", c as u32);
+        }
+    }
+
+    #[test]
+    fn a_case_source_keeps_its_end_and_is_checked() {
+        assert_eq!(case_source("~/a/b.md#3"), "~/a/b.md#3");
+        let long = format!("~/{}/todo.md#12", "x".repeat(600));
+        let short = case_source(&long);
+        assert_eq!(short.len(), SOURCE_MAX);
+        assert!(short.starts_with("~/…xx") && short.ends_with("x/todo.md#12"));
+        assert!(is_case_source(&short));
+        // bytes count (WP-127 round 2): 255 two-byte characters fit, 256
+        // do not, and a cut never splits a character
+        let fits = format!("~/{}", "ä".repeat(255));
+        assert_eq!(case_source(&fits), fits);
+        assert!(is_case_source(&fits));
+        let wide = format!("~/{}", "ä".repeat(510));
+        assert!(!is_case_source(&wide));
+        let short = case_source(&wide);
+        assert!(
+            short.len() <= SOURCE_MAX && short.len() >= SOURCE_MAX - 1,
+            "{}",
+            short.len()
+        );
+        assert!(short.starts_with("~/…ä") && short.ends_with('ä') && is_case_source(&short));
+        let four = format!("~/{}x", "🚀".repeat(200));
+        let short = case_source(&four);
+        assert!(short.len() <= SOURCE_MAX && short.ends_with("🚀x") && is_case_source(&short));
+        for bad in [
+            "/etc/x",
+            "~x/y",
+            "~/a\u{202E}b",
+            "~/a\u{FEFF}",
+            "~/a\tb",
+            "~/a\u{85}b",
+        ] {
+            assert!(!is_case_source(bad), "{bad:?}");
+        }
+        assert!(!is_case_source(&format!("~/{}", "a".repeat(511))));
+    }
+
     use super::*;
+
+    /// WP-140, WP-159: every code point of the set, at both ends of each
+    /// range, is invisible and refused in a path; its neighbours are not
+    /// invisible.
+    #[test]
+    fn the_invisible_set_holds_each_code_point() {
+        for c in [
+            '\u{00AD}',
+            '\u{0600}',
+            '\u{0603}',
+            '\u{0605}',
+            '\u{1BCA0}',
+            '\u{1BCA3}',
+            '\u{1D173}',
+            '\u{1D177}',
+            '\u{1D17A}',
+            '\u{061C}',
+            '\u{180E}',
+            '\u{200B}',
+            '\u{200C}',
+            '\u{200D}',
+            '\u{200E}',
+            '\u{200F}',
+            '\u{202A}',
+            '\u{202E}',
+            '\u{2060}',
+            '\u{2061}',
+            '\u{2062}',
+            '\u{2063}',
+            '\u{2064}',
+            '\u{2066}',
+            '\u{2069}',
+            '\u{206A}',
+            '\u{206B}',
+            '\u{206C}',
+            '\u{206D}',
+            '\u{206E}',
+            '\u{206F}',
+            '\u{FEFF}',
+            '\u{FFF9}',
+            '\u{FFFA}',
+            '\u{FFFB}',
+            '\u{E0000}',
+            '\u{E0001}',
+            '\u{E0020}',
+            '\u{E007F}',
+            // WP-159: fillers and variation selectors
+            '\u{034F}',
+            '\u{115F}',
+            '\u{1160}',
+            '\u{17B4}',
+            '\u{17B5}',
+            '\u{180B}',
+            '\u{180C}',
+            '\u{180D}',
+            '\u{180F}',
+            '\u{2065}',
+            '\u{3164}',
+            '\u{FE00}',
+            '\u{FE07}',
+            '\u{FE0F}',
+            '\u{FFA0}',
+            '\u{E0100}',
+            '\u{E0150}',
+            '\u{E01EF}',
+        ] {
+            assert!(is_invisible(c), "U+{:04X}", c as u32);
+            assert!(bad_path_char(c), "U+{:04X}", c as u32);
+        }
+        for c in [
+            '\u{00AC}',
+            '\u{05FF}',
+            '\u{0606}',
+            '\u{1BC9F}',
+            '\u{1BCA4}',
+            '\u{1D172}',
+            '\u{1D17B}',
+            '\u{00AE}',
+            '\u{061B}',
+            '\u{061D}',
+            '\u{180A}',
+            '\u{1810}',
+            '\u{200A}',
+            '\u{2010}',
+            '\u{2070}',
+            '\u{034E}',
+            '\u{0350}',
+            '\u{115E}',
+            '\u{1161}',
+            '\u{17B3}',
+            '\u{17B6}',
+            '\u{3163}',
+            '\u{3165}',
+            '\u{FDFF}',
+            '\u{FE10}',
+            '\u{FF9F}',
+            '\u{FFA1}',
+            '\u{E00FF}',
+            '\u{E01F0}',
+            '\u{FEFE}',
+            '\u{FFF8}',
+            '\u{FFFC}',
+            '\u{FFFD}',
+            '\u{DFFFF}',
+            '\u{E0080}',
+            'a',
+            '-',
+        ] {
+            assert!(!is_invisible(c), "U+{:04X}", c as u32);
+        }
+    }
 
     #[test]
     fn scrubber_redacts_and_rewrites_home_paths() {
@@ -366,6 +635,37 @@ mod tests {
             [(2, "token-assignment"), (2, "authorization-header")]
         );
         assert_eq!(s.by_rule().len(), 2);
+    }
+
+    /// WP-140: a secret over several lines is masked whole, line ends
+    /// kept; a body line counts under the rule of its run.
+    #[test]
+    fn scrubber_masks_secrets_over_lines() {
+        let mut s = Scrubber::new(Redactor::builtin());
+        let text = "a\r\n-----BEGIN RSA PRIVATE KEY-----\r\nMIIEfakeBody1\r\nAAAAfakeBody2==\r\n-----END RSA PRIVATE KEY-----\r\nb /home/alice/x\r\nmysql -u root \\\n  -p fakeDb \\\n  db\nend";
+        let out = s.text("k.md", text);
+        assert_eq!(
+            out,
+            "a\r\n-----BEGIN RSA PRIVATE KEY-----‹redacted›-----END RSA PRIVATE KEY-----\r\n\r\n\r\n\r\nb ~/x\r\nmysql -u root \\\n  -p ‹redacted›\n\nend",
+            "{out:?}"
+        );
+        assert_eq!(out.matches('\n').count(), text.matches('\n').count());
+        assert_eq!(
+            s.hits.iter().map(|h| (h.line, h.rule)).collect::<Vec<_>>(),
+            [
+                (2, "private-key"),
+                (3, "private-key"),
+                (4, "private-key"),
+                (5, "private-key"),
+                (8, "db-client-password"),
+                (9, "db-client-password"),
+            ]
+        );
+        assert_eq!(s.private_paths, 1);
+        // a file without a secret comes out as it went in
+        let mut s = Scrubber::new(Redactor::builtin());
+        assert_eq!(s.text("x.md", "a\n\nb\r\nc"), "a\n\nb\r\nc");
+        assert!(s.hits.is_empty());
     }
 
     #[test]

@@ -17,14 +17,19 @@ use chrono::{DateTime, FixedOffset, SecondsFormat};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ulid::Ulid;
 
-pub use super::case::Zone;
 use super::case::str_enum;
+pub use super::case::{Risk, Zone};
 use super::{is_agent, is_case_id};
 
 /// Longest `subject` the schema accepts (characters).
 pub const SUBJECT_MAX: usize = 512;
 /// Longest `detail` the schema accepts (characters).
 pub const DETAIL_MAX: usize = 4096;
+/// The index-only `meta` key that marks a clipped text (ADR-0035 §3).
+pub const TRUNCATED: &str = "truncated";
+/// The subject of every `state-loss` line (ADR-0035 §4;
+/// `collectors::STATE_RESET`).
+pub const STATE_LOSS_SUBJECT: &str = "state-reset";
 
 str_enum!(
     /// Who produced the event (`event.schema.json#/properties/source`).
@@ -70,6 +75,18 @@ str_enum!(
         CaseVerified = "case-verified",
         CaseCompleted = "case-completed",
         CaseDropped = "case-dropped",
+        CaseUpdated = "case-updated",
+        StateLoss = "state-loss",
+    }
+);
+
+str_enum!(
+    /// How a pacman transaction ended when it did not complete (ADR-0043):
+    /// pacman's own `transaction failed|interrupted`, or no end line at all.
+    TxStatus {
+        Failed = "failed",
+        Interrupted = "interrupted",
+        Unfinished = "unfinished",
     }
 );
 
@@ -156,9 +173,50 @@ pub struct Meta {
     /// resolution only: the drift group's txId (ADR-0013 §4).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_id: Option<String>,
+    /// case-created, case-started, case-updated: the case's risk after the
+    /// event (ADR-0035 §1); absent on lines written before contract 2.
+    /// Read leniently: 0.1.x let `seldon event --meta risk=…` write any
+    /// value on any kind, and such a line must still load; a value that is
+    /// not R0–R3 reads as none (the line is never rewritten), and the index
+    /// drops one on another kind (`index::build::clipped`).
+    #[serde(
+        default,
+        deserialize_with = "lenient_risk",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub risk: Option<Risk>,
+    /// pacman: how the event's transaction ended when it did not complete
+    /// (ADR-0043); absent when it completed and on lines written before.
+    /// Read leniently like `risk`: a hand-edited value that is not one of
+    /// the three reads as none, and the index keeps it only on a pacman
+    /// event with a `txId` (`index::build::clipped`).
+    #[serde(
+        default,
+        deserialize_with = "lenient_tx_status",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub tx_status: Option<TxStatus>,
     /// Any other scalar key.
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
+}
+
+/// `meta.risk` as a line holds it: `R0`–`R3`, else none (ADR-0035 §1).
+fn lenient_risk<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Risk>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(d)?;
+    Ok(value
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .and_then(|s| s.parse().ok()))
+}
+
+/// `meta.txStatus` as a line holds it: one of the three, else none (ADR-0043).
+fn lenient_tx_status<'de, D: Deserializer<'de>>(d: D) -> Result<Option<TxStatus>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(d)?;
+    Ok(value
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .and_then(|s| s.parse().ok()))
 }
 
 impl Meta {
@@ -245,6 +303,12 @@ impl Event {
         self
     }
 
+    /// `meta.risk`: a case line's risk after the event (ADR-0035 §1).
+    pub fn risk(mut self, risk: Risk) -> Self {
+        self.meta.risk = Some(risk);
+        self
+    }
+
     /// `ts` as written to the ledger: RFC 3339, offset kept, whole seconds
     /// unless the source had fractions.
     pub fn ts_string(&self) -> String {
@@ -308,6 +372,34 @@ impl Event {
         }
         if self.meta.tx_id.is_some() && self.kind != Kind::Resolution {
             return Err("meta.txId is only allowed on a resolution".into());
+        }
+        // ADR-0035 §1, §3, §4
+        let risked = matches!(
+            self.kind,
+            Kind::CaseCreated | Kind::CaseStarted | Kind::CaseUpdated
+        );
+        if self.meta.risk.is_some() && !risked {
+            return Err("meta.risk is only allowed on case-created, -started and -updated".into());
+        }
+        // ADR-0043
+        if self.meta.tx_status.is_some() && (self.source != Source::Pacman || self.tx_id.is_none())
+        {
+            return Err("meta.txStatus is only allowed on a pacman event with a txId".into());
+        }
+        if self.kind == Kind::CaseUpdated && (self.meta.risk.is_none() || self.case.is_none()) {
+            return Err("a case-updated line needs meta.risk and case".into());
+        }
+        if matches!(self.kind, Kind::CaseUpdated | Kind::StateLoss) && self.source != Source::Seldon
+        {
+            return Err(format!("{} is written by seldon only", self.kind));
+        }
+        if self.kind == Kind::StateLoss && self.subject != STATE_LOSS_SUBJECT {
+            return Err(format!(
+                "a state-loss line has the subject `{STATE_LOSS_SUBJECT}`"
+            ));
+        }
+        if self.meta.extra.contains_key(TRUNCATED) {
+            return Err("meta.truncated is index-only (ADR-0035 §3)".into());
         }
         if let Some((k, v)) = self
             .meta
@@ -476,7 +568,63 @@ mod tests {
                 n += 1;
             }
         }
-        assert_eq!(n, 83, "fixtures/README.md: 83 ledger lines");
+        assert_eq!(n, 94, "fixtures/README.md: 94 ledger lines");
+    }
+
+    /// WP-120 round 2, B1: a 0.1.x line with a user `meta.risk` loads;
+    /// a value that is not R0–R3 reads as none, the line keeps its other
+    /// keys.
+    #[test]
+    fn a_user_risk_reads_leniently() {
+        let line = |risk: &str| {
+            format!(
+                r#"{{"id":"01K6Y00000000000000000000A","ts":"2026-10-06T09:00:00+02:00","source":"manual","kind":"note","subject":"journal","actor":"human","meta":{{"risk":{risk},"mine":"kept"}}}}"#
+            )
+        };
+        for (risk, want) in [
+            ("\"R1\"", Some(Risk::R1)),
+            ("\"banana\"", None),
+            ("\"high\"", None),
+            ("3", None),
+            ("null", None),
+        ] {
+            let e: Event =
+                serde_json::from_str(&line(risk)).unwrap_or_else(|e| panic!("{risk}: {e}"));
+            assert_eq!(e.meta.risk, want, "{risk}");
+            assert_eq!(e.meta.extra["mine"], "kept");
+        }
+    }
+
+    /// ADR-0043: `meta.txStatus` is one of three words; a hand-edited
+    /// other value reads as none and the line still loads.
+    #[test]
+    fn a_tx_status_reads_leniently() {
+        let line = |status: &str| {
+            format!(
+                r#"{{"id":"01K6Y00000000000000000000A","ts":"2026-10-06T09:00:00+02:00","source":"pacman","kind":"upgrade","subject":"gtk4","actor":"system","txId":"tx-1","meta":{{"txStatus":{status},"mine":"kept"}}}}"#
+            )
+        };
+        for (status, want) in [
+            ("\"failed\"", Some(TxStatus::Failed)),
+            ("\"interrupted\"", Some(TxStatus::Interrupted)),
+            ("\"unfinished\"", Some(TxStatus::Unfinished)),
+            ("\"completed\"", None),
+            ("\"Interrupted\"", None),
+            ("1", None),
+            ("null", None),
+        ] {
+            let e: Event =
+                serde_json::from_str(&line(status)).unwrap_or_else(|e| panic!("{status}: {e}"));
+            assert_eq!(e.meta.tx_status, want, "{status}");
+            assert_eq!(e.meta.extra["mine"], "kept");
+            assert!(!e.meta.extra.contains_key("txStatus"));
+        }
+        let mut e: Event = serde_json::from_str(&line("\"interrupted\"")).unwrap();
+        e.meta.extra.clear();
+        assert_eq!(
+            serde_json::to_value(&e.meta).unwrap(),
+            serde_json::json!({ "txStatus": "interrupted" })
+        );
     }
 
     #[test]
@@ -534,6 +682,27 @@ mod tests {
         assert!(e.validate().unwrap_err().contains("case"));
         e.case = Some("C-2026-001".into());
         e.validate().unwrap();
+        // ADR-0035 §4 (WP-120 round 2, N4): a state-loss line is seldon's,
+        // subject `state-reset`
+        assert!(
+            ok(Event::new(
+                ts,
+                Source::Seldon,
+                Kind::StateLoss,
+                "state-reset"
+            ))
+            .validate()
+            .is_ok()
+        );
+        let e = ok(Event::new(ts, Source::Seldon, Kind::StateLoss, "config"));
+        assert!(e.validate().unwrap_err().contains("state-reset"));
+        let e = ok(Event::new(
+            ts,
+            Source::Manual,
+            Kind::StateLoss,
+            "state-reset",
+        ));
+        assert!(e.validate().is_err());
         let e = ok(Event::new(ts, Source::Pacman, Kind::Install, "x").actor("agent:Claude"));
         assert!(e.validate().is_err());
         let e = ok(Event::new(ts, Source::Pacman, Kind::Install, ""));
@@ -547,5 +716,15 @@ mod tests {
         e.meta.tx_id = Some("tx-1".into());
         assert!(e.validate().is_err());
         assert_eq!(e.ts_string(), "2026-09-03T21:14:06+00:00");
+        // ADR-0043: txStatus on a pacman transaction's line only
+        let mut e = ok(Event::new(ts, Source::Pacman, Kind::Upgrade, "gtk4"));
+        e.meta.tx_status = Some(TxStatus::Interrupted);
+        assert!(e.validate().unwrap_err().contains("txStatus"));
+        e.tx_id = Some("tx-1".into());
+        e.validate().unwrap();
+        let mut e = ok(Event::new(ts, Source::Manual, Kind::Note, "journal"));
+        e.tx_id = Some("tx-1".into());
+        e.meta.tx_status = Some(TxStatus::Failed);
+        assert!(e.validate().unwrap_err().contains("txStatus"));
     }
 }

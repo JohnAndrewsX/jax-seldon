@@ -82,6 +82,7 @@ use crate::attribution::{self, Stamps};
 use crate::collectors::config::OwnWrites;
 use crate::collectors::{
     self, CollectorState, Ctx, Cursors, Lost, PendingBaseline, REGISTRY, STATE_RESET, Sources, Tz,
+    recent,
 };
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -374,6 +375,20 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         }
         Err(e) => eprintln!("seldon: warning: planned changes not linked: {e}"),
     }
+    // ADR-0046: recently edited under ~/.config, outside the watch paths;
+    // with the config collector only, never an event
+    if reports.iter().any(|r| r.name == "config" && r.ran) {
+        let excluded = [
+            collectors::plugins::Plugins::dir(&sources, &ctx.dirs.home),
+            ctx.config_file.clone(),
+            // its rows could be shown, but `config watch` refuses them (N4)
+            logbook.root.clone(),
+        ];
+        let scan = recent::scan(&ctx.dirs, &config, ledger.redactor(), &excluded, now);
+        if let Err(e) = recent::Saved::of(&scan, now).save(&ctx.dirs) {
+            warnings.push(format!("the recently edited files were not saved: {e:#}"));
+        }
+    }
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
@@ -461,7 +476,13 @@ fn upgrade_defaults(
             // named "unedited" (WP-116 round 2, N7)
             let own_changes = crate::logbook::git::is_repo(&logbook.root)
                 && !crate::logbook::git::is_clean_path(&logbook.root, rules).unwrap_or(false);
-            match crate::sys::write_atomic(&logbook.path(rules), plan.text.as_bytes()) {
+            // a link there is not followed: a warning, as for any other
+            // reason the upgrade cannot write (WP-171)
+            let written = logbook
+                .checked_file(rules)
+                .map_err(anyhow::Error::new)
+                .and_then(|path| crate::sys::write_atomic_nofollow(&path, plan.text.as_bytes()));
+            match written {
                 Ok(()) => {
                     out.rules_from = plan.from;
                     let from = plan.from.map_or("v?".to_string(), |v| format!("v{v}"));
@@ -729,7 +750,9 @@ fn pending_notes(ledger: &Ledger, pending: &[String]) -> Result<Vec<Event>> {
     let mut notes = Vec::new();
     for month in months {
         notes.extend(ledger.read_month(&month)?.events.into_iter().filter(|e| {
-            e.source == Source::Seldon && e.kind == Kind::Note && times.contains(&e.ts)
+            e.source == Source::Seldon
+                && matches!(e.kind, Kind::Note | Kind::StateLoss)
+                && times.contains(&e.ts)
         }));
     }
     Ok(notes)
@@ -742,7 +765,7 @@ fn pending_notes(ledger: &Ledger, pending: &[String]) -> Result<Vec<Event>> {
 fn noted_sources(recorded: &[Event]) -> Vec<&str> {
     recorded
         .iter()
-        .filter(|e| e.subject == STATE_RESET)
+        .filter(|e| collectors::is_state_loss(e))
         .filter_map(|e| e.meta.extra.get("sources")?.as_str())
         .flat_map(|s| s.split(','))
         .filter(|s| !s.is_empty())
@@ -804,7 +827,7 @@ fn state_reset(
     Some(Reset { note, lost })
 }
 
-/// The `state-reset` note for the losses `lost`.
+/// The `state-loss` line for the losses `lost` (ADR-0035 §4).
 fn reset_note(
     lost: &[(&'static str, Lost)],
     baseline: DateTime<FixedOffset>,
@@ -830,7 +853,7 @@ fn reset_note(
     meta.extra
         .insert("sources".into(), json!(sources.join(",")));
     meta.extra.insert("files".into(), json!(files.join(",")));
-    Event::new(now, Source::Seldon, Kind::Note, STATE_RESET)
+    Event::new(now, Source::Seldon, Kind::StateLoss, STATE_RESET)
         .detail(format!(
             "state directory missing, unreadable or bound to another logbook: new baseline for {} at {}, recorded {}; changes made in between may not be recorded",
             named.join(", "),

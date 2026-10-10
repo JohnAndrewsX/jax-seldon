@@ -15,8 +15,10 @@ import "Model.js" as Model
 // behind them are constants from Model.js.
 //
 // The index lives at ${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json
-// (CONTRACT.md rule 1). The engine is probed once at start and again only on
-// the status banner's "Check again"; the capture timer never probes.
+// (CONTRACT.md rule 1). The engine is probed once at start, again on the
+// status banner's "Check again", when the desk opens while it is missing,
+// and every few seconds after the setup card opened its install terminal
+// (WP-119); the capture timer never probes.
 //
 // Development overrides (never set them in a real session):
 //   SELDON_INDEX  read this file instead of the state index.
@@ -26,6 +28,9 @@ import "Model.js" as Model
 //                 so a fixture never turns stale on its own.
 //   SELDON_LOCK_RETRY_MS  the wait before a capture or status that found the
 //                 lock held runs again (default 30000; the harness's).
+//   SELDON_SETUP_CAPTURE_MS  the wait before the setup card's own capture
+//                 after the snapshot grant's terminal, and between two
+//                 (default Model.SETUP_CAPTURE_MS; the harness's).
 Item {
   id: root
 
@@ -53,6 +58,10 @@ Item {
   // next successful call or by an index written after it was set.
   property bool engineNotInitialised: false
   property double notInitialisedAtMs: 0
+  // What the last exit 3 said about the logbook's folder (CONTRACT.md rule
+  // 10, Model.notInitialisedInfo): { reason, path }; the setup card's step
+  // 2 offers another folder when `reason` says this one cannot be used.
+  property var notInitialisedInfo: ({ reason: "", path: "" })
   // The lowest engine this plugin works with (manifest `seldon.engineMin`,
   // docs/VERSIONING.md); "" until the shell has injected the manifest.
   readonly property string engineMin: Model.engineMinOf(root.manifest)
@@ -86,6 +95,9 @@ Item {
     engineNotInitialised: engineNotInitialised,
     nowMs: nowMs
   })
+  // A newer contract this plugin still reads (ADR-0051): the quiet notice
+  // that asks for a plugin update; null otherwise and without an engine.
+  readonly property var contractNotice: Model.contractNewerNotice(parsed, status)
   readonly property var counts: Model.counts(index)
   readonly property string lastCapture: Model.lastCapture(index)
   readonly property var banner: Model.engineOutdatedBanner(status, engineVersion, engineMin)
@@ -101,11 +113,118 @@ Item {
   readonly property bool indexShown: index !== null && Model.showsCounts(status)
   readonly property string crisisText: indexShown ? Model.crisisText(index) : ""
   readonly property var snapperBanner: indexShown ? Model.snapperBanner(index) : null
+  // The setup card (WP-119): engine → logbook → snapshots, from the same
+  // states as the banners (Model.setupCard), null when nothing is left.
+  // *Not now* on its snapshot step is stored in the shell.json entry
+  // (Model.SETUP_LATER_KEY, written by the desk); `setupLaterOverride`
+  // holds the click (true) or Settings' *Offer again* (false) until the
+  // entry the shell sends back says the same, and for this shell's life
+  // when the write did not happen.
+  property var setupLaterOverride: null
+  readonly property bool setupLater: root.setupLaterOverride !== null ? root.setupLaterOverride === true
+    : Model.setupLaterStored(root.entryKnown ? root.entrySettings : root.localEntry)
+  readonly property var setup: Model.setupCard({
+    status: root.status,
+    indexExists: root.fileState === "loaded" || root.fileState === "invalid",
+    index: root.indexShown ? root.index : null,
+    later: root.setupLater,
+    bannerStatus: root.banner ? root.banner.status : "",
+    bannerTitle: root.banner ? root.banner.title : "",
+    snapperReady: !!root.snapperBanner,
+    // the folder `init --defaults` creates: what exit 3 named, else the
+    // notInitialised index's own logbook path
+    logbookPath: Model.displayPath(root.notInitialisedInfo.path !== "" ? root.notInitialisedInfo.path
+      : root.status === "notInitialised" && root.index && root.index.logbook && typeof root.index.logbook.path === "string"
+        ? root.index.logbook.path : "", root.home),
+    logbookBlocked: root.status === "notInitialised" ? root.notInitialisedInfo.reason : ""
+  })
+  // After a step's terminal opened: { step, untilMs, captureAtMs }, while
+  // the service looks again by itself (setupTick); null otherwise.
+  property var setupWatch: null
+  // Why Not now or Offer again holds only until the shell restarts (no
+  // bar entry, or the shell refused the write); "" when it was stored.
+  // Settings › Capture shows it (the card is gone after Not now).
+  property string setupResult: ""
   // The Prime Radiant's windows, series rows, slot counts and chart data for
   // every period (Model.periodTable: one pass per series, then the charts),
   // computed when the index changes: the overlay is created anew on each
   // open and then only looks them up (WP-030, WP-031).
   readonly property var periods: Model.periodTable(index)
+  // The desk's sections Today, Changelog and Work (ADR-0034 §3, WP-122):
+  // their rows, built once when the index changes; the sections filter
+  // them by chip and search and look details up by id. Only while the
+  // index's contents mean something (indexShown), as the desk shows it.
+  readonly property var deskChangelog: Model.deskChangelog(root.indexShown ? root.index : null)
+  readonly property var deskToday: Model.deskToday(root.indexShown ? root.index : null, root.deskChangelog)
+  readonly property var deskWork: Model.deskWork(root.indexShown ? root.index : null)
+  // The graph (section 8, ADR-0034 §5, WP-125): nodes, edges, day index and
+  // folding (Model.graphBuild); the section only lays it out. Built when
+  // section 8 is shown and the index changed since the last build
+  // (`graphDirty`; graphRefresh, called by the section): the build takes
+  // about 5 ms of the shell thread on 500 events, which no capture should
+  // pay while the graph is not on screen. `graphBuilds` counts them.
+  property var graph: Model.graphEmpty()
+  property bool graphDirty: true
+  property int graphBuilds: 0
+  // The graph's layout (Model.graphState), kept here so a reopened desk
+  // shows the settled layout; written by components/graph/GraphCanvas.qml.
+  property var graphLayout: null
+  // Hide in the Changelog (WP-122): the attention items kept out of the
+  // open list for this shell session, by Model.hideKey; nothing written.
+  property var deskHidden: ({})
+  // Ask agent in an event's or a case's bar, and the Changelog's "Agent
+  // sorts N open changes" (WP-124b, ADR-0036): `agent ask` needs an engine
+  // that can run. Whether a default agent exists only the engine knows
+  // (the index does not say; the plugin reads nothing else): a refusal
+  // names the fix in the result line.
+  readonly property bool askAgentAvailable: root.canWrite
+  readonly property var triageButton: Model.triageButton(root.indexShown ? root.index : null, root.canWrite)
+  // The proposal index.triage names, next to the index (ADR-0035 §6): read
+  // as a file the index points to, checked (Model.parseProposal), shown as
+  // plain text. "" path: no proposal.
+  readonly property string proposalPath: Model.triagePath(root.indexPath, root.indexShown ? root.index : null)
+  property string proposalText: ""
+  readonly property var proposal: root.proposalPath === "" ? null
+    : Model.parseProposal(root.proposalText, root.index ? root.index.triage : null)
+  readonly property var triageView: Model.triageView(root.indexShown ? root.index : null, root.proposal,
+    root.deskChangelog, root.triageResult)
+  // WP-156: the agents `seldon agent start` launched whose window is open
+  // (or that are starting), by case ({ <caseId>: { starting, workspace,
+  // actor } }, Model.sessionsResult), from `seldon agent sessions --json` in
+  // its own process beside the queue; asked when the desk opens, after
+  // every agent or open answer, when the index changes and every
+  // Model.SESSIONS_POLL_MS while the desk is open.
+  property var agentSessions: ({})
+  property bool sessionsAgain: false
+  // WP-138: before the logbook exists, what the machine remembers on its
+  // own (`seldon preview --json`, Model.previewResult): asked in its own
+  // read-only process when the status becomes notInitialised and when the
+  // desk opens, at most every Model.PREVIEW_REFRESH_MS; null otherwise.
+  property var preview: null
+  property double previewAtMs: 0
+  // The last successful `open` ({ what, atMs }): the same target is not
+  // sent again within Model.OPEN_REPEAT_MS.
+  property var lastOpen: null
+  // How often the desk stepped aside for a window it opened.
+  property int stepAsides: 0
+  readonly property bool deskOpen: !!root.desk && root.desk.opened
+
+  // Build the graph if the index changed since the last build.
+  function graphRefresh() {
+    if (!root.graphDirty) return
+    root.graphDirty = false
+    root.graphBuilds++
+    root.graph = Model.graphBuild(root.indexShown ? root.index : null, Model.GRAPH_CAP)
+  }
+  // A new index may name another proposal, or the same file rewritten
+  // (applied): read it again; and ask for the agent sessions again while
+  // the desk is open (WP-156).
+  onIndexChanged: {
+    root.graphDirty = true
+    if (root.proposalPath !== "") proposalFile.reload()
+    if (root.deskOpen) root.refreshSessions()
+  }
+  onIndexShownChanged: root.graphDirty = true
 
   // How many aggregation passes this service's Model.js ran (periodTable and
   // its chart builders); the overlay reports it so the harness can show that
@@ -123,6 +242,25 @@ Item {
   // The bar widget setting `driftInBar` (ADR-0028 §4a), pushed by the
   // widget like the capture interval; only the IPC read-out's `pill` uses it.
   property string driftInBar: Model.DRIFT_IN_BAR_DEFAULT
+  // The desk's settings (ADR-0034 §1), pushed by the widget the same way:
+  // the width in per cent of the screen and the sidebar's state, and the
+  // whole shell.json entry, which the desk's settings write carries back
+  // (the facade's updateEntryInline replaces the entry).
+  property int deskWidth: Model.DESK_WIDTH_DEFAULT
+  property string deskSidebar: Model.DESK_SIDEBAR_DEFAULT
+  property var entrySettings: ({})
+  // The widget has pushed an entry: the plugin is in the bar, so the shell
+  // has a place to keep the desk's settings. Without it (the plugin listed
+  // only under plugins[]) the desk keeps a change here, for this shell's
+  // lifetime (localEntry), and writes nothing.
+  property bool entryKnown: false
+  property var localEntry: null
+  // The loaded desk (Desk.qml registers itself), for the pill's
+  // `jax.seldon.panel` shim; null while the shell has it unloaded.
+  property var desk: null
+  // What the desk remembers between opens within one shell session (the
+  // shell unloads it on hide): { section, selected: { <section>: id } }.
+  property var deskMemory: ({ section: Model.DESK_SECTION_DEFAULT, selected: {} })
 
   // Exit 4 (lock held) of a capture or status: what runs again when
   // lockRetry fires ("capture", which brings its status, or "status"), and
@@ -131,6 +269,8 @@ Item {
   property int lockRetries: 0
   readonly property int lockRetryMs: Number(Quickshell.env("SELDON_LOCK_RETRY_MS")) > 0
     ? Number(Quickshell.env("SELDON_LOCK_RETRY_MS")) : Model.LOCK_RETRY_MS
+  readonly property int setupCaptureMs: Number(Quickshell.env("SELDON_SETUP_CAPTURE_MS")) > 0
+    ? Number(Quickshell.env("SELDON_SETUP_CAPTURE_MS")) : Model.SETUP_CAPTURE_MS
 
   // Capture (and the status that follows it) is queued, running or waiting
   // for a held lock.
@@ -158,7 +298,8 @@ Item {
   // the result is about), the drift sheet (`drift`;
   // also `action`, `eventId`, `caseId` — the linked or created case — and
   // `already` for a no-op re-run), the new-decision sheet (`decide`; also
-  // `decisionId`, the created decision, which is then opened in the editor).
+  // `decisionId`, the created decision, which is then opened in the editor),
+  // Accept on a decision (`decide accept`; also `decisionId` and `already`).
   property var logResult: null
   property var openResult: null
   property var captureResult: null
@@ -181,9 +322,29 @@ Item {
   readonly property var rulesNotice: Model.rulesNotice(root.rulesResult)
   property var driftResult: null
   property var decideResult: null
-  // The drift sheet's `seldon drift show` answer: { eventId, pending, ok,
-  // text, members } — a group's members beyond what index.events lists.
+  property var acceptResult: null
+  // WP-139: the engine's answer to Watch on a recently edited file
+  property var watchResult: null
+  // `agent ask …` (WP-124b): { ok, pending, text, what, target }.
+  property var askResult: null
+  // `drift apply|discard …` of a proposal: { ok, pending, text, action,
+  // proposalId, eventId, gone, done, skipped, refused, markedApplied }.
+  property var triageResult: null
+  // The drift form's `seldon drift show` answer: { eventId, pending, ok,
+  // text, members, rule, cls } — a group's members beyond what index.events
+  // lists, and the item's rule (WP-122: the "why loud" callout).
   property var driftShown: null
+  // The rules `drift show` named: { <eventId>: { rule, cls } }, kept while
+  // the item is an open crisis (Model.keptDriftRules).
+  property var driftRules: ({})
+  // WP-102b, *Import tasks…*: the last `import task` call, { ok, pending,
+  // text, dryRun, path, area, created, skipped, redactedLines, caseIds }
+  // (Model.importResult); `path` and `area` are what was sent.
+  property var importResult: null
+  // WP-102b: `plan show <id> --json` of the selected imported case, { ok,
+  // pending, text, caseId, intent, lines, truncated } (Model.caseShowResult):
+  // the whole Intent the detail shows before its Start.
+  property var caseShown: null
 
   // Emitted after every engine call, for panels that wait on a result.
   signal finished(var args, int exitCode, string output)
@@ -196,12 +357,33 @@ Item {
     root.driftInBar = Model.driftInBarMode(mode)
   }
 
+  // The widget's shell.json entry (its `settings`), as it is.
+  function setDeskSettings(entry) {
+    var copy = ({})
+    if (entry && typeof entry === "object")
+      for (var k in entry) copy[k] = entry[k]
+    root.entrySettings = copy
+    root.entryKnown = true
+    // the shell brought the setup card's choice back: the entry decides
+    if (root.setupLaterOverride !== null && Model.setupLaterStored(copy) === root.setupLaterOverride)
+      root.setupLaterOverride = null
+    root.deskWidth = Model.clampDeskWidth(copy.deskWidth)
+    root.deskSidebar = Model.deskSidebarMode(copy.deskSidebar)
+  }
+
   // ---- Index.
 
   function ingest(text) {
     var result = Model.parseIndex(text)
+    // A rule holds while its item is still an open crisis; a rewritten
+    // index drops the others (resolved, or reclassified), which are asked
+    // again if they are selected as a crisis.
+    root.driftRules = Model.keptDriftRules(root.driftRules, result.ok ? result.index : null)
+    // The engine writes whole seconds: an index written in the second of
+    // the exit 3 is the new one (`seldon init` right after the setup
+    // card's probe, WP-119), an older one is a leftover.
     if (root.engineNotInitialised && result.ok
-        && Model.timeMs(result.index.generatedAt) > root.notInitialisedAtMs)
+        && Model.timeMs(result.index.generatedAt) >= Math.floor(root.notInitialisedAtMs / 1000) * 1000)
       root.engineNotInitialised = false
     root.parsed = result
     root.fileState = result.ok || result.error === "contract" ? "loaded" : "invalid"
@@ -303,12 +485,17 @@ Item {
   }
 
   // Open in editor: journal | ledger | status | logbook | <caseId> | <ADR id>.
+  // One open at a time, and not the same target again within
+  // Model.OPEN_REPEAT_MS of a successful one (WP-156: three clicks were
+  // three editors).
   function openInEditor(what) {
     var args = Model.openArgs(what)
     if (args === null) {
       console.warn("jax.seldon: refused to open " + JSON.stringify(String(what)))
       return false
     }
+    if (root.openResult && root.openResult.pending) return root.refuseBusy("open", "open", "", "")
+    if (Model.openRepeated(root.lastOpen, what, Date.now())) return false
     if (!root.run(args)) {
       root.openResult = { ok: false, pending: false, text: root.lastError }
       return false
@@ -359,6 +546,84 @@ Item {
     return true
   }
 
+  // WP-156: *Focus* on an active case an agent works on: `seldon agent
+  // focus <caseId> --json` brings its window to the front; shares the plan
+  // result line and its one-at-a-time rule like Hand to agent.
+  function focusAgent(caseId) {
+    var id = String(caseId || "")
+    if (root.planResult && root.planResult.pending) return root.refuseBusy("plan", "focus", id, "")
+    var built = Model.agentFocusArgs(caseId)
+    if (built.error) {
+      root.planResult = { ok: false, pending: false, text: built.error, action: "focus", caseId: id }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.planResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, action: "focus", caseId: id }
+      return false
+    }
+    root.planResult = { ok: true, pending: true, text: "Bringing the agent on " + id + " to the front…", action: "focus", caseId: id }
+    return true
+  }
+
+  // WP-156: ask the engine which agents it launched still run. Read-only,
+  // its own process (never the queue); one at a time — a request while one
+  // runs asks once more after it.
+  function refreshSessions() {
+    if (root.devMode || root.engineState !== "present" || root.status === "notInitialised") return false
+    if (sessionsCall.running) {
+      root.sessionsAgain = true
+      return false
+    }
+    var args = ["agent", "sessions", "--json"]
+    if (Model.validateArgs(args) !== "") return false
+    root.sessionsAgain = false
+    sessionsCall.launch(["seldon"].concat(args))
+    return true
+  }
+
+  // WP-138: ask the engine for the preview (read-only, its own process,
+  // never the queue). Only while the logbook is not initialised, with an
+  // engine, outside dev mode; within Model.PREVIEW_REFRESH_MS of the last
+  // only when `force`d. The last answer stays on screen while it runs.
+  function refreshPreview(force) {
+    if (root.devMode || root.engineState !== "present" || root.status !== "notInitialised" || previewCall.running)
+      return false
+    if (force !== true && root.previewAtMs > 0 && Date.now() - root.previewAtMs < Model.PREVIEW_REFRESH_MS) return false
+    if (Model.validateArgs(Model.PREVIEW_ARGS) !== "") return false
+    root.previewAtMs = Date.now()
+    if (!root.preview) root.preview = { ok: false, pending: true, text: "" }
+    previewCall.launch(["seldon"].concat(Model.PREVIEW_ARGS))
+    return true
+  }
+
+  function previewDone(exitCode, out, err) {
+    if (exitCode !== 0) root.warnFailure(["preview"], exitCode, out, err)
+    // the logbook appeared meanwhile: the answer is no longer shown
+    root.preview = root.status === "notInitialised" ? Model.previewResult(exitCode, out, err) : null
+  }
+
+  onStatusChanged: {
+    if (root.status === "notInitialised") root.refreshPreview(true)
+    else root.preview = null
+  }
+
+  function sessionsDone(exitCode, out, err) {
+    if (exitCode !== 0) root.warnFailure(["agent", "sessions"], exitCode, out, err)
+    var found = Model.sessionsResult(exitCode, out)
+    if (found !== null) root.agentSessions = found
+    if (root.sessionsAgain) root.refreshSessions()
+  }
+
+  // WP-156: a window the desk opened would appear under it; close the desk
+  // (through the facade, as Esc does), as Omarchy's menus close for what
+  // they launch. Nothing when the desk is not open.
+  function stepAside() {
+    if (!root.deskOpen) return false
+    root.stepAsides++
+    root.desk.dismiss()
+    return true
+  }
+
   // Work tab, *Run* (WP-101, ADR-0027 §6): `seldon agent start --new --json
   // -- <intent>`. The engine creates and starts the case from the sentence
   // and launches the configured agent; the answer shares the plan result
@@ -375,6 +640,62 @@ Item {
       return false
     }
     root.planResult = { ok: true, pending: true, text: "Creating the case and starting an agent…", action: "agent-new", caseId: "" }
+    return true
+  }
+
+  // *Import tasks…* (WP-102b): `seldon import task --json [--dry-run]
+  // [--area <slug>] -- <path>`, the path one argument after `--`. One import
+  // at a time; the created cases arrive with the index.
+  function importTasks(path, area, dryRun) {
+    var p = String(path || "")
+    var a = String(area || "")
+    var dry = dryRun === true
+    if (root.importResult && root.importResult.pending) return root.refuseBusy("import", dry ? "dry-run" : "import", "", "")
+    var fail = function(text) {
+      root.importResult = { ok: false, pending: false, text: text, dryRun: dry, path: p, area: a, created: [], skipped: [],
+        redactedLines: 0, caseIds: [] }
+      return false
+    }
+    var built = Model.importArgs(p, a, dry)
+    if (built.error) return fail(built.error)
+    if (!root.canWrite || !root.run(built.args)) return fail(root.writeBlocker || root.lastError)
+    root.importResult = { ok: true, pending: true, text: dry ? "Reading the task file…" : "Importing…", dryRun: dry,
+      path: p, area: a, created: [], skipped: [], redactedLines: 0, caseIds: [] }
+    return true
+  }
+
+  // The whole Intent of a case (WP-102b): `seldon plan show <id> --json`,
+  // read-only. A call for the case already shown or pending is not repeated
+  // unless `again`.
+  // Asked again (a new index), the last text stays on screen, pending (so
+  // Start is off until the answer), and an unchanged answer changes no text
+  // (WP-102b round 2: a long Intent keeps its layout and scroll position).
+  // A new index while the answer is still in flight is remembered
+  // (`reaskWanted`) and asked once more when it arrives (WP-102b stage 2).
+  function showCase(caseId, again) {
+    var id = String(caseId || "")
+    var c = root.caseShown
+    if (c && c.caseId === id && c.pending) {
+      if (again === true) c.reaskWanted = true
+      return false
+    }
+    if (c && c.caseId === id && again !== true) return false
+    return root.askCase(id)
+  }
+
+  function askCase(id) {
+    var c = root.caseShown
+    var built = Model.caseShowArgs(id)
+    if (built.error || !root.canWrite || !root.run(built.args)) {
+      root.caseShown = { ok: false, pending: false, text: built.error || root.writeBlocker || root.lastError, caseId: id,
+        intent: "", lines: 0, truncated: false, hidden: 0 }
+      return false
+    }
+    root.caseShown = c && c.caseId === id && c.ok
+      ? { ok: true, pending: true, text: "Asking the engine again…", caseId: id, intent: c.intent, lines: c.lines,
+          truncated: c.truncated, hidden: c.hidden }
+      : { ok: false, pending: true, text: "Loading the whole Intent…", caseId: id, intent: "", lines: 0,
+          truncated: false, hidden: 0 }
     return true
   }
 
@@ -442,6 +763,45 @@ Item {
     return true
   }
 
+  // Accept on a proposed decision (WP-135, ADR-0040): `seldon decide accept
+  // <ADR-NNNN> --json`, the id checked against the schema pattern. One
+  // accept at a time; the accepted decision arrives with the index.
+  function acceptDecision(decisionId) {
+    var id = String(decisionId || "")
+    if (root.acceptResult && root.acceptResult.pending) return root.refuseBusy("accept", "accept", "", "")
+    var built = Model.acceptArgs(id)
+    if (built.error) {
+      root.acceptResult = { ok: false, pending: false, text: built.error, decisionId: id, already: false }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.acceptResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, decisionId: id, already: false }
+      return false
+    }
+    root.acceptResult = { ok: true, pending: true, text: "Accepting " + id + "…", decisionId: id, already: false }
+    return true
+  }
+
+  // System › Recently edited, *Watch* (WP-139, ADR-0046): `seldon config
+  // watch --json -- <path>`, the path one argument after `--`, checked as
+  // the engine lists them. One at a time; the row goes with the index the
+  // engine rebuilds.
+  function watchPath(path) {
+    var p = String(path || "")
+    if (root.watchResult && root.watchResult.pending) return root.refuseBusy("watch", "watch", "", "")
+    var built = Model.watchArgs(p)
+    if (built.error) {
+      root.watchResult = { ok: false, pending: false, text: built.error, path: p, added: false }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.watchResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, path: p, added: false }
+      return false
+    }
+    root.watchResult = { ok: true, pending: true, text: "Watching " + p + "…", path: p, added: false }
+    return true
+  }
+
   // `seldon drift show <id> --json`: the full member list of a group whose
   // members index.events no longer lists all of (ADR-0013 §2). Read-only.
   function driftShow(eventId) {
@@ -452,25 +812,133 @@ Item {
     return true
   }
 
+  // Ask agent (WP-124b, ADR-0036 §1): `seldon agent ask triage|drift
+  // <eventId>|case <caseId> --json`. The engine launches the agent and
+  // answers at once; one ask at a time.
+  function askAgent(what, id) {
+    var target = String(id || "")
+    if (root.askResult && root.askResult.pending) return root.refuseBusy("ask", what, what === "case" ? target : "",
+      what === "drift" ? target : "")
+    var built = Model.askArgs(what, target)
+    if (built.error) {
+      root.askResult = { ok: false, pending: false, text: built.error, what: what, target: target }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.askResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, what: what, target: target }
+      return false
+    }
+    root.askResult = { ok: true, pending: true, what: what, target: target,
+      text: what === "triage" ? "Starting an agent to sort the open changes…" : "Asking an agent about " + target + "…" }
+    return true
+  }
+
+  // Apply the proposal the user saw (`proposalId`, the detail's id): only
+  // while the index still names it, so a replaced proposal is never
+  // applied unseen. `eventId`: one crisis (`--item`), else the rest.
+  function applyProposal(proposalId, eventId) {
+    return root.triageCall("apply", proposalId, eventId || "")
+  }
+
+  // Discard the proposal the user saw.
+  function discardProposal(proposalId) {
+    return root.triageCall("discard", proposalId, "")
+  }
+
+  function triageCall(action, proposalId, eventId) {
+    var id = String(proposalId || "")
+    if (root.triageResult && root.triageResult.pending) return root.refuseBusy("triage", action, "", eventId)
+    var fail = function(text) {
+      root.triageResult = { ok: false, pending: false, text: text, action: action, proposalId: id, eventId: eventId,
+        gone: false, done: [], skipped: [], refused: [] }
+      return false
+    }
+    var current = root.index && root.index.triage && typeof root.index.triage.id === "string" ? root.index.triage.id : ""
+    if (current !== id) return fail("This proposal is not the current one any more; review what the Changelog shows now")
+    var built = action === "apply" ? Model.applyArgs(id, eventId) : Model.discardArgs(id)
+    if (built.error) return fail(built.error)
+    if (!root.canWrite || !root.run(built.args)) return fail(root.writeBlocker || root.lastError)
+    root.triageResult = { ok: true, pending: true, action: action, proposalId: id, eventId: eventId, gone: false,
+      done: [], skipped: [], refused: [],
+      text: action === "discard" ? "Discarding the proposal…" : eventId !== "" ? "Applying " + eventId + "…" : "Applying the proposal…" }
+    return true
+  }
+
   function setResult(args, result) {
     if (args[0] === "log") root.logResult = result
     else if (args[0] === "open") root.openResult = result
     else if (args[0] === "capture") root.captureResult = result
-    else if (args[0] === "plan") {
+    else if (args[0] === "plan" && args[1] === "show") {
+      result.caseId = args[2]
+      if (result.intent === undefined) result.intent = ""
+      if (result.lines === undefined) result.lines = 0
+      if (result.truncated === undefined) result.truncated = false
+      if (result.hidden === undefined) result.hidden = 0
+      var last = root.caseShown
+      // the same text again: keep the string the box already lays out
+      if (last && result.ok && last.ok && last.caseId === result.caseId && last.intent === result.intent)
+        result.intent = last.intent
+      if (Model.reaskAfter(last, result)) {
+        // a new index came meanwhile: this answer enables nothing; ask again
+        result.pending = true
+        root.caseShown = result
+        root.askCase(result.caseId)
+        return
+      }
+      root.caseShown = result
+    } else if (args[0] === "import") {
+      var sep = args.indexOf("--")
+      var at = args.indexOf("--area")
+      result.dryRun = args.indexOf("--dry-run") !== -1
+      result.path = sep !== -1 ? args[sep + 1] : ""
+      result.area = at !== -1 && at < sep ? args[at + 1] : ""
+      if (result.created === undefined) result.created = []
+      if (result.skipped === undefined) result.skipped = []
+      if (result.caseIds === undefined) result.caseIds = []
+      if (result.redactedLines === undefined) result.redactedLines = 0
+      root.importResult = result
+    } else if (args[0] === "plan") {
       result.action = args[1]
       if (result.caseId === undefined || result.caseId === "") result.caseId = args[1] === "new" ? "" : args[2]
       root.planResult = result
+    } else if (args[0] === "agent" && args[1] === "ask") {
+      result.what = args[2]
+      result.target = args.length > 4 ? args[3] : ""
+      root.askResult = result
+    } else if (args[0] === "drift" && (args[1] === "apply" || args[1] === "discard")) {
+      result.action = args[1]
+      result.proposalId = args[2]
+      result.eventId = args[3] === "--item" ? args[4] : ""
+      if (result.gone === undefined) result.gone = false
+      if (result.done === undefined) result.done = []
+      if (result.skipped === undefined) result.skipped = []
+      if (result.refused === undefined) result.refused = []
+      root.triageResult = result
     } else if (args[0] === "agent") {
       var isNew = args[2] === "--new"
-      result.action = isNew ? "agent-new" : "agent"
+      result.action = args[1] === "focus" ? "focus" : isNew ? "agent-new" : "agent"
       if (result.caseId === undefined || result.caseId === "") result.caseId = isNew ? "" : args[2]
       root.planResult = result
+    } else if (args[0] === "config") {
+      // the path asked for, also when the engine refused it
+      result.path = args[args.length - 1]
+      root.watchResult = result
     } else if (args[0] === "rules") {
       root.rulesResult = result
     } else if (args[0] === "drift" && args[1] === "show") {
       result.eventId = args[2]
       if (result.members === undefined) result.members = []
+      if (result.ok && result.rule) {
+        var rules = ({})
+        for (var k in root.driftRules) rules[k] = root.driftRules[k]
+        rules[args[2]] = { rule: result.rule, cls: result.cls }
+        root.driftRules = rules
+      }
       root.driftShown = result
+    } else if (args[0] === "decide" && args[1] === "accept") {
+      if (result.decisionId === undefined || result.decisionId === "") result.decisionId = args[2]
+      if (result.already === undefined) result.already = false
+      root.acceptResult = result
     } else if (args[0] === "decide") {
       if (result.decisionId === undefined) result.decisionId = ""
       root.decideResult = result
@@ -522,12 +990,20 @@ Item {
     var result = args[0] === "log" ? Model.logResult(exitCode, out, err)
       : args[0] === "open" ? Model.openResult(exitCode, out, err)
       : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
+      : args[0] === "plan" && args[1] === "show" ? Model.caseShowResult(exitCode, out, err)
       : args[0] === "plan" ? Model.planResult(exitCode, out, err)
+      : args[0] === "agent" && args[1] === "focus" ? Model.focusResult(exitCode, out, err)
+      : args[0] === "import" ? Model.importResult(exitCode, out, err)
+      : args[0] === "agent" && args[1] === "ask" ? Model.askResult(exitCode, out, err)
       : args[0] === "agent" ? Model.agentResult(exitCode, out, err)
+      : args[0] === "drift" && args[1] === "apply" ? Model.applyResult(exitCode, out, err)
+      : args[0] === "drift" && args[1] === "discard" ? Model.discardResult(exitCode, out, err)
       : args[0] === "drift" && args[1] === "show" ? Model.driftShowResult(exitCode, out, err)
       : args[0] === "drift" ? Model.driftResult(args[1], exitCode, out, err)
+      : args[0] === "decide" && args[1] === "accept" ? Model.acceptResult(exitCode, out, err)
       : args[0] === "decide" ? Model.decideResult(exitCode, out, err)
       : args[0] === "rules" ? Model.rulesUpdateResult(exitCode, out, err)
+      : args[0] === "config" ? Model.watchResult(exitCode, out, err)
       : null
     if (result) {
       result.pending = false
@@ -541,22 +1017,29 @@ Item {
       // Nothing else can succeed until `seldon init` has run.
       root.notInitialisedAtMs = Date.now()
       root.engineNotInitialised = true
+      root.notInitialisedInfo = Model.notInitialisedInfo(out)
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
     } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "agent" && args[0] !== "drift" && args[0] !== "decide"
-        && args[0] !== "rules") {
+        && args[0] !== "rules" && args[0] !== "import" && args[0] !== "config") {
       // QuickEntry, the Work tab (case actions, Start agent), the drift sheet
-      // and the new-decision sheet show their own errors in place.
+      // and the new-decision sheet, Accept and Watch show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch
     // missed the rename.
     indexFile.reload()
     // A created decision opens in the editor (the id is checked).
-    if (args[0] === "decide" && result && result.ok && result.decisionId !== "") root.openInEditor(result.decisionId)
+    if (args[0] === "decide" && args[1] !== "accept" && result && result.ok && result.decisionId !== "") root.openInEditor(result.decisionId)
     // Updated rules: ask doctor again, so the banner goes.
     if (args[0] === "rules") root.checkRules(true)
+    if (args[0] === "open" && result && result.ok) root.lastOpen = { what: args[1], atMs: Date.now() }
+    // An agent started, refused as already working, or gone, an editor
+    // opened or focused: ask again (SPEC-PLUGIN §5.4).
+    if (args[0] === "agent" || args[0] === "open") root.refreshSessions()
     root.finished(args, exitCode, out)
+    // The window it opened comes up in front (WP-156).
+    if (Model.opensWindow(args, result)) root.stepAside()
     root.pump()
   }
 
@@ -639,7 +1122,8 @@ Item {
 
   // ---- Banner fixes (AGENTS.md §7: every non-ok state has a one-click fix).
   // bannerId picks the banner whose constants copy and terminal use:
-  // "status" (default) or "snapper" (ADR-0026). Copy puts the plain command
+  // "status" (default), "snapper" (ADR-0026) or "contract" (the newer
+  // contract's notice, ADR-0051). Copy puts the plain command
   // on the clipboard; terminal opens the banner's terminal script (WP-117),
   // only one of Model.TERMINAL_SCRIPTS (Model.terminalArgv). "restart" is the restart
   // notice's own action (WP-090): the fixed argv, only while it shows, and
@@ -658,7 +1142,11 @@ Item {
       root.rulesResult = { ok: true, pending: true, text: "Updating the rules…" }
       return true
     }
-    var source = bannerId === "snapper" ? root.snapperBanner : root.banner
+    var source = bannerId === "snapper" ? root.snapperBanner
+      : bannerId === "contract" ? root.contractNotice
+      // the setup card's Choose a folder (WP-119): only before init
+      : bannerId === "initAsk" ? (root.status === "notInitialised" ? Model.INIT_ASK_FIX : null)
+      : root.banner
     var command = source ? source.command : ""
     var terminal = Model.terminalArgv(source)
     if (actionId === "copy" && command !== "") {
@@ -666,6 +1154,13 @@ Item {
     } else if (actionId === "terminal" && terminal) {
       // Opens on the explicit click only (ADR-0004); the script is a constant.
       Quickshell.execDetached(terminal)
+      // The install, the logbook and the grant: look again by itself
+      // (WP-119), the engine's install also from the urgent notice.
+      var stepId = Model.setupStepOf(source)
+      if (stepId !== "") root.watchSetup(stepId)
+      // No answer comes back from a detached launch: step aside at once,
+      // as Omarchy's menus do (WP-156).
+      root.stepAside()
     } else if (actionId === "recheck") {
       root.probeEngine()
       root.reloadIndex()
@@ -680,6 +1175,88 @@ Item {
     return true
   }
 
+  // ---- Setup card (WP-119). One of the current step's actions: the
+  // terminal fix of the banner behind it (then the service looks again by
+  // itself, setupTick), Copy, or Not now on the snapshot step, which the
+  // desk stores in the shell.json entry (Desk.writeSetting). Returns
+  // whether it was taken.
+  function setupAction(stepId, actionId) {
+    var card = root.setup
+    var steps = card ? card.steps : []
+    var step = null
+    for (var i = 0; i < steps.length; i++) if (steps[i].id === stepId && steps[i].current) step = steps[i]
+    if (!step || !step.ready) return false
+    if (actionId === "later") {
+      if (stepId !== "snapshots") return false
+      return root.setSetupLater(true)
+    }
+    if (actionId === "copy") return root.fix("copy", step.banner)
+    if (actionId !== "terminal") return false
+    return root.fix("terminal", step.banner)
+  }
+
+  // A setup terminal opened (the card's or a notice's): look again by
+  // itself until the step is done (setupTick).
+  function watchSetup(stepId) {
+    root.setupResult = ""
+    root.setupWatch = { step: stepId, untilMs: Date.now() + Model.SETUP_WATCH_MS,
+      captureAtMs: Date.now() + root.setupCaptureMs, probes: 0 }
+  }
+
+  // Not now (true) or Settings' Offer again (false): held here at once,
+  // stored by the desk in the shell.json entry; without a desk or an
+  // entry it holds for this shell's life (the line says so).
+  function setSetupLater(later) {
+    root.setupLaterOverride = later === true
+    var written = root.desk ? root.desk.writeSetting(Model.SETUP_LATER_KEY, later === true ? Model.SETUP_LATER_VALUE : undefined) : "session"
+    root.setupResult = written === "written" || written === "unchanged" ? ""
+      : written === "refused" ? "The shell did not take the change; it holds until the shell restarts."
+      : Model.DESK_NO_ENTRY_TEXT
+    if (later !== true) root.setupWatch = null
+    return true
+  }
+
+  // Every Model.SETUP_PROBE_MS while setupWatch is set: the engine probe
+  // for step 1, the index for step 2 (the FileView watches it too), a
+  // capture every Model.SETUP_CAPTURE_MS for step 3 (only a capture
+  // rewrites the collector state; the grant's own capture comes first).
+  // Ends when the step is done, the card is gone, or after
+  // Model.SETUP_WATCH_MS.
+  function setupTick() {
+    var w = root.setupWatch
+    if (!w) return
+    var steps = root.setup ? root.setup.steps : []
+    var step = null
+    for (var i = 0; i < steps.length; i++) if (steps[i].id === w.step) step = steps[i]
+    var now = Date.now()
+    var done = w.step === "engine" ? root.engineState === "present"
+      : w.step === "logbook" ? root.status !== "notInitialised"
+      : !step || step.done || step.later
+    if (done || now > w.untilMs) {
+      root.setupWatch = null
+      return
+    }
+    // what runs slowly: the step-3 capture, step 2's status (it tells
+    // why a failed init failed, CONTRACT.md rule 10), and step 1's probe
+    // after its first Model.SETUP_PROBES_FAST (each failed probe is a line
+    // in the shell's log: at most about 40 per watch)
+    var slow = now >= w.captureAtMs
+    var next = slow ? now + root.setupCaptureMs : w.captureAtMs
+    var probes = w.probes || 0
+    if (w.step === "engine") {
+      if (probes < Model.SETUP_PROBES_FAST || slow) {
+        root.probeEngine()
+        probes++
+      }
+    } else if (w.step === "logbook") {
+      root.reloadIndex()
+      if (slow && root.engineState === "present" && !root.queued("status")) root.run(["status", "--json"])
+    } else if (w.step === "snapshots" && slow && !root.capturing) {
+      root.captureNow()
+    }
+    root.setupWatch = { step: w.step, untilMs: w.untilMs, captureAtMs: next, probes: probes }
+  }
+
   function snapshot() {
     return {
       status: root.status,
@@ -688,10 +1265,27 @@ Item {
       indexPath: root.indexPath,
       fileState: root.fileState,
       indexContractVersion: root.indexContractVersion,
+      indexReadableFrom: root.parsed ? root.parsed.readableFrom : 0,
+      contractNotice: root.contractNotice ? root.contractNotice.detail : "",
+      contractActions: root.contractNotice ? root.contractNotice.actions.map(function(a) { return a.id + ":" + a.label }) : [],
       engine: root.engineState,
       engineVersion: root.engineVersion,
       engineDetail: root.engineDetail,
       busy: root.busy,
+      preview: root.preview ? Model.previewSummary(root.preview) : "",
+      setup: root.setup ? {
+        headline: root.setup.headline,
+        current: root.setup.current,
+        open: root.setup.open,
+        total: root.setup.total,
+        steps: root.setup.steps.map(function(s) {
+          return s.id + ":" + (s.done ? "done" : s.later ? "later" : s.current ? "current" : "waiting")
+        }),
+        ready: root.setup.steps.some(function(s) { return s.current && s.ready })
+      } : null,
+      setupLater: root.setupLater,
+      setupWatch: root.setupWatch ? root.setupWatch.step : "",
+      setupResult: root.setupResult,
       capturing: root.capturing,
       lockRetries: root.lockRetries,
       engineMin: root.engineMin,
@@ -712,8 +1306,24 @@ Item {
       driftResult: root.driftResult,
       driftShown: root.driftShown,
       decideResult: root.decideResult,
+      acceptResult: root.acceptResult,
+      watchResult: root.watchResult,
+      askResult: root.askResult,
+      triageResult: root.triageResult,
+      importResult: root.importResult,
+      caseShown: root.caseShown ? { caseId: root.caseShown.caseId, ok: root.caseShown.ok, pending: root.caseShown.pending,
+        lines: root.caseShown.lines, truncated: root.caseShown.truncated, hidden: root.caseShown.hidden,
+        text: root.caseShown.text } : null,
+      triageButton: root.triageButton,
+      proposalPath: root.proposalPath,
+      proposalRead: !!root.proposal,
+      agentSessions: root.agentSessions,
+      stepAsides: root.stepAsides,
+      lastOpen: root.lastOpen ? root.lastOpen.what : "",
       pill: Model.pillText(root.counts, root.driftInBar),
       driftInBar: root.driftInBar,
+      deskWidth: root.deskWidth,
+      deskSidebar: root.deskSidebar,
       tone: Model.pillTone(root.counts),
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),
       banner: root.banner ? root.banner.title : "",
@@ -806,6 +1416,17 @@ Item {
   }
 
   EngineCall {
+    id: previewCall
+    onDone: function(exitCode, out, err) { root.previewDone(exitCode, out, err) }
+    onFailedToStart: root.preview = null
+  }
+
+  EngineCall {
+    id: sessionsCall
+    onDone: function(exitCode, out, err) { root.sessionsDone(exitCode, out, err) }
+  }
+
+  EngineCall {
     id: runner
     onDone: function(exitCode, out, err) { root.runnerDone(exitCode, out, err) }
     onFailedToStart: root.runnerFailedToStart()
@@ -821,6 +1442,25 @@ Item {
     onFileChanged: indexFile.reload()
   }
 
+  // The proposal index.triage points to (WP-124b).
+  FileView {
+    id: proposalFile
+    path: root.proposalPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.proposalText = proposalFile.text()
+    onLoadFailed: root.proposalText = ""
+    onFileChanged: proposalFile.reload()
+  }
+
+  // The setup card's own look again after a step's terminal (setupTick).
+  Timer {
+    interval: Model.SETUP_PROBE_MS
+    repeat: true
+    running: root.setupWatch !== null
+    onTriggered: root.setupTick()
+  }
+
   // A watch cannot sit on a file that does not exist yet; look again until
   // it does.
   Timer {
@@ -831,8 +1471,9 @@ Item {
   }
 
   // Capture cycle (ADR-0005). A missing engine is looked for again only on
-  // the status banner's "Check again", so a machine without it logs one
-  // probe per shell start.
+  // the status banner's "Check again", a desk open and the setup card's
+  // watch, so a machine without it logs one probe per shell start and
+  // per desk open.
   Timer {
     interval: root.captureIntervalMin * 60000
     repeat: true
@@ -846,6 +1487,26 @@ Item {
     repeat: true
     running: true
     onTriggered: root.liveNowMs = Date.now()
+  }
+
+  // The live sessions while the desk is open (WP-156): an agent's window
+  // closed by hand ends its session without an index change.
+  Timer {
+    interval: Model.SESSIONS_POLL_MS
+    repeat: true
+    running: root.deskOpen && root.engineState === "present"
+    onTriggered: root.refreshSessions()
+  }
+  onDeskOpenChanged: if (root.deskOpen) {
+    // the setup card's first step may have been done outside the desk
+    if (root.engineState === "missing" && !root.devMode) root.probeEngine()
+    root.refreshSessions()
+    root.refreshPreview(false)
+  }
+  onEngineStateChanged: {
+    if (root.deskOpen) root.refreshSessions()
+    // the index may have said notInitialised before the probe answered
+    root.refreshPreview(true)
   }
 
   // The retry of a capture or status that found the lock held.

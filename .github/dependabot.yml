@@ -1,0 +1,43 @@
+# Dependabot version updates (WP-195; decided 2026-10-06, E70). Updates
+# arrive as pull requests that are reviewed like any other change
+# (packaging/README.md, "Dependabot"); nothing merges by itself.
+#
+# github-actions: every `uses:` pin in .github/workflows/ (the SHA, and the
+#   `# vX.Y.Z` comment on the same line). One group, so all action bumps
+#   arrive in one pull request and each action keeps one pin across the
+#   workflows (tests/release/workflow-pins.test.sh). The job containers'
+#   image digest is not something Dependabot reads (it updates
+#   GitHub-repository actions only); it is refreshed by hand.
+# cargo: engine/Cargo.toml and engine/Cargo.lock; minor and patch updates
+#   in one pull request, a major update in its own.
+# target-branch next: the integration branch until 0.2.0; it moves to
+#   main after 0.2.0 (packaging/README.md, "Dependabot"). Security updates
+#   always go to the default branch (main).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: next
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: cargo
+    directory: /engine
+    target-branch: next
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: engine
+    groups:
+      cargo-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

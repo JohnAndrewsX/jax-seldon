@@ -38,6 +38,7 @@ import Quickshell
 //                                             (input: the sheet's form object)
 //                       ["driftShow", eventId] → Service.driftShow(eventId)
 //                       ["decide", title]     → Service.decide(title)
+//                       ["accept", decisionId] → Service.acceptDecision(decisionId)
 //                       ["agent", caseId]     → Service.startAgent(caseId)
 //                       ["fix", action, banner] → Service.fix(action, banner)
 //                                             (banner "status" or "snapper")
@@ -66,7 +67,14 @@ ShellRoot {
 
   function emit(tag) {
     if (!root.service) return
-    console.log("HARNESS " + tag + " " + JSON.stringify(root.service.snapshot()))
+    var snap = root.service.snapshot()
+    // the banner's detail and the contract the plugin reads, from outside
+    // the snapshot, so a plugin of an older release reports them too
+    // (WP-120: a 0.1.x plugin against a contract-2 index)
+    var b = root.service.banner
+    snap.bannerDetail = b && b.detail ? String(b.detail) : ""
+    snap.pluginContractVersion = root.service.contractVersion
+    console.log("HARNESS " + tag + " " + JSON.stringify(snap))
   }
 
   function settled() {
@@ -145,6 +153,7 @@ ShellRoot {
           : a[0] === "drift" ? s.drift(a[1], a[2])
           : a[0] === "driftShow" ? s.driftShow(a[1])
           : a[0] === "decide" ? s.decide(a[1])
+          : a[0] === "accept" ? s.acceptDecision(a[1])
           : false
         console.log("HARNESS action " + JSON.stringify(a) + " " + done)
       }

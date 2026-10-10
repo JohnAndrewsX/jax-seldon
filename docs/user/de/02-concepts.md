@@ -1,6 +1,6 @@
 # Konzepte
 
-<!-- source: en/02-concepts.md @ 1bae1cd -->
+<!-- source: en/02-concepts.md @ a5ae8924 -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
 Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory. Lies sie
@@ -170,7 +170,7 @@ würde, nicht danach, wer sie gemacht hat:
 
 | Klasse | Beispiele | Was passiert |
 |---|---|---|
-| Routine | ein Theme-Wechsel, ein Plugin-Schalter, ein einfaches System-Upgrade (`pacman -Syu`, `omarchy update`, Kernel eingeschlossen), Omarchys eigene Kopie einer Datei, `shell.json` | Geschichte im Changelog, keine Drift; niemand wird gefragt |
+| Routine | ein Theme-Wechsel, ein Plugin-Schalter, das Hinzufügen von Seldons eigenem Plugin, ein einfaches System-Upgrade (`pacman -Syu`, `omarchy update`, Kernel eingeschlossen), Omarchys eigene Kopie einer Datei, `shell.json` | Geschichte im Changelog, keine Drift; niemand wird gefragt |
 | zur Kenntnis | ein Paket, mit Namen installiert oder entfernt, ein Plugin eines Dritten, hinzugefügt oder aktualisiert, eine Überschreibung unter einem beobachteten Pfad, eine entfernte Datei | offene Drift, leise: das Panel listet sie, die Pill zählt sie nicht |
 | Krise | ein Paket aus `alwaysRed`, mit Namen installiert oder entfernt, eine neue Datei in einem Persistenzpfad wie `~/.config/systemd/user` oder Omarchys Hooks | siehe [Krise](#krise) |
 
@@ -223,22 +223,26 @@ neue Datei in einem Persistenzpfad ist eine Krise, egal wer sie
 geschrieben hat: Units in `~/.config/systemd/user`, Omarchys Hooks in
 `~/.config/omarchy/hooks`, `~/.config/autostart`,
 `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
-`~/.bash_profile`. Diese Dateien laufen bei der Anmeldung oder bei
-Ereignissen, ohne deine gewöhnliche Konfiguration zu sein.
+`~/.bash_profile` und die `authorized_keys`-Dateien, sobald du sie beobachtest.
+Diese Dateien laufen bei der Anmeldung oder bei Ereignissen, ohne deine
+gewöhnliche Konfiguration zu sein. Ein Drittanbieter-Plugin, das an Ort
+und Stelle geändert wird, zählt als Plugin-Update: gelistet, nie in der
+Leiste gezählt.
 
 ## Baseline
 
-Ein neues Logbuch zeichnet ab dem Moment auf, in dem du es anlegst. Der
-Assistent kann auch *nacherfassen*: Änderungen seit einem früheren Datum
-aufzeichnen, aus dem Paketlog und von Snapper. Keine dieser älteren
-Änderungen gehört zu einem Case, also öffnen viele davon als Drift.
+Ein neues Logbuch *erfasst* auch *nach*: Seine erste Erfassung zeichnet
+die letzten 90 Tage aus dem Paketlog und von Snapper auf. Keine dieser
+älteren Änderungen gehört zu einem Case, also würden viele davon als
+Drift öffnen.
 
-Die Baseline räumt das auf. Nach einer Nacherfassung fragt der
-Assistent, ob er alles Gefundene als Baseline vor Seldon markieren soll.
-Sagst du ja, verwirft die Engine jeden offenen Eintrag mit dem Grund
-„pre-Seldon baseline“. Die Ereignisse bleiben im Ledger und in den
-Diagrammen; sie verlangen nur keinen Grund mehr. Ohne Nacherfassung gibt
-es keine Baseline.
+Die Baseline räumt das auf. Die Einrichtungskarte und `seldon init`
+verwerfen jeden Eintrag, den die Nacherfassung öffnet, mit dem Grund
+„before Seldon“, ohne zu fragen. Die Ereignisse bleiben im Ledger und in
+den Diagrammen; sie verlangen nur keinen Grund mehr. Mit `seldon init
+--ask` wählst du das Datum selbst und wirst vor dem Verwerfen gefragt;
+mit `--since` und ohne `--baseline` lässt `seldon init
+--non-interactive` die Nacherfassung als Drift offen.
 
 ## Entscheidungen
 
@@ -246,8 +250,12 @@ Eine Entscheidung ist eine kurze Aufzeichnung einer Wahl, die die
 Maschine prägt, im ADR-Format (Architecture Decision Record): Kontext,
 Entscheidung, Folgen. `seldon decide -- "<titel>"` legt
 `decisions/ADR-NNNN-<slug>.md` mit dem Status *proposed* an und öffnet
-sie in deinem Editor. Den Status änderst du in der Datei auf *accepted*
-oder *superseded*. Der Tab Decisions listet sie auf.
+sie in deinem Editor. *Accept* im Bereich Decisions des Desks (zweimal:
+der erste Klick macht scharf) oder `seldon decide accept ADR-NNNN` setzt
+sie auf *accepted* mit dem heutigen Datum und vermerkt das im Ledger.
+Annehmen ist deine Sache: ein Agent darf eine Entscheidung vorschlagen,
+nie annehmen. *Superseded* setzt du in der Datei. Der Bereich Decisions
+listet sie auf.
 
 ## Memory
 

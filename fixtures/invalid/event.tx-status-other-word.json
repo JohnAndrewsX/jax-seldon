@@ -1,0 +1,11 @@
+{
+  "id": "01M3VQN4807PWS1QE2RYRV2E4G",
+  "ts": "2026-09-19T08:31:12+02:00",
+  "source": "pacman",
+  "kind": "upgrade",
+  "subject": "gtk4",
+  "detail": "meta.txStatus is failed, interrupted or unfinished; a completed transaction has none (ADR-0043)",
+  "actor": "system",
+  "txId": "tx-20260919T083110",
+  "meta": { "txStatus": "completed" }
+}

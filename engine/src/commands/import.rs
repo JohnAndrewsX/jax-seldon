@@ -1,5 +1,6 @@
 //! `seldon import omarchy-agent <vault> [--dry-run|--apply]` (SPEC-ENGINE
 //! §3, WP-043): the kit's vault into this logbook, dry run first.
+//! `seldon import task <FILE>…` (WP-102) lives in [`task`].
 //!
 //! Both modes build the same plan ([`crate::import::omarchy_agent`]) under
 //! the lock and write `outputs/IMPORT-omarchy-agent.md` (only on change).
@@ -40,6 +41,8 @@ use crate::model::{self, event::format_ts};
 use crate::redact::Redactor;
 use crate::sys;
 
+pub(crate) mod task;
+
 #[derive(Debug, Clone, Args)]
 pub struct ImportArgs {
     #[command(subcommand)]
@@ -50,6 +53,9 @@ pub struct ImportArgs {
 pub enum ImportSource {
     /// Import the omarchy-agent kit's Obsidian vault, which is only read (dry run unless --apply)
     OmarchyAgent(OmarchyAgentArgs),
+    /// Import your Markdown task files as cases: one queued case per open
+    /// `- [ ]` item (applies unless --dry-run; the files are only read)
+    Task(task::TaskArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -70,6 +76,7 @@ pub struct OmarchyAgentArgs {
 pub fn run(ctx: &Context, args: ImportArgs) -> Result<Output> {
     match args.source {
         ImportSource::OmarchyAgent(a) => omarchy_agent(ctx, a),
+        ImportSource::Task(a) => task::run(ctx, a),
     }
 }
 
@@ -100,6 +107,12 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
     }
 
     let redactor = Redactor::with_patterns(&config.redaction.patterns)?;
+    if args.apply {
+        // the import's folders, before the plan reads them (WP-168)
+        for rel in IMPORT_FOLDERS {
+            logbook.checked_dir(rel)?;
+        }
+    }
     let plan = omarchy_agent::plan(&vault, shown, &logbook, redactor, &ctx.now)?;
     let report_rel = report_path(SOURCE);
 
@@ -145,6 +158,7 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
             return Err(Error::user(format!("{} already exists", c.path)));
         }
     }
+    check_folders(&logbook, &plan)?;
     commit_pending(ctx, &config, &logbook)?;
     let mut undo = Undo::new(&logbook);
     let files = write_plan(ctx, &config, &logbook, &lock, &plan, &mut undo)
@@ -171,6 +185,32 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
     ))
 }
 
+/// The folders an apply writes into (SPEC-ENGINE §3 `import`).
+const IMPORT_FOLDERS: [&str; 9] = [
+    "ledger",
+    "work/queued",
+    "work/active",
+    "work/completed",
+    "journal",
+    "memory",
+    "system",
+    "outputs",
+    ".seldon/imports",
+];
+
+/// Every folder the apply writes a file in is a real folder of the
+/// logbook ([`Logbook::checked_file`], WP-168), checked before the ledger.
+fn check_folders(logbook: &Logbook, plan: &Plan) -> Result<()> {
+    let files = plan.cases.iter().map(|c| c.path.clone());
+    let files = files.chain(plan.days.iter().map(|d| d.path.clone()));
+    let files = files.chain(plan.memory.iter().map(|m| m.path.clone()));
+    let files = files.chain(plan.dossier.iter().flat_map(|d| d.changed()));
+    for rel in files.chain([report_path(SOURCE), marker_path(SOURCE), undo_path()]) {
+        logbook.checked_file(&rel)?;
+    }
+    Ok(())
+}
+
 /// Writes the plan: ledger notes, cases, journal days, memory files,
 /// deviation rows, the report and the marker. Returns the files written.
 /// Every file is noted in `undo` before it is written.
@@ -195,17 +235,21 @@ fn write_plan(
         let mut case = c.case.clone();
         case.events.push(event.id.to_string());
         undo.note(&c.path);
-        write_new(&logbook.path(&c.path), &model::render_new(&case, &c.body))?;
+        write_new(
+            logbook,
+            &logbook.path(&c.path),
+            &model::render_new(&case, &c.body),
+        )?;
         files.push(c.path.clone());
     }
     for d in &plan.days {
         undo.note(&d.path);
-        sys::write_atomic(&logbook.path(&d.path), d.text.as_bytes())?;
+        sys::write_atomic_nofollow(&logbook.path(&d.path), d.text.as_bytes())?;
         files.push(d.path.clone());
     }
     for m in &plan.memory {
         undo.note(&m.path);
-        sys::write_atomic(&logbook.path(&m.path), m.text.as_bytes())?;
+        sys::write_atomic_nofollow(&logbook.path(&m.path), m.text.as_bytes())?;
         files.push(m.path.clone());
     }
     if let Some(dossier) = &plan.dossier {
@@ -228,7 +272,7 @@ fn write_plan(
         "cases": plan.id_map(),
         "counts": report::counts(plan),
     });
-    sys::write_atomic(
+    sys::write_atomic_nofollow(
         &logbook.path(&marker_rel),
         format!("{}\n", serde_json::to_string_pretty(&marker).expect("json")).as_bytes(),
     )?;
@@ -254,6 +298,9 @@ fn commit_pending(ctx: &Context, config: &Config, logbook: &Logbook) -> Result<(
     if !git::is_repo(&logbook.root) {
         return Ok(());
     }
+    // a `.git` or `HEAD` git would wait on: refused like any file of the
+    // logbook that is no regular file, exit 1 (WP-175)
+    git::check_files(&logbook.root).map_err(Error::user)?;
     let dirty = || {
         git::is_dirty(&logbook.root)
             .map_err(|e| Error::from(anyhow::anyhow!("cannot read the logbook's git status: {e}")))
@@ -417,7 +464,7 @@ fn after_failure(logbook: &Logbook, undo: &Undo, e: Error) -> Error {
         undo_file.note(&undo_path());
         // best effort: the hint below is the undo either way
         let _ = serde_json::to_string_pretty(&undo_file).map(|text| {
-            sys::write_atomic(&logbook.path(undo_path()), format!("{text}\n").as_bytes())
+            sys::write_atomic_nofollow(&logbook.path(undo_path()), format!("{text}\n").as_bytes())
         });
         format!(
             "the import stopped half way and nothing was committed; undo it with `{}` in {} (it touches only the files the import wrote), then run it again",
@@ -489,7 +536,8 @@ fn note(c: &omarchy_agent::PlannedCase) -> Event {
 /// the import is never run twice and never reported done when it is not.
 fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
     let rel = marker_path(SOURCE);
-    match std::fs::read_to_string(logbook.path(&rel)) {
+    // a link there is not read as "imported", a FIFO not opened (WP-171)
+    match sys::read_regular_string(&logbook.checked_file(&rel)?, sys::LOGBOOK_FILE_MAX) {
         Ok(text) => {
             let marker: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
             return Ok(Some(json!({
@@ -513,7 +561,7 @@ fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
         return Ok(None);
     };
     let root = logbook.root.display();
-    let undo = std::fs::read_to_string(logbook.path(undo_path()))
+    let undo = sys::read_regular_string(&logbook.path(undo_path()), sys::LOGBOOK_FILE_MAX)
         .ok()
         .and_then(|text| serde_json::from_str::<Undo>(&text).ok())
         .filter(|undo| undo.is_sane(&logbook.root));
@@ -535,8 +583,8 @@ fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
 
 /// Writes the report (text outside its fence kept); `true` when it changed.
 fn write_report(logbook: &Logbook, plan: &Plan, mode: &Mode) -> Result<bool> {
-    let path = logbook.path(report_path(SOURCE));
-    let existing = match std::fs::read_to_string(&path) {
+    let path = logbook.checked_file(report_path(SOURCE))?;
+    let existing = match sys::read_regular_string(&path, sys::LOGBOOK_FILE_MAX) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
@@ -549,7 +597,7 @@ fn write_report(logbook: &Logbook, plan: &Plan, mode: &Mode) -> Result<bool> {
     if existing.as_deref() == Some(text.as_str()) {
         return Ok(false);
     }
-    sys::write_atomic(&path, text.as_bytes())?;
+    sys::write_atomic_nofollow(&path, text.as_bytes())?;
     Ok(true)
 }
 

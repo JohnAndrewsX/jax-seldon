@@ -401,8 +401,9 @@ fn built_in_templates_explain_without_owned_json() {
     assert!(!owned.exists(), "nothing recorded, nothing left behind");
 }
 
-/// ADR-0028 §4d: `init` writes the six persistence paths; a config whose
-/// list is an earlier engine's default gains them at the next capture,
+/// ADR-0028 §4d: `init` writes the six persistence paths (and WP-113's
+/// toggles directory); a config whose list is an earlier engine's default
+/// (0.1.0–0.1.3, WP-089, 0.1.4) gains them at the next capture,
 /// which says so once; a list the user wrote is never widened, and
 /// `doctor` names what it lacks with the line to add.
 #[test]
@@ -420,10 +421,6 @@ fn default_watch_paths_and_their_upgrade() {
     };
     assert_eq!(watch(&config()), seldon::config::DEFAULT_WATCH_PATHS);
 
-    let new: Vec<String> = seldon::config::DEFAULT_WATCH_PATHS[6..]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
     for earlier in seldon::config::EARLIER_DEFAULT_WATCH_PATHS {
         let mut t = config();
         t["watchPaths"] = toml::Value::Array(
@@ -458,7 +455,8 @@ fn default_watch_paths_and_their_upgrade() {
             .map(|p| p.to_string())
             .collect();
         assert_eq!(added, missing);
-        assert!(new.iter().all(|p| added.contains(p)));
+        // every earlier list lacks the toggles directory (WP-113)
+        assert!(added.iter().any(|p| p == "~/.local/state/omarchy/toggles"));
         let mut have = watch(&config());
         have.sort();
         let mut want: Vec<String> = seldon::config::DEFAULT_WATCH_PATHS
@@ -547,6 +545,14 @@ fn doctor_shows_the_drift_rules() {
     assert_eq!(r["status"], "ok");
     assert!(
         r["message"].as_str().unwrap().contains("; all defaults; "),
+        "{r}"
+    );
+    // Seldon's own plugin is listed like the others (ADR-0050)
+    assert!(
+        r["message"]
+            .as_str()
+            .unwrap()
+            .contains("routine: sysupgrade, upgrade, keyring, omarchy-update, plugin-toggle, seldon-self, theme, "),
         "{r}"
     );
     assert!(

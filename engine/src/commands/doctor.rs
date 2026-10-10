@@ -1,6 +1,6 @@
-//! `seldon doctor`: engine, config, logbook, cases, ledger, fences,
-//! collectors, state, skills, hooks, omarchy, snapper and git checks
-//! (SPEC-ENGINE §3).
+//! `seldon doctor`: engine, config, logbook, cases, ledger, fences, rules,
+//! rollbacks, workpieces, collectors, state, skills, hooks, omarchy,
+//! snapper, pacman and git checks (SPEC-ENGINE §3).
 //! Read-only: no lock, no write; never runs anything with privileges.
 //!
 //! Every check is `ok`, `degraded` (works with less, e.g. snapper without
@@ -19,11 +19,10 @@ use super::capture::{Binding, PendingReset, pending_reset};
 use super::index::duplicate_cases;
 use super::{Context, Output};
 use crate::collectors::config::{Manifest, OwnWrites};
-use crate::collectors::{
-    Cursors, Lost, STATE_RESET, ShownMessages, Sources, cursors_file, snapper,
-};
+use crate::collectors::pacman::{LockState, lock_state};
+use crate::collectors::{Cursors, Lost, ShownMessages, Sources, cursors_file, snapper};
 use crate::config::{Config, LogbookSource};
-use crate::error::{Error, Exit, Result};
+use crate::error::{Error, Exit, Refused, Result};
 use crate::index::load::{FENCE_BEGIN, FENCE_END, bad_lines_warning};
 use crate::index::views::{self, DECISIONS_FENCE, STATUS_FENCE};
 use crate::ledger::Ledger;
@@ -220,9 +219,11 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_rules(ctx, logbook));
             checks.push(check_rollbacks(logbook));
             checks.extend(check_planned(logbook, &cases));
+            checks.push(check_workpieces(logbook));
             checks.push(check_collectors(ctx, &effective, logbook, &shown));
             checks.extend(check_reset(ctx, logbook));
             checks.extend(check_pending_reset(ctx, &effective, logbook, source));
+            checks.push(check_layout(&logbook.root));
         }
         logbook
     } else {
@@ -240,6 +241,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     checks.push(hooks_check);
     checks.push(check_omarchy(&effective, &shown));
     checks.push(check_snapper(&effective, &shown));
+    checks.push(check_pacman(&effective));
     checks.push(check_git(&effective, logbook.as_ref()));
     // ADR-0028 §4c, §4d: rows of config.toml, last (earlier rows keep
     // their places)
@@ -384,6 +386,71 @@ fn check_logbook(
         }
     };
     (check, Some(logbook), ids)
+}
+
+/// A name of the user's (a folder or file of the logbook) as a row shows
+/// it: no control, direction, invisible format or line-breaking character
+/// reaches the terminal (`?` instead).
+fn shown_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if crate::import::bad_path_char(c) || super::is_line_breaking(c) {
+                '?'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// Linked folders and files where Seldon writes (WP-171, ADR-0049 §3):
+/// `error` when a command that writes there refuses (exit 1), so the user
+/// learns it here first; `degraded` when nothing is refused (a view is
+/// skipped with a warning, or a link sits beside Seldon's files in a
+/// folder it writes in).
+fn check_layout(root: &Path) -> Check {
+    const SHOWN: usize = 5;
+    let named = |found: &[&layout::Found]| -> String {
+        let mut names: Vec<String> = found
+            .iter()
+            .take(SHOWN)
+            .map(|f| format!("{} ({})", shown_name(&f.rel), f.what.as_str()))
+            .collect();
+        if found.len() > SHOWN {
+            names.push(format!("and {} more", found.len() - SHOWN));
+        }
+        names.join(", ")
+    };
+    let found = layout::misplaced(root);
+    let (refused, left): (Vec<&layout::Found>, Vec<&layout::Found>) =
+        found.iter().partition(|f| f.refused);
+    let left_text = format!(
+        "{} where Seldon writes but refuses nothing (a view is not updated, another file is left alone): {}",
+        left.len(),
+        named(&left)
+    );
+    if !refused.is_empty() {
+        let mut message = format!(
+            "{} where Seldon writes, so commands that write there refuse: {}",
+            refused.len(),
+            named(&refused)
+        );
+        if !left.is_empty() {
+            message.push_str(&format!("; also {left_text}"));
+        }
+        return Check::new("layout", Status::Error, message).fix(
+            "replace each with a real folder or file (move what the link points to into its place), then run the command again",
+        );
+    }
+    if !left.is_empty() {
+        return Check::new("layout", Status::Degraded, left_text)
+            .fix("replace each with a real file, or move it out of the folder");
+    }
+    Check::new(
+        "layout",
+        Status::Ok,
+        "no linked folders or files where Seldon writes",
+    )
 }
 
 /// `config.toml` parsed; its `[redaction] patterns` must compile too, or
@@ -631,6 +698,195 @@ fn check_rollbacks(logbook: &Logbook) -> Check {
     )
 }
 
+/// A workpiece folder of a closed case above this size is reported
+/// (WP-143).
+const WORKPIECE_LARGE: u64 = 10 * 1024 * 1024;
+
+/// The case id a workpiece folder `work/<name>/` belongs to: `name` is a
+/// case id, alone or followed by `-…` (SPEC-LOGBOOK §2).
+fn workpiece_id(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix("C-")?;
+    let year = rest.get(..4)?;
+    let num = rest.get(5..)?;
+    let digits = num.len() - num.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    let id = &name[..2 + 5 + digits];
+    (rest.as_bytes()[4] == b'-'
+        && year.bytes().all(|b| b.is_ascii_digit())
+        && digits >= 3
+        && (name.len() == id.len() || name[id.len()..].starts_with('-')))
+    .then_some(id)
+}
+
+/// The most directory entries one workpiece folder's walk reads; a
+/// larger folder is reported as "at least" what was read (WP-143 round 2).
+const WALK_MAX: usize = 100_000;
+
+/// The size of a folder as doctor measured it: the bytes of the regular
+/// files read, and whether that is all of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Size {
+    bytes: u64,
+    exact: bool,
+}
+
+/// The bytes of the regular files under `dir`, read-only and bounded:
+/// symbolic links are not followed, nothing on another filesystem than
+/// `dir` is entered or counted, unreadable folders count as empty. The
+/// walk stops after `max_entries` entries, and once the sum passes
+/// `stop_above`; either way the size is not exact when entries were left.
+fn folder_size(dir: &Path, stop_above: Option<u64>, max_entries: usize) -> Size {
+    use std::os::unix::fs::MetadataExt as _;
+    let Ok(root) = std::fs::symlink_metadata(dir) else {
+        return Size {
+            bytes: 0,
+            exact: true,
+        };
+    };
+    let mut bytes = 0;
+    let mut seen = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut entries = entries.flatten().peekable();
+        while let Some(entry) = entries.next() {
+            seen += 1;
+            if seen > max_entries {
+                return Size {
+                    bytes,
+                    exact: false,
+                };
+            }
+            // DirEntry::metadata does not follow a symbolic link
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.dev() != root.dev() {
+                continue;
+            }
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if meta.is_file() {
+                bytes += meta.len();
+            }
+            if stop_above.is_some_and(|limit| bytes > limit) {
+                return Size {
+                    bytes,
+                    exact: entries.peek().is_none() && stack.is_empty(),
+                };
+            }
+        }
+    }
+    Size { bytes, exact: true }
+}
+
+/// `bytes` for people: B, KiB, MiB or GiB.
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 3] = ["KiB", "MiB", "GiB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
+}
+
+/// Workpiece folders `work/<case-id>…/` left behind (WP-143), information
+/// only: orphaned (no case file has the id; one that does not parse
+/// counts as there) or oversized (its case is completed or dropped and
+/// the folder holds more than [`WORKPIECE_LARGE`]). Count, size, and the
+/// oldest by case id (ids are chronological). Always `ok`.
+fn check_workpieces(logbook: &Logbook) -> Check {
+    const NAME: &str = "workpieces";
+    let Ok(entries) = std::fs::read_dir(logbook.path("work")) else {
+        return Check::new(NAME, Status::Ok, "no workpiece folders");
+    };
+    let folders: Vec<(String, PathBuf)> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            workpiece_id(&name)?;
+            Some((name, e.path()))
+        })
+        .collect();
+    if folders.is_empty() {
+        return Check::new(NAME, Status::Ok, "no workpiece folders");
+    }
+    let (files, _) = crate::logbook::cases::all(logbook).unwrap_or_default();
+    let named: Vec<String> = logbook
+        .case_files()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|p| {
+            p.file_stem()?
+                .to_str()
+                .and_then(workpiece_id)
+                .map(String::from)
+        })
+        .collect();
+    let (mut orphaned, mut oversized, mut bytes, mut exact) = (0, 0, 0, true);
+    // (year, number) of a case id: the oldest is the smallest
+    let key = |id: &str| -> (u32, u64) {
+        let (year, num) = id[2..].split_once('-').unwrap_or_default();
+        (year.parse().unwrap_or(0), num.parse().unwrap_or(0))
+    };
+    let mut oldest: Option<(&str, (u32, u64))> = None;
+    for (name, path) in &folders {
+        let id = workpiece_id(name).unwrap_or_default();
+        let left = if !named.iter().any(|n| n == id) {
+            orphaned += 1;
+            Some(folder_size(path, None, WALK_MAX))
+        } else {
+            let closed = files.iter().any(|f| {
+                f.case.id == id
+                    && matches!(f.case.status, CaseStatus::Completed | CaseStatus::Dropped)
+            });
+            // an open case's folder is not measured, a closed case's only
+            // until it passes the threshold
+            closed
+                .then(|| folder_size(path, Some(WORKPIECE_LARGE), WALK_MAX))
+                .filter(|size| size.bytes > WORKPIECE_LARGE)
+                .inspect(|_| oversized += 1)
+        };
+        if let Some(size) = left {
+            bytes += size.bytes;
+            exact &= size.exact;
+            if oldest.is_none_or(|(o, k)| (k, o) > (key(id), name.as_str())) {
+                oldest = Some((name, key(id)));
+            }
+        }
+    }
+    let Some((oldest, _)) = oldest.map(|(name, k)| (shown_name(name), k)) else {
+        return Check::new(
+            NAME,
+            Status::Ok,
+            format!(
+                "{} workpiece folder(s), none orphaned or oversized",
+                folders.len()
+            ),
+        );
+    };
+    Check::new(
+        NAME,
+        Status::Ok,
+        format!(
+            "{} of {} workpiece folder(s) left behind: {orphaned} orphaned (no case), {oversized} \
+             oversized (a closed case, over {}), {}{} in all; the oldest: work/{oldest}/",
+            orphaned + oversized,
+            folders.len(),
+            human_bytes(WORKPIECE_LARGE),
+            if exact { "" } else { "≥ " },
+            human_bytes(bytes)
+        ),
+    )
+}
+
 /// Ledger lines that are not events (a torn write, a hand edit; F-132):
 /// every reader skips them, so their events are missing from the index
 /// and the views.
@@ -638,9 +894,18 @@ fn check_ledger(logbook: &Logbook) -> Check {
     let ledger = Ledger::new(logbook, Redactor::builtin());
     let (months, bad) = match ledger.months().and_then(|m| Ok((m, ledger.bad_lines()?))) {
         Ok(found) => found,
-        Err(e) => return Check::new("ledger", Status::Error, format!("{e:#}")),
+        Err(e) => {
+            let check = Check::new("ledger", Status::Error, format!("{e:#}"));
+            // a month the reader refuses (WP-174) says what to do
+            return if e.chain().any(|c| c.is::<Refused>()) {
+                check.fix(LEDGER_REFUSED_FIX)
+            } else {
+                check
+            };
+        }
     };
-    if bad.is_empty() {
+    let large = large_months(&ledger, &months, sys::LEDGER_MONTH_WARN);
+    if bad.is_empty() && large.is_empty() {
         let noun = if months.len() == 1 { "month" } else { "months" };
         return Check::new(
             "ledger",
@@ -648,21 +913,51 @@ fn check_ledger(logbook: &Logbook) -> Check {
             format!("{} {noun}, every line an event", months.len()),
         );
     }
-    let lines: Vec<String> = bad
-        .iter()
-        .filter_map(|(month, lines)| bad_lines_warning(month, lines))
-        .collect();
-    Check::new(
-        "ledger",
-        Status::Degraded,
-        format!(
+    let mut messages = Vec::new();
+    let mut fixes = Vec::new();
+    if !bad.is_empty() {
+        let lines: Vec<String> = bad
+            .iter()
+            .filter_map(|(month, lines)| bad_lines_warning(month, lines))
+            .collect();
+        messages.push(format!(
             "{}; their events are missing from the index and the views",
             lines.join("; ")
-        ),
-    )
-    .fix(
-        "repair or delete those lines by hand (the ledger is plain JSON Lines, one event per line)",
-    )
+        ));
+        fixes.push(
+            "repair or delete those lines by hand (the ledger is plain JSON Lines, one event per line)",
+        );
+    }
+    if !large.is_empty() {
+        messages.push(format!(
+            "{}: Seldon reads a ledger month of at most {} MiB and refuses a larger one (status, doctor and the index stop on it)",
+            large.join(", "),
+            sys::LEDGER_MONTH_MAX / MIB
+        ));
+        fixes.push(LEDGER_LARGE_FIX);
+    }
+    Check::new("ledger", Status::Degraded, messages.join("; ")).fix(fixes.join("; "))
+}
+
+const MIB: u64 = 1024 * 1024;
+
+/// The fix of a ledger month the reader refuses (WP-174).
+const LEDGER_REFUSED_FIX: &str = "make a month file that is no regular file a regular file again (the layout row names it); keep a copy of one that is too large and remove lines you can do without by hand (plain JSON Lines, one event per line); then run the command again";
+
+/// The fix of a ledger month near the reader's cap (WP-174).
+const LEDGER_LARGE_FIX: &str = "before it reaches the limit, keep a copy of the month file and remove lines you can do without by hand (plain JSON Lines, one event per line)";
+
+/// `ledger/<month>.jsonl is N MiB` for each month of at least `warn`
+/// bytes, months ascending; a size that cannot be read is left out (the
+/// read says why).
+fn large_months(ledger: &Ledger, months: &[String], warn: u64) -> Vec<String> {
+    months
+        .iter()
+        .filter_map(|m| {
+            let len = std::fs::metadata(ledger.month_file(m)).ok()?.len();
+            (len >= warn).then(|| format!("ledger/{m}.jsonl is {} MiB", len.div_ceil(MIB)))
+        })
+        .collect()
 }
 
 /// The generated fences of `STATUS.md` and `DECISIONS.md`. A damaged one
@@ -673,7 +968,9 @@ fn check_ledger(logbook: &Logbook) -> Check {
 /// the writer takes the text up to that stray one as the fence body and
 /// replaces it. Doctor cannot tell a removed end marker followed by a
 /// stray one from an intact fence, and says so. A file that cannot be read
-/// as text stops `status` (exit 2): an error.
+/// as text stops `status` (exit 2): an error. One that is no regular file
+/// (a FIFO, a device behind a link) is not read (WP-174); `status` skips
+/// it as a view, so it is degraded, and the `layout` row names it too.
 fn check_fences(logbook: &Logbook) -> Check {
     let mut unreadable: Vec<String> = Vec::new();
     let mut damaged: Vec<(String, String)> = Vec::new();
@@ -682,9 +979,16 @@ fn check_fences(logbook: &Logbook) -> Check {
         ("STATUS.md", STATUS_FENCE),
         ("DECISIONS.md", DECISIONS_FENCE),
     ] {
-        let text = match std::fs::read_to_string(logbook.path(rel)) {
+        let text = match sys::read_regular_string(&logbook.path(rel), sys::LOGBOOK_FILE_MAX) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
+                damaged.push((
+                    format!("{rel}: not checked ({e}); `seldon status` leaves it as it is"),
+                    format!("replace {rel} by a regular file; `seldon status` writes it again"),
+                ));
+                continue;
+            }
             Err(e) => {
                 unreadable.push(format!("{rel}: cannot read ({e})"));
                 continue;
@@ -982,9 +1286,7 @@ fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
         let events = ledger.read_month(m).ok()?.events;
         events
             .into_iter()
-            .filter(|e| {
-                e.source == Source::Seldon && e.kind == Kind::Note && e.subject == STATE_RESET
-            })
+            .filter(crate::collectors::is_state_loss)
             .max_by_key(|e| e.ts)
     })?;
     if reset.ts < last {
@@ -1281,7 +1583,11 @@ fn check_omarchy(config: &Config, shown: &ShownMessages) -> Check {
     }
     // the program the collector runs (`SELDON_OMARCHY_VERSION`)
     let program = Sources::from_env().omarchy_version;
-    match sys::run_command(sys::omarchy_command(&program, &[]), PROBE_TIMEOUT) {
+    match sys::run_command(
+        sys::omarchy_command(&program, &[]),
+        PROBE_TIMEOUT,
+        sys::OUTPUT_MAX,
+    ) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -1390,6 +1696,51 @@ pub fn check_snapper(config: &Config, shown: &ShownMessages) -> Check {
     }
 }
 
+/// pacman's `db.lck` (WP-160): absent or from this boot → ok; older than
+/// the current boot → degraded, with how to remove it. Looks at the lock's
+/// metadata and the boot time only; the fix is text, never run.
+fn check_pacman(config: &Config) -> Check {
+    if !config.collectors.pacman {
+        return Check::new("pacman", Status::Ok, "collector disabled in config.toml");
+    }
+    let sources = Sources::from_env();
+    let lock = &sources.pacman_db_lock;
+    match lock_state(lock, &sources.proc_stat) {
+        LockState::Absent => Check::new("pacman", Status::Ok, "no db.lck: pacman is not running"),
+        LockState::Held { boot: Some(_) } => Check::new(
+            "pacman",
+            Status::Ok,
+            "db.lck from this boot: taken as a running pacman; its transaction is recorded when it ends",
+        ),
+        LockState::Held { boot: None } => Check::new(
+            "pacman",
+            Status::Ok,
+            "db.lck present, boot time not known: taken as a running pacman; its transaction is recorded when the lock is gone",
+        ),
+        LockState::Stale { modified, boot } => {
+            let at = |t: std::time::SystemTime| {
+                chrono::DateTime::<chrono::Local>::from(t)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            };
+            Check::new(
+                "pacman",
+                Status::Degraded,
+                format!(
+                    "stale {} from {}, before this boot ({}): a pacman was killed or lost its power. pacman refuses to run until the lock is gone; Seldon records a transaction it left open as unfinished",
+                    lock.display(),
+                    at(modified),
+                    at(boot),
+                ),
+            )
+            .fix(format!(
+                "make sure no pacman, yay or omarchy update is running, then: sudo rm {}",
+                lock.display()
+            ))
+        }
+    }
+}
+
 fn check_git(config: &Config, logbook: Option<&Logbook>) -> Check {
     let Some(version) = git::version() else {
         let status = if config.git.autocommit {
@@ -1408,6 +1759,12 @@ fn check_git(config: &Config, logbook: Option<&Logbook>) -> Check {
     };
     let autocommit = if config.git.autocommit { "on" } else { "off" };
     if git::is_repo(&logbook.root) {
+        // before the first git call: a FIFO `HEAD` holds every one of them
+        // until its timeout (WP-175)
+        if let Err(e) = git::check_files(&logbook.root) {
+            return Check::new("git", Status::Degraded, format!("{version}; {e}"))
+                .fix(GIT_FILE_FIX);
+        }
         if let Err(e) = git::check_toplevel(&logbook.root) {
             let check = Check::new("git", Status::Degraded, format!("{version}; {e}"));
             return if e.contains("not a usable repository") {
@@ -1443,6 +1800,9 @@ fn check_git(config: &Config, logbook: Option<&Logbook>) -> Check {
         )
     }
 }
+
+/// The fix of a `.git` or `HEAD` that is no regular file (WP-175).
+const GIT_FILE_FIX: &str = "replace the file the git row names: HEAD is a regular file of one line naming the checked-out branch, e.g. \"ref: refs/heads/main\" (the branches are the files under refs/heads and the lines of packed-refs in the repository's git directory: .git, or for a linked work tree the .git of the main work tree); .git is a directory or a \"gitdir: <path>\" file; then run seldon doctor again";
 
 /// What keeps every autocommit from committing (WP-061), first match: a
 /// `.git/index.lock` (a git process killed half way leaves it behind), a
@@ -1564,6 +1924,7 @@ fn describe(run: &Run) -> String {
                 None => format!("killed by a signal: {first}"),
             }
         }
+        Run::Cut => "output over the limit".into(),
         Run::NotFound => "not found".into(),
         Run::TimedOut => format!("no answer within {}s", PROBE_TIMEOUT.as_secs()),
         Run::Failed(e) => e.clone(),
@@ -1573,6 +1934,77 @@ fn describe(run: &Run) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-174 (review F2): a ledger month from the warning size on is
+    /// named with its size; a smaller one, a missing one is not.
+    #[test]
+    fn a_large_ledger_month_is_named() {
+        let dir = crate::logbook::scratch::scratch("seldon-large-month");
+        let ledger = Ledger::at(dir.to_path_buf(), Redactor::builtin());
+        std::fs::write(dir.join("2026-09.jsonl"), vec![b'\n'; 99]).unwrap();
+        std::fs::write(dir.join("2026-10.jsonl"), vec![b'\n'; 100]).unwrap();
+        let months = ["2026-08", "2026-09", "2026-10"].map(String::from);
+        assert_eq!(
+            large_months(&ledger, &months, 100),
+            ["ledger/2026-10.jsonl is 1 MiB"]
+        );
+        assert!(large_months(&ledger, &months, 101).is_empty());
+    }
+
+    /// WP-143 round 2 (N3): the walk is bounded — by an entry cap and by
+    /// a size it only has to pass — and says when it stopped early; it
+    /// never follows a symbolic link.
+    #[test]
+    fn a_workpiece_walk_is_bounded() {
+        let tmp = std::env::temp_dir().join(format!("seldon-wp143-walk-{}", std::process::id()));
+        let dir = tmp.join("w");
+        std::fs::create_dir_all(dir.join("a/b")).unwrap();
+        for (name, len) in [("one", 10), ("a/two", 20), ("a/b/three", 30)] {
+            std::fs::File::create(dir.join(name))
+                .unwrap()
+                .set_len(len)
+                .unwrap();
+        }
+        std::fs::File::create(tmp.join("outside"))
+            .unwrap()
+            .set_len(1000)
+            .unwrap();
+        std::os::unix::fs::symlink(tmp.join("outside"), dir.join("a/link")).unwrap();
+        std::os::unix::fs::symlink(&tmp, dir.join("a/b/up")).unwrap();
+        let exact = |bytes| Size { bytes, exact: true };
+        assert_eq!(folder_size(&dir, None, 100), exact(60));
+        assert_eq!(folder_size(&dir, Some(60), 100), exact(60));
+        assert_eq!(folder_size(&dir, Some(1000), 100), exact(60));
+        // 7 entries: one, a, a/two, a/link, a/b, a/b/three, a/b/up
+        assert_eq!(folder_size(&dir, None, 7), exact(60));
+        assert!(!folder_size(&dir, None, 6).exact);
+        let early = folder_size(&dir, Some(5), 100);
+        assert!(!early.exact && early.bytes > 5, "{early:?}");
+        assert_eq!(folder_size(&tmp.join("gone"), None, 100), exact(0));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// WP-143: a workpiece folder's name is a case id, alone or followed
+    /// by `-…`.
+    #[test]
+    fn a_workpiece_folder_is_named_by_its_case() {
+        for (name, id) in [
+            ("C-2026-001", Some("C-2026-001")),
+            ("C-2026-001-zed", Some("C-2026-001")),
+            ("C-2026-1000", Some("C-2026-1000")),
+            ("C-2026-001x", None),
+            ("C-2026-0042x", None),
+            ("C-2026-01", None),
+            ("C-2026-01-x", None),
+            ("C-26-001", None),
+            ("C-2026_001", None),
+            ("C-ä026-001", None),
+            ("C-", None),
+            ("queued", None),
+        ] {
+            assert_eq!(workpiece_id(name), id, "{name}");
+        }
+    }
 
     /// WP-091: one reason for all, or each collector with its own; the
     /// fix names every collector for `--source`.

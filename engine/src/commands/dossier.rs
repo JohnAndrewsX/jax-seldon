@@ -73,7 +73,7 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
     let built = index::derive(ctx, &config, &logbook)?;
     let facts = dossier::facts(&built);
     let hosts = Hosts::from_env();
-    let mut files = Files::read(&logbook.path("system"), logbook.meta.language)?;
+    let mut files = Files::read(&logbook.checked_dir("system")?, logbook.meta.language)?;
 
     let mut warnings: Vec<String> = Vec::new();
     let mut counts = Counts::default();
@@ -210,6 +210,10 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
         set(&mut files, &mut warnings, fence, content);
     }
 
+    // a changed file that is a link: refused, not written through (WP-171)
+    for rel in files.changed() {
+        logbook.checked_file(&rel)?;
+    }
     let written = files.write()?;
     let commit = if written.is_empty() {
         Commit::Skipped("nothing changed")

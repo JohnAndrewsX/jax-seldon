@@ -50,13 +50,14 @@ pub struct Pending {
 impl Pending {
     /// Writes the day's file.
     pub fn write(self) -> Result<Appended> {
-        sys::write_atomic(&self.path, self.text.as_bytes())?;
+        sys::write_atomic_nofollow(&self.path, self.text.as_bytes())?;
         Ok(self.appended)
     }
 }
 
 /// Reads the day's journal and builds its text with the entry for `now`
-/// at the end. A day file without frontmatter (Obsidian's "Open today's
+/// at the end; a `journal/` or year folder that is a symbolic link or no
+/// directory is refused (exit 1, WP-168). A day file without frontmatter (Obsidian's "Open today's
 /// daily note" makes an empty one) gets the block in front of its text;
 /// broken frontmatter is the user's to fix (exit 1).
 pub fn prepare(
@@ -68,7 +69,7 @@ pub fn prepare(
 ) -> Result<Pending> {
     let date = now.date_naive();
     let rel = Journal::relative_path(date);
-    let path = logbook.path(&rel);
+    let path = logbook.checked_file(&rel)?;
     let entry = JournalEntry {
         time: now.time(),
         actor: actor.to_string(),
@@ -77,7 +78,8 @@ pub fn prepare(
     };
     let block = format!("{}\n{}\n", entry.heading(), escape(text.trim_end()));
 
-    let (text, created) = match std::fs::read_to_string(&path) {
+    let (text, created) = match crate::sys::read_regular_string(&path, crate::sys::LOGBOOK_FILE_MAX)
+    {
         Ok(existing) => (append_to(&existing, &block, case, date, &rel)?, false),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let record = Journal {
@@ -172,11 +174,12 @@ pub fn ensure_day(logbook: &Logbook, now: &DateTime<FixedOffset>) -> Result<Appe
             created: false,
         });
     }
+    logbook.checked_file(&rel)?;
     let record = Journal {
         date,
         cases: Vec::new(),
     };
-    sys::write_atomic(&path, model::render_new(&record, "").as_bytes())
+    sys::write_atomic_nofollow(&path, model::render_new(&record, "").as_bytes())
         .with_context(|| format!("cannot create {rel}"))?;
     Ok(Appended {
         path: rel,

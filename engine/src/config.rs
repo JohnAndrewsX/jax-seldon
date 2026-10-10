@@ -293,9 +293,11 @@ impl Default for Config {
 
 /// SPEC-ENGINE §4 (config collector). `~/.config/omarchy/plugins/` and
 /// the desktop entries' `mimeinfo.cache` are excluded by the collector;
-/// missing paths are skipped. The last six are the persistence paths of
-/// ADR-0028 §4d (`[drift] alwaysRedPaths`).
-pub const DEFAULT_WATCH_PATHS: [&str; 12] = [
+/// missing paths are skipped. Six are the persistence paths of ADR-0028
+/// §4d (`[drift] alwaysRedPaths`); the last is Omarchy's toggle state
+/// directory, whose `hypr/*.lua` Hyprland loads (WP-113, operator decision
+/// 2026-10-06: hashes only).
+pub const DEFAULT_WATCH_PATHS: [&str; 13] = [
     "~/.config/hypr",
     "~/.config/omarchy",
     "~/.config/waybar",
@@ -308,12 +310,13 @@ pub const DEFAULT_WATCH_PATHS: [&str; 12] = [
     "~/.config/uwsm",
     "~/.profile",
     "~/.bash_profile",
+    "~/.local/state/omarchy/toggles",
 ];
 
-/// The default `watchPaths` of earlier engines: 0.1.0 to 0.1.3, and the
-/// unreleased list of WP-089. A config whose list still equals one of
-/// them (in any order) gains the current defaults (ADR-0028 §4d).
-pub const EARLIER_DEFAULT_WATCH_PATHS: [&[&str]; 2] = [
+/// The default `watchPaths` of earlier engines: 0.1.0 to 0.1.3, the
+/// unreleased list of WP-089, and 0.1.4. A config whose list still equals
+/// one of them (in any order) gains the current defaults (ADR-0028 §4d).
+pub const EARLIER_DEFAULT_WATCH_PATHS: [&[&str]; 3] = [
     &[
         "~/.config/hypr",
         "~/.config/omarchy",
@@ -328,6 +331,20 @@ pub const EARLIER_DEFAULT_WATCH_PATHS: [&[&str]; 2] = [
         "~/.bashrc",
         "~/.zshrc",
         "~/.local/share/applications",
+    ],
+    &[
+        "~/.config/hypr",
+        "~/.config/omarchy",
+        "~/.config/waybar",
+        "~/.bashrc",
+        "~/.zshrc",
+        "~/.local/share/applications",
+        "~/.config/systemd/user",
+        "~/.config/autostart",
+        "~/.config/environment.d",
+        "~/.config/uwsm",
+        "~/.profile",
+        "~/.bash_profile",
     ],
 ];
 
@@ -489,9 +506,9 @@ pub const DEFAULT_SKIP_PATHS: [&str; 5] = [
 /// The text of `config.toml` with `added` appended to its `watchPaths`
 /// array and every other byte as it was (ADR-0028 §4d, WP-109 round 2:
 /// the upgrade keeps comments and order). `None` when that cannot be done
-/// safely: no single top-level `watchPaths = [ … ]` with at least one
-/// string, a nested array, or a result that does not read back as the
-/// same file with exactly these paths added.
+/// safely: no single top-level `watchPaths = [ … ]`, a nested array, or a
+/// result that does not read back as the same file with exactly these
+/// paths added. An empty array takes them right after its `[`.
 pub fn with_added_watch_paths(text: &str, added: &[String]) -> Option<String> {
     // the key, once, before the first table header
     let mut key_at = None;
@@ -559,10 +576,13 @@ pub fn with_added_watch_paths(text: &str, added: &[String]) -> Option<String> {
         }
     }
     close?;
-    let at = last_end?;
+    // an empty array takes the paths right after its `[` (WP-139)
+    let at = last_end.unwrap_or(open + 1);
     let mut insert = String::new();
     for p in added {
-        insert.push_str(", ");
+        if last_end.is_some() || !insert.is_empty() {
+            insert.push_str(", ");
+        }
         insert.push_str(&toml::Value::String(p.clone()).to_string());
     }
     let new = format!("{}{insert}{}", &text[..at], &text[at..]);
@@ -627,20 +647,23 @@ impl AttentionMode {
     }
 }
 
-/// The routine rule ids of ADR-0028 §2 (and WP-109's theme rules), the
-/// default of `[drift] routine`.
-pub const ROUTINE_RULES: [&str; 11] = [
+/// The routine rule ids of ADR-0028 §2 (and WP-109's theme rules,
+/// ADR-0037's `toggle-flag`, ADR-0050's `seldon-self`), the default of
+/// `[drift] routine`.
+pub const ROUTINE_RULES: [&str; 13] = [
     "sysupgrade",
     "upgrade",
     "keyring",
     "omarchy-update",
     "plugin-toggle",
+    "seldon-self",
     "theme",
     "omarchy-default",
     "system-link",
     "routine-paths",
     "theme-assets",
     "theme-repo",
+    "toggle-flag",
 ];
 
 /// Default `[drift] routinePaths`: the shell's own state file and backups
@@ -651,8 +674,12 @@ pub const DEFAULT_ROUTINE_PATHS: [&str; 2] = ["~/.config/omarchy/shell.json", "*
 pub const DEFAULT_ROUTINE_PACKAGES: [&str; 2] = ["archlinux-keyring", "omarchy-keyring"];
 
 /// Default `[drift] alwaysRedPaths`: code that runs at login or on events
-/// without being configuration (ADR-0028 §2).
-pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 7] = [
+/// without being configuration (ADR-0028 §2), and `~/.ssh/authorized_keys`
+/// and `~/.ssh/authorized_keys2`, sshd's two default `AuthorizedKeysFile`
+/// entries (WP-113, operator decision 2026-10-06; ADR-0037 §3), which only
+/// matter once the user adds them to `watchPaths` (opt-in; no default
+/// watch path).
+pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 9] = [
     "~/.config/systemd/user/**",
     "~/.config/omarchy/hooks/**",
     "~/.config/autostart/**",
@@ -660,6 +687,8 @@ pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 7] = [
     "~/.config/uwsm/**",
     "~/.profile",
     "~/.bash_profile",
+    "~/.ssh/authorized_keys",
+    "~/.ssh/authorized_keys2",
 ];
 
 fn strings(list: &[&str]) -> Vec<String> {
@@ -1158,14 +1187,23 @@ mod tests {
             add(text).unwrap(),
             "watchPaths = [\n  \"~/.config/hypr\", # one\n  \"~/.zshrc\", \"~/.profile\", '~/a\"b', # two ] [\n] # done\n"
         );
-        // refused: no key, the key only in a table, twice, quoted, empty,
+        // an empty array (WP-139: `config watch` on a list the user
+        // emptied), also one with a comment in it
+        assert_eq!(
+            add("watchPaths = []\n").unwrap(),
+            "watchPaths = [\"~/.profile\", '~/a\"b']\n"
+        );
+        assert_eq!(
+            add("watchPaths = [ # none\n]\n").unwrap(),
+            "watchPaths = [\"~/.profile\", '~/a\"b' # none\n]\n"
+        );
+        // refused: no key, the key only in a table, twice, quoted,
         // nested, unclosed
         for text in [
             "logbook = \"/x\"\n",
             "[x]\nwatchPaths = [\"a\"]\n",
             "watchPaths = [\"a\"]\nwatchPaths = [\"b\"]\n",
             "\"watchPaths\" = [\"a\"]\n",
-            "watchPaths = []\n",
             "watchPaths = [[\"a\"]]\n",
             "watchPaths = [\"a\"\n",
             "watchPaths = \"a\"\n",

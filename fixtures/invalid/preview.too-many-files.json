@@ -1,0 +1,510 @@
+{
+  "contractVersion": 2,
+  "days": 7,
+  "elapsedMs": 23,
+  "files": {
+    "items": [
+      {
+        "modified": "2026-10-07T21:15:00+02:00",
+        "path": "~/.config/alacritty/alacritty.toml"
+      },
+      {
+        "modified": "2026-10-06T09:30:00+02:00",
+        "path": "~/.config/hypr/bindings.conf"
+      },
+      {
+        "modified": "2026-10-03T18:02:11+02:00",
+        "path": "~/.config/git/config"
+      },
+      {
+        "modified": "2026-10-01T12:00:00+02:00",
+        "path": "~/.config/starship.toml"
+      },
+      {
+        "path": "~/.config/f0",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f1",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f2",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f3",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f4",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f5",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f6",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f7",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f8",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f9",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f10",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f11",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f12",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f13",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f14",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f15",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f16",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f17",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f18",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f19",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f20",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f21",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f22",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f23",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f24",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f25",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f26",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f27",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f28",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f29",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f30",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f31",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f32",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f33",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f34",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f35",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f36",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f37",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f38",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f39",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f40",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f41",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f42",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f43",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f44",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f45",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f46",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f47",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f48",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f49",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f50",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f51",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f52",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f53",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f54",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f55",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f56",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f57",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f58",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f59",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f60",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f61",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f62",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f63",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f64",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f65",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f66",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f67",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f68",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f69",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f70",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f71",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f72",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f73",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f74",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f75",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f76",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f77",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f78",
+        "modified": "2026-10-07T10:00:00+02:00"
+      },
+      {
+        "path": "~/.config/f79",
+        "modified": "2026-10-07T10:00:00+02:00"
+      }
+    ],
+    "ok": true,
+    "partial": false,
+    "root": "~/.config"
+  },
+  "generatedAt": "2026-10-08T12:00:00+02:00",
+  "pacman": {
+    "ok": true,
+    "partial": false,
+    "transactions": [
+      {
+        "at": "2026-10-07T16:02:55+02:00",
+        "command": "pacman -U /var/cache/pacman/pkg/mesa-1:25.2.4-1-x86_64.pkg.tar.zst",
+        "count": 1,
+        "kinds": [
+          "downgrade"
+        ],
+        "packages": [
+          {
+            "from": "1.0-2",
+            "kind": "downgrade",
+            "name": "mesa",
+            "to": "1:25.2.4-1"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-06T09:41:30+02:00",
+        "command": "pacman -S --noconfirm obs-studio",
+        "count": 2,
+        "kinds": [
+          "install"
+        ],
+        "packages": [
+          {
+            "kind": "install",
+            "name": "qt6-websockets",
+            "version": "6.9.3-1"
+          },
+          {
+            "kind": "install",
+            "name": "obs-studio",
+            "version": "32.0.1-1"
+          }
+        ],
+        "status": "failed"
+      },
+      {
+        "at": "2026-10-05T21:14:06+02:00",
+        "command": "pacman -Syu --noconfirm",
+        "count": 14,
+        "kinds": [
+          "upgrade"
+        ],
+        "packages": [
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "linux",
+            "to": "1.0-2"
+          },
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "linux-headers",
+            "to": "1.0-2"
+          },
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "mesa",
+            "to": "1.0-2"
+          },
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "vulkan-radeon",
+            "to": "1.0-2"
+          },
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "lib32-mesa",
+            "to": "1.0-2"
+          },
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "hyprland",
+            "to": "1.0-2"
+          },
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "hyprlock",
+            "to": "1.0-2"
+          },
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "waybar",
+            "to": "1.0-2"
+          },
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "systemd",
+            "to": "1.0-2"
+          },
+          {
+            "from": "1.0-1",
+            "kind": "upgrade",
+            "name": "systemd-libs",
+            "to": "1.0-2"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-04T08:05:10+02:00",
+        "command": "pacman -Rns --noconfirm nano",
+        "count": 1,
+        "kinds": [
+          "remove"
+        ],
+        "packages": [
+          {
+            "kind": "remove",
+            "name": "nano",
+            "version": "8.6-1"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-03T19:22:41+02:00",
+        "command": "pacman -S --noconfirm btop",
+        "count": 1,
+        "kinds": [
+          "install"
+        ],
+        "packages": [
+          {
+            "kind": "install",
+            "name": "btop",
+            "version": "1.4.5-1"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-01T12:00:01+02:00",
+        "command": "pacman -Syu",
+        "count": 1,
+        "kinds": [
+          "upgrade"
+        ],
+        "packages": [
+          {
+            "from": "2.51.0-1",
+            "kind": "upgrade",
+            "name": "git",
+            "to": "2.51.1-1"
+          }
+        ]
+      }
+    ]
+  },
+  "since": "2026-10-01T12:00:00+02:00",
+  "truncated": true
+}

@@ -7,7 +7,11 @@
 //! --inline`. Without a terminal (the plugin) it is `omarchy-launch-editor`,
 //! which opens the user's default editor in its own window: started
 //! detached ([`launch_detached`]), because the launcher stays in the
-//! foreground while a terminal editor runs (WP-012, decision 1).
+//! foreground while a terminal editor runs (WP-012, decision 1). That
+//! launch carries `SELDON_OPEN=<path>` ([`sessions::OPEN_ENV`]); a second
+//! open of the same path while a terminal window Omarchy opened for it
+//! (class `org.omarchy.*`) is open focuses that window instead of starting
+//! another (WP-156, ADR-0041). A GUI editor launches as before.
 
 use std::io::IsTerminal as _;
 use std::os::unix::process::CommandExt as _;
@@ -22,6 +26,7 @@ use super::{Context, Output};
 use crate::error::{Error, Result};
 use crate::logbook::{Logbook, cases, journal};
 use crate::model::{is_case_id, is_decision_id};
+use crate::sessions;
 use crate::sys::{self, Run};
 
 /// Omarchy's launcher for the default editor (`omarchy-launch-editor`).
@@ -46,18 +51,27 @@ pub fn run(ctx: &Context, args: OpenArgs) -> Result<Output> {
     let (_, logbook) = ctx.open_logbook()?;
     let path = resolve(ctx, &logbook, &args.what, args.editor)?;
     let editor = if args.editor {
-        let launched =
+        let opened =
             edit(&path).map_err(|e| Error::user(format!("cannot open {}: {e}", path.display())))?;
-        Some(launched)
+        Some(opened)
     } else {
         None
     };
+    let human = match editor.as_ref().map(|e| &e.how) {
+        Some(How::Focused { address, .. }) => {
+            format!(
+                "{} (already open; focused its window {address})",
+                path.display()
+            )
+        }
+        _ => path.display().to_string(),
+    };
     Ok(Output::ok(
-        path.display().to_string(),
+        human,
         json!({
             "what": args.what,
             "path": path,
-            "editor": editor.map(|program| json!({ "launched": true, "program": program })),
+            "editor": editor.map(|e| editor_json(&Ok(e))),
         }),
     ))
 }
@@ -92,19 +106,9 @@ fn resolve(ctx: &Context, logbook: &Logbook, what: &str, editor: bool) -> Result
         "status" => logbook.path("STATUS.md"),
         "logbook" => logbook.root.clone(),
         id if is_case_id(id) => cases::find(logbook, id)?.path,
-        id if is_decision_id(id) => {
-            let prefix = format!("{id}-");
-            logbook
-                .decision_files()?
-                .into_iter()
-                .find(|p| {
-                    p.file_name().is_some_and(|n| {
-                        let n = n.to_string_lossy();
-                        n.starts_with(&prefix) || n == format!("{id}.md")
-                    })
-                })
-                .ok_or_else(|| Error::user(format!("unknown decision {id}")))?
-        }
+        id if is_decision_id(id) => logbook
+            .decision_file(id)?
+            .ok_or_else(|| Error::user(format!("unknown decision {id}")))?,
         other => {
             return Err(Error::user(format!(
                 "cannot open `{other}`: use case, journal, ledger, status, logbook, C-YYYY-NNN or ADR-NNNN"
@@ -113,8 +117,25 @@ fn resolve(ctx: &Context, logbook: &Logbook, what: &str, editor: bool) -> Result
     })
 }
 
-/// Opens `path` in the editor. `Ok` names the program that was started.
-pub fn edit(path: &Path) -> Result<String, String> {
+/// What `edit` did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Editor {
+    /// The program started, or the launcher of the editor found.
+    pub program: String,
+    pub how: How,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum How {
+    /// Started.
+    Launched,
+    /// A terminal window of an editor this engine started on the path is
+    /// open: it was focused.
+    Focused { address: String, pid: i64 },
+}
+
+/// Opens `path` in the editor (see the module comment).
+pub fn edit(path: &Path) -> Result<Editor, String> {
     let path_arg = path.to_string_lossy();
     let terminal = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
     if terminal {
@@ -131,11 +152,45 @@ pub fn edit(path: &Path) -> Result<String, String> {
         };
         args.push(path_arg.into_owned());
         let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-        return outcome(&program, sys::run_attached(&program, &argv));
+        return outcome(&program, sys::run_attached(&program, &argv)).map(launched);
+    }
+    if let Some(found) = already_open(path) {
+        return Ok(found);
     }
     let mut cmd = Command::new(OMARCHY_EDITOR);
-    cmd.arg(&*path_arg);
-    outcome(OMARCHY_EDITOR, launch_detached(cmd, Stdio::null()))
+    cmd.arg(&*path_arg).env(sessions::OPEN_ENV, path);
+    outcome(OMARCHY_EDITOR, launch_detached(cmd, Stdio::null())).map(launched)
+}
+
+fn launched(program: String) -> Editor {
+    Editor {
+        program,
+        how: How::Launched,
+    }
+}
+
+/// The terminal window of an editor an earlier `open --editor` started
+/// on `path`, focused ([`sessions::marked_windows`]: class `org.omarchy.*`,
+/// the marker in its tree). `None` (launch as usual) when there is none,
+/// when Hyprland cannot be asked, or when the focus fails.
+fn already_open(path: &Path) -> Option<Editor> {
+    let windows = sessions::windows().ok()?;
+    let found = sessions::marked_windows(
+        Path::new(sessions::PROC),
+        &windows,
+        |c| c.starts_with(sessions::TUI_CLASS_PREFIX) && c != sessions::AGENT_CLASS,
+        &[(sessions::OPEN_ENV, path.as_os_str())],
+        &[],
+    );
+    let window = &found.first()?.window;
+    sessions::focus(&window.address).ok()?;
+    Some(Editor {
+        program: OMARCHY_EDITOR.to_string(),
+        how: How::Focused {
+            address: window.address.clone(),
+            pid: window.pid,
+        },
+    })
 }
 
 /// Starts `cmd` (program, arguments, and whatever directory or environment
@@ -201,14 +256,27 @@ fn outcome(program: &str, run: Run) -> Result<String, String> {
         )),
         Run::NotFound => Err(format!("{program} not found (check $VISUAL / $EDITOR)")),
         Run::TimedOut => Err(format!("{program} did not return")),
+        // an editor on the terminal: no output is captured
+        Run::Cut => Err(format!("{program}: output over the limit")),
         Run::Failed(e) => Err(format!("cannot start {program}: {e}")),
     }
 }
 
-/// `{"launched": true, "program": …}` or `{"launched": false, "error": …}`.
-pub fn editor_json(result: &Result<String, String>) -> Value {
+/// `{"launched": true, "program": …}`; an editor already open on the path:
+/// `{"launched": false, "focused": true, "address", "pid", "program"}`; a
+/// failure `{"launched": false, "error": …}`.
+pub fn editor_json(result: &Result<Editor, String>) -> Value {
     match result {
-        Ok(program) => json!({ "launched": true, "program": program }),
+        Ok(Editor {
+            program,
+            how: How::Launched,
+        }) => json!({ "launched": true, "program": program }),
+        Ok(Editor {
+            program,
+            how: How::Focused { address, pid },
+        }) => json!({
+            "launched": false, "focused": true, "address": address, "pid": pid, "program": program
+        }),
         Err(e) => json!({ "launched": false, "error": e }),
     }
 }

@@ -4,8 +4,9 @@
 //! that writes it, so it is no drift; the event stays in the ledger with
 //! its own actor. Other plugins and packages, and adding, installing,
 //! downgrading or removing Seldon (review F4: nothing checks provenance),
-//! stay drift. Own changes an earlier capture left without a resolution
-//! are explained by the next capture (WP-088).
+//! get no resolution; of these, adding its plugin is routine `seldon-self`
+//! (ADR-0050, WP-172), the rest stays drift. Own changes an earlier capture
+//! left without a resolution are explained by the next capture (WP-088).
 //!
 //! Everything runs in a throw-away home (`common::Env`, with
 //! `SELDON_TEST_GUARD`); the collectors' sources point at temp files.
@@ -212,26 +213,63 @@ fn updating_its_own_plugin_is_no_drift_another_plugin_is() {
     assert_eq!(m.ledger().len(), lines);
 }
 
-/// Enabling and disabling Seldon's plugin is no drift; adding it (nothing
-/// checks where the clone came from) and removing it is (review F4).
+/// Adding Seldon's plugin is routine `seldon-self` (ADR-0050: the user
+/// installing Seldon; no resolution, nothing claims a reason), another
+/// plugin's add stays drift; enabling and disabling it is explained by
+/// rule 8; removing it is drift (review F4).
 #[test]
-fn enabling_disabling_its_plugin_is_no_drift_adding_removing_it_is() {
+fn adding_enabling_disabling_its_plugin_is_no_drift_removing_it_is() {
     let m = Machine::new();
     m.plugins(&[(OTHER, true, "1.0")]);
     m.capture(T0, "plugins"); // baseline
 
-    m.plugins(&[(OWN_PLUGIN, false, "0.1.2"), (OTHER, true, "1.0")]);
+    // `omarchy plugin add …jax-seldon-plugin… --enable`, and a third-party
+    // plugin in the same capture
+    const THIRD: &str = "io.github.example.weather";
+    m.plugins(&[
+        (OWN_PLUGIN, true, "0.1.2"),
+        (OTHER, true, "1.0"),
+        (THIRD, true, "2.0"),
+    ]);
     let added = "2026-10-01T10:10:00+02:00";
     let c = m.capture(added, "plugins");
+    assert_eq!(c["written"], 2, "{c}");
     assert_eq!(c["explainedSelf"], 0, "{c}");
     let (_, resolutions) = m.event("plugin-add", OWN_PLUGIN);
-    assert!(resolutions.is_empty(), "{resolutions:?}");
-    assert_eq!(m.drift(added), [pair("plugin-add", OWN_PLUGIN)]);
+    assert!(resolutions.is_empty(), "no resolution: {resolutions:?}");
+    assert_eq!(m.drift(added), [pair("plugin-add", THIRD)]);
+    let classes = |now: &str| -> Vec<(String, String, String)> {
+        let v = json(&m.run(now, &["drift", "--all", "--json"]));
+        v["drift"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| {
+                (
+                    d["subject"].as_str().unwrap().to_string(),
+                    d["class"].as_str().unwrap().to_string(),
+                    d["rule"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    };
+    let row = |s: &str, c: &str, r: &str| (s.to_string(), c.to_string(), r.to_string());
+    let own_add = row(OWN_PLUGIN, "routine", "seldon-self");
+    let third_add = row(THIRD, "attention", "plugin");
+    let mut all = classes(added);
+    all.sort();
+    assert_eq!(all, [third_add.clone(), own_add.clone()]);
+    let ix = m.index();
+    assert_valid_index(&ix);
+    assert_eq!(ix["summary"]["openDrift"], 1);
+    assert_eq!(ix["summary"]["crisis"], 0);
+    m.plugins(&[(OWN_PLUGIN, true, "0.1.2"), (OTHER, true, "1.0")]);
+    m.capture("2026-10-01T10:15:00+02:00", "plugins"); // the third one goes
 
     // (capture time, Seldon's plugin enabled, the event it gives)
     let steps = [
-        ("2026-10-01T10:20:00+02:00", true, "plugin-enable"),
         ("2026-10-01T10:30:00+02:00", false, "plugin-disable"),
+        ("2026-10-01T10:40:00+02:00", true, "plugin-enable"),
     ];
     for (now, enabled, kind) in steps {
         m.plugins(&[(OWN_PLUGIN, enabled, "0.1.2"), (OTHER, true, "1.0")]);
@@ -239,24 +277,33 @@ fn enabling_disabling_its_plugin_is_no_drift_adding_removing_it_is() {
         assert_eq!(c["explainedSelf"], 1, "{kind}: {c}");
         let (event, resolutions) = m.event(kind, OWN_PLUGIN);
         assert_explained_as_own(&event, &resolutions, "seldon's own plugin");
-        assert_eq!(m.drift(now), [pair("plugin-add", OWN_PLUGIN)], "{kind}");
+        assert_eq!(
+            m.drift(now),
+            [pair("plugin-add", THIRD), pair("plugin-remove", THIRD)]
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>(),
+            "{kind}"
+        );
     }
 
     // removing Seldon's panel is a change to the system like any other
     m.plugins(&[(OTHER, true, "1.0")]);
-    let now = "2026-10-01T10:40:00+02:00";
+    let now = "2026-10-01T10:50:00+02:00";
     let c = m.capture(now, "plugins");
     assert_eq!(c["explainedSelf"], 0, "{c}");
     let (_, resolutions) = m.event("plugin-remove", OWN_PLUGIN);
     assert!(resolutions.is_empty(), "{resolutions:?}");
-    // newest first
+    // newest first; the own add stays routine
     assert_eq!(
         m.drift(now),
         [
             pair("plugin-remove", OWN_PLUGIN),
-            pair("plugin-add", OWN_PLUGIN)
+            pair("plugin-remove", THIRD),
+            pair("plugin-add", THIRD)
         ]
     );
+    assert!(classes(now).contains(&own_add));
 }
 
 /// An agent's `omarchy plugin update jax.seldon` (no active case): the
@@ -344,8 +391,9 @@ fn upgrading_its_own_package_is_no_drift_another_package_is() {
 /// WP-088: own changes left open (an engine stop between the two appends,
 /// rows from before rule 8; here written with `seldon event`) are
 /// explained by the next capture, whatever it collects; a row that has a
-/// resolution keeps it, adding Seldon or choosing an older one stays
-/// drift, and nothing creates a case.
+/// resolution keeps it, adding Seldon's plugin gets none (it is routine
+/// `seldon-self`, ADR-0050), choosing an older one stays drift, and
+/// nothing creates a case.
 #[test]
 fn own_changes_left_open_are_explained_by_the_next_capture() {
     let m = Machine::new();
@@ -367,7 +415,7 @@ fn own_changes_left_open_are_explained_by_the_next_capture() {
         "reinstall",
         OWN_PACKAGE,
     );
-    event(
+    let added = event(
         "2026-10-01T10:03:00+02:00",
         "plugins",
         "plugin-add",
@@ -417,13 +465,10 @@ fn own_changes_left_open_are_explained_by_the_next_capture() {
     let kept = resolutions(&dismissed);
     assert_eq!(kept.len(), 1, "{kept:?}");
     assert_eq!(kept[0]["resolution"], "dismissed", "{kept:?}");
+    assert!(resolutions(&added).is_empty());
     assert_eq!(
         m.drift(now),
-        [
-            pair("plugin-update", OTHER),
-            pair("downgrade", OWN_PACKAGE),
-            pair("plugin-add", OWN_PLUGIN),
-        ]
+        [pair("plugin-update", OTHER), pair("downgrade", OWN_PACKAGE)]
     );
     assert_eq!(cases(&m), active, "no case");
     assert_valid_index(&m.index());

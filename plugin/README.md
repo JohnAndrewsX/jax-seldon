@@ -34,7 +34,8 @@ explain unexpected changes from the panel; the engine does the writing.
   one-click fix ([States](#states)).
 
 It follows your Omarchy theme, runs every program without a shell and
-never writes a file itself ([Security](#security-privacy-privileges)).
+writes no file itself; only its own settings, through the shell
+([Security](#security-privacy-privileges)).
 
 [Install](#install) · [Usage](#usage) · [Keys](#keys) ·
 [Configure](#configure) · [Troubleshooting](#troubleshooting) ·
@@ -50,7 +51,8 @@ never writes a file itself ([Security](#security-privacy-privileges)).
 
 ## Install
 
-Three steps: the engine, your logbook, the plugin. None needs `sudo`.
+Three steps: the engine, your logbook, the plugin, all as your user.
+No sudo or pkexec is required for these steps.
 
 **1. The engine.** AUR package: coming soon; until then install it from
 GitHub. `install.sh` checks the release against its `SHA256SUMS`, refuses
@@ -66,14 +68,20 @@ cd "$(mktemp -d)"
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
 less install.sh                                    # read what it does
+gh attestation verify install.sh --repo JohnAndrewsX/jax-seldon \
+  --signer-workflow JohnAndrewsX/jax-seldon/.github/workflows/release.yml  # optional, needs gh
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
 ```
 
-or in one line (the script still verifies the engine, not itself):
-
-```sh
-curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
-```
+The checksum line checks that `install.sh` matches the release's
+`SHA256SUMS`; it does not show who built either. With the GitHub CLI
+(`gh`) logged in, the optional `gh attestation verify` line does: it
+passes only for a file that this project's release workflow built.
+If it fails, do not run `install.sh`. `install.sh` then checks the
+engine it downloads. The panel's *Install* button (see
+[States](#states)) runs the same script without that first check: it
+downloads `install.sh` with `curl` and pipes it to `bash`, in a terminal
+you see; `install.sh` still checks the engine.
 
 Run it again to update. Its options (`--version`, `--prefix`, `--unit`
 for the optional watcher, `--force` over a self-built `seldon`,
@@ -84,7 +92,8 @@ Check the engine with `seldon --version`. If your shell says
 
 Once the AUR package is live, you can install the engine from there
 instead of GitHub. Install from one source only: both put a `seldon` on
-your `PATH`.
+your `PATH`. The AUR package installs through pacman, which asks for
+your password.
 
 ```sh
 omarchy pkg aur add jax-seldon   # install
@@ -259,7 +268,8 @@ resolved the change; if the logbook resolved it already, the sheet says
 *Done*, *Drop* (`x`) and *Start agent* (`a`), the drift sheet and the
 new-decision sheet take two presses. The first Enter (or `x`, or `a`) arms
 the action: its button is marked and the card says "Press Enter again:
-Start C-2026-005". The second press sends it. A note (QuickEntry) and a new
+Start C-2026-005". The second press sends it; holding the key does not
+(only the keys that move repeat; no repeat arms, sends or confirms). A note (QuickEntry) and a new
 case are sent with one Enter. In a list, any other key or a cursor move
 disarms; in a sheet, only a change to the form disarms (Tab between fields
 keeps the arm). A mouse click on a button sends at once, except *Drop* and
@@ -317,23 +327,36 @@ binding (see [Configure](#configure)).
 
 ### States
 
-When something is wrong the panel shows one banner with a one-click fix:
+Until Seldon is set up, Today shows one **setup card** instead of the
+three setup banners: *Set up Seldon · 2 of 3 steps to go* — install the
+engine, create the logbook, read snapshots (optional) — done steps
+ticked, the next one with its button, no question asked. After each
+step's terminal the card moves on by itself; *Not now* on the snapshot
+step ends it for good (Settings › Capture offers it again). The header's
+chip shows the same headline and leads to the card. A machine without
+snapper has two steps. Once set up, a first-day card says "Seldon is
+recording. Nothing to do."
+
+When something else is wrong the panel shows one banner with a one-click
+fix; the setup states below are the setup card's steps:
 
 | State | Banner | One-click fix |
 |---|---|---|
-| Engine missing | Install the engine, in the accent tone (a setup step); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the download against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; *Copy* puts the one-liner on the clipboard; *Check again* looks for the engine again |
-| Logbook not initialised | Create your logbook | *Create* opens a terminal that says what happens, shows and runs `seldon init` (it asks where to put the logbook), then says whether the logbook was created; the panel then updates by itself; *Copy*; *Check again* |
+| Engine missing | Install the engine (step 1 of the setup card); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the engine it downloads against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; the panel then finds it by itself; *Copy* puts the one-liner on the clipboard; *Check again* (on the urgent banner) looks for the engine again |
+| Logbook not initialised | Create your logbook (step 2 of the setup card, with what the machine remembers without Seldon) | *Create logbook* opens a terminal that says what happens, shows and runs `seldon init --defaults` (no question: `~/Seldon`, the last 90 days recorded as history "before Seldon"), then says whether the logbook was created; the panel then updates by itself; *Copy*; *Check again* |
 | Index missing | No index yet / Index unreadable | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
 | Index format mismatch | Index format mismatch, with both contract versions | *Update* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older (then restart the shell, see [Update](#update)), the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
+| Engine newer than the plugin (an index of a newer contract that says this plugin can read it, ADR-0051) | The engine is newer than the plugin: "The engine writes index vN; this plugin reads v2 — update the plugin.", in the neutral tone; no status banner, the pill keeps its counts and colour | *Update* / *Copy*: `omarchy plugin update jax.seldon` (then restart the shell, see [Update](#update)) |
 | Engine too old (older than the plugin's `engineMin`) | Engine too old, with the version the plugin needs and the one `seldon` reports | *Update* runs the GitHub one-liner from *Engine missing* in a terminal (until the AUR package is live, ADR-0024); *Copy*; *Check again* looks for the engine again |
-| Snapshots not readable | Read snapshots (optional): one sentence on the one-time grant; on hover the engine's message and what the grant gives: read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), no snapshot creation, change or deletion (ADR-0026) | *Grant* opens a terminal that says what the grant does and that it asks for your password once, shows and runs `sudo setfacl -m u:$USER:rx /.snapshots`, then runs `seldon capture` and says "Snapshots are now recorded" (or, if that capture did not run, that the next capture records them); the banner goes by itself (Seldon never runs the grant on its own). *Copy* copies the command; *Check again* runs a capture, like *Capture now*, for a grant you ran yourself |
+| Snapshots not readable | Read snapshots (optional), step 3 of the setup card: one sentence on the one-time grant; what the grant gives: read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), no snapshot creation, change or deletion (ADR-0026) | *Grant* opens a terminal that says what the grant does and that it asks for your password once, shows and runs `sudo setfacl -m u:$USER:rx /.snapshots`, then runs `seldon capture` and says "Snapshots are now recorded" (or, if that capture did not run, that the snapshots were not recorded yet); the card moves on by itself (Seldon never runs the grant on its own). *Copy* copies the command; *Check again* runs a capture, like *Capture now*, for a grant you ran yourself; *Not now* (on the card) puts the step away for good |
 | Plugin updated, shell not restarted (the installed manifest names another version than the code running) | Restart the shell to finish the update, in the neutral tone above the other banners, with both versions | *Restart shell* runs `omarchy-restart-shell`, no arguments; the shell then loads the installed plugin |
 | Capture warned (a capture the plugin ran exited 0 with warnings) | Capture warned, in the neutral tone under the other banners: the first line of each warning as the engine wrote it (today the state reset and its restore hint, WP-081); the full text on hover | None: the warning names the user guide section to read. The notice stays until a capture the plugin runs (*Capture now*, *Check again*, the `c` key, the bar's right click, the timer) finishes without warnings; a failed or locked capture leaves it |
 
-The engine is looked for when the shell starts and again on the status
-banner's *Check again* (or `omarchy-shell jax.seldon.service refresh`),
-not on every capture.
+The engine is looked for when the shell starts, when the panel opens
+while it is missing, every few seconds for ten minutes after an *Install*
+terminal, and on the status banner's *Check again* (or `omarchy-shell
+jax.seldon.service refresh`), not on every capture.
 
 ## Configure
 
@@ -455,6 +478,15 @@ shell plugin. This is everything it does outside its own window:
   of a command line other than as one validated argument.
 - **Writes nothing itself.** Notes, cases, drift resolutions and decisions
   are written by the engine, into your logbook, on your Enter or click.
+  The one thing the plugin changes is its own settings: the desk's width
+  and sidebar (Settings › Appearance, or the sidebar's fold button) are
+  stored by Omarchy's shell in the plugin's own entry of
+  `~/.config/omarchy/shell.json`, through the shell's plugin interface,
+  once per click or slider release (a scroll over the slider writes once,
+  after it stops) — the same entry Omarchy's bar settings edit. No other
+  setting in that file changes; as with Omarchy's own bar settings, the
+  shell writes the whole file back in its own formatting (indentation,
+  key order), so hand formatting there is normalised.
 - **No network.** No sockets, no downloads, no update checks. The one
   exception is yours to click: *Install* on the
   engine-missing banner runs the `curl … | bash` install in a terminal
@@ -465,7 +497,15 @@ shell plugin. This is everything it does outside its own window:
   services, timers, scripts or symlinks. The engine is installed
   separately (`install.sh` from the GitHub release, or the AUR package);
   the plugin never installs it.
-- **No privileges.** The plugin never runs `sudo`, `pacman` or `systemctl`.
+- **Privileges.** The plugin runs as your user.
+  No sudo or pkexec is required to use it.
+  One button asks for your password, and only when you press it: the
+  optional snapshot grant (*Grant* on the snapshot banner, above) runs
+  `sudo setfacl -m u:$USER:rx /.snapshots` in a terminal you see
+  (ADR-0026). Outside the plugin, installing, updating or removing the
+  engine's AUR package asks too, because pacman runs through sudo
+  (`omarchy pkg drop` runs `sudo pacman -Rns`; see [Install](#install)
+  and [Remove](#remove)).
 - **Dev mode is read-only:** with `SELDON_INDEX` set, the plugin only
   probes `seldon --version --json`; it never runs capture, status or any
   writing command.
@@ -508,15 +548,22 @@ omarchy plugin remove jax.seldon
 
 This removes the plugin only. The engine, your logbook (`~/Seldon` unless
 you chose another place) and the index under `~/.local/state/seldon/`
-stay. To remove the engine as well, installed from GitHub:
+stay. To remove the engine as well, installed from GitHub, run
+`install.sh` with `--uninstall`. No copy left? Download, read and verify
+it as under [Install](#install):
 
 ```sh
-curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash -s -- --uninstall
+cd "$(mktemp -d)"
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
+less install.sh                                    # read what it does
+gh attestation verify install.sh --repo JohnAndrewsX/jax-seldon \
+  --signer-workflow JohnAndrewsX/jax-seldon/.github/workflows/release.yml  # optional, needs gh
+sha256sum -c --ignore-missing SHA256SUMS && bash install.sh --uninstall
 ```
 
 It removes exactly the files `install.sh` installed (add the same
-`--prefix` if you gave one; `bash install.sh --uninstall` does the same
-with a downloaded copy). Installed from the AUR:
+`--prefix` if you gave one). Installed from the AUR:
 
 ```sh
 omarchy pkg drop jax-seldon

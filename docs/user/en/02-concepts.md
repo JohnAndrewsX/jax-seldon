@@ -156,7 +156,7 @@ who made it:
 
 | Class | Examples | What happens |
 |---|---|---|
-| routine | a theme switch, a plugin toggle, a plain full upgrade (`pacman -Syu`, `omarchy update`, kernels included), Omarchy's own copy of a file, `shell.json` | history in the Changelog, not drift; nobody is asked |
+| routine | a theme switch, a plugin toggle, adding Seldon's own plugin, a plain full upgrade (`pacman -Syu`, `omarchy update`, kernels included), Omarchy's own copy of a file, `shell.json` | history in the Changelog, not drift; nobody is asked |
 | attention | a package installed or removed by name, a third-party plugin added or updated, an override under a watched path, a removed file | open drift, quietly: the panel lists it, the bar does not count it |
 | crisis | an `alwaysRed` package installed or removed by name, a new file in a persistence path such as `~/.config/systemd/user` or Omarchy's hooks | see [Crisis](#crisis) |
 
@@ -205,21 +205,23 @@ installed or removed by name outside a case. A new file in a persistence
 path is a crisis whoever wrote it: units in `~/.config/systemd/user`,
 Omarchy's hooks in `~/.config/omarchy/hooks`, `~/.config/autostart`,
 `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
-`~/.bash_profile`. Those files run at login or on events without being
-your ordinary configuration.
+`~/.bash_profile`, and the `authorized_keys` files once you watch them. Those
+files run at login or on events without being your ordinary
+configuration. A third-party plugin edited in place counts as a plugin
+update: listed, never counted in the bar.
 
 ## Baseline
 
-A new logbook records from the moment you create it. The wizard can also
-*backfill*: record changes since a past date, from the package log and
-snapper. None of those older changes belongs to a case, so many of them
-open as drift.
+A new logbook also *backfills*: its first capture records the last 90
+days from the package log and snapper. None of those older changes
+belongs to a case, so many of them would open as drift.
 
-The baseline settles that. After a backfill the wizard asks whether
-to mark everything it found as the pre-Seldon baseline. Say yes, and the
-engine dismisses every open item with the reason "pre-Seldon baseline".
-The events stay in the ledger and on the charts; they no longer ask for
-a reason. Without a backfill there is nothing to baseline.
+The baseline settles that. The setup card and `seldon init` dismiss every
+item the backfill opens with the reason "before Seldon", without a
+question. The events stay in the ledger and on the charts; they no
+longer ask for a reason. `seldon init --ask` lets you choose the date and
+asks before it dismisses; with `--since` and without `--baseline`,
+`seldon init --non-interactive` leaves the backfill open as drift.
 
 ## Decisions
 
@@ -227,8 +229,11 @@ A decision is a short record of a choice that shapes the machine,
 in the ADR format (architecture decision record): context, decision,
 consequences. `seldon decide -- "<title>"` creates
 `decisions/ADR-NNNN-<slug>.md` with the status *proposed* and opens it in
-your editor. You change the status to *accepted* or *superseded* in the
-file. The Decisions tab lists them.
+your editor. *Accept* in the desk's Decisions section (twice: the first
+click arms it) or `seldon decide accept ADR-NNNN` makes it *accepted*
+with today's date and notes it in the ledger. Accepting is yours: an
+agent may propose a decision, never accept one. *Superseded* you set in
+the file. The Decisions section lists them.
 
 ## Memory
 

@@ -44,9 +44,32 @@ SAMPLE = os.path.join(FIX, "index.sample.json")
 # ADR-0028 §5: the sample logbook indexed with `[drift] attention = "all"` (the rollback, the drift
 # derivation before ADR-0028); the engine's golden test holds `seldon index` to it.
 ATTENTION_ALL = os.path.join(FIX, "index.attention-all.json")
+# ADR-0051: the oldest plugin contract that reads the engine's index (engine: CONTRACT_READABLE_FROM)
+CONTRACT_READABLE_FROM = 2
+# ADR-0051: a later contract's index that a contract-2 plugin may read: the sample plus FORWARD
+FORWARD = os.path.join(FIX, "forward", "index.contract-v3-readable.json")
 ID = "https://github.com/JohnAndrewsX/jax-seldon/schema/"
 
 EVENT, CASE, INDEX = ID + "event.schema.json", ID + "case.schema.json", ID + "index.schema.json"
+PROPOSAL = ID + "proposal.schema.json"
+# ADR-0047 (WP-138): what `seldon preview --json` prints for the fixture home of engine/tests/preview.rs
+PREVIEW = ID + "preview.schema.json"
+# ADR-0035 §6: the triage proposals the sample's `triage` points at (the engine's state dir)
+PROPOSALS = os.path.join(FIX, "proposals")
+# ADR-0046: the last scan of recently edited files under ~/.config (the engine's state dir)
+RECENT_CONFIG = os.path.join(FIX, "state", "recent-config.json")
+# engine: config::DEFAULT_WATCH_PATHS, DEFAULT_SKIP_PATHS (the golden test runs without a config)
+WATCH_PATHS = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc",
+               "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart",
+               "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile",
+               "~/.local/state/omarchy/toggles"]
+SKIP_PATHS = ["~/.config/omarchy/**/history.json", "~/.config/omarchy/**/history/",
+              "~/.config/omarchy/**/state.json", "~/.config/omarchy/**/cache/", "~/.config/omarchy/**/*.log"]
+RECENT_DAYS, RECENT_MAX = 7, 80
+# ADR-0052: the pacman collector's cursor of the 17:05 capture (the engine's state dir), the source
+# of `system.pacmanIgnore`; engine: collectors::pacman_ignore (NAME, MAX_NAMES)
+PACMAN_CURSOR = os.path.join(FIX, "state", "pacman-cursor.json")
+IGNORE_NAME = re.compile(r"[A-Za-z0-9@._+*?!^\[\]-]{1,128}")
 EXT = {
     "snapper": ID + "external/snapper-list.schema.json",
     "plugin-list": ID + "external/omarchy-plugin-list.schema.json",
@@ -58,7 +81,7 @@ DRIFT_SOURCES = {"pacman", "omarchy", "plugins", "theme", "config"}
 EVENT_KEYS = ["id", "ts", "source", "kind", "subject", "detail", "actor", "case", "zone",
               "explicit", "txId", "refersTo", "resolution", "resolutionDetail", "meta"]
 DRIFT_KEYS = ["eventId", "ts", "source", "kind", "subject", "detail", "actor", "zone", "crisis",
-              "proposedCase", "txId", "members"]
+              "proposedCase", "txId", "members", "truncated", "rule"]
 
 # ADR-0013 §3, ADR-0023 (WP-050): default of config.toml [drift] alwaysRed (fnmatch globs,
 # case-sensitive); keep in step with engine/src/config.rs DriftConfig::default.
@@ -91,7 +114,14 @@ PACMAN_LONG_OPS = {"--sync": "S", "--database": "D", "--files": "F", "--query": 
                    "--deptest": "T", "--upgrade": "U", "--version": "V"}
 PACMAN_LONG_WITH_ARG = {"--arch", "--ask", "--assume-installed", "--cachedir", "--color", "--config",
                         "--dbpath", "--gpgdir", "--hookdir", "--ignore", "--ignoregroup", "--logfile",
-                        "--overwrite", "--print-format", "--root", "--sysroot"}
+                        "--overwrite", "--print-format", "--root", "--sysroot",
+                        # yay and paru (WP-113; engine/src/pkgcmd.rs LONG_WITH_ARG)
+                        "--aururl", "--aurrpcurl", "--builddir", "--editor", "--editorflags", "--makepkg",
+                        "--pacman", "--git", "--gitflags", "--gpg", "--gpgflags", "--makepkgconf",
+                        "--requestsplitn", "--completioninterval", "--sortby", "--searchby",
+                        "--answerclean", "--answerdiff", "--answeredit", "--answerupgrade", "--mflags",
+                        "--sudo", "--sudoflags", "--clonedir", "--pacman-conf", "--fm", "--fmflags",
+                        "--bat", "--batflags", "--limit"}
 PACMAN_SHORT_WITH_ARG = "br"  # -b/--dbpath, -r/--root
 
 
@@ -142,11 +172,17 @@ def routine(e):
 # ADR-0028 §2 (WP-109): the class of a drift-eligible event, routine < attention < crisis. Keep in
 # step with engine/src/index/class.rs and the [drift] defaults of engine/src/config.rs.
 ROUTINE_RULES = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "theme",
-                 "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo"]
+                 "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
 ROUTINE_PATHS = ["~/.config/omarchy/shell.json", "**/*.bak.*"]
 ROUTINE_PACKAGES = ["archlinux-keyring", "omarchy-keyring"]
+EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 ALWAYS_RED_PATHS = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**",
-                    "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile"]
+                    "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile",
+                    "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
+# WP-141, ADR-0042: a file pacman left beside one of these is a crisis (engine: class.rs PACNEW_RED)
+PACNEW_RED = ["/etc/mkinitcpio.conf", "/etc/mkinitcpio.conf.d", "/etc/mkinitcpio.d", "/etc/default/limine",
+              "/etc/limine*", "/boot/limine*", "/etc/pam.d"]
+PACNEW_SUFFIXES = (".pacnew", ".pacsave", ".pacorig")
 CLASS_ORDER = {"routine": 0, "attention": 1, "crisis": 2}
 THEME_CODE = {"alacritty.toml", "foot.ini", "ghostty.conf", "kitty.conf", "vscode.json"}
 OMARCHY_LOOKBACK = dt.timedelta(days=31)
@@ -273,6 +309,7 @@ class Classifier:
     def __init__(self, events):
         self.routine_paths = path_globs(ROUTINE_PATHS)
         self.red_paths = path_globs(ALWAYS_RED_PATHS)
+        self.pacnew_red = path_globs(PACNEW_RED)
         self.events = events
         self.explicit = {}
         self.omarchy = []
@@ -290,6 +327,13 @@ class Classifier:
         """(class, rule), or None for a dependency of a named transaction (it follows)."""
         src, kind, subject = e["source"], e["kind"], e["subject"]
         meta = e.get("meta", {})
+        if src == "pacman" and kind == "note" and isinstance(meta.get("ignorePkg"), str):
+            # ADR-0052 §4: pacman's ignore list changed
+            return ("attention", "ignore-list")
+        if src == "pacman" and kind == "note":
+            # a file pacman left (WP-141): its own item, never routine
+            file = next((subject[:-len(x)] for x in PACNEW_SUFFIXES if subject.endswith(x)), subject)
+            return ("crisis", "pacnew-red") if path_match(self.pacnew_red, file) else ("attention", "pacnew")
         if src == "pacman":
             red = always_red(subject)
             if plain_full_upgrade(cmd):
@@ -327,6 +371,13 @@ class Classifier:
         if src == "config":
             mark = meta.get("matches")
             removed = kind == "config-remove"
+            # ADR-0037 §1: a flag file in the toggles directory, created or removed
+            if subject.startswith("~/.local/state/omarchy/toggles/"):
+                h = meta.get("hashFrom") if removed else meta.get("hashTo")
+                if h == EMPTY_SHA256:
+                    return ("routine", "toggle-flag")
+                if removed and mark == "omarchy-default":
+                    return ("routine", "omarchy-default")
             if not removed and mark in ("omarchy-default", "system-link"):
                 return ("routine", mark)
             # the persistence paths right after the evidence rows; a backup there needs evidence
@@ -391,7 +442,8 @@ def group_lead(members):
 
 
 CASE_KEYS = ["id", "title", "status", "zone", "risk", "priority", "area", "created", "started", "closed",
-             "snapshotBefore", "agents", "events", "tags", "path", "steps", "proposedEvents"]
+             "snapshotBefore", "agents", "events", "tags", "path", "steps", "proposedEvents",
+             "intent", "result", "source"]
 
 
 class Fail(Exception):
@@ -538,6 +590,9 @@ class Builtin:
             elif k == "minimum":
                 if self._type_ok("number", x) and x < v:
                     errs.append(f"{where}: below minimum {v}")
+            elif k == "maximum":
+                if self._type_ok("number", x) and x > v:
+                    errs.append(f"{where}: above maximum {v}")
             elif k == "pattern":
                 if isinstance(x, str) and not re.search(v, x):
                     errs.append(f"{where}: {x[:60]!r} does not match {v}")
@@ -785,6 +840,34 @@ def risk_at(risks, at):
     return values[0] if values and all(v == values[0] for v in values) else None
 
 
+RISKS = ("R0", "R1", "R2", "R3")
+RISK_KINDS = ("case-created", "case-started", "case-updated")
+
+
+def risk_line(e):
+    """A line whose meta.risk counts (ADR-0035 §1): the engine's case-created|started|updated."""
+    return e["source"] == "seldon" and e["kind"] in RISK_KINDS
+
+
+def ledger_risks(events, cid):
+    """engine: reconcile::ledger_risks — [(instant, risk)] of the case's case-created|started|updated
+    lines with meta.risk, oldest first; None unless its case-created line carries one."""
+    lines = sorted((e for e in events if risk_line(e) and e["subject"] == cid),
+                   key=lambda e: (instant(e["ts"]), e["id"]))
+    if not any(e["kind"] == "case-created" and e.get("meta", {}).get("risk") in RISKS for e in lines):
+        return None
+    return [(instant(e["ts"]), e["meta"]["risk"]) for e in lines if e.get("meta", {}).get("risk") in RISKS]
+
+
+def told(risks, at):
+    """engine: reconcile::told — the last risk before `at` and every one at it, if they agree."""
+    if risks is None:
+        return None
+    before = [r for m, r in risks if m < at][-1:]
+    values = before + [r for m, r in risks if m == at]
+    return values[0] if values and all(v == values[0] for v in values) else None
+
+
 def instant(ts):
     return dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
@@ -805,15 +888,16 @@ def json_len(c):
     return len(c.encode("utf-8"))
 
 
-def clip(text):
+def clip(text, place="in the ledger"):
     """`text` as the index carries it (ADR-0025): unchanged when it takes at most TEXT_MAX bytes
     in JSON, else its start, cut on a character boundary and stripped of trailing white space,
-    followed by `… (N more characters in the ledger)`, N the characters left out."""
+    followed by `… (N more characters in the ledger)`, N the characters left out. A case's or
+    decision's text names `in the file` instead (ADR-0038 §2)."""
     if sum(json_len(c) for c in text) <= TEXT_MAX:
         return text
 
     def marker(left):
-        return f"… ({left} more {'character' if left == 1 else 'characters'} in the ledger)"
+        return f"… ({left} more {'character' if left == 1 else 'characters'} {place})"
     # the marker for every character is at least as long as the real one
     room = TEXT_MAX - len(marker(len(text)).encode("utf-8"))
     used, end = 0, 0
@@ -826,15 +910,121 @@ def clip(text):
     return head + marker(len(text) - len(head))
 
 
+def is_heading(line):
+    """engine: cases::is_heading — `#` to `######` followed by a space, a tab or nothing."""
+    rest = line.lstrip("#")
+    return 1 <= len(line) - len(rest) <= 6 and (rest == "" or rest[0] in " \t")
+
+
+def paragraphs(text):
+    """engine: cases::paragraphs — blocks of non-blank lines, each line trimmed at the end; a
+    heading line ends a block and is no text."""
+    out, lines = [], []
+    for line in text.split("\n"):
+        line = line.rstrip(WHITE_SPACE)
+        if line.strip(WHITE_SPACE) == "" or is_heading(line.lstrip(WHITE_SPACE)):
+            if lines:
+                out.append("\n".join(lines).lstrip(WHITE_SPACE))
+                lines = []
+            continue
+        lines.append(line)
+    if lines:
+        out.append("\n".join(lines).lstrip(WHITE_SPACE))
+    return out
+
+
+def section_paragraphs(body, name):
+    """The paragraphs of `## <name>` without HTML comments (engine: cases::first_paragraph)."""
+    m = re.search(rf"^## {re.escape(name)}[ \t]*\r?\n(.*?)(?=^## |^# |^##?\r?$|\Z)", body, re.S | re.M)
+    return paragraphs(strip_comments(m.group(1))) if m else []
+
+
+PROVENANCE = re.compile(r"Imported from [^\n]* — read before you start this case\.")
+
+
+def case_intent(fm, body):
+    """ADR-0038 §2: the first paragraph of ## Intent; an imported case's provenance line, when it
+    is the whole first paragraph, gives way to the next one."""
+    ps = section_paragraphs(body, "Intent")
+    if ps and "imported" in (fm.get("tags") or []) and PROVENANCE.fullmatch(ps[0]):
+        ps = ps[1:]
+    return ps[0] if ps else None
+
+
+# engine: redact::is_invisible (ADR-0038 §2, the set WP-140 and WP-159 widened)
+FORMAT_SET = (
+    "\u00ad\u034f\u0600-\u0605\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f"
+    "\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff9-\ufffb"
+    "\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e007f\U000e0100-\U000e01ef"
+)
+DIRECTION_OR_FORMAT = re.compile(f"[{FORMAT_SET}]")
+
+
+def shown_text(text):
+    """engine: build::shown_text without the redaction (the fixture holds no secret in these
+    texts; the engine's golden test redacts with the built-in rules and must agree): direction
+    and format characters dropped, control characters other than line breaks and tabs as spaces,
+    clipped with `in the file`."""
+    if text is None:
+        return None
+    text = DIRECTION_OR_FORMAT.sub("", text)
+    text = "".join(" " if (ord(c) < 0x20 or 0x7f <= ord(c) <= 0x9f) and c not in "\n\t" else c for c in text)
+    text = clip(text, "in the file")
+    return text if text.strip(WHITE_SPACE) else None
+
+
+BAD_PATH = re.compile(f"[\x00-\x1f\x7f-\x9f{FORMAT_SET}]")
+
+
+def case_source(fm, problems, where):
+    """ADR-0038 §3: the frontmatter's `source` while it is a ~/ path of at most 512 bytes (UTF-8)
+    without control, direction or format characters; a non-string is no source."""
+    s = fm.get("source")
+    if not isinstance(s, str):
+        return None
+    if s.startswith("~/") and len(s.encode("utf-8")) <= 512 and not BAD_PATH.search(s):
+        return s
+    problems.append(f"{where}: source {s!r} is not shown")
+    return None
+
+
+TX_STATUSES = ("failed", "interrupted", "unfinished")
+
+
+def tx_status_line(e):
+    """A line whose meta.txStatus counts (ADR-0043): pacman, inside a transaction."""
+    return e.get("source") == "pacman" and isinstance(e.get("txId"), str)
+
+
 def clipped(e):
-    """An event as `index.events` lists it: every free text clipped (ADR-0025)."""
+    """An event as `index.events` lists it: every free text clipped (ADR-0025), and
+    `meta.truncated: true` when one was (ADR-0035 §3; index-only, a ledger line's is dropped)."""
     e = copy.deepcopy(e)
+    cut = False
+    if "meta" in e:
+        e["meta"].pop("truncated", None)
+        # ADR-0035 §1: meta.risk only on the engine's case lines and only R0-R3; 0.1.x let
+        # `seldon event --meta risk=…` write any value on any kind (the engine reads it leniently)
+        if not (risk_line(e) and e["meta"].get("risk") in RISKS):
+            e["meta"].pop("risk", None)
+        # ADR-0043: meta.txStatus only on a pacman transaction's lines and only one of the three
+        # words (the engine reads it leniently, a hand edit never makes the index invalid)
+        if not (tx_status_line(e) and e["meta"].get("txStatus") in TX_STATUSES):
+            e["meta"].pop("txStatus", None)
+        if not e["meta"]:
+            del e["meta"]
     for k in ("detail", "resolutionDetail"):
         if isinstance(e.get(k), str):
-            e[k] = clip(e[k])
+            short = clip(e[k])
+            cut |= short != e[k]
+            e[k] = short
     for k, v in e.get("meta", {}).items():
         if isinstance(v, str):
             e["meta"][k] = clip(v)
+            cut |= e["meta"][k] != v
+    if cut:
+        e.setdefault("meta", {})["truncated"] = True
+        e = order_event(e)
     return e
 
 
@@ -876,11 +1066,20 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
         by_id[e["id"]] = e
     seen = set()
     resolutions = {}
+    tx_statuses = {}
     for where, e in ledger:
         if "resolution" in e and e["kind"] != "resolution":
             problems.append(f"{where}: 'resolution' field on a {e['kind']} event (ledger lines carry it only on kind resolution)")
         if "resolutionDetail" in e:
             problems.append(f"{where}: 'resolutionDetail' is index-only (ADR-0012 §11)")
+        if "truncated" in e.get("meta", {}):
+            problems.append(f"{where}: 'meta.truncated' is index-only (ADR-0035 §3)")
+        # ADR-0043: a transaction ends once, so its lines agree on how
+        if tx_status_line(e):
+            status = e.get("meta", {}).get("txStatus")
+            first = tx_statuses.setdefault(e["txId"], status)
+            if first != status:
+                problems.append(f"{where}: meta.txStatus {status!r} differs from {first!r} of its transaction {e['txId']}")
         if "refersTo" in e:
             if e["refersTo"] not in seen:
                 problems.append(f"{where}: refersTo {e['refersTo']} is not an earlier ledger event")
@@ -958,7 +1157,10 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
         d = {"eventId": lead["id"], "ts": lead["ts"], "source": lead["source"], "kind": lead["kind"],
              "subject": lead["subject"], "detail": lead.get("detail"), "actor": lead["actor"]}
         if d["detail"] is not None:
-            d["detail"] = clip(d["detail"])
+            short = clip(d["detail"])
+            if short != d["detail"]:
+                d["truncated"] = True
+            d["detail"] = short
         d["proposedCase"] = proposed(lead["subject"])
         if legacy:
             if lead["source"] == "pacman":
@@ -966,8 +1168,9 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
             elif "zone" in lead:
                 d["zone"] = lead["zone"]
             d["crisis"] = d.get("zone") == "red"
+            d["rule"] = "attention-all"
         else:
-            cls, _ = classifier.group(members, lead)
+            cls, d["rule"] = classifier.group(members, lead)
             if cls == "routine" and d["proposedCase"] is None:
                 continue  # history, not drift (ADR-0028 §3)
             if "zone" in lead:
@@ -998,6 +1201,13 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
         prop = [d["eventId"] for d in drift if d["proposedCase"] == cid]
         if prop:
             c["proposedEvents"] = prop
+        # ADR-0038 §2, §3
+        c.pop("source", None)
+        for k, v in (("intent", shown_text(case_intent(fm, body))),
+                     ("result", shown_text(next(iter(section_paragraphs(body, "Result")), None))),
+                     ("source", case_source(fm, problems, r))):
+            if v is not None:
+                c[k] = v
         c = {k: c[k] for k in CASE_KEYS if k in c}
         g = "completed" if fm["status"] in ("completed", "dropped") else fm["status"]
         groups[g].append(c)
@@ -1026,9 +1236,17 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
     # decisions
     decisions = []
     for f in sorted(glob.glob(os.path.join(lb, "decisions", "ADR-*.md")), reverse=True):
-        fm, _ = frontmatter(f)
-        decisions.append({"id": fm["id"], "title": fm["title"], "status": fm["status"], "date": fm["date"],
-                          "path": os.path.relpath(f, lb).replace(os.sep, "/")})
+        fm, body = frontmatter(f)
+        cases = []
+        for c in fm.get("cases") or []:  # as written, without repeats (ADR-0035 §5)
+            if c not in cases:
+                cases.append(c)
+        row = {"id": fm["id"], "title": fm["title"], "status": fm["status"], "date": fm["date"],
+               "path": os.path.relpath(f, lb).replace(os.sep, "/"), "cases": cases}
+        lead = shown_text(next(iter(section_paragraphs(body, "Decision")), None))  # ADR-0038 §2
+        if lead is not None:
+            row["lead"] = lead
+        decisions.append(row)
 
     # system
     sysdir = os.path.join(lb, "system")
@@ -1178,16 +1396,30 @@ CASE_STEPS = {
 }
 
 
-def check_case_logs(ledger, case_files):
+# ADR-0035 §1, the fixture story: the engine speaks contract 2 from the start of 2026-10-01; the
+# case lines written from then on carry meta.risk and every `set` Log line has its case-updated
+CONTRACT_2_FROM = "2026-10-01T00:00:00+02:00"
+
+
+def check_case_logs(ledger, case_files, contract_2_from=CONTRACT_2_FROM):
     """Walk every case's Log lines through the state machine `queued → active → verification →
     completed`, open → `dropped`. The walk must end in the frontmatter status; its steps must be
     the case's `case-*` ledger events (same kind, minute and actor, in order); `created`, `started`
-    and `closed` are the dates of their steps; `started (snapshot N)` is `snapshotBefore`."""
+    and `closed` are the dates of their steps; `started (snapshot N)` is `snapshotBefore`.
+    ADR-0035 §1: from `contract_2_from` on (None: never), every `set …` Log line is a
+    `case-updated` line with its words as `detail`, and every `case-created|started|updated` line
+    carries the risk the Log has at that step; lines before it carry none."""
     out = []
+    v2_since = instant(contract_2_from) if contract_2_from else None
+
+    def v2(day, hm):
+        return v2_since is not None and \
+            dt.datetime.fromisoformat(f"{day}T{hm}:59").replace(tzinfo=v2_since.tzinfo) >= v2_since
     for f, fm, body in case_files:
         where = rel(f)
         m = re.search(r"^## Log\n(.*?)(?=^## |\Z)", body, re.S | re.M)
         status, steps, dates, snapshot = None, [], {}, None
+        risk, risks, details = None, [], []
         for line in (m.group(1) if m else "").splitlines():
             if not line.startswith("- "):
                 continue
@@ -1202,7 +1434,17 @@ def check_case_logs(ledger, case_files):
                     out.append(f"{where}: Log 'created' twice")
                 status = "queued"
                 steps.append(("case-created", f"{day} {hm}", actor))
+                rm = re.search(r"\brisk (R[0-3])\b", text)
+                risk = rm.group(1) if rm else None
+                risks.append(risk if v2(day, hm) else None)
                 dates["created"] = day
+            elif word == "set":
+                rm = re.search(r"\brisk R[0-3] → (R[0-3])\b", text)
+                risk = rm.group(1) if rm else risk
+                if v2(day, hm):
+                    steps.append(("case-updated", f"{day} {hm}", actor))
+                    risks.append(risk)
+                    details.append(text[len("set "):])
             elif word in CASE_STEPS:
                 kind, allowed, to = CASE_STEPS[word]
                 if status not in allowed:
@@ -1211,6 +1453,7 @@ def check_case_logs(ledger, case_files):
                 status = to
                 steps.append((kind, f"{day} {hm}", actor))
                 if word == "started":
+                    risks.append(risk if v2(day, hm) else None)
                     dates["started"] = day
                     sm = re.match(r"started \(snapshot (\d+)\)$", text)
                     snapshot = int(sm.group(1)) if sm else None
@@ -1222,6 +1465,14 @@ def check_case_logs(ledger, case_files):
                   if e["source"] == "seldon" and e["kind"].startswith("case-") and e["subject"] == fm.get("id")]
         if events != steps:
             out.append(f"{where}: Log steps {steps} != ledger case events {events}")
+        lines = [e for _, e in ledger if e["source"] == "seldon" and e["subject"] == fm.get("id")
+                 and e["kind"] in ("case-created", "case-started", "case-updated")]
+        have = [e.get("meta", {}).get("risk") for e in lines]
+        if len(have) == len(risks) and have != risks:
+            out.append(f"{where}: ledger meta.risk {have} != the Log's risk at each step {risks} (ADR-0035 §1)")
+        have = [e.get("detail") for e in lines if e["kind"] == "case-updated"]
+        if have != details:
+            out.append(f"{where}: case-updated details {have} != the Log's set lines {details}")
         for k in ("created", "started", "closed"):
             if fm.get(k) != dates.get(k):
                 out.append(f"{where}: frontmatter {k} {fm.get(k)} != Log {dates.get(k)}")
@@ -1293,12 +1544,14 @@ def planned_links(events, case_files):
             cid, fm = planned[0]
             package = always_red(e["subject"])
             crisis = classifier.group([e], e)[0] == "crisis"
-            # the Log's local time; the fixture's events carry the same offset
-            timeline = risk_timeline(by_case[cid])
+            # ADR-0035 §1: the ledger record when the case's case-created line carries meta.risk,
+            # else the Log (its local time; the fixture's events carry the same offset)
+            record = ledger_risks(events, cid)
+            timeline = record if record is not None else risk_timeline(by_case[cid])
             # round 3 fail-safe: a timeline that ends elsewhere than the frontmatter tells nothing
             if timeline and timeline[-1][1] != fm["risk"]:
                 timeline = None
-            risk = risk_at(timeline, t.replace(tzinfo=None))
+            risk = told(timeline, t) if record is not None else risk_at(timeline, t.replace(tzinfo=None))
             if (package or crisis) and risk != "R3":
                 # one wording for packages and paths: the risk at the time (round 3)
                 what = ("is `alwaysRed`" if package
@@ -1366,6 +1619,121 @@ def check_planned_links(ledger, case_files):
     return out
 
 
+def derive_triage(logbook_path, problems):
+    """engine: index::triage::read — the newest proposal of `logbook_path` in fixtures/proposals/
+    (the engine's state dir), as `index.triage` points at it (ADR-0035 §6); None when there is
+    none. A file whose name is not its id is a problem here (the engine skips it with a warning)."""
+    files = sorted(glob.glob(os.path.join(PROPOSALS, "*.json")), reverse=True)
+    for f in files:
+        pid = os.path.basename(f)[:-5]
+        with open(f, encoding="utf-8") as fh:
+            p = json.load(fh)
+        if p.get("id") != pid:
+            problems.append(f"{rel(f)}: id {p.get('id')} is not its file name")
+            continue
+        if p.get("logbook") != logbook_path:
+            continue
+        return {"id": p["id"], "at": p["at"], "actor": p["actor"],
+                "counts": {"items": len(p["items"]), "crises": sum(i["crisis"] for i in p["items"])},
+                "path": f"proposals/{pid}.json", "applied": p["applied"]}
+    return None
+
+
+def derive_recent_config(generated_at, problems):
+    """engine: collectors::recent::shown — `system.recentConfig` from the saved scan
+    (fixtures/state/, the engine's state dir) at `generated_at` (ADR-0046): the files modified in
+    the 7 days before it, under no watch path, matching no skipPath (a folder's name too), at most
+    80, in the file's order (newest first). The sample's scan lists one file under a watch path
+    (watched since the scan) and one older than 7 days; both drop out. None without the file."""
+    if not os.path.exists(RECENT_CONFIG):
+        return None
+    with open(RECENT_CONFIG, encoding="utf-8") as fh:
+        saved = json.load(fh)
+    since = instant(generated_at) - dt.timedelta(days=RECENT_DAYS)
+    skip = path_globs(SKIP_PATHS)
+
+    def under(path, root):
+        return path == root or path.startswith(root.rstrip("/") + "/")
+
+    def skipped(path):
+        parts = path.split("/")
+        return any(path_match(skip, "/".join(parts[:i])) for i in range(2, len(parts) + 1))
+
+    files = []
+    for f in saved["files"]:
+        if not f["path"].startswith("~/.config/"):
+            problems.append(f"{rel(RECENT_CONFIG)}: {f['path']} is not under ~/.config/")
+            continue
+        if instant(f["mtime"]) < since or any(under(f["path"], w) for w in WATCH_PATHS) or skipped(f["path"]):
+            continue
+        files.append({"path": f["path"], "mtime": f["mtime"]})
+    times = [instant(f["mtime"]) for f in saved["files"]]
+    if times != sorted(times, reverse=True):
+        problems.append(f"{rel(RECENT_CONFIG)}: files are not newest first")
+    out = {"scannedAt": saved["scannedAt"], "files": files[:RECENT_MAX]}
+    if saved.get("partial") is True:
+        out["partial"] = True
+    return out
+
+
+def derive_pacman_ignore(ledger, problems):
+    """engine: index::collector_state + collectors::pacman_ignore::shown — `system.pacmanIgnore`
+    from the pacman cursor's `ignore` (ADR-0052 §5): the names of NAME's shape (the sample has no
+    redaction pattern), the others counted in `hidden`, `partial` as the read was. The cursor's
+    `ignoreKnown` must be the lists of the ledger's last ignore-list note when there is one (the
+    capture that wrote it saved the cursor). None without the file."""
+    if not os.path.exists(PACMAN_CURSOR):
+        return None
+    with open(PACMAN_CURSOR, encoding="utf-8") as fh:
+        cursor = json.load(fh)
+    ignore = cursor.get("ignore")
+    if ignore is None:
+        return None
+    out, hidden = {}, 0
+    for k in ("packages", "groups"):
+        names = [n for n in ignore[k] if IGNORE_NAME.fullmatch(n)]
+        hidden += len(ignore[k]) - len(names)
+        out[k] = names
+    if hidden:
+        out["hidden"] = hidden
+    if ignore.get("partial") is True:
+        out["partial"] = True
+    notes = [e for e in ledger if e["source"] == "pacman" and e["kind"] == "note"
+             and isinstance(e.get("meta", {}).get("ignorePkg"), str)]
+    known = cursor.get("ignoreKnown")
+    written = lambda names: " ".join(n if IGNORE_NAME.fullmatch(n) else "(hidden)" for n in names)
+    if notes and known is not None:
+        last = notes[-1]["meta"]
+        if (last["ignorePkg"], last.get("ignoreGroup")) != (written(known["packages"]), written(known["groups"])):
+            problems.append(f"{rel(PACMAN_CURSOR)}: ignoreKnown is not the lists of {notes[-1]['id']}")
+    return out
+
+
+def check_proposals(sample):
+    """Every fixture proposal proposes for open drift items of the sample: `eventId` an item's
+    eventId, `crisis` its crisis, a link's case an open case, at least one item of each action
+    and one crisis (the desk's surfaces, ADR-0034 §6), `at` not after the sample's generatedAt."""
+    out = []
+    items = {d["eventId"]: d for d in sample["drift"]}
+    open_cases = {c["id"] for k in ("queued", "active", "verification") for c in sample["cases"][k]}
+    for f in sorted(glob.glob(os.path.join(PROPOSALS, "*.json"))):
+        with open(f, encoding="utf-8") as fh:
+            p = json.load(fh)
+        for i in p["items"]:
+            d = items.get(i["eventId"])
+            if d is None:
+                out.append(f"{rel(f)}: {i['eventId']} is no open drift item of the sample")
+            elif d["crisis"] != i["crisis"]:
+                out.append(f"{rel(f)}: {i['eventId']} crisis {i['crisis']} != the item's {d['crisis']}")
+            if i["action"] == "link" and i["caseId"] not in open_cases:
+                out.append(f"{rel(f)}: {i['caseId']} is no open case")
+        if {i["action"] for i in p["items"]} != {"link", "explain"} or not any(i["crisis"] for i in p["items"]):
+            out.append(f"{rel(f)}: needs a link, an explain and a crisis item")
+        if instant(p["at"]) > instant(sample["generatedAt"]):
+            out.append(f"{rel(f)}: at {p['at']} is after the sample's generatedAt")
+    return out
+
+
 def check_times(index, name):
     """An index is not older than what it lists: generatedAt is not before any event, lastCapture
     not before any collector event (the engine stamps both at write time)."""
@@ -1419,6 +1787,26 @@ VARIANTS = {
         {"op": "add", "path": "/state/collectors/1/message",
          "value": "snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; `seldon doctor` prints the read grant."},
     ],
+    # WP-119: a machine without snapper. The engine's message is the literal the plugin keys on
+    # (CONTRACT.md rule 10): no snapshot step on the setup card, no snapshot notice.
+    "snapper-not-installed": [
+        {"op": "test", "path": "/state/collectors/1/name", "value": "snapper"},
+        {"op": "replace", "path": "/state/collectors/1/ok", "value": False},
+        {"op": "add", "path": "/state/collectors/1/message", "value": "snapper is not installed"},
+    ],
+    # WP-119: the first day after the setup card: no case in any column, nothing open (the look-back
+    # was dismissed "before Seldon"), nothing recorded today, no proposal. Today shows the first-run
+    # card ("Seldon is recording. Nothing to do.") and its tiles at 0, quiet.
+    "first-run": [
+        {"op": "replace", "path": "/summary", "value": {"activeCases": 0, "queuedCases": 0, "openDrift": 0, "crisis": 0,
+                                                        "eventsToday": 0, "events7d": 0}},
+        {"op": "replace", "path": "/today/entries", "value": []},
+        {"op": "remove", "path": "/today/yesterday"},
+        {"op": "replace", "path": "/events", "value": []},
+        {"op": "replace", "path": "/drift", "value": []},
+        {"op": "replace", "path": "/cases", "value": {"queued": [], "active": [], "verification": [], "completed": []}},
+        {"op": "remove", "path": "/triage"},
+    ],
     # `seldon index` before `seldon init`: no logbook, every section empty.
     "not-initialised": [
         {"op": "replace", "path": "/logbook", "value": {"path": "/home/user/Seldon", "language": "en", "machine": ""}},
@@ -1435,6 +1823,7 @@ VARIANTS = {
         {"op": "replace", "path": "/system", "value": {}},
         {"op": "replace", "path": "/memory", "value": {}},
         {"op": "replace", "path": "/series", "value": {"heatmap": [], "packages": [], "drift": []}},
+        {"op": "remove", "path": "/triage"},
     ],
     # The engine never writes indexStale; plugin/Model.js derives it from the clock or takes it
     # from state.status. This variant exercises that data-driven branch. With SELDON_NOW =
@@ -1449,6 +1838,13 @@ VARIANTS = {
         {"op": "replace", "path": "/state/collectors/3/ok", "value": False},
         {"op": "add", "path": "/state/collectors/3/message", "value": "omarchy plugin list --json: timed out"},
     ],
+    # ADR-0046 §2: the scan of ~/.config stopped early (entry budget, deadline or depth) and found no
+    # recent file before it did: the desk says the list may be incomplete, not "nothing edited".
+    "recent-partial": [
+        {"op": "test", "path": "/system/recentConfig/scannedAt", "value": "2026-10-01T17:05:00+02:00"},
+        {"op": "replace", "path": "/system/recentConfig/files", "value": []},
+        {"op": "add", "path": "/system/recentConfig/partial", "value": True},
+    ],
     # Omarchy run from a git checkout of $OMARCHY_PATH: the dossier carries its HEAD (short hash).
     "omarchy-git-checkout": [
         {"op": "test", "path": "/system/omarchy/version", "value": "4.0.7-1"},
@@ -1458,15 +1854,45 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/67/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/67/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/67/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/77/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/77/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/77/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".
     "drift-capped": [
         {"op": "test", "path": "/summary/openDrift", "value": 6},
         {"op": "replace", "path": "/summary/openDrift", "value": 250},
+    ],
+    # WP-164: the boot configuration's events carry absolute subjects under /etc (the config
+    # collector's boot files). On 09-23 the human took `plymouth` out of Omarchy's hooks drop-in by
+    # hand, and `omarchy-provision-owner` wrote a key drop-in the user cannot read (hashed by its
+    # metadata, `meta.hashBasis: "stat"`). Both are open attention items. Index only, like
+    # drift-explained-case: in the logbook they would move every list the plugin harness walks.
+    "boot-config": [
+        {"op": "test", "path": "/events/55/ts", "value": "2026-09-22T20:10:00+02:00"},
+        {"op": "add", "path": "/events/55", "value": {"id": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "meta": {"hashFrom": "8276d859e9e973d922e3a2adf580b1c061fe8507ff28318ef761e1e355e7eb7d", "hashTo": "ebe226cdad440acc4006c3a4058dc87ff1db9158f7a46442003ef889ed1e6623"}}},
+        {"op": "add", "path": "/events/55", "value": {"id": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "meta": {"hashTo": "140b21ced41879c8ef31256c8b35302b27df920c7efa2a56e6426a7ca056d017", "hashBasis": "stat"}}},
+        {"op": "test", "path": "/drift/5/ts", "value": "2026-09-27T12:30:00+02:00"},
+        {"op": "add", "path": "/drift/6", "value": {"eventId": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "crisis": False, "proposedCase": None, "rule": "config"}},
+        {"op": "add", "path": "/drift/7", "value": {"eventId": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "crisis": False, "proposedCase": None, "rule": "config"}},
+        {"op": "test", "path": "/summary/openDrift", "value": 6},
+        {"op": "replace", "path": "/summary/openDrift", "value": 8},
+    ],
+    # ADR-0052 (WP-165): after the 09-27 mesa downgrade the human pins the three packages beside the
+    # two the sample's list holds (`IgnorePkg = zoom slack-desktop mesa vulkan-radeon lib32-mesa`);
+    # the 12:45 capture records the change as a pacman note on /etc/pacman.conf, an open attention
+    # item (`ignore-list`), and the list in `system.pacmanIgnore`. Index only, like boot-config: in
+    # the logbook it would move every list the plugin harness walks.
+    "pacman-ignore-changed": [
+        {"op": "test", "path": "/events/48/id", "value": "01M3H6M818EPKV6HMJ0GN4PGFG"},
+        {"op": "add", "path": "/events/48", "value": {"id": "01M3H7FNZ0YRX0ZM73QC24X96H", "ts": "2026-09-27T12:45:00+02:00", "source": "pacman", "kind": "note", "subject": "/etc/pacman.conf", "detail": "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa.", "actor": "system", "zone": "red", "meta": {"ignoreGroup": "", "ignorePkg": "zoom slack-desktop mesa vulkan-radeon lib32-mesa"}}},
+        {"op": "test", "path": "/drift/5/ts", "value": "2026-09-27T12:30:00+02:00"},
+        {"op": "add", "path": "/drift/5", "value": {"eventId": "01M3H7FNZ0YRX0ZM73QC24X96H", "ts": "2026-09-27T12:45:00+02:00", "source": "pacman", "kind": "note", "subject": "/etc/pacman.conf", "detail": "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa.", "actor": "system", "zone": "red", "crisis": False, "proposedCase": None, "rule": "ignore-list"}},
+        {"op": "test", "path": "/summary/openDrift", "value": 6},
+        {"op": "replace", "path": "/summary/openDrift", "value": 7},
+        {"op": "test", "path": "/system/pacmanIgnore/packages", "value": ["zoom", "slack-desktop"]},
+        {"op": "replace", "path": "/system/pacmanIgnore/packages", "value": ["zoom", "slack-desktop", "mesa", "vulkan-radeon", "lib32-mesa"]},
     ],
     # ADR-0027 §5 (WP-101): the user reopened the agent-closed C-2026-002 (`seldon plan reopen`):
     # a new active case with the tag `reopens:C-2026-002`, its Intent copied. Index only, like
@@ -1488,14 +1914,55 @@ VARIANTS = {
     # the mesa downgrade group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [
         {"op": "test", "path": "/drift/5/members", "value": 3},
-        {"op": "test", "path": "/events/46/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
-        {"op": "test", "path": "/events/46/subject", "value": "lib32-mesa"},
-        {"op": "remove", "path": "/events/46"},
+        {"op": "test", "path": "/events/49/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
+        {"op": "test", "path": "/events/49/subject", "value": "lib32-mesa"},
+        {"op": "remove", "path": "/events/49"},
     ],
 }
 
 # SELDON_NOW for index-variants/index-stale.json (fixtures/README.md); the plugin harness pins
 # the same clock for its clock-driven stale case.
+# ADR-0051: what a later contract may add that a contract-2 reader must not misread: the version
+# and the field that lets a v2 plugin read it, unknown top-level and summary keys, an event of an
+# unknown source and kind, a drift row of an unknown source and kind (no crisis), an unknown
+# timeline kind. The counts follow the rows (ADR-0051 §3: complete): openDrift +1, the day's and
+# the week's events +2 (summary, heatmap), the week's opened drift +1; crisis and the cases stay.
+# Not a v2 index: it must fail the v2 schema.
+# plugin model.test.js reads it; the orchestrator points SELDON_INDEX at it for the live check.
+FORWARD_OPS = [
+    {"op": "replace", "path": "/contractVersion", "value": 3},
+    {"op": "test", "path": "/contractReadableFrom", "value": 2},
+    {"op": "add", "path": "/crashes", "value": [
+        {"id": "01M3VZXA00J0VRNA0000000001", "exe": "/usr/bin/example", "status": "new", "count": 1}]},
+    {"op": "add", "path": "/reports", "value": []},
+    {"op": "add", "path": "/summary/crashes", "value": 1},
+    {"op": "test", "path": "/summary/openDrift", "value": 6},
+    {"op": "replace", "path": "/summary/openDrift", "value": 7},
+    {"op": "test", "path": "/summary/eventsToday", "value": 33},
+    {"op": "replace", "path": "/summary/eventsToday", "value": 35},
+    {"op": "test", "path": "/summary/events7d", "value": 54},
+    {"op": "replace", "path": "/summary/events7d", "value": 56},
+    {"op": "test", "path": "/series/heatmap/365/date", "value": "2026-10-01"},
+    {"op": "test", "path": "/series/heatmap/365/total", "value": 33},
+    {"op": "replace", "path": "/series/heatmap/365/total", "value": 35},
+    {"op": "add", "path": "/series/heatmap/365/bySource/journal", "value": 2},
+    {"op": "test", "path": "/series/drift/4/week", "value": "2026-W40"},
+    {"op": "test", "path": "/series/drift/4/opened", "value": 6},
+    {"op": "replace", "path": "/series/drift/4/opened", "value": 7},
+    {"op": "add", "path": "/events/0", "value": {
+        "id": "01M3VZXA00J0VRNA0000000001", "ts": "2026-10-01T17:02:00+02:00", "source": "journal",
+        "kind": "crash", "subject": "example", "detail": "example crashed (SIGSEGV)", "actor": "system"}},
+    {"op": "add", "path": "/events/1", "value": {
+        "id": "01M3VZXA00J0VRNA0000000002", "ts": "2026-10-01T17:01:00+02:00", "source": "journal",
+        "kind": "boot-error", "subject": "boot", "detail": "a unit failed during boot", "actor": "system"}},
+    {"op": "add", "path": "/drift/0", "value": {
+        "eventId": "01M3VZXA00J0VRNA0000000002", "ts": "2026-10-01T17:01:00+02:00", "source": "journal",
+        "kind": "boot-error", "subject": "boot", "detail": "a unit failed during boot", "actor": "system",
+        "zone": "yellow", "crisis": False, "rule": "journal-boot"}},
+    {"op": "add", "path": "/series/timeline/0", "value": {
+        "kind": "crash", "ts": "2026-10-01T17:02:00+02:00", "label": "example crashed", "ref": "01M3VZXA00J0VRNA0000000001"}},
+]
+
 STALE_NOW = "2026-10-01T20:05:12+02:00"
 STALE_AFTER = dt.timedelta(hours=2)  # SPEC-PLUGIN §3
 
@@ -1735,6 +2202,64 @@ def self_checks(today):
     if not any("C-2026-001" in e and "'completed' from active" in e for e in errs):
         out.append(f"self-check 'C-2026-001 active -> completed is rejected': walker reported {errs}")
 
+    # ADR-0035 §1: a contract-2 `set` Log line without its case-updated line is caught, and so is
+    # a case-started line whose meta.risk is not the Log's risk at that step
+    def drop_case_updated(ledger):
+        ledger[:] = [(w, e) for w, e in ledger if e["kind"] != "case-updated"]
+
+    ledger, case_files = load_logbook(LOGBOOK, [], drop_case_updated)
+    errs = check_case_logs(ledger, case_files)
+    if not any("C-2026-003" in e and "case-updated" in e for e in errs):
+        out.append(f"self-check 'a set line needs its case-updated line (ADR-0035)': walker reported {errs}")
+
+    def wrong_start_risk(ledger):
+        for _, e in ledger:
+            if e["kind"] == "case-started" and e["subject"] == "C-2026-008":
+                e["meta"]["risk"] = "R1"
+
+    ledger, case_files = load_logbook(LOGBOOK, [], wrong_start_risk)
+    errs = check_case_logs(ledger, case_files)
+    if not any("C-2026-008" in e and "meta.risk" in e for e in errs):
+        out.append(f"self-check 'meta.risk is the Log's risk at the step (ADR-0035)': walker reported {errs}")
+
+    # ADR-0035 §1, append-only: the same logbook with every meta.risk gone (an engine of contract
+    # 1 wrote the case lines, the set line had no ledger line) derives the same cases and drift
+    def contract_1(ledger):
+        ledger[:] = [(w, e) for w, e in ledger if e["kind"] != "case-updated"]
+        for _, e in ledger:
+            if "risk" in e.get("meta", {}):
+                del e["meta"]["risk"]
+                if not e["meta"]:
+                    del e["meta"]
+
+    problems = []
+    base, _, _ = derive(LOGBOOK, today, [])
+    old, _, old_cases = derive(LOGBOOK, today, problems, mutate=contract_1)
+    ledger, _ = load_logbook(LOGBOOK, [], contract_1)
+    problems += check_case_logs(ledger, old_cases, None)
+    if problems or old["cases"] != base["cases"] or old["drift"] != base["drift"]:
+        out.append(f"self-check 'a ledger without meta.risk derives the same (ADR-0035)': {problems[:3]}")
+
+    # ADR-0043: a txStatus off a pacman transaction line or with another word is dropped from
+    # the index; the interrupted transaction keeps its own; a transaction whose lines disagree
+    # is caught
+    def stray_tx_status(ledger):
+        for _, e in ledger:
+            if e["subject"] == "libadwaita":
+                e["meta"]["txStatus"] = "banana"
+            if e["kind"] == "note" and e["source"] == "manual":
+                e.setdefault("meta", {})["txStatus"] = "failed"
+
+    problems = []
+    stray, _, _ = derive(LOGBOOK, today, problems, mutate=stray_tx_status)
+    kept = {e["subject"]: e.get("meta", {}).get("txStatus") for e in stray["events"]
+            if e["subject"] in ("gtk4", "libadwaita")}
+    notes = [e for e in stray["events"] if e["kind"] == "note" and "txStatus" in e.get("meta", {})]
+    if kept != {"gtk4": "interrupted", "libadwaita": None} or notes:
+        out.append(f"self-check 'txStatus only on a transaction line (ADR-0043)': {kept} {len(notes)}")
+    if not any("differs from 'interrupted'" in p for p in problems):
+        out.append(f"self-check 'a transaction's lines agree on txStatus (ADR-0043)': {problems[:3]}")
+
     # ADR-0029 rule 9: the sample's engine link must be missed without its line, and must be
     # extra when C-2026-002's Plan no longer names the package, or when a second case planned it
     # in the same window (no link then, and a Log line in each)
@@ -1821,7 +2346,40 @@ def self_checks(today):
         lines, logs = planned_links([e for _, e in ledger], case_files)
         if not ok(lines, logs):
             out.append(f"self-check 'rule 9: {label}': lines {[(e['id'], c) for e, c, _ in lines]}, logs {logs}")
-    return out, len(cases) + len(proposals) + 2 + len(rule9) + len(round2)
+
+    # WP-141, ADR-0042: a caseless file pacman left is its own item, never its transaction's;
+    # beside a PAM file a crisis, beside a pam-owned file Omarchy overrides attention.
+    def add_left(subject):
+        def m(ledger):
+            ledger.append(("<self-check>:pacnew", {
+                "id": "7" + "Z" * 23 + "PN", "ts": "2026-10-01T16:56:00+02:00", "source": "pacman", "kind": "note",
+                "subject": subject, "detail": subject.rsplit(".", 1)[0] + " installed as " + subject,
+                "actor": "system", "zone": "red",
+                "meta": {"command": "pacman -Syu", "transaction": "tx-20261001T165600"}}))
+        return m
+
+    def add_ignore(subject):
+        # ADR-0052 §4: a caseless change of pacman's ignore list
+        def m(ledger):
+            ledger.append(("<self-check>:ignore", {
+                "id": "7" + "Z" * 23 + "IG", "ts": "2026-10-01T16:56:00+02:00", "source": "pacman", "kind": "note",
+                "subject": subject, "detail": "IgnorePkg: added linux.", "actor": "system", "zone": "red",
+                "meta": {"ignorePkg": "linux", "ignoreGroup": ""}}))
+        return m
+
+    pacnew = [
+        ("a .pacnew beside a PAM file is a crisis", "/etc/pam.d/system-auth.pacnew", (True, "pacnew-red"), add_left),
+        ("a .pacnew in /etc/security is attention", "/etc/security/faillock.conf.pacnew", (False, "pacnew"), add_left),
+        ("a changed ignore list is attention", "/etc/pacman.conf", (False, "ignore-list"), add_ignore),
+    ]
+    for label, subject, want, add in pacnew:
+        problems = []
+        derived, _, _ = derive(LOGBOOK, today, problems, add(subject))
+        got = [(d["crisis"], d.get("rule"), d.get("txId"), d.get("members")) for d in derived["drift"]
+               if d["subject"] == subject]
+        err = problems[:1] or ([] if got == [want + (None, None)] else [f"items {got}, want [{want + (None, None)}]"])
+        out += [f"self-check '{label}': {e}" for e in err]
+    return out, len(cases) + len(proposals) + 5 + len(rule9) + len(round2) + len(pacnew)
 
 
 # --------------------------------------------------------------------------- snapshot info files
@@ -1884,7 +2442,30 @@ def collect_instances():
             sid, bad = EXT["plugin-catalog"], False
         elif re.fullmatch(r"hooks/claude-code-[a-z0-9-]+\.json", r):
             sid, bad = EXT["hook"], False
-        elif re.fullmatch(r"invalid/(index|event|case)\.[a-z0-9-]+\.json", r):
+        elif re.fullmatch(r"proposals/[0-7][0-9A-HJKMNP-TV-Z]{25}\.json", r):
+            sid, bad = PROPOSAL, False
+        elif r == "preview.sample.json":
+            sid, bad = PREVIEW, False
+        elif r == "state/pacman-cursor.json":
+            # engine state, not contract: its `ignore` is `system.pacmanIgnore`'s shape, checked
+            # through the derived sample (derive_pacman_ignore)
+            continue
+        elif r == "state/recent-config.json":
+            # engine state, not contract: its shape is `system.recentConfig`'s, checked through the
+            # derived sample (derive_recent_config)
+            continue
+        elif re.fullmatch(r"errors/[a-z0-9-]+\.json", r):
+            # a command's `--json` error the plugin reads (CONTRACT.md rule 10, WP-119): held equal
+            # to the engine's output by engine/tests/init.rs and read by tests/plugin/model.test.js
+            continue
+        elif r == "themes/roles.json":
+            # theme roles for the plugin's tone tests (WP-177), not contract: its shape (three
+            # themes, the five roles each) is checked by tests/plugin/model.test.js
+            continue
+        elif r == "forward/index.contract-v3-readable.json":
+            # ADR-0051: a later contract's index, no v2 index (checked against the sample below)
+            sid, bad = INDEX, True
+        elif re.fullmatch(r"invalid/(index|event|case|proposal|preview)\.[a-z0-9-]+\.json", r):
             sid, bad = ID + r.split("/")[1].split(".")[0] + ".schema.json", True
         else:
             unmapped.append(r)
@@ -1926,15 +2507,25 @@ def main():
     derived, ledger, case_files = derive(LOGBOOK, today, problems)
 
     derived_all, _, _ = derive(LOGBOOK, today, problems, legacy=True)
+    triage = derive_triage(sample["logbook"]["path"], problems)
+    recent = derive_recent_config(sample["generatedAt"], problems)
+    ignore = derive_pacman_ignore([e for _, e in ledger], problems)
 
     def as_sample(d):
-        out = {k: sample[k] for k in ("contractVersion", "generatedAt", "engineVersion")}
+        out = {"contractVersion": sample["contractVersion"], "contractReadableFrom": CONTRACT_READABLE_FROM}
+        out.update({k: sample[k] for k in ("generatedAt", "engineVersion")})
         out["logbook"] = {"path": sample["logbook"]["path"], **d["logbook"]}
         if "git" in sample["logbook"]:
             out["logbook"]["git"] = sample["logbook"]["git"]
         out["state"] = sample["state"]
         for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
             out[k] = d[k]
+        if recent is not None:
+            out["system"] = {**d["system"], "recentConfig": recent}
+        if ignore is not None:
+            out["system"] = {**out["system"], "pacmanIgnore": ignore}
+        if triage is not None:
+            out["triage"] = triage
         return out
 
     if a.write_index:
@@ -1944,6 +2535,12 @@ def main():
         print(f"wrote {rel(SAMPLE)}")
         dump_json(ATTENTION_ALL, as_sample(derived_all))
         print(f"wrote {rel(ATTENTION_ALL)}")
+        try:
+            os.makedirs(os.path.dirname(FORWARD), exist_ok=True)
+            dump_json(FORWARD, apply_overlay(sample, FORWARD_OPS, "forward"))
+            print(f"wrote {rel(FORWARD)}")
+        except Fail as e:
+            problems.append(f"{e} (not written)")
         for name, ops in VARIANTS.items():
             path = os.path.join(FIX, "index-variants", f"{name}.json")
             try:
@@ -1970,12 +2567,19 @@ def main():
         else:
             ok += 1
 
-    # 2. the sample index derives from the sample logbook
+    # 2. the sample index derives from the sample logbook (and `system.recentConfig` from the
+    # saved scan, ADR-0046)
+    want = as_sample(derived)
     for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
-        problems += [f"index.sample.json /{k}{d}" for d in diff(sample.get(k), derived[k])]
+        problems += [f"index.sample.json /{k}{d}" for d in diff(sample.get(k), want[k])]
+    if sample.get("contractReadableFrom") != CONTRACT_READABLE_FROM:
+        problems.append(f"index.sample.json /contractReadableFrom: {sample.get('contractReadableFrom')!r} "
+                        f"!= {CONTRACT_READABLE_FROM} (ADR-0051)")
     for k in ("language", "machine"):
         if sample["logbook"].get(k) != derived["logbook"][k]:
             problems.append(f"index.sample.json /logbook/{k}: != PROJECT.md")
+    problems += [f"index.sample.json /triage{d}" for d in diff(sample.get("triage"), triage)]
+    problems += check_proposals(sample)
     problems += check_case_logs(ledger, case_files)
     problems += check_planned_links(ledger, case_files)
     problems += check_times(sample, "index.sample.json")
@@ -2011,6 +2615,20 @@ def main():
             for k, v in (("generatedAt", have["generatedAt"]), ("state.lastCapture", have["state"]["lastCapture"])):
                 if instant(STALE_NOW) - instant(v) <= STALE_AFTER:
                     problems.append(f"{rel(path)} {k} {v} is not more than 2 h before STALE_NOW {STALE_NOW}")
+
+    # 3a. the forward index (ADR-0051) is the sample plus FORWARD_OPS
+    if not os.path.exists(FORWARD):
+        problems.append(f"{rel(FORWARD)}: missing; run with --write-index")
+    else:
+        with open(FORWARD, encoding="utf-8") as f:
+            have = json.load(f)
+        try:
+            want = apply_overlay(sample, FORWARD_OPS, "forward")
+        except Fail as e:
+            problems.append(str(e))
+        else:
+            problems += [f"{rel(FORWARD)} {d} (regenerate with --write-index)" for d in diff(have, want)]
+        problems += check_times(have, rel(FORWARD))
 
     # 3b. a `-pre` hook payload is its PostToolUse sibling as PreToolUse, without tool_response
     for pre in sorted(glob.glob(os.path.join(FIX, "hooks", "*-pre.json"))):

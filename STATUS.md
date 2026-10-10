@@ -653,6 +653,32 @@ submission). (see `work/queued/`)
 - The test host is the orchestrator's until the operator announces the
   reinstall.
 
+## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
+- O1 `seldon init --defaults` (the panel path) sets up no agent harness:
+  Seldon never writes into foreign agent files without asking (S7); the
+  Agents line says none and how to add one (WP-119).
+- O2 Correction of an overnight answer: `--non-interactive` follows
+  ADR-0033 §1 (every new logbook looks back 90 days); only `--since`,
+  `--baseline`, `--no-capture` keep the choice (WP-119).
+- O3 Desk rows: Omarchy's pointer-moved hover, any key clears it, one
+  cursor highlight at a time (WP-177).
+
+## Decided 2026-10-10 (operator, all as recommended)
+- E77 ADR-0052 accepted (pacman's IgnorePkg and IgnoreGroup names from
+  /etc/pacman.conf and every file it includes, also under a home
+  directory, names only, as the optional contract-2 field
+  `system.pacmanIgnore`; a change is attention `ignore-list`) → WP-165
+  merged.
+- E78 CONTRACT.md rule 10 (a closed list of values the plugin keys on
+  outside the schema, e.g. `snapper is not installed`, until contract 3)
+  as an operator decision without an ADR.
+- E79 `just check-rss`: the peak limit is 12 MB (was 11 MB, E8); measured
+  dev host 11 348–11 632 kB, CI 11 168–11 480 kB (docs/TESTING.md,
+  "Memory bound").
+- E80 shellcheck runs before CI: the orchestrator's gate also runs it on
+  the test host, where the operator installed it (no binary in the repo
+  or on the dev host).
+
 ## Decided 2026-10-09 (operator)
 - E39 ADR-0045 accepted (EASY | PRO; the header switch stores the mode for
   good). E40 ADR-0047 accepted (`seldon preview` before init) → WP-138.
@@ -661,6 +687,47 @@ submission). (see `work/queued/`)
   released plugin would misread. E43 ADR-0048 accepted (redaction reads the
   original and the visible copy) → WP-159. E44 the way back of
   `deploy-test-host --branch next` is tested on the test host now.
+- E45 ADR-0046 accepted (recently edited files under `~/.config`, paths
+  and times only; a linked `~/.config` is read where it leads) → WP-139.
+  E46 ADR-0049 accepted (a logbook file is never written through a link;
+  doctor's `layout` row) → WP-171. E47 ADR-0050 accepted (adding or
+  enabling Seldon's own plugin is routine `seldon-self`) → WP-172.
+- Prototype 0.3 roadmap (debate `jax-seldon-private/prototype-0.3/debate-2026-10-09/`),
+  all as recommended: E48 no "pause agent starts" (Q1). E49 graph Timeline
+  preset in 0.3 (Q2). E50 an interrupted update leaves Needs you when every
+  marked package reappears in a later complete transaction or the event
+  leaves the window (Q3). E51 ADR-0045's "Pick your agent" opens Omarchy's
+  menu route (amending ADR) (Q4). E52 the PRO cue as ADR-0045 §4, at most
+  5 s per open (Q5). E53 pill `A · !C`, no ⏸ (Q6). E54 two upstream reports
+  to Omarchy (ConfirmDialog default, focus border) as the operator's (Q7).
+  E55 `contractReadableFrom` before the 0.2.0 tag (Q8). E56 reports: a file
+  with status, steps as notes, `reopen` not `undo`, `defer` stays (Q9).
+  E57 no bar colour for a shell/Hyprland/hyprlock crash (Q10). E58 the
+  boot-file crisis question after a live week (Q11). E59 the engine titles
+  EASY "It was me." cases (Q12). E60 AGENTS.md §7 points at the
+  `omarchy-ux` skill when it lands (Q13). E61 the crash inbox guards
+  against mistakes, not an adversary (residual → WP-169). E62 no plugin
+  origin URL recorded. E63 the test host stays on Omarchy's rc channel.
+- Study of Tom Ballard's Omarchy work (`jax-seldon-private/study-tcballard/`),
+  all as recommended: E64 prepare the store submission (WP-042: the
+  plugin README loses both `curl … | bash` blocks, honest sudo/systemctl
+  wording) for 0.2.0; filing after 0.2.0 on a separate go. E65 protect
+  `main` and `v*` tags in both GitHub repos (no deletion, no force push,
+  no PR requirement; the operator sets it). E66 plugin tests in CI: stage 1
+  (node tests, Omarchy's validator) before 0.2.0, stage 2 (Quickshell) in
+  0.2.y with a small ADR. E67 a recorded live test per release from 0.2.0;
+  from 0.3 the workflow refuses a tag with code changed after it. E68 short
+  release highlights (≤ 10 points) from 0.2.0. E69 an offline check of the
+  Omarchy files Seldon builds on (0.2.x). E70 supply chain: Dependabot, a
+  no-network-crate test, the AUR package tested in a container once it
+  exists. E71 shorten Seldon's agent skill to a ~120-line core (0.2.x). E72
+  store review rules as a short block and tests (after T. Ballard, MIT) in
+  WP-183a/WP-126. E73 AGENTS.md §5 evidence words. E74 behaviour tests for
+  the agent skill planned for 0.3. E75 a store scan of similar plugins only
+  after Seldon's own submission.
+- E76 ADR-0051 accepted (contract forward compatibility:
+  `contractReadableFrom`; a later bump proves per field that a v2 plugin
+  misreads nothing and never counts fewer crises) → WP-176, before 0.2.0.
 
 ## Decided 2026-10-07, afternoon (operator)
 - E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).

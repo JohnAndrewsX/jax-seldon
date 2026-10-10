@@ -86,7 +86,9 @@ pub(crate) fn rebuild_with<T>(
             .all()
             .map(|c| (c.id.as_str(), c.path.as_str())),
     );
-    let mut files = views::write_ledger_views(&logbook, &built)?;
+    let mut skipped = Vec::new();
+    let mut files = views::write_ledger_views(&logbook, &built, &mut skipped)?;
+    built.warnings.extend(skipped);
     if status {
         match views::write_status(&logbook, &built)? {
             views::Fill::Written => files.push("STATUS.md".into()),
@@ -100,7 +102,14 @@ pub(crate) fn rebuild_with<T>(
         }
     }
     let extra = before_index(&config, &logbook, &files);
+    built.warnings.extend(index::git_refused(&logbook.root));
     built.index.logbook.git = index::git_info(&logbook.root);
+    built.warnings.extend(index::autocommit::attach(
+        &mut built.index.logbook.git,
+        &ctx.dirs,
+        &config,
+        &logbook.root,
+    ));
 
     let valid = if validate {
         let instance = serde_json::to_value(&built.index).map_err(anyhow::Error::from)?;

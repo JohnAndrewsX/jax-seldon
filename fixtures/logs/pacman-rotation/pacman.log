@@ -7,6 +7,27 @@
 [2026-09-15T20:11:31+0200] [ALPM] upgraded omarchy (4.0.5-1 -> 4.0.6-1)
 [2026-09-15T20:11:31+0200] [ALPM] transaction completed
 [2026-09-15T20:11:31+0200] [ALPM] running '35-systemd-update.hook'...
+[2026-09-18T19:22:40+0200] [PACMAN] Running 'pacman -Syu'
+[2026-09-18T19:22:40+0200] [PACMAN] synchronizing package lists
+[2026-09-18T19:22:41+0200] [PACMAN] starting full system upgrade
+[2026-09-18T19:23:05+0200] [ALPM] running '00-omarchy-update-guard.hook'...
+[2026-09-18T19:23:05+0200] [ALPM] running '10-limine-snapper-lock.hook'...
+[2026-09-18T19:23:05+0200] [ALPM] transaction started
+[2026-09-18T19:23:05+0200] [ALPM] removed pulseaudio (17.0-3)
+[2026-09-18T19:23:06+0200] [ALPM] upgraded pipewire (1:1.4.7-1 -> 1:1.4.8-1)
+[2026-09-18T19:23:06+0200] [ALPM] installed pipewire-pulse (1:1.4.8-1)
+[2026-09-18T19:23:06+0200] [ALPM] upgraded wireplumber (0.5.10-1 -> 0.5.11-1)
+[2026-09-18T19:23:06+0200] [ALPM] transaction completed
+[2026-09-18T19:23:07+0200] [ALPM] running '30-systemd-daemon-reload-user.hook'...
+[2026-09-19T08:30:02+0200] [PACMAN] Running 'pacman -Syu'
+[2026-09-19T08:30:02+0200] [PACMAN] synchronizing package lists
+[2026-09-19T08:30:03+0200] [PACMAN] starting full system upgrade
+[2026-09-19T08:31:10+0200] [ALPM] running '00-omarchy-update-guard.hook'...
+[2026-09-19T08:31:10+0200] [ALPM] running '10-limine-snapper-lock.hook'...
+[2026-09-19T08:31:10+0200] [ALPM] transaction started
+[2026-09-19T08:31:10+0200] [ALPM] upgraded gtk4 (1:4.18.6-1 -> 1:4.18.7-1)
+[2026-09-19T08:31:11+0200] [ALPM] upgraded libadwaita (1:1.7.6-1 -> 1:1.7.7-1)
+[2026-09-19T08:31:12+0200] [ALPM] transaction interrupted
 [2026-09-27T12:29:58+0200] [PACMAN] Running 'pacman -U /var/cache/pacman/pkg/mesa-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/vulkan-radeon-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/lib32-mesa-1:26.1.0-1-x86_64.pkg.tar.zst'
 [2026-09-27T12:30:00+0200] [ALPM] running '10-limine-snapper-lock.hook'...
 [2026-09-27T12:30:00+0200] [ALPM] transaction started
@@ -40,6 +61,7 @@
 [2026-10-01T09:13:58+0200] [ALPM] running '10-limine-snapper-lock.hook'...
 [2026-10-01T09:13:58+0200] [ALPM] running '10-omarchy-hyprland-reload-pause.hook'...
 [2026-10-01T09:13:58+0200] [ALPM] transaction started
+[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew
 [2026-10-01T09:13:58+0200] [ALPM] upgraded hyprland (0.52.1-1 -> 0.53.0-1)
 [2026-10-01T09:13:58+0200] [ALPM] upgraded broken-line-without-version
 [2026-10-01T09:13:59+0200] [ALPM] upgraded omarchy (4.0.6-1 -> 4.0.7-1)

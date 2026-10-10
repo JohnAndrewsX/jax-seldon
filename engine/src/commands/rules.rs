@@ -60,7 +60,7 @@ pub fn template(logbook: &Logbook, today: chrono::NaiveDate) -> String {
 /// The rules file of `logbook`: its bytes, `None` when there is none.
 pub fn read(logbook: &Logbook) -> Result<Option<Vec<u8>>> {
     let path = logbook.path(FILE);
-    match std::fs::read(&path) {
+    match sys::read_regular(&path, sys::LOGBOOK_FILE_MAX) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(anyhow::Error::new(e)
@@ -72,7 +72,9 @@ pub fn read(logbook: &Logbook) -> Result<Option<Vec<u8>>> {
 fn update(ctx: &Context, replace: bool) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
-    let path = logbook.path(FILE);
+    // before the archive copy: a link there would take the rewrite
+    // outside (WP-171)
+    let path = logbook.checked_file(FILE)?;
     let template = template(&logbook, ctx.now.date_naive());
     let bytes = read(&logbook)?;
     let old = match &bytes {
@@ -110,7 +112,7 @@ fn update(ctx: &Context, replace: bool) -> Result<Output> {
         Some(b) if plan.archive => Some(archive(&logbook, ctx.now.date_naive(), b)?),
         _ => None,
     };
-    sys::write_atomic(&path, plan.text.as_bytes())?;
+    sys::write_atomic_nofollow(&path, plan.text.as_bytes())?;
     let commit = autocommit(ctx, &config, &logbook, "rules update");
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
@@ -160,7 +162,7 @@ fn update(ctx: &Context, replace: bool) -> Result<Output> {
 /// Writes `bytes` to `archive/AGENTS-<date>.md`, or `-2`, `-3`, … when that
 /// name is taken; never overwrites. Returns the path relative to the root.
 fn archive(logbook: &Logbook, today: chrono::NaiveDate, bytes: &[u8]) -> Result<String> {
-    let dir = logbook.path("archive");
+    let dir = logbook.checked_dir("archive")?;
     sys::create_dir_private(&dir)
         .map_err(|e| anyhow::Error::new(e).context(format!("cannot create {}", dir.display())))?;
     let mut n = 1u32;

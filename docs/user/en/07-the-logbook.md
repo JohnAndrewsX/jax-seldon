@@ -39,7 +39,7 @@ Seldon/
 | `PROJECT.md` | what the machine is for, what must not happen on it | you |
 | `STATUS.md` | active cases, open drift, latest events | the engine (`seldon status`) |
 | `DECISIONS.md` | the entry page for `decisions/`; the engine fills the table between its markers on every `seldon decide` and `seldon status` | you, outside the markers |
-| `inbox/` | anything you want to sort later | you |
+| `inbox/` | anything you want to sort later, an agent's crash analysis too | you; the engine for `seldon inbox add` |
 | `journal/` | one file per day; entries are `## HH:MM · actor · case` headings | the engine appends, you add text |
 | `ledger/*.jsonl` | the events; append-only | the engine only |
 | `ledger/*.md` | a readable view of each month, with links to cases | the engine (generated) |
@@ -120,12 +120,20 @@ tags: []
 - Goal:
 - Steps:
 - Affected paths:
+- Persists: <!-- survives reboot and update | reboot only | lost at reboot -->
 - Rollback:
 - Verification:
+- Stop if:
 ## Log
 - 2026-10-01 10:12 · created (zone red, risk R2) · human
 ## Result
 ```
+
+*Persists* says how long the change holds: `survives reboot and update`,
+`reboot only` (an update overwrites it) or `lost at reboot`. *Stop if*
+names what makes the agent stop and ask you. In *Result*, each claim is
+marked `measured`, `documented` or `inferred`; its first line goes into
+the commit that closes the case.
 
 The *Log* is append-only. The engine adds a line for each step; you and
 your agents add dated lines below. Keep the frontmatter flat: one value
@@ -198,8 +206,9 @@ was gone is not recorded as deleted. The collectors that compare states
 new starting point, and a change made while the state was gone is not
 recorded.
 
-The capture that starts over says so. It writes a note with the subject
-`state-reset` to the ledger, naming the collectors that started over,
+The capture that starts over says so. It writes a `state-loss` line
+with the subject `state-reset` to the ledger (a note in 0.1.x), naming
+the collectors that started over,
 prints a warning, and `seldon doctor` shows a `state` row until the next
 capture. The same happens when only `manifest.json` or `owned.json` is
 corrupt. See [A state reset was recorded](10-troubleshooting.md#a-state-reset-was-recorded).

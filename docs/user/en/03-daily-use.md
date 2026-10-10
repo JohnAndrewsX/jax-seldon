@@ -27,8 +27,10 @@ The pill sits on the right of the bar.
 - The Seldon mark, then `A · D`: A is the number of active cases, D the
   number of crises. Parts that are zero are hidden: the mark alone, `2`,
   `· 1`. The mark takes the pill's colour. Changes without a case that are
-  no crisis are not counted here; the setting `driftInBar` changes that
-  (see [Configuration](06-configuration.md#drift)).
+  no crisis are not counted here: the panel's Today tab and the tooltip
+  count them (*without a case*). The setting `driftInBar` set to `all`
+  counts them in the bar too (see
+  [Configuration](06-configuration.md#plugin-settings)).
 - It uses your theme's accent colour while cases are active, the theme's
   urgent colour when there is a crisis, and dims while something needs
   fixing.
@@ -167,8 +169,11 @@ decision as *proposed* and opens it.
 
 System shows the machine: Omarchy version, theme and last update,
 package counts, deviations, plugins, snapshots, areas, the state of each
-collector, the machine name and the engine version. *Open in editor*
-opens `STATUS.md`.
+collector, the machine name and the engine version, the files edited
+under `~/.config` that no watch path covers, and *Ignored by pacman*:
+the packages and groups pacman's full upgrade skips (`IgnorePkg`,
+`IgnoreGroup`; `pacman -S` still updates them). *Open in editor* opens
+`STATUS.md`.
 
 ### Memory (6)
 
@@ -207,7 +212,9 @@ Actions that write take two presses on the keyboard: *Start*,
 *Verify*, *Done*, *Drop* (`x`), *Start agent* (`a`), the drift sheet and
 a new decision. The first Enter arms the action and
 the card says "Press Enter again: Start C-2026-005". The second press
-sends it. Any other key in a list disarms it. A note and a new case are
+sends it. Any other key in a list disarms it. Holding a key counts as
+one press: it never confirms and never sends twice; only the keys that
+move the selection repeat. A note and a new case are
 sent with one Enter, a *Run* sentence too. *Reopen* takes one press or
 click: it only adds a case. With the mouse, one click sends, except
 *Drop* and *Start agent*, which ask for a second click.
@@ -261,6 +268,31 @@ and The Plan ignore the period.
 
 A click on the dimmed area or on *Close* closes it too. The Prime Radiant
 only shows; it never runs the engine.
+
+## The graph
+
+From 0.2.0, section 8 of the desk draws your machine's memory as a
+network: areas, cases, decisions and changes, linked the way the logbook
+links them. A change hangs on its case, a case on its area, a decision on
+the cases it names. A dashed line runs from a change to the case Seldon
+proposes for it. Crises are red. *Play growth* replays the network from
+the first day; the slider picks a day.
+
+| Do | How |
+|---|---|
+| move a node | drag it |
+| move the view | drag the background |
+| zoom | the mouse wheel, `-` and `=`; `0` fits the view |
+| see a node's card | point at it; a click keeps the card |
+| open a case | *Open case* on its card: Work shows it |
+| replay | *Play growth*, Space or `p`; ← and → move one day |
+| Esc | pause the replay, let a kept card go, then close |
+
+The graph is drawn from the index, so it holds what the index holds: the
+newest 500 events and 50 completed cases. The footer says how many there
+are. Beyond 400 nodes, the changes of one day and source become one node
+("+12"); its card lists them. The layout moves only while the section is
+on screen, and stops after a few seconds.
 
 ## From the terminal
 

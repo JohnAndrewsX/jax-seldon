@@ -1223,8 +1223,8 @@ mod idempotency {
         let cli = Cli::new();
         let first = cli.capture(&["--since", FIXTURE_CREATED]);
         assert_eq!(
-            first["written"], 18,
-            "3 snapshots + 15 package events: {first}"
+            first["written"], 25,
+            "3 snapshots + 22 pacman events: {first}"
         );
         assert_eq!(first["ok"], true);
         assert_eq!(cli.capture(&[])["written"], 0);
@@ -1277,7 +1277,7 @@ mod idempotency {
         let reset = cli.ledger().pop().unwrap();
         assert_eq!(
             (reset.source, reset.kind, reset.subject.as_str()),
-            (Source::Seldon, Kind::Note, "state-reset")
+            (Source::Seldon, Kind::StateLoss, "state-reset")
         );
         assert_eq!(reset.meta.extra["sources"], "snapper,pacman,omarchy");
         assert_eq!(reset.meta.extra["files"], "cursors");
@@ -1292,7 +1292,7 @@ mod idempotency {
                 count(Source::Snapper),
                 count(Source::Omarchy)
             ),
-            (15, 10, 1)
+            (22, 10, 1)
         );
         // state stays in the fake home
         assert!(
@@ -1313,7 +1313,7 @@ mod idempotency {
         assert_eq!(snapper["name"], "snapper");
         assert_eq!(snapper["ok"], false);
         assert_eq!(snapper["fix"], seldon::commands::doctor::SNAPPER_FIX);
-        assert_eq!(out["written"], 15, "the other collectors still run");
+        assert_eq!(out["written"], 22, "the other collectors still run");
     }
 
     #[test]
@@ -1441,7 +1441,7 @@ mod state_reset {
         let reset = resets(&cli);
         assert_eq!(reset.len(), 1, "{reset:?}");
         let r = &reset[0];
-        assert_eq!((r.kind, r.actor.as_str()), (Kind::Note, "system"));
+        assert_eq!((r.kind, r.actor.as_str()), (Kind::StateLoss, "system"));
         assert_eq!(r.meta.extra["sources"], "snapper,pacman");
         assert_eq!(r.meta.extra["files"], "cursors");
         let detail = r.detail.as_deref().unwrap();
@@ -1583,7 +1583,9 @@ mod state_reset {
             .unwrap()
             .into_iter()
             // WP-091: and no note on the theme collector's change
-            .filter(|e| e.source == Source::Seldon && e.kind == Kind::Note)
+            .filter(|e| {
+                e.source == Source::Seldon && matches!(e.kind, Kind::Note | Kind::StateLoss)
+            })
             .collect();
         assert!(notes.is_empty(), "{notes:?}");
         state_ok();
@@ -2830,6 +2832,42 @@ mod crash {
             .iter()
             .map(|r| r.meta.extra["sources"].as_str().unwrap().to_string())
             .collect()
+    }
+
+    /// ADR-0035 §4: the `note` an engine before contract 2 wrote for a
+    /// loss counts as recorded: a crash after its append, then a capture
+    /// of this engine, writes no `state-loss` line for the same loss.
+    #[test]
+    fn a_state_reset_note_from_before_contract_2_still_counts() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.capture_at(&at(0), &["--since", FIXTURE_CREATED]);
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        cli.crash(&at(1), "after-append", &[]);
+        // the line as a contract-1 engine wrote it
+        for entry in std::fs::read_dir(cli.logbook.join("ledger")).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|e| e == "jsonl") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                let old = text.replace(r#""kind":"state-loss""#, r#""kind":"note""#);
+                std::fs::write(&path, old).unwrap();
+            }
+        }
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 1, "{reset:?}");
+        assert_eq!(reset[0].kind, Kind::Note);
+        let lines = cli.ledger().len();
+        let out = cli.capture_at(&at(2), &[]);
+        assert_eq!(out["written"], 0, "{out}");
+        assert_eq!(
+            cli.ledger().len(),
+            lines,
+            "no second line for the same loss"
+        );
+        assert!(
+            warning(&out).starts_with("state reset recorded: snapper, pacman took a new baseline"),
+            "{out}"
+        );
     }
 
     #[test]

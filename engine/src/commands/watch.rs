@@ -389,7 +389,14 @@ mod imp {
         }
         let logbook = Logbook::open(&root)?;
         let mut built = index::derive_at(&ctx.dirs, &config, &logbook, now)?;
+        built.warnings.extend(index::git_refused(&logbook.root));
         built.index.logbook.git = index::git_info(&logbook.root);
+        built.warnings.extend(index::autocommit::attach(
+            &mut built.index.logbook.git,
+            &ctx.dirs,
+            &config,
+            &logbook.root,
+        ));
         index::write(&ctx.dirs.index_file(), &built.index)?;
         Ok(built)
     }

@@ -39,7 +39,7 @@ pub struct LogArgs {
 }
 
 /// An Obsidian-style tag: letters, digits, `_`, `-`, `/`; not only digits.
-fn parse_tag(s: &str) -> Result<String, String> {
+pub(crate) fn parse_tag(s: &str) -> Result<String, String> {
     let s = s.strip_prefix('#').unwrap_or(s);
     let ok = !s.is_empty()
         && !s.chars().all(|c| c.is_ascii_digit())
@@ -74,6 +74,9 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
     let text = redactor.redact(&text);
     let tags: Vec<String> = args.tags.iter().map(|t| redactor.redact(t)).collect();
     let lock = ctx.lock()?;
+    if args.case_id.is_some() {
+        cases::checked_folders(&logbook)?;
+    }
     let mut case_file = args
         .case_id
         .as_deref()

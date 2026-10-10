@@ -125,6 +125,9 @@ impl Env {
             // Omarchy's package lists (dossier, WP-036): the fixture copies,
             // never the host's `/usr/share/omarchy`
             .env("SELDON_OMARCHY_PACKAGES", omarchy_packages())
+            // the application folders `init` looks for Obsidian in
+            // (WP-119): this temp dir's, never the host's /usr/share
+            .env("XDG_DATA_DIRS", self.tmp.path().join("xdg-data"))
             // the silent upgrades run only for a user (sys::runner); CI runs
             // the tests as root, so the probe is a file a user owns
             .env("SELDON_TEST_ROOT_PROBE", self.user_probe())
@@ -162,6 +165,20 @@ impl Env {
     /// Adds a stub program to this environment's PATH.
     pub fn stub(&self, name: &str, body: &str) {
         stub(&self.bin, name, body);
+    }
+
+    /// Replaces this environment's `git` (a link to the host's) by a
+    /// script: `body` runs with `$REAL_GIT` set to the host's git. The
+    /// link is removed before the script is written: [`Env::stub`] would
+    /// write through it into the host's git (CI runs the tests as root).
+    pub fn wrap_git(&self, body: &str) {
+        let link = self.bin.join("git");
+        let real = std::fs::read_link(&link).expect("this environment's git is a link");
+        std::fs::remove_file(&link).unwrap();
+        write_executable(
+            &link,
+            &format!("#!/bin/sh\nREAL_GIT='{}'\n{body}\n", real.display()),
+        );
     }
 
     /// Shims for the dossier's read-only host queries (WP-035): the package
@@ -427,6 +444,27 @@ pub fn index_errors(instance: &serde_json::Value) -> Vec<String> {
         .with_retriever(SchemaFiles(files))
         .build(&schema("index.schema.json"))
         .expect("index schema compiles");
+    validator
+        .iter_errors(instance)
+        .map(|e| format!("{e} at {}", e.instance_path()))
+        .collect()
+}
+
+/// Errors of `instance` against `schema/proposal.schema.json` (WP-124),
+/// formats checked.
+pub fn proposal_errors(instance: &serde_json::Value) -> Vec<String> {
+    let files = ["proposal.schema.json", "event.schema.json"]
+        .map(|name| {
+            let s = schema(name);
+            (s["$id"].as_str().unwrap().to_string(), s)
+        })
+        .into_iter()
+        .collect();
+    let validator = jsonschema::options()
+        .should_validate_formats(true)
+        .with_retriever(SchemaFiles(files))
+        .build(&schema("proposal.schema.json"))
+        .expect("proposal schema compiles");
     validator
         .iter_errors(instance)
         .map(|e| format!("{e} at {}", e.instance_path()))

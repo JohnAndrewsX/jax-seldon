@@ -8,9 +8,11 @@
 //!   package, a write to a persistence path (`alwaysRedPaths`);
 //! - **attention** (reason test): a package installed, removed or
 //!   downgraded by name, a third-party plugin added, removed or updated,
-//!   an override under a watched path, and every event no row names;
+//!   an override under a watched path, a file pacman left, pacman's
+//!   ignore list changed (ADR-0052), and every event no row names;
 //! - **routine**: a plain full upgrade, an upgrade of what is installed,
-//!   the keyrings, Omarchy's own update, a plugin toggle, a theme switch,
+//!   the keyrings, Omarchy's own update, a plugin toggle, Seldon's own
+//!   plugin added or enabled, a theme switch,
 //!   Omarchy's own copy of a file (`meta.matches`), a link into `/usr/`,
 //!   the `routinePaths`, a theme's assets.
 //!
@@ -27,6 +29,8 @@ use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
 
 use super::drift::AlwaysRed;
+use crate::attribution::OWN_PLUGIN;
+use crate::collectors::pacman_ignore;
 use crate::config::{AttentionMode, DriftConfig};
 use crate::model::event::{Event, Kind, Source};
 use crate::pkgcmd::{Op, PacmanCommand, parse_command, split_logged};
@@ -51,6 +55,11 @@ const THEMES_DIR: &str = "~/.config/omarchy/themes/";
 const BACKGROUNDS_DIR: &str = "~/.config/omarchy/backgrounds/";
 /// Omarchy's hook directory; `omarchy-hook` skips `*.sample`.
 const HOOKS_DIR: &str = "~/.config/omarchy/hooks/";
+/// Omarchy's toggle state directory (`omarchy-toggle` touches and removes
+/// empty flag files; `omarchy-hyprland-toggle` copies Omarchy's flags).
+const TOGGLES_DIR: &str = "~/.local/state/omarchy/toggles/";
+/// SHA-256 of no bytes: an empty flag file.
+const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 /// Theme files that run code: what `omarchy theme install` strips.
 const THEME_CODE: [&str; 5] = [
     "alacritty.toml",
@@ -59,6 +68,26 @@ const THEME_CODE: [&str; 5] = [
     "kitty.conf",
     "vscode.json",
 ];
+
+/// The boot and login files a `.pacnew`, `.pacsave` or `.pacorig` beside
+/// is a crisis (ADR-0042, WP-141): mkinitcpio, Limine (the paths
+/// `omarchy-settings` ships and Omarchy writes: `/etc/default/limine`,
+/// `/etc/limine-entry-tool.conf`, `/etc/limine-entry-tool.d/`), PAM.
+/// Not `/etc/systemd` (Omarchy uses drop-ins) or `/etc/security` (Omarchy
+/// overrides `pam`'s files there): the file in use keeps working. In the
+/// [`PathGlobs`] syntax; a directory covers what lies below it.
+const PACNEW_RED: [&str; 7] = [
+    "/etc/mkinitcpio.conf",
+    "/etc/mkinitcpio.conf.d",
+    "/etc/mkinitcpio.d",
+    "/etc/default/limine",
+    "/etc/limine*",
+    "/boot/limine*",
+    "/etc/pam.d",
+];
+
+/// The suffixes of the files pacman leaves (`collectors::pacman`).
+const PACNEW_SUFFIXES: [&str; 3] = [".pacnew", ".pacsave", ".pacorig"];
 
 /// The three classes, ordered by the attention they get.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -116,6 +145,7 @@ pub struct Rules {
     routine_paths: PathGlobs,
     always_red_paths: PathGlobs,
     routine_packages: HashSet<String>,
+    pacnew_red: PathGlobs,
 }
 
 /// The home directory as the path globs see a `~`-path subject: `~/x` is
@@ -209,6 +239,7 @@ impl Rules {
             routine_paths: PathGlobs::new(&config.routine_paths),
             always_red_paths: PathGlobs::new(&config.always_red_paths),
             routine_packages: config.routine_packages.iter().cloned().collect(),
+            pacnew_red: PathGlobs::new(&PACNEW_RED.map(String::from)),
         }
     }
 
@@ -242,6 +273,13 @@ impl Rules {
     }
 
     fn pacman(&self, e: &Event, cmd: Option<&PacmanCommand>) -> Option<Verdict> {
+        if e.kind == Kind::Note {
+            // ADR-0052 §4: the ignore list changed (before ADR-0042's rows)
+            if pacman_ignore::is_change(e) {
+                return Verdict::attention("ignore-list");
+            }
+            return Some(self.pacnew(&e.subject));
+        }
         let red = self.always_red.matches(&e.subject);
         if cmd.is_some_and(PacmanCommand::is_plain_full_upgrade) {
             // a distro-driven upgrade, `alwaysRed` included (ADR-0028 §2
@@ -300,6 +338,23 @@ impl Rules {
         }
     }
 
+    /// A file pacman left beside a configuration file (WP-141): never
+    /// routine — the new default was not applied, or the user's file was
+    /// moved aside, and nothing but a merge changes that; a crisis beside a
+    /// boot or login file ([`PACNEW_RED`], ADR-0042). Its own item, never
+    /// its transaction's: it carries no `txId`.
+    fn pacnew(&self, subject: &str) -> Verdict {
+        let file = PACNEW_SUFFIXES
+            .iter()
+            .find_map(|s| subject.strip_suffix(s))
+            .unwrap_or(subject);
+        if self.pacnew_red.matches(file) {
+            Verdict::new(Class::Crisis, "pacnew-red")
+        } else {
+            Verdict::new(Class::Attention, "pacnew")
+        }
+    }
+
     fn omarchy(&self, e: &Event, history: &History) -> Verdict {
         let shaped = |v: Option<&String>| v.is_some_and(|v| package_shaped(v));
         if e.kind == Kind::Update
@@ -315,6 +370,14 @@ impl Rules {
     }
 
     fn plugins(&self, e: &Event) -> Verdict {
+        // Seldon's own plugin added or enabled: the user installing Seldon
+        // (ADR-0050); before the toggle row, so its rule says so
+        if e.subject == OWN_PLUGIN
+            && matches!(e.kind, Kind::PluginAdd | Kind::PluginEnable)
+            && let Some(v) = self.routine("seldon-self")
+        {
+            return v;
+        }
         if matches!(e.kind, Kind::PluginEnable | Kind::PluginDisable)
             && let Some(v) = self.routine("plugin-toggle")
         {
@@ -335,6 +398,27 @@ impl Rules {
     fn config(&self, e: &Event, history: &History) -> Verdict {
         let mark = e.meta.extra.get(MATCHES_KEY).and_then(|v| v.as_str());
         let removed = e.kind == Kind::ConfigRemove;
+        // ADR-0037 §1: a toggle is routine both ways — a flag file (empty,
+        // or Omarchy's shipped copy by capture evidence) created, changed
+        // to or removed in the toggles directory
+        if e.subject.starts_with(TOGGLES_DIR) {
+            let hash = if removed {
+                e.meta.hash_from.as_deref()
+            } else {
+                e.meta.hash_to.as_deref()
+            };
+            if hash == Some(EMPTY_SHA256)
+                && let Some(v) = self.routine("toggle-flag")
+            {
+                return v;
+            }
+            if removed
+                && mark == Some(MATCHES_OMARCHY_DEFAULT)
+                && let Some(v) = self.routine(MATCHES_OMARCHY_DEFAULT)
+            {
+                return v;
+            }
+        }
         if !removed {
             for id in [MATCHES_OMARCHY_DEFAULT, MATCHES_SYSTEM_LINK] {
                 if mark == Some(id)
@@ -584,6 +668,17 @@ mod tests {
         e.explicit = explicit;
         e.tx_id = Some(format!("tx-{cmd}"));
         e.meta.command = Some(cmd.into());
+        e
+    }
+
+    /// A file pacman left (`collectors::pacman`, WP-141) in a transaction
+    /// whose logged command is `cmd`.
+    fn left(subject: &str, cmd: &str) -> Event {
+        let mut e = ev(Source::Pacman, Kind::Note, subject);
+        e.meta.command = Some(cmd.into());
+        e.meta
+            .extra
+            .insert("transaction".into(), format!("tx-{cmd}").into());
         e
     }
 
@@ -891,6 +986,43 @@ mod tests {
                 ev(Source::Plugins, Kind::PluginDisable, "io.github.example.x"),
                 (R, "plugin-toggle"),
             ),
+            // Seldon's own plugin (ADR-0050): its add and enable; the rest
+            // is rule 8's (update, disable) or stays attention (remove)
+            (
+                "own plugin-add",
+                ev(Source::Plugins, Kind::PluginAdd, "jax.seldon"),
+                (R, "seldon-self"),
+            ),
+            (
+                "own plugin-enable",
+                ev(Source::Plugins, Kind::PluginEnable, "jax.seldon"),
+                (R, "seldon-self"),
+            ),
+            (
+                "own plugin-disable",
+                ev(Source::Plugins, Kind::PluginDisable, "jax.seldon"),
+                (R, "plugin-toggle"),
+            ),
+            (
+                "own plugin-remove",
+                ev(Source::Plugins, Kind::PluginRemove, "jax.seldon"),
+                (A, "plugin"),
+            ),
+            (
+                "own plugin-update",
+                ev(Source::Plugins, Kind::PluginUpdate, "jax.seldon"),
+                (A, "plugin"),
+            ),
+            (
+                "a look-alike id's add",
+                ev(Source::Plugins, Kind::PluginAdd, "jax.seldon-extra"),
+                (A, "plugin"),
+            ),
+            (
+                "a look-alike id's enable",
+                ev(Source::Plugins, Kind::PluginEnable, "jax.seldon.x"),
+                (R, "plugin-toggle"),
+            ),
             (
                 "theme-set",
                 ev(Source::Theme, Kind::ThemeSet, "tokyo-night"),
@@ -1179,6 +1311,147 @@ mod tests {
                 ),
                 (A, "config-remove"),
             ),
+            // a file pacman left (WP-141): attention, beside a boot, login
+            // or security file a crisis; whatever the transaction was
+            (
+                ".pacnew in a plain full upgrade",
+                left("/etc/pacman.conf.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacsave of a named removal",
+                left("/etc/ssh/sshd_config.pacsave", "pacman -Rns openssh"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacorig in a keyring transaction",
+                left("/etc/x.conf.pacorig", "pacman -Sy archlinux-keyring"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of mkinitcpio.conf, Omarchy's update",
+                left("/etc/mkinitcpio.conf.pacnew", omarchy_line),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew in mkinitcpio.conf.d",
+                left(
+                    "/etc/mkinitcpio.conf.d/omarchy_hooks.conf.pacnew",
+                    "pacman -Syu",
+                ),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew of a mkinitcpio preset",
+                left("/etc/mkinitcpio.d/linux.preset.pacnew", "pacman -Syu"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacsave of /etc/default/limine",
+                left("/etc/default/limine.pacsave", "pacman -Rns limine"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew in limine-entry-tool.d",
+                left(
+                    "/etc/limine-entry-tool.d/omarchy-defaults.conf.pacnew",
+                    "pacman -Syu",
+                ),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew of /boot/limine.conf",
+                left("/boot/limine.conf.pacnew", "pacman -Syu"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew of a systemd file (Omarchy uses drop-ins)",
+                left("/etc/systemd/logind.conf.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacorig in pam.d",
+                left("/etc/pam.d/system-login.pacorig", "pacman -S pambase"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew in /etc/security (Omarchy overrides pam's files)",
+                left("/etc/security/faillock.conf.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of fstab",
+                left("/etc/fstab.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of crypttab",
+                left("/etc/crypttab.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of sudoers",
+                left("/etc/sudoers.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacsave in pam.d",
+                left("/etc/pam.d/sudo.pacsave", "pacman -Rns sudo"),
+                (C, "pacnew-red"),
+            ),
+            (
+                ".pacnew without a command line",
+                {
+                    let mut e = left("/etc/pam.d/system-auth.pacnew", "");
+                    e.meta.command = None;
+                    e
+                },
+                (C, "pacnew-red"),
+            ),
+            (
+                "a look-alike of a system path",
+                left("/etc/pam.dx/a.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                "another root (pacman -r /mnt)",
+                left(
+                    "/mnt/etc/mkinitcpio.conf.pacnew",
+                    "pacman -r /mnt -S mkinitcpio",
+                ),
+                (A, "pacnew"),
+            ),
+            // ADR-0052 §4: the ignore list changed
+            (
+                "pacman's ignore list changed",
+                pacman_ignore::event(
+                    &pacman_ignore::Ignore::default(),
+                    &pacman_ignore::Ignore {
+                        packages: vec!["mesa".into()],
+                        ..Default::default()
+                    },
+                    at(AT),
+                ),
+                (A, "ignore-list"),
+            ),
+            (
+                "pacman's ignore list emptied",
+                {
+                    let mut e = ev(Source::Pacman, Kind::Note, "/etc/pacman.conf");
+                    e.meta.extra.insert("ignorePkg".into(), "".into());
+                    e
+                },
+                (A, "ignore-list"),
+            ),
+            (
+                "a pacman note on a boot file without the list stays a file pacman left",
+                {
+                    let mut e = left("/etc/mkinitcpio.conf.pacnew", "pacman -Syu");
+                    e.meta.extra.insert("ignoreGroup".into(), "x".into());
+                    e
+                },
+                (C, "pacnew-red"),
+            ),
             // the total row
             (
                 "anything else",
@@ -1279,6 +1552,16 @@ mod tests {
             named(Kind::Install, "libnl", false),
         ];
         assert_eq!(verdict(&d, &ledger, &[1, 0]), (A, "package"));
+        // WP-141: a file the transaction left is no member and lends it no
+        // class; it is classed alone
+        let mut pacnew = left("/etc/pam.d/system-login.pacnew", "pacman -S htop");
+        pacnew.meta.extra.insert(
+            "transaction".into(),
+            ledger[0].tx_id.clone().unwrap().into(),
+        );
+        let ledger = [ledger[0].clone(), ledger[1].clone(), pacnew];
+        assert_eq!(verdict(&d, &ledger, &[1]), (A, "package"));
+        assert_eq!(verdict(&d, &ledger, &[2]), (C, "pacnew-red"));
         // K19: of mixed explicit members the highest counts, also when the
         // crisis member is no longer in the item (resolved)
         let mixed = |kind, subject: &str, explicit| {
@@ -1391,6 +1674,16 @@ mod tests {
         };
         let theme = [ev(Source::Theme, Kind::ThemeSet, "x")];
         assert_eq!(verdict(&without("theme"), &theme, &[0]), (A, "other"));
+        // Seldon's own plugin falls to the plugin rows
+        let own = [
+            ev(Source::Plugins, Kind::PluginAdd, "jax.seldon"),
+            ev(Source::Plugins, Kind::PluginEnable, "jax.seldon"),
+        ];
+        assert_eq!(verdict(&without("seldon-self"), &own, &[0]), (A, "plugin"));
+        assert_eq!(
+            verdict(&without("seldon-self"), &own, &[1]),
+            (R, "plugin-toggle")
+        );
         let link = [config(
             Kind::ConfigAdd,
             "~/.config/systemd/user/x.service",

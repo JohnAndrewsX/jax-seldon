@@ -26,8 +26,9 @@ ChartCanvas {
 
   captionSuffix: root.shown < root.rows.length ? " · " + (root.rows.length - root.shown) + " not shown" : ""
 
+  // The card's zone stripe: raw role colours, as every stripe (WP-177).
   function toneColor(tone) {
-    return tone === "urgent" ? root.urgent : tone === "accent" ? root.accent : root.muted
+    return tone === "urgent" ? root.urgent : tone === "accent" ? root.accent : Color.muted
   }
 
   // Items: the cards in order (only the shown ones).
@@ -93,7 +94,7 @@ ChartCanvas {
           width: parent.width
           textFormat: Text.PlainText
           text: [card.modelData.id, card.modelData.risk].filter(function(p) { return p !== "" }).join(" · ")
-          color: root.muted
+          color: root.tone.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
@@ -136,7 +137,7 @@ ChartCanvas {
             width: Math.min(implicitWidth, parent.width * 0.7)
             textFormat: Text.PlainText
             text: card.modelData.stepsText + " · " + card.modelData.agent
-            color: root.muted
+            color: root.tone.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             elide: Text.ElideRight

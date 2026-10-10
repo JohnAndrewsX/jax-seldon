@@ -1,4 +1,4 @@
-<!-- seldon:begin rules v4 -->
+<!-- seldon:begin rules v5 -->
 # AGENTS.md
 
 Regeln für jeden Agenten auf dieser Maschine.
@@ -99,7 +99,12 @@ Alles andere ist Markdown für Menschen und Agenten: *Intent*, *Plan*,
    zur Zeit; `.seldon/active-case` nennt den zuletzt gestarteten.
 2. Der *Plan* ist eine laufende Notiz, keine Schranke: bisherige Schritte,
    betroffene Pfade, Rollback, Prüfung. Schreib ihn unterwegs, nenne
-   Pakete und Pfade genau. Er erweitert den *Intent* nie.
+   Pakete und Pfade genau. Er erweitert den *Intent* nie. Füll vor der
+   ersten Änderung zwei seiner Zeilen:
+   - `Persists:` wie lange die Änderung hält: `survives reboot and update`,
+     `reboot only` (ein Update überschreibt sie) oder `lost at reboot`.
+   - `Stop if:` was dich anhalten lässt, z. B. `the binding is taken by
+     another app`. Trifft es zu, halt an und frag (nächster Abschnitt).
 3. Vor dem ersten privilegierten Schritt gib eine Vorschauzeile aus, im
    Terminal und im *Log* des Case, und mach weiter, ohne zu warten:
    `About to: install X (+deps a, b); snapshot first; rollback: pacman -Rns X`.
@@ -110,8 +115,8 @@ Alles andere ist Markdown für Menschen und Agenten: *Intent*, *Plan*,
 
 ## When to ask first
 
-Frag im Terminal vor dem Schritt und warte auf die Antwort, nur wenn der
-Schritt:
+Frag im Terminal vor dem Schritt und warte auf die Antwort, nur in diesen
+vier Fällen, wenn der Schritt:
 
 - **außerhalb des Intent** liegt: ein anderes Paket oder ein anderer
   Bereich, eine Änderung, um die der Nutzer nicht gebeten hat.
@@ -124,10 +129,12 @@ Schritt:
   ein Snapshot noch git enthält.
 - **R3** ist: er kann Boot, Anmeldung oder die Shell brechen (nächster
   Abschnitt).
+- unter **dein eigenes *Stop if*** fällt: die Bedingung, die du in den
+  *Plan* geschrieben hast, trifft zu. Schreib es auch ins *Log*.
 
 Alles andere: tu es, und schreib ins *Log*, was du getan hast.
 
-## R3: the one stop
+## R3: always the user's go
 
 R3-Gegenstände: Kernel, der Bootloader, die Initramfs, `systemd`, `glibc`,
 `pam`, `sddm`, `uwsm`, `hyprland`, `quickshell`, `omarchy` selbst, `/etc`
@@ -276,7 +283,13 @@ Wenn die Prüfung aus dem *Plan* besteht, schließ den Case selbst ab:
 1. Füll *Result* mit den Belegen: was du ausgeführt hast und was es
    gezeigt hat. Nimm eine Prüfung dazu, die nicht dein eigenes Werk ist:
    den Exit-Status des echten Anwendungsfalls, `pacman -Q <paket>`,
-   `systemctl is-active <unit>`.
+   `systemctl is-active <unit>`. Prüf die Wirkung, nicht die Einstellung:
+   drück die Tastenkombination, die du eingetragen hast, und sieh, was sie
+   tut; die Konfiguration zurückzulesen belegt nur das Schreiben.
+   Kennzeichne jede Aussage mit `measured` (selbst ausgeführt und
+   gesehen), `documented` (eine Quelle sagt es; nenne sie) oder
+   `inferred` (von dir gefolgert). Die erste Zeile von *Result* kommt in
+   den abschließenden Commit: schreib dort das Ergebnis hin.
 2. `seldon plan verify <ID> --actor agent:<name>`, dann
    `seldon plan done <ID> --actor agent:<name>`, in einem Zug. Die Engine
    lehnt das `plan done` eines Agenten ab, solange *Result* oder
@@ -297,7 +310,8 @@ ausführen, lass den Case offen und sag, was noch fehlt; zum Aufgeben
   Pfad aus), `seldon hook session-start`.
 - Schreibend: die `seldon plan`-Schritte oben, `seldon log`,
   `seldon event`, `seldon decide`, `seldon drift link|explain|dismiss`,
-  `seldon capture --all`, `seldon status`, `seldon hook session-stop`.
+  `seldon inbox add`, `seldon capture --all`, `seldon status`,
+  `seldon hook session-stop`.
 - Nur, wenn der Nutzer genau das verlangt: `seldon init`,
   `seldon hook install`, `seldon import … --apply`, `seldon agent start`,
   `seldon rules update`.
@@ -308,9 +322,18 @@ ausführen, lass den Case offen und sag, was noch fehlt; zum Aufgeben
 
 - Journal: `seldon log "<Text>" --case <ID> --actor agent:<name>`.
 - Was du gelernt hast, gehört nach `memory/` (`memory/lessons.md`: eine
-  `## `-Überschrift pro Lektion), nicht in den Chat.
+  `## `-Überschrift pro Lektion), nicht in den Chat. Kennzeichne jede
+  Aussage dort wie in *Result*: `measured`, `documented` oder `inferred`.
 - Eine Entscheidung, die die Maschine prägt:
   `seldon decide --no-edit --case <ID> -- "<Titel>"`, danach das ADR ausfüllen.
+- Ein Absturz, den du untersucht hast (Omarchys `diagnose-crash`): leg
+  den Bericht in die Inbox, den Bericht über stdin:
+  `seldon inbox add --title "<Titel>" --tag crash --actor agent:<name> --file -`.
+  Seldon schwärzt ihn und legt ihn in `inbox/`; nie den Core,
+  Speicherinhalte, die Umgebung oder `bt full` hineinschreiben. Das
+  Ablegen ändert nichts und braucht keinen Case; frag danach den Nutzer
+  in einer Zeile, ob daraus ein Case wird (unbetreut: ablegen, nichts
+  fragen).
 
 ## Drift
 

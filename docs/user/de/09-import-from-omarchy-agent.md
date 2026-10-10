@@ -1,12 +1,13 @@
 # Import aus omarchy-agent
 
-<!-- source: en/09-import-from-omarchy-agent.md @ ec1a8a5 -->
+<!-- source: en/09-import-from-omarchy-agent.md @ 448ae92c -->
 
 Diese Seite ist für dich, wenn du vor Seldon ein Logbuch mit dem
 omarchy-agent-Kit geführt hast: einen Obsidian-Vault mit `pipeline/`,
 `journal/` und `knowledge/`. Seldon kann dessen Cases, Journal, Wissen
 und Abweichungen in dein Seldon-Logbuch übernehmen. Hast du das Kit nie
-benutzt, überspring diese Seite.
+benutzt, spring zum letzten Abschnitt, [Aufgabendateien](#aufgabendateien):
+er ist für alle, die Aufgaben in Markdown-Dateien führen.
 
 ## Was mit deinem Vault passiert
 
@@ -136,6 +137,82 @@ Bis du ihn rückgängig machst, verweigert jedes neue `--apply` den Start
 geändert, dass sie Dateien außerhalb der Ordner des Imports oder keinen
 Commit nennt, gibt Seldon keinen Befehl aus und verweist stattdessen auf
 `git status`.
+
+## Aufgabendateien
+
+Vielleicht führst du Aufgaben in Markdown-Dateien in deinen Projekten —
+eine `TODO.md` mit Checkboxen oder eine Datei, die eine Arbeit
+beschreibt und die du einem Agenten gegeben hast. Ein Befehl macht
+Seldon-Cases daraus, damit die Arbeit auf deinem Desk und im Logbuch
+erscheint:
+
+```sh
+seldon import task ~/projects/desk/TODO.md --dry-run
+seldon import task ~/projects/desk/TODO.md
+```
+
+Der Probelauf listet, was entstehen würde, und schreibt nichts. Ohne
+`--dry-run` wird sofort importiert und als `seldon: import task`
+committet.
+
+Im Desk macht **Import tasks…** in der Work-Liste dasselbe: Pfad eintippen
+(und, wenn du willst, einen Bereich), die Liste des Probelaufs ansehen,
+dann **Import N cases** klicken. Importierte Cases zeigen „imported“ in
+der Liste. Ihr Detail zeigt den ganzen Intent als reinen Text, mit der
+Datei, aus der er kommt, und seiner Zeilenzahl; **Start** wird erst
+klickbar, wenn dieser Text angezeigt ist, und Enter startet nie einen
+importierten Case. Enthält der Intent eines Case unsichtbare Zeichen
+(jemand hat die Datei von Hand bearbeitet), markiert der Desk jedes als
+`‹U+…›` und lässt Start aus; ebenso bei einem Intent, der länger ist, als
+er anzeigt. Dann lies den Case im Editor und starte ihn im Terminal
+(`seldon plan start <id>`).
+
+- Jeder offene Punkt (`- [ ] …`) wird ein Case in **queued**. Sein Titel
+  ist der erste Satz des Punkts (höchstens 72 Zeichen); sein *Intent*
+  ist der Punkt mit den darunter eingerückten Zeilen (auch verschachtelte
+  Punkte) und der Überschrift, unter der er steht.
+- Erledigte Punkte (`- [x] …`) werden übersprungen. Mit
+  `--include-done` werden sie abgeschlossene Cases.
+- Eine Datei ganz ohne Checkbox wird ein Case: Titel ist ihre erste
+  `# `-Überschrift, sonst der Dateiname; *Intent* ist der Rest der
+  Datei.
+- Neue Cases sind gelb, R1, Priorität normal. `--zone`, `--risk` und
+  `--area` setzen für alle andere Werte.
+- Jeder Case bekommt das Tag `imported` und eine Log-Zeile `imported
+  from ~/projects/desk/TODO.md#12` (die Datei und die Zeile des Punkts).
+- Eine Aufgabe, deren Text länger ist, als der Desk anzeigen kann
+  (64 KiB), wird übersprungen („too long“): teile sie auf oder lege den
+  Case von Hand an.
+- Unsichtbare Zeichen (Nullbreiten-Leerzeichen, Richtungsmarken, die
+  Unicode-„Tag“-Zeichen, die versteckte Wörter bilden können) werden vor
+  dem Schreiben aus dem Text entfernt; der Bericht zählt sie.
+
+Deine Aufgabendatei wird nur gelesen: nie geändert, verschoben oder
+ausgeführt. Ihr Text läuft durch dieselbe Schwärzung wie eine Notiz,
+ein Token darin erreicht das Logbuch also nicht — auch keiner auf einer
+fortgesetzten Zeile.
+
+Importierte Cases bleiben in queued. Jeder *Intent* beginnt mit
+`Imported from <file> — read before you start this case.` Lies ihn,
+bevor du den Case startest: Ist ein Case gestartet, darf ein Agent ohne
+Rückfrage nach seinem *Intent* handeln, und der Text kam aus einer
+Datei, nicht von dir. Bis du ihn startest, behandelt ein Agent diesen
+Text wie eine Webseite, die er abgerufen hat. Seldon verweigert einem
+Agenten den Start eines importierten Case: Nur du startest ihn.
+
+Den Import noch einmal laufen zu lassen ist sicher. Seldon merkt sich
+jeden Punkt in `.seldon/imports/tasks.json` und überspringt, was schon
+importiert ist (der Bericht sagt `already-imported` und nennt den Case).
+Hakst du einen Punkt später ab, wird er nicht noch einmal importiert.
+Formulierst du einen Punkt um, entsteht ein neuer Case, und seine
+Log-Zeile nennt den früheren (`changed since C-2026-004`).
+
+Der Import verweigert (Exit 1, nichts geschrieben): eine Datei außerhalb
+deines Home-Verzeichnisses, eine Datei im Logbuch, einen Ordner (nenne
+die Dateien darin), alles, was keine `.md`-Datei ist, eine Datei über
+1 MiB oder nicht in UTF-8, und mehr als 200 neue Cases auf einmal.
+`--json` gibt den Bericht als `{mode, created, skipped, redactedLines,
+…}` aus, für Skripte und Agenten.
 
 ---
 

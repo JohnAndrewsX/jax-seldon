@@ -7,7 +7,9 @@
   "required": ["contractVersion", "generatedAt", "engineVersion", "logbook", "state", "summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"],
   "additionalProperties": false,
   "properties": {
-    "contractVersion": { "const": 1 },
+    "contractVersion": { "const": 2 },
+    "contractReadableFrom": { "type": "integer", "minimum": 1, "maximum": 2,
+      "description": "the oldest plugin contract that can read this index without misreading a field it keys on (ADR-0051); 1 ≤ value ≤ contractVersion; absent means contractVersion" },
     "generatedAt":   { "type": "string", "format": "date-time" },
     "engineVersion": { "type": "string" },
     "logbook": {
@@ -15,7 +17,11 @@
       "properties": {
         "path": { "type": "string" }, "language": { "type": "string" },
         "machine": { "type": "string" },
-        "git": { "type": "object", "additionalProperties": false, "properties": { "head": { "type": "string" }, "dirty": { "type": "boolean" } } }
+        "git": { "type": "object", "additionalProperties": false, "properties": { "head": { "type": "string" }, "dirty": { "type": "boolean" },
+          "autocommit": { "type": "object", "required": ["ok", "at", "message"], "additionalProperties": false,
+            "description": "the last autocommit the engine attempted in this logbook (ADR-0035 §2); absent while git.autocommit is off or none was attempted",
+            "properties": { "ok": { "type": "boolean" }, "at": { "type": "string", "format": "date-time" },
+              "message": { "type": "string", "maxLength": 256, "description": "ok: the commit subject; not ok: the git error (one line, redacted); shown, never executed" } } } } }
       }
     },
     "state": {
@@ -57,8 +63,20 @@
         "verification": { "type": "array", "items": { "$ref": "case.schema.json" } },
         "completed": { "type": "array", "maxItems": 50, "items": { "$ref": "case.schema.json" }, "description": "completed and dropped cases, newest closed first" }
       } },
-    "decisions": { "type": "array", "items": { "type": "object", "required": ["id", "title", "status", "date"], "additionalProperties": false,
-      "properties": { "id": { "type": "string", "pattern": "^ADR-[0-9]{4}$" }, "title": { "type": "string" }, "status": { "enum": ["proposed", "accepted", "superseded"] }, "date": { "type": "string", "format": "date" }, "path": { "type": "string" } } } },
+    "decisions": { "type": "array", "items": { "type": "object", "required": ["id", "title", "status", "date", "cases"], "additionalProperties": false,
+      "properties": { "id": { "type": "string", "pattern": "^ADR-[0-9]{4}$" }, "title": { "type": "string" }, "status": { "enum": ["proposed", "accepted", "superseded"] }, "date": { "type": "string", "format": "date" }, "path": { "type": "string" },
+        "cases": { "type": "array", "items": { "$ref": "event.schema.json#/$defs/caseId" }, "description": "the frontmatter's cases, as written, without repeats; may name a case the index does not list (ADR-0035 §5)" },
+        "lead": { "type": "string", "minLength": 1, "maxLength": 256, "description": "the first paragraph of the decision's ## Decision, without direction and format characters, redacted, clipped to 256 bytes of JSON with the marker '… (N more characters in the file)'; absent without one (ADR-0038 §2)" } } } },
+    "triage": { "type": "object", "required": ["id", "at", "actor", "counts", "path", "applied"], "additionalProperties": false,
+      "description": "the newest triage proposal of this logbook (ADR-0034 §6, ADR-0035 §6); absent when there is none",
+      "properties": {
+        "id": { "$ref": "event.schema.json#/$defs/ulid" },
+        "at": { "type": "string", "format": "date-time" },
+        "actor": { "type": "string", "pattern": "^agent:[a-z0-9-]+$" },
+        "counts": { "type": "object", "required": ["items", "crises"], "additionalProperties": false,
+          "properties": { "items": { "type": "integer", "minimum": 0 }, "crises": { "type": "integer", "minimum": 0 } } },
+        "path": { "type": "string", "pattern": "^proposals/[0-7][0-9A-HJKMNP-TV-Z]{25}\\.json$", "description": "relative to the directory of index.json; the file is proposal.schema.json" },
+        "applied": { "type": ["string", "null"], "format": "date-time", "description": "null until `seldon drift apply` applied it" } } },
     "system": {
       "type": "object", "additionalProperties": false,
       "properties": {
@@ -67,7 +85,20 @@
         "deviations": { "type": "integer", "minimum": 0 },
         "snapshots": { "type": "array", "maxItems": 10, "items": { "type": "object", "required": ["number", "ts"], "additionalProperties": false, "properties": { "number": { "type": "integer" }, "ts": { "type": "string", "format": "date-time" }, "description": { "type": "string" }, "type": { "enum": ["single", "pre", "post"] } } } },
         "plugins": { "type": "object", "additionalProperties": false, "properties": { "enabled": { "type": "integer" }, "installed": { "type": "integer" } } },
-        "areas": { "type": "array", "items": { "type": "object", "required": ["name"], "additionalProperties": false, "properties": { "name": { "type": "string" }, "hasAgentsMd": { "type": "boolean" }, "cases": { "type": "integer" } } } }
+        "areas": { "type": "array", "items": { "type": "object", "required": ["name"], "additionalProperties": false, "properties": { "name": { "type": "string" }, "hasAgentsMd": { "type": "boolean" }, "cases": { "type": "integer" } } } },
+        "recentConfig": { "type": "object", "required": ["scannedAt", "files"], "additionalProperties": false,
+          "description": "optional (ADR-0046): files under ~/.config modified in the 7 days before the last capture's scan, outside watchPaths and skipPaths, newest first; paths and times only, never content; absent before the first scan or with an invalid [redaction] patterns entry; `partial` marks an incomplete list",
+          "properties": {
+            "scannedAt": { "type": "string", "format": "date-time" },
+            "files": { "type": "array", "maxItems": 80, "items": { "type": "object", "required": ["path", "mtime"], "additionalProperties": false, "properties": { "path": { "type": "string", "pattern": "^~/\\.config/", "maxLength": 512, "description": "user content (CONTRACT.md rule 6); passed only as the one argument after -- of `seldon config watch --json`" }, "mtime": { "type": "string", "format": "date-time" } } } },
+            "partial": { "const": true, "description": "present only when the scan stopped early (entry budget, deadline) or left folders below its depth unread: the list may be incomplete" } } },
+        "pacmanIgnore": { "type": "object", "required": ["packages", "groups"], "additionalProperties": false,
+          "description": "optional (ADR-0052): the IgnorePkg and IgnoreGroup names of /etc/pacman.conf and its includes as the pacman collector last read them, in pacman's order; names only, nothing else of the files; absent while the pacman collector is disabled, before its first read and while [redaction] patterns do not compile; `hidden` counts the names not shown; `partial` marks an incomplete read",
+          "properties": {
+            "packages": { "type": "array", "maxItems": 256, "items": { "type": "string", "pattern": "^[A-Za-z0-9@._+*?!^\\[\\]-]{1,128}$", "description": "user content (CONTRACT.md rule 6): a package or group name or an fnmatch pattern of one, as written in pacman.conf; plain text, never an argument" } },
+            "groups": { "type": "array", "maxItems": 256, "items": { "type": "string", "pattern": "^[A-Za-z0-9@._+*?!^\\[\\]-]{1,128}$", "description": "user content (CONTRACT.md rule 6): a package or group name or an fnmatch pattern of one, as written in pacman.conf; plain text, never an argument" } },
+            "hidden": { "type": "integer", "minimum": 1, "description": "present only when not 0: names of both lists Seldon does not show (not of the names' shape, or changed by the redaction); they still count for a change" },
+            "partial": { "const": true, "description": "present only when the read was incomplete (a file that could not be read, a relative include, the depth, the read's budget): names may be missing, and no change is recorded" } } }
       }
     },
     "memory": { "type": "object", "additionalProperties": false, "properties": {
@@ -100,7 +131,9 @@
         "crisis": { "type": "boolean", "description": "true iff the item fails the harm test of ADR-0028 (its class is crisis: a named transaction on an alwaysRed package, a write to a persistence path); under [drift] attention = \"all\" true iff zone is red" },
         "proposedCase": { "anyOf": [ { "$ref": "event.schema.json#/$defs/caseId" }, { "type": "null" } ] },
         "txId": { "type": "string", "minLength": 1, "description": "groups only: the shared pacman txId; expand the group from index.events by txId (ADR-0013 §2)" },
-        "members": { "type": "integer", "minimum": 2, "description": "groups only: number of open member events incl. the leader; omitted for single-event items" } },
+        "members": { "type": "integer", "minimum": 2, "description": "groups only: number of open member events incl. the leader; omitted for single-event items" },
+        "truncated": { "const": true, "description": "detail was clipped (ADR-0025, ADR-0035 §3); absent otherwise" },
+        "rule": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 64, "description": "the ADR-0028 §2 rule that classified the item, as `seldon drift show` reports it (`attention-all` under [drift] attention = \"all\"); the set is open (ADR-0038 §1)" } },
       "allOf": [
         { "if": { "required": ["members"] }, "then": { "required": ["txId"], "properties": { "source": { "const": "pacman" } } } },
         { "if": { "required": ["txId"] }, "then": { "required": ["members"] } }

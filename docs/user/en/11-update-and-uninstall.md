@@ -7,7 +7,7 @@ of it touches your logbook, unless you delete it yourself.
 ## Update the engine
 
 Run the installer again, in either form from
-[Getting started](01-getting-started.md#step-1-install-the-engine). The
+[Getting started](01-getting-started.md#install-the-engine). The
 one-liner:
 
 ```sh
@@ -89,7 +89,10 @@ shell after every plugin update.
 
 The plugin and the engine agree on the index format by its version. If
 one is too old, the panel says "Index format mismatch" and names the one
-to update. After an update, `seldon doctor` should show only `ok`.
+to update. When the engine is newer and its index says this plugin can
+still read it, the plugin keeps working and only asks, in a quiet
+notice, for its own update ("The engine is newer than the plugin").
+After an update, `seldon doctor` should show only `ok`.
 
 ## The optional watcher
 

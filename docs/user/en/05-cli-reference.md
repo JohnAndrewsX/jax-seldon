@@ -26,24 +26,27 @@ Usage: seldon [OPTIONS] [COMMAND]
 
 Commands:
   contract-version  Print the engine/plugin contract version
-  init              Create a logbook (wizard; --non-interactive takes defaults)
+  init              Create a logbook (asks only where; --defaults asks nothing, --ask everything)
   doctor            Check engine, config, logbook, collector state, agent skill, omarchy, snapper and git
   capture           Run collectors and append new events to the ledger
   log               Write a note: a ledger event and a journal entry
   event             Record an event by hand (hooks, scripts)
   plan              Plan and track cases: new, start, verify, done, drop, list, show
-  decide            Create a decision record (ADR) and open it in the editor
+  decide            Create a decision record (ADR) and open it in the editor; accept a proposed one
+  preview           Before the logbook exists: the last days' pacman transactions and the files edited under ~/.config, read-only, nothing written
   open              Print the path of a logbook file; --editor opens it
   index             Rebuild index.json and the ledger/*.md views; --check validates
   status            Regenerate STATUS.md, the ledger views and index.json; print a summary
   hook              Agent hooks: record commands, print session context, install into or uninstall from a harness
-  drift             List open drift; link, explain, dismiss or show a drift event
-  agent             Start an agent on an active case
+  drift             List open drift; link, explain, dismiss or show a drift event; propose, apply or discard a triage proposal
+  agent             Start an agent on an active case, or ask one about the open changes, a change or a case
   rebuild           Write outputs/REBUILD.md: the steps to rebuild this machine
   watch             Rebuild index.json when the logbook changes (feature "watch")
   dossier           Refresh the generated fences of system/*.md from read-only queries
-  import            Import an earlier logbook (dry run unless --apply)
+  import            Import an earlier logbook (dry run unless --apply) or your Markdown task files as cases
+  inbox             File a text into the logbook's inbox (an agent's crash analysis, a finding)
   rules             The agent rules in the logbook's AGENTS.md: update
+  config            Edit config.toml: watch one more path (the desk's Watch on a recently edited file)
   completions       Print a shell completion script for bash, zsh or fish
   mangen            Print the man page seldon(1), generated from this help
   help              Print this message or the help of the given subcommand(s)
@@ -99,12 +102,18 @@ Options:
 ### seldon init
 
 Creates the logbook, the config file, the first capture and the dossier.
-Without flags it asks questions; each flag skips its question. It refuses
-a directory that is not empty and never overwrites a file.
-`--non-interactive` takes the flags, then an existing config, then the
-defaults. `--since` takes a date (`2026-09-29`, local midnight) or an RFC
-3339 time; `--baseline` needs `--since`; `--no-capture` cannot go with
-`--since`. See [Getting started](01-getting-started.md#step-2-create-your-logbook).
+Without flags it asks one question, where the logbook goes, and takes
+the defaults for the rest: the language of your locale, git, Obsidian's
+settings when Obsidian is installed, and a first capture that looks back
+90 days and dismisses what that opens as "before Seldon". `--defaults`
+asks nothing (the plugin's setup card runs it); `--ask` asks every
+question, each flag skipping its own. It refuses a directory that is not
+empty and never overwrites a file. `--non-interactive` takes the flags,
+then an existing config, then the defaults, looks back 90 days too and
+detects nothing.
+`--since` takes a date (`2026-09-29`, local midnight) or an RFC 3339
+time; `--baseline` needs `--since`; `--no-capture` cannot go with
+`--since`. See [Getting started](01-getting-started.md#create-your-logbook).
 `--harness skills` installs the Seldon agent skill, as
 [`seldon hook install skills`](#seldon-hook-install) does.
 `--remove-theme-hook` is the one flag that does not create a logbook: it
@@ -113,26 +122,33 @@ other flag. See [Update and uninstall](11-update-and-uninstall.md#uninstall).
 
 <!-- help: seldon init -->
 ```text
-Create a logbook (wizard; --non-interactive takes defaults)
+Create a logbook (asks only where; --defaults asks nothing, --ask everything)
 
 Usage: seldon init [OPTIONS]
 
 Options:
       --path <DIR>           Logbook directory (default ~/Seldon)
-      --non-interactive      Ask nothing; take flags, then the existing config, then the defaults: ~/Seldon, language from the locale, all collectors, git on, first capture from now on, no backfill, no theme hook
+      --defaults             Ask nothing: ~/Seldon (or the config's logbook), language from the locale, Obsidian settings when Obsidian is installed, and the last 90 days recorded as history before Seldon
+      --ask                  The full wizard: every question, the defaults pre-selected
+      --non-interactive      Ask nothing, detect nothing; take flags, then the existing config, then the defaults: ~/Seldon, language from the locale, all collectors, git on, the last 90 days recorded as history before Seldon, no theme hook
       --language <LANGUAGE>  Language of the logbook prose [possible values: en, de]
       --obsidian             Add Obsidian settings (.obsidian/)
       --harness <NAME>       Agent harness to set up (repeatable) [possible values: claude-code, omarchy-agent, skills]
       --since <TS>           Backfill: the first capture also records changes since TS, a date (YYYY-MM-DD, local midnight) or an RFC 3339 time; each one opens as drift
-      --baseline             Mark the backfilled drift as the pre-Seldon baseline (dismissed)
+      --baseline             Dismiss the drift the backfill opens as "before Seldon" (--defaults and plain init do it without the flag)
       --no-capture           Do not run the first capture
       --theme-hook           Install Omarchy's theme-set hook (`omarchy hook install theme-set`)
       --remove-theme-hook    Remove the theme-set hook that --theme-hook installed, and nothing else; needs no logbook
       --git                  Make the logbook a git repository with a first commit (default unless the existing config says otherwise)
       --no-git               Do not use git
 
+Without --defaults, --ask or --non-interactive, init asks only where the
+logbook goes and takes the defaults for the rest.
+
 Examples:
   seldon init
+  seldon init --defaults
+  seldon init --ask
   seldon init --non-interactive --since 2026-09-01 --baseline
   seldon init --remove-theme-hook
 ```
@@ -149,7 +165,10 @@ where Seldon's Claude Code hooks are: user-wide (`ok`), in the logbook's
 `.claude/settings.json` only (`degraded`: sessions Seldon starts in
 `~/Work` are not recorded; the fix installs them user-wide), both (`ok`,
 with an optional tidy-up), or none (`ok` unless you chose the Claude Code
-harness). Each line says `ok`, `degraded` or `error`, and a
+harness). The `layout` row names every folder or file where Seldon
+writes that is a symbolic link (or a file where a folder belongs, or the
+other way round): `error` when commands that write there refuse,
+`degraded` for a linked view that `status` skips. Each line says `ok`, `degraded` or `error`, and a
 broken check prints the command that fixes it. Exit 0 when nothing is an
 error, 1 when a check is an error (also when `config.toml` cannot be read
 or parsed), 3 when the logbook is not initialised. `--only rules` checks
@@ -211,6 +230,57 @@ Options:
 ```
 <!-- /help -->
 
+### seldon config
+
+Your `config.toml`.
+
+<!-- help: seldon config -->
+```text
+Edit config.toml: watch one more path (the desk's Watch on a recently edited file)
+
+Usage: seldon config [OPTIONS] <COMMAND>
+
+Commands:
+  watch  Add a path under your home directory to watchPaths; the rest of config.toml stays as it is
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+```
+<!-- /help -->
+
+### seldon config watch
+
+Adds one path below your home directory to `watchPaths` in
+`config.toml`: the desk's *Watch* on a recently edited file (System ›
+Recently edited). Only the `watchPaths` list changes; your comments and
+the order of the file stay. The next capture takes the files under the
+path as they are, without an event; a later edit is a config change like
+any other. A path already watched changes nothing (exit 0). Refused,
+exit 1 and nothing written: a path outside your home directory, one in
+or around Seldon's own files (the logbook, `~/.local/state/seldon`,
+`~/.config/seldon`), one that does not exist, one under `[redaction]
+skipPaths`, one that leads through a link out of your home directory,
+into Seldon's own files or under `skipPaths`, and a `config.toml` whose
+list cannot be extended without rewriting the file (the message names
+the line to add by hand).
+
+<!-- help: seldon config watch -->
+```text
+Add a path under your home directory to watchPaths; the rest of config.toml stays as it is
+
+Usage: seldon config watch [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>  The file or folder (`~/…`; a relative path lies under the home directory)
+
+Options:
+
+Examples:
+  seldon config watch ~/.config/alacritty/alacritty.toml
+  seldon config watch --json -- ~/.config/starship.toml
+```
+<!-- /help -->
+
 ## Record
 
 ### seldon capture
@@ -266,6 +336,48 @@ Examples:
 ```
 <!-- /help -->
 
+### seldon inbox
+
+<!-- help: seldon inbox -->
+```text
+File a text into the logbook's inbox (an agent's crash analysis, a finding)
+
+Usage: seldon inbox [OPTIONS] <COMMAND>
+
+Commands:
+  add   File a text into the logbook's inbox/, redacted; the same text again changes nothing
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+```
+<!-- /help -->
+
+### seldon inbox add
+
+Files a text into the logbook's `inbox/`, for example an agent's crash
+analysis (the agent skill says when). The text is redacted like a note,
+home paths become `~`, and it lands in `inbox/<date>-<title>.md`, committed
+on its own. The same text again changes nothing; another text under a
+title whose file exists gets `-2`. `--file -` reads the text from stdin.
+
+<!-- help: seldon inbox add -->
+```text
+File a text into the logbook's inbox/, redacted; the same text again changes nothing
+
+Usage: seldon inbox add [OPTIONS] --title <TITLE> --file <FILE>
+
+Options:
+      --title <TITLE>  The title: one line, the file's `# heading` and name
+      --file <FILE>    The text: a Markdown file, or `-` for stdin (at most 1 MiB, UTF-8)
+      --tag <TAG>      Tag the text (repeatable): `tags` in the file's frontmatter
+      --actor <ACTOR>  Who files it: human or agent:NAME (default: $SELDON_ACTOR, else human)
+
+Examples:
+  seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file report.md
+  printf '%s\n' "Zed ignores the theme" | seldon inbox add --title "Zed theme" --file -
+```
+<!-- /help -->
+
 ### seldon event
 
 Records an event by hand, for a change that no collector or hook sees,
@@ -311,6 +423,10 @@ Options:
 Rebuilds the index and the ledger views without `STATUS.md` and without
 a commit. `--check` refuses to write an index that does not match the
 format (exit 2).
+
+The desk's graph (section 8) is drawn from this index. It therefore
+shows the newest 500 events and 50 completed cases, not the whole
+logbook. No command draws the whole logbook as a graph yet.
 
 <!-- help: seldon index -->
 ```text
@@ -595,20 +711,50 @@ Options:
 
 Creates `decisions/ADR-NNNN-<slug>.md` with the status *proposed* and
 opens it in your editor; `--no-edit` skips the editor. It writes no
-ledger event.
+ledger event. A decision titled "accept" goes after `--`
+(`seldon decide -- accept`): a bare `accept` is the subcommand below.
 
 <!-- help: seldon decide -->
 ```text
-Create a decision record (ADR) and open it in the editor
+Create a decision record (ADR) and open it in the editor; accept a proposed one
 
 Usage: seldon decide [OPTIONS] <TITLE>
+       seldon decide <COMMAND>
+
+Commands:
+  accept  Accept a proposed decision: status accepted, today's date, a ledger note. The user's act; an agent is refused
+  help    Print this message or the help of the given subcommand(s)
 
 Arguments:
-  <TITLE>  The decision title, as one argument
+  <TITLE>  The decision title, as one argument (a title `accept` goes after `--`)
 
 Options:
       --case <ID>      The case this decision belongs to
       --no-edit        Do not open the editor
+```
+<!-- /help -->
+
+### seldon decide accept
+
+Accepts a proposed decision: its frontmatter gets `status: accepted` and
+today's date, the ledger a `seldon` note (subject the decision id),
+`DECISIONS.md` and the index follow, and the logbook commits. A decision
+that is accepted already is left as it is (exit 0, `already` in
+`--json`); a superseded one is refused. Accepting is yours: an agent
+(`--actor agent:…` or `SELDON_ACTOR`) is refused, and so is `--actor
+human` in an agent's session (exit 1). The desk's *Accept* runs it.
+
+<!-- help: seldon decide accept -->
+```text
+Accept a proposed decision: status accepted, today's date, a ledger note. The user's act; an agent is refused
+
+Usage: seldon decide accept [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The decision, ADR-NNNN
+
+Options:
+      --actor <ACTOR>  Who accepts it: human (the default); an agent is refused
 ```
 <!-- /help -->
 
@@ -634,6 +780,29 @@ Options:
 ```
 <!-- /help -->
 
+### seldon preview
+
+Before you set up Seldon: what this machine remembers of the last days on
+its own — pacman's transactions and the files edited under `~/.config`,
+by modification time only. No who, no why, and gone when the logs rotate.
+It needs no logbook and writes nothing. `--days` looks back 1 to 7 days
+(default 7). The desk shows it on Today until the logbook exists.
+
+<!-- help: seldon preview -->
+```text
+Before the logbook exists: the last days' pacman transactions and the files edited under ~/.config, read-only, nothing written
+
+Usage: seldon preview [OPTIONS]
+
+Options:
+      --days <N>       Days to look back, 1 to 7 [default: 7]
+
+Examples:
+  seldon preview
+  seldon preview --days 2 --json
+```
+<!-- /help -->
+
 ## Drift
 
 ### seldon drift
@@ -644,7 +813,7 @@ list is cut.
 
 <!-- help: seldon drift -->
 ```text
-List open drift; link, explain, dismiss or show a drift event
+List open drift; link, explain, dismiss or show a drift event; propose, apply or discard a triage proposal
 
 Usage: seldon drift [OPTIONS]
        seldon drift <COMMAND>
@@ -654,6 +823,9 @@ Commands:
   explain  Explain a drift event with a new retroactive, completed case
   dismiss  Dismiss a drift event with a reason
   show     Show a drift event and every open member of its group
+  propose  Store an agent's triage proposal (JSON on stdin) for the user to apply; every item needs evidence the engine can resolve
+  apply    Apply a stored triage proposal as the user: link and explain its items; a crisis only when named by --item
+  discard  Remove a stored triage proposal; the logbook is not touched
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -757,19 +929,93 @@ All three resolving commands write one resolution per open member of the
 group in one step. `--only` resolves the named event alone. Running the
 same command again writes nothing and exits 0.
 
+### seldon drift propose
+
+The agent's command (ADR-0036): stores a triage proposal for you to
+apply, from JSON on stdin. Every item names an open change, a link to a
+case or an explanation (title and intent), and evidence the engine
+looks up itself: a journal time, an event id, a snapshot number, a case,
+or a case whose *Plan* names the change. One item that does not hold up
+refuses the whole proposal, naming the item. A new proposal replaces the
+earlier one. A person is refused: link or explain directly.
+
+<!-- help: seldon drift propose -->
+```text
+Store an agent's triage proposal (JSON on stdin) for the user to apply; every item needs evidence the engine can resolve
+
+Usage: seldon drift propose [OPTIONS]
+
+Options:
+      --file <FILE>    Read the proposal from FILE instead of stdin
+      --actor <ACTOR>  Who proposes: agent:NAME (default: $SELDON_ACTOR)
+
+Input (stdin):
+  {"items": [{"eventId": "<EVENT>", "action": "link", "caseId": "<CASE>",
+              "evidence": [{"kind": "plan", "ref": "<CASE>"}]}]}
+  action explain takes "title" and "intent" instead of "caseId"; evidence kinds:
+  journal (YYYY-MM-DD HH:MM), event (<EVENT>), snapshot (<N>), case (<CASE>),
+  plan (<CASE>: a line of its Plan that names the change)
+```
+<!-- /help -->
+
+### seldon drift apply
+
+Applies a proposal as you (`human`): each item is checked again against
+the logbook, then linked or explained like `drift link` and `drift
+explain`, with the resolution detail `proposed by agent:<name> —
+<evidence>`. Items already resolved are skipped; a crisis is applied only
+when you name it with `--item`. Running it again changes nothing. An
+agent is refused.
+
+<!-- help: seldon drift apply -->
+```text
+Apply a stored triage proposal as the user: link and explain its items; a crisis only when named by --item
+
+Usage: seldon drift apply [OPTIONS] <PROPOSAL>
+
+Arguments:
+  <PROPOSAL>  The proposal id, as `seldon drift propose` and index.json's triage name it
+
+Options:
+      --item <EVENT>   Apply only this item (repeatable); the only way to apply a crisis
+      --actor <ACTOR>  Who applies it: human (default: $SELDON_ACTOR, else human); an agent is refused
+```
+<!-- /help -->
+
+### seldon drift discard
+
+Removes a proposal without applying it. The logbook is not touched.
+
+<!-- help: seldon drift discard -->
+```text
+Remove a stored triage proposal; the logbook is not touched
+
+Usage: seldon drift discard [OPTIONS] <PROPOSAL>
+
+Arguments:
+  <PROPOSAL>  The proposal id
+
+Options:
+      --actor <ACTOR>  Who discards it: human (default: $SELDON_ACTOR, else human); an agent is refused
+```
+<!-- /help -->
+
 ## Agents and hooks
 
 ### seldon agent
 
 <!-- help: seldon agent -->
 ```text
-Start an agent on an active case
+Start an agent on an active case, or ask one about the open changes, a change or a case
 
 Usage: seldon agent [OPTIONS] <COMMAND>
 
 Commands:
-  start  Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
-  help   Print this message or the help of the given subcommand(s)
+  start     Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
+  ask       Ask an agent about the open changes, one change or one case: the prompt holds ids only and names the skill's guide; nothing in the logbook changes (ADR-0036)
+  focus     Bring the window of the agent `agent start` launched on a case to the front (Hyprland)
+  sessions  List the agents `agent start` launched whose window is open, one per case (Hyprland)
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
 ```
@@ -813,10 +1059,120 @@ Options:
       --risk <RISK>      With --new: R0 to R3 [default: R1]
       --area <AREA>      With --new: area slug; created under areas/ on first use
       --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+      --again            Start another agent although one already works on the case
 
 Examples:
   seldon agent start C-2026-004
   seldon agent start --new -- "Install zed as a second editor"
+```
+<!-- /help -->
+
+### seldon agent ask
+
+Starts an agent the way `agent start` does, to look at something and
+answer you: `triage` sorts the open changes into a proposal (`drift
+propose`), `drift <EVENT>` looks at one open change, `case <ID>` at one
+case. The prompt names the logbook, the id and the skill's guide
+(`triage.md`, `drift.md`, `case.md`); it holds no logbook text. The
+agent gets no case to work on (no `SELDON_CASE`) and the active case
+stays as it is. Nothing starts without an Omarchy default agent (with
+the built-in launcher), without the `seldon` skill installed, or when
+`triage` finds nothing open; the message names the fix.
+
+<!-- help: seldon agent ask -->
+```text
+Ask an agent about the open changes, one change or one case: the prompt holds ids only and names the skill's guide; nothing in the logbook changes (ADR-0036)
+
+Usage: seldon agent ask [OPTIONS] <COMMAND>
+
+Commands:
+  triage  Sort the open changes: the agent stores a proposal with evidence (`seldon drift propose`) for the user to apply
+  drift   One open change (attention or crisis)
+  case    One case, any status
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+
+Examples:
+  seldon agent ask triage
+  seldon agent ask drift 01M3VNJ9JGZ9169T01XCW16FT0
+  seldon agent ask case C-2026-004
+```
+<!-- /help -->
+
+<!-- help: seldon agent ask triage -->
+```text
+Sort the open changes: the agent stores a proposal with evidence (`seldon drift propose`) for the user to apply
+
+Usage: seldon agent ask triage [OPTIONS]
+
+Options:
+      --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+```
+<!-- /help -->
+
+<!-- help: seldon agent ask drift -->
+```text
+One open change (attention or crisis)
+
+Usage: seldon agent ask drift [OPTIONS] <EVENT>
+
+Arguments:
+  <EVENT>  The drift event id, as `seldon drift` prints it
+
+Options:
+      --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+```
+<!-- /help -->
+
+<!-- help: seldon agent ask case -->
+```text
+One case, any status
+
+Usage: seldon agent ask case [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The case id
+
+Options:
+      --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+```
+<!-- /help -->
+
+**One agent per case.** `agent start <ID>` refuses while the window of an
+agent it launched on the case is open (or for 10 seconds after a launch,
+while that window comes up), and names `seldon agent focus <ID>`;
+`--again` starts another anyway. `agent focus` brings that window to the
+front; `agent sessions` lists the open ones, one per case. The engine
+looks at the agent windows Hyprland lists and finds the case in the
+environment of their processes (`SELDON_CASE`, `SELDON_LOGBOOK`); closing
+the window frees the case. Without Hyprland nothing is tracked and
+nothing is refused.
+
+<!-- help: seldon agent focus -->
+```text
+Bring the window of the agent `agent start` launched on a case to the front (Hyprland)
+
+Usage: seldon agent focus [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The case
+
+Options:
+
+Example:
+  seldon agent focus C-2026-004
+```
+<!-- /help -->
+
+<!-- help: seldon agent sessions -->
+```text
+List the agents `agent start` launched whose window is open, one per case (Hyprland)
+
+Usage: seldon agent sessions [OPTIONS]
+
+Options:
 ```
 <!-- /help -->
 
@@ -1063,12 +1419,13 @@ Options:
 
 <!-- help: seldon import -->
 ```text
-Import an earlier logbook (dry run unless --apply)
+Import an earlier logbook (dry run unless --apply) or your Markdown task files as cases
 
 Usage: seldon import [OPTIONS] <COMMAND>
 
 Commands:
   omarchy-agent  Import the omarchy-agent kit's Obsidian vault, which is only read (dry run unless --apply)
+  task           Import your Markdown task files as cases: one queued case per open `- [ ]` item (applies unless --dry-run; the files are only read)
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1093,6 +1450,33 @@ Arguments:
 Options:
       --dry-run        Only write the report outputs/IMPORT-omarchy-agent.md (the default)
       --apply          Import: cases, journal, memory and deviation rows, in one commit
+```
+<!-- /help -->
+
+### seldon import task
+
+Turns your own Markdown task files into cases: one queued case per open
+`- [ ]` item, or one case for a file without checkboxes. Applies at once
+unless `--dry-run`; the files are only read; a second run skips what is
+already imported. See
+[Task files](09-import-from-omarchy-agent.md#task-files).
+
+<!-- help: seldon import task -->
+```text
+Import your Markdown task files as cases: one queued case per open `- [ ]` item (applies unless --dry-run; the files are only read)
+
+Usage: seldon import task [OPTIONS] <FILE>...
+
+Arguments:
+  <FILE>...  Markdown task files under your home: one case per open `- [ ]` item; a file without checklist items is one case
+
+Options:
+      --area <AREA>    Area slug of the new cases; created under areas/ on first use
+      --zone <ZONE>    green, yellow or red [default: yellow]
+      --risk <RISK>    R0 to R3 [default: R1]
+      --include-done   Also import `- [x]` items, as completed cases
+      --dry-run        List what would be created; write nothing
+      --actor <ACTOR>  Who imports: human or agent:NAME (default: $SELDON_ACTOR, else human)
 ```
 <!-- /help -->
 

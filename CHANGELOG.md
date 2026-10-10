@@ -5,7 +5,562 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+From 0.2.0 every version opens with `### Highlights`: one to ten
+bullets of one line each, what changes for you in your words, breaking
+changes included, no work package numbers. Only the standing paragraph
+for plugin 0.1.0 users comes before it. The GitHub release shows the
+Highlights and links to the whole section here
+([docs/VERSIONING.md](docs/VERSIONING.md), "CHANGELOG.md").
+
 ## [Unreleased]
+
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
+and the package does not exist yet. Update the plugin first:
+`omarchy plugin update jax.seldon` (Omarchy shows the changes and asks
+`Update jax.seldon?`; answer yes), then `omarchy-restart-shell`.
+
+### Highlights
+
+### Breaking
+
+- **Contract 2 (ADR-0035).** `index.json` says `contractVersion: 2`;
+  engine and plugin must be updated together: a 0.1.x plugin shows the
+  "Index format mismatch" banner against this engine, and this plugin
+  against a 0.1.x engine, each naming both versions and the side to
+  update. New in the index: a case's risk in the ledger (`meta.risk` on
+  `case-created`/`case-started`, and the new kind `case-updated`, which
+  `seldon plan set` now writes), the kind `state-loss` (formerly a
+  `note` `state-reset`), `logbook.git.autocommit` (the last autocommit,
+  ok or the git error), `meta.truncated` beside a clipped text,
+  `decisions[].cases` and `triage` (the agent's proposal, ADR-0034).
+  Old ledger lines are not rewritten and still index. A 0.1.x engine
+  skips the new kinds as unreadable lines: going back is not supported
+  (WP-120).
+- **Linked logbook folders refuse writes (WP-168).** A folder of the
+  logbook that the engine writes into (`ledger/`, `journal/`,
+  `decisions/`, `work/queued|active|completed/`, `areas/<area>/`,
+  `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/`, …) must be a
+  real folder inside the logbook. When it is a symbolic link or a file,
+  every command that would write there stops with exit 1 and names it
+  ("ledger is a symbolic link, not a folder of the logbook; make it a
+  folder and run the command again"), and nothing is written; before,
+  the write went through the link to wherever it pointed. With a linked
+  `ledger/` that includes `seldon log`, `index` and `status` (the
+  plugin's refresh shows the error). Fix: make it a real folder again —
+  move the link's contents into a folder of that name; a logbook kept on
+  another disk goes there whole (the logbook folder itself may be a
+  link, or a bind mount). Reading through a
+  link is unchanged, and the logbook folder itself may still be a link.
+  A `.seldon` that is a file now means "not initialised" (exit 3).
+- **Linked logbook files refuse writes (WP-171, ADR-0049).** The same
+  rule for the files the engine writes in the logbook (a journal day, a
+  case file, `STATUS.md`, `DECISIONS.md`, `AGENTS.md`, `ledger/*.jsonl`
+  and the views, `system/*.md`, `outputs/*.md`, `.seldon/active-case`,
+  …): when one is a symbolic link (or a directory or FIFO in a file's
+  place), every command that would write it stops with exit 1 and names
+  it ("journal/2026/2026-10-09.md is a symbolic link, not a file of the
+  logbook; make it a file and run the command again"), and nothing is
+  written; before, the write replaced the file the link pointed to,
+  wherever it was, and a dangling link created its target. A capture
+  that would update the rules in a linked `AGENTS.md` only warns; a
+  linked generated view (`STATUS.md`, `DECISIONS.md`, `ledger/<month>.md`)
+  is skipped with a warning, and `status` still refreshes `index.json`. Fix:
+  replace the link with the file it points to. Outside the logbook
+  (`config.toml`, Claude Code's `settings.json`) links are followed as
+  before. `seldon doctor` has a new `layout` row that names every linked
+  folder and file where Seldon writes, so you see them before a write is
+  refused (`error`; `degraded` for what is only skipped).
+
+### Engine
+
+- **pacman's ignore list (WP-165, ADR-0052).** Every capture that reads
+  `pacman.log` also reads the `IgnorePkg` and `IgnoreGroup` names of
+  `/etc/pacman.conf` and the files it includes, as pacman reads them —
+  the names only, nothing else of the files. The index lists them as
+  `system.pacmanIgnore` (optional within contract 2). The first read is
+  taken as it is; from then on a change of the list (an edit, or
+  `omarchy refresh pacman` replacing the file) is one pacman note on
+  `/etc/pacman.conf`, attention `ignore-list` until you explain it. A
+  name that is no plain package or group name, or that your redaction
+  masks, is counted but not shown. A read that could not see everything
+  (a file it cannot read, its budget) marks the list `partial` and
+  reports no change.
+- **`seldon init` asks only where, and looks back 90 days (WP-119,
+  ADR-0033).** Plain `seldon init` asks one question, the logbook's
+  location, and takes the defaults for the rest; `seldon init --defaults`
+  asks nothing and reads nothing from stdin (the plugin's setup card runs
+  it); `seldon init --ask` is the full wizard, its backfill question now
+  defaulting to 90 days back. All three record the last 90 days on the
+  first capture and dismiss every drift item that opens with the reason
+  "before Seldon" — the History row says "Looked back 90 days: N changes
+  recorded as history before Seldon" — and add Obsidian's settings when
+  Obsidian is installed (its desktop entry is found), instead of asking.
+  The baseline's reason is "before Seldon" also for `--since --baseline`
+  (it was "pre-Seldon baseline"). `--non-interactive` looks back 90 days
+  too (ADR-0033), but detects nothing; with `--since` and without
+  `--baseline` its backfill stays open as before. Before 0.2.0 it
+  recorded from the logbook's creation on; a script that wants that
+  passes `--no-capture` and runs `seldon capture --all` afterwards. Harnesses stay as the
+  config says (none on a fresh machine); the summary's Agents row then
+  says "none; add one with seldon hook install claude-code (or skills)".
+- **The first capture reads the package log as a stream (WP-198).** The
+  pacman collector now reads `/var/log/pacman.log` one line at a time
+  instead of loading it whole, and on the first capture skips the lines
+  older than the 90-day look-back after reading only their times. A
+  synthetic 234 MiB log took `init --defaults` 61 s and 2.2 GiB of memory
+  before and 17.7 s and 22 MiB now (debug build; 1.5 s and 11 MiB
+  optimised). What is recorded is unchanged, and a second capture still
+  writes nothing. A line longer than 1 MiB is ignored like any line pacman
+  does not write. A package log that is not a regular file (a FIFO, a
+  device) is now a degraded pacman source naming it, not a capture that
+  waits forever.
+- **No git left running in the logbook after a commit (WP-199).** git
+  2.55 starts automatic maintenance after every commit and detaches it,
+  so it went on writing in the logbook's `.git` after `seldon` had
+  returned. The engine's `init`, `add` and `commit` now pass
+  `-c gc.auto=0 -c maintenance.auto=false`, and every git call in the
+  logbook passes `-c core.fsmonitor=false` (with `core.fsmonitor=true` in
+  your git config, a `status` started a file system monitor daemon that
+  kept watching the logbook). When a command returns, no git of its own
+  is still running. Your git hooks that a commit runs inherit these
+  three settings. Seldon's commits no longer pack the
+  logbook's objects on their own; a git command you run there still
+  does, and `git -C <logbook> gc` packs them by hand.
+- **Exit 3 says which folder, and why it cannot be used (WP-119).** With
+  `--json`, "logbook not initialised" now carries `path`, the logbook
+  path the engine resolved, and `reason` when `init` could not create the
+  logbook there: `logbook-folder-not-empty` or
+  `logbook-folder-not-a-folder` (CONTRACT.md rule 10; no contract bump).
+- **The index says which plugin can read it (WP-176, ADR-0051).** Every
+  `index.json` carries `contractReadableFrom: 2`, the oldest plugin
+  contract that reads it without misreading a field it keys on (optional
+  in the schema, checked by `seldon index --check`). A later engine that
+  moves the index to contract 3 can keep this release's plugin reading it,
+  if the ADR of that bump shows, field by field, that nothing is misread.
+- **Installing Seldon's plugin is no drift (WP-172, ADR-0050).** After
+  `seldon init`, `omarchy plugin add …jax-seldon-plugin… --enable` was the
+  first thing Seldon asked a new user to explain. Adding or enabling the
+  plugin `jax.seldon` is now routine under its own rule, `seldon-self`: in
+  the Changelog and `seldon drift --all`, never open drift. It is in the
+  default `[drift] routine` list and in `seldon doctor`'s `drift` line;
+  left out of your own list, the add is attention again. No reason is
+  recorded for it, and removing the plugin stays drift. This reaches
+  earlier captures too: an open `plugin-add jax.seldon` item from a 0.1.x
+  logbook is routine after the first capture (or `seldon index`) on this
+  version — gone from `seldon drift` and the panel's Today list, still in
+  `drift --all`; a link, explanation or dismissal you gave it stays.
+- **The crash inbox in the logbook's `AGENTS.md` (WP-172).** The rules
+  block is v5: an agent that diagnosed a crash files the report with
+  `seldon inbox add` and asks you whether it becomes a case. An unedited
+  v4 block is updated by the next capture; `seldon doctor`'s `rules` row
+  says `current (v5)`.
+- **Crash analyses go into the logbook (WP-166, E28 step 1).** `seldon
+  inbox add --title T --file F|-` files a text into the logbook's
+  `inbox/` as `<date>-<title>.md`, in a commit of its own. It is redacted
+  as `import task` redacts a task file: secrets, a private key over several
+  lines, home paths as `~`, invisible and control characters dropped. The same
+  text again changes nothing; another text under a taken name gets `-2`.
+  The agent skill tells an agent that diagnosed a crash with Omarchy's
+  `diagnose-crash` to file its report there and ask you whether it
+  becomes a case.
+- **No reader hangs on a FIFO or a device in the logbook (WP-174).**
+  A FIFO at `ledger/<month>.jsonl`, `AGENTS.md`, `STATUS.md` or
+  `DECISIONS.md` made `status`, `doctor` and `capture` wait forever, and
+  a link to `/dev/zero` there read until memory ran out, so `doctor`
+  could hang before its `layout` row named the file. Every file of the
+  logbook is now read only when it is a regular file (through a link
+  too, as before), at most 256 MiB for a ledger month and 16 MiB for
+  any other file; anything else is "not read" with the reason and what
+  to do. A refused ledger month stops `status` with exit 1, like the
+  refusals of WP-171; doctor's rows name it, with a fix, and the
+  `layout` row is reached. Doctor warns (`degraded`) from 128 MiB on:
+  the append has no cap, so a month that grows past 256 MiB has to be
+  trimmed by hand before it can be read again.
+- **No git waits on a FIFO at `.git/HEAD` (WP-175).** A FIFO at
+  `.git/HEAD` held every git call of a command until its timeout:
+  `status` took 40 s, `doctor` 30 s. The engine now checks `.git` and
+  `HEAD` before it runs git in the logbook; if one is not what git needs,
+  no git runs, the command says once which file it is and what to do
+  (`import --apply` stops with exit 1), and doctor's `git` row names it
+  with a fix. Other files git opens (`.git/config`, a loose ref, a linked work tree's `commondir`) are not
+  checked: a FIFO there still costs a git timeout. A FIFO at
+  `.seldon/logbook.toml` is named the same way (exit 1) instead of
+  "not initialised; run `seldon init`", and the hook's fast index
+  rebuild no longer reads a huge ledger month without a newline before
+  giving up on it.
+- **No secret hides behind an invisible or control character
+  (WP-159, ADR-0048).** Every redaction now reads the text twice: without
+  its invisible characters and lone control characters (so
+  `to<U+200B>ken=…`, `Authorization: Bearer<U+3164> …`, `to<BS>ken=…` or
+  a GitHub token split by a variation selector is masked), and as given
+  (so `x<U+200B>sk-…` is masked too), in a note, an imported task, a
+  closing commit, `plan show` and every event, as its plain form is. A
+  text with no secret is written as it was, its joiners and emoji
+  selectors included. The invisible set grows by the fillers (U+034F, U+115F,
+  U+1160, U+17B4, U+17B5, U+3164, U+FFA0), the variation selectors
+  (U+180B–U+180D, U+180F, U+FE00–U+FE0F, U+E0100–U+E01EF) and U+2065:
+  a task file's path may not hold them, the desk's texts drop them, and
+  `plan show --json` marks them. A `[redaction] patterns` entry that
+  names one of them matches only the text as given now.
+- **Start stays off for a hand-edited emoji (WP-159).** An imported case
+  whose Intent you edited by hand with an emoji and its U+FE0F (or that
+  was imported before this release with one) now counts the selector as
+  a hidden character: the desk keeps Start off and points to the
+  terminal. It fails safe; start such a case with `seldon plan start`.
+- **Boot configuration (WP-164).** The config collector now hashes the
+  boot configuration, whatever `watchPaths` says:
+  `/etc/mkinitcpio.conf`, the files in `/etc/mkinitcpio.conf.d/` and
+  `/etc/mkinitcpio.d/`, `/etc/default/limine`,
+  `/etc/limine-entry-tool.conf` and the files in
+  `/etc/limine-entry-tool.d/`. A change shows up at the next capture,
+  also when no agent made it; only hashes are recorded, never the
+  content. It is quiet attention, not a crisis (add the paths to
+  `[drift] alwaysRedPaths` for one). A file that cannot be read is
+  hashed from its size, times and inode (`meta.hashBasis = "stat"`).
+  `/boot/limine*.conf` is left out: only root can open `/boot` on
+  Omarchy, and the Limine tools rewrite it on every snapshot and kernel
+  update. The `.pacnew` files pacman leaves there are not hashed (the
+  pacman note covers them). The first capture after the update takes the
+  files in without events. Opt out with `[redaction] skipPaths`.
+- **`seldon preview` (WP-138, ADR-0047).** Before you set up Seldon:
+  what your machine remembers of the last 7 days on its own — pacman's
+  transactions and the files edited under `~/.config`, by modification
+  time only (no content; caches, browser profiles, databases, logs and
+  your `skipPaths` left out). Read-only: it needs no logbook and writes
+  nothing. `--days` 1–7, `--json` for the desk.
+- **Recently edited, not watched (WP-139, ADR-0046).** Each capture that
+  runs the config collector also looks at `~/.config` for files modified
+  in the last 7 days outside your watch paths — a terminal's config,
+  `git/config`, `starship.toml` — and keeps the newest 80 as paths and
+  times (never their content, never a ledger line) in
+  `~/.local/state/seldon/recent-config.json`. The index lists them as
+  `system.recentConfig` (optional within contract 2). Left out: your
+  `skipPaths`, browser and Electron profiles, caches, state, logs, locks,
+  databases, images, editor temp files, Seldon's own and Omarchy's plugin
+  folders, and any path the redaction would change. New:
+  `seldon config watch <path>` adds a path to `watchPaths`, changing only
+  that list in `config.toml`; the next capture takes the file in as it
+  is. The scan costs about 2 ms per capture; it stops at 20 000 entries
+  or 500 ms and then marks the list `partial` (the desk: "The scan
+  stopped early; the list may be incomplete.").
+- **Links are checked before they are read (WP-139).** The config
+  collector no longer follows a watch path that is a link (or lies behind
+  one) to a file under your `skipPaths`, into Seldon's own files, or — a
+  link itself — out of your home directory; nor a link in a watched
+  folder to a skipped file. The message counts them. `seldon config
+  watch` refuses such a path and says why, and the recently edited list
+  shows a link only when it points to a file inside `~/.config` it would
+  show itself.
+- **Files pacman left (WP-141).** A `.pacnew` (the package's new default
+  was not applied), `.pacsave` or `.pacorig` (your file was moved aside)
+  that pacman reports in `/var/log/pacman.log` is now recorded: a pacman
+  `note` named after the file, its transaction in `meta.transaction`. It
+  is its own item, never part of its transaction's group: quiet
+  attention (rule `pacnew`), a crisis beside a boot or login file —
+  mkinitcpio, Limine, PAM (rule `pacnew-red`, ADR-0042). Seldon
+  does not read `/etc`, so it cannot tell whether you merged it since.
+- **One agent per case (WP-156, ADR-0041).** `seldon agent start <ID>`
+  refuses (exit 1, nothing launched) while the window of an agent it
+  launched on the case is open, or for 10 s after a launch while that
+  window is still coming up, and names `seldon agent focus <ID>`, which
+  brings that window to the front (Hyprland); `--again` starts another
+  anyway. `seldon agent sessions` lists the open ones. A session is an
+  `org.omarchy.agent` window whose process or a descendant carries the
+  `SELDON_CASE`/`SELDON_LOGBOOK` marker; the engine reads the environment
+  of those windows' processes only (only those keys). Closing the window
+  frees the case, even if the agent left a background process behind.
+  Without Hyprland nothing is tracked. `seldon open --editor` from the desk
+  focuses the terminal window it already opened on the same file instead
+  of starting a second editor.
+- **A pacman transaction that did not complete says so (WP-137,
+  ADR-0043).** When pacman logs `transaction failed` or `transaction
+  interrupted`, or a transaction has no end line (pacman killed, power
+  lost), each of its package events records `meta.txStatus`; the month's
+  ledger view adds `· transaction interrupted`. Lines written before keep
+  none. `seldon event --meta txStatus=…` is refused.
+- **A lock left by a dead pacman no longer hides its transaction
+  (WP-160).** After a power loss or a killed pacman,
+  `/var/lib/pacman/db.lck` stays. A lock older than the current boot is
+  now known as stale: the transaction it left open is recorded at once,
+  marked `unfinished`, instead of waiting until you delete the lock.
+  `seldon doctor` has a `pacman` row that names a stale lock and how to
+  remove it. Seldon only looks at the lock, never removes it.
+- **`seldon decide accept ADR-NNNN` (ADR-0040).** Accepts a proposed
+  decision: `status: accepted` and today's date in its frontmatter, a
+  `seldon` note in the ledger, `DECISIONS.md`, the commit and the index.
+  A second run changes nothing; a superseded decision is refused.
+  Accepting is the user's: an agent actor or an agent's session is
+  refused. A decision titled "accept" is now made with `seldon decide --
+  accept` (WP-135).
+- **Rules for every git call (WP-154).** Every program the engine runs
+  keeps at most a cap of its output, named at each call (1 MiB for git
+  and short answers; a 100 MB flood of stderr from git costs 1 MiB), and
+  a stdout over the cap is no answer. The logbook's read-only git queries
+  (`status`, `rev-parse`, `doctor`'s checks) never reach the network:
+  in a logbook that is a partial clone a missing object is not fetched,
+  whatever transport the repository's own config allows. `init`, `add`
+  and `commit` keep the user's git as it is: hooks, signing, filters,
+  transport. A plugin clone's HEAD and the logbook's `.git` file are
+  read only in the bytes git writes; anything else (a CR, a byte order
+  mark, a `packed-refs` git would refuse, a SHA-256 clone) is left to
+  git. The package now depends on git 2.44 or later
+  (`--no-lazy-fetch`).
+- **More secrets are redacted (WP-140).** A PEM private key
+  (`-----BEGIN … PRIVATE KEY-----`, OpenSSH, RSA, EC, encrypted, PGP) is
+  masked whole between its BEGIN and END lines, also when a clip cut one
+  of them off; a header value in quotes (`Authorization: "Bearer …"`,
+  `"Authorization": "…"`, `x-api-key: '…'`) and a JSON `"x-api-key"` are
+  masked, also HTTPie's and xh's `Authorization:'Bearer …'`; nmcli's
+  secrets (`password X`, `wifi-sec.psk X`,
+  `802-1x.password X`, `vpn.secrets X`, …) are masked and the rest of
+  the line stays. The hooks record a line that gives a secret as a plain
+  argument or pipes it in (`htpasswd -b`, `echo u:pw | chpasswd`,
+  `usermod -p`/`--password`, `smbpasswd -s`, `passwd` fed from the line,
+  `cryptsetup` with a key piped in or written on the same line, `openssl
+  passwd`, `wpa_passphrase`) as `<program> ‹redacted›`. More invisible characters are
+  dropped from the index texts and commit subjects, so none hides a token
+  from its rule (soft hyphen, U+0600–U+0605, U+061C, U+180E,
+  U+2061–U+2064, U+206A–U+206F, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3,
+  U+1D173–U+1D17A, tags), and the hooks drop them from a command line
+  before reading it. A second redaction no longer
+  merges markers a user pattern left beside a built-in one, and the vault
+  import masks a secret that spans lines. An empty header value
+  (`Authorization:` at the line end) is no longer masked: there is
+  nothing in it.
+- The agent hooks record every command an agent runs with `sudo`,
+  `doas`, `pkexec` or `run0`, also a program Seldon does not know: an
+  agent's `pkexec lpadmin …` printer setup is now one red `agent/command`
+  event with `meta.wrapper: pkexec` and `asked to run: <the redacted
+  line>` as its text, on the active case or without one. A command
+  another hook class records (`pkexec pacman -S x`) is recorded once, as
+  before; probes (`sudo -l`, `sudo -n true`, `pkexec --version`, `command
+  -v sudo`) record nothing; a wrapper of `sh -c '…'` holds for the
+  commands inside; a line that pipes a password into `sudo -S` is
+  recorded as `<program> ‹redacted›`. These records are events, not
+  drift; the change they make is drift through its own collector
+  (ADR-0039; WP-129).
+- **Code the collectors could not see (WP-113, ADR-0028 WP-E; hashes
+  only, never content).** A third-party plugin edited in place is now one
+  `plugin-update` (detail `files changed (sha256 … → …)`): the plugins
+  collector hashes each listed third-party plugin's folder under
+  `~/.config/omarchy/plugins/` as one whole and skips reading an
+  unchanged one. Omarchy's toggle folder
+  `~/.local/state/omarchy/toggles` joins the default `watchPaths` (a list
+  that is still 0.1.4's default gains it at the next capture); turning a
+  switch of Omarchy's *Toggle* menu or a Hyprland flag on or off is
+  routine (new rule `toggle-flag`, ADR-0037), anything else there is
+  quiet attention; every file there is hashed. `~/.ssh/authorized_keys`
+  and `~/.ssh/authorized_keys2` join the default `alwaysRedPaths`: add
+  both to `watchPaths` and a change to either without a case is a
+  crisis. Under the persistence paths the config collector now
+  hashes every file — a hook with a NUL byte after its first line or
+  over 1 MiB used to be skipped — and follows a linked hook folder (each
+  folder once, at most 4096 entries below links; a link with more is a
+  crisis of its own; links into the logbook or Seldon's folders are not
+  followed); a file over 64 MiB is hashed from its size, modification and
+  change time and inode,
+  and an unreadable one keeps its last hash. A plugin tree counts an
+  unreadable file by its size, time and mode and holds at most 10 000
+  entries. The first capture after the upgrade records nothing for files
+  that were skipped before.
+- A full upgrade with a yay or paru option that takes a value
+  (`--answerdiff None`, `--mflags …`, `--editor …`) no longer counts the
+  value as a package: it is routine like any plain full upgrade
+  (WP-113).
+- **Bulk triage and Ask agent (ADR-0036).** `seldon agent ask triage`
+  starts your agent to sort the open changes; `agent ask drift <EVENT>`
+  and `agent ask case <ID>` ask it about one change or one case. The
+  prompt names only ids, the logbook and the skill's guide, never
+  logbook text, and hands the agent no case to work. The agent stores a
+  proposal with `seldon drift propose` (JSON on stdin): every item needs
+  evidence the engine looks up itself (a journal entry, an event, a
+  snapshot, a case, a case's Plan line), or the proposal is refused.
+  `seldon drift apply <PROPOSAL>` applies it as you, checking every item
+  again, with `proposed by agent:<name> — <evidence>` in the ledger; a
+  crisis only one by one with `--item`; a second run changes nothing.
+  `seldon drift discard` throws a proposal away. The skill gains
+  `triage.md` (WP-124).
+
+- `seldon import task <FILE>…` turns your own Markdown task files into
+  cases: one queued case per open `- [ ]` item (title from its first
+  sentence, Intent from the item, its indented lines and its heading),
+  or one case for a file without checkboxes; tag `imported`, a Log line
+  that names the file and line. The files are only read and redacted
+  like a note; a second run creates nothing, a reworded item makes a new
+  case that names the earlier one; `--include-done`, `--dry-run`,
+  `--zone`, `--risk`, `--area`. Files outside your home or inside the
+  logbook are refused (WP-102). Each imported case records its task as
+  `source: "~/…/file.md#line"` in its frontmatter, which the index
+  carries for the desk (WP-127).
+- The index carries what the desk's details show, all optional within
+  contract 2 (ADR-0038): each open change's `rule` (what `seldon drift
+  show` reports), the first paragraph of a case's Intent and Result and
+  of a decision's Decision (redacted on every build, clipped at 256
+  bytes with "… (N more characters in the file)"), and an imported
+  case's `source` (WP-127).
+
+- The harm guard of the planned-and-active link (ADR-0029) reads a
+  case's risk from its ledger lines, to the second, for every case this
+  engine creates; an edited Log no longer changes the answer. Cases from
+  before keep the Log as their record (WP-120).
+- Redaction reads Windows line ends: a secret on a line continued with
+  `\` and a CRLF line end (`mysql -u root \` then `-p secret`,
+  `curl -u \` then the credentials, a quoted value over two lines) is
+  masked as with LF, in notes, cases, hooks and imports. A CRLF note
+  keeps its line ends; the task import reads CRLF as LF first, as
+  before (WP-128).
+- **Cases say when to stop and how long a change holds (WP-143).** A new
+  case's *Plan* has `Persists:` (`survives reboot and update`, `reboot
+  only`, `lost at reboot`) and `Stop if:`, both empty; a logbook whose
+  case template is still the one `init` copied gets them too. The agent
+  rules (v4; the block 0.1.4 ships is upgraded silently) and the skill
+  tell agents to fill both and to stop and ask when *Stop if* holds (a
+  fourth case of "ask first"; a subject named only there is not linked
+  to the case as planned), to verify the effect rather
+  than the setting (press the key binding, not only write it), and to
+  label each claim in *Result* and `memory/` `measured`, `documented` or
+  `inferred`.
+- **A closing commit names the case (WP-143):** `seldon: C-2026-012
+  completed — <title>: <first line of Result>`, and for a drop the
+  reason; one line without direction or invisible format characters,
+  redacted, then clipped to 100 characters.
+- **`seldon doctor` reports left-behind workpiece folders (WP-143):** a
+  `workpieces` row, information only, counts the `work/<case-id>/`
+  folders no case owns or that a closed case left over 10 MiB, with
+  their size and the oldest; the walk stays on one filesystem and is
+  bounded.
+
+### Plugin
+
+- **Ignored by pacman (WP-165, ADR-0052).** System has a seventh tile:
+  the packages and groups pacman's full upgrade skips — "pacman's full
+  upgrade skips them; `pacman -S` still updates them." A change of the
+  list in the Changelog says the same as its hint.
+- **Set up Seldon on one card (WP-119).** Until Seldon is set up,
+  Today's overview shows one card instead of three banners: "Set up
+  Seldon · N of 3 steps to go" — install the engine, create the logbook
+  (`seldon init --defaults`, no question), read snapshots (optional) —
+  done steps ticked, the next one with its button. After each step's
+  terminal the card looks again by itself (no *Check again*). *Not now*
+  on the snapshot step is stored once and never asks again; Settings ›
+  Capture offers it again. A machine without snapper has two steps and
+  no snapshot notice. The header's chip shows the same line and leads to
+  the card. Then a first-run card: "Seldon is recording. Nothing to do.",
+  with the tiles that read 0 in the muted tone. When the logbook's folder
+  already holds other files, step 2 says so and offers *Choose a folder*
+  (`seldon init`, which asks where). An urgent notice still takes the
+  header's chip from the card. The grant's result line
+  reports instead of forecasting: "The snapshots were not recorded yet;
+  Seldon tries again at its next capture."
+- **A newer engine no longer dims the bar when its index is readable
+  (WP-176, ADR-0051).** The plugin reads an index of a newer contract
+  when the index says this plugin can (`contractReadableFrom` at most 2):
+  the pill keeps its counts and the crisis colour, and the desk shows a
+  quiet notice, "The engine writes index vN; this plugin reads v2 —
+  update the plugin.", with *Update* (`omarchy plugin update
+  jax.seldon`) and *Copy*. Any other contract shows the "Index format
+  mismatch" banner as before.
+- **A held key acts once (WP-173).** Omarchy's Hyprland repeats a key
+  held for a quarter second, and the repeat confirmed what the first
+  press armed: holding `x` dropped a case, holding `a` started an agent,
+  holding Enter in the new decision's title created it; keys that write
+  at once (`r`, `c`, Enter in the note field, Space on *Import*) acted
+  again on every repeat. Now only the keys that move repeat (arrows,
+  page keys, `j`/`k`, `h`/`l`, `-`/`=`); every other repeat is dropped
+  on the desk, in the forms and on their buttons. An armed action stays
+  armed with its hint until the key is released and pressed again.
+- **Before init, a preview without memory (WP-138).** Until the logbook
+  exists, Today lists the last 7 days' pacman transactions and the files
+  edited under `~/.config` — "This is without memory: no who, no why,
+  gone when the logs rotate. Set up Seldon?" — and **Set up Seldon**
+  opens the setup in a terminal.
+- **Recently edited (WP-139).** System has a sixth tile: the files under
+  `~/.config` edited in the last 7 days that Seldon does not watch, each
+  with its age, "not watched" and *Watch*, which adds it to `watchPaths`
+  (`seldon config watch`); the row goes at once.
+- **The pacdiff hint (WP-141).** The Changelog's detail of a file pacman
+  left reads "Merge with pacdiff (from pacman-contrib) in a terminal." —
+  text only; the plugin runs nothing. A crisis of rule `pacnew-red` says
+  why it is loud.
+- **The desk steps aside for what it opens (WP-156).** After it starts
+  an agent, opens the editor or runs a fix in a terminal, the desk closes,
+  so the new window is in front instead of hidden behind it. An active
+  case an agent works on shows *Focus* in place of a second *Hand to
+  agent*; a button whose call is running is busy, and *Open in editor*
+  never sends the same file twice within 2 s.
+- **A transaction's packages in the Changelog (WP-137).** Selecting a
+  pacman change shows every package of its transaction — ↑ upgraded,
+  ↓ downgraded, + installed, − removed, ↻ reinstalled, old → new — and
+  the command that started it. A transaction that failed, was
+  interrupted or never finished is marked in the urgent colour in its
+  rows and explained in the detail.
+- **Import tasks…** in the desk's Work list: name your Markdown task file
+  (and an area), see the dry run's list, then import with one click; the
+  path goes to the engine as one argument. Imported cases are marked
+  "imported"; their detail shows the whole Intent as plain text, with its
+  source and line count, and Start is enabled only after that, by click,
+  never by Enter. `seldon plan show --json` gives the whole Intent for it,
+  invisible characters marked `‹U+…›`; such an Intent, or one longer than
+  64 KiB, keeps Start off. `seldon import task` removes invisible
+  characters and skips a task too long to review (WP-102b, ADR-0044).
+
+- **Agent sorts N open changes.** The Changelog's head asks your
+  agent to sort the open changes; its proposal shows as a row and a
+  detail: every item with the change, the link or explanation, and every
+  piece of evidence with who wrote it first; evidence by an agent or of
+  unknown authorship is marked. *Apply proposals* applies it as you in
+  one click, crises never with the rest: each has its own button. The
+  result says what was done, skipped or refused; a second Apply changes
+  nothing. *Discard* throws a proposal away. *Ask agent* on an open
+  change and on a case asks your agent about it (WP-124).
+
+- **Accept accepts.** *Accept* on a proposed decision in the desk's
+  Decisions section no longer opens the editor: the first click arms it
+  (*Confirm accept*), the second runs `seldon decide accept`, and the
+  decision shows as accepted with the next index (WP-135).
+- The desk's "Why loud?" callout reads the rule from the index: selecting
+  a crisis in the Changelog no longer runs `seldon drift show` (it still
+  does against an engine whose index has no rule). Work's case detail
+  shows the first paragraph of Intent and Result and where an imported
+  case came from; the Decisions detail shows the first paragraph of the
+  decision. *Open in editor* stays for the rest (WP-127).
+
+### Docs
+
+- **A tour that works on a fresh install (WP-172).** The README's
+  60-second tour and *Getting started* used a theme switch as the
+  example drift; since 0.1.4 a theme switch is routine and `seldon drift`
+  had nothing to show. The example is now an alias in `~/.bashrc`, drift
+  by default and undone in a second; every command was run on a fresh
+  home and the output is real. The texts also say what the pill counts by
+  default (crises) and where the other changes without a case are (the
+  panel's Today tab, the tooltip, `driftInBar = all`), and that a case
+  whose *Plan* names the file links the change by itself.
+- **Supply chain (WP-195).** Dependabot opens weekly pull requests for
+  the pinned actions (one grouped pull request) and the engine's crates
+  (minor and patch grouped); they are reviewed like any change.
+  `just check-packaging` fails on a network, TLS, async-runtime or DNS
+  crate in the engine's shipped crate graph or a `std::net` in its source
+  (AGENTS.md §7). CI pulls its Arch image from a GHCR copy with the same
+  digest instead of Docker Hub, whose anonymous pull limit had stopped
+  it; only a push to `main` or `next` copies an image there. `just
+  check-rss` prints its measurement and CI records it; its limit stays
+  11 MB (operator decision E8), and 12 MB, from the measurements in
+  docs/TESTING.md, is proposed to the operator.
+- **A recorded live test per release (WP-192).** From 0.2.0 every
+  release has `packaging/acceptance/vX.Y.Z.json`: the commit deployed to
+  the test host, the Omarchy version and channel, the installed engine
+  and plugin, each scenario with where it ran, its result and its
+  counts, and what was not covered. `packaging/acceptance-check.sh X.Y.Z`
+  checks it and refuses a release whose code changed after the tested
+  commit (docs/VERSIONING.md, "Release acceptance record"); the test-host
+  deploy prints the full commit for it.
+- **Release notes you can read (WP-193).** From 0.2.0 a release opens
+  with at most ten points on what changes for you, the Highlights at the
+  top of its section here; the GitHub release shows them and one link to
+  the whole section. `packaging/release-notes.sh` refuses a release
+  without them, with more than ten, or with a point over one line
+  (docs/VERSIONING.md, "CHANGELOG.md").
 
 ## [0.1.4] - 2026-10-08
 

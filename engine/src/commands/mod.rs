@@ -3,6 +3,7 @@
 
 pub mod agent;
 pub mod capture;
+pub mod config_cmd;
 pub mod decide;
 pub mod doctor;
 pub mod dossier;
@@ -10,17 +11,20 @@ pub mod drift;
 pub mod event;
 pub mod hook;
 pub mod import;
+pub mod inbox;
 pub mod index;
 pub mod init;
 pub mod log;
 pub mod manual;
 pub mod open;
 pub mod plan;
+pub mod preview;
 pub mod rebuild;
 pub mod rules;
 pub mod setup;
 pub mod skills;
 pub mod status;
+pub mod triage;
 pub mod watch;
 
 use std::io::Write as _;
@@ -175,6 +179,17 @@ impl Commit {
         }
     }
 
+    /// Keeps an attempt for `logbook.git.autocommit` (ADR-0035 §2); a
+    /// skip is no attempt.
+    pub fn record(&self, ctx: &Context, config: &Config, logbook: &Logbook) {
+        let (ok, message) = match self {
+            Commit::Committed(m) => (true, m),
+            Commit::Failed(e) | Commit::Warned(e) => (false, e),
+            Commit::Skipped(_) => return,
+        };
+        crate::index::autocommit::record(&ctx.dirs, config, &logbook.root, ctx.now, ok, message);
+    }
+
     /// A line for the human output, empty when there is nothing to say.
     pub fn human(&self) -> String {
         match self {
@@ -200,17 +215,35 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
     if !git::is_repo(&logbook.root) {
         return Commit::Skipped("the logbook is not a git repository");
     }
-    match git::commit_all(&logbook.root, summary) {
+    let commit = match git::commit_all(&logbook.root, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
-        Err(e) => {
-            // not eprintln!: a closed stderr must not abort the command
-            let _ = writeln!(
-                std::io::stderr(),
-                "seldon: warning: git: not committed: {e}"
-            );
-            Commit::Warned(e)
-        }
+        Err(e) => warned(config, logbook, &e),
+    };
+    commit.record(ctx, config, logbook);
+    commit
+}
+
+/// A failed autocommit: its warning on stderr and [`Commit::Warned`]. A
+/// `.git` or `HEAD` that is no regular file ([`git::check_files`]) is
+/// said once per command (WP-175): the index rebuild may have said it.
+fn warned(config: &Config, logbook: &Logbook, error: &str) -> Commit {
+    let e = redacted_git_error(config, error);
+    if git::check_files(&logbook.root).is_ok() || git::say_refusal() {
+        // not eprintln!: a closed stderr must not abort the command
+        let _ = writeln!(
+            std::io::stderr(),
+            "seldon: warning: git: not committed: {e}"
+        );
     }
+    Commit::Warned(e)
+}
+
+/// A git error as the engine shows it — on stderr, in `--json` `git.error`
+/// and in `autocommit.json` — through the logbook's redaction (SPEC-ENGINE
+/// §7; WP-120 round 2, N6): a hook's output or a remote URL may carry a
+/// secret. An invalid `[redaction] patterns` entry withholds it.
+fn redacted_git_error(config: &Config, error: &str) -> String {
+    crate::collectors::ShownMessages::new(Some(config)).show(error)
 }
 
 /// [`autocommit`] of `paths` alone (relative to the logbook): a commit of
@@ -231,16 +264,12 @@ pub fn autocommit_paths(
     if !git::is_repo(&logbook.root) {
         return Commit::Skipped("the logbook is not a git repository");
     }
-    match git::commit_paths(&logbook.root, paths, summary) {
+    let commit = match git::commit_paths(&logbook.root, paths, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
-        Err(e) => {
-            let _ = writeln!(
-                std::io::stderr(),
-                "seldon: warning: git: not committed: {e}"
-            );
-            Commit::Warned(e)
-        }
-    }
+        Err(e) => warned(config, logbook, &e),
+    };
+    commit.record(ctx, config, logbook);
+    commit
 }
 
 /// The text of a free-text argument, or a user error when it is blank.
@@ -252,18 +281,30 @@ pub(crate) fn required_text(what: &str, text: &str) -> Result<String> {
     Ok(text.to_string())
 }
 
-/// A one-line free text (titles, reasons): blank or multi-line is an error.
+/// A one-line free text (titles, reasons): blank or multi-line is an error,
+/// and so are the Unicode line and paragraph separators and the bidi
+/// controls, which break or reorder a line where it is shown (WP-124
+/// round 2).
 pub(crate) fn one_line(what: &str, text: &str) -> Result<String> {
     let text = required_text(what, text)?;
-    if text.contains(['\n', '\r']) {
-        return Err(Error::user(format!("{what} must be one line")));
+    if text.contains(['\n', '\r']) || text.chars().any(is_line_breaking) {
+        return Err(Error::user(format!(
+            "{what} must be one line (no line or paragraph separator, no bidi control)"
+        )));
     }
     Ok(text)
 }
 
-/// Creates `path` with `text`; an existing file is a user error, never
-/// overwritten.
-pub(crate) fn write_new(path: &Path, text: &str) -> Result<()> {
+/// U+2028, U+2029 and the bidi controls U+202A–U+202E, U+2066–U+2069.
+pub(crate) fn is_line_breaking(c: char) -> bool {
+    matches!(c, '\u{2028}' | '\u{2029}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+}
+
+/// Creates `path` (in `logbook`) with `text`; an existing file is a user
+/// error, never overwritten, and so is a folder on the way that is a
+/// symbolic link or no directory ([`Logbook::checked_file`], WP-168).
+pub(crate) fn write_new(logbook: &Logbook, path: &Path, text: &str) -> Result<()> {
+    let path = &logbook.checked_file(path)?;
     if let Some(dir) = path.parent() {
         crate::sys::create_dir_private(dir)
             .with_context(|| format!("cannot create {}", dir.display()))?;
@@ -279,4 +320,58 @@ pub(crate) fn write_new(path: &Path, text: &str) -> Result<()> {
     file.write_all(text.as_bytes())
         .with_context(|| format!("cannot write {}", path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `write_new` refuses a linked folder on its own, whatever its caller
+    /// checked first (WP-168).
+    #[test]
+    fn write_new_refuses_a_linked_folder() {
+        let base = crate::logbook::scratch::scratch("seldon-write-new");
+        let (root, outside) = (base.join("logbook"), base.join("outside"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("decisions")).unwrap();
+        let logbook = Logbook {
+            root: root.clone(),
+            meta: crate::logbook::LogbookMeta {
+                schema_version: 1,
+                created: "2026-09-01T19:00:42+02:00".parse().unwrap(),
+                machine_id: "workstation-7f3a".into(),
+                language: crate::model::Language::En,
+            },
+        };
+        match write_new(&logbook, &root.join("decisions/ADR-0001-x.md"), "x\n") {
+            Err(Error::User(m)) => assert!(m.starts_with("decisions is a symbolic link,"), "{m}"),
+            other => panic!("expected a user error, got {other:?}"),
+        }
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        write_new(&logbook, &root.join("memory/x.md"), "x\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("memory/x.md")).unwrap(),
+            "x\n"
+        );
+    }
+
+    #[test]
+    fn one_line_refuses_separators_and_bidi_controls() {
+        assert_eq!(one_line("t", " a b ").unwrap(), "a b");
+        for bad in [
+            "a\nb",
+            "a\rb",
+            "a\u{2028}b",
+            "a\u{2029}b",
+            "a\u{202A}b",
+            "a\u{202E}b",
+            "a\u{2066}b",
+            "a\u{2069}b",
+        ] {
+            let e = one_line("the title", bad).unwrap_err().to_string();
+            assert!(e.contains("the title must be one line"), "{bad:?}: {e}");
+        }
+        assert!(one_line("t", "a\u{2027}b\u{206A}c").is_ok());
+    }
 }

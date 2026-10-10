@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 5d68748 -->
+<!-- source: en/04-working-with-agents.md @ 12f706be -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -67,7 +67,7 @@ Logbuchs. Die Datei sagt jedem Agenten, wie er dort arbeitet:
 - er ändert nie das Ledger, erzeugte Dateien oder Felder der Engine.
 
 Seldons Regeln stehen in einem Block oben in der Datei, zwischen den
-Zeilen `<!-- seldon:begin rules v4 -->` und `<!-- seldon:end -->`. Deine
+Zeilen `<!-- seldon:begin rules v5 -->` und `<!-- seldon:end -->`. Deine
 eigenen Regeln gehören darunter, unter `## Your rules`, und Regeln für
 einen Bereich nach `areas/<bereich>/AGENTS.md`; Agenten folgen ihnen.
 Deine Regeln können nur Grenzen hinzufügen: Nichts darin oder in einem
@@ -305,6 +305,27 @@ nicht aufgezeichnet.
 | yellow | Schreibzugriffe in beobachtete Pfade: `cp`, `mv`, `tee`, `sed -i`, `rm`, Umleitungen sowie die Werkzeuge Edit und Write von Claude Code |
 | green | jeder andere ändernde Befehl (`npm install`, `git push`, Dateien anderswo), nur solange ein Case aktiv ist |
 
+Jeder Befehl, den ein Agent mit `sudo`, `doas`, `pkexec` oder `run0`
+ausführen will, wird ebenfalls aufgezeichnet, rot und mit oder ohne
+Case, auch wenn Seldon das Programm nicht kennt. Richtet ein Agent mit
+`pkexec lpadmin -p Office … -E` einen Drucker ein, zeigt der Eintrag
+`lpadmin` als Gegenstand, die Befehlszeile (bekannte Geheimnis-Formen
+entfernt) als Text und `pkexec` als Wrapper. Ein Befehl, den die Tabelle
+oben schon aufzeichnet (`pkexec pacman -S cups`), wird wie bisher einmal
+aufgezeichnet. Prüfungen, die nichts ändern (`sudo -l`, `sudo -n true`,
+`pkexec --version`, `command -v sudo`), zeichnen nichts auf. Der Hook
+läuft vor dem Befehl, deshalb sagt der Eintrag „asked to run“: Er steht
+auch dann da, wenn du den Passwortdialog abbrichst. Eine Zeile, die ein
+Passwort an `sudo -S` weiterreicht, wird nur als Programm und
+`‹redacted›` aufgezeichnet, ebenso eine Zeile, die ein Passwort als
+einfaches Argument angibt oder es an das Programm weiterreicht
+(`htpasswd -b`, `echo user:pw | chpasswd`, `usermod -p`, `smbpasswd -s`,
+`passwd`, das sein Passwort aus der Zeile bekommt, `openssl passwd`, ein
+Schlüssel, der an `cryptsetup` geht oder in derselben Zeile in eine Datei
+geschrieben wird). Ein solcher Eintrag steht im Case und im
+Changelog; als Drift wird er nicht gelistet (die Änderung, die er
+bewirkt, schon, durch den Collector, der sie sieht).
+
 Ein Hook zeichnet die Befehlszeile und den Pfad auf. Er zeichnet nie die
 Ausgabe eines Befehls oder den Inhalt einer Datei auf. Vor dem Schreiben
 entfernt die Engine Passwörter und Tokens, die sie erkennt (siehe
@@ -418,6 +439,74 @@ Scheitert der Launcher, steht sein Fehler in
 `agent start` lehnt einen Case ab, der nicht aktiv ist. Starte ihn
 vorher.
 
+## Einen Agenten die offenen Änderungen sortieren lassen
+
+Änderungen ohne Case warten im Changelog. Erklären musst du sie nie,
+aber ein Agent kann sie für dich sortieren, mit Belegen, und du wendest
+das Ergebnis mit einem Klick an. *Agent sorts N open changes* im Panel
+führt aus:
+
+```sh
+seldon agent ask triage
+```
+
+Die Engine startet deinen Agenten wie `agent start`, mit einem Prompt,
+der nur das Logbuch und die `triage.md` des Skills nennt: kein Text aus
+deinem Logbuch und kein Case zum Bearbeiten. Der Agent liest die offenen
+Änderungen, deine Cases, das Journal und das Ledger und legt einen
+**Vorschlag** ab. Für jede Änderung, die er belegen kann, schlägt er eine
+Verknüpfung mit einem Case oder eine Erklärung vor (ein neuer
+abgeschlossener Case mit Titel und Grund) und nennt die Belege: einen
+Journal-Eintrag mit seiner Uhrzeit (`2026-10-01 14:40`), ein anderes
+Ereignis, eine Snapshot-Nummer, einen Case oder einen Case, dessen
+*Plan* die Änderung nennt. Die Engine schlägt jeden Beleg selbst nach und
+lehnt einen Vorschlag mit einem Eintrag ab, den sie nicht belegen kann;
+eine Änderung, die niemand erklären kann, bleibt also offen. Jeder Beleg
+zeigt, wer ihn geschrieben hat (`by human`, `by agent:codex`), und Belege,
+die der vorschlagende Agent selbst geschrieben hat, lehnt die Engine ab:
+seine eigenen Notizen, Ereignisse, Cases oder Pläne. Ins Logbuch wird noch
+nichts geschrieben. Am Ende nennt dir der Agent die Id des
+Vorschlags.
+
+Du wendest ihn an, als du selbst:
+
+```sh
+seldon drift apply <PROPOSAL>
+```
+
+Vorher wird jeder Eintrag noch einmal gegen das Logbuch geprüft; ein
+Eintrag, dessen Beleg verschwunden ist, wird abgelehnt, einer, der schon
+aufgelöst ist, übersprungen. Jede Auflösung im Ledger lautet
+`proposed by agent:<name> — <Belege>`. Eine Krise wird nie mit dem Rest
+angewendet: Lies ihre Belege und wende sie dann einzeln an:
+
+```sh
+seldon drift apply <PROPOSAL> --item <EVENT>
+```
+
+Ein zweites `apply` ändert nichts. Ein neuer Vorschlag ersetzt den alten;
+`seldon drift discard <PROPOSAL>` verwirft einen. Anwenden und verwerfen
+darfst nur du: Die Engine lehnt einen Agenten ab, der sich als Agent
+ausweist, wie es ein von Seldon gestarteter tut (`SELDON_ACTOR`). Das
+schützt vor einem Versehen, ist aber kein Schloss: Jedes Programm, das du
+als du selbst startest, kann die Variable weglassen, so wie es Drift auch
+direkt auflösen könnte; *Apply* im Desk läuft aus der Shell, nie aus der
+Sitzung eines Agenten.
+
+Um stattdessen nach einer einzelnen Änderung oder einem Case zu fragen:
+
+```sh
+seldon agent ask drift <EVENT>
+seldon agent ask case C-2026-003
+```
+
+Der Agent sagt dir in seinem Fenster, was die Aufzeichnung zeigt und was
+er vorschlägt; er löst nichts auf, solange du es ihm dort nicht sagst.
+Eine Frage gibt dem Agenten nie einen Case zum Bearbeiten: Das tut
+`agent start`. Ohne Omarchy-Standard-Agent oder ohne den Skill `seldon`
+(`seldon hook install skills`) startet nichts, und die Meldung nennt die
+Lösung.
+
 ## Andere Agenten
 
 Ein Agent, der außerhalb des Logbuch-Ordners startet, liest die
@@ -500,6 +589,12 @@ ausführlich sagt:
   nur aufzeichnen“;
 - Drift nur mit Belegen erklären und dir eine Krise in einer Zeile
   melden;
+- die offenen Änderungen auf deinen Wunsch zu einem Vorschlag sortieren,
+  den du anwendest, mit Belegen, die die Engine nachschlagen kann
+  (`triage.md`);
+- nach der Diagnose eines Absturzes mit Omarchys Skill `diagnose-crash`
+  den Bericht im `inbox/` des Logbuchs ablegen und dich fragen, ob daraus
+  ein Case wird (unten);
 - für Omarchy selbst (Hyprland, die Leiste, Themes) Omarchys eigenem
   Skill folgen.
 
@@ -524,6 +619,28 @@ wirkt nur dort, wo heute Seldons Skill liegt: Ein Ordner, aus dem du den
 Skill entfernt hast, bleibt ohne ihn, und einen Ordner namens `seldon`,
 den Seldon nicht geschrieben hat, lässt er in Ruhe. `seldon hook uninstall skills` entfernt, was Seldon geschrieben
 hat, und behält, was du geändert oder hinzugefügt hast.
+
+### Absturzanalysen landen in `inbox/`
+
+Hat ein Agent einen Absturz mit Omarchys Skill `diagnose-crash`
+untersucht (zum Beispiel nach einer Benachrichtigung „Process crashed“)
+und gibt es ein Logbuch, sagt ihm der Seldon-Skill, den Bericht im
+`inbox/` des Logbuchs abzulegen und dich dann in einer Zeile zu fragen, ob
+aus dem Absturz ein Case wird. Omarchys Benachrichtigung und sein Skill
+bleiben, wie sie sind. Der Agent legt den Bericht über die Engine ab:
+
+```sh
+seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file report.md
+```
+
+Die Engine schwärzt den Bericht wie eine Notiz (Tokens, Schlüssel,
+Passwörter; Pfade im Home-Verzeichnis werden zu `~`), schreibt
+`inbox/<datum>-<titel>.md` und committet diese Datei für sich. Derselbe
+Bericht noch einmal ändert nichts; ein anderer Bericht unter demselben
+Titel bekommt eine Nummer (`-2`). Sagst du ja, legt der Agent einen Case
+an, der die Datei in `inbox/` nennt; sagst du nein, wartet der Bericht
+dort, bis du ihn einsortierst. Ein Agent in einer unbeaufsichtigten
+Sitzung legt den Bericht ab und fragt nichts.
 
 ## Das Omarchy-Agent-Kit
 
@@ -568,6 +685,9 @@ haben, erscheint dort.
   `seldon import … --apply`, `seldon agent start` oder
   `seldon rules update` nur ausführen, wenn du genau das verlangst. Die
   `AGENTS.md` des Logbuchs sagt dasselbe.
+- `seldon drift apply` und `seldon drift discard` gehören dir: Ein
+  Agent schlägt nur vor, und die Engine lehnt einen Agenten ab, der unter
+  seinem eigenen Namen anwendet.
 - Schreib eigene Grenzen unter `## Your rules` in `AGENTS.md`, zum
   Beispiel „nie aus dem AUR installieren“.
 - Lies das *Result* eines Case und seine Spur, wenn du die Arbeit des

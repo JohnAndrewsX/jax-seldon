@@ -1,0 +1,55 @@
+{
+  "id": "01M3VZS4J0NDXZFC2F7RBBD3FJ",
+  "at": "2026-10-01T17:02:00+02:00",
+  "actor": "agent:claude-code",
+  "logbook": "/home/user/Seldon",
+  "applied": null,
+  "items": [
+    {
+      "eventId": "01M3VTGNY0NZG4AY80814WSKGR",
+      "action": "link",
+      "caseId": "C-2026-005",
+      "crisis": false,
+      "evidence": [
+        {
+          "kind": "plan",
+          "ref": "C-2026-005",
+          "text": "by human · - [ ] `omarchy theme set tokyo-night`"
+        },
+        {
+          "kind": "journal",
+          "ref": "2026-10-01 17:00",
+          "text": "by human · Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox."
+        }
+      ]
+    },
+    {
+      "eventId": "01M3KVWFR06078ZQTPRZCFYHK0",
+      "action": "explain",
+      "title": "monitors.conf nach dem Umzug auf Lua entfernt",
+      "intent": "Die Monitore stehen seit dem Umzug in der Lua-Konfiguration; die alte monitors.conf aus C-2026-002 wird nicht mehr gelesen.",
+      "crisis": false,
+      "evidence": [
+        {
+          "kind": "event",
+          "ref": "01M2A9MNTG5XQ4EPAYSBBYJ92N",
+          "text": "by system · config-change ~/.config/hypr/monitors.conf: sha256 40ab1178 → 6d81c412"
+        }
+      ]
+    },
+    {
+      "eventId": "01M3VNJ9JGZ9169T01XCW16FT0",
+      "action": "explain",
+      "title": "Ollama-User-Service von Codex",
+      "intent": "Codex hat ollama samt User-Service ohne Case installiert; ob er bleibt, entscheidet ADR-0004.",
+      "crisis": true,
+      "evidence": [
+        {
+          "kind": "journal",
+          "ref": "2026-10-01 14:40",
+          "text": "by human · Codex hat ollama ohne Case installiert, samt User-Service. Snapshot 113 gemacht; morgen entscheiden, ob es bleibt (Vorschlag ADR-0004)."
+        }
+      ]
+    }
+  ]
+}

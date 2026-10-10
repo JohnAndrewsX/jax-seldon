@@ -14,8 +14,10 @@ use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
 use crate::config::{AttentionMode, DriftConfig};
-use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, format_ts};
+use crate::import::is_case_source;
+use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, TRUNCATED, format_ts};
 use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
+use crate::redact::{Redactor, is_invisible};
 
 /// Most events the index lists (CONTRACT.md rule 4).
 pub const MAX_EVENTS: usize = 500;
@@ -49,6 +51,10 @@ pub struct Input {
     pub state: State,
     /// `config.toml [drift]` (ADR-0013, ADR-0028).
     pub drift: DriftConfig,
+    /// The logbook's redaction (`config.toml [redaction]`) for the texts
+    /// of cases and decisions (ADR-0038); `None` when its patterns do not
+    /// compile, which withholds those texts.
+    pub redactor: Option<Redactor>,
 }
 
 /// The index and what the generated Markdown views need besides it.
@@ -126,7 +132,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         .collect();
     let (drift_total, crisis_total) = (drift.len(), drift.iter().filter(|d| d.crisis).count());
     let drift = cap_drift(drift);
-    let groups = case_groups(&cases, &drift);
+    let groups = case_groups(&cases, &drift, input.redactor.as_ref(), &mut warnings);
     let all_cases: Vec<&IndexCase> = groups.all().collect();
 
     let summary = Summary {
@@ -148,7 +154,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         yesterday: Some(rows(journal_yesterday)),
     };
 
-    let decision_rows = decision_rows(decisions);
+    let decision_rows = decision_rows(decisions, |lead| shown_text(input.redactor.as_ref(), lead));
 
     let snapshots = snapshots(&events);
     let system = System {
@@ -196,6 +202,10 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
                 })
                 .collect(),
         ),
+        // the state file's, set by `derive_at` (ADR-0046)
+        recent_config: None,
+        // the pacman cursor's, set by `derive_at` (ADR-0052)
+        pacman_ignore: None,
     };
 
     // other memory files by `updated` descending, then by topic
@@ -247,6 +257,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
 
     let index = Index {
         contract_version: crate::CONTRACT_VERSION,
+        contract_readable_from: crate::CONTRACT_READABLE_FROM,
         generated_at: format_ts(&input.now),
         engine_version: crate::VERSION.to_string(),
         logbook: LogbookInfo {
@@ -265,6 +276,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         system,
         memory,
         series,
+        triage: None,
     };
     warnings.extend(over_budget(&index));
     Built {
@@ -326,16 +338,30 @@ pub fn r3_advisory(id: &str, risk: Risk, subject: &str) -> String {
 }
 
 /// The `decisions` rows of the index, newest id first (also the rows of
-/// the logbook's `DECISIONS.md` table, [`super::views::decisions_index`]).
-pub fn decision_rows(decisions: Vec<(String, Decision)>) -> Vec<DecisionRow> {
+/// the logbook's `DECISIONS.md` table, [`super::views::decisions_index`]);
+/// `lead` makes a row's `lead` from the paragraph as written.
+pub fn decision_rows(
+    decisions: Vec<(String, Decision, Option<String>)>,
+    lead: impl Fn(&str) -> Option<String>,
+) -> Vec<DecisionRow> {
     let mut rows: Vec<DecisionRow> = decisions
         .into_iter()
-        .map(|(path, d)| DecisionRow {
-            id: d.id,
-            title: d.title,
-            status: d.status.as_str().to_string(),
-            date: d.date.to_string(),
-            path,
+        .map(|(path, d, written)| {
+            let mut cases: Vec<String> = Vec::with_capacity(d.cases.len());
+            for c in d.cases {
+                if !cases.contains(&c) {
+                    cases.push(c);
+                }
+            }
+            DecisionRow {
+                id: d.id,
+                title: d.title,
+                status: d.status.as_str().to_string(),
+                date: d.date.to_string(),
+                path,
+                cases,
+                lead: written.as_deref().and_then(&lead),
+            }
         })
         .collect();
     rows.sort_by(|a, b| b.id.cmp(&a.id));
@@ -405,6 +431,15 @@ fn fold(events: &[Event]) -> (Vec<IndexEvent>, HashSet<Ulid>) {
 /// marker, `… (3744 more characters in the ledger)` (CONTRACT.md rule 5).
 /// The cut falls on a character boundary.
 pub fn clip(text: &str) -> Cow<'_, str> {
+    clip_with(text, "in the ledger")
+}
+
+/// Where the rest of a case's or decision's text is (ADR-0038 §2).
+pub const IN_THE_FILE: &str = "in the file";
+
+/// [`clip`] with the marker naming `place`: `… (N more characters
+/// {place})`.
+pub fn clip_with<'a>(text: &'a str, place: &str) -> Cow<'a, str> {
     // bytes of one character in JSON (serde_json escapes only these)
     let json_len = |c: char| match c {
         '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
@@ -416,7 +451,7 @@ pub fn clip(text: &str) -> Cow<'_, str> {
     }
     let marker = |left: usize| {
         let unit = if left == 1 { "character" } else { "characters" };
-        format!("… ({left} more {unit} in the ledger)")
+        format!("… ({left} more {unit} {place})")
     };
     let total = text.chars().count();
     // the marker for every character is at least as long as the real one
@@ -433,10 +468,31 @@ pub fn clip(text: &str) -> Cow<'_, str> {
     Cow::Owned(format!("{head}{}", marker(total - head.chars().count())))
 }
 
-/// An event as `index.events` lists it: every free text [`clip`]ped.
+/// An event as `index.events` lists it: every free text [`clip`]ped, and
+/// `meta.truncated: true` when one was (ADR-0035 §3; index-only, so one
+/// a hand-edited ledger line carries is dropped); `meta.risk` only on the
+/// engine's case lines (ADR-0035 §1); `meta.txStatus` only on pacman
+/// events with a `txId` (ADR-0043).
 fn clipped(f: &IndexEvent) -> IndexEvent {
     let mut f = f.clone();
+    let mut cut = false;
+    // ADR-0035 §1: `meta.risk` belongs to the engine's case lines; one a
+    // 0.1.x `seldon event --meta risk=…` wrote on another kind is dropped
+    let risked = matches!(
+        f.event.kind,
+        Kind::CaseCreated | Kind::CaseStarted | Kind::CaseUpdated
+    ) && f.event.source == Source::Seldon;
+    // ADR-0043: `meta.txStatus` belongs to the pacman collector's package
+    // lines; one a hand edit put anywhere else is dropped
+    let tx_line = f.event.source == Source::Pacman && f.event.tx_id.is_some();
     let meta = &mut f.event.meta;
+    if !risked {
+        meta.risk = None;
+    }
+    if !tx_line {
+        meta.tx_status = None;
+    }
+    meta.extra.remove(TRUNCATED);
     let texts = [
         &mut f.event.detail,
         &mut f.resolution_detail,
@@ -453,6 +509,7 @@ fn clipped(f: &IndexEvent) -> IndexEvent {
     for text in texts.into_iter().flatten() {
         if let Cow::Owned(short) = clip(text) {
             *text = short;
+            cut = true;
         }
     }
     for value in meta.extra.values_mut() {
@@ -460,7 +517,12 @@ fn clipped(f: &IndexEvent) -> IndexEvent {
             && let Cow::Owned(short) = clip(text)
         {
             *text = short;
+            cut = true;
         }
+    }
+    if cut {
+        meta.extra
+            .insert(TRUNCATED.to_string(), serde_json::Value::Bool(true));
     }
     f
 }
@@ -636,12 +698,18 @@ fn drift_items(
                 kind: lead.kind.as_str().to_string(),
                 subject: lead.subject.clone(),
                 detail: lead.detail.as_deref().map(|d| clip(d).into_owned()),
+                truncated: lead
+                    .detail
+                    .as_deref()
+                    .is_some_and(|d| matches!(clip(d), Cow::Owned(_)))
+                    .then_some(true),
                 actor: lead.actor.clone(),
                 zone: zone.map(String::from),
                 crisis: class == Class::Crisis,
                 proposed_case,
                 tx_id: group.then(|| lead.tx_id.clone()).flatten(),
                 members: group.then_some(members.len()),
+                rule: Some(rule.to_string()),
             };
             let classified = ClassifiedItem {
                 item,
@@ -681,9 +749,91 @@ fn cap_drift(drift: Vec<DriftItem>) -> Vec<DriftItem> {
         .collect()
 }
 
+/// A case's or decision's text as the index carries it (ADR-0038 §2):
+/// control characters other than line breaks and tabs as spaces, redacted,
+/// then invisible characters dropped ([`Redactor::redact_dropping_invisible`]:
+/// a reordered line can mislead; after the redaction, so the rules read
+/// the boundary one makes, WP-159 round 2), then [`clip_with`] the file
+/// marker: redaction first, so a cut never leaves a secret's prefix.
+/// `None` without a redactor (withheld) or without text.
+pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
+    let redacted = plain_text(redactor?, text);
+    let shown = clip_with(&redacted, IN_THE_FILE).into_owned();
+    (!shown.trim().is_empty()).then_some(shown)
+}
+
+/// [`shown_text`] without the clip: control characters other than line
+/// breaks and tabs as spaces, redacted, then invisible characters
+/// dropped.
+pub fn plain_text(redactor: &Redactor, text: &str) -> String {
+    redactor.redact_dropping_invisible(&spaced(text))
+}
+
+/// `text` with its control characters other than line breaks and tabs as
+/// spaces.
+fn spaced(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() && c != '\n' && c != '\t' {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// [`plain_text`] for a text a person reviews before an agent may act on
+/// it (`plan show --json` `intent`, WP-102b round 2): every invisible
+/// character ([`is_invisible`], WP-159: a variation selector too, which can
+/// carry hidden bytes) is not dropped but shown as `‹U+XXXX›`, so nothing is
+/// hidden from the review. The marks are set after the redaction, so the
+/// rules read the text as [`plain_text`] does and a secret split by one is
+/// masked (WP-159 round 2, B2); one inside a masked secret goes with it.
+/// The count that comes back is of every invisible character the text
+/// holds, those inside a masked secret too: the file still holds them, and
+/// an agent reads the file.
+pub fn marked_text(redactor: &Redactor, text: &str) -> (String, usize) {
+    let hidden = text.chars().filter(|c| is_invisible(*c)).count();
+    let redacted = redactor.redact(&spaced(text));
+    let mut marked = String::with_capacity(redacted.len());
+    for c in redacted.chars() {
+        if is_invisible(c) {
+            marked.push_str(&format!("‹U+{:04X}›", c as u32));
+        } else {
+            marked.push(c);
+        }
+    }
+    (marked, hidden)
+}
+
+/// An imported case's `source` as the index carries it (ADR-0038 §3):
+/// redacted once more, then copied only while it is a clean `~/` path of
+/// at most 512 bytes; otherwise a warning and no field.
+fn shown_source(
+    redactor: Option<&Redactor>,
+    case: &Case,
+    warnings: &mut Vec<String>,
+) -> Option<String> {
+    let source = redactor?.redact(case.source.as_deref()?);
+    if is_case_source(&source) {
+        return Some(source);
+    }
+    warnings.push(format!(
+        "{}: its source is not a ~/ path of at most 512 bytes without control or direction characters; not shown",
+        case.id
+    ));
+    None
+}
+
 /// `index.cases` (ADR-0012 §9): open groups by id, completed and dropped
 /// together, newest `closed` first, at most [`MAX_COMPLETED`].
-fn case_groups(cases: &[LoadedCase], drift: &[DriftItem]) -> Cases {
+fn case_groups(
+    cases: &[LoadedCase],
+    drift: &[DriftItem],
+    redactor: Option<&Redactor>,
+    warnings: &mut Vec<String>,
+) -> Cases {
     let mut groups = Cases::default();
     for lc in cases {
         let c = &lc.case;
@@ -712,6 +862,9 @@ fn case_groups(cases: &[LoadedCase], drift: &[DriftItem]) -> Cases {
                 .filter(|d| d.proposed_case.as_deref() == Some(c.id.as_str()))
                 .map(|d| d.event_id.clone())
                 .collect(),
+            intent: lc.intent.as_deref().and_then(|t| shown_text(redactor, t)),
+            result: lc.result.as_deref().and_then(|t| shown_text(redactor, t)),
+            source: shown_source(redactor, c, warnings),
         };
         match c.status {
             CaseStatus::Queued => groups.queued.push(row),
@@ -970,4 +1123,33 @@ fn timeline(
         (&a.ts, order(a.kind), &a.reference).cmp(&(&b.ts, order(b.kind), &b.reference))
     });
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WP-159 round 2, B1b and B2: the index's texts and `plan show`'s
+    /// review text are redacted before an invisible character is dropped
+    /// or marked, so one before a secret (a boundary) or inside one hides
+    /// nothing; the count is of every invisible character the text holds.
+    #[test]
+    fn shown_texts_are_redacted_before_invisible_characters_go() {
+        let r = Redactor::builtin();
+        let text = "x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX y to\u{200B}ken=hunter2abc \
+                    ghp_0123\u{FE0F}456789abcdefghijABCDEFGHIJ012345 a\u{200D}b";
+        assert_eq!(
+            plain_text(&r, text),
+            "x‹redacted› y token=‹redacted› ‹redacted› ab"
+        );
+        let (marked, hidden) = marked_text(&r, text);
+        assert_eq!(
+            marked,
+            "x‹U+200B›‹redacted› y token=‹redacted› ‹redacted› a‹U+200D›b"
+        );
+        assert_eq!(hidden, 4);
+        // control characters as spaces, as before
+        assert_eq!(marked_text(&r, "a\u{7}b\tc\n").0, "a b\tc\n");
+        assert_eq!(plain_text(&r, "a\u{1B}b"), "a b");
+    }
 }

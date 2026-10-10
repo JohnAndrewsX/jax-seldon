@@ -1,0 +1,8 @@
+{
+  "source": "Omarchy themes (MIT), themes/<name>/colors.toml, the five roles as shell/Commons/Color.qml reads them (urgent = red or color1, muted = muted or color8)",
+  "themes": {
+    "tokyo-night": { "foreground": "#a9b1d6", "background": "#1a1b26", "accent": "#7aa2f7", "urgent": "#f7768e", "muted": "#414868" },
+    "rose-pine": { "foreground": "#575279", "background": "#faf4ed", "accent": "#56949f", "urgent": "#b4637a", "muted": "#cecacd" },
+    "miasma": { "foreground": "#c2c2b0", "background": "#222222", "accent": "#78824b", "urgent": "#685742", "muted": "#666666" }
+  }
+}

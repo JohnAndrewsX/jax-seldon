@@ -181,8 +181,8 @@ mutant() {
 }
 
 old='XDG_RUNTIME_DIR="$''{XDG_RUNTIME_DIR:-$rt}"'
-for f in tests/plugin/panel-view.sh tests/plugin/overlay-view.sh tests/plugin/bar-view.sh \
-  tests/plugin/service-states.sh tests/plugin/ipc-restart.sh tests/integration/e2e.sh; do
+for f in tests/plugin/desk-view.sh tests/plugin/bar-view.sh tests/plugin/service-states.sh \
+  tests/plugin/ipc-restart.sh tests/plugin/graph-live.sh tests/integration/e2e.sh; do
   name=$(basename "$f" .sh)
   mutant "$name" clean "$f" ''
   mutant "$name-default-back" session "$f" "s|XDG_RUNTIME_DIR=\"\$rt\"|$old|"
@@ -190,30 +190,32 @@ for f in tests/plugin/panel-view.sh tests/plugin/overlay-view.sh tests/plugin/ba
 done
 mutant service-states-unset unset tests/plugin/service-states.sh 's|XDG_RUNTIME_DIR="$rt" ||'
 mutant e2e-unset unset tests/integration/e2e.sh 's| XDG_RUNTIME_DIR="$rt" \\$| \\|'
-mutant panel-view-unset unset tests/plugin/panel-view.sh '/^    XDG_RUNTIME_DIR="$rt" \\$/d'
+mutant desk-view-unset unset tests/plugin/desk-view.sh '/^    XDG_RUNTIME_DIR="$rt" \\$/d'
 mutant bar-view-real-dir session tests/plugin/bar-view.sh 's|XDG_RUNTIME_DIR="$rt"|XDG_RUNTIME_DIR=/run/user/1000|'
 # Other spellings of the start, the setting dropped.
 drop='/^    XDG_RUNTIME_DIR="$rt" \\$/d'
 braces='"${qs_bin}" -p'
-mutant panel-view-braces unset tests/plugin/panel-view.sh "s|\"\$qs_bin\" -p|$braces|; $drop"
-mutant panel-view-unquoted unset tests/plugin/panel-view.sh "s|\"\$qs_bin\" -p|\$qs_bin -p|; $drop"
-mutant panel-view-path unset tests/plugin/panel-view.sh "s|\"\$qs_bin\" -p |\"\$qs_bin\" --path |; $drop"
-mutant panel-view-path-eq unset tests/plugin/panel-view.sh "s|\"\$qs_bin\" -p |\"\$qs_bin\" --path=|; $drop"
-mutant panel-view-quickshell unset tests/plugin/panel-view.sh "s|\"\$qs_bin\" -p|quickshell -p|; $drop"
+mutant desk-view-braces unset tests/plugin/desk-view.sh "s|\"\$qs_bin\" -p|$braces|; $drop"
+mutant desk-view-unquoted unset tests/plugin/desk-view.sh "s|\"\$qs_bin\" -p|\$qs_bin -p|; $drop"
+mutant desk-view-path unset tests/plugin/desk-view.sh "s|\"\$qs_bin\" -p |\"\$qs_bin\" --path |; $drop"
+mutant desk-view-path-eq unset tests/plugin/desk-view.sh "s|\"\$qs_bin\" -p |\"\$qs_bin\" --path=|; $drop"
+mutant desk-view-quickshell unset tests/plugin/desk-view.sh "s|\"\$qs_bin\" -p|quickshell -p|; $drop"
 # Other ways to pass the session's dir on.
 mutant service-states-printenv session tests/plugin/service-states.sh 's|XDG_RUNTIME_DIR="$rt"|XDG_RUNTIME_DIR="$(printenv XDG_RUNTIME_DIR)"|'
-mutant overlay-view-indirect session tests/plugin/overlay-view.sh 's|^chmod 700 "$rt"$|&\nrv=XDG_RUNTIME_DIR|; s|XDG_RUNTIME_DIR="$rt" \\$|XDG_RUNTIME_DIR="${!rv}" \\|'
-mutant overlay-view-default-assign session tests/plugin/overlay-view.sh 's|^chmod 700 "$rt"$|: "${XDG_RUNTIME_DIR:=$rt}"|'
+mutant desk-view-indirect session tests/plugin/desk-view.sh 's|^chmod 700 "$rt"$|&\nrv=XDG_RUNTIME_DIR|; s|XDG_RUNTIME_DIR="$rt" \\$|XDG_RUNTIME_DIR="${!rv}" \\|'
+mutant desk-view-default-assign session tests/plugin/desk-view.sh 's|^chmod 700 "$rt"$|: "${XDG_RUNTIME_DIR:=$rt}"|'
 # The private dir left behind.
 mutant bar-view-trap trap tests/plugin/bar-view.sh 's|; rm -rf "$rt"||'
-mutant panel-view-trap trap tests/plugin/panel-view.sh "s|^trap 'rm -rf \"\$work\" \"\$rt\"' EXIT|trap 'rm -rf \"\$work\"' EXIT|"
+mutant desk-view-trap trap tests/plugin/desk-view.sh "s|^trap 'rm -rf \"\$work\" \"\$rt\"' EXIT|trap 'rm -rf \"\$work\"' EXIT|"
 # ipc-restart.sh (WP-162) passes the dir through its env array and removes
 # it in its cleanup function.
+# graph-live.sh (next, not in check) links the session's sockets into $rt.
+mutant graph-live-unset unset tests/plugin/graph-live.sh 's|XDG_RUNTIME_DIR="$rt" ||'
 mutant ipc-restart-unset unset tests/plugin/ipc-restart.sh 's| XDG_RUNTIME_DIR="$rt"||'
 mutant ipc-restart-trap trap tests/plugin/ipc-restart.sh '/^  \[\[ -z \$rt \]\] || rm -rf "\$rt"$/d'
 mutant ipc-restart-handler trap tests/plugin/ipc-restart.sh 's|^trap cleanup EXIT$|trap other EXIT|'
 mutant e2e-trap trap tests/integration/e2e.sh "s|trap 'rm -rf \"\$work\" \"\$rt\"' EXIT|trap 'rm -rf \"\$work\"' EXIT|"
-for f in scripts/deploy-test-host.sh tests/plugin/real-home-guard.sh; do
+for f in scripts/deploy-test-host.sh tests/plugin/real-home-guard.sh tests/plugin/graph-live.sh; do
   name=$(basename "$f" .sh)
   mutant "$name" clean "$f" ''
   mutant "$name-marker-dropped" session "$f" 's| # live runtime dir: .*$||'

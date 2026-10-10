@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 5d68748 -->
+<!-- source: en/06-configuration.md @ b5e6bac9 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -35,7 +35,7 @@ den Schlüssel siehst. In deiner Zeile `logbook` steht dein eigener Pfad.
 harnesses = ["claude-code"]
 language = "de"
 logbook = "/home/you/Seldon"
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles"]
 
 [collectors]
 config = true
@@ -108,14 +108,36 @@ Sprache des nächsten Logbuchs fest, das `seldon init` anlegt.
 | Collector | Liest | Zeichnet auf |
 |---|---|---|
 | `snapper` | `snapper --jsonout list` | angelegte und gelöschte Snapshots |
-| `pacman` | `/var/log/pacman.log` | installierte, entfernte, aktualisierte und zurückgestufte Pakete, nach Transaktion gruppiert |
+| `pacman` | `/var/log/pacman.log`; die Namen in `IgnorePkg` und `IgnoreGroup` von `/etc/pacman.conf` und den Dateien, die sie einbindet | installierte, entfernte, aktualisierte und zurückgestufte Pakete, nach Transaktion gruppiert; eine Änderung der Pakete, die pacman auslässt |
 | `omarchy` | `omarchy-version` | Wechsel der Omarchy-Version |
 | `plugins` | `omarchy plugin list --json` | Shell-Plugins: hinzugefügt, entfernt, aktiviert, deaktiviert, aktualisiert |
 | `theme` | `~/.local/state/omarchy/current/theme.name` | Theme-Wechsel |
-| `config` | die Dateien unter `watchPaths` | Dateien: hinzugefügt, geändert, entfernt |
+| `config` | die Dateien unter `watchPaths` und die Boot-Konfiguration | Dateien: hinzugefügt, geändert, entfernt |
 
 Jeder Collector liest nur. Mit `false` schaltest du einen aus;
 `seldon capture --source <name>` startet ihn trotzdem bei Bedarf.
+
+Der `pacman`-Collector liest außerdem `/etc/pacman.conf` und jede Datei,
+die sie einbindet (auf Omarchy die Mirrorlist und Drop-ins wie
+`/etc/pacman.d/*.conf`), so wie pacman sie liest. Er behält nur die Namen
+in `IgnorePkg` und `IgnoreGroup`, also die Pakete, die pacmans volles
+Update auslässt; sonst wird aus diesen Dateien nichts behalten oder
+aufgezeichnet. System zeigt die Liste. Die erste Erfassung nimmt sie, wie
+sie ist; danach ist eine Änderung – deine Bearbeitung oder `omarchy
+refresh pacman`, das die Datei ersetzt – eine Änderung, die du erklärst.
+Ein Name, der kein einfacher Paket- oder Gruppenname ist oder den deine
+Schwärzung maskiert, wird gezählt, aber nicht gezeigt. Lässt sich ein
+Teil der Konfiguration nicht lesen, gilt die Liste als unvollständig,
+und bis dahin wird keine Änderung aufgezeichnet.
+
+Ein Shell-Plugin, das du mit `omarchy plugin add` hinzugefügt hast, ist
+ein git-Klon. Seine Aktualisierung nennt die Commits: wie viele ein Pull
+gebracht oder ein Zurücksetzen entfernt hat, und bis zu 20 ihrer
+Betreffzeilen, die der Desk mit der Änderung zeigt. Seldon liest den Klon
+mit `git` nur; es holt nie etwas aus dem Netz. Einen Klon, dessen
+Repository aus dem Plugin-Ordner hinausweist (ein verlinktes `.git`,
+geteilte Objekte, eine eingebundene Konfiguration), liest Seldon nicht,
+und die Änderung sagt das.
 
 Ein Collector, der seine Quelle nicht lesen kann, ist `degraded`: Die
 Erfassung läuft weiter, und `seldon doctor` nennt die Abhilfe. Zwei Fälle
@@ -147,13 +169,16 @@ Desktop-Einträge deiner Web-Apps und TUIs) und die Persistenzpfade
 `~/.config/systemd/user`, `~/.config/autostart`,
 `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
 `~/.bash_profile` (Dateien, die bei der Anmeldung laufen; eine neue dort
-ist eine Krise, siehe [Drift](#drift)). Fehlende Pfade überspringt der
-Collector. Ein relativer Pfad wie `.config/nvim` bedeutet
+ist eine Krise, siehe [Drift](#drift)) sowie Omarchys Toggle-Ordner
+`~/.local/state/omarchy/toggles` (die Schalter aus Omarchys
+*Toggle*-Menü und Hyprlands Flags; ein- oder ausschalten ist Routine,
+alles andere dort wird gelistet).
+Fehlende Pfade überspringt der Collector. Ein relativer Pfad wie `.config/nvim` bedeutet
 `~/.config/nvim`; der Assistent speichert getippte Pfade in dieser Form.
 Ergänze eigene, zum Beispiel:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.config/nvim"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.config/nvim"]
 ```
 
 Der Assistent schreibt die Liste in die `config.toml`. Eine Liste, die
@@ -164,7 +189,7 @@ selbst geändert hast, bleibt, wie sie ist: `seldon doctor` nennt die
 Pfade, die ihr fehlen, und du ergänzt sie genauso:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles"]
 ```
 
 Die Dateien, die schon dort liegen, wenn der Pfad in die Liste kommt,
@@ -172,15 +197,85 @@ nimmt der Collector, wie sie sind: Die nächste Erfassung zeichnet für
 sie nichts als hinzugefügt auf und meldet `watch scope changed: 0 file(s)
 left it, N entered it`.
 
+`~/.ssh/authorized_keys` und `~/.ssh/authorized_keys2` (die beiden
+Dateien, die sshd standardmäßig liest) werden nur beobachtet, wenn du sie
+ergänzt; ergänze beide Zeilen. Stehen sie in der Liste, ist eine Änderung
+an einer davon ohne Case eine Krise (beide stehen in der Vorgabe von
+`alwaysRedPaths`); aufgezeichnet werden nur die Hashes:
+
+```toml
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
+```
+
+Deine Boot-Konfiguration wird beobachtet, egal was `watchPaths` sagt.
+Der Config-Collector hasht `/etc/mkinitcpio.conf`, die Dateien in
+`/etc/mkinitcpio.conf.d/` und `/etc/mkinitcpio.d/`, `/etc/default/limine`,
+`/etc/limine-entry-tool.conf` und die Dateien in
+`/etc/limine-entry-tool.d/`. Sie bestimmen, wie die nächste Initramfs
+gebaut wird und was das Bootmenü startet. Eine Änderung an einer davon
+erscheint bei der nächsten Erfassung, auch wenn kein Agent sie gemacht
+hat: eine Änderung von Hand, `omarchy hibernation setup`, eine Migration,
+ein `omarchy-settings`-Update, das eine Datei geändert hat. Aufgezeichnet
+werden nur Hashes, nie der Inhalt (eine Kernel-Befehlszeile nennt deine
+Platten). Einem Symlink in einem dieser Ordner folgt Seldon zu seiner
+Datei und zeichnet nur deren Hash auf; ein Link auf eine Datei, die ein
+Paket mitbringt, zählt dort wie jede andere Änderung. Daneben liest
+Seldon nur `/etc/pacman.conf` und ihre eingebundenen Dateien, für die
+ausgelassenen Namen (oben); sonst nichts unter `/etc`. Die `.pacnew`-Dateien,
+die pacman dort hinterlässt, werden nicht gehasht: Der Pacman-Collector
+listet jede schon auf, und wenn du sie mit `pacdiff` zusammenführst, wird
+die Änderung der Datei selbst aufgezeichnet.
+
+`/boot/limine.conf` wird nicht beobachtet. Auf Omarchy kann nur root
+`/boot` öffnen, und die Limine-Werkzeuge schreiben diese Datei bei jedem
+Snapshot und jedem Kernel-Update aus den Dateien oben neu. Sie würde sich
+also bei jedem Systemupdate ändern, ohne dass jemand eine Einstellung
+ändert.
+
+Eine Datei, die Seldon nicht lesen kann, wird stattdessen aus Größe,
+Zeiten und Inode gehasht (das Ereignis sagt `hashBasis: stat`). Das
+zeigt, *dass* die Datei geschrieben wurde, nicht *was* sich geändert hat.
+Auf Omarchy sind all diese Dateien lesbar.
+
+Eine Änderung an der Boot-Konfiguration wird aufgelistet, ist aber keine
+Krise: Ein `omarchy-settings`-Update schreibt Omarchys eigene Drop-ins
+neu, und eine rote Leiste nach einem normalen Update würde dir
+beibringen, Rot zu übersehen. Willst du die Krise, nimm die Pfade in
+`alwaysRedPaths` auf (siehe [Drift](#drift)):
+
+```toml
+[drift]
+alwaysRedPaths = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**", "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile", "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2", "/etc/mkinitcpio*", "/etc/limine*", "/etc/default/limine"]
+```
+
+Ein offener Case übernimmt eine solche Änderung, wenn der Befehl des
+Agenten den Pfad geschrieben hat (`sudo tee /etc/mkinitcpio.conf.d/…`)
+oder der Plan des Case den Pfad nennt; sonst verknüpfst du sie mit
+`seldon drift link`. Um die Boot-Dateien auszunehmen, trag
+`/etc/mkinitcpio*`, `/etc/limine*` und `/etc/default/limine` in
+`[redaction] skipPaths` ein.
+
 Immer ausgenommen:
 
-- `~/.config/omarchy/plugins/` (das deckt der Plugins-Collector ab);
+- `~/.config/omarchy/plugins/` (das deckt der Plugins-Collector ab: Er
+  hasht den Ordner jedes Drittanbieter-Plugins als Ganzes und zeichnet
+  eine Änderung als ein Plugin-Update auf);
 - `~/.local/share/applications/mimeinfo.cache`: ein Cache, der aus den
   Desktop-Einträgen gebaut und bei vielen Paket-Updates neu geschrieben
   wird;
-- `.git`-Ordner und Ordner, die über einen Symlink erreicht werden;
+- `.git`-Ordner und Ordner, die über einen Symlink erreicht werden —
+  außer in den Persistenzpfaden (`alwaysRedPaths`): Dort folgt der
+  Collector einem verlinkten Ordner, jedem Ordner einmal, mit höchstens
+  4096 Einträgen unter Links pro Erfassung. Ein Link mit mehr wird als
+  abgeschnitten aufgezeichnet, und das ist eine Krise: Niemand sieht,
+  was von dort läuft. Links in dein Logbuch oder Seldons eigene Ordner
+  verfolgt er nie;
 - Binärdateien und Dateien über 1 MiB (als übersprungen gelistet, ohne
-  Hash);
+  Hash) — außer in den Persistenzpfaden, wo jede Datei gehasht wird: Ein
+  Hook läuft, egal was er enthält. Eine Datei dort über 64 MiB wird aus
+  Größe, Zeiten und Inode gehasht statt gelesen, und eine, die sich nicht
+  lesen lässt, behält ihren letzten Hash, bis sie es wieder tut. Jede
+  Datei im Toggle-Ordner wird genauso gehasht;
 - Dateien, deren Name ein Steuerzeichen enthält oder deren Pfad länger
   als 512 Zeichen ist: Die Erfassung zählt sie in einer Warnung;
 - alles in `[redaction] skipPaths`. Die Vorgabe enthält die Dateien, die
@@ -230,11 +325,14 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   Kleinbuchstaben, Großbuchstaben, Ziffern und anderen Zeichen mischen
   (`sort --key=2` und `hotkey=Super` bleiben also, wie sie sind);
 - `Authorization:`, `X-Api-Key:`, `Private-Token:` und andere Header,
-  deren Name auf Key, Token, Secret oder Auth endet, sowie die Cookies
+  deren Name auf Key, Token, Secret oder Auth endet, auch ein Wert in
+  Anführungszeichen (`Authorization: "Bearer …"`, `"Authorization": "…"`
+  in JSON), sowie die Cookies
   nach `Cookie:` und `Set-Cookie:` (ein `name=value`; `cookie: banner
   fixed` bleibt);
 - der Wert eines JSON-Schlüssels wie `"password"`, `"passwd"`,
-  `"client_secret"`, `"access_token"`, `"api_key"` oder `"apiKey"` in
+  `"client_secret"`, `"access_token"`, `"api_key"`, `"x-api-key"` oder
+  `"apiKey"` in
   eingebettetem JSON (`curl -d '{"password": "…"}'`); `"password_hint"`
   bleibt;
 - AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
@@ -251,6 +349,12 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
 - Proxy-Zugangsdaten: nach `curl -U`, `--proxy-user` und
   `--proxy-password` sowie `user:pass@` im Proxy nach `curl -x`,
   `--proxy` oder in `https_proxy=`;
+- ein privater PEM-Schlüssel (`-----BEGIN OPENSSH PRIVATE KEY-----` und
+  die anderen `… PRIVATE KEY`-Blöcke): alles zwischen seiner BEGIN- und
+  END-Zeile wird ein einziges `‹redacted›`;
+- Passwörter und Schlüssel von nmcli: der Wert nach `password`,
+  `wifi-sec.psk`, `802-1x.password`, `vpn.secrets` und den anderen
+  geheimen Eigenschaften;
 - Benutzer und Passwort in einer URL (`https://user:secret@host`), auch
   wenn das Passwort `/`, `?`, `#` oder `:` enthält.
 - der Teil vor dem `@` einer E-Mail-Adresse: `me@example.com` lautet
@@ -272,6 +376,12 @@ patterns = ["MYAPP_SESSION=\\S+", "acme_[0-9A-Za-z]{24}"]
 Die Domain einer Adresse bleibt sichtbar. Nennt deine dich, trag ein
 Muster für sie ein: `"@smith\\.example\\b"` macht aus
 `jo@smith.example` den Text `‹redacted›‹redacted›`.
+
+Ein unsichtbares Zeichen in oder vor einem Geheimnis (ein
+Nullbreiten-Leerzeichen, ein Variantenselektor) oder ein Steuerzeichen
+darin versteckt es nicht: Die Regeln, auch deine, lesen den Text einmal
+ohne solche Zeichen und einmal, wie er ist. Ein Text, in dem nichts zu
+schwärzen ist, behält sie.
 
 Ein ungültiges Muster ist ein Fehler (Exit 1): Seldon schreibt lieber gar
 nicht, als etwas preiszugeben.
@@ -326,17 +436,17 @@ Shell brechen kann, ist eine Krise.
 |---|---|---|
 | `alwaysRed` | `linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`, `quickshell` | Pakete, die Boot, Anmeldung oder die Shell brechen können: außerhalb eines Case mit Namen installiert oder entfernt eine Krise; mit dem System aktualisiert Routine |
 | `attention` | `"normal"` | `"all"`: jede Änderung ohne Case ist Drift, eine Krise, wenn ihre Zone rot ist (das Verhalten bis 0.1.3) |
-| `routine` | alle Regeln | die Routine-Regeln, die gelten: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo` |
+| `routine` | alle Regeln | die Routine-Regeln, die gelten: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `seldon-self`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag` |
 | `routinePaths` | `~/.config/omarchy/shell.json`, `**/*.bak.*` | Konfigurationsdateien, deren Änderungen Routine sind |
 | `routinePackages` | `archlinux-keyring`, `omarchy-keyring` | Pakete, deren eigene Transaktionen Routine sind |
-| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile` | Persistenzpfade: eine Änderung dort ohne Case ist eine Krise |
+| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` | Persistenzpfade: eine Änderung dort ohne Case ist eine Krise (die `authorized_keys`-Dateien erst, wenn du sie beobachtest) |
 
 Willst du mehr? Ein paar Beispiele:
 
 ```toml
 [drift]
 # theme switches are drift again
-routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo"]
+routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "seldon-self", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
 # a kernel from NVIDIA counts too
 alwaysRed = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell", "nvidia*"]
 ```
@@ -419,8 +529,10 @@ Seine Fehlerausgabe landet in `~/.local/state/seldon/agent-launch.log`.
 ## Git
 
 Mit `autocommit = true` committet jeder schreibende Befehl das Logbuch,
-mit einer Nachricht wie `seldon: C-2026-004 active`. Der Commit nimmt den
-ganzen Ordner, also gehen Änderungen, die du seit dem letzten Befehl im
+mit einer Nachricht wie `seldon: C-2026-004 active`. Der Abschluss eines
+Case nennt ihn: `seldon: C-2026-004 completed — Zed installieren: SUPER+E
+öffnet Zed`, Titel und erste Zeile seines *Result* (beim Verwerfen der
+Grund). Der Commit nimmt den ganzen Ordner, also gehen Änderungen, die du seit dem letzten Befehl im
 Editor gemacht hast, mit. Die Geschichte ist dein Backup und dein
 Rückgängig.
 

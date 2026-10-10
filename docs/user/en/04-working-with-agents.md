@@ -60,7 +60,7 @@ language. It tells every agent how to work there:
 - it never edits the ledger, generated files or engine-owned fields.
 
 Seldon's rules sit in a block at the top of the file, between the lines
-`<!-- seldon:begin rules v4 -->` and `<!-- seldon:end -->`. Your own
+`<!-- seldon:begin rules v5 -->` and `<!-- seldon:end -->`. Your own
 rules go below it, under `## Your rules`, and rules for one area into
 `areas/<area>/AGENTS.md`; agents follow them. Your rules can only add
 limits: nothing in them, or in any other text, loosens Seldon's block,
@@ -278,6 +278,25 @@ with the agent's name. Green commands are not recorded at all.
 | yellow | writes into watched paths: `cp`, `mv`, `tee`, `sed -i`, `rm`, redirections, and Claude Code's Edit and Write tools |
 | green | every other changing command (`npm install`, `git push`, files elsewhere), only while a case is active |
 
+Every command an agent asks to run with `sudo`, `doas`, `pkexec` or
+`run0` is recorded too, red and with or without a case, even when Seldon
+does not know the program. When an agent adds a printer with `pkexec
+lpadmin -p Office … -E`, the record shows `lpadmin` as the subject, the
+command line (known secret forms removed) as its text, and `pkexec` as
+the wrapper. A command the table above already records (`pkexec pacman
+-S cups`) is recorded once, as before. Checks that change nothing (`sudo
+-l`, `sudo -n true`, `pkexec --version`, `command -v sudo`) record
+nothing. The hook runs before the command, so the record says "asked to
+run": it is there even if you cancel the password prompt. A line that
+pipes a password into `sudo -S` is recorded only as the program and
+`‹redacted›`, and so is a line that gives a password as a plain argument
+or pipes it into the program (`htpasswd -b`, `echo user:pw | chpasswd`,
+`usermod -p`, `smbpasswd -s`, `passwd` fed from the line, `openssl
+passwd`, a key piped into `cryptsetup` or written to a file on the same
+line). Such a record is on the case and in the Changelog; it is
+not listed as drift (the change it makes is, by the collector that sees
+it).
+
 A hook records the command line and the path. It never records a
 command's output or a file's content. Before writing, the engine removes
 passwords and tokens it recognises (see [Configuration](06-configuration.md#redaction)).
@@ -380,6 +399,69 @@ fails, its error is in `~/.local/state/seldon/agent-launch.log`.
 
 `agent start` refuses a case that is not active. Start it first.
 
+## Let an agent sort the open changes
+
+Changes without a case wait in the Changelog. You never have to explain
+them, but an agent can sort them for you, with evidence, and you apply
+the result in one click. The panel's *Agent sorts N open changes* runs:
+
+```sh
+seldon agent ask triage
+```
+
+The engine starts your agent the way `agent start` does, with a prompt
+that names only the logbook and the skill's `triage.md`: no text from
+your logbook, and no case to work on. The agent reads the open changes,
+your cases, the journal and the ledger, and stores a **proposal**. For
+each change it can prove, it proposes a link to a case or an explanation
+(a new completed case with its title and reason), and names the
+evidence: a journal entry by its time (`2026-10-01 14:40`), another
+event, a snapshot number, a case, or a case whose *Plan* names the
+change. The engine looks up every piece of evidence itself and refuses a
+proposal with an item it cannot back, so a change nobody can explain
+stays open. Each piece of evidence shows who wrote it (`by human`,
+`by agent:codex`), and the engine refuses evidence the proposing agent
+wrote itself: its own notes, events, cases or Plans. Nothing is written to
+the logbook yet. The agent ends by
+telling you the proposal's id.
+
+You apply it, as yourself:
+
+```sh
+seldon drift apply <PROPOSAL>
+```
+
+Every item is checked again against the logbook first; an item whose
+evidence is gone is refused, one that is already resolved is skipped.
+Each resolution in the ledger reads `proposed by agent:<name> —
+<evidence>`. A crisis is never applied with the rest: read its evidence,
+then apply it on its own:
+
+```sh
+seldon drift apply <PROPOSAL> --item <EVENT>
+```
+
+Running `apply` again changes nothing. A new proposal replaces the old
+one; `seldon drift discard <PROPOSAL>` throws one away. Only you apply or
+discard: the engine refuses an agent that names itself, as an agent
+Seldon started does (`SELDON_ACTOR`). That is a guard against a mistake,
+not a lock: any program you run as yourself can drop the variable, as it
+could resolve drift directly; the desk's *Apply* runs from the shell,
+never from an agent's session.
+
+To ask about one change or one case instead:
+
+```sh
+seldon agent ask drift <EVENT>
+seldon agent ask case C-2026-003
+```
+
+The agent tells you in its window what the record shows and what it
+proposes; it resolves nothing unless you tell it to there. An ask never
+hands the agent a case to work on: that is `agent start`. Without an
+Omarchy default agent, or without the `seldon` skill (`seldon hook
+install skills`), nothing starts and the message names the fix.
+
 ## Other agents
 
 An agent started outside the logbook folder never reads the logbook's
@@ -455,6 +537,11 @@ at length:
   only: nothing there loosens the R3 stop or "unattended: record only";
 - explain drift only with evidence, and tell you about a crisis in one
   line;
+- sort the open changes into a proposal you apply, with evidence the
+  engine can look up, when you ask it to (`triage.md`);
+- after it diagnosed a crash with Omarchy's `diagnose-crash` skill, file
+  the report into the logbook's inbox and ask you whether it becomes a
+  case (below);
 - for Omarchy itself (Hyprland, the bar, themes), follow Omarchy's own
   skill.
 
@@ -478,6 +565,27 @@ shipped and commits the archive. It acts only where Seldon's skill is
 today: a folder you removed the skill from stays without it, and a
 folder named `seldon` that Seldon did not write is left alone. `seldon hook uninstall skills` removes what
 Seldon wrote and keeps what you changed or added.
+
+### Crash analyses go into the inbox
+
+When an agent has diagnosed a crash with Omarchy's `diagnose-crash` skill
+(for example after a "Process crashed" notification) and there is a
+logbook, the Seldon skill tells it to file the report into the logbook's
+`inbox/` and then to ask you in one line whether the crash becomes a case.
+Omarchy's notification and its skill stay as they are. The agent files the
+report through the engine:
+
+```sh
+seldon inbox add --title "Crash: waybar (SIGSEGV)" --tag crash --file report.md
+```
+
+The engine redacts the report like a note (tokens, keys, passwords; home
+paths become `~`), writes `inbox/<date>-<title>.md` and commits that file
+on its own. The same report filed again changes nothing; another report
+under the same title gets a number (`-2`). Say yes, and the agent opens a
+case that names the inbox file; say no, and the report waits in the inbox
+until you sort it. An agent in an unattended session files the report and
+asks nothing.
 
 ## The Omarchy-Agent kit
 
@@ -519,6 +627,9 @@ seeing it shows up there.
   `seldon import … --apply`, `seldon agent start` or
   `seldon rules update` unless you ask for exactly that. The logbook's
   `AGENTS.md` says the same.
+- `seldon drift apply` and `seldon drift discard` are yours: an agent
+  only proposes, and the engine refuses an agent that applies under its
+  own name.
 - Add your own limits under `## Your rules` in `AGENTS.md`, for example
   "never install from the AUR".
 - Read a case's *Result* and its trace when you want to check the agent's

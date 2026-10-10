@@ -30,7 +30,9 @@
 pub mod config;
 pub mod omarchy;
 pub mod pacman;
+pub mod pacman_ignore;
 pub mod plugins;
+pub mod recent;
 pub mod snapper;
 pub mod theme;
 
@@ -118,9 +120,19 @@ impl Lost {
     }
 }
 
-/// Subject of the `seldon` `note` a capture writes when collectors lost
-/// their state although the ledger holds their events (WP-081).
-pub const STATE_RESET: &str = "state-reset";
+/// Subject of the `seldon` `state-loss` line a capture writes when
+/// collectors lost their state although the ledger holds their events
+/// (WP-081; a `note` before contract 2, ADR-0035 §4).
+pub const STATE_RESET: &str = crate::model::event::STATE_LOSS_SUBJECT;
+
+/// Whether `e` records a state loss: a `state-loss` line, or the `note`
+/// with subject [`STATE_RESET`] an engine before contract 2 wrote. Old
+/// lines are never rewritten (append-only), so every reader takes both.
+pub fn is_state_loss(e: &Event) -> bool {
+    use crate::model::event::{Kind, Source};
+    e.source == Source::Seldon
+        && (e.kind == Kind::StateLoss || (e.kind == Kind::Note && e.subject == STATE_RESET))
+}
 
 impl Outcome {
     pub fn ok(events: Vec<Event>, cursor: Value) -> Self {
@@ -172,11 +184,21 @@ pub fn find(name: &str) -> Option<&'static (dyn Collector + Sync)> {
 /// acceptance runs in docs/TESTING.md). Read once per process.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sources {
-    /// `SELDON_PACMAN_LOG`, default `/var/log/pacman.log`.
+    /// `SELDON_PACMAN_LOG`, default `/var/log/pacman.log`. Under
+    /// `SELDON_TEST_GUARD` without the variable it is `<guard>/pacman.log`
+    /// (WP-160 round 2), so a guarded run never reads the host's log.
     pub pacman_log: PathBuf,
     /// `SELDON_PACMAN_DB_LOCK`, default `/var/lib/pacman/db.lck`: present
-    /// while pacman runs (ADR-0013 §5).
+    /// while pacman runs (ADR-0013 §5), or left by one that died before
+    /// the current boot (WP-160). Under `SELDON_TEST_GUARD` without the
+    /// variable it is `<guard>/db.lck`, so a guarded run never reads the
+    /// host's lock.
     pub pacman_db_lock: PathBuf,
+    /// `SELDON_PROC_STAT`, default `/proc/stat`: its `btime` line is the
+    /// boot time that tells a stale `db.lck` from a running pacman
+    /// (WP-160). Under `SELDON_TEST_GUARD` without the variable it is
+    /// `<guard>/proc-stat` (missing: no boot time, the lock counts as held).
+    pub proc_stat: PathBuf,
     /// `SELDON_SNAPPER`, default `snapper`.
     pub snapper: String,
     /// `SELDON_SNAPSHOTS_DIR`, default `/.snapshots`: the `root` config's
@@ -203,6 +225,15 @@ pub struct Sources {
     /// (`meta.matches = "omarchy-default"`, ADR-0028 §2). Under
     /// `SELDON_TEST_GUARD` without the variable it is `<guard>/omarchy`.
     pub omarchy_path: PathBuf,
+    /// `SELDON_ETC_DIR`, default `/etc`: the system configuration, of
+    /// which the config collector hashes the boot files
+    /// ([`config::boot_roots`], WP-164) and the pacman collector reads the
+    /// ignore list of `pacman.conf` and its includes, names only
+    /// ([`pacman_ignore`]; an include outside `/etc` below this
+    /// directory's parent); nothing else (AGENTS.md §6). Under
+    /// `SELDON_TEST_GUARD` without the variable it is `<guard>/etc`, so no
+    /// test reads the host's.
+    pub etc_dir: PathBuf,
 }
 
 impl Default for Sources {
@@ -210,6 +241,7 @@ impl Default for Sources {
         Sources {
             pacman_log: PathBuf::from("/var/log/pacman.log"),
             pacman_db_lock: PathBuf::from("/var/lib/pacman/db.lck"),
+            proc_stat: PathBuf::from("/proc/stat"),
             snapper: "snapper".into(),
             snapshots: PathBuf::from("/.snapshots"),
             omarchy_version: "omarchy-version".into(),
@@ -218,6 +250,7 @@ impl Default for Sources {
             plugins_dir: None,
             theme_file: None,
             omarchy_path: PathBuf::from("/usr/share/omarchy"),
+            etc_dir: PathBuf::from("/etc"),
         }
     }
 }
@@ -227,8 +260,24 @@ impl Sources {
         let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
         let d = Sources::default();
         Sources {
-            pacman_log: var("SELDON_PACMAN_LOG").map_or(d.pacman_log, PathBuf::from),
-            pacman_db_lock: var("SELDON_PACMAN_DB_LOCK").map_or(d.pacman_db_lock, PathBuf::from),
+            pacman_log: var("SELDON_PACMAN_LOG")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("pacman.log"))
+                })
+                .unwrap_or(d.pacman_log),
+            pacman_db_lock: var("SELDON_PACMAN_DB_LOCK")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("db.lck"))
+                })
+                .unwrap_or(d.pacman_db_lock),
+            proc_stat: var("SELDON_PROC_STAT")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("proc-stat"))
+                })
+                .unwrap_or(d.proc_stat),
             snapper: var("SELDON_SNAPPER").unwrap_or(d.snapper),
             snapshots: var("SELDON_SNAPSHOTS_DIR")
                 .map(PathBuf::from)
@@ -247,6 +296,10 @@ impl Sources {
                     var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("omarchy"))
                 })
                 .unwrap_or(d.omarchy_path),
+            etc_dir: var("SELDON_ETC_DIR")
+                .map(PathBuf::from)
+                .or_else(|| var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("etc")))
+                .unwrap_or(d.etc_dir),
         }
     }
 }
@@ -293,9 +346,10 @@ pub struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
-    /// Runs `program args…` (fixed argv, no shell) with [`RUN_TIMEOUT`].
+    /// Runs `program args…` (fixed argv, no shell) with [`RUN_TIMEOUT`]
+    /// and [`sys::OUTPUT_MAX`].
     pub fn run(&self, program: &str, args: &[&str]) -> sys::Run {
-        sys::run(program, args, None, RUN_TIMEOUT)
+        sys::run(program, args, None, RUN_TIMEOUT, sys::OUTPUT_MAX)
     }
 }
 

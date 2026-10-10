@@ -201,7 +201,7 @@ impl Files {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            match std::fs::read_to_string(&path) {
+            match sys::read_regular_string(&path, sys::LOGBOOK_FILE_MAX) {
                 Ok(text) => files.push(File {
                     name,
                     path,
@@ -211,7 +211,7 @@ impl Files {
                 // not UTF-8: the lossy text still shows its fence markers
                 Err(e) => unread.push(Unread {
                     lossy: (e.kind() == std::io::ErrorKind::InvalidData)
-                        .then(|| std::fs::read(&path).ok())
+                        .then(|| sys::read_regular(&path, sys::LOGBOOK_FILE_MAX).ok())
                         .flatten()
                         .map(|b| String::from_utf8_lossy(&b).into_owned()),
                     name,
@@ -320,7 +320,7 @@ impl Files {
             if f.old.as_deref() == Some(f.text.as_str()) {
                 continue;
             }
-            sys::write_atomic(&f.path, f.text.as_bytes())?;
+            sys::write_atomic_nofollow(&f.path, f.text.as_bytes())?;
             written.push(format!("system/{}", f.name));
         }
         Ok(written)

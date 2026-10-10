@@ -30,7 +30,7 @@ ChartCanvas {
       ctx.fillRect(L.x0 + c.col * L.pitch, L.y0 + c.row * L.pitch, L.cell, L.cell)
     }
 
-    ctx.fillStyle = root.muted
+    ctx.fillStyle = root.dim
     ctx.textBaseline = "middle"
     var days = [[0, "Mon"], [2, "Wed"], [4, "Fri"]]
     for (var d = 0; d < days.length; d++)
@@ -59,7 +59,7 @@ ChartCanvas {
     if (lx < 0) return
     var ly = lx === beside ? L.y0 + (L.cell - box) / 2 : 0
     ctx.textBaseline = "middle"
-    ctx.fillStyle = root.muted
+    ctx.fillStyle = root.dim
     ctx.fillText("less", lx, ly + box / 2)
     lx += less + gap
     for (var s = 0; s < root.stepColors.length; s++) {
@@ -67,7 +67,7 @@ ChartCanvas {
       ctx.fillRect(lx, ly, box, box)
       lx += box + gap
     }
-    ctx.fillStyle = root.muted
+    ctx.fillStyle = root.dim
     ctx.fillText("more", lx, ly + box / 2)
   }
 

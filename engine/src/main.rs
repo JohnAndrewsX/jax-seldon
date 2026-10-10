@@ -12,7 +12,11 @@ use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use serde_json::json;
 
-use seldon::commands::{self, Context, Output, capture::CaptureArgs, init::InitArgs};
+use seldon::commands::{
+    self, Context, Output,
+    capture::CaptureArgs,
+    init::{InitArgs, InitMode},
+};
 use seldon::error::{Error, Exit};
 use seldon::model::Language;
 use seldon::{CONTRACT_VERSION, VERSION};
@@ -57,7 +61,7 @@ enum Command {
     /// Print the engine/plugin contract version
     ContractVersion,
 
-    /// Create a logbook (wizard; --non-interactive takes defaults)
+    /// Create a logbook (asks only where; --defaults asks nothing, --ask everything)
     Init(InitCmd),
 
     /// Check engine, config, logbook, collector state, agent skill, omarchy, snapper and git
@@ -105,8 +109,12 @@ enum Command {
     /// Plan and track cases: new, start, verify, done, drop, list, show
     Plan(commands::plan::PlanArgs),
 
-    /// Create a decision record (ADR) and open it in the editor
+    /// Create a decision record (ADR) and open it in the editor; accept a proposed one
     Decide(commands::decide::DecideArgs),
+
+    /// Before the logbook exists: the last days' pacman transactions and the
+    /// files edited under ~/.config, read-only, nothing written
+    Preview(commands::preview::PreviewArgs),
 
     /// Print the path of a logbook file; --editor opens it
     Open(commands::open::OpenArgs),
@@ -120,10 +128,10 @@ enum Command {
     /// Agent hooks: record commands, print session context, install into or uninstall from a harness
     Hook(commands::hook::HookArgs),
 
-    /// List open drift; link, explain, dismiss or show a drift event
+    /// List open drift; link, explain, dismiss or show a drift event; propose, apply or discard a triage proposal
     Drift(commands::drift::DriftArgs),
 
-    /// Start an agent on an active case
+    /// Start an agent on an active case, or ask one about the open changes, a change or a case
     Agent(commands::agent::AgentArgs),
 
     /// Write outputs/REBUILD.md: the steps to rebuild this machine
@@ -135,11 +143,18 @@ enum Command {
     /// Refresh the generated fences of system/*.md from read-only queries
     Dossier(commands::dossier::DossierArgs),
 
-    /// Import an earlier logbook (dry run unless --apply)
+    /// Import an earlier logbook (dry run unless --apply) or your Markdown
+    /// task files as cases
     Import(commands::import::ImportArgs),
+
+    /// File a text into the logbook's inbox (an agent's crash analysis, a finding)
+    Inbox(commands::inbox::InboxArgs),
 
     /// The agent rules in the logbook's AGENTS.md: update
     Rules(commands::rules::RulesArgs),
+
+    /// Edit config.toml: watch one more path (the desk's Watch on a recently edited file)
+    Config(commands::config_cmd::ConfigArgs),
 
     /// Print a shell completion script for bash, zsh or fish
     #[command(after_help = "Examples:
@@ -159,18 +174,36 @@ enum Command {
 }
 
 #[derive(Debug, Args)]
-#[command(after_help = "Examples:
+#[command(
+    after_help = "Without --defaults, --ask or --non-interactive, init asks only where the
+logbook goes and takes the defaults for the rest.
+
+Examples:
   seldon init
+  seldon init --defaults
+  seldon init --ask
   seldon init --non-interactive --since 2026-09-01 --baseline
-  seldon init --remove-theme-hook")]
+  seldon init --remove-theme-hook"
+)]
 struct InitCmd {
     /// Logbook directory (default ~/Seldon)
     #[arg(long, value_name = "DIR")]
     path: Option<PathBuf>,
 
-    /// Ask nothing; take flags, then the existing config, then the
-    /// defaults: ~/Seldon, language from the locale, all collectors, git
-    /// on, first capture from now on, no backfill, no theme hook
+    /// Ask nothing: ~/Seldon (or the config's logbook), language from the
+    /// locale, Obsidian settings when Obsidian is installed, and the last
+    /// 90 days recorded as history before Seldon
+    #[arg(long, conflicts_with_all = ["non_interactive", "ask"])]
+    defaults: bool,
+
+    /// The full wizard: every question, the defaults pre-selected
+    #[arg(long, conflicts_with = "non_interactive")]
+    ask: bool,
+
+    /// Ask nothing, detect nothing; take flags, then the existing config,
+    /// then the defaults: ~/Seldon, language from the locale, all
+    /// collectors, git on, the last 90 days recorded as history before
+    /// Seldon, no theme hook
     #[arg(long)]
     non_interactive: bool,
 
@@ -192,7 +225,8 @@ struct InitCmd {
     #[arg(long, value_name = "TS")]
     since: Option<String>,
 
-    /// Mark the backfilled drift as the pre-Seldon baseline (dismissed)
+    /// Dismiss the drift the backfill opens as "before Seldon" (--defaults
+    /// and plain init do it without the flag)
     #[arg(long, requires = "since")]
     baseline: bool,
 
@@ -207,7 +241,7 @@ struct InitCmd {
     /// Remove the theme-set hook that --theme-hook installed, and nothing
     /// else; needs no logbook
     #[arg(long, conflicts_with_all = [
-        "path", "non_interactive", "language", "obsidian", "harness", "since",
+        "path", "defaults", "ask", "non_interactive", "language", "obsidian", "harness", "since",
         "baseline", "no_capture", "theme_hook", "git", "no_git",
     ])]
     remove_theme_hook: bool,
@@ -268,7 +302,32 @@ fn main() -> ExitCode {
                 Err(e) => stdout_failed(&e),
             }
         }
-        Err(err) => fail(json, err.exit(), &err.to_string()),
+        Err(err) => fail_with(json, &err),
+    }
+}
+
+/// [`fail`] for a command's error. Exit 3 adds, to the `--json` error, the
+/// logbook path and, when `init` could not create a logbook there, why
+/// (`reason`, [`seldon::logbook::layout::blocked_reason`]; CONTRACT.md rule
+/// 10, WP-119).
+fn fail_with(as_json: bool, err: &Error) -> ExitCode {
+    let Error::NotInitialised(root) = err else {
+        return fail(as_json, err.exit(), &err.to_string());
+    };
+    if !as_json {
+        return fail(false, err.exit(), &err.to_string());
+    }
+    let mut error = json!({
+        "code": Exit::NotInitialised as u8,
+        "message": err.to_string(),
+        "path": root,
+    });
+    if let Some(reason) = seldon::logbook::layout::blocked_reason(root) {
+        error["reason"] = json!(reason);
+    }
+    match print_line(&json!({ "error": error }).to_string()) {
+        Ok(()) => Exit::NotInitialised.into(),
+        Err(e) => stdout_failed(&e),
     }
 }
 
@@ -327,7 +386,15 @@ fn run(cli: Cli) -> Result<Output, Error> {
             &ctx,
             InitArgs {
                 path: c.path,
-                non_interactive: c.non_interactive,
+                mode: if c.defaults {
+                    InitMode::Defaults
+                } else if c.ask {
+                    InitMode::Ask
+                } else if c.non_interactive {
+                    InitMode::NonInteractive
+                } else {
+                    InitMode::Location
+                },
                 language: c
                     .language
                     .map(|l| l.parse::<Language>())
@@ -368,6 +435,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Plan(a) => commands::plan::run(&ctx, a),
         Command::Decide(a) => commands::decide::run(&ctx, a),
         Command::Open(a) => commands::open::run(&ctx, a),
+        Command::Preview(a) => commands::preview::run(&ctx, a),
         Command::Index(a) => commands::index::run(&ctx, a),
         Command::Status(a) => commands::status::run(&ctx, a),
         Command::Hook(a) => commands::hook::run(&ctx, a),
@@ -377,7 +445,9 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Watch(a) => commands::watch::run(&ctx, a),
         Command::Dossier(a) => commands::dossier::run(&ctx, a),
         Command::Import(a) => commands::import::run(&ctx, a),
+        Command::Inbox(a) => commands::inbox::run(&ctx, a),
         Command::Rules(a) => commands::rules::run(&ctx, a),
+        Command::Config(a) => commands::config_cmd::run(&ctx, a),
     }
 }
 

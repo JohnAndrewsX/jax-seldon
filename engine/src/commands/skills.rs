@@ -1,7 +1,7 @@
 //! The Seldon agent skill (WP-094; ADR-0027 §8): `seldon hook install
 //! skills` and `hook uninstall skills`, and the `skills` row of `doctor`.
 //!
-//! - **The skill.** Five Markdown files under `engine/assets/skills/seldon/`,
+//! - **The skill.** Six Markdown files under `engine/assets/skills/seldon/`,
 //!   compiled in ([`FILES`]). Shaped like Omarchy's own agent skills
 //!   (`$OMARCHY_PATH/default/agents/skills/`), which point at it for the
 //!   record and which it points at for Omarchy work.
@@ -49,7 +49,7 @@ pub const SKILL_NAME: &str = "seldon";
 pub const MANIFEST: &str = ".seldon-skill.json";
 
 /// The skill's files: name, content.
-pub const FILES: [(&str, &str); 5] = [
+pub const FILES: [(&str, &str); 6] = [
     (
         "SKILL.md",
         include_str!("../../assets/skills/seldon/SKILL.md"),
@@ -69,6 +69,10 @@ pub const FILES: [(&str, &str); 5] = [
     (
         "update.md",
         include_str!("../../assets/skills/seldon/update.md"),
+    ),
+    (
+        "triage.md",
+        include_str!("../../assets/skills/seldon/triage.md"),
     ),
 ];
 
@@ -422,7 +426,7 @@ impl Archive {
         if let Some(rel) = &self.rel {
             return Ok(rel.clone());
         }
-        let parent = self.root.join("archive");
+        let parent = crate::logbook::checked_dir(&self.root, Path::new("archive"))?;
         sys::create_dir_private(&parent)
             .map_err(|e| anyhow::anyhow!("cannot create {}: {e}", parent.display()))?;
         let mut n = 1u32;
@@ -448,7 +452,7 @@ impl Archive {
     /// `<run folder>/<label>`.
     fn copy(&mut self, label: &str, name: &str, bytes: &[u8]) -> Result<String> {
         let rel = format!("{}/{label}", self.dir()?);
-        let dir = self.root.join(&rel);
+        let dir = crate::logbook::checked_dir(&self.root, Path::new(&rel))?;
         sys::create_dir_private(&dir).map_err(|e| anyhow::anyhow!("cannot create {rel}: {e}"))?;
         let mut file = sys::create_new_private(&dir.join(name))
             .map_err(|e| anyhow::anyhow!("cannot write {rel}/{name}: {e}"))?;
@@ -1087,6 +1091,42 @@ fn with_failures(mut human: String, json: Value, reports: &[DirReport]) -> Outpu
 mod tests {
     use super::*;
 
+    /// The archive of `--replace` is made in the logbook's own `archive/`
+    /// only: a link there, or a file, stops it before anything is made
+    /// (WP-168).
+    #[test]
+    fn the_archive_refuses_a_linked_or_non_directory_archive_folder() {
+        let base = crate::logbook::scratch::scratch("seldon-skill-archive");
+        let (root, outside) = (base.join("logbook"), base.join("outside"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 9).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("archive")).unwrap();
+        let e = Archive::new(&root, today)
+            .copy("claude", "SKILL.md", b"x")
+            .unwrap_err();
+        assert!(
+            e.to_string().starts_with("archive is a symbolic link,"),
+            "{e}"
+        );
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        std::fs::remove_file(root.join("archive")).unwrap();
+        std::fs::write(root.join("archive"), "").unwrap();
+        let e = Archive::new(&root, today)
+            .copy("claude", "SKILL.md", b"x")
+            .unwrap_err();
+        assert!(e.to_string().starts_with("archive is no directory,"), "{e}");
+        std::fs::remove_file(root.join("archive")).unwrap();
+        let rel = Archive::new(&root, today)
+            .copy("claude", "SKILL.md", b"x")
+            .unwrap();
+        assert_eq!(rel, "archive/skill-2026-10-09/claude");
+        assert_eq!(
+            std::fs::read(root.join(&rel).join("SKILL.md")).unwrap(),
+            b"x"
+        );
+    }
+
     #[test]
     fn every_file_is_shipped_once_and_the_skill_has_its_frontmatter() {
         let names: Vec<&str> = FILES.iter().map(|(n, _)| *n).collect();
@@ -1097,7 +1137,8 @@ mod tests {
                 "case.md",
                 "drift.md",
                 "snapshot.md",
-                "update.md"
+                "update.md",
+                "triage.md"
             ]
         );
         let skill = FILES[0].1;

@@ -1,6 +1,6 @@
 # Das Logbuch
 
-<!-- source: en/07-the-logbook.md @ e8bf173 -->
+<!-- source: en/07-the-logbook.md @ 4d58d386 -->
 
 Diese Seite geht durch den Ordner des Logbuchs: was jeder Ordner und
 jede Datei enthält, welche Teile der Engine gehören und welche dir, wie
@@ -42,7 +42,7 @@ Seldon/
 | `PROJECT.md` | wofür die Maschine da ist, was auf ihr nicht passieren darf | du |
 | `STATUS.md` | aktive Cases, offene Drift, letzte Ereignisse | die Engine (`seldon status`) |
 | `DECISIONS.md` | die Einstiegsseite für `decisions/`; die Engine füllt die Tabelle zwischen ihren Markierungen bei jedem `seldon decide` und `seldon status` | du, außerhalb der Markierungen |
-| `inbox/` | alles, was du später einsortieren willst | du |
+| `inbox/` | alles, was du später einsortieren willst, auch die Absturzanalyse eines Agenten | du; die Engine bei `seldon inbox add` |
 | `journal/` | eine Datei pro Tag; Einträge sind Überschriften `## HH:MM · actor · case` | die Engine hängt an, du ergänzt Text |
 | `ledger/*.jsonl` | die Ereignisse; wird nur ergänzt | nur die Engine |
 | `ledger/*.md` | eine lesbare Ansicht jedes Monats, mit Links zu Cases | die Engine (erzeugt) |
@@ -124,12 +124,20 @@ tags: []
 - Goal:
 - Steps:
 - Affected paths:
+- Persists: <!-- survives reboot and update | reboot only | lost at reboot -->
 - Rollback:
 - Verification:
+- Stop if:
 ## Log
 - 2026-10-01 10:12 · created (zone red, risk R2) · human
 ## Result
 ```
+
+*Persists* sagt, wie lange die Änderung hält: `survives reboot and
+update`, `reboot only` (ein Update überschreibt sie) oder `lost at
+reboot`. *Stop if* nennt, was den Agenten anhalten und dich fragen lässt.
+Im *Result* trägt jede Aussage `measured`, `documented` oder `inferred`;
+seine erste Zeile kommt in den Commit, der den Case abschließt.
 
 Das *Log* wird nur ergänzt. Die Engine fügt für jeden Schritt eine Zeile
 hinzu; du und deine Agenten ergänzt darunter datierte Zeilen. Halte die
@@ -209,8 +217,9 @@ Plugins, Omarchy, Theme), nehmen die Maschine, wie sie jetzt ist, als
 neuen Ausgangspunkt, und eine Änderung, die geschah, während der Zustand
 fehlte, wird nicht festgehalten.
 
-Das Capture, das neu anfängt, sagt das. Es schreibt eine Notiz mit dem
-Betreff `state-reset` ins Ledger, die die neu startenden Collectors
+Das Capture, das neu anfängt, sagt das. Es schreibt eine
+`state-loss`-Zeile mit dem Betreff `state-reset` ins Ledger (in 0.1.x
+eine Notiz), die die neu startenden Collectors
 nennt, gibt eine Warnung aus, und `seldon doctor` zeigt bis zum nächsten
 Capture eine `state`-Zeile. Dasselbe geschieht, wenn nur `manifest.json`
 oder `owned.json` beschädigt ist. Siehe

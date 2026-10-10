@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ e3463b2 -->
+<!-- source: en/03-daily-use.md @ d6953a36 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar, das Panel mit seinen sechs Tabs, die Tasten und das
@@ -31,8 +31,10 @@ Die Pill sitzt rechts in der Bar.
 - Das Seldon-Zeichen, dann `A · D`: A ist die Zahl der aktiven Cases, D
   die Zahl der Krisen. Teile, die null sind, fallen weg: das Zeichen
   allein, `2`, `· 1`. Das Zeichen nimmt die Farbe der Pill. Änderungen
-  ohne Case, die keine Krise sind, zählt sie nicht; die Einstellung
-  `driftInBar` ändert das (siehe [Konfiguration](06-configuration.md#drift)).
+  ohne Case, die keine Krise sind, zählt sie nicht: Der Tab Today des
+  Panels und der Tooltip zählen sie (*without a case*). Die Einstellung
+  `driftInBar` auf `all` zählt sie auch in der Bar (siehe
+  [Konfiguration](06-configuration.md#einstellungen-des-plugins)).
 - Sie nimmt die Akzentfarbe deines Themes, solange Cases aktiv sind, die
   Warnfarbe des Themes bei einer Krise und wird blasser, solange etwas
   repariert werden muss.
@@ -181,8 +183,11 @@ fragt nach einem Titel, legt die Entscheidung als *proposed* an und
 
 System zeigt die Maschine: Omarchy-Version, Theme und letztes Update,
 Paketzahlen, Abweichungen, Plugins, Snapshots, Bereiche, den Zustand
-jedes Collectors, den Namen der Maschine und die Version der Engine.
-*Open in editor* öffnet `STATUS.md`.
+jedes Collectors, den Namen der Maschine und die Version der Engine, die
+unter `~/.config` bearbeiteten Dateien, die kein beobachteter Pfad
+abdeckt, und *Ignored by pacman*: die Pakete und Gruppen, die pacmans
+volles Update auslässt (`IgnorePkg`, `IgnoreGroup`; `pacman -S`
+aktualisiert sie trotzdem). *Open in editor* öffnet `STATUS.md`.
 
 ### Memory (6)
 
@@ -222,6 +227,8 @@ Aktionen, die schreiben, brauchen auf der Tastatur zwei Tastendrücke:
 Drift-Dialog und eine neue Entscheidung. Das erste Enter schaltet die
 Aktion scharf, und die Karte sagt „Press Enter again: Start C-2026-005“. Der
 zweite Druck sendet sie. Jede andere Taste in einer Liste entschärft sie.
+Eine gehaltene Taste zählt als ein Druck: Sie bestätigt nie und sendet nie
+zweimal; nur die Tasten, die die Auswahl bewegen, wiederholen sich.
 Eine Notiz und ein neuer Case gehen mit einem Enter raus, ein Satz für
 *Run* auch. *Reopen* braucht einen Druck oder Klick: Es fügt nur einen
 Case hinzu. Mit der Maus sendet ein Klick, außer bei *Drop* und *Start
@@ -278,6 +285,33 @@ Plan beachten den Zeitraum nicht.
 
 Ein Klick auf die abgedunkelte Fläche oder auf *Close* schließt ihn auch.
 Der Prime Radiant zeigt nur; er startet nie die Engine.
+
+## Der Graph
+
+Ab 0.2.0 zeichnet Abschnitt 8 des Desks das Gedächtnis deiner Maschine
+als Netz: Bereiche, Cases, Entscheidungen und Änderungen, verbunden so,
+wie das Logbuch sie verbindet. Eine Änderung hängt an ihrem Case, ein
+Case an seinem Bereich, eine Entscheidung an den Cases, die sie nennt.
+Eine gestrichelte Linie führt von einer Änderung zu dem Case, den Seldon
+für sie vorschlägt. Krisen sind rot. *Play growth* spielt das Netz vom
+ersten Tag an ab; der Schieberegler wählt einen Tag.
+
+| Tun | Wie |
+|---|---|
+| einen Knoten bewegen | ziehen |
+| die Ansicht verschieben | den Hintergrund ziehen |
+| zoomen | das Mausrad, `-` und `=`; `0` passt die Ansicht ein |
+| die Karte eines Knotens sehen | darauf zeigen; ein Klick hält die Karte |
+| einen Case öffnen | *Open case* auf seiner Karte: Work zeigt ihn |
+| abspielen | *Play growth*, Leertaste oder `p`; ← und → gehen einen Tag |
+| Esc | das Abspielen anhalten, eine gehaltene Karte loslassen, dann schließen |
+
+Der Graph entsteht aus dem Index und enthält deshalb, was der Index
+enthält: die neuesten 500 Ereignisse und 50 abgeschlossenen Cases. Die
+Fußzeile nennt die Zahlen. Über 400 Knoten werden die Änderungen eines
+Tages und einer Quelle zu einem Knoten („+12“); seine Karte zählt sie
+auf. Das Layout bewegt sich nur, solange der Abschnitt zu sehen ist, und
+hält nach wenigen Sekunden an.
 
 ## Vom Terminal aus
 

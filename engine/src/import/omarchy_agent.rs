@@ -663,6 +663,7 @@ fn build_case(
         agents: Vec::new(),
         events: Vec::new(),
         tags,
+        source: None,
     };
     let mut log = format!(
         "imported from {SOURCE} {} (status {} → {})",
@@ -870,7 +871,7 @@ fn plan_journal(
             }
         }
         let block = block.trim_end().to_string() + "\n";
-        let existing = match std::fs::read_to_string(&path) {
+        let existing = match crate::sys::read_regular_string(&path, crate::sys::LOGBOOK_FILE_MAX) {
             Ok(t) => Some(t),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => {
@@ -961,7 +962,7 @@ fn plan_memory(
             .map(|(source, text)| rw.text(source, &memory_section(source, text)))
             .collect();
         let path = logbook.path(rel);
-        let existing = match std::fs::read_to_string(&path) {
+        let existing = match crate::sys::read_regular_string(&path, crate::sys::LOGBOOK_FILE_MAX) {
             Ok(t) => Some(t),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => {

@@ -15,11 +15,27 @@
 //!   ([`SkipPaths`]); they do not appear in the manifest at all;
 //! - binary files (a NUL byte in the first 8000 bytes, as git decides) and
 //!   files larger than 1 MB: listed as `skipped` without a hash, so a file
-//!   that grows past the limit is not reported as removed;
-//! - sockets, FIFOs and devices; symlinks to directories (no loops).
-//!   Symlinks to files are followed (stow-style dotfiles);
+//!   that grows past the limit is not reported as removed — except under
+//!   the persistence paths (`[drift] alwaysRedPaths`), where every file is
+//!   hashed whatever its content or size (WP-113: a hook with a NUL after
+//!   its first line, or over 1 MB, still runs);
+//! - sockets, FIFOs and devices; symlinks to directories, except one at or
+//!   below a persistence path, which is followed (WP-113: a linked hook
+//!   directory still runs): every real directory at most once per walk,
+//!   at most [`LINKED_ENTRIES`] entries below links per walk, a link cut
+//!   off at that budget recorded as [`CUT_OFF`]. Symlinks to files are
+//!   followed (stow-style dotfiles); no link into the logbook, the state
+//!   directory or Seldon's config directory is followed (it would change
+//!   with every capture);
 //! - files whose `~`-path cannot be an event subject (control characters,
 //!   longer than [`SUBJECT_MAX`]): counted in the collector's message.
+//!
+//! The collector also hashes the boot configuration, whatever `watchPaths`
+//! says ([`boot_roots`], AGENTS.md §6, WP-164): mkinitcpio's and Limine's
+//! files under `Sources::etc_dir`, a directory among them one level deep,
+//! without the files pacman left there ([`PACMAN_LEFTOVERS`]). Hashes
+//! only; a boot file that cannot be read is hashed by its metadata
+//! ([`stat_hash`], `meta.hashBasis = "stat"`).
 //!
 //! The manifest lives in `$XDG_STATE_HOME/seldon/manifest.json`
 //! ([`Manifest`]); the cursor holds the hash of the generation the ledger has
@@ -93,7 +109,55 @@ const BINARY_PROBE: usize = 8000;
 /// Directory depth below a watch path; deeper trees are not walked.
 const MAX_DEPTH: usize = 32;
 
+/// Entries (files, directories, links) one walk reads below followed
+/// directory links, all links together (WP-113 round 2): a link may point
+/// at a large tree. A link whose walk reaches it is cut off
+/// ([`CUT_OFF`]).
+pub const LINKED_ENTRIES: usize = 4096;
+
+/// Where every file is hashed (the persistence paths, plugin trees), a
+/// file larger than this is not read: its hash is a fingerprint of its
+/// size, modification time and inode ([`stat_hash`], WP-113 round 2).
+pub const STAT_HASH_ABOVE: u64 = 64 * 1024 * 1024;
+
+/// What the manifest records for a followed directory link that was cut
+/// off: its `~`-path with the SHA-256 of this text. The link then is one
+/// config event of its own (a crisis: it lies under a persistence path)
+/// instead of a silent partial view; the files below it keep their last
+/// hashes until it is walked in full again.
+pub const CUT_OFF: &str = "seldon: linked directory cut off\n";
+
+/// The `meta` key that says how a hash was made when not from the content
+/// (`stat`: [`stat_hash`]).
+pub const HASH_BASIS_KEY: &str = "hashBasis";
+
 pub struct ConfigFiles;
+
+/// The boot configuration the collector hashes besides `watchPaths`
+/// (AGENTS.md §6, WP-164), under `etc`: mkinitcpio's file, drop-ins and
+/// presets, Limine's defaults (`default/limine`, which also overrides
+/// every drop-in) and `limine-entry-tool`'s file and drop-ins. A directory
+/// among them is read one level deep, its files only. `/boot/limine*.conf`
+/// is not among them: on Omarchy `/boot` is root's alone (the ESP, mode
+/// 0700), so not even its metadata can be read, and the Limine tools
+/// regenerate it from these files on every snapshot and kernel build.
+pub fn boot_roots(etc: &Path) -> [PathBuf; 6] {
+    [
+        "mkinitcpio.conf",
+        "mkinitcpio.conf.d",
+        "mkinitcpio.d",
+        "default/limine",
+        "limine-entry-tool.conf",
+        "limine-entry-tool.d",
+    ]
+    .map(|r| etc.join(r))
+}
+
+/// The suffixes of the files pacman leaves beside a configuration file
+/// (`collectors::pacman`, WP-141). In a boot directory they are not
+/// hashed: the tools read only `*.conf` and the presets, and the pacman
+/// collector records each as a note already.
+pub const PACMAN_LEFTOVERS: [&str; 3] = [".pacnew", ".pacsave", ".pacorig"];
 
 /// One state of the watched files.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,7 +166,8 @@ pub struct Generation {
     pub hash: String,
     /// `~`-path → SHA-256 of every hashed file.
     pub files: BTreeMap<String, String>,
-    /// Files seen but not hashed: binary, larger than 1 MB, or unreadable.
+    /// Files seen but not hashed: binary, larger than 1 MB, or unreadable
+    /// (under a persistence path only an unreadable one never hashed).
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub skipped: BTreeSet<String>,
     /// The scope the files were collected in; absent in a manifest written
@@ -216,7 +281,7 @@ const RACY: Duration = Duration::from_secs(2);
 impl FileStat {
     /// `None` for a file modified less than [`RACY`] before `started` (or
     /// either time before 1970): its hash is not reused.
-    fn of(meta: &std::fs::Metadata, started: SystemTime) -> Option<Self> {
+    pub(crate) fn of(meta: &std::fs::Metadata, started: SystemTime) -> Option<Self> {
         let mtime = meta.modified().ok()?;
         let ctime = UNIX_EPOCH.checked_add(Duration::new(
             u64::try_from(meta.ctime()).ok()?,
@@ -371,6 +436,66 @@ impl OwnWrites {
     }
 }
 
+/// Why a path must not be opened or hashed although its own name passes
+/// (WP-139 round 3, B1, B2): a link on the way leads into Seldon's own
+/// files, to a path `ignored` refuses (`[redaction] skipPaths`, the
+/// excluded folders; the path or a folder above it below the home), or —
+/// with `outside_home` — out of the home directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkRefusal {
+    OutsideHome,
+    Own,
+    Ignored,
+}
+
+/// [`LinkRefusal`] for `path`, `None` when it may be read: no link on the
+/// way, or one whose canonical target passes. `own` holds Seldon's own
+/// files, canonical. A target below the canonical `~/.config` counts as
+/// below `~/.config`, also when `~/.config` itself leads out of the home. A path whose target cannot be resolved is the
+/// caller's (as before: not readable, not hashed).
+pub fn link_refusal(
+    home: &Path,
+    path: &Path,
+    own: &[PathBuf],
+    ignored: &dyn Fn(&Path) -> bool,
+    outside_home: bool,
+) -> Option<LinkRefusal> {
+    let canonical = std::fs::canonicalize(path).ok()?;
+    if canonical == path {
+        return None;
+    }
+    if own
+        .iter()
+        .any(|o| canonical.starts_with(o) || o.starts_with(&canonical))
+    {
+        return Some(LinkRefusal::Own);
+    }
+    let canonical_home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    // `~/.config` may itself be a link out of the home (a dotfile setup
+    // such as /mnt/dotfiles): its canonical folder counts as `~/.config`
+    // (orchestrator decision, WP-139 round 3b)
+    let dot_config = home.join(crate::config_scan::ROOT);
+    let under_dot_config = std::fs::canonicalize(&dot_config).ok().and_then(|c| {
+        canonical
+            .strip_prefix(c)
+            .ok()
+            .map(|rest| dot_config.join(rest))
+    });
+    let under_home = canonical
+        .strip_prefix(&canonical_home)
+        .map(|rest| home.join(rest));
+    match under_dot_config.ok_or(()).or(under_home.map_err(|_| ())) {
+        // the target as the patterns spell it: under the home as given
+        Ok(shown) => shown
+            .ancestors()
+            .take_while(|p| *p != home && p.starts_with(home))
+            .any(ignored)
+            .then_some(LinkRefusal::Ignored),
+        Err(_) if outside_home => Some(LinkRefusal::OutsideHome),
+        Err(_) => ignored(&canonical).then_some(LinkRefusal::Ignored),
+    }
+}
+
 /// Whether the config collector hashes `path`: it lies under a watch path
 /// and matches no `[redaction] skipPaths` pattern.
 pub fn is_watched(dirs: &Dirs, config: &Config, path: &Path) -> bool {
@@ -389,10 +514,13 @@ fn own_hash(dirs: &Dirs, config: &Config, path: &Path) -> Option<String> {
     if !is_watched(dirs, config, path) {
         return None;
     }
-    std::fs::metadata(path)
-        .ok()
-        .filter(|m| m.is_file())
-        .and_then(|m| hash_file(path, m.len()))
+    let persistent = SkipPaths::new(&dirs.home, &config.drift.always_red_paths).matches(path);
+    let meta = std::fs::metadata(path).ok().filter(|m| m.is_file())?;
+    if persistent {
+        persistent_hash(path, &meta)
+    } else {
+        hash_file(path, meta.len())
+    }
 }
 
 /// Adds `(path, hash)` records by `by` to `owned.json`; returns their
@@ -602,6 +730,23 @@ struct Scan {
     stats: BTreeMap<String, FileStat>,
     /// Files left out because their `~`-path cannot be a subject.
     unnamed: usize,
+    /// Followed directory links cut off at [`LINKED_ENTRIES`] (`~`-paths).
+    cut: BTreeSet<String>,
+    /// Directory links not followed because their target was walked
+    /// already.
+    loops: usize,
+    /// Links not followed because they lead into Seldon's own files.
+    own: usize,
+    /// Links not followed because they lead to a path the walk leaves out
+    /// or, for a watch path that is itself a link, out of the home
+    /// directory (WP-139 round 3).
+    refused: usize,
+    /// Files under a persistence path that could not be read: their last
+    /// hash is kept (WP-113 round 2, N1).
+    unreadable: usize,
+    /// Files hashed by [`stat_hash`] (larger than [`STAT_HASH_ABOVE`], or
+    /// a boot file that cannot be read).
+    stat_hashed: BTreeSet<String>,
 }
 
 /// The rules of one walk.
@@ -609,22 +754,88 @@ struct Walker<'a> {
     dirs: &'a Dirs,
     excluded: &'a [PathBuf],
     skip: &'a SkipPaths,
+    /// The persistence paths (`[drift] alwaysRedPaths`): every file there
+    /// is hashed, and a directory link there is followed.
+    persist: &'a SkipPaths,
     /// The stored manifest: hashes to reuse by [`FileStat`].
     known: Option<&'a Manifest>,
     /// When the walk started (the system clock, for [`FileStat::of`]).
     started: SystemTime,
+    /// Seldon's own directories, canonical: the logbook, the state
+    /// directory, `~/.config/seldon`. No link into them is followed.
+    own: &'a [PathBuf],
+    /// [`boot_roots`]: hashed by [`system_hash`]; a directory among them
+    /// is read one level deep.
+    system: &'a [PathBuf],
+}
+
+/// One walk's state of the directory links it follows.
+struct Follow {
+    /// Device and inode of every directory walked so far. A link to one
+    /// of them is not followed, and below a link none is walked twice:
+    /// each real directory at most once, whatever the links.
+    visited: std::collections::HashSet<(u64, u64)>,
+    /// Entries the walk may still read below links ([`LINKED_ENTRIES`]).
+    left: usize,
+    /// Inside a followed link.
+    inside: bool,
+    /// The budget ran out inside the current outermost link.
+    cut: bool,
+}
+
+impl Default for Follow {
+    fn default() -> Self {
+        Follow {
+            visited: Default::default(),
+            left: LINKED_ENTRIES,
+            inside: false,
+            cut: false,
+        }
+    }
 }
 
 impl Walker<'_> {
     fn scan(&self, roots: &[PathBuf]) -> Scan {
         let mut scan = Scan::default();
+        let mut follow = Follow::default();
         for root in roots {
             if self.ignored(root) {
                 continue;
             }
-            // a watch path may itself be a symlink (dotfile managers)
+            // a watch path may itself be a symlink (dotfile managers): what
+            // it leads to is checked before it is opened (WP-139 round 3)
+            if !self.system.contains(root) {
+                let itself = std::fs::symlink_metadata(root).is_ok_and(|m| m.is_symlink());
+                match link_refusal(
+                    &self.dirs.home,
+                    root,
+                    self.own,
+                    &|p| self.ignored(p),
+                    itself,
+                ) {
+                    Some(LinkRefusal::Own) => {
+                        scan.own += 1;
+                        continue;
+                    }
+                    Some(_) => {
+                        scan.refused += 1;
+                        continue;
+                    }
+                    None => {}
+                }
+            }
             match std::fs::metadata(root) {
-                Ok(m) if m.is_dir() => self.walk(root, 0, &mut scan),
+                Ok(m) if m.is_dir() => {
+                    follow.visited.insert((m.dev(), m.ino()));
+                    // a boot directory: its files, no directory below
+                    // (AGENTS.md §6)
+                    let depth = if self.system.contains(root) {
+                        MAX_DEPTH
+                    } else {
+                        0
+                    };
+                    self.walk(root, depth, &mut scan, &mut follow);
+                }
                 Ok(m) if m.is_file() => self.file(root, &m, &mut scan),
                 _ => {}
             }
@@ -633,16 +844,76 @@ impl Walker<'_> {
     }
 
     fn ignored(&self, path: &Path) -> bool {
-        self.excluded.iter().any(|x| path.starts_with(x)) || self.skip.matches(path)
+        self.excluded.iter().any(|x| path.starts_with(x))
+            || self.skip.matches(path)
+            || self.is_pacman_leftover(path)
     }
 
-    fn walk(&self, dir: &Path, depth: usize, scan: &mut Scan) {
+    /// Whether `path` is a file pacman left in a boot directory
+    /// ([`PACMAN_LEFTOVERS`]).
+    fn is_pacman_leftover(&self, path: &Path) -> bool {
+        path.parent()
+            .is_some_and(|d| self.system.iter().any(|p| p == d))
+            && path.file_name().is_some_and(|n| {
+                let n = n.to_string_lossy();
+                PACMAN_LEFTOVERS.iter().any(|s| n.ends_with(s))
+            })
+    }
+
+    /// Whether `path` is a boot file: one of [`boot_roots`] or a file
+    /// directly in one.
+    fn is_system(&self, path: &Path) -> bool {
+        self.system
+            .iter()
+            .any(|p| path == p || path.parent() == Some(p))
+    }
+
+    /// Whether the directory `path` is, or may hold, a persistence path: a
+    /// pattern matches it or what lies below it (`hooks/**` covers the
+    /// link `hooks` itself).
+    fn may_persist(&self, path: &Path) -> bool {
+        self.persist.matches(path) || self.persist.matches(&path.join("x"))
+    }
+
+    /// Whether the link `path` leads into Seldon's own files.
+    fn leads_into_own(&self, path: &Path) -> bool {
+        std::fs::canonicalize(path).is_ok_and(|t| self.own.iter().any(|o| t.starts_with(o)))
+    }
+
+    /// Below a followed directory link, why `path` must not be read where
+    /// it really lies: in Seldon's own files ([`Self::leads_into_own`]; a
+    /// folder that only holds them is walked beside them, WP-113), or
+    /// skipped or excluded there ([`link_refusal`], WP-139 stage 2). `None`
+    /// outside links.
+    fn refused_below_link(&self, path: &Path, follow: &Follow) -> Option<LinkRefusal> {
+        if !follow.inside {
+            return None;
+        }
+        if self.leads_into_own(path) {
+            return Some(LinkRefusal::Own);
+        }
+        match link_refusal(&self.dirs.home, path, self.own, &|p| self.ignored(p), false) {
+            Some(LinkRefusal::Own) => None,
+            other => other,
+        }
+    }
+
+    fn walk(&self, dir: &Path, depth: usize, scan: &mut Scan, follow: &mut Follow) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
         let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
         paths.sort();
+        // a directory's files before its subdirectories
+        let mut dirs = Vec::new();
         for path in paths {
+            if follow.inside {
+                if follow.left == 0 {
+                    follow.cut = true;
+                    return;
+                }
+                follow.left -= 1;
+            }
             if path.file_name().is_some_and(|n| n == ".git") || self.ignored(&path) {
                 continue;
             }
@@ -650,20 +921,114 @@ impl Walker<'_> {
                 continue;
             };
             if meta.file_type().is_symlink() {
-                // follow links to files, never into directories
-                if let Ok(target) = std::fs::metadata(&path)
-                    && target.is_file()
-                {
-                    self.file(&path, &target, scan);
+                // follow links to files; into directories only where
+                // something that runs at login may lie (WP-113)
+                let refusal = link_refusal(
+                    &self.dirs.home,
+                    &path,
+                    self.own,
+                    &|p| self.ignored(p),
+                    false,
+                );
+                match std::fs::metadata(&path) {
+                    Ok(_) if self.leads_into_own(&path) => scan.own += 1,
+                    // a file behind the link that the walk leaves out
+                    // (skipPaths, the excluded folders) is not read either
+                    Ok(target) if target.is_file() && refusal.is_some() => scan.refused += 1,
+                    Ok(target) if target.is_file() => self.file(&path, &target, scan),
+                    // a folder behind the link that the walk leaves out is
+                    // not entered either (WP-139 stage 2, B1); one that
+                    // holds Seldon's own files is walked beside them
+                    Ok(target)
+                        if target.is_dir() && refusal.is_some_and(|r| r != LinkRefusal::Own) =>
+                    {
+                        scan.refused += 1
+                    }
+                    Ok(target) if target.is_dir() && self.may_persist(&path) => {
+                        dirs.push((path, true, (target.dev(), target.ino())));
+                    }
+                    _ => {}
                 }
             } else if meta.is_dir() {
-                if depth < MAX_DEPTH {
-                    self.walk(&path, depth + 1, scan);
-                }
+                dirs.push((path, false, (meta.dev(), meta.ino())));
             } else if meta.is_file() {
-                self.file(&path, &meta, scan);
+                // below a followed link the spelled path is not the real
+                // one: the checks go by where it lies (WP-139 stage 2, B1)
+                match self.refused_below_link(&path, follow) {
+                    Some(LinkRefusal::Own) => scan.own += 1,
+                    Some(_) => scan.refused += 1,
+                    None => self.file(&path, &meta, scan),
+                }
             }
         }
+        if depth >= MAX_DEPTH {
+            return;
+        }
+        for (path, linked, id) in dirs {
+            if follow.cut {
+                return;
+            }
+            // a directory walked already: not again through a link, nor
+            // below one (outside links the tree itself has no loops)
+            let first = follow.visited.insert(id);
+            if linked {
+                if first {
+                    self.follow(&path, depth, scan, follow);
+                } else {
+                    scan.loops += 1;
+                }
+            } else if let Some(why) = self.refused_below_link(&path, follow) {
+                // below a link: Seldon's own directories, or a folder the
+                // walk leaves out where it really lies
+                match why {
+                    LinkRefusal::Own => scan.own += 1,
+                    _ => scan.refused += 1,
+                }
+            } else if first || !follow.inside {
+                self.walk(&path, depth + 1, scan, follow);
+            }
+        }
+    }
+
+    /// Walks the directory link `link` under the link's own name. The
+    /// outermost link of a walk is cut off when the budget runs out below
+    /// it: what was read below it is dropped, the files the manifest had
+    /// there keep their hashes, and the link is recorded as [`CUT_OFF`].
+    fn follow(&self, link: &Path, depth: usize, scan: &mut Scan, follow: &mut Follow) {
+        if follow.inside {
+            self.walk(link, depth + 1, scan, follow);
+            return;
+        }
+        follow.inside = true;
+        follow.cut = false;
+        self.walk(link, depth + 1, scan, follow);
+        follow.inside = false;
+        if !follow.cut {
+            return;
+        }
+        let key = self.dirs.display(link);
+        let prefix = format!("{key}/");
+        let below = |k: &String| k.starts_with(&prefix);
+        scan.files.retain(|k, _| !below(k));
+        scan.skipped.retain(|k| !below(k));
+        scan.stats.retain(|k, _| !below(k));
+        scan.mtimes.retain(|k, _| !below(k));
+        scan.stat_hashed.retain(|k| !below(k));
+        if let Some(m) = self.known {
+            scan.files.extend(
+                m.current
+                    .files
+                    .range(prefix.clone()..)
+                    .take_while(|(k, _)| below(k))
+                    .map(|(k, h)| (k.clone(), h.clone())),
+            );
+        }
+        scan.files
+            .insert(key.clone(), sys::sha256_hex(CUT_OFF.as_bytes()));
+        scan.cut.insert(key);
+        // the cut belongs to this link: the walk above it and the later
+        // roots go on (WP-113 round 3)
+        follow.cut = false;
     }
 
     fn file(&self, path: &Path, meta: &std::fs::Metadata, scan: &mut Scan) {
@@ -677,23 +1042,117 @@ impl Walker<'_> {
         if let Ok(t) = meta.modified() {
             scan.mtimes.insert(key.clone(), t);
         }
+        let persistent = self.persist.matches(path);
+        // the toggles directory too: Hyprland loads its Lua whatever it
+        // holds (WP-113 round 3); a dozen files
+        let every = persistent || path.starts_with(self.dirs.home.join(TOGGLES_DIR));
+        if every && meta.len() > STAT_HASH_ABOVE {
+            scan.stat_hashed.insert(key.clone());
+        }
         let stat = FileStat::of(meta, self.started);
+        let last = self.known.and_then(|m| m.current.files.get(&key));
         let known = stat.and_then(|s| {
-            let m = self.known?;
-            (m.stats.get(&key) == Some(&s))
-                .then(|| m.current.files.get(&key).cloned())
+            (self.known?.stats.get(&key) == Some(&s))
+                .then(|| last.cloned())
                 .flatten()
         });
-        match known.or_else(|| hash_file(path, meta.len())) {
+        let system = self.is_system(path);
+        let hash = known.or_else(|| {
+            if system {
+                Some(system_hash(path, meta))
+            } else if every {
+                persistent_hash(path, meta)
+            } else {
+                hash_file(path, meta.len())
+            }
+        });
+        // also when the stored hash is reused: equal stats, equal stat hash
+        if system && hash.as_ref() == Some(&stat_hash(meta)) {
+            scan.stat_hashed.insert(key.clone());
+        }
+        match hash {
             Some(hash) => {
                 if let Some(s) = stat {
                     scan.stats.insert(key.clone(), s);
                 }
                 scan.files.insert(key, hash);
             }
+            // unreadable under a persistence path: the last hash stays, so
+            // the content it has when readable again is compared with it
+            // (WP-113 round 2, N1); never seen readable: skipped
+            None if persistent => {
+                scan.unreadable += 1;
+                match last {
+                    Some(h) => {
+                        scan.files.insert(key, h.clone());
+                    }
+                    None => {
+                        scan.skipped.insert(key);
+                    }
+                }
+            }
             None => {
                 scan.skipped.insert(key);
             }
+        }
+    }
+}
+
+/// The hash of a file where every file is hashed: [`hash_any`], or
+/// [`stat_hash`] above [`STAT_HASH_ABOVE`].
+pub(crate) fn persistent_hash(path: &Path, meta: &std::fs::Metadata) -> Option<String> {
+    if meta.len() > STAT_HASH_ABOVE {
+        Some(stat_hash(meta))
+    } else {
+        hash_any(path)
+    }
+}
+
+/// The hash of a boot file (WP-164): its content, any size up to
+/// [`STAT_HASH_ABOVE`] ([`hash_any`]); [`stat_hash`] for a larger file or
+/// one that cannot be read.
+fn system_hash(path: &Path, meta: &std::fs::Metadata) -> String {
+    (meta.len() <= STAT_HASH_ABOVE)
+        .then(|| hash_any(path))
+        .flatten()
+        .unwrap_or_else(|| stat_hash(meta))
+}
+
+/// SHA-256 of a file's size, modification time (ns), change time and
+/// inode: the hash of a file too large to read (WP-113 rounds 2 and 3). A
+/// `touch` changes it, and so does an in-place write whose modification
+/// time was put back: no user can reset the change time.
+pub(crate) fn stat_hash(meta: &std::fs::Metadata) -> String {
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    sys::sha256_hex(
+        format!(
+            "stat {} {} {} {} {}\n",
+            meta.len(),
+            mtime,
+            meta.ctime(),
+            meta.ctime_nsec(),
+            meta.ino()
+        )
+        .as_bytes(),
+    )
+}
+
+/// SHA-256 of the whole file at `path`, any size and content, read in
+/// pieces; `None` when it cannot be read.
+pub fn hash_any(path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = sys::Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => return Some(hasher.finish_hex()),
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return None,
         }
     }
 }
@@ -779,8 +1238,9 @@ fn diff(ctx: &Ctx, base: &Generation, scan: &Scan, since: DateTime<FixedOffset>)
 
 /// ADR-0028 §5: the capture-time evidence of a new `config-add` or
 /// `config-change`, as `meta.matches` (the boolean fact, never the target
-/// or the content): `system-link` for a symlink whose target lies under
-/// `/usr/` (`systemctl --user enable`, Omarchy's migrations),
+/// or the content): `system-link` for a symlink under the home directory
+/// whose target lies under `/usr/` (`systemctl --user enable`, Omarchy's
+/// migrations; never a boot file, WP-164),
 /// `omarchy-default` for content equal to Omarchy's shipped copy (its
 /// hash), `theme-repo` for a file of a theme directory with a `.git`
 /// directory (`omarchy theme install`, which strips a theme's code).
@@ -790,15 +1250,45 @@ fn mark_evidence(ctx: &Ctx, events: &mut [Event]) {
     let trusted = omarchy_trust(omarchy, owner)
         .is_ok()
         .then_some((omarchy.as_path(), owner));
-    for e in events
-        .iter_mut()
-        .filter(|e| matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange))
-    {
-        let mark = evidence(ctx.dirs, trusted, &e.subject, e.meta.hash_to.as_deref());
+    for e in events.iter_mut() {
+        let mark = match e.kind {
+            Kind::ConfigAdd | Kind::ConfigChange => {
+                evidence(ctx.dirs, trusted, &e.subject, e.meta.hash_to.as_deref())
+            }
+            Kind::ConfigRemove => {
+                removed_toggle(ctx.dirs, trusted, &e.subject, e.meta.hash_from.as_deref())
+            }
+            _ => None,
+        };
         if let Some(mark) = mark {
             e.meta
                 .extra
                 .insert(MATCHES_KEY.to_string(), Value::String(mark.to_string()));
+        }
+    }
+}
+
+/// WP-113 round 2: what the walk knows of an event's hash beyond the
+/// content — a linked directory cut off ([`CUT_OFF`]: its own detail,
+/// `meta.cutOff`), or watched in full again; a file hashed by
+/// [`stat_hash`] (`meta.hashBasis = "stat"`).
+fn mark_walk(scan: &Scan, events: &mut [Event]) {
+    let cut = sys::sha256_hex(CUT_OFF.as_bytes());
+    for e in events.iter_mut() {
+        let added = matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange);
+        if added && scan.cut.contains(&e.subject) {
+            e.detail = Some(format!(
+                "linked directory cut off: more than {LINKED_ENTRIES} entries below links"
+            ));
+            e.meta.extra.insert("cutOff".into(), Value::Bool(true));
+            // a link into /usr/ is no evidence for what it hides
+            e.meta.extra.remove(MATCHES_KEY);
+        } else if e.meta.hash_from.as_deref() == Some(cut.as_str()) {
+            e.detail = Some("linked directory watched in full again".into());
+        } else if added && scan.stat_hashed.contains(&e.subject) {
+            e.meta
+                .extra
+                .insert(HASH_BASIS_KEY.into(), Value::String("stat".into()));
         }
     }
 }
@@ -875,19 +1365,17 @@ pub fn evidence(
 ) -> Option<&'static str> {
     let path = key_path(dirs, key);
     let is_link = std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink());
-    if is_link && std::fs::canonicalize(&path).is_ok_and(|t| t.starts_with("/usr/")) {
+    // a file under the home directory only: a boot file linked into
+    // `/usr/` is a boot change like any other (ADR-0037 §2, WP-164)
+    if is_link
+        && key.starts_with("~/")
+        && std::fs::canonicalize(&path).is_ok_and(|t| t.starts_with("/usr/"))
+    {
         return Some(MATCHES_SYSTEM_LINK);
     }
     if let Some(hash) = hash
         && let Some((omarchy, owner)) = omarchy
-        && omarchy_copies(dirs, omarchy, &path).iter().any(|copy| {
-            std::fs::metadata(copy)
-                .ok()
-                .filter(|m| m.is_file())
-                .and_then(|m| hash_file(copy, m.len()))
-                .is_some_and(|h| h == hash)
-                && copy_trusted(copy, omarchy, owner)
-        })
+        && is_omarchy_copy(dirs, omarchy, owner, &path, hash)
     {
         return Some(MATCHES_OMARCHY_DEFAULT);
     }
@@ -906,15 +1394,62 @@ pub fn evidence(
     None
 }
 
+/// Whether the content `hash` of `path` is one of Omarchy's shipped copies
+/// of it ([`omarchy_copies`]) in the trusted tree `omarchy`.
+fn is_omarchy_copy(dirs: &Dirs, omarchy: &Path, owner: u32, path: &Path, hash: &str) -> bool {
+    omarchy_copies(dirs, omarchy, path).iter().any(|copy| {
+        std::fs::metadata(copy).is_ok_and(|m| m.is_file() && m.len() <= STAT_HASH_ABOVE)
+            && hash_any(copy).is_some_and(|h| h == hash)
+            && copy_trusted(copy, omarchy, owner)
+    })
+}
+
+/// Omarchy's toggle state directory relative to `$HOME`
+/// (`omarchy-toggle` touches and removes empty flag files there;
+/// `omarchy-hyprland-toggle` copies a flag into `hypr/` and deletes it to
+/// turn it off; Hyprland loads every `.lua` under `hypr/`).
+pub const TOGGLES_DIR: &str = ".local/state/omarchy/toggles";
+
+/// WP-113: the capture-time evidence of a `config-remove` in the toggles
+/// directory whose removed content (`hash`) is Omarchy's shipped flag — a
+/// toggle turned off, routine by ADR-0037 §1 (the classifier reads a mark
+/// on a removal only there).
+fn removed_toggle(
+    dirs: &Dirs,
+    omarchy: Option<(&Path, u32)>,
+    key: &str,
+    hash: Option<&str>,
+) -> Option<&'static str> {
+    let path = key_path(dirs, key);
+    let (omarchy, owner) = omarchy?;
+    (path.starts_with(dirs.home.join(TOGGLES_DIR))
+        && is_omarchy_copy(dirs, omarchy, owner, &path, hash?))
+    .then_some(MATCHES_OMARCHY_DEFAULT)
+}
+
 /// Omarchy's shipped copies of `path`: `$OMARCHY_PATH/config/<rel>` for
 /// `~/.config/<rel>` (`omarchy refresh config`, migrations), and for a
 /// desktop entry `~/.local/share/applications/<name>` the file of that
 /// name under `$OMARCHY_PATH/applications/`, or for `Alacritty.desktop`
 /// `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`
-/// (`omarchy-refresh-applications`).
+/// (`omarchy-refresh-applications`), and for a toggle
+/// `~/.local/state/omarchy/toggles/<app>/<rel>`
+/// `$OMARCHY_PATH/default/<app>/toggles/<rel>` (`omarchy-hyprland-toggle`,
+/// WP-113).
 fn omarchy_copies(dirs: &Dirs, omarchy: &Path, path: &Path) -> Vec<PathBuf> {
     if let Ok(rel) = path.strip_prefix(dirs.home.join(".config")) {
         return vec![omarchy.join("config").join(rel)];
+    }
+    if let Ok(rel) = path.strip_prefix(dirs.home.join(TOGGLES_DIR)) {
+        let mut parts = rel.components();
+        let Some(app) = parts.next() else {
+            return Vec::new();
+        };
+        let rest = parts.as_path();
+        if rest.as_os_str().is_empty() {
+            return Vec::new();
+        }
+        return vec![omarchy.join("default").join(app).join("toggles").join(rest)];
     }
     if let Ok(rel) = path.strip_prefix(dirs.home.join(".local/share/applications")) {
         let mut copies = vec![omarchy.join("applications").join(rel)];
@@ -1230,13 +1765,27 @@ impl ConfigFiles {
         };
         let skip_paths = &ctx.config.redaction.skip_paths;
         let skip = SkipPaths::new(&ctx.dirs.home, skip_paths);
+        let persist = SkipPaths::new(&ctx.dirs.home, &ctx.config.drift.always_red_paths);
+        let own: Vec<PathBuf> = [
+            ctx.ledger.dir().parent().map(Path::to_path_buf),
+            Some(ctx.dirs.state_dir.clone()),
+            Some(ctx.dirs.xdg_config_home.join("seldon")),
+        ]
+        .into_iter()
+        .flatten()
+        .filter_map(|p| std::fs::canonicalize(p).ok())
+        .collect();
+        let system = boot_roots(&ctx.sources.etc_dir);
         let scope = WatchScope::new(ctx.dirs, roots, excluded, skip_paths);
         let scan = Walker {
             dirs: ctx.dirs,
             excluded,
             skip: &skip,
+            persist: &persist,
             known: stored.as_ref(),
             started: SystemTime::now(),
+            own: &own,
+            system: &system,
         }
         .scan(roots);
         let current = Generation {
@@ -1283,6 +1832,36 @@ impl ConfigFiles {
                 scan.unnamed
             ));
         }
+        if !scan.cut.is_empty() {
+            notes.push(format!(
+                "{} linked director(ies) cut off: more than {LINKED_ENTRIES} entries below links",
+                scan.cut.len()
+            ));
+        }
+        if scan.loops > 0 {
+            notes.push(format!(
+                "{} linked director(ies) not followed: walked already",
+                scan.loops
+            ));
+        }
+        if scan.own > 0 {
+            notes.push(format!(
+                "{} link(s) into Seldon's own files not followed",
+                scan.own
+            ));
+        }
+        if scan.refused > 0 {
+            notes.push(format!(
+                "{} link(s) not followed: they lead to a skipped or excluded file, or a watch path out of the home directory",
+                scan.refused
+            ));
+        }
+        if scan.unreadable > 0 {
+            notes.push(format!(
+                "{} file(s) under persistence paths could not be read; their last hash is kept",
+                scan.unreadable
+            ));
+        }
         let since = prev.as_ref().map(|p| p.checked);
         // the generation the last capture stored, when the cursor names an
         // older one: that capture's cursor save (or its ledger write) failed
@@ -1324,6 +1903,7 @@ impl ConfigFiles {
                 }
                 let mut events = diff(ctx, &base, &scan, prev.checked);
                 mark_evidence(ctx, &mut events);
+                mark_walk(&scan, &mut events);
                 events
             }
             (Some(_), None) => {
@@ -1364,12 +1944,19 @@ impl Collector for ConfigFiles {
     }
 
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
-        let roots: Vec<PathBuf> = ctx
+        let mut roots: Vec<PathBuf> = ctx
             .config
             .watch_paths
             .iter()
             .filter_map(|p| ctx.dirs.expand_config(p))
             .collect();
+        // the boot files, whatever `watchPaths` says (WP-164); one a watch
+        // path covers is walked there
+        for p in boot_roots(&ctx.sources.etc_dir) {
+            if !roots.iter().any(|r| p.starts_with(r)) {
+                roots.push(p);
+            }
+        }
         let excluded = [
             Plugins::dir(ctx.sources, &ctx.dirs.home),
             ctx.dirs.home.join(MIME_CACHE),
@@ -1469,6 +2056,101 @@ mod tests {
             assert!(!copy_trusted(&copy, &tree, 0));
         }
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// WP-164: a boot file is hashed by its content when it can be read,
+    /// else by its metadata; the content hash is the plain SHA-256.
+    #[test]
+    fn a_boot_file_is_hashed_by_content_or_metadata() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = std::env::temp_dir().join(format!("seldon-boot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let file = tmp.join("mkinitcpio.conf");
+        std::fs::write(&file, "HOOKS=(base udev)\n").unwrap();
+        let meta = std::fs::metadata(&file).unwrap();
+        assert_eq!(
+            system_hash(&file, &meta),
+            sys::sha256_hex(b"HOOKS=(base udev)\n")
+        );
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let meta = std::fs::metadata(&file).unwrap();
+        let root = std::fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0);
+        if !root {
+            assert_eq!(system_hash(&file, &meta), stat_hash(&meta));
+        }
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn boot_roots_are_the_listed_files() {
+        assert_eq!(
+            boot_roots(Path::new("/etc")).map(|p| p.display().to_string()),
+            [
+                "/etc/mkinitcpio.conf",
+                "/etc/mkinitcpio.conf.d",
+                "/etc/mkinitcpio.d",
+                "/etc/default/limine",
+                "/etc/limine-entry-tool.conf",
+                "/etc/limine-entry-tool.d",
+            ]
+        );
+    }
+
+    /// WP-164: pacman's leftovers are left out in a boot directory only;
+    /// a boot file is a root or a file directly in a root directory.
+    #[test]
+    fn boot_files_and_pacman_leftovers() {
+        let dirs = Dirs {
+            home: PathBuf::from("/home/user"),
+            xdg_config_home: PathBuf::from("/home/user/.config"),
+            state_dir: PathBuf::from("/home/user/.local/state/seldon"),
+        };
+        let system = boot_roots(Path::new("/etc"));
+        let (skip, persist) = (SkipPaths::default(), SkipPaths::default());
+        let w = Walker {
+            dirs: &dirs,
+            excluded: &[],
+            skip: &skip,
+            persist: &persist,
+            known: None,
+            started: SystemTime::now(),
+            own: &[],
+            system: &system,
+        };
+        let p = |s: &str| PathBuf::from(s);
+        for leftover in [
+            "/etc/mkinitcpio.conf.d/omarchy_hooks.conf.pacnew",
+            "/etc/mkinitcpio.d/linux.preset.pacsave",
+            "/etc/limine-entry-tool.d/omarchy-defaults.conf.pacorig",
+        ] {
+            assert!(w.ignored(&p(leftover)), "{leftover}");
+        }
+        for kept in [
+            "/etc/mkinitcpio.conf.d/omarchy_hooks.conf",
+            "/etc/mkinitcpio.conf.d/omarchy_hooks.pacnew.conf",
+            "/etc/mkinitcpio.conf.d/sub/x.pacnew",
+            "/etc/mkinitcpio.conf.pacnew",
+            "/home/user/.config/hypr/x.pacnew",
+        ] {
+            assert!(!w.ignored(&p(kept)), "{kept}");
+        }
+        for boot in [
+            "/etc/mkinitcpio.conf",
+            "/etc/default/limine",
+            "/etc/limine-entry-tool.d/omarchy-uki.conf",
+            "/etc/mkinitcpio.d/linux.preset",
+        ] {
+            assert!(w.is_system(&p(boot)), "{boot}");
+        }
+        for other in [
+            "/etc/mkinitcpio.conf.d/sub/x.conf",
+            "/etc/default/grub",
+            "/etc/pacman.conf",
+            "/etc/limine-entry-tool.conf.d/x.conf",
+        ] {
+            assert!(!w.is_system(&p(other)), "{other}");
+        }
     }
 
     fn skip(patterns: &[&str]) -> SkipPaths {

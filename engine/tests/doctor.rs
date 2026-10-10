@@ -803,6 +803,97 @@ mod doctor {
         assert_eq!(check(&v, "collectors")["status"], "ok", "{v}");
     }
 
+    /// WP-160: the `pacman` row looks at `db.lck` against the boot time.
+    /// Under the test guard both default into the guard directory
+    /// (`<guard>/db.lck`, `<guard>/proc-stat`), never the host's. A stale
+    /// lock is degraded with the path and how to remove it (text, never
+    /// run); the lock stays as it was.
+    #[test]
+    fn the_pacman_row_names_a_stale_lock() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let env = Env::new(Snapper::NoPermissions);
+        let root = init(&env);
+        let lock = env.tmp.path().join("db.lck");
+        let stat = env.tmp.path().join("proc-stat");
+        let row = || {
+            let out = env.seldon(&["doctor", "--path", root.to_str().unwrap(), "--json"]);
+            assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+            check(&json(&out), "pacman").clone()
+        };
+
+        let c = row();
+        assert_eq!(c["status"], "ok", "{c}");
+        assert_eq!(c["message"], "no db.lck: pacman is not running");
+
+        std::fs::write(&lock, "").unwrap();
+        let c = row();
+        assert_eq!(c["status"], "ok", "no boot time: held, {c}");
+        assert!(
+            c["message"]
+                .as_str()
+                .unwrap()
+                .contains("boot time not known"),
+            "{c}"
+        );
+
+        // booted 2026-10-01T08:30:00Z
+        std::fs::write(&stat, "cpu 1\nbtime 1790843400\n").unwrap();
+        let boot = UNIX_EPOCH + Duration::from_secs(1_790_843_400);
+        let set = |t| {
+            std::fs::File::options()
+                .write(true)
+                .open(&lock)
+                .unwrap()
+                .set_modified(t)
+                .unwrap()
+        };
+        set(boot + Duration::from_secs(5));
+        let c = row();
+        assert_eq!(c["status"], "ok", "{c}");
+        assert!(
+            c["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("db.lck from this boot: taken as a running pacman"),
+            "{c}"
+        );
+        assert!(c.get("fix").is_none(), "{c}");
+
+        let made = boot - Duration::from_secs(3600);
+        set(made);
+        let c = row();
+        assert_eq!(c["status"], "degraded", "{c}");
+        let message = c["message"].as_str().unwrap();
+        assert!(
+            message.starts_with(&format!("stale {} from ", lock.display())),
+            "{c}"
+        );
+        assert!(message.contains("before this boot"), "{c}");
+        assert!(message.contains("unfinished"), "{c}");
+        assert_eq!(
+            c["fix"],
+            format!(
+                "make sure no pacman, yay or omarchy update is running, then: sudo rm {}",
+                lock.display()
+            )
+        );
+        let human = stdout(&env.seldon(&["doctor", "--path", root.to_str().unwrap()]));
+        assert!(human.contains("degraded  pacman   stale "), "{human}");
+        assert!(human.contains("fix: make sure no pacman"), "{human}");
+        let meta = std::fs::metadata(&lock).unwrap();
+        assert_eq!(meta.modified().unwrap(), made, "the lock is not touched");
+        assert_eq!(meta.len(), 0);
+
+        // the collector switched off: the lock is not looked at
+        let config = env.config_file();
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(text.contains("pacman = true"), "{text}");
+        std::fs::write(&config, text.replace("pacman = true", "pacman = false")).unwrap();
+        let c = row();
+        assert_eq!(c["status"], "ok");
+        assert_eq!(c["message"], "collector disabled in config.toml");
+    }
+
     /// Review Q3: the omarchy probe runs `SELDON_OMARCHY_VERSION` like the
     /// collector.
     #[test]
@@ -1667,4 +1758,232 @@ fn doctor_says_where_the_hooks_are() {
         (Some("degraded"), Some("none"))
     );
     assert_eq!(r["fix"], "seldon hook install claude-code");
+}
+
+/// WP-143: the `workpieces` row names the `work/<case-id>/` folders that
+/// no case owns or that a closed case left large: count, size, the
+/// oldest by case id (999 before 1000). Information only: always ok, no
+/// fix.
+#[test]
+fn doctor_reports_leftover_workpiece_folders() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    let row = || {
+        let v = json(&env.seldon(&["doctor", "--json"]));
+        check(&v, "workpieces").clone()
+    };
+    assert_eq!(row()["message"], "no workpiece folders");
+    let run = |args: &[&str]| {
+        let out = env.seldon(args);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    };
+    for title in ["big", "small", "open"] {
+        run(&["plan", "new", "--no-commit", "--", title]);
+    }
+    for id in ["C-2026-001", "C-2026-002", "C-2026-003"] {
+        run(&["plan", "start", "--no-commit", id]);
+    }
+    for id in ["C-2026-001", "C-2026-002"] {
+        run(&["plan", "verify", "--no-commit", "--no-capture", id]);
+        run(&["plan", "done", "--no-commit", "--no-capture", id]);
+    }
+    let work = root.join("work");
+    let folder = |name: &str, bytes: u64| {
+        let dir = work.join(name);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let f = std::fs::File::create(dir.join("sub/file")).unwrap();
+        f.set_len(bytes).unwrap();
+    };
+    // 10 MiB exactly is not over 10 MiB
+    folder("C-2026-002", 10 << 20);
+    folder("notes", 20 << 20);
+    folder("C-2026-01x", 20 << 20);
+    // a case file that does not parse still owns its folder
+    std::fs::write(work.join("queued/C-2026-050-broken.md"), "no frontmatter\n").unwrap();
+    folder("C-2026-050", 5);
+    assert_eq!(
+        row()["message"],
+        "2 workpiece folder(s), none orphaned or oversized"
+    );
+    // the oldest by id, not by name
+    folder("C-2026-1000", 10);
+    folder("C-2026-999-old", 5);
+    // a symbolic link inside a folder is not followed
+    std::os::unix::fs::symlink(work.join("notes"), work.join("C-2026-1000/dir")).unwrap();
+    std::os::unix::fs::symlink(work.join("notes/sub/file"), work.join("C-2026-1000/file")).unwrap();
+    assert_eq!(
+        row()["message"],
+        "2 of 4 workpiece folder(s) left behind: 2 orphaned (no case), 0 oversized (a closed \
+         case, over 10.0 MiB), 15 B in all; the oldest: work/C-2026-999-old/"
+    );
+    // a closed case's folder is measured until it passes 10 MiB: at least
+    folder("C-2026-001-big", 11 << 20);
+    std::fs::File::create(work.join("C-2026-001-big/top"))
+        .unwrap()
+        .set_len(11 << 20)
+        .unwrap();
+    folder("C-2026-003-open", 20 << 20);
+    std::os::unix::fs::symlink(work.join("notes"), work.join("C-2024-001")).unwrap();
+    let r = row();
+    assert_eq!(r["status"], "ok", "{r}");
+    assert!(r.get("fix").is_none(), "{r}");
+    assert_eq!(
+        r["message"],
+        "3 of 6 workpiece folder(s) left behind: 2 orphaned (no case), 1 oversized (a closed \
+         case, over 10.0 MiB), ≥ 11.0 MiB in all; the oldest: work/C-2026-001-big/"
+    );
+    // a name is shown without its control characters
+    folder("C-2025-001-\u{1b}[2J", 5);
+    assert_eq!(
+        row()["message"],
+        "4 of 7 workpiece folder(s) left behind: 3 orphaned (no case), 1 oversized (a closed \
+         case, over 10.0 MiB), ≥ 11.0 MiB in all; the oldest: work/C-2025-001-?[2J/"
+    );
+    // nor its direction, format or line-breaking characters
+    folder("C-2024-900-a\u{202E}b\u{2028}c\u{200B}d", 5);
+    assert_eq!(
+        row()["message"],
+        "5 of 8 workpiece folder(s) left behind: 4 orphaned (no case), 1 oversized (a closed \
+         case, over 10.0 MiB), ≥ 11.0 MiB in all; the oldest: work/C-2024-900-a?b?c?d/"
+    );
+}
+
+/// WP-171, ADR-0049 §3: the `layout` row names every linked folder and
+/// file where Seldon writes (and a folder or file of the wrong kind
+/// there), the first five, as an error with the fix; doctor follows none
+/// and writes nothing.
+#[test]
+fn doctor_names_linked_folders_and_files() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    let row = || {
+        let out = env.seldon(&["doctor", "--json"]);
+        let v = json(&out);
+        (out.status.code(), check(&v, "layout").clone())
+    };
+    let (_, ok) = row();
+    assert_eq!(ok["status"], "ok", "{ok}");
+    assert_eq!(
+        ok["message"],
+        "no linked folders or files where Seldon writes"
+    );
+    assert!(ok.get("fix").is_none(), "{ok}");
+
+    let outside = env.tmp.path().join("outside");
+    std::fs::create_dir_all(outside.join("ledger")).unwrap();
+    std::fs::write(outside.join("day.md"), "outside\n").unwrap();
+    std::fs::remove_dir_all(root.join("ledger")).unwrap();
+    std::os::unix::fs::symlink(outside.join("ledger"), root.join("ledger")).unwrap();
+    std::fs::create_dir_all(root.join("journal/2026")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.join("day.md"),
+        root.join("journal/2026/2026-10-09.md"),
+    )
+    .unwrap();
+    let before = snapshot(&outside);
+    let (code, row1) = row();
+    assert_eq!(code, Some(1), "{row1}");
+    assert_eq!(row1["status"], "error", "{row1}");
+    assert_eq!(
+        row1["message"],
+        "2 where Seldon writes, so commands that write there refuse: journal/2026/2026-10-09.md (symbolic link), ledger (symbolic link)"
+    );
+    assert_eq!(
+        row1["fix"],
+        "replace each with a real folder or file (move what the link points to into its place), then run the command again"
+    );
+    assert_eq!(snapshot(&outside), before);
+
+    // more than five: the first five and a count; a folder in a file's
+    // place and a file in a folder's place; a view (skipped, not refused)
+    // named apart
+    let _ = std::fs::remove_file(root.join("STATUS.md"));
+    std::fs::create_dir(root.join("STATUS.md")).unwrap();
+    std::fs::remove_dir_all(root.join("system")).unwrap();
+    std::fs::write(root.join("system"), "").unwrap();
+    for n in 1..=3 {
+        std::os::unix::fs::symlink(
+            outside.join("day.md"),
+            root.join(format!("decisions/ADR-000{n}-x.md")),
+        )
+        .unwrap();
+    }
+    let (_, row2) = row();
+    assert_eq!(
+        row2["message"],
+        "6 where Seldon writes, so commands that write there refuse: decisions/ADR-0001-x.md (symbolic link), decisions/ADR-0002-x.md (symbolic link), decisions/ADR-0003-x.md (symbolic link), journal/2026/2026-10-09.md (symbolic link), ledger (symbolic link), and 1 more; also 1 where Seldon writes but refuses nothing (a view is not updated, another file is left alone): STATUS.md (no regular file)"
+    );
+    // the human line
+    let human = stdout(&env.seldon(&["doctor"]));
+    assert!(
+        human.contains("error     layout   6 where Seldon writes,"),
+        "{human}"
+    );
+}
+
+/// WP-171 round 2 (F1, Q3): links Seldon never writes through are not
+/// named (a case template kept in a dotfiles repository, a note in an area,
+/// a report of the user's in `outputs/`, attachments beside a journal
+/// day); a linked view, which `status` skips with a warning, is
+/// `degraded`, and doctor exits 0.
+#[test]
+fn the_layout_row_names_only_what_seldon_writes() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    let outside = env.tmp.path().join("dots");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("file.md"), "mine\n").unwrap();
+    let link = |rel: &str| {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let _ = std::fs::remove_file(&path);
+        std::os::unix::fs::symlink(outside.join("file.md"), &path).unwrap();
+    };
+    for rel in [
+        ".seldon/templates/case.md",
+        "areas/hyprland/notes.md",
+        "outputs/my-report.md",
+        "journal/2026/attachments",
+    ] {
+        link(rel);
+    }
+    let out = env.seldon(&["doctor", "--json"]);
+    let v = json(&out);
+    assert_eq!(check(&v, "layout")["status"], "ok", "{v}");
+    for rel in ["STATUS.md", "ledger/2026-10.md"] {
+        link(rel);
+    }
+    let out = env.seldon(&["doctor", "--json"]);
+    let v = json(&out);
+    let row = check(&v, "layout");
+    assert_eq!(
+        (
+            row["status"].as_str(),
+            row["message"].as_str(),
+            row["fix"].as_str()
+        ),
+        (
+            Some("degraded"),
+            Some(
+                "2 where Seldon writes but refuses nothing (a view is not updated, another file is left alone): ledger/2026-10.md (symbolic link), STATUS.md (symbolic link)"
+            ),
+            Some("replace each with a real file, or move it out of the folder")
+        ),
+        "{v}"
+    );
+    assert_eq!(out.status.code(), Some(0), "{v}");
+}
+
+/// The `layout` row shows a name of the user's with every control and
+/// direction character as `?` (as the `workpieces` row).
+#[test]
+fn the_layout_row_shows_no_control_character() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    std::os::unix::fs::symlink("nowhere", root.join("memory/a\u{7}b\u{202e}c.md")).unwrap();
+    let v = json(&env.seldon(&["doctor", "--json"]));
+    assert_eq!(
+        check(&v, "layout")["message"],
+        "1 where Seldon writes, so commands that write there refuse: memory/a?b?c.md (symbolic link)"
+    );
 }

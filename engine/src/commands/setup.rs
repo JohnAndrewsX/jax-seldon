@@ -1,6 +1,7 @@
 //! The steps `seldon init` runs once the logbook exists (SPEC-ENGINE §9):
-//! the agent harnesses, the first capture with an optional backfill, the
-//! pre-Seldon baseline, and Omarchy's theme-set hook.
+//! the agent harnesses, the first capture with its backfill, the baseline
+//! that marks the backfill "before Seldon" (ADR-0033), and Omarchy's
+//! theme-set hook.
 //!
 //! None of them fails the wizard: the logbook is already there, so each
 //! step reports what it did, or why not, and the fix.
@@ -51,8 +52,8 @@ use crate::model::event::{ACTOR_HUMAN, Event, Resolution};
 use crate::reconcile::{self, Resolve};
 use crate::sys::{self, Run};
 
-/// The reason of every resolution [`baseline`] writes.
-pub const BASELINE_REASON: &str = "pre-Seldon baseline";
+/// The reason of every resolution [`baseline`] writes (ADR-0033 §2).
+pub const BASELINE_REASON: &str = "before Seldon";
 
 /// Environment variable naming the Omarchy-Agent kit's template directory.
 pub const KIT_ENV: &str = "SELDON_OMARCHY_AGENT_KIT";
@@ -244,7 +245,7 @@ fn omarchy_agent(dirs: &Dirs, root: &Path) -> HarnessReport {
             false,
         );
     }
-    match copy_tree(&template, &root.join(HARNESS_DIR)) {
+    match copy_tree(&template, root, Path::new(HARNESS_DIR)) {
         Ok(c) => report(
             format!(
                 "{} file(s) copied from {shown} into {HARNESS_DIR}/{}",
@@ -271,6 +272,29 @@ fn omarchy_agent(dirs: &Dirs, root: &Path) -> HarnessReport {
     }
 }
 
+/// Copies the regular file `from` to the new file `to` with `from`'s
+/// permission bits. `O_CREAT|O_EXCL`: never through a link at `to`, also
+/// one that appears after the caller's check (ADR-0049 §4); an existing
+/// `to` is `AlreadyExists`. A copy that fails half way is removed.
+fn copy_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+    let mode = std::fs::metadata(from)?.permissions().mode() & 0o777;
+    let bytes = std::fs::read(from)?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(mode)
+        .open(to)?;
+    let written = file
+        .set_permissions(std::fs::Permissions::from_mode(mode))
+        .and_then(|()| file.write_all(&bytes));
+    if written.is_err() {
+        let _ = std::fs::remove_file(to);
+    }
+    written
+}
+
 /// Files [`copy_tree`] copied and kept, relative to the target, sorted.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Copied {
@@ -278,10 +302,13 @@ struct Copied {
     kept: Vec<String>,
 }
 
-/// Copies the regular files under `from` into `to` (permissions kept, so
-/// an executable guard stays executable). A file that exists in `to` is
-/// kept, never overwritten; symbolic links are not followed or copied.
-fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
+/// Copies the regular files under `from` into the folder `to` of the
+/// logbook at `root` (permissions kept, so an executable guard stays
+/// executable). A file that exists in `to` is kept, never overwritten;
+/// symbolic links are not followed or copied, and a folder on the way in
+/// the logbook that is a link or no directory (WP-168), or a link or no
+/// regular file where a file goes (WP-171), stops the copy.
+fn copy_tree(from: &Path, root: &Path, to: &Path) -> anyhow::Result<Copied> {
     let mut out = Copied::default();
     let mut stack = vec![PathBuf::new()];
     while let Some(rel) = stack.pop() {
@@ -295,7 +322,10 @@ fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
             if kind.is_dir() {
                 stack.push(rel);
             } else if kind.is_file() {
-                let target = to.join(&rel);
+                // a link where the file goes is refused, not taken as
+                // there (a dangling one would have the copy create its
+                // target; WP-171)
+                let target = crate::logbook::checked_file(root, &to.join(&rel))?;
                 let name = rel.to_string_lossy().into_owned();
                 if target.exists() {
                     out.kept.push(name);
@@ -305,9 +335,14 @@ fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
                     sys::create_dir_private(parent)
                         .with_context(|| format!("cannot create {}", parent.display()))?;
                 }
-                std::fs::copy(entry.path(), &target)
-                    .with_context(|| format!("cannot copy {name}"))?;
-                out.copied.push(name);
+                match copy_new(&entry.path(), &target) {
+                    Ok(()) => out.copied.push(name),
+                    // made since the check (a link included): kept
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => out.kept.push(name),
+                    Err(e) => {
+                        return Err(anyhow::Error::new(e).context(format!("cannot copy {name}")));
+                    }
+                }
             }
         }
     }
@@ -593,6 +628,7 @@ pub fn install_theme_hook(_lock: &Lock, dirs: &Dirs, omarchy: &str) -> ThemeHook
         &["hook", "install", "theme-set", arg],
         None,
         OMARCHY_TIMEOUT,
+        sys::OUTPUT_MAX,
     ) {
         Run::Exited { code: Some(0), .. } => ThemeHook::Installed { script, hook },
         Run::Exited {
@@ -611,6 +647,7 @@ pub fn install_theme_hook(_lock: &Lock, dirs: &Dirs, omarchy: &str) -> ThemeHook
         }
         Run::NotFound => failed(format!("`{omarchy}` is not installed")),
         Run::TimedOut => failed("`omarchy hook install` timed out".into()),
+        Run::Cut => failed("`omarchy hook install`: output over the limit".into()),
         Run::Failed(e) => failed(format!("cannot run `{omarchy}`: {e}")),
     }
 }
@@ -728,8 +765,7 @@ mod tests {
     #[test]
     fn copy_tree_keeps_existing_files_and_modes() {
         use std::os::unix::fs::PermissionsExt as _;
-        let tmp = std::env::temp_dir().join(format!("seldon-copy-tree-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
+        let tmp = crate::logbook::scratch::scratch("seldon-copy-tree");
         let (from, to) = (tmp.join("kit"), tmp.join("logbook/.claude"));
         std::fs::create_dir_all(from.join("hooks")).unwrap();
         std::fs::create_dir_all(from.join("skills/zones")).unwrap();
@@ -745,7 +781,7 @@ mod tests {
         std::os::unix::fs::symlink("/etc/hostname", from.join("link")).unwrap();
         std::fs::write(to.join("settings.json"), "{}").unwrap();
 
-        let c = copy_tree(&from, &to).unwrap();
+        let c = copy_tree(&from, &tmp.join("logbook"), Path::new(".claude")).unwrap();
         assert_eq!(c.copied, ["hooks/guard.py", "skills/zones/SKILL.md"]);
         assert_eq!(c.kept, ["settings.json"]);
         assert_eq!(
@@ -759,8 +795,72 @@ mod tests {
             .mode();
         assert_eq!(mode & 0o111, 0o111);
         // a second run copies nothing
-        let again = copy_tree(&from, &to).unwrap();
+        let again = copy_tree(&from, &tmp.join("logbook"), Path::new(".claude")).unwrap();
         assert!(again.copied.is_empty());
-        std::fs::remove_dir_all(&tmp).unwrap();
+        // a linked folder in the logbook stops the copy, nothing written
+        // through it (WP-168)
+        std::fs::remove_dir_all(to.join("skills")).unwrap();
+        std::fs::create_dir(tmp.join("outside")).unwrap();
+        std::os::unix::fs::symlink(tmp.join("outside"), to.join("skills")).unwrap();
+        let e = copy_tree(&from, &tmp.join("logbook"), Path::new(".claude")).unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            ".claude/skills is a symbolic link, not a folder of the logbook; make it a folder and run the command again"
+        );
+        assert_eq!(std::fs::read_dir(tmp.join("outside")).unwrap().count(), 0);
+        // a link where a file goes: refused, not "kept"; a dangling one
+        // does not have the copy create its target (WP-171)
+        std::fs::remove_file(to.join("skills")).unwrap();
+        std::fs::create_dir_all(to.join("skills/zones")).unwrap();
+        std::fs::write(tmp.join("outside/SKILL.md"), "mine").unwrap();
+        for (target, shown) in [
+            (tmp.join("outside/SKILL.md"), "SKILL.md"),
+            (tmp.join("outside/missing.md"), "missing.md"),
+        ] {
+            std::os::unix::fs::symlink(&target, to.join("skills/zones/SKILL.md")).unwrap();
+            let e = copy_tree(&from, &tmp.join("logbook"), Path::new(".claude")).unwrap_err();
+            assert_eq!(
+                e.to_string(),
+                ".claude/skills/zones/SKILL.md is a symbolic link, not a file of the logbook; make it a file and run the command again",
+                "{shown}"
+            );
+            std::fs::remove_file(to.join("skills/zones/SKILL.md")).unwrap();
+        }
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("outside/SKILL.md")).unwrap(),
+            "mine"
+        );
+        assert!(!tmp.join("outside/missing.md").exists());
+    }
+
+    /// ADR-0049 §4: the copy itself never follows a link at the target,
+    /// with no check in front (the race the check cannot close): a link,
+    /// dangling or not, is `AlreadyExists` and nothing is written where
+    /// it points; a new file gets the source's mode.
+    #[test]
+    fn copy_new_never_follows_a_link() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = crate::logbook::scratch::scratch("seldon-copy-new");
+        std::fs::write(tmp.join("kit"), "kit").unwrap();
+        std::fs::set_permissions(tmp.join("kit"), std::fs::Permissions::from_mode(0o750)).unwrap();
+        std::fs::write(tmp.join("outside"), "mine").unwrap();
+        std::os::unix::fs::symlink(tmp.join("outside"), tmp.join("linked")).unwrap();
+        std::os::unix::fs::symlink(tmp.join("missing"), tmp.join("dangling")).unwrap();
+        for name in ["linked", "dangling"] {
+            let e = copy_new(&tmp.join("kit"), &tmp.join(name)).unwrap_err();
+            assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists, "{name}");
+        }
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("outside")).unwrap(),
+            "mine"
+        );
+        assert!(!tmp.join("missing").exists());
+        copy_new(&tmp.join("kit"), &tmp.join("new")).unwrap();
+        assert_eq!(std::fs::read_to_string(tmp.join("new")).unwrap(), "kit");
+        let mode = std::fs::metadata(tmp.join("new"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o750);
     }
 }

@@ -1,0 +1,28 @@
+# The characters a task file's path may not hold (WP-102b round 2, N3):
+# control characters, invisible characters (engine redact::is_invisible,
+# ADR-0038's set as amended by WP-140 and WP-159) and the line and
+# paragraph separators. One inclusive code-point range per
+# line, hex. The engine's import::bad_path_char and the plugin's
+# Model.BAD_PATH_CHARS are each tested against this file.
+0000 001F
+007F 009F
+00AD 00AD
+034F 034F
+0600 0605
+061C 061C
+115F 1160
+17B4 17B5
+180B 180F
+200B 200F
+2028 2029
+202A 202E
+2060 206F
+3164 3164
+FE00 FE0F
+FEFF FEFF
+FFA0 FFA0
+FFF9 FFFB
+1BCA0 1BCA3
+1D173 1D17A
+E0000 E007F
+E0100 E01EF

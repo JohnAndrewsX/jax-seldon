@@ -69,8 +69,6 @@ config="$work/config"
 mkdir -p "$config/Commons" "$config/Ui" "$work/bin"
 cp "$shell_dir"/Commons/* "$config/Commons/"
 cp "$shell_dir"/Ui/* "$config/Ui/"
-# BarWidget.qml loads Panel.qml, whose KeyboardPanel is a layer-shell window.
-cp "$root/tests/plugin/harness/KeyboardPanel.qml" "$config/Ui/KeyboardPanel.qml"
 cp "$root/tests/plugin/harness/bar.qml" "$config/shell.qml"
 
 # The fake engine, so the dev-mode service reports ok; never a real seldon.
@@ -190,7 +188,7 @@ check "three owners after the owner and the placeholder go" "$(three '.three.own
 check "three open after exit" "$(three .three.openAfter.exit)" 0
 # "Target not found." (still exit 0) when nobody took the target over
 check "three open after output" "$(three .three.openAfter.out)" ""
-check "three open after reaches the survivor" "$(three '.three.openedAfter | map(tostring) | join(",")')" "null,null,true"
+check "three open after reaches the survivor" "$(three '.three.callsAfter | map(tostring) | join(",")')" "null,null,1"
 check "three one handler" "$(grep -a -c 'another handler is registered' "$work/three.log" || true)" 0
 
 real_home_check ipc-restart

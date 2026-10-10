@@ -3,10 +3,10 @@
 //
 // Nothing here touches Qt, files or processes, so the same file runs under
 // node (tests/plugin/model.test.js). Service.qml owns all I/O; BarWidget.qml,
-// Panel.qml and components/ only render what these functions return,
-// including the rows of the Today, Changelog and System tabs.
+// Desk.qml and components/ only render what these functions return,
+// including the rows of the desk's sections.
 
-var CONTRACT_VERSION = 1
+var CONTRACT_VERSION = 2
 
 // The version of the code that is running: always equal to `version` in
 // plugin/manifest.json, set by hand with it (docs/VERSIONING.md, tag flow;
@@ -37,6 +37,8 @@ var STATUSES = ["ok", "engineMissing", "notInitialised", "indexMissing", "indexS
 // Patterns from schema/event.schema.json $defs.
 var CASE_ID = /^C-[0-9]{4}-[0-9]{3,}$/
 var EVENT_ID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/
+// A triage proposal's id (a ULID, like an event's; ADR-0035 §6).
+var PROPOSAL_ID = EVENT_ID
 var ZONES = ["green", "yellow", "red"]
 var RISKS = ["R0", "R1", "R2", "R3"]
 // `seldon open` targets the panel uses; `logbook` (the logbook folder) stands
@@ -64,7 +66,9 @@ var INSTALL_ENGINE_COMMAND = "curl -fsSL https://github.com/JohnAndrewsX/jax-sel
 // installer (ADR-0024); flip back together with INSTALL_ENGINE_COMMAND.
 var UPDATE_ENGINE_COMMAND = INSTALL_ENGINE_COMMAND
 var UPDATE_PLUGIN_COMMAND = "omarchy plugin update jax.seldon"
-var INIT_COMMAND = "seldon init"
+// The setup card's step 2 (WP-119, ADR-0033): no question, the last 90
+// days recorded as history before Seldon.
+var INIT_COMMAND = "seldon init --defaults"
 // ADR-0026: the one-time read grant on the snapshot directory that lets the
 // snapper collector read the snapshot info files. `$USER` is expanded by the
 // shell the user pastes it into (or by the terminal launcher's bash -c);
@@ -136,7 +140,8 @@ var INSTALL_ENGINE_SCRIPT = terminalScript({
   title: "Seldon: install the engine",
   what: "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.",
   command: INSTALL_ENGINE_COMMAND,
-  ok: "The engine is installed. In the Seldon panel, press Check again.",
+  // the panel looks again by itself after this terminal (Service.setupWatch)
+  ok: "The engine is installed. The Seldon panel finds it by itself.",
   failed: "The install did not finish. Run it again; your logbook is untouched.",
   cancelled: "Cancelled. The install did not finish. Run it again; your logbook is untouched."
 })
@@ -163,15 +168,28 @@ var UPDATE_PLUGIN_SCRIPT = terminalScript({
   failed: "Nothing changed. The plugin stays at its version.",
   cancelled: "Cancelled. The plugin update did not finish."
 })
-// `seldon init` writes the index; the service's FileView picks it up and
-// the banner goes (Service.ingest).
+// `seldon init --defaults` asks nothing and writes the index; the
+// service's FileView picks it up and the setup card moves on
+// (Service.ingest).
 var INIT_SCRIPT = terminalScript({
   title: "Seldon: create your logbook",
-  what: "Sets up the logbook folder and starts recording. Asks a few questions; Enter takes the suggested answer. No password.",
+  what: "Creates your logbook (in ~/Seldon unless your config names another folder) and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.",
   command: INIT_COMMAND,
   ok: "Your logbook is ready. The panel updates by itself.",
-  failed: "No logbook was created; the message above says why. Press Create in the panel to try again.",
-  cancelled: "Cancelled. Press Create in the panel to start again."
+  failed: "No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again.",
+  cancelled: "Cancelled. Press Create logbook in the panel to start again."
+})
+// The logbook step when its folder cannot be used (exit 3's `reason`,
+// CONTRACT.md rule 10): plain `seldon init` asks only where the logbook
+// goes and takes the defaults for the rest (WP-119 round 2).
+var INIT_ASK_COMMAND = "seldon init"
+var INIT_ASK_SCRIPT = terminalScript({
+  title: "Seldon: choose where your logbook goes",
+  what: "Asks where the logbook should live, then creates it there and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No password.",
+  command: INIT_ASK_COMMAND,
+  ok: "Your logbook is ready. The panel updates by itself.",
+  failed: "No logbook was created; the message above says why. Press Choose a folder in the panel to try again.",
+  cancelled: "Cancelled. Press Choose a folder in the panel to start again."
 })
 // After the grant a capture records the snapshots and rewrites the index,
 // so the banner goes without a click. Exit 4 (the plugin's own timed
@@ -188,12 +206,15 @@ var SNAPPER_FIX_SCRIPT = terminalScript({
   run: "sudo setfacl -m u:${USER:?}:rx /.snapshots",
   after: "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }",
   ok: "Snapshots are now recorded. The panel updates by itself.",
-  partial: "Read access granted. Seldon records snapshots at its next capture.",
+  // WP-117 stage 2: report, never forecast; the setup card's re-probe
+  // then shows the truth
+  partial: "Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture.",
   failed: "Nothing changed. Snapshots stay off; Seldon works without them.",
   cancelled: "Cancelled. Nothing changed."
 })
 
-var TERMINAL_SCRIPTS = [INSTALL_ENGINE_SCRIPT, UPDATE_ENGINE_SCRIPT, UPDATE_PLUGIN_SCRIPT, INIT_SCRIPT, SNAPPER_FIX_SCRIPT]
+var TERMINAL_SCRIPTS = [INSTALL_ENGINE_SCRIPT, UPDATE_ENGINE_SCRIPT, UPDATE_PLUGIN_SCRIPT, INIT_SCRIPT, SNAPPER_FIX_SCRIPT,
+  INIT_ASK_SCRIPT]
 
 function isTerminalScript(script) {
   return typeof script === "string" && TERMINAL_SCRIPTS.indexOf(script) !== -1
@@ -219,13 +240,33 @@ function count(value) {
 
 // ---- Index ------------------------------------------------------------------
 
-// Parse index.json text. Returns { ok, error, detail, contractVersion, index }.
-// error: "" | "empty" | "parse" | "shape" | "contract". Only a matching
-// contractVersion yields an index; a mismatch still reports the version found
-// so the banner can show both numbers (CONTRACT.md rule 3).
+// The oldest plugin contract that can read an index (ADR-0051): its
+// `contractReadableFrom` when that is an integer from 1 to the index's own
+// version, else the version itself (the strict rule of an index without
+// the field).
+function readableFrom(data, version) {
+  var r = isObject(data) ? data.contractReadableFrom : undefined
+  return typeof r === "number" && Math.floor(r) === r && r >= 1 && r <= version ? r : version
+}
+
+// Whether this plugin reads an index of `version` that says `from`
+// (CONTRACT.md rule 3, ADR-0051): its own contract, or a newer one that
+// a plugin of this contract can read without misreading a field.
+function readsContract(version, from) {
+  if (version === CONTRACT_VERSION) return true
+  return isFinite(version) && Math.floor(version) === version && version > CONTRACT_VERSION && from <= CONTRACT_VERSION
+}
+
+// Parse index.json text. Returns { ok, error, detail, contractVersion,
+// readableFrom, newer, index }. error: "" | "empty" | "parse" | "shape" |
+// "contract". Only a contractVersion this plugin reads yields an index: its
+// own, or a newer one whose contractReadableFrom is at most its own
+// (ADR-0051; `newer` is then true and the desk asks for a plugin update).
+// A mismatch still reports the version found so the banner can show both
+// numbers (CONTRACT.md rule 3).
 function parseIndex(text) {
   var raw = text === undefined || text === null ? "" : String(text)
-  var result = { ok: false, error: "", detail: "", contractVersion: 0, index: null }
+  var result = { ok: false, error: "", detail: "", contractVersion: 0, readableFrom: 0, newer: false, index: null }
   if (raw.trim() === "") {
     result.error = "empty"
     return result
@@ -244,10 +285,12 @@ function parseIndex(text) {
     return result
   }
   result.contractVersion = typeof data.contractVersion === "number" ? data.contractVersion : 0
-  if (result.contractVersion !== CONTRACT_VERSION) {
+  result.readableFrom = readableFrom(data, result.contractVersion)
+  if (!readsContract(result.contractVersion, result.readableFrom)) {
     result.error = "contract"
     return result
   }
+  result.newer = result.contractVersion > CONTRACT_VERSION
   if (!isObject(data.summary) || !isObject(data.state) || typeof data.generatedAt !== "string") {
     result.error = "shape"
     result.detail = "summary, state or generatedAt missing"
@@ -546,11 +589,11 @@ function bannerFor(status, ctx) {
       status: status,
       tone: "accent",
       title: "Create your logbook",
-      detail: "Sets up your logbook and starts recording; the terminal asks a few questions, no password.",
+      detail: INIT_DETAIL,
       command: INIT_COMMAND,
       script: INIT_SCRIPT,
       actions: [
-        { id: "terminal", label: "Create" },
+        { id: "terminal", label: "Create logbook" },
         { id: "copy", label: "Copy" },
         { id: "recheck", label: "Check again" }
       ]
@@ -597,6 +640,30 @@ function bannerFor(status, ctx) {
     }
   }
   return null
+}
+
+// The quiet notice when the index is of a newer contract that this plugin
+// still reads (ADR-0051): the bar keeps its counts and colour, the desk
+// says that the plugin is behind and offers Omarchy's plugin update, the
+// mismatch banner's own fix (UPDATE_PLUGIN_SCRIPT). null otherwise, and
+// while the engine is missing: its banner comes first, and the index is a
+// leftover of the engine that is gone.
+function contractNewerNotice(parsed, status) {
+  if (status === "engineMissing") return null
+  if (!isObject(parsed) || !parsed.ok || !parsed.newer) return null
+  var found = Number(parsed.contractVersion) || 0
+  return {
+    status: "contractNewer",
+    tone: "neutral",
+    title: "The engine is newer than the plugin",
+    detail: "The engine writes index v" + found + "; this plugin reads v" + CONTRACT_VERSION + " — update the plugin.",
+    command: UPDATE_PLUGIN_COMMAND,
+    script: UPDATE_PLUGIN_SCRIPT,
+    actions: [
+      { id: "terminal", label: "Update" },
+      { id: "copy", label: "Copy" }
+    ]
+  }
 }
 
 // ---- Engine calls -----------------------------------------------------------
@@ -654,6 +721,9 @@ function validateArgs(args) {
   var withText = free !== null
   var only = function(i) { return n === i + 1 && a[i] === "--only" }
   switch (a[0]) {
+  case "preview":
+    // WP-138, ADR-0047: read-only, before the logbook exists; nothing else
+    return n === 1 && json && !withText ? "" : "preview must be: preview --json"
   case "--version":
   case "status":
   case "rebuild":
@@ -680,9 +750,16 @@ function validateArgs(args) {
     if (!withText && n === 3 && matches(PLAN_STEPS, a[1]) && CASE_ID.test(a[2])) return ""
     // WP-101: reopen a completed case (a new case; nothing is destroyed)
     if (!withText && n === 3 && a[1] === "reopen" && CASE_ID.test(a[2]) && json) return ""
+    // WP-102b: read-only, the whole Intent of an imported case before its Start
+    if (!withText && n === 3 && a[1] === "show" && CASE_ID.test(a[2]) && json) return ""
     return "plan must be: plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] -- <title>"
-      + " | plan start|verify|done|drop <caseId> | plan reopen <caseId> --json"
+      + " | plan start|verify|done|drop <caseId> | plan reopen <caseId> --json | plan show <caseId> --json"
   case "drift":
+    // WP-124 (ADR-0036): apply or discard the proposal index.triage names;
+    // a crisis one --item per run. Never `propose` (the agent's command).
+    if (!withText && json && n === 3 && (a[1] === "apply" || a[1] === "discard") && PROPOSAL_ID.test(a[2])) return ""
+    if (!withText && json && n === 5 && a[1] === "apply" && PROPOSAL_ID.test(a[2]) && a[3] === "--item"
+        && EVENT_ID.test(a[4])) return ""
     var id = n >= 3 && EVENT_ID.test(a[2])
     if (id && !withText && a[1] === "link" && n >= 4 && CASE_ID.test(a[3]) && (n === 4 || only(4))) return ""
     // dismiss takes its reason like explain its text, after `--` (WP-011
@@ -701,20 +778,47 @@ function validateArgs(args) {
     if (id && !withText && a[1] === "show" && n === 3 && json) return ""
     return "drift must be: drift link <eventId> <caseId> [--only] | explain <eventId> [--only] [--zone <z>]"
       + " [--risk <r>] [--area <a>] -- <text> | dismiss <eventId> [--only] -- <text> | show <eventId> --json"
+      + " | apply <proposalId> [--item <eventId>] --json | discard <proposalId> --json"
   case "agent":
     // WP-022: the engine reads the launcher from its config; nothing else.
     if (!withText && n === 3 && a[1] === "start" && CASE_ID.test(a[2]) && json) return ""
     // WP-101: one sentence creates, starts and hands a case to the agent
     if (withText && n === 3 && a[1] === "start" && a[2] === "--new" && json) return ""
+    // WP-124 (ADR-0036 §1): ids only; the engine builds the prompt
+    if (!withText && json && n === 3 && a[1] === "ask" && a[2] === "triage") return ""
+    if (!withText && json && n === 4 && a[1] === "ask"
+        && ((a[2] === "drift" && EVENT_ID.test(a[3])) || (a[2] === "case" && CASE_ID.test(a[3])))) return ""
+    // WP-156 (ADR-0041): the window of the agent working on a case; the open sessions
+    if (!withText && n === 3 && a[1] === "focus" && CASE_ID.test(a[2]) && json) return ""
+    if (!withText && n === 2 && a[1] === "sessions" && json) return ""
     return "agent must be: agent start <caseId> --json | agent start --new --json -- <intent>"
+      + " | agent ask triage --json | agent ask drift <eventId> --json | agent ask case <caseId> --json"
+      + " | agent focus <caseId> --json | agent sessions --json"
+  case "import": {
+    // WP-102b: `import task --json [--dry-run] [--area <slug>] -- <path>`,
+    // the path one argument after `--`, checked as importPathError does
+    var pre = sep === -1 ? args.slice() : args.slice(0, sep)
+    var k = 3
+    if (pre[k] === "--dry-run") k += 1
+    if (pre[k] === "--area" && k + 1 < pre.length && AREA.test(pre[k + 1])) k += 2
+    return withText && pre[1] === "task" && pre[2] === "--json" && k === pre.length && importPathError(free[0]) === ""
+      ? "" : "import must be: import task --json [--dry-run] [--area <slug>] -- <path to a .md file>"
+  }
   case "doctor":
     // WP-101: read-only, the rules row only (Service.checkRules); no probe
     return !withText && n === 3 && a[1] === "--only" && a[2] === "rules" && json
       ? "" : "doctor must be: doctor --only rules --json"
+  case "config":
+    // WP-139, ADR-0046: Watch on a row of index.system.recentConfig
+    return withText && n === 2 && a[1] === "watch" && json && watchPathError(free[0]) === ""
+      ? "" : "config must be: config watch --json -- <path under ~/.config/>"
   case "rules":
     return !withText && n === 2 && a[1] === "update" && json ? "" : "rules must be: rules update --json"
   case "decide":
-    return withText && n === 2 && a[1] === "--no-edit" ? "" : "decide must be: decide --no-edit -- <title>"
+    if (withText && n === 2 && a[1] === "--no-edit") return ""
+    // WP-135, ADR-0040: the user accepts a proposed decision
+    if (!withText && n === 3 && a[1] === "accept" && DECISION_ID.test(a[2]) && json) return ""
+    return "decide must be: decide --no-edit -- <title> | decide accept <ADR id> --json"
   case "open":
     return !withText && n === 3 && (matches(OPEN_TARGETS, a[1]) || CASE_ID.test(a[1]) || DECISION_ID.test(a[1]))
       && a[2] === "--editor" ? "" : "open must be: open journal|ledger|status|logbook|<caseId>|<ADR id> --editor"
@@ -818,12 +922,17 @@ function logResult(exitCode, stdoutText, stderrText) {
   return { ok: true, text: "Saved to " + where + id }
 }
 
-// `seldon open --json` → {"what", "path", "editor": {"launched", "program"}}.
+// `seldon open --json` → {"what", "path", "editor": {"launched", "program"}};
+// an editor the engine opened on the path before: {"launched": false,
+// "focused": true, …}, its terminal window brought to the front (WP-156,
+// ADR-0041).
 function openResult(exitCode, stdoutText, stderrText) {
   if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
   var data = parseJson(stdoutText)
   var path = data && typeof data.path === "string" ? data.path : ""
   var editor = data && isObject(data.editor) ? data.editor : null
+  if (editor && editor.launched === false && editor.focused === true)
+    return { ok: true, path: path, text: (path !== "" ? path : "The file") + " is already open; its window is in front" }
   if (editor && editor.launched === false)
     return { ok: false, text: typeof editor.error === "string" ? editor.error : "The editor did not start" }
   var program = editor && typeof editor.program === "string" ? editor.program : "the editor"
@@ -877,12 +986,15 @@ function collectors(index) {
 // Service.fix(actionId, "snapper"). *Check again* is a capture (the same
 // call as *Capture now*), for a grant run outside the panel: only a capture
 // rewrites the collector state this banner reads; reloading the index
-// would not (WP-054).
+// would not (WP-054). None on a machine without snapper (the engine's
+// "snapper is not installed", SNAPPER_NOT_INSTALLED): no grant helps there
+// (WP-119).
 function snapperBanner(index) {
   var list = collectors(index)
   for (var i = 0; i < list.length; i++) {
     var c = list[i]
     if (!isObject(c) || c.name !== "snapper" || c.enabled !== true || c.ok !== false) continue
+    if (c.message === SNAPPER_NOT_INSTALLED) return null
     return {
       status: "snapperDegraded",
       tone: "accent",
@@ -901,6 +1013,223 @@ function snapperBanner(index) {
     }
   }
   return null
+}
+
+// ---- Setup card (WP-119) ---------------------------------------------------
+
+// The three setup states — engine missing (no index yet), logbook not
+// initialised, snapshots not readable — as one card in Today's overview
+// (SPEC-PLUGIN §5.4 "Setup card"): engine → logbook → snapshots, done
+// steps ticked, the next one with its buttons. The banners stay the model
+// behind it (bannerFor, snapperBanner): a step's terminal and Copy go to
+// Service.fix with the banner's id, as the notices did. The card has no
+// mode logic; EASY (ADR-0045 §6) shows the same card, and its open steps
+// are what WP-179's Needs you counts.
+
+var SETUP_TITLE = "Set up Seldon"
+// What `seldon init --defaults` does, in one sentence (the step's detail
+// and the notInitialised banner's).
+var INIT_DETAIL = "Creates your logbook and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password."
+// The engine's degraded message when the machine has no snapper
+// (engine/src/collectors/snapper.rs NOT_INSTALLED): no snapshot step.
+var SNAPPER_NOT_INSTALLED = "snapper is not installed"
+// *Not now* on the snapshot step: stored once in the plugin's shell.json
+// entry (a state key, not in the manifest's schema), offered again only
+// from Settings › Capture.
+var SETUP_LATER_KEY = "setupSnapshots"
+var SETUP_LATER_VALUE = "not-now"
+// After a step's terminal opened, how long and how often the service
+// looks again by itself (Service.setupWatch): the engine probe for step
+// 1, the index for step 2, a capture for step 3 (only a capture rewrites
+// the collector state).
+var SETUP_WATCH_MS = 10 * 60 * 1000
+var SETUP_PROBE_MS = 5000
+var SETUP_CAPTURE_MS = 30000
+// Step 1's engine probe every SETUP_PROBE_MS this many times (two minutes),
+// then every SETUP_CAPTURE_MS: a missing engine logs one line per probe.
+var SETUP_PROBES_FAST = 24
+var SETUP_LAUNCHED_TEXT = "A terminal opened. This card moves on by itself when the step is done."
+
+// Whether *Not now* is stored in this shell.json entry.
+function setupLaterStored(entry) {
+  return isObject(entry) && entry[SETUP_LATER_KEY] === SETUP_LATER_VALUE
+}
+
+// The snapshot step as the index tells it: "none" (no snapper here, or
+// its collector is off), "done" (snapshots are read) or "open".
+function snapperStep(index) {
+  var list = collectors(index)
+  for (var i = 0; i < list.length; i++) {
+    var c = list[i]
+    if (!isObject(c) || c.name !== "snapper") continue
+    if (c.enabled !== true) return "none"
+    if (c.ok === true) return "done"
+    return c.message === SNAPPER_NOT_INSTALLED ? "none" : "open"
+  }
+  return "none"
+}
+
+// s: { status, indexExists, index, later, bannerStatus, bannerTitle,
+// snapperReady, logbookPath, logbookBlocked }. null when nothing is left to set up — and while the
+// engine that was there is gone (its urgent banner says so), or in a
+// status the notices handle (index missing, contract mismatch). Dev mode
+// shows it too, from the fixture (its buttons open the terminals; the
+// service runs no engine call). Before the logbook exists
+// the machine's snapper is not known yet, so the snapshot step counts;
+// once the index says there is none, the denominator is 2. A step is
+// `ready` while the banner behind it is up (the status banner of its
+// state, the snapshot banner): an engine older than the plugin's
+// engineMin takes the status banner's place, and the logbook step waits
+// for its update (`waiting` names the notice). `logbookPath` (shown as is,
+// "~/…") names the folder step 2 creates; `logbookBlocked`, exit 3's
+// reason (notInitialisedInfo), turns step 2 into *Choose a folder*: plain
+// `seldon init`, which asks where (INIT_ASK_FIX), instead of a button that
+// would fail the same way.
+// → { headline, lead, open, total, optionalOnly, current, steps: [{ id,
+//   number, title, detail, hint, done, later, optional, current, ready,
+//   waiting, banner, command, actions: [{ id, label }] }] }
+function setupCard(s) {
+  s = isObject(s) ? s : {}
+  var status = s.status
+  var before = status === "engineMissing" || status === "notInitialised"
+  if (status === "engineMissing" && s.indexExists === true) return null
+  if (!before && status !== "ok" && status !== "indexStale") return null
+  var engineDone = status !== "engineMissing"
+  var snap = before ? "open" : snapperStep(s.index)
+  var steps = [
+    { id: "engine", title: "Install the engine", detail: ENGINE_MISSING_DETAIL, done: engineDone,
+      hint: "Opens a terminal that shows the installer and runs it", banner: "status", command: INSTALL_ENGINE_COMMAND,
+      actions: [{ id: "terminal", label: "Install" }, { id: "copy", label: "Copy" }] },
+    logbookStep(engineDone && !before, s.logbookPath, s.logbookBlocked)
+  ]
+  if (snap !== "none") {
+    steps.push({ id: "snapshots", title: "Read snapshots (optional)", optional: true,
+      detail: "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it.",
+      done: snap === "done", hint: SNAPPER_FIX_GRANTS, banner: "snapper", command: SNAPPER_FIX_COMMAND,
+      actions: [{ id: "terminal", label: "Grant" }, { id: "copy", label: "Copy" }, { id: "later", label: "Not now" }] })
+  }
+  var open = 0
+  var current = ""
+  for (var i = 0; i < steps.length; i++) {
+    var st = steps[i]
+    st.number = i + 1
+    st.optional = st.optional === true
+    st.later = !st.done && st.optional && s.later === true
+    if (st.done || st.later) continue
+    open++
+    if (current === "") current = st.id
+  }
+  if (open === 0) return null
+  var ready = {
+    engine: s.bannerStatus === "engineMissing",
+    logbook: s.bannerStatus === "notInitialised",
+    snapshots: s.snapperReady === true
+  }
+  for (var j = 0; j < steps.length; j++) {
+    var sj = steps[j]
+    sj.current = sj.id === current
+    sj.ready = sj.current && ready[sj.id] === true
+    sj.waiting = sj.current && !sj.ready && sj.banner === "status" && typeof s.bannerTitle === "string" && s.bannerTitle !== ""
+      ? "First: " + s.bannerTitle + " (the notice above)." : ""
+  }
+  var optionalOnly = current === "snapshots"
+  return {
+    headline: SETUP_TITLE + " · " + open + " of " + steps.length + " steps to go" + (optionalOnly ? " (optional)" : ""),
+    lead: optionalOnly ? "Seldon is recording. One optional step is left: snapshots in the timeline."
+      : snap === "none" ? "No questions, no password. Seldon records nothing before the logbook exists."
+      : "No questions; only the optional snapshot step asks for your password. Seldon records nothing before the logbook exists.",
+    open: open,
+    total: steps.length,
+    optionalOnly: optionalOnly,
+    current: current,
+    steps: steps
+  }
+}
+
+// What `--defaults` does with the folder, in one sentence (INIT_DETAIL
+// with the folder the engine names).
+function initDetail(path) {
+  // without a folder from the engine: INIT_DETAIL, which names none (the
+  // config or SELDON_LOGBOOK may name another than ~/Seldon)
+  if (typeof path !== "string" || path === "") return INIT_DETAIL
+  return "Creates " + path + " and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password."
+}
+
+// Exit 3's reasons (CONTRACT.md rule 10) and what step 2 says about them.
+var LOGBOOK_BLOCKED = {
+  "logbook-folder-not-empty": " holds other files, so Seldon does not create its logbook there. Choose another folder: seldon init asks where.",
+  "logbook-folder-not-a-folder": " is a file, not a folder, so Seldon cannot create its logbook there. Choose another folder: seldon init asks where."
+}
+
+// Step 2 of the setup card: *Create logbook* (`init --defaults`), or,
+// when the engine said the folder cannot be used, *Choose a folder*.
+function logbookStep(done, path, blocked) {
+  var where = typeof path === "string" && path !== "" ? path : "The logbook's folder"
+  if (!done && LOGBOOK_BLOCKED[blocked] !== undefined) {
+    return { id: "logbook", title: "Create the logbook", detail: where + LOGBOOK_BLOCKED[blocked], done: false,
+      blocked: blocked, hint: "Opens a terminal that asks where the logbook goes", banner: "initAsk",
+      command: INIT_ASK_COMMAND, actions: [{ id: "terminal", label: "Choose a folder" }, { id: "copy", label: "Copy" }] }
+  }
+  return { id: "logbook", title: "Create the logbook", detail: initDetail(path), done: done, blocked: "",
+    hint: "Opens a terminal that creates your logbook and starts recording", banner: "status", command: INIT_COMMAND,
+    actions: [{ id: "terminal", label: "Create logbook" }, { id: "copy", label: "Copy" }] }
+}
+
+// The fix *Choose a folder* runs (Service.fix's "initAsk"): a constant, as
+// every banner's.
+var INIT_ASK_FIX = { status: "notInitialised", command: INIT_ASK_COMMAND, script: INIT_ASK_SCRIPT }
+
+// Exit 3's `--json` error (CONTRACT.md rule 10): { reason, path }, each ""
+// when absent or not one the plugin knows. The path is user content (rule
+// 6): one line, at most 4096 characters, shown as plain text.
+function notInitialisedInfo(stdoutText) {
+  var d = parseJson(stdoutText)
+  var e = d && isObject(d.error) ? d.error : {}
+  var path = typeof e.path === "string" && e.path.length <= 4096 && !/[\u0000-\u001f\u007f]/.test(e.path) ? e.path : ""
+  return { reason: LOGBOOK_BLOCKED[e.reason] !== undefined ? e.reason : "", path: path }
+}
+
+// A path for the card: under the home folder as "~/…".
+function displayPath(path, home) {
+  var p = typeof path === "string" ? path : ""
+  var h = typeof home === "string" ? home.replace(/\/+$/, "") : ""
+  if (p === "" || h === "") return p
+  if (p === h) return "~"
+  return p.indexOf(h + "/") === 0 ? "~" + p.slice(h.length) : p
+}
+
+// The setup step a banner's terminal fix does ("engine", "logbook",
+// "snapshots"), else "": after it the service looks again by itself.
+function setupStepOf(banner) {
+  if (!isObject(banner)) return ""
+  if (banner.status === "engineMissing") return "engine"
+  if (banner.status === "notInitialised") return "logbook"
+  if (banner.status === "snapperDegraded") return "snapshots"
+  return ""
+}
+
+// Whether a notice is a setup state the card shows instead (the status
+// banner of a setup step, the snapshot banner): the notices leave it out
+// while the card is up, and the snapshot banner after *Not now* too.
+function isSetupNotice(id, banner, setup, later) {
+  if (!isObject(banner)) return false
+  if (id === "snapper") return setup !== null || later === true
+  if (id !== "status" || setup === null) return false
+  return (banner.status === "engineMissing" && banner.tone !== "urgent") || banner.status === "notInitialised"
+}
+
+// Settings › Capture: what the snapshot step is now, in one line.
+function snapshotSetting(index, later) {
+  var snap = snapperStep(index)
+  if (!index) return "not known yet (no index)"
+  if (snap === "done") return "recorded"
+  if (snap === "none") {
+    var list = collectors(index)
+    for (var i = 0; i < list.length; i++)
+      if (isObject(list[i]) && list[i].name === "snapper" && list[i].enabled !== true) return "off ([collectors] snapper)"
+    return "no snapper on this machine"
+  }
+  return later ? "not read; you chose Not now on the setup card" : "not readable yet; the setup card offers the read grant"
 }
 
 // ---- Panel: tab keys ----------------------------------------------------------
@@ -1017,8 +1346,10 @@ function events(index) {
 // (ADR-0013; ADR-0015 §2: `members` present) also under its txId, so the
 // group's other members find it.
 function driftLookup(index) {
-  var byId = {}
-  var byTx = {}
+  // keyed by index text (an id, a txId a hand edit may make `constructor`):
+  // no prototype (WP-137 round 2, B2)
+  var byId = Object.create(null)
+  var byTx = Object.create(null)
   var list = index && Array.isArray(index.drift) ? index.drift : []
   for (var i = 0; i < list.length; i++) {
     var d = list[i]
@@ -1081,7 +1412,12 @@ function changelogRows(index, filter) {
       badge: grouped && leader.members > 1 ? "+" + (leader.members - 1) : "",
       txId: grouped ? str(leader.txId) : "",
       groupLeader: group ? str(group.eventId) : "",
-      groupSubject: group ? str(group.subject) : ""
+      groupSubject: group ? str(group.subject) : "",
+      // WP-137, ADR-0043: the pacman transaction the event belongs to (a
+      // file pacman left names it in meta.transaction, WP-141) and how it
+      // ended when it did not complete
+      tx: eventTx(e),
+      txStatus: txStatusOf(e)
     })
   }
   return rows
@@ -1355,6 +1691,7 @@ function workCase(c, group, column) {
     agents: Array.isArray(c.agents) ? c.agents.filter(function(a) { return typeof a === "string" && a !== "" }) : [],
     closedByAgent: caseTags(c).indexOf(TAG_CLOSED_BY_AGENT) !== -1,
     reopens: reopensOf(c),
+    imported: caseTags(c).indexOf(TAG_IMPORTED) !== -1,
     actionable: CASE_ID.test(id)
   }
 }
@@ -1363,6 +1700,9 @@ function workCase(c, group, column) {
 // case; the case reopens another (`reopens:<caseId>`).
 var TAG_CLOSED_BY_AGENT = "closed-by-agent"
 var TAG_REOPENS = "reopens:"
+// `seldon import task` made the case (WP-102): its Intent is text from a
+// file, and only the user starts it (ADR-0027 §2(a)).
+var TAG_IMPORTED = "imported"
 
 // A case's tags, strings only.
 function caseTags(c) {
@@ -1580,6 +1920,123 @@ function agentNewArgs(intent) {
   if (!hasText(intent)) return { error: "Say what the agent should do" }
   if (String(intent).indexOf("\u0000") !== -1) return { error: "The text contains a NUL character" }
   return { args: ["agent", "start", "--new", "--json", "--", String(intent)] }
+}
+
+// ---- Import tasks (WP-102b; SPEC-ENGINE §3 `import task`) --------------------
+//
+// The desk's *Import tasks…* form: a path to the user's own Markdown task
+// file, an optional area, a dry run first, then one click imports. The path
+// is one argument after `--`, never interpolated (CONTRACT.md); the engine
+// checks it for real (under the home, outside the logbook, a regular `.md`
+// file, its size and encoding); this check only spares the call for what
+// cannot be right.
+
+var IMPORT_PATH_MAX = 4096
+// The engine's `bad_path_char`, one set (WP-102b round 2): control
+// characters, invisible characters (the engine's `redact::is_invisible`:
+// WP-140's set with the tags, WP-159's fillers and variation selectors)
+// and the line and paragraph separators. Both sides are tested against
+// fixtures/bad-path-chars.txt.
+var BAD_PATH_CHARS = /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff9-\ufffb\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u
+
+// "" when `path` may go to the engine, else why not (plain text).
+function importPathError(path) {
+  var p = typeof path === "string" ? path : ""
+  if (p.trim() === "") return "Name a Markdown task file, e.g. ~/projects/TODO.md"
+  if (BAD_PATH_CHARS.test(p)) return "The path holds a control, text-direction or invisible character"
+  if (p.length > IMPORT_PATH_MAX) return "The path is too long"
+  if (p.indexOf("~/") !== 0 && p.charAt(0) !== "/") return "Give the path from your home (~/…) or from / (absolute)"
+  if (!/\.md$/i.test(p)) return "A task file ends in .md"
+  return ""
+}
+
+// `seldon import task --json [--dry-run] [--area <slug>] -- <path>`:
+// { args } or { error }.
+function importArgs(path, area, dryRun) {
+  var why = importPathError(path)
+  if (why !== "") return { error: why }
+  var a = typeof area === "string" ? area : ""
+  if (a !== "" && !AREA.test(a)) return { error: "Area must be a lowercase slug: letters, digits and -" }
+  var args = ["import", "task", "--json"]
+  if (dryRun) args.push("--dry-run")
+  if (a !== "") args.push("--area", a)
+  return { args: args.concat(["--", path]) }
+}
+
+// The engine's reasons a task was not imported, as the desk says them.
+var IMPORT_SKIP_REASONS = {
+  done: "done (- [x])",
+  empty: "no text",
+  "already-imported": "already imported",
+  duplicate: "the same text again",
+  "too-long": "too long to review in the desk (over 64 KiB)"
+}
+
+// `seldon import task --json` → { ok, text, dryRun, created: [{ id, title,
+// status, source, replaces }], skipped: [{ source, reason, caseId }],
+// redactedLines, caseIds }. Every text is user content (rule 6); an id
+// that is no case id is shown as "" and never passed on.
+function importResult(exitCode, stdoutText, stderrText) {
+  var empty = { created: [], skipped: [], redactedLines: 0, caseIds: [], dryRun: false }
+  if (exitCode !== 0) {
+    empty.ok = false
+    empty.text = engineError(stdoutText, stderrText, exitCode)
+    return empty
+  }
+  var data = parseJson(stdoutText)
+  if (!data) {
+    empty.ok = false
+    empty.text = "The engine's answer was not JSON"
+    return empty
+  }
+  var dryRun = data.mode === "dry-run"
+  var caseId = function(v) { return typeof v === "string" && CASE_ID.test(v) ? v : "" }
+  var created = (Array.isArray(data.created) ? data.created : []).filter(isObject).map(function(c) {
+    return { id: caseId(c.id), title: str(c.title), status: str(c.status), source: str(c.source), replaces: caseId(c.replaces) }
+  })
+  var skipped = (Array.isArray(data.skipped) ? data.skipped : []).filter(isObject).map(function(k) {
+    var reason = str(k.reason)
+    return { source: str(k.source), reason: IMPORT_SKIP_REASONS[reason] !== undefined ? IMPORT_SKIP_REASONS[reason] : reason,
+      caseId: caseId(k.case) }
+  })
+  var ids = created.map(function(c) { return c.id }).filter(function(id) { return id !== "" })
+  var n = created.length
+  var head = dryRun
+    ? (n > 0 ? "Would create " + plural(n, "case", "cases") : "Nothing new to import")
+    : (n > 0 ? "Imported " + plural(n, "case", "cases") + (ids.length > 0 ? ": " + ids.join(", ") : "") : "Nothing new imported")
+  var tail = [skipped.length > 0 ? plural(skipped.length, "task", "tasks") + " skipped" : "",
+    count(data.redactedLines) > 0 ? plural(count(data.redactedLines), "line", "lines") + " redacted" : "",
+    count(data.droppedCharacters) > 0
+      ? plural(count(data.droppedCharacters), "invisible character", "invisible characters") + " dropped" : ""]
+    .filter(function(p) { return p !== "" })
+  return { ok: true, text: [head].concat(tail).join(" · "), dryRun: dryRun, created: created, skipped: skipped,
+    redactedLines: count(data.redactedLines), droppedCharacters: count(data.droppedCharacters), caseIds: ids }
+}
+
+// `seldon plan show <caseId> --json` (WP-102b): the whole Intent the desk
+// shows before an imported case's Start. { args } or { error }.
+function caseShowArgs(caseId) {
+  var id = String(caseId || "")
+  if (!CASE_ID.test(id)) return { error: "Not a case id: " + id }
+  return { args: ["plan", "show", id, "--json"] }
+}
+
+// → { ok, text, caseId, intent, lines, truncated, hidden }; `intent` is
+// the engine's display text (control characters as spaces, every direction
+// or format character marked ‹U+XXXX› and counted in `hidden`, redacted),
+// shown as plain text.
+function caseShowResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "", intent: "", lines: 0,
+    truncated: false, hidden: 0 }
+  var data = parseJson(stdoutText)
+  var c = data && isObject(data.case) ? data.case : null
+  var id = c && typeof c.id === "string" && CASE_ID.test(c.id) ? c.id : ""
+  var it = data && isObject(data.intent) ? data.intent : null
+  if (!it || typeof it.text !== "string")
+    return { ok: false, text: "The engine withholds the Intent while the redaction patterns do not compile", caseId: id,
+      intent: "", lines: 0, truncated: false, hidden: 0 }
+  return { ok: true, text: "", caseId: id, intent: it.text, lines: count(it.lines), truncated: it.truncated === true,
+    hidden: count(it.hidden) }
 }
 
 function agentResult(exitCode, stdoutText, stderrText) {
@@ -1862,7 +2319,7 @@ function driftShowResult(exitCode, stdoutText, stderrText) {
     if (isObject(m) && typeof m.id === "string" && EVENT_ID.test(m.id))
       members.push({ id: m.id, kind: str(m.kind), subject: str(m.subject), detail: str(m.detail) })
   }
-  return { ok: true, text: "", members: members }
+  return { ok: true, text: "", members: members, rule: data ? str(data.rule) : "", cls: data ? str(data["class"]) : "" }
 }
 
 // The member lines the sheet shows: at most DRIFT_MEMBERS_SHOWN, then
@@ -1932,6 +2389,7 @@ function decisionRows(index) {
       status: status,
       date: str(d.date),
       path: str(d.path),
+      lead: str(d.lead),
       tone: status === "proposed" ? "accent" : status === "superseded" ? "muted" : "",
       actionable: DECISION_ID.test(id)
     })
@@ -1984,6 +2442,91 @@ function decideResult(exitCode, stdoutText, stderrText) {
   return { ok: true, text: text, decisionId: id }
 }
 
+// `seldon decide accept <ADR-NNNN> --json` (WP-135, ADR-0040): the user
+// accepts a proposed decision; the engine refuses one that is not proposed
+// and an agent. Returns { args } or { error }; the id must match the
+// schema pattern, it goes into an argument list.
+function acceptArgs(decisionId) {
+  var id = String(decisionId || "")
+  if (!DECISION_ID.test(id)) return { error: "Not a decision id: " + id }
+  return { args: ["decide", "accept", id, "--json"] }
+}
+
+// `seldon decide accept --json` → {"decision": {id, title, status, date,
+// cases, path}, "already", "event", "git", "warnings"}. Returns { ok, text,
+// decisionId, already }; decisionId is "" unless it matches the pattern.
+function acceptResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), decisionId: "", already: false }
+  var data = parseJson(stdoutText)
+  var d = data && isObject(data.decision) ? data.decision : null
+  var id = d && typeof d.id === "string" && DECISION_ID.test(d.id) ? d.id : ""
+  var already = !!data && data.already === true
+  var text = already ? (id !== "" ? id : "The decision") + " is accepted already"
+    : "Accepted " + (id !== "" ? id : "the decision") + (d && typeof d.title === "string" && d.title !== "" ? " · " + d.title : "")
+  return { ok: true, text: text, decisionId: id, already: already }
+}
+
+// The sticky bar's hint while Accept is armed.
+function acceptArmHint(decisionId) {
+  return "Accept " + decisionId + "? Click Confirm: it becomes accepted with today's date."
+}
+
+// ---- System: recently edited, not watched (WP-139, ADR-0046) ---------------
+
+var RECENT_ROOT = "~/.config/"
+// The desk's line for a scan that stopped early (index.system.recentConfig.partial).
+var RECENT_PARTIAL_TEXT = "The scan stopped early; the list may be incomplete."
+var RECENT_PATH_MAX = 512
+
+// "" when `path` may go to `seldon config watch`, else why not: a path the
+// engine listed — under ~/.config/, at most 512 characters, no control,
+// direction or invisible character, no `.` or `..` folder.
+function watchPathError(path) {
+  var p = typeof path === "string" ? path : ""
+  if (p.indexOf(RECENT_ROOT) !== 0 || p.length === RECENT_ROOT.length) return "Not a file under ~/.config/"
+  if (BAD_PATH_CHARS.test(p)) return "The path holds a control, text-direction or invisible character"
+  if (Array.from(p).length > RECENT_PATH_MAX) return "The path is too long"
+  if (/\/\.\.?(\/|$)/.test(p.slice(1)) || /\/\//.test(p)) return "The path holds a . or .. folder"
+  return ""
+}
+
+// `seldon config watch --json -- <path>`: { args } or { error }.
+function watchArgs(path) {
+  var why = watchPathError(path)
+  if (why !== "") return { error: why }
+  return { args: ["config", "watch", "--json", "--", path] }
+}
+
+// `seldon config watch --json` → {added, path, coveredBy, config}. Returns
+// { ok, text, path, added }.
+function watchResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), path: "", added: false }
+  var data = parseJson(stdoutText)
+  var path = data && typeof data.path === "string" ? data.path : ""
+  var added = !!data && data.added === true
+  var by = data && typeof data.coveredBy === "string" ? data.coveredBy : ""
+  var text = added ? "Watching " + path + " from the next capture on; it is taken as it is, without an event"
+    : path + " is watched already" + (by !== "" && by !== path ? " (" + by + ")" : "")
+  return { ok: true, text: text, path: path, added: added }
+}
+
+// index.system.recentConfig as rows { path, mtime, age }, newest first as
+// the engine wrote them; a row whose path could not be watched is left out
+// (the engine never writes one). null without the field.
+function recentFiles(index, nowMs) {
+  var sys = index && isObject(index.system) ? index.system : {}
+  var rc = isObject(sys.recentConfig) ? sys.recentConfig : null
+  if (rc === null || !Array.isArray(rc.files)) return null
+  var rows = []
+  for (var i = 0; i < rc.files.length; i++) {
+    var f = rc.files[i]
+    if (!isObject(f) || watchPathError(f.path) !== "") continue
+    var t = timeMs(f.mtime)
+    rows.push({ path: f.path, mtime: hasText(f.mtime) ? f.mtime : "", age: isFinite(t) ? relativeAge(t, nowMs) : "" })
+  }
+  return rows
+}
+
 // ---- Memory (WP-023) --------------------------------------------------------
 
 // What the Memory tab opens. The engine's `seldon open` has no memory target
@@ -2002,7 +2545,7 @@ function memoryRows(index) {
   var out = []
   for (var i = 0; i < lessons.length; i++) {
     if (!hasText(lessons[i])) continue
-    out.push({ section: "", kind: "lesson", title: lessons[i], meta: "", target: MEMORY_OPEN_TARGET })
+    out.push({ section: "", kind: "lesson", title: lessons[i], meta: "", path: "memory/lessons.md", updated: "", target: MEMORY_OPEN_TARGET })
   }
   if (out.length > 0) out[0].section = "LESSONS"
   var first = out.length
@@ -2012,7 +2555,8 @@ function memoryRows(index) {
     var meta = []
     if (hasText(t.path)) meta.push(t.path)
     if (hasText(t.updated)) meta.push("updated " + t.updated)
-    out.push({ section: "", kind: "topic", title: t.topic, meta: meta.join(" · "), target: MEMORY_OPEN_TARGET })
+    out.push({ section: "", kind: "topic", title: t.topic, meta: meta.join(" · "), path: hasText(t.path) ? t.path : "",
+      updated: hasText(t.updated) ? t.updated : "", target: MEMORY_OPEN_TARGET })
   }
   if (out.length > first) out[first].section = "TOPICS"
   return out
@@ -2024,6 +2568,220 @@ function memorySummary(rows) {
   var lessons = list.filter(function(r) { return r.kind === "lesson" }).length
   var topics = list.length - lessons
   return list.length === 0 ? "" : plural(lessons, "lesson", "lessons") + " · " + plural(topics, "topic", "topics")
+}
+
+// ---- Desk sections 4–6: Decisions, System, Memory (WP-123) -----------------
+
+// The sidebar search over a list (ADR-0034 §2, `/`): the rows whose
+// `fields` hold every word of `text`, case-insensitive; "" keeps all.
+function deskFilter(rows, text, fields) {
+  var list = Array.isArray(rows) ? rows : []
+  var words = String(text || "").toLowerCase().split(/\s+/).filter(function(w) { return w !== "" })
+  if (words.length === 0) return list
+  return list.filter(function(r) {
+    var hay = fields.map(function(f) { return str(r[f]) }).join(" ").toLowerCase()
+    return words.every(function(w) { return hay.indexOf(w) !== -1 })
+  })
+}
+
+// The cases a decision names (contract v2, `decisions[].cases`), each with
+// its title and status from the index's case lists: [{ id, title, status,
+// actionable }]. null when the index does not carry the field (contract 1):
+// the detail then hides the block. A case the index no longer lists (the
+// newest 50 completed, CONTRACT.md rule 4) keeps its id with an empty title.
+function decisionCases(index, decisionId) {
+  var list = index && Array.isArray(index.decisions) ? index.decisions : []
+  var d = null
+  for (var i = 0; i < list.length; i++) if (isObject(list[i]) && list[i].id === decisionId) d = list[i]
+  if (!d || !Array.isArray(d.cases)) return null
+  var known = {}
+  var groups = index && isObject(index.cases) ? index.cases : {}
+  for (var g = 0; g < CASE_STATUSES.length; g++) {
+    var cs = Array.isArray(groups[CASE_STATUSES[g]]) ? groups[CASE_STATUSES[g]] : []
+    for (var k = 0; k < cs.length; k++) if (isObject(cs[k]) && hasText(cs[k].id)) known[cs[k].id] = cs[k]
+  }
+  var out = []
+  for (var j = 0; j < d.cases.length; j++) {
+    var id = str(d.cases[j])
+    if (id === "") continue
+    var c = known[id] || {}
+    out.push({ id: id, title: str(c.title), status: str(c.status), actionable: CASE_ID.test(id) })
+  }
+  return out
+}
+
+// What a decision's detail shows besides its title: `text`, the first
+// paragraph of its Decision when the index carries it (ADR-0038 §2; plain
+// text, "" otherwise), the rest is in the file. `actions` for the sticky
+// bar: Accept while it is proposed — `seldon decide accept` (WP-135,
+// ADR-0040), a write, so it arms (`write`) — then Open in editor.
+function decisionDetail(row) {
+  if (!row) return null
+  var rows = []
+  if (row.status !== "") rows.push(["Status", row.status])
+  if (row.date !== "") rows.push(["Date", row.date])
+  if (row.path !== "") rows.push(["File", row.path])
+  var actions = []
+  if (row.status === "proposed") actions.push({ id: "accept", label: "Accept", primary: true, enabled: row.actionable, write: true })
+  actions.push({ id: "open", label: "Open in editor", primary: false, enabled: row.actionable, write: false })
+  return {
+    heading: [row.id, row.status, row.date].filter(function(p) { return p !== "" }).join(" · "),
+    rows: rows,
+    actions: actions,
+    note: row.status === "proposed"
+      ? "Proposed: it waits for your decision. Accept marks it accepted with today's date and notes it in the ledger; Open in editor shows the whole text."
+      : row.status === "superseded" ? "Superseded by a later decision; kept for the record." : "",
+    text: str(row.lead),
+    lead: !row.actionable ? "This id does not match ADR-NNNN; Seldon does not open it."
+      : str(row.lead) !== "" ? "The whole text is in the file; Open in editor shows it."
+      : "The text is in the file; Open in editor shows it."
+  }
+}
+
+// System (ADR-0034 §2, section 5): five tiles, each with a big value, a
+// unit, a lead line and key/value rows, from Model.systemSections (every
+// field of index.system is optional). A tile without its data shows "—"
+// and says so. Collectors carries how Seldon sees the machine: each
+// collector, then machine, engine, index time and the logbook's areas.
+// `stripe` "attention" marks a tile with a failing collector.
+// pacman's ignore list (ADR-0052): the System tile's lead, and the hint of
+// the event that records a change of it.
+var IGNORE_TEXT = "pacman's full upgrade skips them; `pacman -S` still updates them."
+var IGNORE_NONE_TEXT = "pacman ignores nothing: no IgnorePkg or IgnoreGroup in pacman.conf."
+var IGNORE_PARTIAL_TEXT = "Part of pacman's configuration could not be read; the list may be incomplete."
+var IGNORE_HIDDEN_TEXT = " (not a plain package or group name, or masked by your redaction)"
+var IGNORE_HINT = "pacman's full upgrade skips the packages in IgnorePkg and IgnoreGroup; `pacman -S` still updates them. The list is in System."
+// A name as the engine writes it (collectors::pacman_ignore::NAME): a
+// package or group name or an fnmatch pattern of one.
+var IGNORE_NAME = /^[A-Za-z0-9@._+*?!^[\]-]{1,128}$/
+
+// `system.pacmanIgnore` (ADR-0052, optional): { packages, groups, hidden,
+// partial } with the names of the engine's shape; a name of another shape
+// counts as hidden, as the names the engine does not show (`hidden`); null
+// without the field.
+function pacmanIgnore(index) {
+  var sys = index && isObject(index.system) ? index.system : null
+  var raw = sys && isObject(sys.pacmanIgnore) ? sys.pacmanIgnore : null
+  if (raw === null) return null
+  var hidden = isInt(raw.hidden) && raw.hidden > 0 ? raw.hidden : 0
+  var names = function(list) {
+    var all = Array.isArray(list) ? list : []
+    var kept = all.filter(function(n) { return typeof n === "string" && IGNORE_NAME.test(n) })
+    hidden += all.length - kept.length
+    return kept
+  }
+  var packages = names(raw.packages)
+  var groups = names(raw.groups)
+  return { packages: packages, groups: groups, hidden: hidden, partial: raw.partial === true }
+}
+
+// The event that records a change of pacman's ignore list (ADR-0052 §3): a
+// pacman `note` with `meta.ignorePkg`.
+function isIgnoreChange(row) {
+  var meta = row && isObject(row.meta) ? row.meta : null
+  return !!row && row.source === "pacman" && row.kind === "note" && meta !== null && typeof meta.ignorePkg === "string"
+}
+
+function systemTiles(index, nowMs) {
+  var sections = {}
+  var list = systemSections(index, nowMs)
+  for (var i = 0; i < list.length; i++) sections[list[i].title] = list[i].rows
+  var rowsOf = function(title) { return (sections[title] || []).map(function(p) { return [p.label, p.value] }) }
+  var sys = index && isObject(index.system) ? index.system : {}
+  var tiles = []
+
+  var om = isObject(sys.omarchy) ? sys.omarchy : {}
+  var omLead = []
+  if (hasText(om.theme)) omLead.push("theme " + om.theme)
+  if (hasText(om.lastUpdate)) omLead.push("updated " + relativeAge(timeMs(om.lastUpdate), nowMs))
+  tiles.push({ id: "omarchy", title: "Omarchy", big: hasText(om.version) ? om.version : "—", unit: "",
+    lead: omLead.join(" · "), rows: rowsOf("OMARCHY").concat(rowsOf("PLUGINS")) })
+
+  var pk = isObject(sys.packages) ? sys.packages : {}
+  var pkLead = []
+  if (isInt(pk.explicit)) pkLead.push(pk.explicit + " explicit")
+  if (isInt(pk.aur)) pkLead.push(pk.aur + " from the AUR")
+  tiles.push({ id: "packages", title: "Packages", big: isInt(pk.total) ? String(pk.total) : isInt(pk.explicit) ? String(pk.explicit) : "—",
+    unit: isInt(pk.total) ? "installed" : isInt(pk.explicit) ? "explicit" : "",
+    lead: pkLead.join(" · "), rows: rowsOf("PACKAGES").filter(function(r) { return r[0] !== "Deviations" }) })
+
+  var snapRows = rowsOf("SNAPSHOTS")
+  var newest = null
+  var snaps = Array.isArray(sys.snapshots) ? sys.snapshots : []
+  for (var s = 0; s < snaps.length; s++)
+    if (isObject(snaps[s]) && isInt(snaps[s].number) && (newest === null || snaps[s].number > newest)) newest = snaps[s].number
+  tiles.push({ id: "snapshots", title: "Snapshots", big: newest === null ? "—" : String(newest), unit: newest === null ? "" : "newest",
+    lead: snapRows.length > 0 ? plural(snapRows.length, "snapshot", "snapshots") + " in the index (the newest 10)" : "", rows: snapRows })
+
+  var dev = isInt(sys.deviations) ? sys.deviations : null
+  tiles.push({ id: "deviations", title: "Deviations", big: dev === null ? "—" : String(dev), unit: dev === null ? "" : dev === 1 ? "file" : "files",
+    lead: dev === null ? "" : "Config files that differ from Omarchy's defaults; the list is in STATUS.md", rows: [] })
+
+  var cs = collectors(index)
+  var enabled = 0
+  var ok = 0
+  for (var c = 0; c < cs.length; c++) {
+    if (!isObject(cs[c]) || cs[c].enabled === false) continue
+    enabled++
+    if (cs[c].ok !== false) ok++
+  }
+  var last = index && isObject(index.state) && hasText(index.state.lastCapture) ? timeMs(index.state.lastCapture) : NaN
+  var colLead = []
+  if (enabled > ok) colLead.push(plural(enabled - ok, "collector failing", "collectors failing"))
+  if (isFinite(last)) colLead.push("last capture " + relativeAge(last, nowMs))
+  var areaRows = rowsOf("AREAS").map(function(r) { return ["Area " + r[0], r[1] === "" ? "—" : r[1]] })
+  tiles.push({ id: "collectors", title: "Collectors", big: enabled === 0 ? "—" : ok + "/" + enabled, unit: enabled === 0 ? "" : "ok",
+    lead: colLead.join(" · "), rows: rowsOf("COLLECTORS").concat(rowsOf("SELDON"), areaRows),
+    stripe: enabled > ok ? "attention" : "" })
+
+  // WP-139, ADR-0046: edits the config collector does not see
+  var files = recentFiles(index, nowMs)
+  var rc = files === null ? null : sys.recentConfig
+  var scanned = rc !== null ? timeMs(rc.scannedAt) : NaN
+  // ADR-0046 §2: the scan stopped early; an empty list proves nothing
+  var partial = rc !== null && rc.partial === true
+  var listed = "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed"
+  tiles.push({ id: "recent", title: "Recently edited", big: files === null ? "—" : String(files.length),
+    unit: files === null ? "" : files.length === 1 ? "file" : "files",
+    lead: files === null ? ""
+      : files.length === 0 ? (partial ? RECENT_PARTIAL_TEXT
+        : "Nothing under ~/.config was edited outside the watched paths in the last 7 days")
+      : partial ? listed + ". " + RECENT_PARTIAL_TEXT : listed,
+    rows: isFinite(scanned) ? [["Scanned", relativeAge(scanned, nowMs)]] : [],
+    files: files === null ? [] : files,
+    source: "From the last capture's scan of ~/.config: paths and times only, never content. Seldon keeps no record of these edits until a path is watched." })
+
+  // ADR-0052: the packages pacman's full upgrade skips (names only)
+  var ig = pacmanIgnore(index)
+  var igCount = ig === null ? 0 : ig.packages.length + ig.groups.length + ig.hidden
+  var igLead = ig === null ? "" : igCount === 0 ? IGNORE_NONE_TEXT : IGNORE_TEXT
+  if (ig !== null && ig.partial) igLead += " " + IGNORE_PARTIAL_TEXT
+  tiles.push({ id: "ignored", title: "Ignored by pacman", big: ig === null ? "—" : String(igCount),
+    unit: ig === null ? "" : "ignored", lead: igLead,
+    rows: ig === null ? [] : [["IgnorePkg", ig.packages.length > 0 ? ig.packages.join(", ") : "—"],
+      ["IgnoreGroup", ig.groups.length > 0 ? ig.groups.join(", ") : "—"]]
+      .concat(ig.hidden > 0 ? [["Not shown", plural(ig.hidden, "name", "names") + IGNORE_HIDDEN_TEXT]] : []),
+    source: "From pacman.conf and the files it includes, read on every capture: the IgnorePkg and IgnoreGroup names only, nothing else of the files." })
+
+  for (var t = 0; t < tiles.length; t++) {
+    if (tiles[t].stripe === undefined) tiles[t].stripe = ""
+    if (tiles[t].files === undefined) tiles[t].files = []
+    if (tiles[t].source === undefined) tiles[t].source = "From the dossier; rebuilt on every capture."
+    tiles[t].empty = tiles[t].big === "—"
+    if (tiles[t].empty && tiles[t].lead === "") tiles[t].lead = "Not in the index"
+    tiles[t].meta = (tiles[t].big + (tiles[t].unit !== "" ? " " + tiles[t].unit : ""))
+  }
+  return tiles
+}
+
+// What a memory row's detail shows: the kind as its heading, the file it
+// lives in and, for a topic, when it was updated.
+function memoryDetail(row) {
+  if (!row) return null
+  var rows = []
+  if (str(row.path) !== "") rows.push(["File", row.path])
+  if (str(row.updated) !== "") rows.push(["Updated", row.updated])
+  return { heading: row.kind === "lesson" ? "Lesson" : "Topic", rows: rows }
 }
 
 // ---- Prime Radiant (overlay) ------------------------------------------------
@@ -2066,24 +2824,11 @@ function periodById(id) {
   return periodById(PERIOD_DEFAULT)
 }
 
-// "1"–"4" → the period id, anything else → "".
-function periodForKey(text) {
-  var n = Number(text)
-  return String(text).length === 1 && n >= 1 && n <= PERIODS.length ? PERIODS[n - 1].id : ""
-}
-
 // The next period to the left (-1) or right (+1), wrapping like the tabs.
 function cyclePeriod(current, direction) {
   var i = PERIODS.indexOf(periodById(current))
   var n = PERIODS.length
   return PERIODS[((i + (direction < 0 ? -1 : 1)) % n + n) % n].id
-}
-
-// `summon jax.seldon '{"period":"30"}'` opens on that period; anything else
-// (no payload, broken JSON, an unknown id) opens on `fallback`.
-function overlayPayloadPeriod(payloadJson, fallback) {
-  var data = parseJson(payloadJson)
-  return data && isPeriod(data.period) ? data.period : fallback
 }
 
 // A real calendar date "YYYY-MM-DD" (no 2026-02-30).
@@ -2944,28 +3689,6 @@ function periodCaption(win) {
   return p.label + " · " + win.from + " – " + win.to
 }
 
-// The header's second line: machine · Omarchy version · generated time.
-function overlayMeta(index) {
-  if (!index) return ""
-  var parts = []
-  var logbook = isObject(index.logbook) ? index.logbook : {}
-  if (hasText(logbook.machine)) parts.push(logbook.machine)
-  var omarchy = isObject(index.system) && isObject(index.system.omarchy) ? index.system.omarchy : {}
-  if (hasText(omarchy.version)) parts.push("Omarchy " + omarchy.version)
-  if (dayOf(index.generatedAt) !== "") parts.push("generated " + dayOf(index.generatedAt) + " " + clockTime(index.generatedAt))
-  return parts.join(" · ")
-}
-
-// The overlay's banner: the service's banner, with only the fix that runs
-// no engine command (copying it); the overlay runs no engine command (WP-030).
-function overlayBanner(banner) {
-  if (!banner) return null
-  var out = {}
-  for (var k in banner) out[k] = banner[k]
-  out.actions = (banner.actions || []).filter(function(a) { return a.id === "copy" })
-  return out
-}
-
 // Slot geometry on a 12-column grid (SPEC-PLUGIN §6) inside `width` ×
 // `height`, `gap` between cells. The column count follows the width:
 //   wide   (≥ 3 slots of minWidth): Heatmap | Series DriftBars RiskDonut | Timeline | The Plan
@@ -3221,4 +3944,2766 @@ function captureWarningNotice(warnings) {
     actions: [],
     hint: ""
   }
+}
+
+// ---- Desk (ADR-0034) ----------------------------------------------------------
+
+// The desk's nine targets in sidebar order: eight sections with their fixed
+// digit, then Settings on `,`. `solo` sections have no list column (§2). `icon` is a 24-unit SVG path, drawn in the theme colour
+// (components/desk/NavIcon.qml), from the approved prototype.
+var DESK_SECTIONS = [
+  { id: "today", label: "Today", key: "1", solo: false,
+    icon: "M4 5h16v15H4zM4 9h16M9 3v4M15 3v4" },
+  { id: "changelog", label: "Changelog", key: "2", solo: false,
+    icon: "M5 6h14M5 12h14M5 18h9" },
+  { id: "work", label: "Work", key: "3", solo: false,
+    icon: "M4 8h16v11H4zM9 8V5h6v3" },
+  { id: "decisions", label: "Decisions", key: "4", solo: false,
+    icon: "M6 4h9l4 4v12H6zM14 4v5h5" },
+  { id: "system", label: "System", key: "5", solo: false,
+    icon: "M4 5h16v11H4zM8 20h8M12 16v4" },
+  { id: "memory", label: "Memory", key: "6", solo: false,
+    icon: "M7 4h10a2 2 0 0 1 2 2v14l-7-4-7 4V6a2 2 0 0 1 2-2z" },
+  { id: "radiant", label: "Prime Radiant", key: "7", solo: true,
+    icon: "M12 2l2 7 7 3-7 3-2 7-2-7-7-3 7-3z" },
+  { id: "graph", label: "Graph", key: "8", solo: true,
+    icon: "M4 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M16 7a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M10 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M7 8l4 7M17 9l-4 6M8 6h8" },
+  { id: "settings", label: "Settings", key: ",", solo: false,
+    icon: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2" }
+]
+var DESK_SECTION_DEFAULT = "today"
+// The sidebar's fold button.
+var DESK_COLLAPSE_ICON = "M15 6l-6 6 6 6"
+var DESK_EXPAND_ICON = "M9 6l6 6-6 6"
+
+// The bar-widget settings of the desk (manifest barWidget.defaults/schema).
+var DESK_WIDTH_DEFAULT = 100
+var DESK_WIDTH_MIN = 50
+var DESK_WIDTH_MAX = 100
+var DESK_WIDTH_PRESETS = [50, 67, 75, 100]
+var DESK_SIDEBAR_MODES = ["open", "collapsed"]
+var DESK_SIDEBAR_DEFAULT = "open"
+// §1: never narrower than this (unless the screen is); below it the sidebar
+// shows icons only, below DESK_STACK_WIDTH list and detail stack.
+var DESK_MIN_WIDTH = 960
+var DESK_STACK_WIDTH = 760
+var DESK_REFUSED_TEXT = "Change it in Omarchy's bar settings (Seldon widget)."
+// The plugin is enabled but not in the bar: the shell has no entry to keep
+// the desk's settings in (Service.entryKnown).
+var DESK_NO_ENTRY_TEXT = "Add Seldon to the bar to keep this setting; until then it holds until the shell restarts."
+
+function deskSection(id) {
+  for (var i = 0; i < DESK_SECTIONS.length; i++)
+    if (DESK_SECTIONS[i].id === id) return DESK_SECTIONS[i]
+  return null
+}
+
+function deskSectionIndex(id) {
+  for (var i = 0; i < DESK_SECTIONS.length; i++)
+    if (DESK_SECTIONS[i].id === id) return i
+  return -1
+}
+
+// The section a typed character selects ("1"–"8", ","), or "".
+function deskSectionForKey(text) {
+  for (var i = 0; i < DESK_SECTIONS.length; i++)
+    if (DESK_SECTIONS[i].key === text) return DESK_SECTIONS[i].id
+  return ""
+}
+
+// A held key (WP-173): Omarchy's Hyprland repeats it after 250 ms, 40 a
+// second. Only the keys that move repeat on the desk: the arrows (with or
+// without Alt), the page keys, Home and End (Qt key codes), `j`/`k`, the
+// Prime Radiant's `h`/`l` and the graph's zoom `-`/`=`. Every other
+// repeat is dropped by Desk.keyPressed, so no key that writes, launches
+// or confirms ever acts twice from one press.
+var DESK_REPEAT_KEYS = [0x01000010, 0x01000011, 0x01000012, 0x01000013, 0x01000014, 0x01000015, 0x01000016, 0x01000017]
+var DESK_REPEAT_TEXT = ["j", "k", "h", "l", "-", "="]
+
+function deskKeyRepeats(key, text) {
+  return DESK_REPEAT_KEYS.indexOf(key) !== -1 || DESK_REPEAT_TEXT.indexOf(String(text)) !== -1
+}
+
+// Alt+↑/↓: the previous or next of the nine targets, wrapping.
+function deskCycle(id, delta) {
+  var n = DESK_SECTIONS.length
+  var i = deskSectionIndex(id)
+  if (i === -1) i = 0
+  return DESK_SECTIONS[(((i + delta) % n) + n) % n].id
+}
+
+// The setting `deskWidth` as an integer per cent in 50–100; anything else
+// (missing, a hand-edited shell.json) is the default.
+function clampDeskWidth(value) {
+  if (value === null || value === undefined || value === "") return DESK_WIDTH_DEFAULT
+  var n = Math.round(Number(value))
+  if (!isFinite(n)) return DESK_WIDTH_DEFAULT
+  return Math.max(DESK_WIDTH_MIN, Math.min(DESK_WIDTH_MAX, n))
+}
+
+function deskSidebarMode(value) {
+  return DESK_SIDEBAR_MODES.indexOf(value) !== -1 ? value : DESK_SIDEBAR_DEFAULT
+}
+
+// The desk inside its window (ADR-0034 §1). The window covers the screen's
+// usable area; `gap` is Style.gapsOut on every side. The width is
+// clamp(round(avail × pct / 100), min(960, avail), avail), centred; at
+// 100 % it fills the row like a left/right-anchored surface.
+function deskGeometry(windowWidth, windowHeight, pct, gap) {
+  var g = Math.max(0, Math.round(Number(gap) || 0))
+  var availW = Math.max(0, Math.floor(Number(windowWidth) || 0) - 2 * g)
+  var availH = Math.max(0, Math.floor(Number(windowHeight) || 0) - 2 * g)
+  var want = Math.round(availW * clampDeskWidth(pct) / 100)
+  var w = Math.max(Math.min(DESK_MIN_WIDTH, availW), Math.min(availW, want))
+  return { x: g + Math.floor((availW - w) / 2), y: g, w: w, h: availH, avail: availW }
+}
+
+// The columns at a desk width. `sizes`: { sidebar, icons, listMin, listMax }
+// in pixels (Style.space of the prototype's 210 / 56 / 260 / 360).
+// The thresholds are pixels of the desk itself.
+function deskLayout(width, sidebarPref, solo, sizes) {
+  var w = Math.max(0, Number(width) || 0)
+  var forced = w < DESK_MIN_WIDTH
+  var icons = forced || deskSidebarMode(sidebarPref) === "collapsed"
+  var stacked = !solo && w < DESK_STACK_WIDTH
+  var sidebarW = icons ? sizes.icons : sizes.sidebar
+  var rest = Math.max(0, w - sidebarW)
+  var listW = solo ? 0 : stacked ? rest : Math.max(sizes.listMin, Math.min(sizes.listMax, Math.round(rest * 0.3)))
+  return {
+    sidebar: icons ? "icons" : "open",
+    forced: forced,
+    stacked: stacked,
+    solo: !!solo,
+    sidebarW: sidebarW,
+    listW: listW,
+    detailW: solo ? rest : stacked ? rest : Math.max(0, rest - listW)
+  }
+}
+
+// The desk's open(payloadJson) (§4, §7): {"section": id, "select": id,
+// "filter": source, "period": p}. A `period` without a section implies the
+// Prime Radiant (the old overlay payload). Unknown sections are dropped.
+function deskPayload(payloadJson) {
+  var data = parseJson(payloadJson) || {}
+  var out = { section: "", select: "", filter: "", period: "" }
+  if (deskSection(data.section)) out.section = data.section
+  if (isPeriod(data.period)) out.period = data.period
+  if (out.section === "" && out.period !== "") out.section = "radiant"
+  if (typeof data.select === "string") out.select = data.select
+  if (typeof data.filter === "string") out.filter = data.filter
+  return out
+}
+
+// The header's KPI strip (§2): active · verification · queued · crises ·
+// attention. `tone`: "accent" for active cases, "urgent" for crises, ""
+// otherwise. Empty before an index is shown.
+function deskKpis(index) {
+  if (!index) return []
+  var c = counts(index) || { active: 0, queued: 0, crisis: 0, attention: 0 }
+  var cases = isObject(index.cases) ? index.cases : {}
+  var verification = Array.isArray(cases.verification) ? cases.verification.length : 0
+  return [
+    { id: "active", label: "active", value: c.active, tone: c.active > 0 ? "accent" : "" },
+    { id: "verification", label: "verification", value: verification, tone: "" },
+    { id: "queued", label: "queued", value: c.queued, tone: "" },
+    { id: "crises", label: "crises", value: c.crisis, tone: c.crisis > 0 ? "urgent" : "" },
+    { id: "attention", label: "attention", value: c.attention, tone: "" }
+  ]
+}
+
+// The counts at the right of the sidebar rows: { <section id>: { text,
+// tone } }. Today: events today; Changelog: open changes (urgent with a
+// crisis); Work: active · verification · queued; Decisions: proposed;
+// Memory: lessons and topics. Empty text hides the count.
+function deskCounts(index) {
+  var out = {}
+  for (var i = 0; i < DESK_SECTIONS.length; i++) out[DESK_SECTIONS[i].id] = { text: "", tone: "" }
+  if (!index) return out
+  var summary = isObject(index.summary) ? index.summary : {}
+  var c = counts(index) || { active: 0, queued: 0, drift: 0, crisis: 0 }
+  out.today = { text: String(count(summary.eventsToday)), tone: "" }
+  if (c.drift > 0) out.changelog = { text: String(c.drift), tone: c.crisis > 0 ? "urgent" : "" }
+  var cases = isObject(index.cases) ? index.cases : {}
+  var verification = Array.isArray(cases.verification) ? cases.verification.length : 0
+  if (c.active + verification + c.queued > 0)
+    out.work = { text: c.active + " · " + verification + " · " + c.queued, tone: "" }
+  var proposed = (Array.isArray(index.decisions) ? index.decisions : []).filter(function(d) {
+    return isObject(d) && d.status === "proposed"
+  }).length
+  if (proposed > 0) out.decisions = { text: proposed + " new", tone: "" }
+  var memory = isObject(index.memory) ? index.memory : {}
+  var notes = (Array.isArray(memory.lessons) ? memory.lessons.length : 0) + (Array.isArray(memory.topics) ? memory.topics.length : 0)
+  if (notes > 0) out.memory = { text: String(notes), tone: "" }
+  return out
+}
+
+// The header's second line: machine · Omarchy version · captured N ago.
+function deskSubline(index, lastCaptureText, nowMs) {
+  var parts = []
+  if (index) {
+    var logbook = isObject(index.logbook) ? index.logbook : {}
+    if (hasText(logbook.machine)) parts.push(logbook.machine)
+    var omarchy = isObject(index.system) && isObject(index.system.omarchy) ? index.system.omarchy : {}
+    if (hasText(omarchy.version)) parts.push("Omarchy " + omarchy.version)
+  }
+  if (hasText(lastCaptureText)) parts.push("captured " + relativeAge(timeMs(lastCaptureText), nowMs))
+  return parts.join(" · ")
+}
+
+// The settings the desk writes through the shell facade's
+// updateEntryInline, which replaces the plugin's shell.json entry with
+// { id } + settings: every key of the current entry (unknown ones too, the
+// id left out) and the one that changes. null when the value is already
+// stored (the facade would report "nothing changed" as false, which the
+// desk must not read as a refusal). `value` undefined takes the key out
+// (the setup card's Offer again, WP-119).
+function deskSettingsWrite(entry, key, value) {
+  var next = {}
+  var current = isObject(entry) ? entry : {}
+  for (var k in current) if (k !== "id") next[k] = current[k]
+  if (next[key] === value) return null
+  if (value === undefined) delete next[key]
+  else next[key] = value
+  return next
+}
+
+// The desk header's chip (SPEC-PLUGIN §5.6; WP-119): `notices` are the
+// shown notices in order ({ title, tone }), `setupHeadline` the setup
+// card's ("" without one). An urgent notice wins (S3), then the setup
+// card, then the first notice; "+N" counts the rest. `setup`: a click
+// leads to the card instead of folding the notices.
+function deskChip(notices, setupHeadline) {
+  var list = Array.isArray(notices) ? notices : []
+  var setup = typeof setupHeadline === "string" && setupHeadline !== ""
+  var count = list.length + (setup ? 1 : 0)
+  var more = function(n) { return n > 0 ? " +" + n : "" }
+  for (var i = 0; i < list.length; i++)
+    if (list[i].tone === "urgent") return { text: list[i].title + more(count - 1), count: count, tone: "urgent", setup: false }
+  if (setup) return { text: setupHeadline + more(count - 1), count: count, tone: "accent", setup: true }
+  if (list.length === 0) return { text: "", count: 0, tone: "", setup: false }
+  return { text: list[0].title + more(count - 1), count: count, tone: list[0].tone, setup: false }
+}
+
+// The screen the desk opens on: the index in `names` of Hyprland's focused
+// monitor, else 0 (the first screen).
+function pickScreen(names, focused) {
+  var list = Array.isArray(names) ? names : []
+  var i = hasText(focused) ? list.indexOf(focused) : -1
+  return i === -1 ? 0 : i
+}
+
+// Settings › Appearance: "1728 px on this screen".
+function deskWidthPreview(windowWidth, pct, gap) {
+  return deskGeometry(windowWidth, 0, pct, gap).w + " px on this screen"
+}
+
+// The label of a width preset chip.
+function deskPresetLabel(pct) {
+  return pct === 100 ? "Full" : pct + " %"
+}
+
+// The old `jax.seldon.panel` tab names and their sections (the shim, §7).
+var PANEL_TABS = ["today", "changelog", "work", "decisions", "system", "memory"]
+
+// ---- Desk sections Today, Changelog, Work (WP-122; ADR-0034 §2, §3) ----------
+//
+// The service builds deskChangelog, deskToday and deskWork once per index
+// (ADR-0034 §3: no section aggregates on paint); the sections filter those
+// rows by chip and search text and look details up by id. No new engine
+// call: every action still goes through logArgs, openArgs, planArgs,
+// agentArgs, agentNewArgs and driftArgs.
+
+// The Changelog's chips (§2): an event's class, "open" = crisis + attention.
+var CHANGELOG_CHIPS = [
+  { id: "open", label: "open" },
+  { id: "crisis", label: "crisis" },
+  { id: "attention", label: "attention" },
+  { id: "routine", label: "routine" },
+  { id: "case", label: "in case" },
+  { id: "all", label: "all" }
+]
+var CHANGELOG_CHIP_DEFAULT = "open"
+var EVENT_CLASS_LABELS = { crisis: "crisis", attention: "attention", "case": "in case", routine: "routine" }
+
+function isChangelogChip(id) {
+  for (var i = 0; i < CHANGELOG_CHIPS.length; i++) if (CHANGELOG_CHIPS[i].id === id) return true
+  return false
+}
+
+// Keys `f` / `F`: the next or previous chip, wrapping.
+function cycleChip(current, direction) {
+  var n = CHANGELOG_CHIPS.length
+  var at = 0
+  for (var i = 0; i < n; i++) if (CHANGELOG_CHIPS[i].id === current) at = i
+  return CHANGELOG_CHIPS[(at + (direction < 0 ? n - 1 : 1)) % n].id
+}
+
+// A Changelog row's class: open drift by its item's `crisis` (a group's
+// open members too, ADR-0013), else "case" when it has one, else routine.
+function eventClass(row) {
+  if (row.drift) return row.crisis ? "crisis" : "attention"
+  return row.caseId !== "" ? "case" : "routine"
+}
+
+// The last segment of a path subject ("~/.config/hypr/bindings.conf" →
+// "bindings.conf"); other subjects as they are.
+function lastSegment(subject) {
+  var s = str(subject)
+  var parts = s.split("/").filter(function(p) { return p !== "" })
+  return parts.length > 0 ? parts[parts.length - 1] : s
+}
+
+// The age at a row's right: the time today, else "30 Sep 17:00" (the year
+// too when it is not the index's).
+function rowAge(day, time, today) {
+  if (day === "") return time
+  if (day === today) return time
+  var d = utcDate(day)
+  if (!d) return (day + " " + time).trim()
+  var label = d.getUTCDate() + " " + MONTHS[d.getUTCMonth()]
+  if (String(today || "").slice(0, 4) !== day.slice(0, 4)) label += " " + day.slice(0, 4)
+  return (label + " " + time).trim()
+}
+
+// The key Hide uses: a group hides as one, from its leader or a member.
+function hideKey(row) {
+  return row.groupLeader !== "" ? row.groupLeader : row.id
+}
+
+// Every index event as a desk row (changelogRows plus class, list title,
+// meta, age and the lowercased text the sidebar search matches), and a
+// lookup by id. Built once per index by the service.
+function deskChangelog(index) {
+  var base = changelogRows(index, "all")
+  var today = todayDate(index)
+  var rows = []
+  var byId = Object.create(null)
+  for (var i = 0; i < base.length; i++) {
+    var r = base[i]
+    var row = {}
+    for (var k in r) row[k] = r[k]
+    row.cls = eventClass(r)
+    row.title = lastSegment(r.subject) + (r.badge !== "" ? " " + r.badge : "")
+    row.listMeta = [r.source, r.kind, r.caseId].filter(function(p) { return p !== "" }).join(" · ")
+    row.age = rowAge(r.day, r.time, today)
+    row.stripe = row.cls === "crisis" ? "crisis" : row.cls === "attention" ? "attention" : ""
+    row.hideKey = hideKey(r)
+    // WP-137: the row says in the urgent style that its transaction did
+    // not complete (ListRow `alert`)
+    row.alert = r.txStatus
+    row.search = [r.subject, row.listMeta, r.detail, r.actor, r.resolution, r.resolutionDetail, r.txStatus].join(" ").toLowerCase()
+    if (row.id !== "" && byId[row.id] === undefined) byId[row.id] = rows.length
+    rows.push(row)
+  }
+  return { rows: rows, byId: byId, today: today, tx: transactionIndex(index) }
+}
+
+function changelogRow(prepared, id) {
+  if (!prepared || !prepared.byId) return null
+  var at = prepared.byId[String(id || "")]
+  return at === undefined ? null : prepared.rows[at]
+}
+
+// Hide (attention only, a session's quiet; never a crisis, ADR-0028 §3).
+function isHidden(row, hidden) {
+  return row.cls === "attention" && isObject(hidden) && hidden[row.hideKey] === true
+}
+
+// One count everywhere (the sidebar, the header, the quiet line): open
+// drift counts a group once. The drift chips (open, crisis, attention)
+// list and count changes — a pacman group as its leader ("mesa +2"; its
+// members are in the leader's detail); routine, in case and all list and
+// count ledger events, one row each, group members included.
+var DRIFT_CHIPS = ["open", "crisis", "attention"]
+
+function chipHas(chip, row, hidden) {
+  if (chip === "all") return true
+  if (DRIFT_CHIPS.indexOf(chip) !== -1 && row.groupLeader !== "") return false
+  if (chip === "open") return row.cls === "crisis" || (row.cls === "attention" && !isHidden(row, hidden))
+  if (chip === "attention") return row.cls === "attention" && !isHidden(row, hidden)
+  return row.cls === chip
+}
+
+// The rows of one chip, without the hidden ones, matching the sidebar
+// search (case-insensitive, anywhere in subject, meta, detail, actor,
+// resolution).
+function changelogView(prepared, chip, hidden, search) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var c = isChangelogChip(chip) ? chip : CHANGELOG_CHIP_DEFAULT
+  var q = String(search || "").trim().toLowerCase()
+  return rows.filter(function(r) {
+    return chipHas(c, r, hidden) && (q === "" || r.search.indexOf(q) !== -1)
+  })
+}
+
+// The chips with their counts (hidden rows left out of open and attention).
+function changelogChips(prepared, hidden) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  return CHANGELOG_CHIPS.map(function(c) {
+    var n = 0
+    for (var i = 0; i < rows.length; i++) if (chipHas(c.id, rows[i], hidden)) n++
+    return { id: c.id, label: c.label, count: n }
+  })
+}
+
+// How many changes Hide keeps out of the open list this session (a group
+// once).
+function hiddenCount(prepared, hidden) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var n = 0
+  for (var i = 0; i < rows.length; i++) if (rows[i].groupLeader === "" && isHidden(rows[i], hidden)) n++
+  return n
+}
+
+// Where an event's source reads from (the detail's "Source" row).
+var SOURCE_TEXTS = {
+  pacman: "/var/log/pacman.log",
+  snapper: "snapper, the root config",
+  omarchy: "omarchy version",
+  plugins: "omarchy plugin list",
+  theme: "Omarchy's current theme",
+  config: "the watched paths (hashes only)",
+  agent: "an agent's command log",
+  manual: "the journal",
+  seldon: "Seldon itself"
+}
+
+// A rule id as the schema has it (`drift[].rule`): a lowercase slug of at
+// most 64 characters.
+var RULE_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+// The engine's rule for an open drift item: the item's own `rule` in the
+// index (ADR-0038 §1; no process), else the answer of `seldon drift show
+// <id> --json` (`rule`, `class`; engine/src/commands/drift.rs) for an
+// index of an earlier contract-2 build. `index`: the index (its drift
+// item by `eventId`, a group's leader); `rules`: Service.driftRules ({
+// <id>: { rule, cls } }, the answers for this index); `shown`:
+// Service.driftShown (the call in flight). { state: "known", rule, cls },
+// or state "pending" (asked, no answer yet) or "unknown" (not asked, or
+// not answerable: dev mode, no engine, a refusal).
+function driftRuleInfo(rules, shown, eventId, index) {
+  var list = index && Array.isArray(index.drift) ? index.drift : []
+  for (var i = 0; i < list.length; i++) {
+    var d = list[i]
+    if (isObject(d) && d.eventId === eventId && typeof d.rule === "string" && RULE_ID.test(d.rule))
+      return { state: "known", rule: d.rule, cls: d.crisis === true ? "crisis" : "attention" }
+  }
+  var known = isObject(rules) && isObject(rules[eventId]) ? rules[eventId] : null
+  if (known && str(known.rule) !== "") return { state: "known", rule: str(known.rule), cls: str(known.cls) }
+  if (isObject(shown) && shown.eventId === eventId && shown.pending) return { state: "pending", rule: "", cls: "" }
+  return { state: "unknown", rule: "", cls: "" }
+}
+
+// The rules to keep for a new index: those whose item it still lists as
+// an open crisis (by the item's event id, a group's leader). A copy; the
+// same object when nothing goes, so an unchanged index changes nothing.
+function keptDriftRules(rules, index) {
+  var r = isObject(rules) ? rules : {}
+  var keys = Object.keys(r)
+  if (keys.length === 0) return r
+  var crises = {}
+  var list = index && Array.isArray(index.drift) ? index.drift : []
+  for (var i = 0; i < list.length; i++)
+    if (isObject(list[i]) && list[i].crisis === true && typeof list[i].eventId === "string") crises[list[i].eventId] = true
+  var out = {}
+  var dropped = false
+  for (var k = 0; k < keys.length; k++) {
+    if (crises[keys[k]] === true) out[keys[k]] = r[keys[k]]
+    else dropped = true
+  }
+  return dropped ? out : r
+}
+
+// The crisis rules (engine/src/index/class.rs, SPEC-ENGINE §5): what each
+// says, naming the user's lists rather than what they are meant to hold.
+var CRISIS_RULE_TEXTS = {
+  "always-red": "A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml) was installed, removed or downgraded by name in this transaction.",
+  "always-red-paths": "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml).",
+  "pacnew-red": "pacman left a .pacnew, .pacsave or .pacorig beside a file that boot or login depend on (mkinitcpio, Limine, PAM); check it with pacdiff before the next reboot.",
+  "attention-all": "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."
+}
+
+// Why a crisis is loud (§2's callout): the engine's rule when `drift
+// show` has answered (`info`, driftRuleInfo), else only what the index
+// proves — the class and the source, never a cause; then whether an open
+// case's plan names it (`proposedCase`, SPEC-ENGINE §5), which the Case
+// row says too. "" for anything that is not a crisis.
+function whyLoud(row, proposedCase, info) {
+  if (!row || row.cls !== "crisis") return ""
+  var i = isObject(info) ? info : { state: "unknown" }
+  var cause = i.state === "known"
+    ? (CRISIS_RULE_TEXTS[i.rule] !== undefined ? CRISIS_RULE_TEXTS[i.rule] : "The engine's rule: " + i.rule + ".")
+    : "The engine classed this " + row.source + " change as a crisis"
+      + (i.state === "pending" ? "; asking it for the rule." : "; `seldon drift show " + row.id + "` names the rule.")
+  var plan = proposedCase !== ""
+    ? proposedCase + " plans it (its plan names this change); nothing has linked it yet."
+    : "No open case plans it, and no case is linked."
+  return cause + " " + plan
+}
+
+// A file pacman left beside a configuration file (WP-141: a pacman
+// `note` whose subject ends in .pacnew, .pacsave or .pacorig): what to do,
+// as text. Never a button and never a command Seldon runs (AGENTS.md §8);
+// Seldon does not read that file, so it cannot know whether it was merged.
+var PACNEW_SUFFIX = /\.(pacnew|pacsave|pacorig)$/
+var PACNEW_HINT = "Merge with pacdiff (from pacman-contrib) in a terminal. Seldon does not read that file, so it cannot tell whether that happened since."
+
+function pacnewHint(row) {
+  return row && row.source === "pacman" && row.kind === "note" && PACNEW_SUFFIX.test(row.subject) ? PACNEW_HINT : ""
+}
+
+// One event as the detail shows it (prototype `eventDetail`): heading
+// "source · kind", the full subject, the class, the callout, and the
+// key/value rows When · Who · What (· Commits, a plugin clone's update; ·
+// Hint, a file pacman left) · Case · Rule · Source (· Zone · Resolved ·
+// Event). `info`: the engine's rule (driftRuleInfo). null when the index has
+// no such event.
+function eventDetail(index, prepared, id, info) {
+  var row = changelogRow(prepared, id)
+  if (!row) return null
+  var e = findEvent(index, row.id) || {}
+  var proposed = row.proposedCase
+  if (proposed === "" && row.groupLeader !== "") {
+    var leader = changelogRow(prepared, row.groupLeader)
+    if (leader) proposed = leader.proposedCase
+  }
+  var r = isObject(info) ? info : { state: "unknown" }
+  var ruleName = r.state === "known" ? "rule " + r.rule : r.state === "pending" ? "rule: asking the engine" : ""
+  var caseState = proposed !== "" ? "planned by " + proposed + ", not linked" : "no case"
+  var rule = row.cls === "crisis" ? ["crisis", ruleName, caseState].filter(function(p) { return p !== "" }).join(" · ")
+    : row.cls === "attention" ? "attention · " + caseState + "; quiet until you say something"
+    : row.cls === "case" ? "in case · recorded for " + row.caseId
+    : "routine · history, nothing to do"
+  if (row.txId !== "" || row.groupLeader !== "") rule += " · one pacman transaction (ADR-0013)"
+  // Contract 2 (ADR-0035 §3): a detail the index clipped says so; the
+  // ledger line has it in full.
+  var item = row.drift ? driftItemFor(index, row.id) : null
+  var lead = item && index && Array.isArray(index.drift)
+    ? index.drift.filter(function(d) { return isObject(d) && d.eventId === item.leaderId })[0] : null
+  var clipped = (isObject(e.meta) && e.meta.truncated === true) || (isObject(lead) && lead.truncated === true)
+  var kv = [
+    ["When", stamp(e.ts)],
+    ["Who", str(e.actor) !== "" ? str(e.actor) : "—"],
+    ["What", (row.detail !== "" ? row.detail : "—") + (clipped ? " (clipped in the index; the ledger has it in full)" : "")]
+  ]
+  var hint = pacnewHint(row)
+  if (hint === "" && isIgnoreChange(e)) hint = IGNORE_HINT
+  if (hint !== "") kv.push(["Hint", hint])
+  kv = kv.concat([
+    ["Case", row.caseId !== "" ? row.caseId : proposed !== "" ? "proposed: " + proposed : "—"],
+    ["Rule", rule],
+    ["Source", SOURCE_TEXTS[row.source] !== undefined ? SOURCE_TEXTS[row.source] : row.source]
+  ])
+  // WP-136: the commits of a plugin clone's update as the engine named
+  // them (meta.commits, one subject per line, newest first; meta.git
+  // pull | rollback | reset), plain text after What
+  var commits = isObject(e.meta) ? str(e.meta.commits) : ""
+  if (commits !== "") kv.splice(3, 0, [e.meta.git === "rollback" ? "Rolled back" : "Commits", commits])
+  // WP-137: a pacman transaction's command and what it did, after What
+  var tx = transactionDetail(index, prepared, row.id)
+  var txRows = transactionRows(tx)
+  for (var t = 0; t < txRows.length; t++) kv.splice(3 + t, 0, txRows[t])
+  if (row.zone !== "") kv.push(["Zone", row.zone])
+  if (row.resolution !== "") kv.push(["Resolved", rowStatus(row)])
+  kv.push(["Event", row.id])
+  return {
+    id: row.id,
+    heading: row.source + " · " + row.kind,
+    title: row.subject,
+    cls: row.cls,
+    classLabel: EVENT_CLASS_LABELS[row.cls],
+    open: row.drift,
+    caseId: row.caseId,
+    proposedCase: proposed,
+    hideKey: row.hideKey,
+    whyLoud: whyLoud(row, proposed, r),
+    kv: kv,
+    transaction: tx
+  }
+}
+
+// The sticky bar of an event (§2): open drift → [Ask agent], Link to
+// case…, Explain…, Dismiss… (attention also Hide / Show); with a case →
+// Open case; routine → none. opts: { askAgent, hidden }. The first is
+// primary. Link names the proposed case when the engine has one.
+function eventActions(detail, opts) {
+  if (!detail) return []
+  var o = isObject(opts) ? opts : {}
+  var out = []
+  if (detail.open) {
+    if (o.askAgent === true) out.push({ id: "ask", label: "Ask agent" })
+    out.push({ id: "link", label: detail.proposedCase !== "" ? "Link to " + detail.proposedCase + "…" : "Link to case…" })
+    out.push({ id: "explain", label: "Explain…" })
+    out.push({ id: "dismiss", label: "Dismiss…" })
+    if (detail.cls === "attention") out.push({ id: "hide", label: o.hidden === true ? "Show" : "Hide" })
+  } else if (detail.caseId !== "") {
+    out.push({ id: "case", label: "Open case" })
+  }
+  for (var i = 0; i < out.length; i++) out[i].primary = i === 0
+  return out
+}
+
+// ---- Triage (WP-124b; ADR-0034 §6, ADR-0036) --------------------------------
+//
+// "Agent sorts N open changes" asks the default agent for a proposal
+// (`agent ask triage --json`); the agent stores it with `drift propose`
+// (never the plugin's call), the index points at it (`index.triage`), and
+// the desk shows it from the file next to the index (CONTRACT.md rule 1:
+// the files the index points to). Apply is bound to the id the user saw
+// (`drift apply <index.triage.id> --json`); a crisis has its own button,
+// one per run (`--item <eventId>`). Every text of the file is data:
+// shown as plain text, never evaluated (CONTRACT.md rule 6).
+
+var PROPOSAL_PATH = /^proposals\/[0-7][0-9A-HJKMNP-TV-Z]{25}\.json$/
+var AGENT_ACTOR = /^agent:[a-z0-9-]+$/
+var EVIDENCE_KINDS = ["journal", "event", "snapshot", "case", "plan"]
+var EVIDENCE_KIND_LABELS = { journal: "Journal", event: "Event", snapshot: "Snapshot", "case": "Case", plan: "Plan of" }
+var TRIAGE_ITEMS_MAX = 200
+var TRIAGE_REFS_MAX = 10
+
+// The open changes the button names (attention + crises, a group once),
+// and whether it shows: something open and an engine that can run.
+function triageButton(index, canWrite) {
+  var c = counts(index)
+  var n = c ? c.drift : 0
+  return { visible: canWrite === true && n > 0, count: n, text: "Agent sorts " + plural(n, "open change", "open changes") }
+}
+
+// Where the proposal index.triage names lies: `path` is relative to the
+// directory of index.json (ADR-0035 §6), exactly `proposals/<id>.json`.
+// "" when the index names none, or names it in any other form.
+function triagePath(indexPath, index) {
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (!t || typeof t.id !== "string" || !PROPOSAL_ID.test(t.id) || t.path !== "proposals/" + t.id + ".json"
+      || !PROPOSAL_PATH.test(t.path)) return ""
+  var p = String(indexPath || "")
+  var cut = p.lastIndexOf("/")
+  return cut < 0 ? "" : p.slice(0, cut + 1) + t.path
+}
+
+// The proposal file as the desk needs it, checked against
+// proposal.schema.json: only its properties, `logbook` present, `at` and
+// `applied` date-times, the length limits, a link without title or intent
+// and an explanation without a case. null when it is not the proposal
+// `triage` names, larger than the engine reads (4 MiB), or off in any part
+// — the engine wrote it, so a deviation is an edit the desk does not show.
+var PROPOSAL_TEXT_MAX = 4 * 1024 * 1024
+var DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
+
+function onlyKeys(obj, keys) {
+  for (var k in obj) if (keys.indexOf(k) === -1) return false
+  return true
+}
+
+// A string of `min`..`max` characters counted as the engine and JSON
+// Schema count them: code points, not UTF-16 units (an emoji is one).
+function textUpTo(value, max, min) {
+  if (typeof value !== "string") return false
+  var n = Array.from(value).length
+  return n >= (min || 0) && n <= max
+}
+
+function parseProposal(text, triage) {
+  if (!isObject(triage)) return null
+  var raw = String(text || "")
+  if (raw.length > PROPOSAL_TEXT_MAX) return null
+  var data = parseJson(raw)
+  if (!data || !onlyKeys(data, ["id", "at", "actor", "logbook", "applied", "items"])) return null
+  if (data.id !== triage.id || typeof data.actor !== "string" || !AGENT_ACTOR.test(data.actor)
+      || !textUpTo(data.logbook, 4096, 1) || typeof data.at !== "string" || !DATE_TIME.test(data.at)
+      || !(data.applied === null || (typeof data.applied === "string" && DATE_TIME.test(data.applied)))
+      || !Array.isArray(data.items) || data.items.length > TRIAGE_ITEMS_MAX) return null
+  var items = []
+  for (var i = 0; i < data.items.length; i++) {
+    var it = data.items[i]
+    if (!isObject(it) || !onlyKeys(it, ["eventId", "action", "caseId", "title", "intent", "crisis", "evidence"])
+        || typeof it.eventId !== "string" || !EVENT_ID.test(it.eventId)
+        || (it.action !== "link" && it.action !== "explain") || typeof it.crisis !== "boolean"
+        || !Array.isArray(it.evidence) || it.evidence.length < 1 || it.evidence.length > TRIAGE_REFS_MAX) return null
+    if (it.action === "link" && (typeof it.caseId !== "string" || !CASE_ID.test(it.caseId)
+        || it.title !== undefined || it.intent !== undefined)) return null
+    if (it.action === "explain" && (it.caseId !== undefined || !textUpTo(it.title, 256, 1)
+        || !textUpTo(it.intent, 4096, 1))) return null
+    var evidence = []
+    for (var j = 0; j < it.evidence.length; j++) {
+      var e = it.evidence[j]
+      if (!isObject(e) || !onlyKeys(e, ["kind", "ref", "text"]) || EVIDENCE_KINDS.indexOf(e.kind) === -1
+          || !textUpTo(e.ref, 64, 1) || (e.text !== undefined && !textUpTo(e.text, 256))) return null
+      evidence.push({ kind: e.kind, ref: e.ref, text: typeof e.text === "string" ? e.text : "" })
+    }
+    items.push({
+      eventId: it.eventId,
+      action: it.action,
+      caseId: it.action === "link" ? it.caseId : "",
+      title: it.action === "explain" ? it.title : "",
+      intent: it.action === "explain" ? it.intent : "",
+      crisis: it.crisis,
+      evidence: evidence
+    })
+  }
+  return { id: data.id, at: data.at, actor: data.actor, applied: data.applied === null ? "" : data.applied, items: items }
+}
+
+// The proposal the user opened (`seenId`, WP-124b round 2) against the
+// one the index names now: { state: none|current|replaced|gone, text }.
+// Apply and Discard act only on the current one: a replaced or gone
+// proposal is never applied unseen.
+function triageSeen(index, seenId) {
+  var id = String(seenId || "")
+  if (id === "") return { state: "none", text: "" }
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (t && t.id === id) return { state: "current", text: "" }
+  if (t && typeof t.id === "string")
+    return { state: "replaced", text: "Replaced by a newer proposal by " + str(t.actor) + " at " + stamp(t.at) + " — review it" }
+  return { state: "gone", text: "Proposal " + id + " is not there any more: applied and replaced, or discarded." }
+}
+
+// The author the engine wrote in front of an evidence text (`by <author> ·
+// …`, ADR-0036 §2); "" when there is none.
+function evidenceAuthor(text) {
+  var m = /^by (.+?) · /.exec(String(text || ""))
+  return m ? m[1] : ""
+}
+
+// Evidence the user should read twice: any author is an agent or unknown
+// (the engine names every author, WP-124b round 2), a Plan an agent worked
+// on, or a text without its authors.
+function evidenceFlagged(author) {
+  return author === "" || author.indexOf("agent:") !== -1 || /(^|, )unknown(,|$| )/.test(author)
+}
+
+// What the last apply did with an item: { state: done|skipped|refused,
+// reason } or null (not in that run).
+function itemOutcome(result, eventId) {
+  if (!isObject(result)) return null
+  var lists = [["done", result.done], ["skipped", result.skipped], ["refused", result.refused]]
+  for (var i = 0; i < lists.length; i++) {
+    var list = Array.isArray(lists[i][1]) ? lists[i][1] : []
+    for (var j = 0; j < list.length; j++)
+      if (isObject(list[j]) && list[j].eventId === eventId)
+        return { state: lists[i][0], reason: typeof list[j].reason === "string" ? list[j].reason
+          : typeof list[j].warning === "string" ? list[j].warning : "" }
+  }
+  return null
+}
+
+// The proposal as the detail shows it: the sticky bar's line (Fable's
+// wording: "N items proposed by <actor> at <at>, C crises held back —
+// apply each below"), the state line, the items Apply takes and the
+// crises, each with its subject (index.events), its action, every evidence
+// text with its author first, a mark when any evidence needs a second
+// look, whether it is still open, and the last apply's outcome. `result`:
+// Service.triageResult of this proposal. null without index.triage.
+function triageView(index, proposal, prepared, result) {
+  var t = index && isObject(index.triage) ? index.triage : null
+  if (!t || typeof t.id !== "string") return null
+  var n = isObject(t.counts) ? count(t.counts.items) : 0
+  var c = isObject(t.counts) ? count(t.counts.crises) : 0
+  var actor = typeof t.actor === "string" ? t.actor : ""
+  var at = stamp(t.at)
+  var view = {
+    id: t.id,
+    actor: actor,
+    at: at,
+    applied: typeof t.applied === "string" ? stamp(t.applied) : "",
+    readable: !!proposal,
+    head: plural(n, "item", "items") + " proposed by " + actor + " at " + at + ", "
+      + plural(c, "crisis", "crises") + " held back — apply each below",
+    state: typeof t.applied === "string"
+      ? "Applied " + stamp(t.applied) + ". That marks the run, not every item: what is still open shows below."
+      : actor + " · proposal, nothing written yet",
+    items: [],
+    regular: [],
+    crises: [],
+    applyCount: 0
+  }
+  if (!proposal) return view
+  var mine = isObject(result) && result.proposalId === t.id ? result : null
+  for (var i = 0; i < proposal.items.length; i++) {
+    var it = proposal.items[i]
+    var row = changelogRow(prepared, it.eventId)
+    var e = row ? null : findEvent(index, it.eventId)
+    var subject = row ? row.subject : e && typeof e.subject === "string" ? e.subject : it.eventId
+    var crisis = it.crisis || (!!row && row.cls === "crisis")
+    var evidence = it.evidence.map(function(ev) {
+      var author = evidenceAuthor(ev.text)
+      return {
+        label: EVIDENCE_KIND_LABELS[ev.kind] + " " + ev.ref,
+        text: ev.text !== "" ? ev.text : "(the engine wrote no text for this ref)",
+        author: author,
+        flagged: evidenceFlagged(author)
+      }
+    })
+    var item = {
+      eventId: it.eventId,
+      subject: subject,
+      kind: row ? row.source + " · " + row.kind : "",
+      action: it.action,
+      actionText: it.action === "link" ? "Link to " + it.caseId : "Explain: " + it.title,
+      intent: it.intent,
+      crisis: crisis,
+      open: !!row && row.drift === true,
+      evidence: evidence,
+      flagged: evidence.some(function(ev) { return ev.flagged }),
+      outcome: mine ? itemOutcome(mine, it.eventId) : null
+    }
+    view.items.push(item)
+    if (crisis) view.crises.push(item)
+    else {
+      view.regular.push(item)
+      if (item.open) view.applyCount++
+    }
+  }
+  return view
+}
+
+// `seldon agent ask triage|drift <eventId>|case <caseId> --json` (ADR-0036
+// §1): ids only. { args } or { error }.
+function askArgs(what, id) {
+  var target = String(id || "")
+  if (what === "triage") return { args: ["agent", "ask", "triage", "--json"] }
+  if (what === "drift" && EVENT_ID.test(target)) return { args: ["agent", "ask", "drift", target, "--json"] }
+  if (what === "case" && CASE_ID.test(target)) return { args: ["agent", "ask", "case", target, "--json"] }
+  return { error: "Not something an agent can be asked about: " + what + " " + target }
+}
+
+// `seldon drift apply <proposalId> [--item <eventId>] --json`: one --item
+// at most (a crisis one per run, ADR-0036 §3).
+function applyArgs(proposalId, eventId) {
+  var id = String(proposalId || "")
+  if (!PROPOSAL_ID.test(id)) return { error: "Not a proposal id: " + id }
+  if (eventId === undefined || eventId === null || eventId === "") return { args: ["drift", "apply", id, "--json"] }
+  var item = String(eventId)
+  if (!EVENT_ID.test(item)) return { error: "Not an event id: " + item }
+  return { args: ["drift", "apply", id, "--item", item, "--json"] }
+}
+
+function discardArgs(proposalId) {
+  var id = String(proposalId || "")
+  if (!PROPOSAL_ID.test(id)) return { error: "Not a proposal id: " + id }
+  return { args: ["drift", "discard", id, "--json"] }
+}
+
+// `agent ask --json` → { launched, ask, target, open, launcher, program, … }.
+function askResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
+  var data = parseJson(stdoutText) || {}
+  var launcher = typeof data.launcher === "string" ? data.launcher : ""
+  var program = typeof data.program === "string" ? data.program : ""
+  var via = launcher === "" ? program : program === "" || program === launcher ? launcher : launcher + " (" + program + ")"
+  var target = typeof data.target === "string" ? data.target : ""
+  var head = data.ask === "triage"
+    ? "Agent started to sort " + plural(count(data.open), "open change", "open changes") + "; its proposal shows here"
+    : "Agent asked about " + (target !== "" ? target : "it") + "; it answers in its window"
+  return { ok: true, text: head + (via !== "" ? " · launcher " + via : "") }
+}
+
+// `drift apply --json` → { proposal, applied, markedApplied, done, skipped,
+// refused, git } (SPEC-ENGINE §3). `gone`: the proposal is not there any
+// more (exit 1 "no proposal …"): refresh, never retry.
+function applyResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) {
+    var text = engineError(stdoutText, stderrText, exitCode)
+    return { ok: false, text: text, gone: exitCode === 1 && /^no proposal /.test(text), done: [], skipped: [], refused: [] }
+  }
+  var data = parseJson(stdoutText) || {}
+  var list = function(v) { return Array.isArray(v) ? v.filter(isObject) : [] }
+  var done = list(data.done)
+  var skipped = list(data.skipped)
+  var refused = list(data.refused)
+  return {
+    ok: true,
+    gone: false,
+    text: "Applied " + done.length + " · skipped " + skipped.length + " · refused " + refused.length,
+    applied: typeof data.applied === "string" ? data.applied : "",
+    markedApplied: data.markedApplied === true,
+    done: done,
+    skipped: skipped,
+    refused: refused
+  }
+}
+
+function discardResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) {
+    var text = engineError(stdoutText, stderrText, exitCode)
+    return { ok: false, text: text, gone: exitCode === 1 && /^no proposal /.test(text) }
+  }
+  return { ok: true, gone: false, text: "Proposal discarded; nothing in the logbook changed" }
+}
+
+// ---- Today
+
+// The first-run card (WP-119): Today's overview on a logbook with no case
+// yet and nothing open, in place of the sentence and its lead.
+var FIRST_RUN_TITLE = "Seldon is recording. Nothing to do."
+var FIRST_RUN_LEAD = "Every change to this machine lands in the Changelog. Plan a change below, or just keep working: routine stays quiet, and only a crisis colours the bar."
+
+// Whether the logbook has a case in any column.
+function anyCase(index) {
+  var c = index && isObject(index.cases) ? index.cases : {}
+  var lists = [c.queued, c.active, c.verification, c.completed]
+  for (var i = 0; i < lists.length; i++) if (Array.isArray(lists[i]) && lists[i].length > 0) return true
+  return false
+}
+
+// Today's list and overview (prototype `today`): the date and the day's
+// state, the tiles (a zero one `dim`, WP-119), NEEDS YOU (the crises, a
+// group by its leader), the journal of today and yesterday, the active
+// cases as tiles, the overview's sentence, and `firstRun` while no case
+// exists and nothing is open (the first-run card).
+function deskToday(index, prepared) {
+  var v = todayView(index)
+  var summary = index && isObject(index.summary) ? index.summary : {}
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var needs = []
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    if (r.cls !== "crisis" || r.groupLeader !== "") continue
+    needs.push({ id: r.id, type: "crisis", title: r.title, meta: r.kind + " · " + (r.actor !== "" ? r.actor : r.source),
+      aside: r.age, stripe: "crisis", group: "needs", alert: r.alert })
+  }
+  var cases = []
+  var active = index && isObject(index.cases) && Array.isArray(index.cases.active) ? index.cases.active : []
+  for (var k = 0; k < active.length; k++) {
+    if (!isObject(active[k])) continue
+    var c = workCase(active[k], "active", "active")
+    var steps = isObject(active[k].steps) ? active[k].steps : null
+    var total = steps ? count(steps.total) : 0
+    var done = steps ? Math.min(count(steps.done), total) : 0
+    cases.push({
+      id: c.id, risk: c.risk, title: c.title, progress: total > 0 ? done / total : 0,
+      text: (total > 0 ? done + "/" + total + " steps" : "no steps yet") + " · "
+        + (c.agents.length > 0 ? c.agents.map(actorLabel).join(", ") : "you")
+    })
+  }
+  var c0 = counts(index)
+  var crises = c0 ? c0.crisis : 0
+  return {
+    date: v.date,
+    title: v.title,
+    state: todayState(c0),
+    tiles: index ? [
+      { label: count(summary.eventsToday) === 1 ? "event today" : "events today", value: count(summary.eventsToday),
+        dim: count(summary.eventsToday) === 0 },
+      { label: "7 days", value: count(summary.events7d), dim: count(summary.events7d) === 0 }
+    ] : [],
+    firstRun: !!index && !anyCase(index) && !!c0 && c0.drift === 0 && c0.crisis === 0,
+    needs: needs,
+    entries: v.entries,
+    yesterday: v.yesterday,
+    cases: cases,
+    headline: !index ? "No index to show"
+      : crises > 0 ? "Seldon is recording. " + plural(crises, "change needs", "changes need") + " you."
+      : "Seldon is recording. Nothing needs you.",
+    lead: "Routine — updates, the theme, plugin switches — stays quiet in the Changelog. A crisis is a change without a case that can affect boot, login or the shell."
+  }
+}
+
+// Today's list rows: NEEDS YOU, then JOURNAL (today's entries or the
+// empty line, the yesterday row, yesterday's entries when open). `id`:
+// the event id for a crisis, "entry:N", "yesterday:N", "toggle", "empty".
+// With a sidebar search: the crises and entries (yesterday's too) whose
+// text or meta holds it, nothing else.
+function todayRows(today, yesterdayOpen, search) {
+  var t = isObject(today) ? today : { needs: [], entries: [], yesterday: [] }
+  var q = String(search || "").trim().toLowerCase()
+  if (q !== "") {
+    return todayRows(t, true, "").filter(function(r) {
+      return (r.type === "crisis" || r.type === "entry") && (r.title + " " + r.meta).toLowerCase().indexOf(q) !== -1
+    })
+  }
+  var out = t.needs.slice()
+  var i
+  for (i = 0; i < t.entries.length; i++)
+    out.push({ id: "entry:" + i, type: "entry", title: t.entries[i].text, meta: entryMeta(t.entries[i]), aside: "",
+      stripe: "", group: "journal" })
+  if (t.entries.length === 0)
+    out.push({ id: "empty", type: "empty", title: "Nothing in today's journal yet.", meta: "", aside: "", stripe: "", group: "journal" })
+  if (t.yesterday.length > 0) {
+    out.push({ id: "toggle", type: "toggle", title: (yesterdayOpen ? "▾ " : "▸ ") + "Yesterday · "
+      + plural(t.yesterday.length, "entry", "entries"), meta: "", aside: "", stripe: "", group: "journal" })
+    if (yesterdayOpen)
+      for (i = 0; i < t.yesterday.length; i++)
+        out.push({ id: "yesterday:" + i, type: "entry", title: t.yesterday[i].text, meta: entryMeta(t.yesterday[i]),
+          aside: "", stripe: "", group: "journal" })
+  }
+  return out
+}
+
+// ---- Work
+
+var WORK_GROUPS = [
+  { id: "active", label: "Active" },
+  { id: "verification", label: "Verification" },
+  { id: "queued", label: "Queued" },
+  { id: "completed", label: "Completed" }
+]
+
+// Every case as a desk row, by group (Active · Verification · Queued ·
+// Completed, the last completed and dropped, newest closed first as the
+// index lists them).
+function deskWork(index) {
+  var cases = index && isObject(index.cases) ? index.cases : {}
+  var rows = []
+  for (var g = 0; g < WORK_GROUPS.length; g++) {
+    var group = WORK_GROUPS[g].id
+    var list = Array.isArray(cases[group]) ? cases[group] : []
+    for (var i = 0; i < list.length; i++) {
+      if (!isObject(list[i])) continue
+      var c = workCase(list[i], group, group)
+      var steps = isObject(list[i].steps) ? list[i].steps : null
+      var total = steps ? count(steps.total) : 0
+      c.group = group
+      c.progress = total > 0 ? Math.min(count(steps.done), total) / total : 0
+      c.listMeta = [c.id, c.imported ? "imported" : "", c.risk, c.area, c.status === "dropped" ? "dropped" : "",
+        c.closedByAgent ? "closed by agent" : "", c.reopens !== "" ? "reopens " + c.reopens : "",
+        c.proposed > 0 ? c.proposed + " proposed" : ""].filter(function(p) { return p !== "" }).join(" · ")
+      c.stripe = group === "active" ? "attention" : ""
+      c.search = [c.id, c.title, c.area, c.status, c.risk, c.imported ? "imported" : ""].join(" ").toLowerCase()
+      rows.push(c)
+    }
+  }
+  return { rows: rows }
+}
+
+// The rows the Work list shows: the By agent filter on Completed
+// (ADR-0027 §5), the sidebar search, and each group's header ("ACTIVE ·
+// 2", "COMPLETED · 1 / 2" while the filter hides some).
+function workView(prepared, filter, search) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var q = String(search || "").trim().toLowerCase()
+  var shown = []
+  var totals = {}
+  var counts0 = {}
+  for (var g = 0; g < WORK_GROUPS.length; g++) {
+    totals[WORK_GROUPS[g].id] = 0
+    counts0[WORK_GROUPS[g].id] = 0
+  }
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    totals[r.group]++
+    if (r.group === "completed" && filter === COMPLETED_FILTER_AGENT && !r.closedByAgent) continue
+    if (q !== "" && r.search.indexOf(q) === -1) continue
+    counts0[r.group]++
+    shown.push(r)
+  }
+  var labels = {}
+  for (var k = 0; k < WORK_GROUPS.length; k++) {
+    var id = WORK_GROUPS[k].id
+    labels[id] = WORK_GROUPS[k].label.toUpperCase() + " · " + counts0[id]
+      + (counts0[id] !== totals[id] ? " / " + totals[id] : "")
+  }
+  return { rows: shown, labels: labels, counts: counts0, totals: totals }
+}
+
+function findWorkRow(prepared, id) {
+  var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  for (var i = 0; i < rows.length; i++) if (rows[i].id === id) return rows[i]
+  return null
+}
+
+// The case's sticky bar by status (§2): queued → Start · Drop; active →
+// Hand to agent · To verification · Drop; verification → Complete · Drop;
+// completed → Reopen; every case → Open in editor, last. `arm`: the first
+// press or click arms, the second runs (Arm.qml); `final`: Drop, whose
+// hint says so; Reopen runs at once (it creates a case and destroys
+// nothing, WP-101). The first is primary (drawn selected, the
+// prototype's); Enter takes the first that launches nothing (`enter`):
+// Enter never starts an agent (operator decision, WP-122 round 2), so on
+// an active case Enter twice is To verification, as in 0.1, and only `a`
+// or a click hands it to the agent.
+var CASE_DESK_ACTIONS = {
+  start: { id: "start", label: "Start", write: true, arm: true, key: "Enter" },
+  agent: { id: "agent", label: "Hand to agent", write: true, arm: true, key: "a", launches: true },
+  // WP-156: in place of Hand to agent while an agent works on the case
+  focus: { id: "focus", label: "Focus", write: false, arm: false, key: "a", launches: true },
+  verify: { id: "verify", label: "To verification", write: true, arm: true, key: "" },
+  done: { id: "done", label: "Complete", write: true, arm: true, key: "Enter" },
+  drop: { id: "drop", label: "Drop", write: true, arm: true, key: "x", final: true },
+  reopen: { id: "reopen", label: "Reopen", write: true, arm: false, key: "r" },
+  open: { id: "open", label: "Open in editor", write: false, arm: false, key: "e" }
+}
+var CASE_DESK_BY_STATUS = {
+  queued: ["start", "drop", "open"],
+  active: ["agent", "verify", "drop", "open"],
+  verification: ["done", "drop", "open"],
+  completed: ["reopen", "open"],
+  dropped: ["open"]
+}
+
+//
+// An imported case's Start (WP-102b, ADR-0027 §2(a)): never from a key or
+// the list; `review` — the bar enables it only while the detail shows the
+// whole Intent the engine gave (`plan show`), and it arms by click only.
+// Such a case has no Enter action at all.
+function caseDeskActions(c) {
+  if (!c || !c.actionable || CASE_DESK_BY_STATUS[c.status] === undefined) return []
+  var ids = CASE_DESK_BY_STATUS[c.status]
+  // one agent per case (WP-156): Focus brings the working one to the front
+  if (c.working === true) ids = ids.map(function(id) { return id === "agent" ? "focus" : id })
+  var review = function(id) { return id === "start" && c.imported === true }
+  var enter = ""
+  for (var k = 0; k < ids.length && enter === ""; k++) if (CASE_DESK_ACTIONS[ids[k]].launches !== true) enter = ids[k]
+  // an imported case's Enter would be its Start: none (never Drop instead)
+  if (review(enter)) enter = ""
+  return ids.map(function(id, i) {
+    var a = CASE_DESK_ACTIONS[id]
+    var isEnter = id === enter && a.arm
+    return { id: a.id, label: a.label, write: a.write, arm: a.arm, final: a.final === true, primary: i === 0,
+      enter: id === enter, launches: a.launches === true, review: review(id),
+      key: review(id) ? "" : isEnter ? (a.key !== "" && a.key !== "Enter" ? a.key + " or Enter" : "Enter") : a.key }
+  })
+}
+
+// Whether the detail shows the whole Intent of case `c` as the engine gave
+// it (Service.caseShown), so an imported case's Start may be pressed: this
+// case's finished, successful `plan show`, not cut at 64 KiB and without a
+// hidden character (WP-102b round 2: the box would not show it all).
+function intentReviewed(c, shown) {
+  return !!c && isObject(shown) && !shown.pending && shown.ok === true && shown.caseId === c.id
+    && shown.truncated !== true && !(count(shown.hidden) > 0)
+}
+
+// Whether a `plan show` answer must be asked again at once (WP-102b stage 2):
+// a new index came while it was in flight (Service.showCase set
+// `reaskWanted`), so the answer may already be stale and must not enable
+// Start. Only a successful answer for the same case; a failure is shown,
+// and the next index asks anyway.
+function reaskAfter(last, result) {
+  return isObject(last) && last.reaskWanted === true && isObject(result) && result.ok === true
+    && last.caseId === result.caseId
+}
+
+// The bar's hint while an imported case's Start is off ("" when it is on
+// or the case has no such Start).
+function reviewHint(c, shown) {
+  var start = caseDeskAction(c, "start")
+  if (!start || !start.review || intentReviewed(c, shown)) return ""
+  var mine = isObject(shown) && shown.caseId === c.id && !shown.pending && shown.ok === true
+  if (!mine) return "Start waits until the whole Intent below is shown; only you start an imported case"
+  var why = []
+  if (count(shown.hidden) > 0) why.push(plural(count(shown.hidden), "hidden character is", "hidden characters are") + " marked")
+  if (shown.truncated === true) why.push("the Intent is longer than the desk shows")
+  return why.join(" and ") + ": read the whole Intent in the editor; start this case from the terminal."
+}
+
+// The action Enter takes on a case: the first that launches nothing.
+function caseEnterAction(c) {
+  var list = caseDeskActions(c)
+  for (var i = 0; i < list.length; i++) if (list[i].enter) return list[i]
+  return null
+}
+
+function caseDeskAction(c, id) {
+  var list = caseDeskActions(c)
+  for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]
+  return null
+}
+
+// The sticky bar's hint while a case action is armed.
+function caseArmHint(action, caseId) {
+  if (!action) return ""
+  var again = action.key !== "" ? "Press " + action.key + " again or click Confirm" : "Click Confirm"
+  return action.label + " " + caseId + "? " + again + (action.final ? ". This is final." : ".")
+}
+
+// The plan verb or agent call an action id runs ("" for none).
+function caseActionVerb(id) {
+  return id === "start" || id === "verify" || id === "done" || id === "drop" || id === "reopen" ? id : ""
+}
+
+// One case as the detail shows it (prototype `work`), from the index only
+// (AGENTS.md §3): key/values, the plan's progress, the log (this case's
+// lifecycle events and notes in the index, newest first), the linked
+// changes (its `events` the index still lists, and how many it no longer
+// does), and the first paragraph of Intent and Result and an imported
+// case's source when the index carries them (ADR-0038; plain text, the
+// rest is in the case file, which the plugin never reads). null when the
+// index has no such case.
+function caseDetail(index, prepared, id) {
+  var wc = findWorkRow(prepared, id)
+  if (!wc) return null
+  var raw = null
+  var cases = index && isObject(index.cases) ? index.cases : {}
+  for (var g = 0; g < WORK_GROUPS.length && !raw; g++) {
+    var list = Array.isArray(cases[WORK_GROUPS[g].id]) ? cases[WORK_GROUPS[g].id] : []
+    for (var i = 0; i < list.length; i++) if (isObject(list[i]) && list[i].id === id) raw = list[i]
+  }
+  raw = raw || {}
+  var steps = isObject(raw.steps) ? raw.steps : null
+  var total = steps ? count(steps.total) : 0
+  var done = steps ? Math.min(count(steps.done), total) : 0
+  var snap = isInt(raw.snapshotBefore) ? "snapshot " + raw.snapshotBefore : "—"
+  var kv = [
+    ["Status", wc.status + (wc.closedByAgent ? " by agent" : "")],
+    ["Risk", wc.risk + (wc.risk === "R3" ? " · every step that can break boot needs your go" : "")],
+    ["Zone", wc.zone !== "" ? wc.zone : "—"],
+    ["Area", wc.area !== "" ? wc.area : "—"],
+    ["Priority", wc.priority !== "" ? wc.priority : "normal"],
+    ["Agent", wc.agents.length > 0 ? wc.agents.join(", ") : "—"],
+    ["Rollback", snap],
+    ["Dates", caseDates(wc) !== "" ? caseDates(wc) : "—"]
+  ]
+  if (wc.reopens !== "") kv.push(["Reopens", wc.reopens])
+  if (wc.proposed > 0) kv.push(["Proposed", plural(wc.proposed, "open change", "open changes") + " the engine thinks belong here"])
+  if (wc.path !== "") kv.push(["File", wc.path])
+  // display only: never an argument (ADR-0038 §3)
+  if (str(raw.source) !== "") kv.push(["Imported from", str(raw.source)])
+  var all = events(index)
+  var log = []
+  var byId = {}
+  for (var k = 0; k < all.length; k++) {
+    var e = all[k]
+    if (!isObject(e)) continue
+    if (typeof e.id === "string") byId[e.id] = e
+    if (e.case !== id) continue
+    // a pacman note is a change (a file pacman left, WP-141): listed with
+    // the linked changes below, not in the Log
+    var logged = e.source === "seldon" || ((e.kind === "note" || e.kind === "correction") && e.source !== "pacman")
+    if (!logged) continue
+    log.push([stamp(e.ts), [str(e.kind), str(e.actor),
+      isObject(e.meta) && RISKS.indexOf(e.meta.risk) !== -1 ? e.meta.risk : "",
+      e.kind === "note" || e.kind === "correction" ? str(e.detail) : ""]
+      .filter(function(p) { return p !== "" }).join(" · ")])
+  }
+  var ids = Array.isArray(raw.events) ? raw.events : []
+  var linked = []
+  var missing = 0
+  for (var m = ids.length - 1; m >= 0; m--) {
+    var le = byId[ids[m]]
+    if (!le) {
+      missing++
+      continue
+    }
+    linked.push([stamp(le.ts), str(le.source) + " " + str(le.kind) + " · " + str(le.subject)])
+  }
+  return {
+    id: wc.id,
+    title: wc.title,
+    status: wc.status,
+    heading: wc.id + " · " + wc.status + (wc.closedByAgent ? " by agent" : ""),
+    meta: [wc.id, wc.risk].filter(function(p) { return p !== "" }).join(" · "),
+    actionable: wc.actionable,
+    closedByAgent: wc.closedByAgent,
+    reopens: wc.reopens,
+    imported: wc.imported,
+    source: str(raw.source),
+    path: wc.path,
+    kv: kv,
+    plan: { done: done, total: total, progress: total > 0 ? done / total : 0,
+      text: total > 0 ? done + " of " + total + " steps done" : "No steps in the plan yet" },
+    log: log,
+    linked: linked,
+    linkedMore: missing > 0 ? "+" + plural(missing, "older change", "older changes") + " the index no longer lists" : "",
+    intent: str(raw.intent),
+    result: str(raw.result),
+    row: wc
+  }
+}
+
+// ---- The graph, desk section 8 (ADR-0034 §5, WP-125) -----------------------
+//
+// The machine's memory as a network, from the index alone. Nodes: the
+// logbook's areas, the cases of all four lists, the decisions, and the
+// events whose kind is a change (GRAPH_CHANGE_KINDS, and a pacman note: a
+// file pacman left, WP-141; not case lifecycle, other notes, corrections or
+// resolutions). A change is a crisis when its event
+// id is in drift[] with crisis: true. Edges: event.case → case, case.area →
+// area, decision.cases → case (contract 2), and drift.proposedCase → case
+// dashed. Day index: event ts, case created, decision date; an area is as
+// old as the earliest node attached to it.
+//
+// The service builds the graph when the index changes (graphBuild); the
+// section keeps only the layout (graphState: typed arrays, positions kept by
+// id across index updates) and steps it on a Timer (graphStep, one force
+// iteration per tick, at most GRAPH_TICKS_MAX ticks after each wake). Beyond
+// GRAPH_CAP nodes, changes fold into cluster nodes ("+N"): those of one day
+// and source first, then of one day, one ISO week, one month, the biggest
+// groups first and only as many as the cap needs; areas, cases, decisions
+// and crises never fold.
+
+var GRAPH_CAP = 400
+// schema/index.schema.json: events maxItems, cases.completed maxItems.
+var GRAPH_EVENTS_MAX = 500
+var GRAPH_COMPLETED_MAX = 50
+var GRAPH_CHANGE_KINDS = ["install", "remove", "upgrade", "downgrade", "reinstall", "snapshot", "snapshot-delete",
+  "update", "theme-set", "config-change", "config-add", "config-remove", "command"]
+var GRAPH_KIND_LABELS = { area: "Area", case: "Case", decision: "Decision", change: "Change", crisis: "Crisis",
+  cluster: "Folded changes" }
+// The legend in drawing order (the cluster entry only when something folded).
+var GRAPH_LEGEND = [
+  { kind: "case", label: "Case" },
+  { kind: "area", label: "Area" },
+  { kind: "decision", label: "Decision" },
+  { kind: "change", label: "Change" },
+  { kind: "crisis", label: "Crisis" },
+  { kind: "cluster", label: "Folded" }
+]
+var GRAPH_FOLD_LEVELS = ["day-source", "day", "week", "month"]
+// Layout: at most this many ticks after a wake, alpha decaying from 1 to
+// GRAPH_ALPHA_MIN over them; a tick over the budget is counted.
+var GRAPH_TICKS_MAX = 200
+var GRAPH_ALPHA_MIN = 0.001
+var GRAPH_ALPHA_DECAY = 1 - Math.pow(GRAPH_ALPHA_MIN, 1 / GRAPH_TICKS_MAX)
+var GRAPH_TICK_BUDGET_MS = 8
+// Labels drawn at most per paint besides the focus and its neighbours.
+var GRAPH_LABELS_MAX = 40
+// … and while the layout moves (areas and crises only).
+var GRAPH_LABELS_MOVING = 16
+// Forces (the prototype's, scaled by alpha): repulsion CHARGE / distance,
+// a pull to the centre, springs of rest length LINK + both radii.
+var GRAPH_CHARGE = 150
+var GRAPH_GRAVITY = 0.02
+var GRAPH_SPRING = 0.1
+var GRAPH_LINK = 30
+var GRAPH_DAMPING = 0.6
+var GRAPH_MAX_SPEED = 12
+// Repulsion: exact pairs up to this many visible nodes, a quadtree above
+// (Barnes–Hut, opening angle θ = 0.9 as d3-force's default).
+var GRAPH_EXACT_MAX = 160
+var GRAPH_THETA2 = 0.81
+
+function graphIsChange(kind, source) {
+  return typeof kind === "string" && (GRAPH_CHANGE_KINDS.indexOf(kind) !== -1 || kind.indexOf("plugin-") === 0
+    || (kind === "note" && source === "pacman"))
+}
+
+// The empty graph (no index, or nothing in it).
+function graphEmpty() {
+  return { nodes: [], edges: [], deg: [], first: 0, last: 0, span: 0, empty: true, still: false, foldLevel: "",
+    numbers: { nodes: 0, edges: 0, areas: 0, cases: 0, decisions: 0, changes: 0, crises: 0, clusters: 0, folded: 0,
+      events: 0, completed: 0 },
+    footer: "" }
+}
+
+// The last path segment of a subject ("~/.config/hypr/input.conf" →
+// "input.conf"), the whole subject when it has none.
+function graphShortLabel(subject) {
+  var s = str(subject)
+  var parts = s.split("/").filter(function(p) { return p !== "" })
+  return parts.length > 0 ? parts[parts.length - 1] : s
+}
+
+// The smallest radius a node of `kind` is drawn with, in screen pixels
+// (zoomed far out, the graph keeps its shapes).
+function graphMinRadius(kind) {
+  return kind === "area" ? 5 : kind === "case" || kind === "crisis" ? 4 : kind === "decision" ? 3.5 : kind === "cluster" ? 3 : 2
+}
+
+function graphRadius(kind, deg, members) {
+  if (kind === "area") return 9
+  if (kind === "case") return 7
+  if (kind === "decision" || kind === "crisis") return 6
+  if (kind === "cluster") return 4 + Math.min(6, Math.sqrt(members) * 1.2)
+  return 3.5 + Math.min(3, deg * 0.6)
+}
+
+// Which changes fold (graphBuild): `evs` is the list of change entries
+// ({ day, source, crisis }), `budget` how many nodes they may take. Returns
+// { level, groups: [[entry index…]…], count } — the groups that fold (two
+// or more entries each), at the finest level that brings the count within
+// the budget (the coarsest when none does), biggest first.
+function graphFold(evs, budget) {
+  if (evs.length <= budget) return { level: "", groups: [], count: evs.length }
+  var best = null
+  for (var l = 0; l < GRAPH_FOLD_LEVELS.length; l++) {
+    var level = GRAPH_FOLD_LEVELS[l]
+    var byKey = {}
+    var keys = []
+    for (var i = 0; i < evs.length; i++) {
+      var e = evs[i]
+      if (e.crisis) continue
+      var key = level === "day-source" ? e.day + "/" + e.source
+        : level === "day" ? String(e.day)
+        : level === "week" ? String(e.day - weekdayOfDay(e.day))
+        : dateOfDay(e.day).slice(0, 7)
+      if (!byKey[key]) {
+        byKey[key] = []
+        keys.push(key)
+      }
+      byKey[key].push(i)
+    }
+    var groups = keys.map(function(k) { return byKey[k] }).filter(function(g) { return g.length > 1 })
+    groups.sort(function(a, b) { return b.length - a.length || evs[a[0]].day - evs[b[0]].day })
+    var n = evs.length
+    var chosen = []
+    for (var g = 0; g < groups.length && n > budget; g++) {
+      chosen.push(groups[g])
+      n -= groups[g].length - 1
+    }
+    best = { level: level, groups: chosen, count: n }
+    if (n <= budget) return best
+  }
+  return best
+}
+
+// The graph of an index: { nodes, edges, deg, first, last, span, empty,
+// foldLevel, numbers, footer }. A node: { id, kind (area, case, decision,
+// change, crisis, cluster), label (drawn beside it), title, sub, day (days
+// since `first`), date, r (radius at zoom 1), caseId (the case "Open case"
+// goes to, "" none), done (a closed case), count and members (a cluster's
+// changes, newest first, at most 12; `more` the rest) }. An edge: { a, b,
+// dashed } (node indices). Nodes come in the order areas, cases,
+// decisions, changes by day; `cap` (GRAPH_CAP when missing) bounds them
+// unless the fixed nodes alone exceed it.
+function graphBuild(index, cap) {
+  if (!isObject(index)) return graphEmpty()
+  var limit = count(cap) || GRAPH_CAP
+  var today = dayNumber(todayDate(index))
+  var nodes = []
+  // Maps without a prototype: an id such as "constructor" or "__proto__"
+  // from a foreign index must not find an inherited member.
+  var byId = Object.create(null)
+  var abs = []
+  var links = []
+  function add(node, day) {
+    if (byId[node.id] !== undefined) return byId[node.id]
+    byId[node.id] = nodes.length
+    nodes.push(node)
+    abs.push(day)
+    return nodes.length - 1
+  }
+  function dayOr(text, fallback) {
+    var d = dayNumber(dayOf(text))
+    return isNaN(d) ? fallback : d
+  }
+
+  // Areas: the logbook's, then any a case names that the list lacks.
+  var sys = isObject(index.system) ? index.system : {}
+  var areas = Array.isArray(sys.areas) ? sys.areas : []
+  function addArea(name) {
+    return add({ id: "area:" + name, kind: "area", label: name, title: name, sub: "", caseId: "", done: false }, NaN)
+  }
+  for (var a = 0; a < areas.length; a++)
+    if (isObject(areas[a]) && typeof areas[a].name === "string" && AREA.test(areas[a].name)) addArea(areas[a].name)
+
+  // Cases, all four lists (a case listed twice counts once).
+  var groups = isObject(index.cases) ? index.cases : {}
+  var completed = 0
+  var caseList = []
+  ;["queued", "active", "verification", "completed"].forEach(function(group) {
+    var list = Array.isArray(groups[group]) ? groups[group] : []
+    if (group === "completed") completed = list.length
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i]
+      if (!isObject(c) || typeof c.id !== "string" || !CASE_ID.test(c.id) || byId[c.id] !== undefined) continue
+      var day = dayOr(c.created, dayOr(c.started, dayOr(c.closed, today)))
+      var status = str(c.status) || group
+      add({ id: c.id, kind: "case", label: c.id, title: c.id + " " + str(c.title),
+        sub: [status, RISKS.indexOf(c.risk) !== -1 ? c.risk : "", hasText(c.area) ? c.area : ""]
+          .filter(function(p) { return p !== "" }).join(" · "),
+        caseId: c.id, done: group === "completed" }, day)
+      caseList.push(c)
+    }
+  })
+  for (var ci = 0; ci < caseList.length; ci++) {
+    var area = caseList[ci].area
+    if (typeof area === "string" && AREA.test(area)) links.push([caseList[ci].id, addArea(area) >= 0 ? "area:" + area : "", false])
+  }
+
+  // Decisions and the cases they name.
+  var decisions = Array.isArray(index.decisions) ? index.decisions : []
+  for (var d = 0; d < decisions.length; d++) {
+    var dec = decisions[d]
+    if (!isObject(dec) || typeof dec.id !== "string" || !DECISION_ID.test(dec.id)) continue
+    add({ id: dec.id, kind: "decision", label: dec.id, title: dec.id + " " + str(dec.title), sub: str(dec.status),
+      caseId: "", done: false }, dayOr(dec.date, today))
+    var named = Array.isArray(dec.cases) ? dec.cases : []
+    for (var n = 0; n < named.length; n++) if (typeof named[n] === "string" && CASE_ID.test(named[n])) links.push([dec.id, named[n], false])
+  }
+  var fixed = nodes.length
+
+  // Changes: the index's events, then open drift items older than them.
+  var drift = Array.isArray(index.drift) ? index.drift : []
+  var crisisIds = Object.create(null)
+  var proposed = Object.create(null)
+  for (var k = 0; k < drift.length; k++) {
+    var item = drift[k]
+    if (!isObject(item) || typeof item.eventId !== "string") continue
+    if (item.crisis === true) crisisIds[item.eventId] = true
+    if (typeof item.proposedCase === "string" && CASE_ID.test(item.proposedCase)) proposed[item.eventId] = item.proposedCase
+  }
+  var events = Array.isArray(index.events) ? index.events : []
+  var evs = []
+  var seen = Object.create(null)
+  function addChange(e, id) {
+    if (!isObject(e) || !graphIsChange(e.kind, e.source) || seen[id]) return
+    var day = dayNumber(dayOf(e.ts))
+    if (isNaN(day)) return
+    seen[id] = true
+    evs.push({ id: id, day: day, ts: str(e.ts), source: str(e.source), kind: e.kind, subject: str(e.subject),
+      crisis: crisisIds[id] === true, case: typeof e.case === "string" && CASE_ID.test(e.case) ? e.case : "",
+      proposed: typeof proposed[id] === "string" ? proposed[id] : "" })
+  }
+  for (var ev = 0; ev < events.length; ev++) if (isObject(events[ev])) addChange(events[ev], str(events[ev].id))
+  for (var dr = 0; dr < drift.length; dr++) if (isObject(drift[dr])) addChange(drift[dr], str(drift[dr].eventId))
+  // Oldest first, so the replay and the start layout grow outwards.
+  evs.sort(function(x, y) { return x.day - y.day || (x.ts < y.ts ? -1 : x.ts > y.ts ? 1 : 0) })
+
+  var fold = graphFold(evs, Math.max(0, limit - fixed))
+  var clusterOf = Object.create(null)
+  for (var g = 0; g < fold.groups.length; g++) for (var m = 0; m < fold.groups[g].length; m++) clusterOf[fold.groups[g][m]] = g
+  var clusterNode = []
+  var folded = 0
+  for (var e2 = 0; e2 < evs.length; e2++) {
+    var c2 = evs[e2]
+    var target
+    var gi = clusterOf[e2]
+    if (gi === undefined) {
+      var kind = c2.crisis ? "crisis" : "change"
+      target = c2.id
+      add({ id: c2.id, kind: kind, label: graphShortLabel(c2.subject), title: c2.subject,
+        sub: c2.source + " · " + c2.kind, caseId: byId[c2.case] !== undefined ? c2.case : "", done: false }, c2.day)
+    } else {
+      var members = fold.groups[gi]
+      if (clusterNode[gi] === undefined) {
+        var first = evs[members[0]]
+        var key = fold.level === "day-source" ? dateOfDay(first.day) + " · " + first.source
+          : fold.level === "day" ? dateOfDay(first.day)
+          : fold.level === "week" ? "week of " + dateOfDay(first.day - weekdayOfDay(first.day))
+          : dateOfDay(first.day).slice(0, 7)
+        var texts = []
+        for (var mm = members.length - 1; mm >= 0 && texts.length < 12; mm--) {
+          var me = evs[members[mm]]
+          texts.push(me.kind + " " + me.subject)
+        }
+        clusterNode[gi] = "fold:" + fold.level + ":" + key
+        add({ id: clusterNode[gi], kind: "cluster", label: "+" + members.length,
+          title: plural(members.length, "change", "changes") + " · " + key, sub: "folded: the graph shows at most " + limit + " nodes",
+          caseId: "", done: false, count: members.length, members: texts, more: Math.max(0, members.length - texts.length) }, first.day)
+        folded += members.length
+      }
+      target = clusterNode[gi]
+    }
+    if (c2.case !== "") links.push([target, c2.case, false])
+    if (c2.proposed !== "" && c2.proposed !== c2.case) links.push([target, c2.proposed, true])
+  }
+
+  // Edges between nodes that exist, once each (a solid one wins).
+  var edges = []
+  var edgeAt = Object.create(null)
+  for (var l = 0; l < links.length; l++) {
+    var ia = byId[links[l][0]]
+    var ib = byId[links[l][1]]
+    if (ia === undefined || ib === undefined || ia === ib) continue
+    var ek = ia < ib ? ia + ":" + ib : ib + ":" + ia
+    if (edgeAt[ek] !== undefined) {
+      if (!links[l][2]) edges[edgeAt[ek]].dashed = false
+      continue
+    }
+    edgeAt[ek] = edges.length
+    edges.push({ a: ia, b: ib, dashed: links[l][2] })
+  }
+  var deg = nodes.map(function() { return 0 })
+  for (var de = 0; de < edges.length; de++) {
+    deg[edges[de].a]++
+    deg[edges[de].b]++
+  }
+
+  // Day index: the first day of anything dated; an area at its earliest
+  // neighbour, an area without one at the first day.
+  var lo = Infinity
+  var hi = -Infinity
+  for (var t = 0; t < abs.length; t++) if (!isNaN(abs[t])) {
+    lo = Math.min(lo, abs[t])
+    hi = Math.max(hi, abs[t])
+  }
+  if (lo === Infinity) lo = hi = isNaN(today) ? 0 : today
+  for (var ae = 0; ae < edges.length; ae++) {
+    var ed = edges[ae]
+    var pairs = [[ed.a, ed.b], [ed.b, ed.a]]
+    for (var p = 0; p < 2; p++) {
+      var x = pairs[p][0]
+      var y = pairs[p][1]
+      if (nodes[x].kind === "area" && !isNaN(abs[y]) && (isNaN(abs[x]) || abs[y] < abs[x])) abs[x] = abs[y]
+    }
+  }
+  var numbers = { nodes: nodes.length, edges: edges.length, areas: 0, cases: 0, decisions: 0, changes: 0, crises: 0,
+    clusters: fold.groups.length, folded: folded, events: events.length, completed: completed }
+  for (var q = 0; q < nodes.length; q++) {
+    var node = nodes[q]
+    var day0 = isNaN(abs[q]) ? lo : abs[q]
+    node.day = day0 - lo
+    node.date = dateOfDay(day0)
+    node.r = graphRadius(node.kind, deg[q], node.count || 0)
+    if (node.kind === "area") numbers.areas++
+    else if (node.kind === "case") numbers.cases++
+    else if (node.kind === "decision") numbers.decisions++
+    else if (node.kind === "crisis") numbers.crises++
+    else if (node.kind === "change") numbers.changes++
+  }
+  var footer = "Newest " + plural(events.length, "event", "events") + " · " + completed + " completed " +
+    (completed === 1 ? "case" : "cases") + " in the index"
+  if (events.length >= GRAPH_EVENTS_MAX || completed >= GRAPH_COMPLETED_MAX) footer += " · older ones are only in the logbook"
+  if (folded > 0) footer += " · " + plural(folded, "change", "changes") + " folded into " + fold.groups.length
+  // More nodes that never fold (areas, cases, decisions, crises) than the
+  // cap: the layout would not keep its budget, so the graph is a still
+  // picture in node order (ADR-0034 §5's static escalation; no tick).
+  var still = numbers.areas + numbers.cases + numbers.decisions + numbers.crises > limit
+  return { nodes: nodes, edges: edges, deg: deg, first: lo, last: hi, span: hi - lo, empty: nodes.length === 0,
+    still: still, foldLevel: fold.level, numbers: numbers, footer: footer }
+}
+
+// A stable pseudo-random number in [0, 1) from a text (FNV-1a), so the
+// start layout is the same on every build of the same index.
+function graphHash(text) {
+  var h = 2166136261
+  for (var i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0) / 4294967296
+}
+
+// An array of n zeros. Plain arrays, not typed ones: the shell's JS engine
+// (QV4) reads and writes them about 1.7 times faster (measured, WP-125).
+function graphFill(n) {
+  var a = new Array(n)
+  for (var i = 0; i < n; i++) a[i] = 0
+  return a
+}
+
+// Run the layout's functions a few times on a six-node graph, once per
+// Model.js instance: QV4 compiles a function only after a few calls, so
+// without this the first real ticks ran interpreted (the first tick of a
+// 400-node layout took 8 ms on the test host, the later ones half of it).
+var graphWarmed = false
+function graphWarm() {
+  if (graphWarmed) return
+  graphWarmed = true
+  var b = { nodes: [], edges: [{ a: 0, b: 1 }, { a: 1, b: 2 }], first: 0, span: 0 }
+  for (var i = 0; i < 6; i++) b.nodes.push({ id: "warm" + i, r: 4, day: 0 })
+  var s = graphState(b, null)
+  for (var k = 0; k < 4; k++) {
+    graphRepelExact(s, 1)
+    graphRepelTree(s, 1)
+    s.sleeping = false
+    graphStep(s, 1000)
+  }
+}
+
+// The layout state of a build: positions, velocities and radii in arrays, the edges as index pairs, the visible set (day ≤ cut), alpha and
+// the tick counters. Positions of nodes `prev` already had (same id) are
+// kept; a new node starts beside a placed neighbour, else on a sunflower
+// spiral by its order. `prev`'s cut is kept when it was not on its last
+// day (a replay in progress), else the new last day. `added` counts the
+// nodes `prev` did not have, `removed` those it had that are gone.
+function graphState(build, prev) {
+  graphWarm()
+  var n = build.nodes.length
+  var m = build.edges.length
+  var s = {
+    n: n, ids: build.nodes.map(function(node) { return node.id }), at: Object.create(null),
+    x: graphFill(n), y: graphFill(n), vx: graphFill(n), vy: graphFill(n), r: graphFill(n), day: graphFill(n),
+    vis: graphFill(n), visList: graphFill(n), visCount: 0,
+    ea: graphFill(m), eb: graphFill(m), adjStart: graphFill(n + 1), adj: graphFill(2 * m),
+    first: build.first, span: build.span, cut: build.span,
+    alpha: 1, ticks: 0, total: 0, sleeping: false, pinned: -1, px: 0, py: 0, lastMs: 0, maxMs: 0, over: 0,
+    added: 0, removed: 0, tree: null, still: build.still === true, treeSteps: 0, exactSteps: 0
+  }
+  for (var i = 0; i < n; i++) {
+    s.at[s.ids[i]] = i
+    s.r[i] = build.nodes[i].r
+    s.day[i] = build.nodes[i].day
+  }
+  for (var e = 0; e < m; e++) {
+    s.ea[e] = build.edges[e].a
+    s.eb[e] = build.edges[e].b
+    s.adjStart[s.ea[e] + 1]++
+    s.adjStart[s.eb[e] + 1]++
+  }
+  for (var k = 0; k < n; k++) s.adjStart[k + 1] += s.adjStart[k]
+  var fill = s.adjStart.slice(0, n)
+  for (var e2 = 0; e2 < m; e2++) {
+    s.adj[fill[s.ea[e2]]++] = s.eb[e2]
+    s.adj[fill[s.eb[e2]]++] = s.ea[e2]
+  }
+  var placed = graphFill(n)
+  var kept = 0
+  for (var p = 0; p < n; p++) {
+    var old = prev ? prev.at[s.ids[p]] : undefined
+    if (old !== undefined) {
+      s.x[p] = prev.x[old]
+      s.y[p] = prev.y[old]
+      placed[p] = 1
+      kept++
+    }
+  }
+  var spiral = 0
+  for (var q = 0; q < n; q++) {
+    if (placed[q]) continue
+    var h = graphHash(s.ids[q])
+    var near = -1
+    for (var a = s.adjStart[q]; a < s.adjStart[q + 1]; a++) if (placed[s.adj[a]]) {
+      near = s.adj[a]
+      break
+    }
+    if (near >= 0) {
+      var dist = s.r[near] + s.r[q] + GRAPH_LINK * (0.6 + 0.4 * h)
+      s.x[q] = s.x[near] + dist * Math.cos(h * 2 * Math.PI)
+      s.y[q] = s.y[near] + dist * Math.sin(h * 2 * Math.PI)
+    } else {
+      var rad = 24 * Math.sqrt(0.5 + spiral)
+      var ang = spiral * Math.PI * (3 - Math.sqrt(5))
+      s.x[q] = rad * Math.cos(ang)
+      s.y[q] = rad * Math.sin(ang)
+      spiral++
+    }
+    placed[q] = 1
+  }
+  if (prev) {
+    s.added = n - kept
+    s.removed = prev.n - kept
+    if (prev.cut < prev.span) s.cut = Math.max(0, Math.min(s.span, prev.first + prev.cut - s.first))
+    s.alpha = s.added + s.removed > 0 ? Math.max(prev.sleeping ? 0 : prev.alpha, 0.3) : prev.alpha
+    s.sleeping = s.added + s.removed === 0 && prev.sleeping
+    s.total = prev.total
+  }
+  if (s.still) {
+    s.alpha = 0
+    s.sleeping = true
+  }
+  graphSetCut(s, s.cut, false)
+  return s
+}
+
+// Show the nodes of day ≤ cut (days since the build's first day, clamped).
+// With `grow`, a node that becomes visible starts beside a visible
+// neighbour (the replay's growth). Returns how many became visible.
+function graphSetCut(s, cut, grow) {
+  var c = Math.max(0, Math.min(s.span, Math.round(Number(cut) || 0)))
+  s.cut = c
+  var shown = 0
+  var count = 0
+  for (var i = 0; i < s.n; i++) {
+    var v = s.day[i] <= c ? 1 : 0
+    if (v && !s.vis[i]) {
+      shown++
+      if (grow) {
+        for (var a = s.adjStart[i]; a < s.adjStart[i + 1]; a++) {
+          var j = s.adj[a]
+          if (!s.vis[j] || s.day[j] > c) continue
+          var h = graphHash(s.ids[i] + "#" + s.total)
+          s.x[i] = s.x[j] + (s.r[j] + s.r[i] + 4) * Math.cos(h * 2 * Math.PI)
+          s.y[i] = s.y[j] + (s.r[j] + s.r[i] + 4) * Math.sin(h * 2 * Math.PI)
+          s.vx[i] = 0
+          s.vy[i] = 0
+          break
+        }
+      }
+    }
+    s.vis[i] = v
+    if (v) s.visList[count++] = i
+  }
+  s.visCount = count
+  if (s.pinned >= 0 && !s.vis[s.pinned]) s.pinned = -1
+  return shown
+}
+
+// Wake the layout: alpha at least `alpha`, the tick count from zero; a
+// still picture (build.still) never wakes.
+function graphWake(s, alpha) {
+  if (s.still) return
+  s.alpha = Math.max(s.alpha, Math.min(1, Number(alpha) || 0.3))
+  s.ticks = 0
+  s.sleeping = s.visCount === 0
+}
+
+// Hold node i at (x, y) while it is dragged, there at once (-1: let go,
+// the node stays where it was put).
+function graphPin(s, i, x, y) {
+  s.pinned = i >= 0 && i < s.n && s.vis[i] ? i : -1
+  s.px = x
+  s.py = y
+  if (s.pinned < 0) return
+  s.x[i] = x
+  s.y[i] = y
+  s.vx[i] = 0
+  s.vy[i] = 0
+}
+
+// Repulsion between every pair of visible nodes, exactly (each pair once).
+function graphRepelExact(s, charge) {
+  var x = s.x
+  var y = s.y
+  var vx = s.vx
+  var vy = s.vy
+  var list = s.visList
+  var m = s.visCount
+  for (var p = 0; p < m; p++) {
+    var i = list[p]
+    var xi = x[i]
+    var yi = y[i]
+    var fx = 0
+    var fy = 0
+    for (var q = p + 1; q < m; q++) {
+      var j = list[q]
+      var dx = xi - x[j]
+      var dy = yi - y[j]
+      var d2 = dx * dx + dy * dy
+      if (d2 < 0.01) {
+        dx = ((i * 7 + j) % 5) - 2 || 1
+        dy = ((i + j * 3) % 5) - 2 || 1
+        d2 = dx * dx + dy * dy
+      }
+      var f = charge / d2
+      dx *= f
+      dy *= f
+      fx += dx
+      fy += dy
+      vx[j] -= dx
+      vy[j] -= dy
+    }
+    vx[i] += fx
+    vy[i] += fy
+  }
+}
+
+// Repulsion through a quadtree (Barnes–Hut): a far cell acts with its
+// whole mass from its centre when its size² < GRAPH_THETA2 × distance²;
+// near nodes act one by one. The tree lives in flat arrays on the state,
+// rebuilt on every call. About 4× fewer interactions than the exact pairs
+// at 400 nodes.
+function graphRepelTree(s, charge) {
+  var x = s.x
+  var y = s.y
+  var list = s.visList
+  var m = s.visCount
+  var t = s.tree
+  if (!t) t = s.tree = { count: 0, mass: [], cx: [], cy: [], x0: [], y0: [], size: [], open: [], body: [], child: [], stack: [] }
+  var x0 = Infinity
+  var y0 = Infinity
+  var x1 = -Infinity
+  var y1 = -Infinity
+  for (var p = 0; p < m; p++) {
+    var b = list[p]
+    if (x[b] < x0) x0 = x[b]
+    if (x[b] > x1) x1 = x[b]
+    if (y[b] < y0) y0 = y[b]
+    if (y[b] > y1) y1 = y[b]
+  }
+  t.count = 1
+  t.mass[0] = 0
+  t.body[0] = -1
+  t.x0[0] = x0 - 1
+  t.y0[0] = y0 - 1
+  t.size[0] = Math.max(x1 - x0, y1 - y0) + 2
+  t.child[0] = t.child[1] = t.child[2] = t.child[3] = -1
+  for (var q = 0; q < m; q++) graphTreeInsert(t, x, y, list[q])
+  for (var c = 0; c < t.count; c++) if (t.mass[c] > 1) {
+    t.cx[c] /= t.mass[c]
+    t.cy[c] /= t.mass[c]
+  }
+  // A cell opens while its size² / θ² is at least the distance².
+  var tOpen = t.open
+  for (var o = 0; o < t.count; o++) tOpen[o] = t.size[o] * t.size[o] / GRAPH_THETA2
+  for (var u = 0; u < m; u++) graphTreeForce(t, x, y, s.vx, s.vy, list[u], charge)
+}
+
+// The tree's push on body i, added to its velocity. A function of its own,
+// called once per body: QV4 compiles a function after a few calls, so the
+// first tick already runs this loop compiled (as one loop over all bodies
+// it ran interpreted on the first ticks: 8 ms against 2–3, test host).
+function graphTreeForce(t, x, y, vx, vy, i, charge) {
+  // Locals, not t.<name>[k]: a property lookup per read costs QV4 more
+  // than the arithmetic.
+  var tMass = t.mass
+  var tBody = t.body
+  var tCx = t.cx
+  var tCy = t.cy
+  var tChild = t.child
+  var tOpen = t.open
+  var stack = t.stack
+  var xi = x[i]
+  var yi = y[i]
+  var fx = 0
+  var fy = 0
+  var sp = 0
+  stack[sp++] = 0
+  while (sp > 0) {
+    var k = stack[--sp]
+    var body = tBody[k]
+    if (body === i) continue
+    var dx = xi - tCx[k]
+    var dy = yi - tCy[k]
+    var d2 = dx * dx + dy * dy
+    if (body < 0 && tOpen[k] >= d2) {
+      var ch = 4 * k
+      var c0 = tChild[ch]
+      var c1 = tChild[ch + 1]
+      var c2 = tChild[ch + 2]
+      var c3 = tChild[ch + 3]
+      if (c0 >= 0) stack[sp++] = c0
+      if (c1 >= 0) stack[sp++] = c1
+      if (c2 >= 0) stack[sp++] = c2
+      if (c3 >= 0) stack[sp++] = c3
+      continue
+    }
+    if (d2 < 0.01) {
+      dx = ((i * 7 + k) % 5) - 2 || 1
+      dy = ((i + k * 3) % 5) - 2 || 1
+      d2 = dx * dx + dy * dy
+    }
+    var f = charge * tMass[k] / d2
+    fx += dx * f
+    fy += dy * f
+  }
+  vx[i] += fx
+  vy[i] += fy
+}
+
+// Add body i to the quadtree `t` (cells in flat arrays; masses as sums of
+// positions until graphRepelTree divides them). Bodies closer than the
+// depth limit share a leaf: the second one moves half a unit, so the next
+// tick separates them.
+function graphTreeInsert(t, x, y, i) {
+  var mass = t.mass
+  var cx = t.cx
+  var cy = t.cy
+  var body = t.body
+  var child = t.child
+  var x0 = t.x0
+  var y0 = t.y0
+  var size = t.size
+  var k = 0
+  var depth = 0
+  var px = x[i]
+  var py = y[i]
+  for (;;) {
+    if (mass[k] === 0) {
+      mass[k] = 1
+      cx[k] = px
+      cy[k] = py
+      body[k] = i
+      return
+    }
+    var b = body[k]
+    if (b >= 0) {
+      if (depth >= 24) {
+        x[i] = px + 0.5
+        mass[k]++
+        cx[k] += px + 0.5
+        cy[k] += py
+        return
+      }
+      // Move the leaf's body one level down.
+      body[k] = -1
+      var hb = size[k] / 2
+      var qb = (x[b] >= x0[k] + hb ? 1 : 0) + (y[b] >= y0[k] + hb ? 2 : 0)
+      var cb = t.count++
+      child[4 * k + qb] = cb
+      mass[cb] = 1
+      cx[cb] = x[b]
+      cy[cb] = y[b]
+      body[cb] = b
+      x0[cb] = x0[k] + (qb & 1) * hb
+      y0[cb] = y0[k] + (qb >> 1) * hb
+      size[cb] = hb
+      child[4 * cb] = child[4 * cb + 1] = child[4 * cb + 2] = child[4 * cb + 3] = -1
+    }
+    mass[k]++
+    cx[k] += px
+    cy[k] += py
+    var half = size[k] / 2
+    var q = (px >= x0[k] + half ? 1 : 0) + (py >= y0[k] + half ? 2 : 0)
+    var next = child[4 * k + q]
+    if (next < 0) {
+      next = t.count++
+      child[4 * k + q] = next
+      mass[next] = 0
+      body[next] = -1
+      x0[next] = x0[k] + (q & 1) * half
+      y0[next] = y0[k] + (q >> 1) * half
+      size[next] = half
+      child[4 * next] = child[4 * next + 1] = child[4 * next + 2] = child[4 * next + 3] = -1
+    }
+    k = next
+    depth++
+  }
+}
+
+// One force iteration over the visible nodes: repulsion between every
+// pair (graphRepelExact up to GRAPH_EXACT_MAX nodes, graphRepelTree
+// above), a pull to the centre, springs along the edges, all scaled by
+// alpha; damping and a speed limit; the pinned node stays where it is held.
+// Then alpha decays; after GRAPH_TICKS_MAX ticks since the last wake, or
+// below GRAPH_ALPHA_MIN, the layout sleeps. Returns false when it already
+// slept. `budgetMs` (GRAPH_TICK_BUDGET_MS when missing): a tick that took
+// longer is counted in `over`; `lastMs` and `maxMs` keep the times.
+function graphStep(s, budgetMs) {
+  if (s.sleeping) return false
+  var started = Date.now()
+  var x = s.x
+  var y = s.y
+  var vx = s.vx
+  var vy = s.vy
+  var list = s.visList
+  var m = s.visCount
+  var a = s.alpha
+  // Which repulsion ran is counted (a test holds the tree to 400 nodes).
+  if (m <= GRAPH_EXACT_MAX) {
+    graphRepelExact(s, GRAPH_CHARGE * a)
+    s.exactSteps++
+  } else {
+    graphRepelTree(s, GRAPH_CHARGE * a)
+    s.treeSteps++
+  }
+  var gravity = GRAPH_GRAVITY * a
+  for (var p = 0; p < m; p++) {
+    var i = list[p]
+    vx[i] -= x[i] * gravity
+    vy[i] -= y[i] * gravity
+  }
+  var r = s.r
+  var vis = s.vis
+  var k = GRAPH_SPRING * a
+  for (var e = 0; e < s.ea.length; e++) {
+    var u = s.ea[e]
+    var w = s.eb[e]
+    if (!vis[u] || !vis[w]) continue
+    var ex = x[w] - x[u]
+    var ey = y[w] - y[u]
+    var d = Math.sqrt(ex * ex + ey * ey) || 0.01
+    var g = (d - GRAPH_LINK - r[u] - r[w]) * k / d
+    ex *= g
+    ey *= g
+    vx[u] += ex
+    vy[u] += ey
+    vx[w] -= ex
+    vy[w] -= ey
+  }
+  var limit = GRAPH_MAX_SPEED
+  for (var t = 0; t < m; t++) {
+    var n = list[t]
+    if (n === s.pinned) {
+      x[n] = s.px
+      y[n] = s.py
+      vx[n] = 0
+      vy[n] = 0
+      continue
+    }
+    var sx = vx[n] * GRAPH_DAMPING
+    var sy = vy[n] * GRAPH_DAMPING
+    var sp = sx * sx + sy * sy
+    if (sp > limit * limit) {
+      var c = limit / Math.sqrt(sp)
+      sx *= c
+      sy *= c
+    }
+    vx[n] = sx
+    vy[n] = sy
+    x[n] += sx
+    y[n] += sy
+  }
+  s.alpha = a * (1 - GRAPH_ALPHA_DECAY)
+  s.ticks++
+  s.total++
+  if (s.ticks >= GRAPH_TICKS_MAX || s.alpha < GRAPH_ALPHA_MIN || m === 0) s.sleeping = true
+  s.lastMs = Date.now() - started
+  s.maxMs = Math.max(s.maxMs, s.lastMs)
+  if (s.lastMs > (Number(budgetMs) > 0 ? Number(budgetMs) : GRAPH_TICK_BUDGET_MS)) s.over++
+  return true
+}
+
+// The visible node at world point (wx, wy): the nearest whose disc, grown
+// by `slack`, holds the point; -1 none.
+function graphPick(s, wx, wy, slack) {
+  var best = -1
+  var bestD = Infinity
+  var extra = Number(slack) || 0
+  for (var p = 0; p < s.visCount; p++) {
+    var i = s.visList[p]
+    var dx = s.x[i] - wx
+    var dy = s.y[i] - wy
+    var d2 = dx * dx + dy * dy
+    var rr = s.r[i] + extra
+    if (d2 <= rr * rr && d2 < bestD) {
+      bestD = d2
+      best = i
+    }
+  }
+  return best
+}
+
+// The neighbours of node i ({ <index>: true }), for the hover's highlight.
+function graphNeighbours(s, i) {
+  var out = {}
+  if (i < 0 || i >= s.n) return out
+  for (var a = s.adjStart[i]; a < s.adjStart[i + 1]; a++) out[s.adj[a]] = true
+  return out
+}
+
+// The hover card of node i: { id, kind, kindLabel, title, sub, line,
+// date, day, links, caseId, members, more }; null for no node.
+function graphInfo(build, i) {
+  if (!build || i < 0 || i >= build.nodes.length) return null
+  var node = build.nodes[i]
+  var links = build.deg[i]
+  var line = GRAPH_KIND_LABELS[node.kind] + " · since " + node.date + " · day " + node.day + " · " +
+    plural(links, "link", "links")
+  return { id: node.id, kind: node.kind, kindLabel: GRAPH_KIND_LABELS[node.kind], title: node.title, sub: node.sub,
+    line: line, date: node.date, day: node.day, links: links, caseId: node.caseId,
+    members: node.members || [], more: node.more || 0 }
+}
+
+// The box around the visible nodes (with their radii), null when none;
+// filled into `out` when given (the canvas reuses one per paint).
+function graphBounds(s, out) {
+  if (s.visCount === 0) return null
+  var b = out || {}
+  b.x0 = Infinity
+  b.y0 = Infinity
+  b.x1 = -Infinity
+  b.y1 = -Infinity
+  for (var p = 0; p < s.visCount; p++) {
+    var i = s.visList[p]
+    b.x0 = Math.min(b.x0, s.x[i] - s.r[i])
+    b.y0 = Math.min(b.y0, s.y[i] - s.r[i])
+    b.x1 = Math.max(b.x1, s.x[i] + s.r[i])
+    b.y1 = Math.max(b.y1, s.y[i] + s.r[i])
+  }
+  return b
+}
+
+// The view { x, y, k } that fits `bounds` into a w × h canvas with `pad`
+// on every side, zoom at most kMax (the view's origin is the canvas
+// centre: screen = world × k + (w / 2 + x, h / 2 + y)); into `out` when
+// given.
+function graphFit(bounds, w, h, pad, kMax, out) {
+  var v = out || {}
+  if (!bounds || w <= 0 || h <= 0) {
+    v.x = 0
+    v.y = 0
+    v.k = 1
+    return v
+  }
+  var bw = Math.max(1, bounds.x1 - bounds.x0)
+  var bh = Math.max(1, bounds.y1 - bounds.y0)
+  var k = Math.min(Math.max(1, w - 2 * pad) / bw, Math.max(1, h - 2 * pad) / bh, kMax || 2)
+  v.x = -(bounds.x0 + bounds.x1) / 2 * k
+  v.y = -(bounds.y0 + bounds.y1) / 2 * k
+  v.k = k
+  return v
+}
+
+// Add the shape of a node of `kind` at (x, y), radius r, to ctx's current
+// path (the canvas fills or strokes the batch): a disc for cases, changes,
+// clusters and areas (an area is filled light and ringed), a square for
+// decisions, the concave spindle of A12's crisis marker for crises.
+function graphShape(ctx, kind, x, y, r) {
+  if (kind === "decision") {
+    var h = r * 0.85
+    ctx.moveTo(x - h, y - h)
+    ctx.lineTo(x + h, y - h)
+    ctx.lineTo(x + h, y + h)
+    ctx.lineTo(x - h, y + h)
+    ctx.closePath()
+  } else if (kind === "crisis") {
+    var t = r * 1.35
+    var w = r * 0.75
+    var c = r * 0.12
+    ctx.moveTo(x, y - t)
+    ctx.quadraticCurveTo(x + c, y - c, x + w, y)
+    ctx.quadraticCurveTo(x + c, y + c, x, y + t)
+    ctx.quadraticCurveTo(x - c, y + c, x - w, y)
+    ctx.quadraticCurveTo(x - c, y - c, x, y - t)
+    ctx.closePath()
+  } else {
+    ctx.moveTo(x + r, y)
+    ctx.arc(x, y, r, 0, 2 * Math.PI, false)
+  }
+}
+
+// ---- A pacman transaction in the event detail (WP-137; ADR-0043) ------------
+//
+// Every package event of a transaction carries its `txId`, its versions
+// (meta.from/meta.to, meta.version) and the command (meta.command);
+// `meta.txStatus` says how a transaction that did not complete ended
+// (ADR-0043: failed | interrupted | unfinished; absent when it completed
+// and on lines written before, so "absent" never reads as "completed").
+// The desk indexes the transactions once per index (`deskChangelog().tx`)
+// and the detail looks them up by the selected event. A file pacman left
+// (WP-141: a pacman note naming its transaction in meta.transaction) is
+// counted beside the packages, never listed as one. Every text is user
+// content, shown as plain text (CONTRACT.md rule 6).
+
+var TX_STATUSES = ["failed", "interrupted", "unfinished"]
+// The detail's callout: its title and what the status means. pacman's
+// post-transaction hooks do not run after `failed` or a killed pacman
+// (alpm-hooks(5) CAVEATS); for `interrupted` not verified against
+// libalpm's source, hence "may not have run". They run only for that
+// transaction's targets: a later run that no longer includes a package
+// already changed never runs them for it. Hence the safe step before a
+// reboot, which names only what a reinstall can repair: ↑ and ↻ (WP-137
+// rounds 2 and 3). Text only: the plugin runs nothing (AGENTS.md §8).
+var TX_STATUS_TITLES = {
+  failed: "Transaction failed",
+  interrupted: "Transaction interrupted",
+  unfinished: "Transaction did not finish"
+}
+// Omarchy's 10-omarchy-hyprland-reload-pause hook pauses the auto-reload
+// before an omarchy-settings update; its 90-…-resume twin is a
+// post-transaction hook.
+var TX_STEPS_DID_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_STEPS_MAY_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_SAFE_STEP = "Before you reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with their names): that runs those steps for them; a plain rerun does not. A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
+var TX_STATUS_TEXTS = {
+  failed: "pacman reported this transaction as failed: a package could not be installed, upgraded or removed, and pacman's output in the terminal named the error. The packages below may be all it changed. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP,
+  interrupted: "pacman was interrupted and stopped after the packages below; the ones it had not reached are unchanged. " + TX_STEPS_MAY_NOT + " " + TX_SAFE_STEP,
+  unfinished: "pacman never logged the end of this transaction: it was killed, or the machine went down while it ran. The packages below may be all it changed, the last one possibly half written. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP
+}
+// ↑ upgraded, ↓ downgraded, + installed, − removed, ↻ reinstalled; the
+// list shows the unusual changes first.
+var TX_KINDS = ["downgrade", "remove", "install", "upgrade", "reinstall"]
+var TX_GLYPHS = { upgrade: "↑", downgrade: "↓", install: "+", remove: "−", reinstall: "↻" }
+var TX_VERBS = { upgrade: "upgraded", downgrade: "downgraded", install: "installed", remove: "removed", reinstall: "reinstalled" }
+// CONTRACT.md rule 4: the index lists the newest 500 events.
+var INDEX_EVENTS_MAX = 500
+
+// The transaction an event belongs to: a pacman package event's own
+// `txId`, a file pacman left by its meta.transaction (WP-141), else "".
+function eventTx(e) {
+  if (!isObject(e) || e.source !== "pacman") return ""
+  if (TX_VERBS[e.kind] !== undefined) return str(e.txId)
+  if (e.kind === "note" && isObject(e.meta)) return str(e.meta.transaction)
+  return ""
+}
+
+// How the event's transaction ended when it did not complete (ADR-0043),
+// "" otherwise: only one of the three words, only on a pacman package
+// event with a `txId`.
+function txStatusOf(e) {
+  if (!isObject(e) || e.source !== "pacman" || TX_VERBS[e.kind] === undefined || str(e.txId) === "") return ""
+  var s = isObject(e.meta) ? e.meta.txStatus : undefined
+  return TX_STATUSES.indexOf(s) !== -1 ? s : ""
+}
+
+// The transactions of an index: { <txId>: { packages: [event], files: n,
+// status, oldest } }, built once per index. `oldest`: the index's oldest
+// event is one of its packages, so the cap may have cut it.
+function transactionIndex(index) {
+  var all = events(index)
+  // keyed by txId or meta.transaction, text a hand-edited ledger line may
+  // make `constructor` or `__proto__`: no prototype (WP-137 round 2, B2)
+  var out = Object.create(null)
+  var at = function(id) {
+    if (out[id] === undefined) out[id] = { packages: [], files: 0, status: "", oldest: false }
+    return out[id]
+  }
+  for (var i = 0; i < all.length; i++) {
+    var e = all[i]
+    var id = eventTx(e)
+    if (id === "") continue
+    var t = at(id)
+    if (e.kind === "note") {
+      t.files++
+      continue
+    }
+    t.packages.push(e)
+    if (t.status === "") t.status = txStatusOf(e)
+    if (i === all.length - 1 && all.length >= INDEX_EVENTS_MAX) t.oldest = true
+  }
+  return out
+}
+
+// "old → new" for an upgrade or downgrade, the version otherwise; the
+// detail when meta lacks them.
+function txVersions(e) {
+  var m = isObject(e.meta) ? e.meta : {}
+  if (typeof m.from === "string" && typeof m.to === "string") return m.from + " → " + m.to
+  if (typeof m.version === "string") return m.version
+  return str(e.detail)
+}
+
+// "4 packages: 1 removed, 1 installed, 2 upgraded".
+function txSummary(packages) {
+  var n = Object.create(null)
+  for (var i = 0; i < packages.length; i++) n[packages[i].kind] = (n[packages[i].kind] || 0) + 1
+  var parts = []
+  for (var k = 0; k < TX_KINDS.length; k++)
+    if (n[TX_KINDS[k]]) parts.push(n[TX_KINDS[k]] + " " + TX_VERBS[TX_KINDS[k]])
+  return plural(packages.length, "package", "packages") + (parts.length > 0 ? ": " + parts.join(", ") : "")
+}
+
+// The selected event's transaction as the detail shows it, or null when
+// the event belongs to none: { status, title, text, command, clipped,
+// summary, packages: [{ id, glyph, verb, name, versions, selected }],
+// files, partial, list } — `list`: the package list is worth showing (two
+// or more packages, a status, or files left; one completed package says
+// no more than the detail's own rows).
+function transactionDetail(index, prepared, id) {
+  var row = changelogRow(prepared, id)
+  if (!row || row.tx === "") return null
+  var all = prepared && isObject(prepared.tx) ? prepared.tx : transactionIndex(index)
+  var t = all[row.tx] || { packages: [], files: 0, status: "", oldest: false }
+  var sorted = t.packages.slice().sort(function(a, b) {
+    var k = TX_KINDS.indexOf(a.kind) - TX_KINDS.indexOf(b.kind)
+    return k !== 0 ? k : str(a.subject) < str(b.subject) ? -1 : str(a.subject) > str(b.subject) ? 1 : 0
+  })
+  var packages = sorted.map(function(e) {
+    return { id: str(e.id), glyph: TX_GLYPHS[e.kind], verb: TX_VERBS[e.kind], name: str(e.subject),
+      versions: txVersions(e), selected: e.id === row.id }
+  })
+  // the command as the selected event logged it, else as any package did
+  var self = findEvent(index, row.id)
+  var withCommand = [self].concat(t.packages).filter(function(e) {
+    return isObject(e) && isObject(e.meta) && typeof e.meta.command === "string" && e.meta.command !== ""
+  })[0]
+  var status = t.status
+  return {
+    status: status,
+    title: status !== "" ? TX_STATUS_TITLES[status] : "",
+    text: status !== "" ? TX_STATUS_TEXTS[status] : "",
+    command: withCommand ? withCommand.meta.command : "",
+    clipped: !!withCommand && withCommand.meta.truncated === true,
+    summary: txSummary(t.packages),
+    packages: packages,
+    files: t.files,
+    partial: t.oldest,
+    list: packages.length > 1 || status !== "" || t.files > 0
+  }
+}
+
+// The detail's key/value rows for a transaction (after What): Command,
+// then Transaction ("4 packages · interrupted · left 1 file"). A file
+// pacman left whose transaction the index no longer lists says so.
+function transactionRows(tx) {
+  if (!tx) return []
+  var out = []
+  if (tx.command !== "") out.push(["Command", tx.command + (tx.clipped ? " (clipped in the index; the ledger has it in full)" : "")])
+  var parts = [tx.packages.length > 0 ? tx.summary
+    : "not in the index any more (it keeps the newest " + INDEX_EVENTS_MAX + " events)"]
+  if (tx.status !== "") parts.push(tx.status)
+  if (tx.files > 0) parts.push("left " + plural(tx.files, "file", "files"))
+  out.push(["Transaction", parts.join(" · ")])
+  return out
+}
+
+// One package line of the list (also the harness's text): "↑ pipewire
+// 1:1.4.7-1 → 1:1.4.8-1".
+function txPackageLine(p) {
+  return p.glyph + " " + p.name + (p.versions !== "" ? "  " + p.versions : "")
+}
+
+// ---- The desk steps aside; one agent per case (WP-156) -----------------------
+//
+// The desk is an overlay: a window it opens appears under it. After a call
+// that opened or focused one it closes, as Omarchy's menus do. The engine
+// knows which agents it launched still have a window open (`seldon agent
+// sessions`, ADR-0041: an `org.omarchy.agent` window whose tree carries the
+// case's marker, or a launch less than 10 s old whose window is not open
+// yet); an active case with one shows Focus (`seldon agent focus`) in place
+// of a second Hand to agent.
+
+// How often the open desk asks for the live sessions, besides on open,
+// after every agent or open answer and when the index changes.
+var SESSIONS_POLL_MS = 15 * 1000
+// The same target is not opened again this soon after an open.
+var OPEN_REPEAT_MS = 2000
+
+// `seldon agent focus <caseId> --json`: { args } or { error }.
+function agentFocusArgs(caseId) {
+  var id = String(caseId || "")
+  if (!CASE_ID.test(id)) return { error: "Not a case id: " + id }
+  return { args: ["agent", "focus", id, "--json"] }
+}
+
+// `seldon agent sessions --json` → {"tracking", "sessions": [{"case",
+// "starting", "window": {"address", "workspace", "pid"} | null, "pids",
+// "actor"}]} → { <caseId>: { starting, workspace, actor } }; null when the
+// answer is not one (the caller keeps what it had). A case id, workspace
+// or actor out of shape is left out. Without tracking (no Hyprland) the
+// engine lists nothing.
+function sessionsResult(exitCode, stdoutText) {
+  if (exitCode !== 0) return null
+  var data = parseJson(stdoutText)
+  if (!data || !Array.isArray(data.sessions)) return null
+  var out = ({})
+  for (var i = 0; i < data.sessions.length; i++) {
+    var s = data.sessions[i]
+    if (!isObject(s) || typeof s.case !== "string" || !CASE_ID.test(s.case)) continue
+    var w = isObject(s.window) ? s.window : null
+    out[s.case] = { starting: !w,
+      workspace: w && typeof w.workspace === "string" && /^[A-Za-z0-9 :_-]{1,32}$/.test(w.workspace) ? w.workspace : "",
+      actor: typeof s.actor === "string" && /^agent:[a-z0-9-]+$/.test(s.actor) ? s.actor : "" }
+  }
+  return out
+}
+
+// `seldon agent focus --json` → {"focused", "case", "address", "workspace"};
+// an agent launched less than 10 s ago whose window is not open yet:
+// {"focused": false, "starting": true, "case"} (its window comes up itself).
+function focusResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "" }
+  var data = parseJson(stdoutText)
+  var id = data && typeof data.case === "string" && CASE_ID.test(data.case) ? data.case : ""
+  if (data && data.starting === true)
+    return { ok: true, text: "The agent on " + (id !== "" ? id : "the case") + " is starting; its window comes up when it opens",
+      caseId: id }
+  var ws = data && typeof data.workspace === "string" && data.workspace !== "" ? data.workspace : ""
+  return { ok: true, text: "The agent on " + (id !== "" ? id : "the case") + " is in front"
+    + (ws !== "" ? " · workspace " + ws : ""), caseId: id }
+}
+
+// Whether a finished call opened or focused a window: the desk steps aside.
+function opensWindow(args, result) {
+  if (!Array.isArray(args) || !result || result.ok !== true) return false
+  if (args[0] === "open") return true
+  return args[0] === "agent" && (args[1] === "start" || args[1] === "focus" || args[1] === "ask")
+}
+
+// An open of `what` at `nowMs` repeats the last successful one ({ what,
+// atMs }) within OPEN_REPEAT_MS.
+function openRepeated(last, what, nowMs) {
+  return isObject(last) && last.what === String(what) && nowMs - Number(last.atMs) < OPEN_REPEAT_MS
+}
+
+// The case detail (caseDetail) with what `sessions` (sessionsResult) says:
+// an active case an agent works on gets `row.working`, which turns Hand to
+// agent into Focus (caseDeskActions), "agent working" before its meta and
+// the "Agent" row "working now · <actor> · workspace <n>", or "starting ·
+// its window is not open yet" (the agents that recorded on it are in the
+// log). Any other detail comes back as it is.
+function withSession(detail, sessions) {
+  if (!detail || detail.status !== "active" || !isObject(sessions) || !isObject(sessions[detail.id])) return detail
+  var s = sessions[detail.id]
+  var out = ({})
+  for (var k in detail) out[k] = detail[k]
+  var row = ({})
+  for (var r in detail.row) row[r] = detail.row[r]
+  row.working = true
+  out.row = row
+  out.working = true
+  out.meta = ["agent working", detail.meta].filter(function(p) { return p !== "" }).join(" · ")
+  var line = s.starting === true ? "starting · its window is not open yet"
+    : "working now" + (s.actor !== "" ? " · " + s.actor : "") + (s.workspace !== "" ? " · workspace " + s.workspace : "")
+  out.kv = detail.kv.map(function(kv) { return kv[0] === "Agent" ? ["Agent", line] : kv })
+  return out
+}
+
+// ---- Before init: the preview (WP-138, ADR-0047) -------------------------
+
+// `seldon preview --json`: read-only, its own process beside the queue (as
+// `doctor` and `agent sessions`), run while the logbook is not initialised:
+// when that status begins and when the desk opens, at most every
+// PREVIEW_REFRESH_MS. Its JSON is schema/preview.schema.json.
+var PREVIEW_ARGS = ["preview", "--json"]
+var PREVIEW_REFRESH_MS = 5 * 60 * 1000
+var PREVIEW_ROWS = 200
+var PREVIEW_FILES = 80
+var PREVIEW_PACKAGES = 10
+// The setup card's step 2 says it after the preview's line (WP-119).
+var PREVIEW_LEAD = "This is without memory: no who, no why, gone when the logs rotate."
+var PREVIEW_KINDS = { install: "Installed", remove: "Removed", upgrade: "Upgraded", downgrade: "Downgraded",
+  reinstall: "Reinstalled" }
+var PREVIEW_STATUSES = ["failed", "interrupted", "unfinished"]
+
+function previewEmpty(ok, text) {
+  return { ok: ok, pending: false, text: text, days: 0, generatedAt: "", root: "", transactions: [], files: [],
+    truncated: false, pacmanNote: "", filesNote: "" }
+}
+
+// One line of user content (names, paths, a command line): a string of at
+// most `max` characters, else "".
+function previewText(value, max) {
+  return typeof value === "string" && value !== "" && value.length <= max ? value : ""
+}
+
+function previewPackage(p) {
+  if (!isObject(p) || PREVIEW_KINDS[p.kind] === undefined) return null
+  var name = previewText(p.name, 512)
+  if (name === "") return null
+  return { kind: p.kind, name: name }
+}
+
+function previewTransaction(t) {
+  if (!isObject(t) || typeof t.at !== "string" || !DATE_TIME.test(t.at)) return null
+  var total = Number(t.count)
+  if (!isFinite(total) || total < 1 || Math.floor(total) !== total) return null
+  var kinds = Array.isArray(t.kinds) ? t.kinds.filter(function(k) { return PREVIEW_KINDS[k] !== undefined }) : []
+  var packages = Array.isArray(t.packages) ? t.packages.slice(0, PREVIEW_PACKAGES).map(previewPackage)
+    .filter(function(p) { return p !== null }) : []
+  if (kinds.length === 0 || packages.length === 0) return null
+  return { at: t.at, count: total, kinds: kinds, packages: packages, command: previewText(t.command, 256),
+    status: PREVIEW_STATUSES.indexOf(t.status) !== -1 ? t.status : "" }
+}
+
+function previewFile(f) {
+  if (!isObject(f) || typeof f.modified !== "string" || !DATE_TIME.test(f.modified)) return null
+  var p = previewText(f.path, 4096)
+  return p === "" ? null : { path: p, modified: f.modified }
+}
+
+// The answer, checked: only what the schema allows is kept, the bounds are
+// applied again (200 rows, files first at most 80, 10 packages listed), a
+// row the plugin cannot read is dropped. { ok, pending, text, days,
+// generatedAt, root, transactions, files, truncated, pacmanNote, filesNote }.
+function previewResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return previewEmpty(false, engineError(stdoutText, stderrText, exitCode))
+  var d = parseJson(stdoutText)
+  if (!d || d.contractVersion !== CONTRACT_VERSION || !isObject(d.pacman) || !isObject(d.files))
+    return previewEmpty(false, "The engine's preview could not be read.")
+  var days = Number(d.days)
+  var out = previewEmpty(true, "")
+  out.days = isFinite(days) && days >= 1 && days <= 7 ? Math.floor(days) : 7
+  out.generatedAt = typeof d.generatedAt === "string" && DATE_TIME.test(d.generatedAt) ? d.generatedAt : ""
+  out.root = previewText(d.files.root, 1024) || "~/.config"
+  var files = d.files.ok === true && Array.isArray(d.files.items) ? d.files.items.map(previewFile)
+    .filter(function(f) { return f !== null }) : []
+  out.files = files.slice(0, PREVIEW_FILES)
+  var txs = d.pacman.ok === true && Array.isArray(d.pacman.transactions) ? d.pacman.transactions.map(previewTransaction)
+    .filter(function(t) { return t !== null }) : []
+  out.transactions = txs.slice(0, PREVIEW_ROWS - out.files.length)
+  out.truncated = d.truncated === true || files.length > out.files.length || txs.length > out.transactions.length
+  out.pacmanNote = d.pacman.ok !== true ? (previewText(d.pacman.message, 1024) || "pacman's log could not be read.")
+    : d.pacman.partial === true ? "pacman's log was read only part of the way back." : ""
+  out.filesNote = d.files.ok !== true ? (previewText(d.files.message, 1024) || "The files could not be listed.")
+    : d.files.partial === true ? "The search stopped early: some files may be missing." : ""
+  return out
+}
+
+// "Upgraded linux, linux-headers, mesa and 11 more"; "Changed …" for a
+// transaction of several kinds.
+function previewTxTitle(t) {
+  var verb = t.kinds.length === 1 ? PREVIEW_KINDS[t.kinds[0]] : "Changed"
+  var names = t.packages.slice(0, 3).map(function(p) { return p.name })
+  var more = t.count - names.length
+  return verb + " " + names.join(", ") + (more > 0 ? " and " + more + " more" : "")
+}
+
+// "Mon 5 Oct 21:14", "Today 09:30", from the preview's own date.
+function previewWhen(ts, today) {
+  return (dayLabel(dayOf(ts), today) + " " + clockTime(ts)).trim()
+}
+
+// The Today list while the logbook is not initialised: PACKAGES (one row
+// per transaction, newest first) and EDITED CONFIG FILES (one row per file
+// under ~/.config); a group without rows says so, a note says what was not read. The
+// search filters the transactions and files.
+function previewRows(p, search) {
+  if (!isObject(p) || p.ok !== true) return []
+  var today = dayOf(p.generatedAt)
+  var pkgTitle = "Packages · last " + plural(p.days, "day", "days")
+  // the header is shown in capitals (GroupedRow): no path in it
+  var fileTitle = "Edited config files"
+  var rows = []
+  var i
+  var row = function(id, type, group, groupTitle, title, meta, aside) {
+    return { id: id, type: type, title: title, meta: meta, aside: aside, stripe: "", group: group, groupTitle: groupTitle,
+      search: title + " " + meta }
+  }
+  for (i = 0; i < p.transactions.length; i++) {
+    var t = p.transactions[i]
+    var r = row("tx:" + i, "preview-tx", "packages", pkgTitle, previewTxTitle(t),
+      [previewWhen(t.at, today), t.command].filter(function(x) { return x !== "" }).join(" · "), t.status)
+    // every listed package is found, not only the title's three
+    r.search += " " + t.packages.map(function(pk) { return pk.name }).join(" ")
+    rows.push(r)
+  }
+  if (p.pacmanNote !== "") rows.push(row("note:packages", "note", "packages", pkgTitle, p.pacmanNote, "", ""))
+  else if (p.transactions.length === 0) rows.push(row("empty:packages", "empty", "packages", pkgTitle,
+    "No package changed in these days.", "", ""))
+  for (i = 0; i < p.files.length; i++)
+    rows.push(row("file:" + i, "preview-file", "files", fileTitle, p.files[i].path, previewWhen(p.files[i].modified, today), ""))
+  if (p.filesNote !== "") rows.push(row("note:files", "note", "files", fileTitle, p.filesNote, "", ""))
+  else if (p.files.length === 0) rows.push(row("empty:files", "empty", "files", fileTitle,
+    "No file edited in these days.", "", ""))
+  var q = String(search || "").trim().toLowerCase()
+  if (q === "") return rows
+  return rows.filter(function(r) {
+    return (r.type === "preview-tx" || r.type === "preview-file") && r.search.toLowerCase().indexOf(q) !== -1
+  })
+}
+
+// The card's line under the lead: what was found, or why nothing is shown.
+function previewSummary(p) {
+  if (!isObject(p) || (p.pending === true && p.ok !== true)) return "Reading what this machine remembers…"
+  if (p.ok !== true) return p.text
+  return "The last " + plural(p.days, "day", "days") + ": " + plural(p.transactions.length, "pacman transaction",
+    "pacman transactions") + " and " + plural(p.files.length, "file", "files") + " edited under " + p.root + "."
+    + (p.truncated ? " The newest are shown." : "")
+}
+
+// ---- Text and UI tones from the theme (WP-177; SPEC-PLUGIN §7 "Theming") ----
+
+// The contrast every derived tone reaches on the surfaces it sits on: text
+// 4.7:1 (WCAG's 4.5 for text plus a margin), UI parts 3.2:1 (WCAG 1.4.11's
+// 3 plus a margin). One constant each, for every text and every UI part.
+var TONE_TEXT_TARGET = 4.7
+var TONE_UI_TARGET = 3.2
+// The theme's own focus border is kept when it reaches this (WCAG 1.4.11).
+var TONE_FOCUS_MIN = 3
+// The mix moves towards the theme's foreground in steps of 1/TONE_STEPS.
+var TONE_STEPS = 50
+// The hairlines between header, list and detail: the foreground at 12 %.
+var TONE_DIVIDER_ALPHA = 0.12
+// Where a line starts before it is lifted to TONE_UI_TARGET: 40 % of the
+// way from the background to the foreground.
+var TONE_LINE_START = 0.4
+
+// A colour as { r, g, b, a } in 0…1: a QML color (r, g, b, a), "#rgb",
+// "#rrggbb" or Qt's "#aarrggbb"; null for anything else.
+function colourRgba(c) {
+  if (isObject(c) && typeof c.r === "number" && typeof c.g === "number" && typeof c.b === "number")
+    return { r: c.r, g: c.g, b: c.b, a: typeof c.a === "number" ? c.a : 1 }
+  var m = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(String(c === undefined || c === null ? "" : c).trim())
+  if (!m) return null
+  var h = m[1]
+  if (h.length === 3) h = h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2)
+  var a = 1
+  if (h.length === 8) {
+    a = parseInt(h.slice(0, 2), 16) / 255
+    h = h.slice(2)
+  }
+  return { r: parseInt(h.slice(0, 2), 16) / 255, g: parseInt(h.slice(2, 4), 16) / 255, b: parseInt(h.slice(4, 6), 16) / 255, a: a }
+}
+
+// "#rrggbb", or Qt's "#aarrggbb" for an alpha below 1.
+function colourHex(c, alpha) {
+  var byte = function(x) {
+    var s = Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16)
+    return s.length === 1 ? "0" + s : s
+  }
+  var a = alpha === undefined ? 1 : alpha
+  return "#" + (a < 1 ? byte(a) : "") + byte(c.r) + byte(c.g) + byte(c.b)
+}
+
+// WCAG 2 relative luminance and contrast ratio of two opaque colours.
+function luminance(c) {
+  var lin = function(x) { return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4) }
+  return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+}
+
+function contrastRatio(a, b) {
+  var x = colourRgba(a)
+  var y = colourRgba(b)
+  if (!x || !y) return 0
+  var l1 = luminance(x)
+  var l2 = luminance(y)
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
+}
+
+// a moved the share p (0…1) of the way to b.
+function mixColour(a, b, p) {
+  return { r: a.r + (b.r - a.r) * p, g: a.g + (b.g - a.g) * p, b: a.b + (b.b - a.b) * p, a: 1 }
+}
+
+// top (with its alpha) painted over an opaque bottom.
+function overColour(top, bottom) {
+  return mixColour(bottom, top, top.a)
+}
+
+// `colour` moved towards `toward` (the theme's foreground; no black or
+// white of its own) in small steps until it reaches `target` on every
+// surface, as "#rrggbb". `surfaces` is one colour or a list; each is taken
+// as opaque. When even `toward` does not reach the target (a theme whose
+// own foreground is that weak), `toward` itself: the best the theme has.
+function textOn(colour, surfaces, target, toward) {
+  var c = colourRgba(colour)
+  if (!c) return ""
+  var to = colourRgba(toward === undefined ? colour : toward) || c
+  var list = (Array.isArray(surfaces) ? surfaces : [surfaces]).map(colourRgba).filter(function(s) { return s !== null })
+  for (var i = 0; i <= TONE_STEPS; i++) {
+    // judged as drawn: the 8-bit colour, not the exact mix
+    var t = colourHex(mixColour(c, to, i / TONE_STEPS))
+    var ok = true
+    for (var j = 0; ok && j < list.length; j++) ok = contrastRatio(t, list[j]) >= target
+    if (ok) return t
+  }
+  return colourHex(to)
+}
+
+var deskTonesMemo = { key: "", value: null }
+var deskTonesBuilds = 0
+
+// The desk's tones for one theme, computed once per theme change (the last
+// result is kept while the input is the same; components/Tone.qml shares it
+// through Tones.js). `theme`: the five roles as the desk draws them
+// (foreground = Color.popups.text, background = Color.popups.background,
+// accent, urgent, muted) and Style's fills under rows and controls
+// (`normal`, `hover`, `selected`, each with its alpha) and the focus border
+// (`focusBorder` with its alpha, `focusBorderWidth`).
+//
+// The surface is the popups background, taken as opaque: with a
+// `popups.background-alpha` below 1 the wallpaper shows through and no
+// contrast can be computed, so the colour itself stands in for it. Text
+// sits on that background, Style's three fills over it and the role tints
+// (accent and urgent at the selected alpha, a notice or a chip); every text
+// tone reaches TONE_TEXT_TARGET on all of them, every UI tone
+// TONE_UI_TARGET. Only text and UI parts are mixed: stripes, bars of state,
+// charts and the pill keep the raw role colours.
+//
+//   text        the foreground itself
+//   dim         secondary text (meta lines, captions, labels): from muted
+//   accentText  text in the accent (links, hints, "proposed")
+//   urgentText  text in the urgent colour (errors, crisis titles)
+//   accentUi    the selection's accent bar (also on the accent tint of the
+//               sidebar's current section) and a selected chip's bar
+//   ui          a line or ring that must be seen: from 40 % foreground,
+//               on the background and all three fills
+//   focusRing   Seldon's ring on its own controls: the theme's focus border
+//               where it reaches TONE_FOCUS_MIN (themeFocus true), else ui
+//   divider     the hairlines, foreground at TONE_DIVIDER_ALPHA
+//   limited     the tones that did not reach their target because the
+//               theme's own foreground does not (A9: no fallback colour)
+function deskTones(theme) {
+  var t = isObject(theme) ? theme : {}
+  // fallbacks for input that is no colour: Color.qml's own defaults
+  // ($OMARCHY_PATH/shell/Commons/Color.qml, foreground … muted)
+  var role = function(c, fallback) { return colourRgba(c) || colourRgba(fallback) }
+  var fg = role(t.foreground, "#cacccc")
+  var bg = role(t.background, "#101315")
+  var accent = role(t.accent, colourHex(fg))
+  var urgent = role(t.urgent, "#a55555")
+  var muted = role(t.muted, colourHex(fg))
+  var fill = function(c, alpha) { var f = colourRgba(c); return f || { r: fg.r, g: fg.g, b: fg.b, a: alpha } }
+  var normal = fill(t.normal, 0.04)
+  var hover = fill(t.hover, 0.08)
+  var selected = fill(t.selected, 0.18)
+  var focus = fill(t.focusBorder, 0.25)
+  var focusWidth = typeof t.focusBorderWidth === "number" ? t.focusBorderWidth : 1
+  var key = [fg, bg, accent, urgent, muted].map(function(c) { return colourHex(c) })
+    .concat([normal, hover, selected, focus].map(function(c) { return colourHex(c, c.a) }), [focusWidth]).join(" ")
+  if (deskTonesMemo.key === key) return deskTonesMemo.value
+  deskTonesBuilds++
+
+  // each surface as drawn: 8 bits a channel
+  var drawn = function(c) { return colourRgba(colourHex(c)) }
+  var base = drawn(bg)
+  var plain = [base, drawn(overColour(normal, base)), drawn(overColour(hover, base)), drawn(overColour(selected, base))]
+  var tint = function(c) { return drawn(overColour({ r: c.r, g: c.g, b: c.b, a: selected.a }, base)) }
+  var accentTint = tint(accent)
+  var urgentTint = tint(urgent)
+  var fgHex = colourHex(fg)
+  var limited = []
+  var derive = function(name, from, surfaces, target) {
+    var out = textOn(colourHex(from), surfaces, target, fgHex)
+    for (var i = 0; i < surfaces.length; i++) {
+      if (contrastRatio(out, surfaces[i]) < target) {
+        limited.push(name)
+        break
+      }
+    }
+    return out
+  }
+  var focusOn = drawn(overColour(focus, base))
+  var focusRatio = Math.min(contrastRatio(focusOn, base), contrastRatio(focusOn, plain[1]))
+  var themeFocus = focusWidth >= 1 && focusRatio >= TONE_FOCUS_MIN
+  var tones = {
+    text: fgHex,
+    dim: derive("dim", muted, plain.concat([accentTint, urgentTint]), TONE_TEXT_TARGET),
+    accentText: derive("accentText", accent, plain.concat([accentTint]), TONE_TEXT_TARGET),
+    urgentText: derive("urgentText", urgent, plain.concat([urgentTint]), TONE_TEXT_TARGET),
+    accentUi: derive("accentUi", accent, plain.concat([accentTint]), TONE_UI_TARGET),
+    // on all four: a ring also sits on a selected (primary) button
+    ui: derive("ui", mixColour(base, fg, TONE_LINE_START), plain, TONE_UI_TARGET),
+    focusRing: "",
+    themeFocus: themeFocus,
+    focusRatio: Math.round(focusRatio * 100) / 100,
+    divider: colourHex(fg, TONE_DIVIDER_ALPHA),
+    limited: limited
+  }
+  tones.focusRing = themeFocus ? colourHex(focusOn) : tones.ui
+  deskTonesMemo = { key: key, value: tones }
+  return tones
 }

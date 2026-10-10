@@ -13,12 +13,15 @@ closed:
 snapshotBefore:
 agents: []
 events: []
-tags: []
+tags: [imported]
+source: "~/Notizen/aufgaben.md#4"
 ---
 # C-2026-007 — Herdr-Orchestrator als Default-Agent registrieren
 
 ## Intent
-Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben.
+Imported from ~/Notizen/aufgaben.md#4 — read before you start this case.
+
+Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben.
 
 ## Plan
 - Goal: „Start agent“ im Seldon-Panel öffnet eine Herdr-Sitzung mit Case-Kontext.
@@ -36,7 +39,7 @@ Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben.
 
 ## Log
 <!-- append-only; engine and agents add dated lines -->
-- 2026-10-01 11:00 · created (zone yellow, risk R1) · human
+- 2026-10-01 11:00 · created (zone yellow, risk R1): imported from ~/Notizen/aufgaben.md#4 · human
 
 ## Result
 

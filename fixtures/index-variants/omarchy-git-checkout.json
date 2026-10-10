@@ -1,5 +1,6 @@
 {
-  "contractVersion": 1,
+  "contractVersion": 2,
+  "contractReadableFrom": 2,
   "generatedAt": "2026-10-01T17:05:12+02:00",
   "engineVersion": "0.1.0",
   "logbook": {
@@ -8,7 +9,12 @@
     "machine": "workstation-7f3a",
     "git": {
       "head": "a1b2c3d",
-      "dirty": false
+      "dirty": false,
+      "autocommit": {
+        "ok": true,
+        "at": "2026-10-01T17:00:01+02:00",
+        "message": "seldon: note C-2026-004"
+      }
     }
   },
   "state": {
@@ -58,8 +64,8 @@
     "queuedCases": 3,
     "openDrift": 6,
     "crisis": 2,
-    "eventsToday": 30,
-    "events7d": 51
+    "eventsToday": 33,
+    "events7d": 54
   },
   "today": {
     "date": "2026-10-01",
@@ -276,7 +282,10 @@
       "kind": "case-started",
       "subject": "C-2026-008",
       "actor": "human",
-      "case": "C-2026-008"
+      "case": "C-2026-008",
+      "meta": {
+        "risk": "R2"
+      }
     },
     {
       "id": "01M3VC74ARPB23HG486VS0V52M",
@@ -286,7 +295,10 @@
       "subject": "C-2026-008",
       "detail": "Tailscale für Fernzugriff einrichten",
       "actor": "human",
-      "case": "C-2026-008"
+      "case": "C-2026-008",
+      "meta": {
+        "risk": "R2"
+      }
     },
     {
       "id": "01M3VB2V6G1EE4HHZ9SB8SRKMS",
@@ -296,7 +308,10 @@
       "subject": "C-2026-007",
       "detail": "Herdr-Orchestrator als Default-Agent registrieren",
       "actor": "human",
-      "case": "C-2026-007"
+      "case": "C-2026-007",
+      "meta": {
+        "risk": "R1"
+      }
     },
     {
       "id": "01M3V9XQPG3XSQHDE1KSNTZRQA",
@@ -393,7 +408,10 @@
       "kind": "case-started",
       "subject": "C-2026-004",
       "actor": "human",
-      "case": "C-2026-004"
+      "case": "C-2026-004",
+      "meta": {
+        "risk": "R2"
+      }
     },
     {
       "id": "01M3V5D0V0YT5KRGAHD1VQDF2Q",
@@ -426,6 +444,21 @@
         "command": "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
         "from": "4.0.6-1",
         "to": "4.0.7-1"
+      }
+    },
+    {
+      "id": "01M3V504QGJ5468NKRV7A744AY",
+      "ts": "2026-10-01T09:13:58+02:00",
+      "source": "pacman",
+      "kind": "note",
+      "subject": "/etc/mkinitcpio.conf.pacnew",
+      "detail": "/etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew",
+      "actor": "agent:claude-code",
+      "case": "C-2026-003",
+      "zone": "red",
+      "meta": {
+        "command": "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
+        "transaction": "tx-20261001T091358"
       }
     },
     {
@@ -496,7 +529,36 @@
       "kind": "case-started",
       "subject": "C-2026-003",
       "actor": "human",
-      "case": "C-2026-003"
+      "case": "C-2026-003",
+      "meta": {
+        "risk": "R3"
+      }
+    },
+    {
+      "id": "01M3V47SE0SG6CBVKB1NG4DEWJ",
+      "ts": "2026-10-01T09:00:40+02:00",
+      "source": "seldon",
+      "kind": "case-updated",
+      "subject": "C-2026-003",
+      "detail": "risk R2 → R3",
+      "actor": "human",
+      "case": "C-2026-003",
+      "meta": {
+        "risk": "R3"
+      }
+    },
+    {
+      "id": "01M3V3XDD0Q5Y4FVWJQ985QGR9",
+      "ts": "2026-10-01T08:55:00+02:00",
+      "source": "seldon",
+      "kind": "state-loss",
+      "subject": "state-reset",
+      "detail": "state directory missing, unreadable or bound to another logbook: new baseline for config (owned) at 2026-10-01T08:55:00+02:00, recorded 2026-10-01T08:55:00+02:00; changes made in between may not be recorded",
+      "actor": "system",
+      "meta": {
+        "files": "owned",
+        "sources": "config"
+      }
     },
     {
       "id": "01M3SXBRV0WPNQ721VWGG2WXZ1",
@@ -788,14 +850,32 @@
       "source": "plugins",
       "kind": "plugin-update",
       "subject": "io.github.example.weather-plus",
-      "detail": "1.2.0 → 1.3.0",
+      "detail": "1.2.0 → 1.3.0, pulled 3 commits: Release 1.3.0 …",
       "actor": "system",
       "zone": "yellow",
       "resolution": "explained",
       "resolutionDetail": "omarchy plugin update, nur das Widget.",
       "meta": {
         "from": "1.2.0",
-        "to": "1.3.0"
+        "to": "1.3.0",
+        "commits": "Release 1.3.0\nAdd a wind gust row\nFix the unit toggle in the panel",
+        "git": "pull"
+      }
+    },
+    {
+      "id": "01M354YX603T291Y52TPXV4J4Z",
+      "ts": "2026-09-22T20:10:00+02:00",
+      "source": "plugins",
+      "kind": "plugin-update",
+      "subject": "io.github.example.weather-plus",
+      "detail": "files changed (sha256 62cd48f3 → 97ce30cb)",
+      "actor": "system",
+      "zone": "yellow",
+      "resolution": "explained",
+      "resolutionDetail": "Vorhersage-Panel selbst angepasst (größere Schrift).",
+      "meta": {
+        "hashFrom": "62cd48f3d1ae14492c37f771c018686c815f923e4109d80518203815169e448b",
+        "hashTo": "97ce30cb3a9efe04e925d5baf7bfa552331a6bd57518155fa0b5a29665e72cb9"
       }
     },
     {
@@ -812,6 +892,108 @@
       "meta": {
         "from": "osaka-jade",
         "to": "kanagawa"
+      }
+    },
+    {
+      "id": "01M2W5S5WR0VXZGZ21D38HN54Z",
+      "ts": "2026-09-19T08:31:11+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "libadwaita",
+      "detail": "1:1.7.6-1 → 1:1.7.7-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260919T083110",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "1:1.7.6-1",
+        "to": "1:1.7.7-1",
+        "txStatus": "interrupted"
+      }
+    },
+    {
+      "id": "01M2W5S4XG9MX3PXAMR7WEEBVZ",
+      "ts": "2026-09-19T08:31:10+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "gtk4",
+      "detail": "1:4.18.6-1 → 1:4.18.7-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260919T083110",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "1:4.18.6-1",
+        "to": "1:4.18.7-1",
+        "txStatus": "interrupted"
+      }
+    },
+    {
+      "id": "01M2TRP54GT5ZYGRJ3XKDF17Q7",
+      "ts": "2026-09-18T19:23:06+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "wireplumber",
+      "detail": "0.5.10-1 → 0.5.11-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260918T192305",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "0.5.10-1",
+        "to": "0.5.11-1"
+      }
+    },
+    {
+      "id": "01M2TRP54GGCKNZ4DT9G74W5QP",
+      "ts": "2026-09-18T19:23:06+02:00",
+      "source": "pacman",
+      "kind": "install",
+      "subject": "pipewire-pulse",
+      "detail": "1:1.4.8-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260918T192305",
+      "meta": {
+        "command": "pacman -Syu",
+        "version": "1:1.4.8-1"
+      }
+    },
+    {
+      "id": "01M2TRP54G6K1N4WZF19XZFHZW",
+      "ts": "2026-09-18T19:23:06+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "pipewire",
+      "detail": "1:1.4.7-1 → 1:1.4.8-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260918T192305",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "1:1.4.7-1",
+        "to": "1:1.4.8-1"
+      }
+    },
+    {
+      "id": "01M2TRP458WGAYTYM0MEFXC2TY",
+      "ts": "2026-09-18T19:23:05+02:00",
+      "source": "pacman",
+      "kind": "remove",
+      "subject": "pulseaudio",
+      "detail": "17.0-3",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260918T192305",
+      "meta": {
+        "command": "pacman -Syu",
+        "version": "17.0-3"
       }
     },
     {
@@ -914,9 +1096,12 @@
       "source": "manual",
       "kind": "note",
       "subject": "C-2026-002",
-      "detail": "Sieht gut aus, Skalierung 1.5 auf beiden. Morgen nach dem Neustart prüfen.",
+      "detail": "Sieht gut aus, Skalierung 1.5 auf beiden. Morgen nach dem Neustart prüfen. Notizen für morgen: erst kalt starten, dann beide Monitore einzeln aus- und wieder einstecken; prüfen, ob Hyprland die Reihenfolge DP-1 lin… (155 more characters in the ledger)",
       "actor": "human",
-      "case": "C-2026-002"
+      "case": "C-2026-002",
+      "meta": {
+        "truncated": true
+      }
     },
     {
       "id": "01M2ABVHD0SVBF5WCN07HWGE3Z",
@@ -1073,7 +1258,8 @@
       "actor": "human",
       "zone": "yellow",
       "crisis": false,
-      "proposedCase": "C-2026-005"
+      "proposedCase": "C-2026-005",
+      "rule": "theme"
     },
     {
       "eventId": "01M3VNJ9JGZ9169T01XCW16FT0",
@@ -1085,7 +1271,8 @@
       "actor": "agent:codex",
       "zone": "red",
       "crisis": true,
-      "proposedCase": null
+      "proposedCase": null,
+      "rule": "always-red-paths"
     },
     {
       "eventId": "01M3VNFTF8EVHWFFZ687N14Q0C",
@@ -1097,7 +1284,8 @@
       "actor": "agent:codex",
       "zone": "red",
       "crisis": false,
-      "proposedCase": null
+      "proposedCase": null,
+      "rule": "package"
     },
     {
       "eventId": "01M3Q7R0Z08ZD5R76DQA3PHQ1G",
@@ -1109,7 +1297,8 @@
       "actor": "system",
       "zone": "yellow",
       "crisis": true,
-      "proposedCase": null
+      "proposedCase": null,
+      "rule": "always-red-paths"
     },
     {
       "eventId": "01M3KVWFR06078ZQTPRZCFYHK0",
@@ -1121,7 +1310,8 @@
       "actor": "system",
       "zone": "yellow",
       "crisis": false,
-      "proposedCase": null
+      "proposedCase": null,
+      "rule": "config-remove"
     },
     {
       "eventId": "01M3H6M720FC6BAG7ETNQTXW9K",
@@ -1135,7 +1325,8 @@
       "crisis": false,
       "proposedCase": null,
       "txId": "tx-20260927T123000",
-      "members": 3
+      "members": 3,
+      "rule": "package"
     }
   ],
   "cases": {
@@ -1162,7 +1353,8 @@
         },
         "proposedEvents": [
           "01M3VTGNY0NZG4AY80814WSKGR"
-        ]
+        ],
+        "intent": "Ein Theme überall: Omarchy, Zed und Neovim in Tokyo Night."
       },
       {
         "id": "C-2026-006",
@@ -1183,7 +1375,8 @@
         "steps": {
           "total": 3,
           "done": 0
-        }
+        },
+        "intent": "Snapshots sollen nicht unbegrenzt wachsen; 14 Tage reichen."
       },
       {
         "id": "C-2026-007",
@@ -1199,12 +1392,16 @@
         "snapshotBefore": null,
         "agents": [],
         "events": [],
-        "tags": [],
+        "tags": [
+          "imported"
+        ],
         "path": "work/queued/C-2026-007-herdr-default-agent.md",
         "steps": {
           "total": 5,
           "done": 0
-        }
+        },
+        "intent": "Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben.",
+        "source": "~/Notizen/aufgaben.md#4"
       }
     ],
     "active": [
@@ -1227,6 +1424,7 @@
           "01M3V4RY8GW92AWEZ8KFTHZRAW",
           "01M3V4T4B8J32CE6CP7FQ4SS42",
           "01M3V504QG60MBGRBA2257PVQC",
+          "01M3V504QGJ5468NKRV7A744AY",
           "01M3V505PRK95EXCMDQW91M9FG",
           "01M3V5D0V0YT5KRGAHD1VQDF2Q"
         ],
@@ -1237,7 +1435,8 @@
         "steps": {
           "total": 5,
           "done": 4
-        }
+        },
+        "intent": "Omarchy 4.0.7 einspielen, ohne die eigenen Hyprland-Bindings zu verlieren."
       },
       {
         "id": "C-2026-004",
@@ -1268,7 +1467,8 @@
         "steps": {
           "total": 4,
           "done": 2
-        }
+        },
+        "intent": "Zed als zweiter Editor neben Neovim, für größere Refactorings."
       }
     ],
     "verification": [
@@ -1293,7 +1493,8 @@
         "steps": {
           "total": 4,
           "done": 3
-        }
+        },
+        "intent": "Vom Laptop aus auf die Workstation zugreifen, ohne Ports zu öffnen."
       }
     ],
     "completed": [
@@ -1325,7 +1526,9 @@
         "steps": {
           "total": 4,
           "done": 4
-        }
+        },
+        "intent": "Zweiter WQHD-Monitor: sauberes Layout statt Auto-Erkennung.",
+        "result": "Layout steht, Skalierung 1.25. Abweichung in `system/deviations.md` eingetragen."
       },
       {
         "id": "C-2026-001",
@@ -1350,7 +1553,9 @@
         "steps": {
           "total": 2,
           "done": 2
-        }
+        },
+        "intent": "Ein Logbuch für diese Maschine, damit jede Änderung einen Grund hat.",
+        "result": "Logbuch läuft, Baseline erfasst, `seldon doctor` ohne Befund."
       }
     ]
   },
@@ -1360,28 +1565,41 @@
       "title": "Ollama nur als User-Service mit Case",
       "status": "proposed",
       "date": "2026-10-01",
-      "path": "decisions/ADR-0004-ollama-user-service.md"
+      "path": "decisions/ADR-0004-ollama-user-service.md",
+      "cases": [],
+      "lead": "Lokale Modelle nur über einen Case; ollama läuft, wenn überhaupt, als User-Service ohne Autostart."
     },
     {
       "id": "ADR-0003",
       "title": "Zed statt VS Code als Zweiteditor",
       "status": "accepted",
       "date": "2026-10-01",
-      "path": "decisions/ADR-0003-zed.md"
+      "path": "decisions/ADR-0003-zed.md",
+      "cases": [
+        "C-2026-004",
+        "C-2026-005"
+      ],
+      "lead": "Zed wird Zweiteditor, Neovim bleibt Standard."
     },
     {
       "id": "ADR-0002",
       "title": "Snapshots vor jedem Red-Zone-Eingriff",
       "status": "accepted",
       "date": "2026-09-02",
-      "path": "decisions/ADR-0002-snapshots.md"
+      "path": "decisions/ADR-0002-snapshots.md",
+      "cases": [],
+      "lead": "Vor jedem Case in der Red Zone gibt es einen Snapper-Snapshot; die Nummer steht als `snapshotBefore` im Case."
     },
     {
       "id": "ADR-0001",
       "title": "Logbuch-Sprache Deutsch, Struktur Englisch",
       "status": "accepted",
       "date": "2026-09-01",
-      "path": "decisions/ADR-0001-language.md"
+      "path": "decisions/ADR-0001-language.md",
+      "cases": [
+        "C-2026-001"
+      ],
+      "lead": "Prosa auf Deutsch. Dateinamen, YAML-Schlüssel und Enum-Werte auf Englisch."
     }
   ],
   "system": {
@@ -1470,7 +1688,35 @@
         "hasAgentsMd": true,
         "cases": 1
       }
-    ]
+    ],
+    "recentConfig": {
+      "scannedAt": "2026-10-01T17:05:00+02:00",
+      "files": [
+        {
+          "path": "~/.config/zed/settings.json",
+          "mtime": "2026-10-01T10:38:50+02:00"
+        },
+        {
+          "path": "~/.config/git/config",
+          "mtime": "2026-09-30T21:40:07+02:00"
+        },
+        {
+          "path": "~/.config/starship.toml",
+          "mtime": "2026-09-29T08:15:31+02:00"
+        },
+        {
+          "path": "~/.config/alacritty/alacritty.toml",
+          "mtime": "2026-09-27T19:02:11+02:00"
+        }
+      ]
+    },
+    "pacmanIgnore": {
+      "packages": [
+        "zoom",
+        "slack-desktop"
+      ],
+      "groups": []
+    }
   },
   "memory": {
     "lessons": [
@@ -2928,11 +3174,17 @@
       },
       {
         "date": "2026-09-18",
-        "total": 0
+        "total": 4,
+        "bySource": {
+          "pacman": 4
+        }
       },
       {
         "date": "2026-09-19",
-        "total": 0
+        "total": 2,
+        "bySource": {
+          "pacman": 2
+        }
       },
       {
         "date": "2026-09-20",
@@ -2947,7 +3199,10 @@
       },
       {
         "date": "2026-09-22",
-        "total": 0
+        "total": 1,
+        "bySource": {
+          "plugins": 1
+        }
       },
       {
         "date": "2026-09-23",
@@ -3010,15 +3265,15 @@
       },
       {
         "date": "2026-10-01",
-        "total": 30,
+        "total": 33,
         "bySource": {
           "agent": 6,
           "config": 2,
           "manual": 2,
           "omarchy": 1,
-          "pacman": 7,
+          "pacman": 8,
           "plugins": 1,
-          "seldon": 6,
+          "seldon": 8,
           "snapper": 4,
           "theme": 1
         }
@@ -3059,8 +3314,8 @@
       },
       {
         "week": "2026-W39",
-        "opened": 2,
-        "resolved": 1
+        "opened": 3,
+        "resolved": 2
       },
       {
         "week": "2026-W40",
@@ -3192,5 +3447,16 @@
         "ref": "115"
       }
     ]
+  },
+  "triage": {
+    "id": "01M3VZS4J0NDXZFC2F7RBBD3FJ",
+    "at": "2026-10-01T17:02:00+02:00",
+    "actor": "agent:claude-code",
+    "counts": {
+      "items": 3,
+      "crises": 1
+    },
+    "path": "proposals/01M3VZS4J0NDXZFC2F7RBBD3FJ.json",
+    "applied": null
   }
 }

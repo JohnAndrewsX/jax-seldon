@@ -64,9 +64,10 @@ jax-seldon/
 `just check` is the gate for every change. It runs rustfmt, clippy and
 the engine tests (with and without the `watch` feature), the packaging
 and install checks, the fixture validation against `schema/`, the docs
-check, and on an Omarchy host the plugin checks
-(`omarchy plugin validate`, qmllint against the installed shell, the
-headless plugin harnesses). Without an Omarchy host,
+check, the plugin's manifest against Omarchy's validator and its node
+and bash tests, and on an Omarchy host the rest of the plugin checks
+(qmllint against the installed shell, the headless plugin harnesses).
+Without an Omarchy host,
 `SELDON_SKIP_HOST_CHECKS=1 just check` runs what CI runs. [`docs/TESTING.md`](TESTING.md) explains every
 step, the manual runs in scratch directories, the end-to-end test and
 how the plugin screenshots are made.

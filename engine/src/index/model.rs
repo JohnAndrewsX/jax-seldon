@@ -1,7 +1,9 @@
 //! `index.json` as typed structs (`schema/index.schema.json`). Field order
 //! is the key order of `fixtures/index.sample.json`; every object of the
 //! schema is closed, so nothing here may grow a field without an ADR and a
-//! `contractVersion` bump (docs/CONTRACT.md).
+//! `contractVersion` bump (docs/CONTRACT.md), except an optional field an
+//! accepted ADR adds within contract 2 before 0.2.0 is tagged (ADR-0035 §6,
+//! CONTRACT.md rule 9).
 
 use std::collections::BTreeMap;
 
@@ -15,6 +17,8 @@ use crate::model::event::{Event, format_ts};
 #[serde(rename_all = "camelCase")]
 pub struct Index {
     pub contract_version: u32,
+    /// ADR-0051: the oldest plugin contract that can read this index.
+    pub contract_readable_from: u32,
     pub generated_at: String,
     pub engine_version: String,
     pub logbook: LogbookInfo,
@@ -28,6 +32,9 @@ pub struct Index {
     pub system: System,
     pub memory: MemoryInfo,
     pub series: Series,
+    /// The newest triage proposal of this logbook (ADR-0035 §6).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triage: Option<Triage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -46,6 +53,17 @@ pub struct GitInfo {
     /// `None` when unknown (the fast rebuild path spawns no git).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty: Option<bool>,
+    /// The last autocommit attempted in this logbook (ADR-0035 §2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub autocommit: Option<AutocommitInfo>,
+}
+
+/// `logbook.git.autocommit`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AutocommitInfo {
+    pub ok: bool,
+    pub at: String,
+    pub message: String,
 }
 
 /// `state.status`.
@@ -179,6 +197,13 @@ pub struct DriftItem {
     pub tx_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub members: Option<usize>,
+    /// `Some(true)` when `detail` was clipped (ADR-0035 §3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
+    /// The ADR-0028 §2 rule that classified the item, as `drift show`
+    /// reports it (ADR-0038 §1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -201,7 +226,7 @@ impl Cases {
 }
 
 /// `case.schema.json` as the index has it: no `type`, plus `path`,
-/// `steps` and `proposedEvents`.
+/// `steps`, `proposedEvents`, `intent` and `result`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexCase {
@@ -225,6 +250,15 @@ pub struct IndexCase {
     pub steps: Steps,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub proposed_events: Vec<String>,
+    /// The first paragraph of `## Intent` and of `## Result`, redacted
+    /// and clipped (ADR-0038 §2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    /// An imported case's task, `~/…/file.md#line` (ADR-0038 §3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -240,6 +274,30 @@ pub struct DecisionRow {
     pub status: String,
     pub date: String,
     pub path: String,
+    /// The frontmatter's `cases`, as written, without repeats (ADR-0035 §5).
+    pub cases: Vec<String>,
+    /// The first paragraph of `## Decision`, redacted and clipped
+    /// (ADR-0038 §2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lead: Option<String>,
+}
+
+/// `triage`: the newest proposal of this logbook (ADR-0035 §6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Triage {
+    pub id: String,
+    pub at: String,
+    pub actor: String,
+    pub counts: TriageCounts,
+    /// `proposals/<id>.json`, relative to the directory of `index.json`.
+    pub path: String,
+    pub applied: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct TriageCounts {
+    pub items: usize,
+    pub crises: usize,
 }
 
 /// `system`: every member is optional; an empty logbook has `{}`.
@@ -257,6 +315,34 @@ pub struct System {
     pub plugins: Option<PluginCounts>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub areas: Option<Vec<AreaRow>>,
+    /// Recently edited files under `~/.config` outside the watch paths
+    /// (ADR-0046).
+    #[serde(rename = "recentConfig", skip_serializing_if = "Option::is_none")]
+    pub recent_config: Option<RecentConfig>,
+    /// pacman's `IgnorePkg` and `IgnoreGroup` names, from the pacman
+    /// collector's cursor (ADR-0052 §5).
+    #[serde(rename = "pacmanIgnore", skip_serializing_if = "Option::is_none")]
+    pub pacman_ignore: Option<crate::collectors::pacman_ignore::Shown>,
+}
+
+/// `system.recentConfig` (ADR-0046): the last scan's time and its files,
+/// newest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentConfig {
+    pub scanned_at: String,
+    pub files: Vec<RecentFile>,
+    /// The scan stopped early or left deep folders out: the list may be
+    /// incomplete (ADR-0046 §2). Written only when true.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
+}
+
+/// One recently edited file: its `~`-path and modification time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct RecentFile {
+    pub path: String,
+    pub mtime: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

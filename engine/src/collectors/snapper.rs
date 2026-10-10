@@ -117,6 +117,11 @@ pub struct SnapperCursor {
     pub known: BTreeMap<u64, Known>,
 }
 
+/// The degraded message when there is no `snapper`. The plugin's setup
+/// card reads it as "this machine has no snapper": no snapshot step
+/// (WP-119); `tests/collectors.rs` pins it.
+pub const NOT_INSTALLED: &str = "snapper is not installed";
+
 /// The degraded message for a permission error (index and doctor).
 pub const NO_PERMISSIONS: &str = "snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; `seldon doctor` prints the read grant.";
 
@@ -161,7 +166,7 @@ pub fn lists_current_user(program: &str, timeout: Duration) -> bool {
     else {
         return false;
     };
-    match sys::run_command(get_config_command(program), timeout) {
+    match sys::run_command(get_config_command(program), timeout, sys::OUTPUT_MAX) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -179,9 +184,10 @@ pub fn allow_users(stdout: &str) -> Option<Vec<String>> {
     Some(users.split_whitespace().map(str::to_string).collect())
 }
 
-/// Runs [`list_command`] with `timeout`.
+/// Runs [`list_command`] with `timeout`, keeping its whole output (a cut
+/// list would read as snapshots deleted).
 pub fn run_list(program: &str, timeout: Duration) -> Run {
-    sys::run_command(list_command(program), timeout)
+    sys::run_command(list_command(program), timeout, sys::WHOLE_OUTPUT)
 }
 
 /// Whether snapper's stderr is its permission error (English, see
@@ -219,7 +225,8 @@ impl Collector for Snapper {
                     None,
                 );
             }
-            Run::NotFound => return Outcome::degraded("snapper is not installed", None),
+            Run::Cut => return Outcome::degraded("snapper's list is over the limit", None),
+            Run::NotFound => return Outcome::degraded(NOT_INSTALLED, None),
             Run::TimedOut => return Outcome::degraded("snapper did not answer in time", None),
             Run::Failed(e) => return Outcome::degraded(format!("cannot run snapper: {e}"), None),
         };

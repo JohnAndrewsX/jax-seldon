@@ -30,6 +30,30 @@ pub const TAG_CLOSED_BY_AGENT: &str = "closed-by-agent";
 /// The tag prefix of a case `plan reopen` made: `reopens:<ID>`.
 pub const TAG_REOPENS: &str = "reopens:";
 
+/// The tag of a case `seldon import task` made (WP-102).
+pub const TAG_IMPORTED: &str = "imported";
+
+/// An imported case is started by the user (WP-102 round 3, orchestrator
+/// decision; ADR-0027 §2(a)): its Intent is text from a file, which becomes
+/// an agent's authorisation only by the user's start. Refused when `actor`
+/// or the session (`$SELDON_ACTOR`) is an agent, whatever `--actor` says.
+pub(crate) fn refuse_agent_start_of_imported(file: &CaseFile, actor: &str) -> Result<()> {
+    if !file.case.tags.iter().any(|t| t == TAG_IMPORTED) {
+        return Ok(());
+    }
+    let session = env_actor(parse_person).ok().flatten();
+    let agent = Some(actor)
+        .filter(|a| is_agent(a))
+        .or(session.as_deref().filter(|s| is_agent(s)));
+    match agent {
+        Some(agent) => Err(Error::user(format!(
+            "{} is not started: an imported case is started by the user (ADR-0027 §2a); ask them to start it ({agent}'s session)",
+            file.case.id
+        ))),
+        None => Ok(()),
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct PlanArgs {
     #[command(subcommand)]
@@ -240,6 +264,8 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
             note: None,
             start: false,
             point: false,
+            done: None,
+            source: None,
         },
     )?;
     let id = created.file.case.id.clone();
@@ -285,6 +311,12 @@ pub(crate) struct Spec {
     /// With `start`: the new case becomes `.seldon/active-case`, which the
     /// hooks attribute an agent's commands by.
     pub point: bool,
+    /// Created completed in one go (`import task --include-done`, WP-102):
+    /// `case-created` and `case-completed` in one ledger write, `done` the
+    /// completed Log line's text. Never with `start`.
+    pub done: Option<String>,
+    /// The frontmatter's `source` (`import task` only, ADR-0038 §3).
+    pub source: Option<String>,
 }
 
 /// What [`create`] wrote: the case file, its ledger events (created, then
@@ -314,12 +346,24 @@ pub(crate) fn create(
         )));
     }
     let today = ctx.now.date_naive();
-    let id = cases::next_id(logbook, ctx.now.year())?;
-    let status = if spec.start {
+    let status = if spec.done.is_some() {
+        CaseStatus::Completed
+    } else if spec.start {
         CaseStatus::Active
     } else {
         CaseStatus::Queued
     };
+    // every folder this writes into, before the next id is read and the
+    // ledger written (WP-168)
+    cases::checked_folders(logbook)?;
+    if let Some(area) = spec.area.as_deref() {
+        // the README too: `ensure_area` writes it after the ledger (WP-171)
+        logbook.checked_file(format!("areas/{area}/README.md"))?;
+    }
+    if spec.start && spec.point {
+        logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
+    }
+    let id = cases::next_id(logbook, ctx.now.year())?;
     let case = Case {
         id: id.clone(),
         title: spec.title.clone(),
@@ -329,12 +373,13 @@ pub(crate) fn create(
         priority: Some(spec.priority),
         area: spec.area.clone(),
         created: today,
-        started: spec.start.then_some(today),
-        closed: None,
+        started: (spec.start || spec.done.is_some()).then_some(today),
+        closed: spec.done.is_some().then_some(today),
         snapshot_before: None,
         agents: Vec::new(),
         events: Vec::new(),
         tags: spec.tags.clone(),
+        source: spec.source.clone(),
     };
     let mut body = cases::new_body(logbook, &id, &spec.title)?;
     if let Some(intent) = &spec.intent {
@@ -361,6 +406,9 @@ pub(crate) fn create(
     if spec.start {
         file.log(&ctx.now, Transition::Start.log_word(), &spec.actor);
     }
+    if let Some(done) = &spec.done {
+        file.log(&ctx.now, done, &spec.actor);
+    }
     let text = crate::model::render_new(&file.case, &file.doc.body);
     if file.path.exists() {
         return Err(Error::user(format!(
@@ -374,11 +422,20 @@ pub(crate) fn create(
         Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
             .detail(spec.title.clone())
             .actor(&spec.actor)
-            .case(Some(id.clone())),
+            .case(Some(id.clone()))
+            .risk(spec.risk),
     ];
     if spec.start {
         events.push(
             Event::new(ctx.now, Source::Seldon, Kind::CaseStarted, &id)
+                .actor(&spec.actor)
+                .case(Some(id.clone()))
+                .risk(spec.risk),
+        );
+    }
+    if spec.done.is_some() {
+        events.push(
+            Event::new(ctx.now, Source::Seldon, Kind::CaseCompleted, &id)
                 .actor(&spec.actor)
                 .case(Some(id.clone())),
         );
@@ -390,7 +447,7 @@ pub(crate) fn create(
         .map(|a| cases::ensure_area(logbook, a))
         .transpose()?
         .flatten();
-    write_new(&file.path, &text)?;
+    write_new(logbook, &file.path, &text)?;
     if spec.start && spec.point {
         cases::set_active_case(logbook, &id)?;
     }
@@ -444,11 +501,15 @@ fn step(
         && cases::find(&logbook, &args.id).is_ok_and(|f| transition.target(f.case.status).is_ok()))
     .then(|| capture_first(ctx));
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut file = cases::find(&logbook, &args.id)?;
     let from = file.case.status;
     let to = transition
         .target(from)
         .map_err(|e| Error::user(format!("{} {e}", args.id)))?;
+    if transition == Transition::Start {
+        refuse_agent_start_of_imported(&file, &actor)?;
+    }
 
     // an agent closes only with evidence (ADR-0027 §5); the resolved
     // actor counts, so `SELDON_ACTOR` cannot go around it
@@ -503,6 +564,15 @@ fn step(
         })
     });
 
+    // `.seldon/` for the active case, before the ledger (WP-168); the case
+    // folders were checked under the lock
+    if transition != Transition::Verify {
+        logbook.checked_file(crate::logbook::ACTIVE_CASE_FILE)?;
+    }
+    // the case file from and to, as the save will write it: a link there
+    // fails the step before the ledger (WP-171)
+    file.prepare(&logbook, |_| {})?;
+
     // the journal day is read before the ledger is written: a day file
     // the engine cannot read fails the step before anything changes
     // (WP-057)
@@ -516,6 +586,10 @@ fn step(
     let mut event = Event::new(ctx.now, Source::Seldon, kind(transition), &args.id)
         .actor(&actor)
         .case(Some(args.id.clone()));
+    if transition == Transition::Start {
+        // ADR-0035 §1: the risk the case starts with
+        event = event.risk(file.case.risk);
+    }
     event.detail = reason.clone();
     let event = emit_one(&lock, &config, &logbook, event)?;
 
@@ -534,7 +608,22 @@ fn step(
         Some(pending) => Some(pending.write()?.path),
         None => None,
     };
-    let commit = autocommit(ctx, &config, &logbook, &format!("{} {}", args.id, to));
+    let summary = match transition {
+        Transition::Done => closing_summary(
+            &args.id,
+            to,
+            &file.case.title,
+            cases::first_paragraph(&file.doc.body, "Result")
+                .as_deref()
+                .and_then(|r| r.lines().next()),
+            &redactor,
+        ),
+        Transition::Drop => {
+            closing_summary(&args.id, to, &file.case.title, reason.as_deref(), &redactor)
+        }
+        _ => format!("{} {}", args.id, to),
+    };
+    let commit = autocommit(ctx, &config, &logbook, &summary);
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
@@ -654,8 +743,8 @@ fn open_only(file: &CaseFile, what: &str) -> Result<()> {
 }
 
 /// `plan set`: zone, risk and area of an open case, in its frontmatter,
-/// with one Log line. No ledger event (no kind fits; a new one would be a
-/// contract change): the Log line and the commit are the record. A value
+/// with one Log line and one `case-updated` ledger line that carries the
+/// risk after the change (ADR-0035 §1; the harm guard reads it). A value
 /// equal to the current one is no change; with nothing changed nothing is
 /// written (exit 0).
 fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
@@ -669,6 +758,7 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
     }
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut file = cases::find(&logbook, &args.id)?;
     open_only(&file, "set")?;
 
@@ -702,6 +792,7 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
             json!({
                 "case": case_json(&logbook, &file),
                 "changed": changed,
+                "event": Value::Null,
                 "areaCreated": Value::Null,
                 "git": Value::Null,
             }),
@@ -710,10 +801,20 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
     file.add_agent(&actor);
     file.log(&ctx.now, &format!("set {}", words.join(", ")), &actor);
     file.prepare(&logbook, |_| {})?;
+    // a new area's README first (WP-120 round 2, N5): a failure there
+    // leaves the ledger and the case file as they were; an area left
+    // behind by a later failure is harmless (the next set finds it)
     let area_created = match &file.case.area {
         Some(a) if changed.iter().any(|c| c["key"] == "area") => cases::ensure_area(&logbook, a)?,
         _ => None,
     };
+    // then the ledger: if it cannot be written, the case file stays
+    let event = Event::new(ctx.now, Source::Seldon, Kind::CaseUpdated, &args.id)
+        .detail(words.join(", "))
+        .actor(&actor)
+        .case(Some(args.id.clone()))
+        .risk(file.case.risk);
+    let event = emit_one(&lock, &config, &logbook, event)?;
     file.save(&logbook)?;
     let commit = autocommit(
         ctx,
@@ -736,6 +837,7 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
         json!({
             "case": case_json(&logbook, &file),
             "changed": changed,
+            "event": event_json(&event),
             "areaCreated": area_created,
             "git": commit.json(),
             "warnings": warnings,
@@ -771,6 +873,7 @@ fn record_snapshot(ctx: &Context, args: SnapshotArgs) -> Result<Output> {
     let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut file = cases::find(&logbook, &args.id)?;
     open_only(&file, "snapshot")?;
     let n = args.number;
@@ -831,6 +934,7 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
     let lock = ctx.lock()?;
+    cases::checked_folders(&logbook)?;
     let mut old = cases::find(&logbook, &args.id)?;
     if old.case.status != CaseStatus::Completed {
         return Err(Error::user(format!(
@@ -880,6 +984,8 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
             note: Some(format!("reopens {}", args.id)),
             start: true,
             point: holder.is_none(),
+            done: None,
+            source: None,
         },
     )?;
     let id = created.file.case.id.clone();
@@ -927,6 +1033,61 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
             "git": commit.json(),
         }),
     ))
+}
+
+/// The most characters of a closing commit's text after the dash.
+const CLOSING_TAIL_MAX: usize = 100;
+
+/// The summary of a closing step's commit (WP-143): `<ID> completed —
+/// <title>: <line>`, `line` the first line of the case's *Result* (`plan
+/// done`) or the reason (`plan drop`), left out when there is none, a
+/// list marker before it dropped. The text after the dash is one line
+/// (control characters and line or paragraph separators as spaces,
+/// redacted, then invisible characters dropped,
+/// `Redactor::redact_dropping_invisible`, so none splits a token or hides
+/// one; control characters and line or paragraph separators become
+/// spaces), redacted and then clipped: the patterns see the whole text,
+/// so a cut cannot hide a secret from them.
+fn closing_summary(
+    id: &str,
+    to: CaseStatus,
+    title: &str,
+    line: Option<&str>,
+    redactor: &Redactor,
+) -> String {
+    let line = line
+        .map(|l| {
+            let l = l.trim();
+            l.strip_prefix(['-', '*', '+'])
+                .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+                .unwrap_or(l)
+                .trim()
+        })
+        .filter(|l| !l.is_empty());
+    let tail = match line {
+        Some(l) => format!("{}: {l}", title.trim()),
+        None => title.trim().to_string(),
+    };
+    let tail: String = tail
+        .chars()
+        .map(|c| {
+            // the bidi controls are invisible: dropped after the redaction
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let tail = clip(
+        redactor.redact_dropping_invisible(&tail).trim(),
+        CLOSING_TAIL_MAX,
+    );
+    if tail.is_empty() {
+        format!("{id} {to}")
+    } else {
+        format!("{id} {to} — {tail}")
+    }
 }
 
 /// The ledger kind of a step (`event.schema.json`).
@@ -982,8 +1143,13 @@ fn list(ctx: &Context, args: ListArgs) -> Result<Output> {
 /// `plan show`: the case file's path and text as quoted lines (`> `, as
 /// `hook session-start` prints logbook text), under a line that says what
 /// they are; `--json` gives them unquoted.
+/// The most of a case's *Intent* `plan show --json` gives in `intent.text`,
+/// in bytes (WP-102b: the desk shows it whole before an imported case's
+/// Start).
+pub const SHOW_INTENT_MAX: usize = 64 * 1024;
+
 fn show(ctx: &Context, id: &str) -> Result<Output> {
-    let (_, logbook) = ctx.open_logbook()?;
+    let (config, logbook) = ctx.open_logbook()?;
     let file = cases::find(&logbook, id)?;
     let mut human = format!(
         "Case {id}: its file's path and text.\n{}\n",
@@ -995,7 +1161,33 @@ fn show(ctx: &Context, id: &str) -> Result<Output> {
     let mut json = json!({ "case": case_json(&logbook, &file) });
     json["body"] = Value::String(file.doc.body.clone());
     json["activeCase"] = Value::Bool(cases::active_case(&logbook).as_deref() == Some(id));
+    json["intent"] = intent_json(&config, &file.doc.body);
     Ok(Output::ok(human, json))
+}
+
+/// `plan show --json` `intent` (WP-102b): the whole *Intent* section as
+/// display text (`index::build::marked_text`: control characters as
+/// spaces, every invisible character marked `‹U+XXXX›` and
+/// counted in `hidden`, redacted), at most [`SHOW_INTENT_MAX`] bytes cut at
+/// a character, with its line count before the cut. `null` while the
+/// config's redaction patterns do not compile (withheld, as the index
+/// withholds its texts).
+fn intent_json(config: &crate::config::Config, body: &str) -> Value {
+    let Ok(redactor) = Redactor::for_config(config) else {
+        return Value::Null;
+    };
+    let (text, hidden) = crate::index::build::marked_text(&redactor, cases::intent(body));
+    let lines = if text.is_empty() {
+        0
+    } else {
+        text.lines().count()
+    };
+    let truncated = text.len() > SHOW_INTENT_MAX;
+    let mut end = text.len().min(SHOW_INTENT_MAX);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    json!({ "text": &text[..end], "lines": lines, "truncated": truncated, "hidden": hidden })
 }
 
 /// A case in the shape of `case.schema.json` as the index has it: the
@@ -1025,5 +1217,98 @@ pub fn case_json(logbook: &Logbook, file: &CaseFile) -> Value {
     if let Some(a) = &c.area {
         v["area"] = json!(a);
     }
+    // the frontmatter's `source` while it has the schema's shape (ADR-0038 §3)
+    if let Some(s) = c
+        .source
+        .as_deref()
+        .filter(|s| crate::import::is_case_source(s))
+    {
+        v["source"] = json!(s);
+    }
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn summary(title: &str, line: Option<&str>) -> String {
+        closing_summary(
+            "C-2026-012",
+            CaseStatus::Completed,
+            title,
+            line,
+            &Redactor::builtin(),
+        )
+    }
+
+    #[test]
+    fn a_closing_summary_carries_the_title_and_the_result_line() {
+        assert_eq!(
+            summary(
+                "Install Zed",
+                Some("- `zed --version` prints 0.200 (measured)")
+            ),
+            "C-2026-012 completed — Install Zed: `zed --version` prints 0.200 (measured)"
+        );
+        assert_eq!(
+            summary("Install Zed", None),
+            "C-2026-012 completed — Install Zed"
+        );
+        assert_eq!(
+            summary("Install Zed", Some("  -  ")),
+            "C-2026-012 completed — Install Zed"
+        );
+        // one line, whatever the title holds
+        assert_eq!(
+            summary("a\tb\u{7}c", Some("x\ry")),
+            "C-2026-012 completed — a b c: x y"
+        );
+        assert_eq!(summary(" ", None), "C-2026-012 completed");
+        assert_eq!(
+            closing_summary(
+                "C-2026-012",
+                CaseStatus::Dropped,
+                "Zed",
+                Some("not needed"),
+                &Redactor::builtin()
+            ),
+            "C-2026-012 dropped — Zed: not needed"
+        );
+    }
+
+    #[test]
+    fn a_closing_summary_is_clipped_after_redaction() {
+        let long = "x".repeat(300);
+        let s = summary("T", Some(&long));
+        let tail = s.strip_prefix("C-2026-012 completed — ").unwrap();
+        assert_eq!(tail.chars().count(), CLOSING_TAIL_MAX);
+        assert!(tail.ends_with('…'));
+        // a zero-width space inside a token does not hide it, and no
+        // direction or line-breaking character reaches the subject
+        let s = summary(
+            "T\u{202E}x",
+            Some("token ghp_0123\u{200B}456789abcdefghijABCDEFGHIJ012345\u{2028}y\u{2029}z"),
+        );
+        assert!(!s.contains("ghp_0123"), "{s}");
+        assert!(
+            !s.contains(['\u{202E}', '\u{2028}', '\u{2029}', '\u{200B}']),
+            "{s}"
+        );
+        assert!(s.starts_with("C-2026-012 completed — Tx: token "), "{s}");
+        assert!(s.ends_with(" y z"), "{s}");
+        // WP-159 round 2, B1b: an invisible character before a secret is
+        // a boundary its rule reads; it is dropped after the redaction
+        let s = summary(
+            "T",
+            Some("x\u{200B}sk-ABCDEFGHIJKLMNOPQRSTUVWX and a\u{FE0F}b"),
+        );
+        assert_eq!(s, "C-2026-012 completed — T: x‹redacted› and ab");
+        // a secret that a clip would have cut is redacted first
+        let secret = "ghp_0123456789abcdefghijABCDEFGHIJ012345";
+        let title = format!("{}token {secret}", "y".repeat(80));
+        let s = summary(&title, None);
+        assert!(!s.contains("ghp_0123"), "{s}");
+        assert!(!s.contains(secret), "{s}");
+    }
 }

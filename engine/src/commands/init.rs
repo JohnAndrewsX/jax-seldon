@@ -1,10 +1,19 @@
-//! `seldon init`: the wizard (SPEC-ENGINE §9, ADR-0010).
+//! `seldon init`: the wizard (SPEC-ENGINE §9, ADR-0010, ADR-0033).
 //!
-//! Steps: path → language → Obsidian → collectors → watched paths →
-//! harnesses → theme hook → git → backfill. Each step is skipped when its
-//! flag is given; `--non-interactive` skips them all and takes flags or
-//! defaults. Defaults come from an existing `config.toml` where it has a
-//! value (a file without `language` leaves the language to the locale).
+//! Four ways to ask ([`InitMode`], WP-119): `--defaults` asks nothing (the
+//! panel's setup card runs it); plain `seldon init` asks only where the
+//! logbook goes; `--ask` is the full wizard — path → language → Obsidian →
+//! collectors → watched paths → harnesses → theme hook → git → backfill —
+//! each step skipped when its flag is given; `--non-interactive` asks
+//! nothing and takes flags, then the config, then the defaults (the
+//! scripting form). Every mode looks back [`LOOKBACK_DAYS`] days and marks
+//! that history "before Seldon" ([`setup::BASELINE_REASON`]) without a
+//! question, unless `--since`, `--baseline` or `--no-capture` says
+//! otherwise (ADR-0033 §3; `--ask` offers the date and asks about the
+//! baseline). `--defaults` and plain `init` also add Obsidian's settings
+//! when Obsidian is installed ([`obsidian_installed`]). Defaults come from an existing
+//! `config.toml` where it has a value (a file without `language` leaves the
+//! language to the locale).
 //!
 //! Then `config.toml` is saved (with the choices, `[git] autocommit =
 //! false` for no git) before anything is written into the logbook folder,
@@ -50,11 +59,52 @@ use crate::sys;
 /// Project folders checked for ADR-0010 option 3, in order.
 pub const PROJECT_FOLDERS: [&str; 5] = ["Work", "Projects", "dev", "src", "code"];
 
+/// How many days a new logbook looks back on its first capture
+/// (ADR-0033 §1).
+pub const LOOKBACK_DAYS: u32 = 90;
+
+/// How `init` asks (WP-119).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InitMode {
+    /// Plain `seldon init`: the logbook's location only; needs a terminal.
+    #[default]
+    Location,
+    /// `--defaults`: no question (the panel's setup card).
+    Defaults,
+    /// `--ask`: the full wizard; needs a terminal.
+    Ask,
+    /// `--non-interactive`: no question, flags and the config; the
+    /// look-back of ADR-0033 unless a flag says otherwise; no detection.
+    NonInteractive,
+}
+
+impl InitMode {
+    /// The name `--json` reports.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            InitMode::Location => "location",
+            InitMode::Defaults => "defaults",
+            InitMode::Ask => "ask",
+            InitMode::NonInteractive => "non-interactive",
+        }
+    }
+
+    /// Whether this run asks a question: `--ask` always, plain `init`
+    /// only while no `--path` or `--logbook` names the location.
+    pub fn asks_with(self, location_given: bool) -> bool {
+        match self {
+            InitMode::Ask => true,
+            InitMode::Location => !location_given,
+            InitMode::Defaults | InitMode::NonInteractive => false,
+        }
+    }
+}
+
 /// `seldon init` flags.
 #[derive(Debug, Clone, Default)]
 pub struct InitArgs {
     pub path: Option<PathBuf>,
-    pub non_interactive: bool,
+    pub mode: InitMode,
     pub language: Option<Language>,
     pub obsidian: bool,
     pub harnesses: Vec<String>,
@@ -82,6 +132,9 @@ struct Choices {
     git: bool,
     capture: bool,
     since: Option<DateTime<FixedOffset>>,
+    /// `Some(days)`: `since` is the look-back of ADR-0033, not a flag's or
+    /// the wizard's date (the History row says so).
+    lookback: Option<u32>,
     /// `None`: ask after the first capture, when it opened drift.
     baseline: Option<bool>,
     theme_hook: bool,
@@ -121,21 +174,36 @@ pub fn path_options(dirs: &crate::config::Dirs) -> Vec<PathOption> {
 pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     let config_file = ctx.config_file.clone();
     let existing = ctx.load_config()?;
-    let interactive = !args.non_interactive;
-    if interactive && !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
+    let location_given = args.path.is_some() || ctx.logbook_flag.is_some();
+    if args.mode.asks_with(location_given)
+        && !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal())
+    {
         return Err(Error::user(
-            "not a terminal; use `seldon init --non-interactive` with --path, --language, … for defaults",
+            "not a terminal; use `seldon init --defaults` to ask nothing, or `seldon init --non-interactive` with --path, --language, …",
         ));
     }
 
-    let mut choices = if interactive {
-        wizard(ctx, &args, existing.as_ref())?
-    } else {
-        defaults(ctx, &args, existing.as_ref())
+    let mut choices = match args.mode {
+        InitMode::Ask => wizard(ctx, &args, existing.as_ref())?,
+        InitMode::Location => location(ctx, &args, existing.as_ref())?,
+        InitMode::Defaults => no_questions(ctx, &args, existing.as_ref()),
+        InitMode::NonInteractive => {
+            let mut c = defaults(ctx, &args, existing.as_ref());
+            look_back(ctx, &mut c);
+            c
+        }
     };
     let root = choices.root.clone();
     let lock = lock::acquire(&ctx.dirs.lock_file())?;
     if Logbook::is_initialised(&root) {
+        let meta = root.join(crate::logbook::META_FILE);
+        if !meta.is_file() {
+            // a FIFO there: init would wait on it (WP-175)
+            return Err(Error::user(format!(
+                "{}: not a regular file; init does not write over it: remove it, or make it a regular file if this is a logbook",
+                meta.display()
+            )));
+        }
         return Err(Error::user(format!(
             "{} is already a logbook",
             root.display()
@@ -229,7 +297,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     // SELDON_LOGBOOK name
     let mut lb_ctx = ctx.clone();
     lb_ctx.logbook_flag = Some(root.clone());
-    let capture = first_capture(&lb_ctx, &mut choices, interactive);
+    let capture = first_capture(&lb_ctx, &mut choices, args.mode == InitMode::Ask);
     // the dossier once, after the first capture (WP-035); `capture` and
     // `status` never refresh it
     let dossier = first_dossier(&lb_ctx, &capture);
@@ -315,6 +383,10 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
                 summary.step(format!("seldon hook install {}", h.name));
             }
         }
+    } else {
+        // no harness asked for (the default on a fresh machine): say how
+        // to add one, without making it a step (WP-119 round 2)
+        summary.row("Agents", NO_AGENTS);
     }
 
     summary.row("History", capture.row.clone());
@@ -358,6 +430,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     Ok(Output::ok(
         human,
         json!({
+            "mode": args.mode.as_str(),
             "logbook": root,
             "config": config_file,
             "machineId": machine_id,
@@ -461,10 +534,17 @@ fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> Cap
     let mut json = out.json;
     json["ran"] = json!(true);
     json["since"] = json!(since);
+    json["lookbackDays"] = json!(choices.lookback);
     let mut steps = Vec::new();
-    let mut row = match choices.since {
-        Some(t) => format!("{written} event(s) since {}", shown_since(t)),
-        None => format!("from now on; the first capture recorded {written} event(s)"),
+    // ADR-0033 §4: one line for the look-back, which the baseline below
+    // marks "before Seldon"
+    let mut row = match (choices.lookback, choices.since) {
+        (Some(days), _) => format!(
+            "Looked back {days} days: {written} {} recorded as history before Seldon",
+            if written == 1 { "change" } else { "changes" }
+        ),
+        (None, Some(t)) => format!("{written} event(s) since {}", shown_since(t)),
+        (None, None) => format!("from now on; the first capture recorded {written} event(s)"),
     };
     // snapper has the Snapshots row of its own
     let degraded: Vec<&str> = json["collectors"]
@@ -494,9 +574,10 @@ fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> Cap
     if choices.baseline == Some(true) {
         match setup::baseline(ctx) {
             Ok(b) => {
-                if b.items > 0 {
+                // the look-back's line already says it
+                if b.items > 0 && choices.lookback.is_none() {
                     row.push_str(&format!(
-                        "; {} drift item(s) marked as the {BASELINE_REASON}",
+                        "; {} drift item(s) dismissed as \"{BASELINE_REASON}\"",
                         b.items
                     ));
                 }
@@ -641,9 +722,83 @@ fn defaults(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Choice
         git: args.git.unwrap_or(base.git.autocommit),
         capture: args.capture,
         since: args.since,
+        lookback: None,
         baseline: args.since.is_some().then_some(args.baseline),
         theme_hook: args.theme_hook,
     }
+}
+
+/// `--defaults` (and plain `init` after its one question): [`defaults`],
+/// plus Obsidian's settings when Obsidian is installed, and, unless a flag
+/// says otherwise, the look-back of ADR-0033: the first capture records
+/// the last [`LOOKBACK_DAYS`] days and the baseline marks what that opens
+/// "before Seldon", without a question. `--since` sets another start, its
+/// backfill marked the same way; `--no-capture` records nothing.
+fn no_questions(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Choices {
+    let mut c = defaults(ctx, args, existing);
+    c.obsidian = c.obsidian || obsidian_installed(&ctx.dirs);
+    look_back(ctx, &mut c);
+    if c.since.is_some() {
+        c.baseline = Some(true);
+    }
+    c
+}
+
+/// ADR-0033 §1, §2 for every mode that asks no date: without `--since` and
+/// with a first capture, the capture records the last [`LOOKBACK_DAYS`]
+/// days and the baseline marks what that opens "before Seldon". A
+/// `--since` keeps its own choice (`--baseline` or not).
+fn look_back(ctx: &Context, c: &mut Choices) {
+    if c.capture && c.since.is_none() {
+        c.since = Some(lookback_start(ctx.now, LOOKBACK_DAYS));
+        c.lookback = Some(LOOKBACK_DAYS);
+        c.baseline = Some(true);
+    }
+}
+
+/// Plain `seldon init`: [`no_questions`], and the one question where the
+/// logbook goes (unless `--path` or `--logbook` names it).
+fn location(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<Choices> {
+    let mut c = no_questions(ctx, args, existing);
+    if args.path.is_none() && ctx.logbook_flag.is_none() {
+        c.root = ask_path(ctx, &c.root)?;
+    }
+    Ok(c)
+}
+
+/// Local midnight `days` days before `now`'s day, in `now`'s offset: where
+/// the look-back starts.
+pub fn lookback_start(now: DateTime<FixedOffset>, days: u32) -> DateTime<FixedOffset> {
+    let day = now.date_naive() - chrono::Days::new(u64::from(days));
+    day.and_time(chrono::NaiveTime::MIN)
+        .and_local_timezone(*now.offset())
+        .single()
+        .unwrap_or(now)
+}
+
+/// Desktop entries that say Obsidian is installed: the package's and the
+/// Flatpak's.
+pub const OBSIDIAN_DESKTOP_FILES: [&str; 2] = ["obsidian.desktop", "md.obsidian.Obsidian.desktop"];
+
+/// Whether Obsidian is installed: one of [`OBSIDIAN_DESKTOP_FILES`] is in
+/// an application folder of the XDG data dirs (`$XDG_DATA_HOME`, default
+/// `~/.local/share`, then `$XDG_DATA_DIRS`, default `/usr/local/share` and
+/// `/usr/share`; a Flatpak's exports are on that list where Flatpak is set
+/// up). Only whether the file is there; nothing is read.
+pub fn obsidian_installed(dirs: &crate::config::Dirs) -> bool {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    let data_home = var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| dirs.home.join(".local/share"));
+    let data_dirs = var("XDG_DATA_DIRS").unwrap_or_else(|| "/usr/local/share:/usr/share".into());
+    std::iter::once(data_home)
+        .chain(std::env::split_paths(&data_dirs).filter(|p| p.is_absolute()))
+        .any(|dir| {
+            OBSIDIAN_DESKTOP_FILES
+                .iter()
+                .any(|f| dir.join("applications").join(f).is_file())
+        })
 }
 
 /// The wizard's "more paths" answer as `watchPaths` entries: comma
@@ -663,44 +818,53 @@ fn locale_language() -> Language {
     Language::from_locale(locale.as_deref())
 }
 
+fn prompt_err(e: dialoguer::Error) -> Error {
+    Error::Engine(anyhow::Error::new(e).context("wizard input failed"))
+}
+
+/// The location question (ADR-0010's options; `current` first when it is
+/// none of them).
+fn ask_path(ctx: &Context, current: &Path) -> Result<PathBuf> {
+    let theme = ColorfulTheme::default();
+    let mut options = path_options(&ctx.dirs);
+    if !options.iter().any(|o| o.path == current) {
+        options.insert(
+            0,
+            PathOption {
+                label: "current setting".into(),
+                path: current.to_path_buf(),
+            },
+        );
+    }
+    let mut items: Vec<String> = options
+        .iter()
+        .map(|o| format!("{}  ({})", ctx.dirs.display(&o.path), o.label))
+        .collect();
+    items.push("custom path…".into());
+    let pick = Select::with_theme(&theme)
+        .with_prompt(prompts::PATH)
+        .items(&items)
+        .default(0)
+        .interact()
+        .map_err(prompt_err)?;
+    Ok(match options.get(pick) {
+        Some(o) => o.path.clone(),
+        None => {
+            let typed: String = Input::with_theme(&theme)
+                .with_prompt(prompts::CUSTOM_PATH)
+                .interact_text()
+                .map_err(prompt_err)?;
+            ctx.dirs.expand(typed.trim())
+        }
+    })
+}
+
 fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<Choices> {
     let mut c = defaults(ctx, args, existing);
     let theme = ColorfulTheme::default();
-    let prompt_err =
-        |e: dialoguer::Error| Error::Engine(anyhow::Error::new(e).context("wizard input failed"));
 
     if args.path.is_none() && ctx.logbook_flag.is_none() {
-        let mut options = path_options(&ctx.dirs);
-        if !options.iter().any(|o| o.path == c.root) {
-            options.insert(
-                0,
-                PathOption {
-                    label: "current setting".into(),
-                    path: c.root.clone(),
-                },
-            );
-        }
-        let mut items: Vec<String> = options
-            .iter()
-            .map(|o| format!("{}  ({})", ctx.dirs.display(&o.path), o.label))
-            .collect();
-        items.push("custom path…".into());
-        let pick = Select::with_theme(&theme)
-            .with_prompt(prompts::PATH)
-            .items(&items)
-            .default(0)
-            .interact()
-            .map_err(prompt_err)?;
-        c.root = match options.get(pick) {
-            Some(o) => o.path.clone(),
-            None => {
-                let typed: String = Input::with_theme(&theme)
-                    .with_prompt(prompts::CUSTOM_PATH)
-                    .interact_text()
-                    .map_err(prompt_err)?;
-                ctx.dirs.expand(typed.trim())
-            }
-        };
+        c.root = ask_path(ctx, &c.root)?;
     }
 
     if args.language.is_none() {
@@ -724,7 +888,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
     if !args.obsidian {
         c.obsidian = Confirm::with_theme(&theme)
             .with_prompt(prompts::OBSIDIAN)
-            .default(false)
+            .default(obsidian_installed(&ctx.dirs))
             .interact()
             .map_err(prompt_err)?;
     }
@@ -797,20 +961,23 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
 
     if c.capture && args.since.is_none() {
         eprintln!("{BACKFILL_NOTE}");
+        // Enter takes the look-back of ADR-0033
+        let start = lookback_start(ctx.now, LOOKBACK_DAYS);
         let typed: String = Input::with_theme(&theme)
             .with_prompt(prompts::BACKFILL)
-            .allow_empty(true)
+            .default(start.format("%Y-%m-%d").to_string())
             .validate_with(|s: &String| -> std::result::Result<(), String> {
-                if s.trim().is_empty() {
+                if no_backfill(s) {
                     return Ok(());
                 }
                 setup::parse_since(s).map(|_| ()).map_err(|e| e.to_string())
             })
             .interact_text()
             .map_err(prompt_err)?;
-        c.since = match typed.trim() {
-            "" => None,
-            s => Some(setup::parse_since(s)?),
+        c.since = if no_backfill(&typed) {
+            None
+        } else {
+            Some(setup::parse_since(&typed)?)
         };
     }
     // asked after the capture, with the number of items it opened
@@ -820,6 +987,12 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
         (Some(_), false) => None,
     };
     Ok(c)
+}
+
+/// The wizard's answer for "record from now on only".
+fn no_backfill(typed: &str) -> bool {
+    let t = typed.trim();
+    t.is_empty() || t.eq_ignore_ascii_case("none")
 }
 
 /// The wizard's questions (WP-118). Each is drawn on one line of a
@@ -840,8 +1013,8 @@ pub mod prompts {
     pub const HARNESSES: &str = "Agent setup (space toggles, enter confirms)";
     pub const THEME_HOOK: &str = "Record theme switches instantly?";
     pub const GIT: &str = "Keep the logbook in git, with a first commit?";
-    pub const BACKFILL: &str = "Backfill since (YYYY-MM-DD; empty for none)";
-    pub const BASELINE: &str = "Mark them as the pre-Seldon baseline?";
+    pub const BACKFILL: &str = "Backfill since (YYYY-MM-DD, or none)";
+    pub const BASELINE: &str = "Dismiss them as \"before Seldon\"?";
 }
 
 /// The terminal width every wizard line fits in ([`prompts`]).
@@ -882,12 +1055,13 @@ records it the moment it happens.";
 
 /// What the wizard says before it asks for a backfill. Under ADR-0028
 /// most of an older history is routine; what is left opens as drift and
-/// can be marked as the baseline right after the capture.
+/// can be dismissed "before Seldon" right after the capture (ADR-0033).
 pub const BACKFILL_NOTE: &str = "\
-A new logbook records changes from now on. A backfill also records
-older changes (the package log, snapshots). Most of them are routine
-history; the rest you can mark as the pre-Seldon baseline in one step
-after the capture. The events stay in the ledger either way.";
+A new logbook looks back 90 days: the package log and snapshots
+since the date below. Most of it is routine history; the rest you
+can dismiss as \"before Seldon\" in one step after the capture.
+Enter takes the date; none records from now on. The events stay
+in the ledger.";
 
 /// The wizard's agent items, in [`HARNESSES`] order, as (name, label).
 /// The Omarchy-Agent kit is a private template, not Omarchy's agent: it
@@ -1002,6 +1176,9 @@ impl Summary {
         out.join("\n")
     }
 }
+
+/// The Agents row when no harness is set up.
+pub const NO_AGENTS: &str = "none; add one with seldon hook install claude-code (or skills)";
 
 /// The last line of a clean `init`.
 pub const NOTHING_TO_DO: &str = "Seldon is recording. Nothing else to do.";
@@ -1189,24 +1366,69 @@ mod tests {
         );
         assert_eq!(
             BACKFILL_NOTE,
-            "A new logbook records changes from now on. A backfill also records\n\
-             older changes (the package log, snapshots). Most of them are routine\n\
-             history; the rest you can mark as the pre-Seldon baseline in one step\n\
-             after the capture. The events stay in the ledger either way."
+            "A new logbook looks back 90 days: the package log and snapshots\n\
+             since the date below. Most of it is routine history; the rest you\n\
+             can dismiss as \"before Seldon\" in one step after the capture.\n\
+             Enter takes the date; none records from now on. The events stay\n\
+             in the ledger."
         );
+        assert!(BACKFILL_NOTE.contains(&format!("looks back {LOOKBACK_DAYS} days")));
         assert!(!BACKFILL_NOTE.contains("red") && !BACKFILL_NOTE.contains("crises"));
         assert_eq!(
             prompts::GIT,
             "Keep the logbook in git, with a first commit?"
         );
-        assert_eq!(prompts::BASELINE, "Mark them as the pre-Seldon baseline?");
+        assert_eq!(prompts::BACKFILL, "Backfill since (YYYY-MM-DD, or none)");
+        assert_eq!(prompts::BASELINE, "Dismiss them as \"before Seldon\"?");
         assert_eq!(
             baseline_note(40, 0),
             "The backfill opened 40 drift item(s):\n\
              changes from before Seldon. The baseline dismisses them with the\n\
-             reason \"pre-Seldon baseline\"."
+             reason \"before Seldon\"."
         );
         assert!(baseline_note(5, 2).starts_with("The backfill opened 5 drift item(s) (2 crisis):"));
+    }
+
+    /// WP-119: the look-back starts at local midnight 90 days before the
+    /// day, in the clock's offset; the wizard's "none" (or nothing) records
+    /// from now on.
+    #[test]
+    fn the_look_back_starts_90_days_back_at_midnight() {
+        let now = DateTime::parse_from_rfc3339("2026-10-15T12:34:56+02:00").unwrap();
+        assert_eq!(
+            lookback_start(now, LOOKBACK_DAYS).to_rfc3339(),
+            "2026-07-17T00:00:00+02:00"
+        );
+        // across a year and a leap day
+        let now = DateTime::parse_from_rfc3339("2028-03-01T00:00:01-05:00").unwrap();
+        assert_eq!(
+            lookback_start(now, 90).to_rfc3339(),
+            "2027-12-02T00:00:00-05:00"
+        );
+        for typed in ["", "  ", "none", "None", " NONE "] {
+            assert!(no_backfill(typed), "{typed:?}");
+        }
+        assert!(!no_backfill("2026-07-17"));
+    }
+
+    /// WP-119: which modes ask, and what `--json` calls them.
+    #[test]
+    fn only_plain_init_and_ask_need_a_terminal() {
+        // plain init with its location named asks nothing
+        assert!(InitMode::Location.asks_with(false) && !InitMode::Location.asks_with(true));
+        assert!(InitMode::Ask.asks_with(true) && InitMode::Ask.asks_with(false));
+        assert!(!InitMode::Defaults.asks_with(false) && !InitMode::NonInteractive.asks_with(false));
+        assert_eq!(InitMode::default(), InitMode::Location);
+        assert_eq!(
+            [
+                InitMode::Location,
+                InitMode::Defaults,
+                InitMode::Ask,
+                InitMode::NonInteractive
+            ]
+            .map(InitMode::as_str),
+            ["location", "defaults", "ask", "non-interactive"]
+        );
     }
 
     /// WP-118: the kit is a private template; without its directory the

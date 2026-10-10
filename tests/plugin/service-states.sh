@@ -144,7 +144,9 @@ run not-initialised 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/not-
 expect not-initialised .status notInitialised
 expect not-initialised .banner "Create your logbook"
 expect not-initialised .bannerTone accent
-expect not-initialised '.bannerActions | join(",")' "terminal:Create,copy:Copy,recheck:Check again"
+expect not-initialised '.bannerActions | join(",")' "terminal:Create logbook,copy:Copy,recheck:Check again"
+# the setup card stands for it (WP-119): the logbook step is the current one
+expect not-initialised '[.setup.headline, .setup.current, .setup.ready] | map(tostring) | join("|")' "Set up Seldon · 2 of 3 steps to go|logbook|true"
 expect not-initialised .pill ""
 
 # 4. No index file.
@@ -174,13 +176,71 @@ expect variant-stale .banner "Index is stale"
 expect variant-stale .pill "2 · 2"
 clean_log variant-stale
 
-# 7. Contract v2.
-run contract-mismatch 2500 PATH="$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v2.json"
+# 7. Contract mismatch (CONTRACT.md rule 3): an index of a newer contract
+# (update the plugin), one of an older (update the engine).
+run contract-mismatch 2500 PATH="$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v3.json"
 expect contract-mismatch .status contractMismatch
-expect contract-mismatch .indexContractVersion 2
+expect contract-mismatch .indexContractVersion 3
+expect contract-mismatch .pluginContractVersion 2
 expect contract-mismatch .banner "Index format mismatch"
+expect contract-mismatch .bannerDetail "The index uses contract v3 and this plugin reads v2: update the plugin."
 expect contract-mismatch .pill ""
 clean_log contract-mismatch
+jq '.contractVersion = 1' "$fx/index.sample.json" >"$work/index.contract-v1.json"
+run contract-older 2500 PATH="$fake_path" SELDON_INDEX="$work/index.contract-v1.json"
+expect contract-older .status contractMismatch
+expect contract-older .indexContractVersion 1
+expect contract-older .bannerDetail "The index uses contract v1 and this plugin reads v2: update the engine."
+clean_log contract-older
+
+# 7a. ADR-0051: a newer index that says a contract-2 plugin can read it
+# (fixtures/forward): read, the pill keeps its counts and the crisis colour,
+# the quiet notice asks for a plugin update; with contractReadableFrom 3
+# the mismatch banner as above.
+run contract-newer 2500 PATH="$fake_path" SELDON_INDEX="$fx/forward/index.contract-v3-readable.json"
+expect contract-newer .status ok
+expect contract-newer .indexContractVersion 3
+expect contract-newer .indexReadableFrom 2
+expect contract-newer .banner ""
+expect contract-newer .pill "2 · 2"
+expect contract-newer .tone urgent
+expect contract-newer .contractNotice "The engine writes index v3; this plugin reads v2 — update the plugin."
+expect contract-newer '.contractActions | join(",")' "terminal:Update,copy:Copy"
+clean_log contract-newer
+jq '.contractReadableFrom = 3' "$fx/forward/index.contract-v3-readable.json" >"$work/index.contract-v3-unreadable.json"
+run contract-unreadable 2500 PATH="$fake_path" SELDON_INDEX="$work/index.contract-v3-unreadable.json"
+expect contract-unreadable .status contractMismatch
+expect contract-unreadable .bannerDetail "The index uses contract v3 and this plugin reads v2: update the plugin."
+expect contract-unreadable .contractNotice ""
+expect contract-unreadable .pill ""
+clean_log contract-unreadable
+
+# 7b. WP-120 (ADR-0035): a 0.1.x plugin against a contract-2 index shows the
+# mismatch banner with both numbers. The plugin of the v0.1.3 tag; without
+# the tag (a shallow clone) this plugin with its contract set back to 1.
+old_plugin="$work/plugin-0.1.x"
+mkdir -p "$old_plugin"
+if git -C "$root" rev-parse -q --verify "refs/tags/v0.1.3" >/dev/null; then
+  git -C "$root" archive v0.1.3 plugin | tar -x -C "$old_plugin" --strip-components=1
+  old_label="v0.1.3"
+  # the 0.1.3 plugin's own wording
+  old_detail="The index uses contract v2, this plugin reads v1. Update the plugin."
+else
+  cp -r "$plugin/." "$old_plugin/"
+  sed -i 's/^var CONTRACT_VERSION = 2$/var CONTRACT_VERSION = 1/' "$old_plugin/Model.js"
+  old_label="this plugin at contract 1 (no v0.1.3 tag here)"
+  # this plugin's wording (WP-117), with its contract set back to 1
+  old_detail="The index uses contract v2 and this plugin reads v1: update the plugin."
+fi
+grep -q '^var CONTRACT_VERSION = 1$' "$old_plugin/Model.js" || { echo "service-states: $old_label does not read contract 1" >&2; exit 1; }
+echo "     0.1.x plugin: $old_label"
+run old-plugin 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" HARNESS_PLUGIN_DIR="$old_plugin"
+expect old-plugin .status contractMismatch
+expect old-plugin .indexContractVersion 2
+expect old-plugin .pluginContractVersion 1
+expect old-plugin .banner "Index format mismatch"
+expect old-plugin .bannerDetail "$old_detail"
+expect old-plugin .pill ""
 
 # 8. A relative SELDON_INDEX resolves against the shell's working directory.
 (cd "$root" && run relative 2500 PATH="$fake_path" SELDON_INDEX="fixtures/index.sample.json")
@@ -289,7 +349,7 @@ run fix-engine 3000 PATH="$work/bin-tools:$base_path" SELDON_INDEX="$fx/index.sa
 install_engine="curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash"
 record_check fix-engine "$(printf '%s\n' wl-copy -- "$install_engine" -- \
   omarchy-launch-floating-terminal-with-presentation "$(model_const INSTALL_ENGINE_SCRIPT)" --)"
-run fix-contract 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v2.json" \
+run fix-contract 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v3.json" \
   HARNESS_FIX=copy,terminal HARNESS_RECORD="$work/fix-contract.record"
 record_check fix-contract "$(printf '%s\n' wl-copy -- "omarchy plugin update jax.seldon" -- \
   omarchy-launch-floating-terminal-with-presentation "$(model_const UPDATE_PLUGIN_SCRIPT)" --)"
@@ -466,14 +526,15 @@ expect xdg-relative .indexPath "$work/home-xdg-rel/.local/state/seldon/index.jso
 #     text, quotes, a newline. Capture runs before status; a second "Capture
 #     now" while one is queued is dropped. Open hands the engine's path to
 #     the editor launcher (a recorder here) and the result line reads the
-#     engine's `open --json` output.
+#     engine's `open --json` output. One open at a time (WP-156): each waits
+#     for the one before.
 install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-tools/omarchy-launch-editor"
 mkdir -p "$work/home-actions"
 note2='a "b" c'
 note3=$'line one\nline two'
 actions=$(jq -cn --arg n2 "$note2" --arg n3 "$note3" '[
   ["log", "--help", ""], ["log", $n2, "C-2026-004"], ["log", $n3, ""],
-  ["open", "journal"], ["open", "ledger"], ["open", "status"], ["open", "C-2026-004"],
+  ["open", "journal"], ["wait"], ["open", "ledger"], ["wait"], ["open", "status"], ["wait"], ["open", "C-2026-004"],
   ["capture"], ["capture"]
 ]')
 run actions 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-actions" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
@@ -737,7 +798,7 @@ argv_check drift-dev "$(q --version --json)"
 mkdir -p "$work/home-decide"
 dtitle='Zed "second" editor'
 actions=$(jq -cn --arg t "$dtitle" '[["decide", "--help"], ["wait"], ["decide", $t], ["wait"],
-  ["open", "ADR-0004"], ["open", "logbook"]]')
+  ["open", "ADR-0004"], ["wait"], ["open", "logbook"]]')
 run decide 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/decide.record"
 argv_check decide "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
@@ -939,8 +1000,8 @@ fi
 clean_log capture-gives-up "jax.seldon: seldon capture exit 4: another seldon process holds the lock "
 
 # 34. A one-at-a-time guard that refuses tells the caller (WP-068): a
-#     second plan call, a second drift call and a second decide while the
-#     first is pending get no engine call, a `false` and Model.BUSY_TEXT
+#     second plan call, a second drift call, a second decide and a second
+#     accept (WP-135) while the first is pending get no engine call, a `false` and Model.BUSY_TEXT
 #     in busyRefusal; the pending result lines stay pending until their
 #     engine answers.
 busy_text="Another action is running — try again in a moment"
@@ -948,32 +1009,35 @@ mkdir -p "$work/home-busy"
 actions=$(jq -cn --arg u "$UNIT" --arg t "$THEME" '[
   ["plan", "start", "C-2026-005"], ["plan", "new", {title: "Second case", zone: "yellow", risk: "R1"}], ["snapshot"], ["wait"],
   ["drift", "dismiss", {eventId: $u, text: "x"}], ["drift", "link", {eventId: $t, caseId: "C-2026-005"}], ["snapshot"], ["wait"],
-  ["decide", "first"], ["decide", "second"], ["snapshot"]]')
+  ["decide", "first"], ["decide", "second"], ["snapshot"], ["wait"],
+  ["accept", "ADR-0004"], ["accept", "ADR-0004"], ["snapshot"]]')
 run busy 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-busy" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 argv_check busy "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q plan start C-2026-005 --json)" "$(q drift dismiss $UNIT --json -- x)" "$(q decide --no-edit --json -- first)" \
-  "$(q open ADR-0005 --editor --json)")"
+  "$(q open ADR-0005 --editor --json)" "$(q decide accept ADR-0004 --json)")"
 refusals=$(sed 's/\x1b\[[0-9;]*m//g' "$work/busy.log" | grep -a "HARNESS snapshot " | sed 's/.*HARNESS snapshot //' \
   | jq -r '[.busyRefusal.family, .busyRefusal.action, .busyRefusal.caseId, .busyRefusal.eventId, .busyRefusal.text,
-      ((.planResult // {}).pending), ((.driftResult // {}).pending), ((.decideResult // {}).pending)] | map(tostring) | join(" | ")' 2>/dev/null || true)
-want_refusals=$(printf '%s\n' "plan | new |  |  | $busy_text | true | null | null" \
-  "drift | link |  | $THEME | $busy_text | false | true | null" \
-  "decide | decide |  |  | $busy_text | false | false | true")
+      ((.planResult // {}).pending), ((.driftResult // {}).pending), ((.decideResult // {}).pending), ((.acceptResult // {}).pending)] | map(tostring) | join(" | ")' 2>/dev/null || true)
+want_refusals=$(printf '%s\n' "plan | new |  |  | $busy_text | true | null | null | null" \
+  "drift | link |  | $THEME | $busy_text | false | true | null | null" \
+  "decide | decide |  |  | $busy_text | false | false | true | null" \
+  "accept | accept |  |  | $busy_text | false | false | false | true")
 if [[ $refusals == "$want_refusals" ]]; then
   pass=$((pass + 1)); echo "ok   busy: each refusal names its call and the busy text; the pending lines stay"
 else
   fail=$((fail + 1)); echo "FAIL busy: refusals were:"; echo "$refusals" | sed 's/^/     /'
 fi
-if [[ $(grep -a 'HARNESS action ' "$work/busy.log" | sed 's/.* //' | tr '\n' ' ') == "true false true false true false " ]]; then
+if [[ $(grep -a 'HARNESS action ' "$work/busy.log" | sed 's/.* //' | tr '\n' ' ') == "true false true false true false true false " ]]; then
   pass=$((pass + 1)); echo "ok   busy: the second call of each family is refused"
 else
   fail=$((fail + 1)); echo "FAIL busy: $(grep -a 'HARNESS action' "$work/busy.log")"
 fi
 
 # 35. The sheets (WP-068), in a headless window against the installed
-#     shell's Commons/ and Ui/ (copied, as panel-view.sh does) and the fake
-#     engine. A small harness written here drives NewCaseSheet, DriftSheet
-#     and NewDecisionSheet through their own functions and prints each step.
+#     shell's Commons/ and Ui/ (copied, as desk-view.sh does) and the fake
+#     engine. A small harness written here drives NewCaseSheet, DriftForm
+#     and NewDecisionForm (components/desk/; the 0.1 NewDecisionSheet)
+#     through their own functions and prints each step.
 #       busy    a pending `plan start`, then Create in the new-case sheet; a
 #               pending `drift dismiss` on another event, then the drift
 #               sheet's action; a pending `decide` another panel sent, then
@@ -991,7 +1055,6 @@ if [[ -d $shell_dir/Commons && -d $shell_dir/Ui ]]; then
   mkdir -p "$sheets/Commons" "$sheets/Ui"
   cp "$shell_dir"/Commons/* "$sheets/Commons/"
   cp "$shell_dir"/Ui/* "$sheets/Ui/"
-  cp "$root/tests/plugin/harness/KeyboardPanel.qml" "$sheets/Ui/KeyboardPanel.qml"
   # The shell's Style.qml asks Hyprland and fontconfig; outside Hyprland it
   # keeps its defaults when they fail.
   printf '#!/bin/sh\nexit 1\n' >"$work/bin-base/hyprctl"
@@ -1005,8 +1068,8 @@ import QtQuick.Window
 import Quickshell
 
 // Sheet harness (tests/plugin/service-states.sh, scenario 35). Loads
-// Service.qml as the shell does, NewCaseSheet, DriftSheet and
-// NewDecisionSheet in an
+// Service.qml as the shell does, NewCaseSheet, DriftForm and
+// NewDecisionForm in an
 // offscreen window, then runs HARNESS_SHEETS ("busy" or "rearm") step by
 // step: each step waits until the service is idle (and, after an index
 // rewrite, until the index was read again), acts, and prints
@@ -1155,9 +1218,9 @@ ShellRoot {
     }
     root.service = component.createObject(null)
     root.service.parsedChanged.connect(function() { root.reloads++ })
-    root.newCase = root.load("components/NewCaseSheet.qml", column, { service: root.service, width: 440 })
-    root.drift = root.load("components/DriftSheet.qml", column, { service: root.service, width: 440 })
-    root.decision = root.load("components/NewDecisionSheet.qml", column, { service: root.service, width: 440 })
+    root.newCase = root.load("components/desk/NewCaseSheet.qml", column, { service: root.service, width: 440 })
+    root.drift = root.load("components/desk/DriftForm.qml", column, { service: root.service, width: 440 })
+    root.decision = root.load("components/desk/NewDecisionForm.qml", column, { service: root.service, width: 440 })
     if (root.drift) root.drift.indexData = Qt.binding(function() { return root.service.index })
   }
 

@@ -76,13 +76,12 @@ fn case(env: &Env, lb: &Path, id: &str) -> Value {
     run(env, lb, &["plan", "show", id], 0)["case"].clone()
 }
 
-/// A list item without the fields the command adds to the index's
-/// (`class`, `rule`).
+/// A list item without the field the command adds to the index's
+/// (`class`; `rule` is the index's own since ADR-0038 §1).
 fn as_index_item(item: &Value) -> Value {
     let mut item = item.clone();
     let map = item.as_object_mut().unwrap();
     map.remove("class");
-    map.remove("rule");
     item
 }
 
@@ -108,7 +107,7 @@ fn lists_the_six_fixture_items() {
             v["crisis"].clone(),
             v["routine"].clone()
         ),
-        (json!(6), json!(2), json!(6))
+        (json!(6), json!(2), json!(8))
     );
     let class = |i: usize| (items[i]["class"].clone(), items[i]["rule"].clone());
     assert_eq!(
@@ -152,9 +151,11 @@ fn lists_the_six_fixture_items() {
         ("io.github.example.weather-plus", "plugin-toggle"),
         ("kanagawa", "theme"),
         ("catppuccin", "theme"),
+        ("gtk4", "sysupgrade"),
+        ("pulseaudio", "sysupgrade"),
     ];
     assert_eq!(routine, want.map(|(s, r)| (s.to_string(), r.to_string())));
-    assert_eq!(all["drift"].as_array().unwrap().len(), 12);
+    assert_eq!(all["drift"].as_array().unwrap().len(), 14);
 
     // human output: one line per item, then the totals
     let out = env.at(GENERATED_AT, &["--logbook", lb.to_str().unwrap(), "drift"]);
@@ -176,7 +177,7 @@ fn lists_the_six_fixture_items() {
         "{text}"
     );
     assert!(
-        text.ends_with("6 open drift item(s), 2 crisis; 6 routine (history, not drift)\n"),
+        text.ends_with("6 open drift item(s), 2 crisis; 8 routine (history, not drift)\n"),
         "{text}"
     );
     assert!(
@@ -561,7 +562,7 @@ fn routine_events_link_but_never_explain_or_dismiss() {
     // open drift is untouched; the group is linked, no longer linkable
     let v = drift(&env, &lb);
     assert_eq!(v["openDrift"], 6);
-    assert_eq!(v["routine"], 5);
+    assert_eq!(v["routine"], 7);
     let again = run(&env, &lb, &["drift", "link", FIREFOX, "C-2026-004"], 0);
     assert_eq!(again["resolved"], 0);
     assert_eq!(again["already"]["case"], "C-2026-004");
@@ -967,6 +968,208 @@ fn a_caseless_install_is_one_group_and_links_as_one() {
         2
     );
     assert_eq!(drift(&env, &lb)["openDrift"], 0);
+}
+
+/// WP-141: the files pacman left (`.pacnew`, `.pacsave`) are pacman notes,
+/// each its own drift item outside its transaction's group: attention, a
+/// crisis beside a boot file, routine never — also in a plain full
+/// upgrade, whose packages stay routine history. An agent's transaction
+/// passes its case on to the file it left. Resolving a package group
+/// leaves the file open. Capturing again, also after a rotation that
+/// hands the whole log over once more, writes nothing.
+#[test]
+fn files_pacman_left_are_their_own_items() {
+    let env = Env::new(Snapper::Missing);
+    let t0 = "2026-10-01T10:00:00+02:00";
+    let lb = env.tmp.path().join("logbook");
+    let at = |now: &str, args: &[&str]| {
+        let out = env.at(now, args);
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+        out
+    };
+    at(
+        t0,
+        &[
+            "init",
+            "--non-interactive",
+            "--no-capture",
+            "--no-git",
+            "--path",
+            lb.to_str().unwrap(),
+        ],
+    );
+    at(t0, &["plan", "new", "--zone", "red", "--", "Install zed"]);
+    at(t0, &["plan", "start", "C-2026-001"]);
+    at(
+        "2026-10-01T10:00:30+02:00",
+        &[
+            "event",
+            "agent",
+            "command",
+            "--subject",
+            "yay",
+            "--actor",
+            "agent:claude-code",
+            "--case",
+            "C-2026-001",
+            "--meta",
+            "command=yay -S zed",
+        ],
+    );
+    let log = env.tmp.path().join("pacman.log");
+    let text = "[2026-10-01T10:01:00+0200] [PACMAN] Running 'pacman -S --noconfirm zed'\n\
+         [2026-10-01T10:01:01+0200] [ALPM] transaction started\n\
+         [2026-10-01T10:01:02+0200] [ALPM] installed alsa-lib (1.2.14-1)\n\
+         [2026-10-01T10:01:03+0200] [ALPM] warning: /etc/zed/zed.conf installed as /etc/zed/zed.conf.pacnew\n\
+         [2026-10-01T10:01:03+0200] [ALPM] installed zed (0.205.4-1)\n\
+         [2026-10-01T10:01:03+0200] [ALPM] transaction completed\n\
+         [2026-10-01T11:00:00+0200] [PACMAN] Running 'pacman -Syu'\n\
+         [2026-10-01T11:00:01+0200] [ALPM] transaction started\n\
+         [2026-10-01T11:00:02+0200] [ALPM] warning: /etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew\n\
+         [2026-10-01T11:00:02+0200] [ALPM] upgraded mkinitcpio (40-1 -> 41-1)\n\
+         [2026-10-01T11:00:03+0200] [ALPM] upgraded firefox (143.0.1-1 -> 143.0.2-1)\n\
+         [2026-10-01T11:00:03+0200] [ALPM] transaction completed\n\
+         [2026-10-01T12:00:00+0200] [PACMAN] Running 'pacman -Rns foo'\n\
+         [2026-10-01T12:00:01+0200] [ALPM] transaction started\n\
+         [2026-10-01T12:00:02+0200] [ALPM] warning: /etc/foo.conf saved as /etc/foo.conf.pacsave\n\
+         [2026-10-01T12:00:02+0200] [ALPM] removed foo (1-1)\n\
+         [2026-10-01T12:00:02+0200] [ALPM] removed libfoo (1-1)\n\
+         [2026-10-01T12:00:02+0200] [ALPM] transaction completed\n";
+    std::fs::write(&log, text).unwrap();
+    let capture = || {
+        let out = env
+            .command(&[
+                "capture", "--source", "pacman", "--since", T_SINCE, "--json",
+            ])
+            .env("SELDON_PACMAN_LOG", &log)
+            .env("SELDON_PACMAN_DB_LOCK", env.tmp.path().join("no-db.lck"))
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        json(&out)
+    };
+    assert_eq!(capture()["written"], 9);
+
+    let lines = common::ledger(&lb);
+    let notes: Vec<&Value> = lines
+        .iter()
+        .filter(|l| l["source"] == "pacman" && l["kind"] == "note")
+        .collect();
+    let got: Vec<(&str, &str, &str, &Value, &Value)> = notes
+        .iter()
+        .map(|l| {
+            (
+                l["subject"].as_str().unwrap(),
+                l["actor"].as_str().unwrap(),
+                l["case"].as_str().unwrap_or("-"),
+                &l["meta"]["transaction"],
+                &l["txId"],
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (
+                "/etc/zed/zed.conf.pacnew",
+                "agent:claude-code",
+                "C-2026-001",
+                &json!("tx-20261001T100101"),
+                &Value::Null
+            ),
+            (
+                "/etc/mkinitcpio.conf.pacnew",
+                "system",
+                "-",
+                &json!("tx-20261001T110001"),
+                &Value::Null
+            ),
+            (
+                "/etc/foo.conf.pacsave",
+                "system",
+                "-",
+                &json!("tx-20261001T120001"),
+                &Value::Null
+            ),
+        ]
+    );
+    assert_eq!(
+        notes[2]["detail"],
+        "/etc/foo.conf saved as /etc/foo.conf.pacsave"
+    );
+    assert_eq!(notes[2]["meta"]["command"], "pacman -Rns foo");
+    assert_eq!(notes[2]["zone"], "red");
+    assert!(notes.iter().all(|n| n.get("explicit").is_none()));
+
+    let v = drift(&env, &lb);
+    let items: Vec<(String, Value, String, String, Value)> = v["drift"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                d["subject"].as_str().unwrap().to_string(),
+                d["members"].clone(),
+                d["class"].as_str().unwrap().to_string(),
+                d["rule"].as_str().unwrap().to_string(),
+                d["crisis"].clone(),
+            )
+        })
+        .collect();
+    let item = |s: &str, m: Value, c: &str, r: &str, x: bool| {
+        (s.to_string(), m, c.to_string(), r.to_string(), json!(x))
+    };
+    assert_eq!(
+        items,
+        [
+            item(
+                "/etc/foo.conf.pacsave",
+                Value::Null,
+                "attention",
+                "pacnew",
+                false
+            ),
+            item("foo", json!(2), "attention", "package", false),
+            item(
+                "/etc/mkinitcpio.conf.pacnew",
+                Value::Null,
+                "crisis",
+                "pacnew-red",
+                true
+            ),
+        ],
+        "newest first; the -Syu packages are routine history"
+    );
+    assert_eq!(v["openDrift"], 3);
+    let pacnew = v["drift"][2]["eventId"].as_str().unwrap().to_string();
+    let show = run(&env, &lb, &["drift", "show", &pacnew], 0);
+    assert_eq!(
+        (show["class"].clone(), show["rule"].clone()),
+        (json!("crisis"), json!("pacnew-red"))
+    );
+    assert_eq!(show["members"].as_array().map(Vec::len), Some(1));
+
+    // explaining the removal resolves its packages, not the file it left
+    let foo = v["drift"][1]["eventId"].as_str().unwrap().to_string();
+    let explained = run(
+        &env,
+        &lb,
+        &["drift", "explain", &foo, "--", "no longer needed"],
+        0,
+    );
+    assert_eq!(explained["resolved"], 2);
+    let v = drift(&env, &lb);
+    assert_eq!(v["openDrift"], 2);
+    assert_eq!(v["drift"][0]["subject"], "/etc/foo.conf.pacsave");
+
+    // idempotent: again, and after a rotation hands the log over anew
+    let before = common::ledger(&lb);
+    assert_eq!(capture()["written"], 0);
+    let fresh = env.tmp.path().join("pacman.log.new");
+    std::fs::write(&fresh, text).unwrap();
+    std::fs::rename(&fresh, &log).unwrap();
+    assert_eq!(capture()["written"], 0);
+    assert_eq!(common::ledger(&lb), before);
 }
 
 /// Rule 1 through the hook and the shared attribution pass (WP-009): an

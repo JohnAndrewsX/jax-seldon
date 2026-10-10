@@ -53,8 +53,8 @@ pub fn run(ctx: &Context, _args: RebuildArgs) -> Result<Output> {
     let counts = doc.counts();
     let (content, skipped) = rebuild::render::text(&doc, logbook.meta.language);
 
-    let path = logbook.path(REL_PATH);
-    let existing = match std::fs::read_to_string(&path) {
+    let path = logbook.checked_file(REL_PATH)?;
+    let existing = match crate::sys::read_regular_string(&path, crate::sys::LOGBOOK_FILE_MAX) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
@@ -66,7 +66,7 @@ pub fn run(ctx: &Context, _args: RebuildArgs) -> Result<Output> {
     let text = rebuild::merge(existing.as_deref(), &content);
     let changed = existing.as_deref() != Some(text.as_str());
     if changed {
-        sys::write_generated(&path, text.as_bytes())?;
+        sys::write_generated_nofollow(&path, text.as_bytes())?;
     }
     let commit = if changed {
         autocommit(ctx, &config, &logbook, "rebuild")

@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import "../../Model.js" as Model
+import ".."
 
 // The frame every Prime Radiant chart shares (WP-031): a Canvas over the
 // chart area, the caption (the hovered item's read-out, else the chart's
@@ -18,12 +19,13 @@ import "../../Model.js" as Model
 Item {
   id: root
 
+  readonly property Tone tone: Tone {}
+
   property string chartId: ""
   property var chart: null
   property color foreground: Color.popups.text
   property color accent: Color.accent
   property color urgent: Color.urgent
-  property color muted: Color.muted
   property string fontFamily: Style.font.family
 
   // The hovered item's read-out, "" when nothing is hovered (`call view`).
@@ -34,6 +36,9 @@ Item {
   // ms (the chart's own drawing calls, for the profile note).
   property int paints: 0
   property real paintMs: 0
+  // What a chart decided about its own drawing, for view() and the tests
+  // (RiskDonut: { centreLabel }); null when there is nothing to say.
+  property var readout: null
   // Appended to the summary in the caption (e.g. what did not fit).
   property string captionSuffix: ""
   // The caption line: the hovered item's read-out, else the summary.
@@ -44,7 +49,9 @@ Item {
   readonly property var numbers: root.chart ? root.chart.numbers : null
   readonly property alias plot: canvas
   readonly property string canvasFont: Style.font.caption + "px \"" + root.fontFamily + "\""
-  readonly property color faint: Util.alpha(root.foreground, 0.12)
+  // Labels and legends in the dim tone (text), grid lines in the divider.
+  readonly property color dim: root.tone.dim
+  readonly property color faint: root.tone.divider
 
   // Paint the chart into ctx, a w × h canvas already cleared.
   signal paintRequested(var ctx, real w, real h)
@@ -118,7 +125,8 @@ Item {
   onForegroundChanged: canvas.requestPaint()
   onAccentChanged: canvas.requestPaint()
   onUrgentChanged: canvas.requestPaint()
-  onMutedChanged: canvas.requestPaint()
+  onDimChanged: canvas.requestPaint()
+  onFaintChanged: canvas.requestPaint()
   onCanvasFontChanged: canvas.requestPaint()
 
   Canvas {
@@ -144,7 +152,7 @@ Item {
     width: root.highlight.width
     height: root.highlight.height
     visible: root.highlight.width > 0 && !root.empty
-    color: Util.alpha(root.foreground, 0.08)
+    color: Style.hoverFillFor(root.foreground, root.accent)
     border.color: root.foreground
     border.width: Math.max(1, Style.space(1))
   }
@@ -165,7 +173,7 @@ Item {
     horizontalAlignment: Text.AlignHCenter
     textFormat: Text.PlainText
     text: root.chart ? String(root.chart.emptyText) : Model.CHART_EMPTY_TEXT
-    color: root.muted
+    color: root.tone.dim
     font.family: root.fontFamily
     font.pixelSize: Style.font.body
     elide: Text.ElideRight

@@ -74,11 +74,208 @@ pub fn create_new_private(path: &Path) -> std::io::Result<File> {
     Ok(file)
 }
 
+/// Most bytes a state file the index reads beside the logbook may hold
+/// (`proposals/*.json`, `autocommit.json`; ADR-0035 §6, WP-120 round 3).
+pub const STATE_FILE_MAX: u64 = 4 * 1024 * 1024;
+
+/// The text of `path` when it is a regular file (not a symbolic link, a
+/// FIFO, a device or a directory) of at most `max` bytes; else why not, in
+/// words for a warning. `Ok(None)` when it does not exist. The type is
+/// checked with `symlink_metadata` before the file is opened, so a FIFO is
+/// never opened (it would block) and `/dev/zero` behind a link never read;
+/// the open checks again ([`open_checked`]: one swapped in after the check
+/// does not block either); the read itself stops after `max + 1` bytes,
+/// in case the file grew.
+pub fn read_small_file(path: &Path, max: u64) -> Result<Option<String>, String> {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    let kind = meta.file_type();
+    if !kind.is_file() {
+        let what = if kind.is_symlink() {
+            "a symbolic link"
+        } else if kind.is_dir() {
+            "a directory"
+        } else {
+            "not a regular file"
+        };
+        return Err(what.to_string());
+    }
+    if meta.len() > max {
+        return Err(format!("{} bytes, more than {max}", meta.len()));
+    }
+    let file = open_checked(path).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    file.take(max + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > max {
+        return Err(format!("more than {max} bytes"));
+    }
+    String::from_utf8(bytes)
+        .map(Some)
+        .map_err(|_| "not UTF-8".to_string())
+}
+
+/// Most bytes a ledger month `ledger/<YYYY-MM>.jsonl` may hold when it is
+/// read (WP-174): about half a million events, at some 460 bytes each.
+pub const LEDGER_MONTH_MAX: u64 = 256 * 1024 * 1024;
+
+/// From this size on `doctor` warns of a ledger month (`degraded`): half
+/// of [`LEDGER_MONTH_MAX`], so there is time before it cannot be read.
+pub const LEDGER_MONTH_WARN: u64 = LEDGER_MONTH_MAX / 2;
+
+/// Most bytes any other file of the logbook may hold when it is read
+/// whole (WP-174): `AGENTS.md`, `STATUS.md`, `DECISIONS.md`, a journal
+/// day, a case, a decision, `.seldon/*`; also Claude Code's settings file.
+pub const LOGBOOK_FILE_MAX: u64 = 16 * 1024 * 1024;
+
+/// `O_NONBLOCK` of open(2) on Linux: the generic value; mips and sparc
+/// number it differently (as [`O_NOFOLLOW`]).
+#[cfg(any(target_arch = "mips", target_arch = "mips64"))]
+const O_NONBLOCK: i32 = 0o200;
+#[cfg(any(target_arch = "sparc", target_arch = "sparc64"))]
+const O_NONBLOCK: i32 = 0o40000;
+#[cfg(not(any(
+    target_arch = "mips",
+    target_arch = "mips64",
+    target_arch = "sparc",
+    target_arch = "sparc64"
+)))]
+const O_NONBLOCK: i32 = 0o4000;
+
+/// `F_GETFL` and `F_SETFL` of fcntl(2), the same on every Linux target.
+const F_GETFL: i32 = 3;
+const F_SETFL: i32 = 4;
+
+/// The regular file at `path`, opened to read; a file of the logbook is
+/// opened only this way (WP-174). A symbolic link is followed (reading
+/// through a linked file is unchanged, ADR-0049 §2), but what it leads to
+/// must be a regular file: a FIFO (an open would block until a writer
+/// comes), a device (`/dev/zero` reads forever), a socket or a directory
+/// is an `InvalidInput` error naming what it is. The type is checked
+/// before the open, so such a file is not opened at all, and again on the
+/// open file, which is opened `O_NONBLOCK`, so one swapped in between
+/// cannot block either; the flag is cleared once the file is known to be
+/// regular, so its reads are plain blocking reads. A missing file
+/// is a `NotFound` error, as for `std::fs::File::open`.
+pub fn open_regular(path: &Path) -> std::io::Result<File> {
+    not_regular(&std::fs::metadata(path)?)?;
+    open_checked(path)
+}
+
+/// The second half of [`open_regular`]: the open that cannot block, the
+/// check on the open file, then `O_NONBLOCK` cleared (`fcntl(F_SETFL)`):
+/// a regular file on FUSE or a network file system could otherwise answer
+/// a read with `EAGAIN`.
+fn open_checked(path: &Path) -> std::io::Result<File> {
+    use std::os::fd::AsRawFd as _;
+    unsafe extern "C" {
+        fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NONBLOCK)
+        .open(path)?;
+    not_regular(&file.metadata()?)?;
+    let fd = file.as_raw_fd();
+    // SAFETY: `fd` is open for as long as `file` lives; F_GETFL and
+    // F_SETFL take and return plain ints
+    let flags = unsafe { fcntl(fd, F_GETFL) };
+    if flags < 0 || unsafe { fcntl(fd, F_SETFL, flags & !O_NONBLOCK) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(file)
+}
+
+/// `Ok` for a regular file, else the `InvalidInput` error saying what
+/// the file is.
+fn not_regular(meta: &std::fs::Metadata) -> std::io::Result<()> {
+    let Some(what) = irregular(meta) else {
+        return Ok(());
+    };
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        format!(
+            "{what}, not a regular file; not read: make it a regular file and run the command again"
+        ),
+    ))
+}
+
+/// What a file that is no regular file is (`a FIFO`, `a device`, ...),
+/// from its metadata (links followed); `None` for a regular file.
+pub fn irregular(meta: &std::fs::Metadata) -> Option<&'static str> {
+    use std::os::unix::fs::FileTypeExt as _;
+    let kind = meta.file_type();
+    if kind.is_file() {
+        return None;
+    }
+    Some(if kind.is_dir() {
+        "a directory"
+    } else if kind.is_fifo() {
+        "a FIFO"
+    } else if kind.is_char_device() || kind.is_block_device() {
+        "a device"
+    } else if kind.is_socket() {
+        "a socket"
+    } else {
+        "no regular file"
+    })
+}
+
+/// The bytes of the regular file at `path` ([`open_regular`]), at most
+/// `max` of them: a larger file is a `FileTooLarge` error, also one that
+/// grows past `max` while it is read (the read stops at `max + 1`). For
+/// every file of the logbook the engine reads whole (WP-174); `max` is
+/// [`LEDGER_MONTH_MAX`] for a ledger month, else [`LOGBOOK_FILE_MAX`].
+pub fn read_regular(path: &Path, max: u64) -> std::io::Result<Vec<u8>> {
+    let file = open_regular(path)?;
+    let len = file.metadata()?.len();
+    if len > max {
+        return Err(too_large(max));
+    }
+    let mut bytes = Vec::with_capacity(len as usize);
+    file.take(max + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max {
+        return Err(too_large(max));
+    }
+    Ok(bytes)
+}
+
+/// [`read_regular`] as text: bytes that are not UTF-8 are an
+/// `InvalidData` error, as for `std::fs::read_to_string`.
+pub fn read_regular_string(path: &Path, max: u64) -> std::io::Result<String> {
+    String::from_utf8(read_regular(path, max)?).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        )
+    })
+}
+
+/// The error of a file of more than `max` bytes (in MiB when whole).
+pub fn too_large(max: u64) -> std::io::Error {
+    const MIB: u64 = 1024 * 1024;
+    let size = if max >= MIB && max.is_multiple_of(MIB) {
+        format!("{} MiB", max / MIB)
+    } else {
+        format!("{max} bytes")
+    };
+    std::io::Error::new(
+        std::io::ErrorKind::FileTooLarge,
+        format!("more than {size}; not read"),
+    )
+}
+
 /// Writes `bytes` to a temp file next to `path` and renames it over `path`.
 /// A symbolic link at `path` is followed: its target is replaced and the
 /// link stays. The target keeps its permission bits; a new file gets
 /// [`NEW_FILE_MODE`] and new directories [`NEW_DIR_MODE`]. File and
 /// directory are synced; the temp file is removed when anything fails.
+/// For files outside the logbook (config, state, settings); a file of the
+/// logbook goes through [`write_atomic_nofollow`] (ADR-0049).
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     write_atomic_with(path, bytes, None, true)
 }
@@ -86,6 +283,13 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
 /// [`write_atomic`] with the file's permission bits set to exactly `mode`.
 pub fn write_atomic_mode(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> {
     write_atomic_with(path, bytes, Some(mode), true)
+}
+
+/// [`write_atomic_mode`] that never follows a symbolic link at `path`: the
+/// rename replaces the link itself (state files others can write next to,
+/// such as `proposals/<id>.json`; WP-124).
+pub fn write_atomic_replace(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> {
+    write_atomic_at(path.to_path_buf(), bytes, Some(mode), true)
 }
 
 /// [`write_atomic`] without the syncs, for files the engine rebuilds from
@@ -96,6 +300,100 @@ pub fn write_generated(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     write_atomic_with(path, bytes, None, false)
 }
 
+/// [`write_atomic`] for a file of the logbook (ADR-0049): a symbolic link
+/// at `path` is never followed. A link or anything but a regular file
+/// there is an error (the command's `logbook::checked_file` names it for
+/// the user first); one that appears after this check is replaced by the
+/// rename, never its target. A regular file keeps its permission bits.
+pub fn write_atomic_nofollow(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    write_nofollow(path, bytes, true)
+}
+
+/// [`write_generated`] that never follows a link, as
+/// [`write_atomic_nofollow`]: the logbook's `STATUS.md`, ledger views and
+/// `outputs/REBUILD.md`.
+pub fn write_generated_nofollow(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    write_nofollow(path, bytes, false)
+}
+
+fn write_nofollow(path: &Path, bytes: &[u8], sync: bool) -> anyhow::Result<()> {
+    let mode = regular_or_missing(path)?.map_or(NEW_FILE_MODE, |m| m.permissions().mode() & 0o777);
+    write_atomic_at(path.to_path_buf(), bytes, Some(mode), sync)
+}
+
+/// `O_NOFOLLOW` of open(2) on Linux: the generic value; arm, aarch64 and
+/// powerpc number it differently (std has `custom_flags`, not the
+/// constant; as [`SIGKILL`] below).
+#[cfg(any(
+    target_arch = "arm",
+    target_arch = "aarch64",
+    target_arch = "powerpc",
+    target_arch = "powerpc64"
+))]
+pub const O_NOFOLLOW: i32 = 0o100000;
+#[cfg(not(any(
+    target_arch = "arm",
+    target_arch = "aarch64",
+    target_arch = "powerpc",
+    target_arch = "powerpc64"
+)))]
+pub const O_NOFOLLOW: i32 = 0o400000;
+
+/// `ELOOP` on Linux: what open(2) with [`O_NOFOLLOW`] says of a link.
+const ELOOP: i32 = 40;
+
+/// The file of the logbook at `path`, opened to read and append, made
+/// with [`NEW_FILE_MODE`] when missing (the ledger's month files,
+/// ADR-0049 §4): never through a symbolic link, also one swapped in after
+/// the caller's check (`O_NOFOLLOW`: the open fails, nothing is made
+/// where the link points), and only a regular file (checked on the open
+/// file).
+pub fn open_append_nofollow(path: &Path) -> anyhow::Result<File> {
+    let opened = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .append(true)
+        .mode(NEW_FILE_MODE)
+        .custom_flags(O_NOFOLLOW)
+        .open(path);
+    let file = match opened {
+        Ok(f) => f,
+        Err(e) if e.raw_os_error() == Some(ELOOP) => anyhow::bail!(
+            "{} is a symbolic link, not a file of the logbook; nothing written",
+            path.display()
+        ),
+        Err(e) => return Err(e).with_context(|| format!("cannot open {}", path.display())),
+    };
+    if !file.metadata()?.is_file() {
+        anyhow::bail!(
+            "{} is no regular file, not a file of the logbook; nothing written",
+            path.display()
+        );
+    }
+    Ok(file)
+}
+
+/// The metadata of the regular file at `path`, without following a link;
+/// `None` when nothing is there. A symbolic link or anything else that is
+/// no regular file is an error: a file of the logbook is never written
+/// through one (ADR-0049).
+pub fn regular_or_missing(path: &Path) -> anyhow::Result<Option<std::fs::Metadata>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_file() => Ok(Some(m)),
+        Ok(m) => anyhow::bail!(
+            "{} is {}, not a file of the logbook; nothing written",
+            path.display(),
+            if m.file_type().is_symlink() {
+                "a symbolic link"
+            } else {
+                "no regular file"
+            }
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("cannot read {}", path.display())),
+    }
+}
+
 fn write_atomic_with(
     path: &Path,
     bytes: &[u8],
@@ -104,6 +402,15 @@ fn write_atomic_with(
 ) -> anyhow::Result<()> {
     let target =
         resolve_links(path).with_context(|| format!("cannot resolve {}", path.display()))?;
+    write_atomic_at(target, bytes, mode, sync)
+}
+
+fn write_atomic_at(
+    target: PathBuf,
+    bytes: &[u8],
+    mode: Option<u32>,
+    sync: bool,
+) -> anyhow::Result<()> {
     let dir = target
         .parent()
         .with_context(|| format!("{} has no parent directory", target.display()))?;
@@ -195,6 +502,9 @@ pub enum Run {
         stdout: String,
         stderr: String,
     },
+    /// The program wrote more than the caller's cap to stdout: what it
+    /// wrote is no answer, so it is not kept (WP-154).
+    Cut,
     /// The program is not on `PATH`.
     NotFound,
     /// The program did not finish in time and was killed.
@@ -212,10 +522,22 @@ impl Run {
 /// `ETXTBSY` on Linux ("Text file busy").
 const ETXTBSY: i32 = 26;
 
-/// Runs `program args…` with stdin closed and a timeout, capturing output,
-/// in its own process group ([`run_command`]).
-pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) -> Run {
-    run_with(command(program, args, cwd), timeout, Group::Own)
+/// The cap of a run's output pipes for a caller that reads a line, a
+/// message or a short answer: every `git` call, `omarchy-version`. More
+/// than any such answer, far less than a program that floods its output
+/// (git on a hostile repository) could make the engine hold.
+pub const OUTPUT_MAX: usize = 1024 * 1024;
+
+/// No cap: for a caller that parses the whole answer of a trusted system
+/// program, where a cut list would read as entries removed (a package
+/// list, a dossier query, the snapper list). Named at every such call.
+pub const WHOLE_OUTPUT: usize = usize::MAX;
+
+/// Runs `program args…` with stdin closed and a timeout, capturing at most
+/// `cap` bytes of each output pipe, in its own process group
+/// ([`run_command`]).
+pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration, cap: usize) -> Run {
+    run_with(command(program, args, cwd), timeout, Group::Own, cap)
 }
 
 /// [`run`] in the engine's own process group, for `git`: git and what it
@@ -228,8 +550,9 @@ pub fn run_in_engine_group(
     args: &[&str],
     cwd: Option<&Path>,
     timeout: Duration,
+    cap: usize,
 ) -> Run {
-    run_with(command(program, args, cwd), timeout, Group::Engine)
+    run_with(command(program, args, cwd), timeout, Group::Engine, cap)
 }
 
 /// Omarchy's install root when `OMARCHY_PATH` is unset or empty: the
@@ -301,19 +624,27 @@ const DRAIN_GRACE: Duration = Duration::from_millis(200);
 /// captured, in its own process group. The timeout covers the program and
 /// its output pipes: at the deadline the whole group is killed, also when
 /// the program has exited and something it started still holds a pipe.
-pub fn run_command(cmd: Command, timeout: Duration) -> Run {
-    run_with(cmd, timeout, Group::Own)
+///
+/// At most `cap` bytes of each output pipe are kept; the rest is read and
+/// dropped, so a program that floods its output costs time up to the
+/// deadline, never memory (WP-136, WP-154). A stdout over the cap is
+/// [`Run::Cut`], never a cut answer; a stderr over it is kept cut (only
+/// messages are read from it). [`OUTPUT_MAX`] is the usual cap,
+/// [`WHOLE_OUTPUT`] none.
+pub fn run_command(cmd: Command, timeout: Duration, cap: usize) -> Run {
+    run_with(cmd, timeout, Group::Own, cap)
 }
 
 /// [`run_command`] in the engine's own process group, for a `git` command
 /// the caller built (its environment controlled, `logbook::git`): git and
 /// what it runs (hooks, a signing prompt) may use the terminal, as with
 /// [`run_in_engine_group`]. At the deadline only the program is killed.
-pub fn run_command_in_engine_group(cmd: Command, timeout: Duration) -> Run {
-    run_with(cmd, timeout, Group::Engine)
+pub fn run_command_in_engine_group(cmd: Command, timeout: Duration, cap: usize) -> Run {
+    run_with(cmd, timeout, Group::Engine, cap)
 }
 
-fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
+/// Runs `cmd`, keeping at most `cap` bytes of each pipe.
+fn run_with(mut cmd: Command, timeout: Duration, group: Group, cap: usize) -> Run {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -337,8 +668,8 @@ fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Run::NotFound,
         Err(e) => return Run::Failed(e.to_string()),
     };
-    let mut out = Drain::start(child.stdout.take().map(|p| Box::new(p) as _));
-    let mut err = Drain::start(child.stderr.take().map(|p| Box::new(p) as _));
+    let mut out = Drain::start(child.stdout.take().map(|p| Box::new(p) as _), cap);
+    let mut err = Drain::start(child.stderr.take().map(|p| Box::new(p) as _), cap);
     let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
@@ -363,6 +694,9 @@ fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
             return Run::TimedOut;
         }
     }
+    if out.cut {
+        return Run::Cut;
+    }
     Run::Exited {
         code: status.code(),
         stdout: out.text(),
@@ -370,23 +704,47 @@ fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
     }
 }
 
-/// One output pipe read to its end by a thread.
+/// One output pipe read to its end by a thread, keeping at most `cap`
+/// bytes (the rest is read and dropped, so the writer never blocks).
 struct Drain {
-    rx: Receiver<Vec<u8>>,
+    rx: Receiver<(Vec<u8>, bool)>,
     bytes: Option<Vec<u8>>,
+    /// More than `cap` bytes came.
+    cut: bool,
 }
 
 impl Drain {
-    fn start(pipe: Option<Box<dyn Read + Send>>) -> Drain {
+    fn start(pipe: Option<Box<dyn Read + Send>>, cap: usize) -> Drain {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut buf = Vec::new();
+            let mut cut = false;
             if let Some(mut p) = pipe {
-                let _ = p.read_to_end(&mut buf);
+                if cap == usize::MAX {
+                    let _ = p.read_to_end(&mut buf);
+                } else {
+                    let mut chunk = [0u8; 8192];
+                    loop {
+                        match p.read(&mut chunk) {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                let keep = n.min(cap - buf.len());
+                                buf.extend_from_slice(&chunk[..keep]);
+                                cut |= keep < n;
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                            Err(_) => break,
+                        }
+                    }
+                }
             }
-            let _ = tx.send(buf);
+            let _ = tx.send((buf, cut));
         });
-        Drain { rx, bytes: None }
+        Drain {
+            rx,
+            bytes: None,
+            cut: false,
+        }
     }
 
     /// Whether the pipe reached its end by `deadline`. A thread still
@@ -394,7 +752,10 @@ impl Drain {
     fn wait_until(&mut self, deadline: Instant) -> bool {
         if self.bytes.is_none() {
             let left = deadline.saturating_duration_since(Instant::now());
-            self.bytes = self.rx.recv_timeout(left).ok();
+            if let Ok((bytes, cut)) = self.rx.recv_timeout(left) {
+                self.bytes = Some(bytes);
+                self.cut = cut;
+            }
         }
         self.bytes.is_some()
     }
@@ -491,37 +852,93 @@ pub fn slugify(s: &str) -> String {
 }
 
 /// SHA-256 (FIPS 180-4) of `bytes`. Implemented here because no hashing
-/// crate is on the allowed list (AGENTS.md §7); the config collector hashes
-/// files of at most 1 MB, so a plain one-shot implementation is enough. The
-/// whole blocks are hashed in place; only the last one or two, with the
-/// padding, are copied.
+/// crate is on the allowed list (AGENTS.md §7). The whole blocks are
+/// hashed in place; only the last one or two, with the padding, are
+/// copied. [`Sha256`] hashes a stream (a file of any size, WP-113).
 pub fn sha256(bytes: &[u8]) -> [u8; 32] {
-    let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    let (blocks, rest) = bytes.as_chunks::<64>();
-    for block in blocks {
-        sha256_block(&mut h, block);
+    let mut s = Sha256::new();
+    s.update(bytes);
+    s.finish()
+}
+
+/// SHA-256 over bytes that arrive in pieces: [`Sha256::update`] as often
+/// as needed, then [`Sha256::finish`].
+#[derive(Debug, Clone)]
+pub struct Sha256 {
+    h: [u32; 8],
+    /// A block begun by an earlier update.
+    buf: [u8; 64],
+    buffered: usize,
+    len: u64,
+}
+
+impl Default for Sha256 {
+    fn default() -> Self {
+        Sha256::new()
     }
-    // the rest + 0x80 + zero padding + 64-bit big-endian bit length: one
-    // block, or two when the rest leaves less than 9 bytes
-    let mut tail = [0u8; 128];
-    tail[..rest.len()].copy_from_slice(rest);
-    tail[rest.len()] = 0x80;
-    let end = if rest.len() < 56 { 64 } else { 128 };
-    tail[end - 8..end].copy_from_slice(&((bytes.len() as u64).wrapping_mul(8)).to_be_bytes());
-    let (blocks, _) = tail[..end].as_chunks::<64>();
-    for block in blocks {
-        sha256_block(&mut h, block);
+}
+
+impl Sha256 {
+    pub fn new() -> Self {
+        Sha256 {
+            h: [
+                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+                0x5be0cd19,
+            ],
+            buf: [0; 64],
+            buffered: 0,
+            len: 0,
+        }
     }
 
-    let mut out = [0u8; 32];
-    let (chunks, _) = out.as_chunks_mut::<4>();
-    for (chunk, word) in chunks.iter_mut().zip(h) {
-        *chunk = word.to_be_bytes();
+    pub fn update(&mut self, mut bytes: &[u8]) {
+        self.len = self.len.wrapping_add(bytes.len() as u64);
+        if self.buffered > 0 {
+            let take = (64 - self.buffered).min(bytes.len());
+            self.buf[self.buffered..self.buffered + take].copy_from_slice(&bytes[..take]);
+            self.buffered += take;
+            bytes = &bytes[take..];
+            if self.buffered < 64 {
+                return;
+            }
+            let block = self.buf;
+            sha256_block(&mut self.h, &block);
+            self.buffered = 0;
+        }
+        let (blocks, rest) = bytes.as_chunks::<64>();
+        for block in blocks {
+            sha256_block(&mut self.h, block);
+        }
+        self.buf[..rest.len()].copy_from_slice(rest);
+        self.buffered = rest.len();
     }
-    out
+
+    pub fn finish(mut self) -> [u8; 32] {
+        // the rest + 0x80 + zero padding + 64-bit big-endian bit length: one
+        // block, or two when the rest leaves less than 9 bytes
+        let rest = self.buffered;
+        let mut tail = [0u8; 128];
+        tail[..rest].copy_from_slice(&self.buf[..rest]);
+        tail[rest] = 0x80;
+        let end = if rest < 56 { 64 } else { 128 };
+        tail[end - 8..end].copy_from_slice(&self.len.wrapping_mul(8).to_be_bytes());
+        let (blocks, _) = tail[..end].as_chunks::<64>();
+        for block in blocks {
+            sha256_block(&mut self.h, block);
+        }
+
+        let mut out = [0u8; 32];
+        let (chunks, _) = out.as_chunks_mut::<4>();
+        for (chunk, word) in chunks.iter_mut().zip(self.h) {
+            *chunk = word.to_be_bytes();
+        }
+        out
+    }
+
+    /// [`Sha256::finish`] as 64 lowercase hex digits.
+    pub fn finish_hex(self) -> String {
+        hex(&self.finish())
+    }
 }
 
 /// One SHA-256 compression step: `h` after the 64-byte `block`.
@@ -579,12 +996,324 @@ fn sha256_block(h: &mut [u32; 8], block: &[u8; 64]) {
 
 /// [`sha256`] as 64 lowercase hex digits.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    sha256(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    hex(&sha256(bytes))
+}
+
+fn hex(digest: &[u8; 32]) -> String {
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]
 mod tests {
+
+    /// WP-120 round 3: [`read_small_file`] reads a small regular file,
+    /// refuses a link, a directory and a file over the limit, and says
+    /// nothing for a missing one.
+    #[test]
+    fn small_regular_files_only() {
+        let dir = std::env::temp_dir().join(format!("seldon-small-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.json");
+        std::fs::write(&file, "{}").unwrap();
+        assert_eq!(read_small_file(&file, 2), Ok(Some("{}".to_string())));
+        // the size is checked before the file is opened (the read's own cap
+        // would say "more than 1 bytes")
+        assert_eq!(
+            read_small_file(&file, 1),
+            Err("2 bytes, more than 1".to_string())
+        );
+        let link = dir.join("b.json");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        assert!(
+            read_small_file(&link, 10)
+                .unwrap_err()
+                .contains("symbolic link")
+        );
+        assert!(read_small_file(&dir, 10).unwrap_err().contains("directory"));
+        assert_eq!(read_small_file(&dir.join("none.json"), 10), Ok(None));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
+
+    /// WP-171, ADR-0049: the logbook's writers never follow a link at the
+    /// path, and refuse one (dangling too) or anything but a regular file;
+    /// the link and its target stay as they were.
+    #[test]
+    fn nofollow_writes_refuse_a_link_and_a_non_regular_file() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = crate::logbook::scratch::scratch("seldon-nofollow");
+        std::fs::write(dir.join("outside.md"), "outside\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("outside.md"), dir.join("linked.md")).unwrap();
+        std::os::unix::fs::symlink("missing.md", dir.join("dangling.md")).unwrap();
+        std::fs::create_dir(dir.join("folder.md")).unwrap();
+        type Write = fn(&Path, &[u8]) -> anyhow::Result<()>;
+        let writers: [(&str, Write); 2] = [
+            ("atomic", write_atomic_nofollow),
+            ("generated", write_generated_nofollow),
+        ];
+        for (name, write) in writers {
+            for (file, what) in [
+                ("linked.md", "a symbolic link"),
+                ("dangling.md", "a symbolic link"),
+                ("folder.md", "no regular file"),
+            ] {
+                let path = dir.join(file);
+                let e = write(&path, b"new\n").unwrap_err().to_string();
+                assert_eq!(
+                    e,
+                    format!(
+                        "{} is {what}, not a file of the logbook; nothing written",
+                        path.display()
+                    ),
+                    "{name} {file}"
+                );
+            }
+            assert_eq!(
+                std::fs::read_to_string(dir.join("outside.md")).unwrap(),
+                "outside\n"
+            );
+            assert!(!dir.join("missing.md").exists());
+            assert!(
+                dir.join("linked.md")
+                    .symlink_metadata()
+                    .unwrap()
+                    .is_symlink()
+            );
+            assert!(
+                dir.join("dangling.md")
+                    .symlink_metadata()
+                    .unwrap()
+                    .is_symlink()
+            );
+            assert!(dir.join("folder.md").is_dir());
+            // a regular file keeps its mode; a new one is 0600; no temp
+            // file is left
+            let kept = dir.join(format!("kept-{name}.md"));
+            std::fs::write(&kept, "old\n").unwrap();
+            std::fs::set_permissions(&kept, std::fs::Permissions::from_mode(0o640)).unwrap();
+            write(&kept, b"new\n").unwrap();
+            assert_eq!(std::fs::read_to_string(&kept).unwrap(), "new\n");
+            let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(&kept), 0o640, "{name}");
+            let new = dir.join(format!("sub-{name}/new.md"));
+            write(&new, b"x\n").unwrap();
+            assert_eq!(std::fs::read_to_string(&new).unwrap(), "x\n");
+            assert_eq!(mode(&new), NEW_FILE_MODE, "{name}");
+        }
+        let left: Vec<_> = std::fs::read_dir(&*dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".tmp-"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        // write_atomic itself still follows the link (config, settings)
+        write_atomic(&dir.join("linked.md"), b"through\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("outside.md")).unwrap(),
+            "through\n"
+        );
+    }
+
+    /// ADR-0049 §4: the ledger's open itself never follows a link (no
+    /// check before it here: the race the check cannot close) and takes
+    /// only a regular file; a FIFO is opened without blocking and refused.
+    #[test]
+    fn the_append_open_never_follows_a_link() {
+        unsafe extern "C" {
+            fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32;
+        }
+        let dir = crate::logbook::scratch::scratch("seldon-append-open");
+        std::fs::write(dir.join("outside"), "kept\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("outside"), dir.join("linked")).unwrap();
+        std::os::unix::fs::symlink(dir.join("missing"), dir.join("dangling")).unwrap();
+        for name in ["linked", "dangling"] {
+            let path = dir.join(name);
+            let e = open_append_nofollow(&path).unwrap_err().to_string();
+            assert_eq!(
+                e,
+                format!(
+                    "{} is a symbolic link, not a file of the logbook; nothing written",
+                    path.display()
+                )
+            );
+        }
+        assert_eq!(
+            std::fs::read_to_string(dir.join("outside")).unwrap(),
+            "kept\n"
+        );
+        assert!(!dir.join("missing").exists());
+        let fifo = dir.join("fifo");
+        let c = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { mkfifo(c.as_ptr(), 0o600) }, 0);
+        let e = open_append_nofollow(&fifo).unwrap_err().to_string();
+        assert!(
+            e.ends_with("fifo is no regular file, not a file of the logbook; nothing written"),
+            "{e}"
+        );
+        // a regular file and a new one open for appending
+        let mut f = open_append_nofollow(&dir.join("new")).unwrap();
+        std::io::Write::write_all(&mut f, b"a\n").unwrap();
+        let mut f = open_append_nofollow(&dir.join("new")).unwrap();
+        std::io::Write::write_all(&mut f, b"b\n").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("new")).unwrap(), "a\nb\n");
+    }
+
+    /// WP-174: a reader of the logbook takes only a regular file, through
+    /// a link too, and at most `max` bytes of it; a FIFO is never waited
+    /// on and `/dev/zero` never read, also when one is swapped in after
+    /// the type check (the open itself checks again).
+    #[test]
+    fn a_bounded_read_takes_only_a_regular_file() {
+        unsafe extern "C" {
+            fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32;
+            fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+        }
+        let dir = crate::logbook::scratch::scratch("seldon-read-regular");
+        std::fs::write(dir.join("file"), "abc\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("file"), dir.join("linked")).unwrap();
+        std::os::unix::fs::symlink("/dev/zero", dir.join("zero")).unwrap();
+        std::os::unix::fs::symlink(dir.join("missing"), dir.join("dangling")).unwrap();
+        std::fs::create_dir(dir.join("folder")).unwrap();
+        let fifo = dir.join("fifo");
+        let c = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { mkfifo(c.as_ptr(), 0o600) }, 0);
+
+        assert_eq!(read_regular(&dir.join("file"), 4).unwrap(), b"abc\n");
+        assert_eq!(
+            read_regular_string(&dir.join("linked"), 4).unwrap(),
+            "abc\n"
+        );
+        let e = read_regular(&dir.join("file"), 3).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::FileTooLarge);
+        assert_eq!(e.to_string(), "more than 3 bytes; not read");
+        assert_eq!(
+            too_large(LOGBOOK_FILE_MAX).to_string(),
+            "more than 16 MiB; not read"
+        );
+        // in a thread with a time limit: a regression that opens the FIFO
+        // blocks there, and the test fails instead of hanging
+        let base = dir.to_path_buf();
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for (name, what) in [
+                ("fifo", "a FIFO"),
+                ("zero", "a device"),
+                ("folder", "a directory"),
+            ] {
+                let path = base.join(name);
+                for e in [
+                    read_regular(&path, 4).unwrap_err(),
+                    read_regular_string(&path, 4).unwrap_err(),
+                    open_checked(&path).unwrap_err(),
+                ] {
+                    assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput, "{name}");
+                    assert_eq!(
+                        e.to_string(),
+                        format!(
+                            "{what}, not a regular file; not read: make it a regular file and run the command again"
+                        ),
+                        "{name}"
+                    );
+                }
+                // read_small_file opens with the same check
+                assert!(read_small_file(&path, 4).is_err(), "{name}");
+            }
+            done.send(()).unwrap();
+        });
+        finished
+            .recv_timeout(Duration::from_secs(10))
+            .expect("a FIFO or device was opened and blocked (or an assertion failed)");
+        // a regular file's reads are blocking reads again
+        {
+            use std::os::fd::AsRawFd as _;
+            let file = open_regular(&dir.join("file")).unwrap();
+            let flags = unsafe { fcntl(file.as_raw_fd(), F_GETFL) };
+            assert!(flags >= 0 && flags & O_NONBLOCK == 0, "{flags:o}");
+        }
+        for name in ["missing", "dangling"] {
+            let e = read_regular(&dir.join(name), 4).unwrap_err();
+            assert_eq!(e.kind(), std::io::ErrorKind::NotFound, "{name}");
+        }
+        std::fs::write(dir.join("latin1"), b"\xe4\n").unwrap();
+        let e = read_regular_string(&dir.join("latin1"), 4).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn regular_or_missing_says_which() {
+        let dir = crate::logbook::scratch::scratch("seldon-regular");
+        std::fs::write(dir.join("a"), "abc").unwrap();
+        assert_eq!(
+            regular_or_missing(&dir.join("a")).unwrap().unwrap().len(),
+            3
+        );
+        assert!(regular_or_missing(&dir.join("b")).unwrap().is_none());
+        // below a file: neither missing nor a file
+        let e = regular_or_missing(&dir.join("a/b")).unwrap_err();
+        assert!(format!("{e:#}").starts_with("cannot read "), "{e:#}");
+    }
+
+    #[test]
+    fn a_capped_run_keeps_the_head_of_a_flood_and_reads_the_rest() {
+        let cap = 64 * 1024;
+        let flood = |script: &str| {
+            let mut cmd = Command::new("sh");
+            cmd.args(["-c", script]);
+            run_command(cmd, Duration::from_secs(10), cap)
+        };
+        // 16 MiB to stderr, a short stdout: the writer is never blocked,
+        // the run ends, stderr keeps its first `cap` bytes
+        let r = flood("head -c 16777216 /dev/zero >&2; echo out; echo done >&2");
+        let Run::Exited {
+            code: Some(0),
+            stdout,
+            stderr,
+        } = r
+        else {
+            panic!("{r:?}");
+        };
+        assert_eq!((stdout.as_str(), stderr.len()), ("out\n", cap));
+        // a stdout over the cap is no answer, whatever the exit code
+        assert_eq!(flood("head -c 1048576 /dev/zero"), Run::Cut);
+        assert_eq!(flood("head -c 65537 /dev/zero; exit 3"), Run::Cut);
+        // exactly the cap is whole
+        let r = flood("head -c 65536 /dev/zero");
+        assert!(matches!(&r, Run::Exited { stdout, .. } if stdout.len() == cap));
+        // a small output is whole
+        assert_eq!(
+            flood("echo out; echo err >&2"),
+            Run::Exited {
+                code: Some(0),
+                stdout: "out\n".into(),
+                stderr: "err\n".into()
+            }
+        );
+    }
+
+    /// WP-154: 100 MB to stderr in the engine's process group (the group
+    /// every `logbook::git` call runs in) costs [`OUTPUT_MAX`] bytes, and
+    /// the answer on stdout stays whole.
+    #[test]
+    fn a_hundred_megabytes_of_stderr_keep_one_mebibyte() {
+        let r = run_in_engine_group(
+            "sh",
+            &["-c", "head -c 100000000 /dev/zero >&2; echo answer"],
+            None,
+            Duration::from_secs(30),
+            OUTPUT_MAX,
+        );
+        let Run::Exited {
+            code: Some(0),
+            stdout,
+            stderr,
+        } = r
+        else {
+            panic!("{r:?}");
+        };
+        assert_eq!((stdout.as_str(), stderr.len()), ("answer\n", OUTPUT_MAX));
+        assert_eq!(OUTPUT_MAX, 1024 * 1024);
+    }
 
     #[test]
     fn run_captures_and_reports() {
@@ -593,6 +1322,7 @@ mod tests {
             &["-c", "echo out; echo err >&2; exit 3"],
             None,
             Duration::from_secs(5),
+            OUTPUT_MAX,
         );
         assert_eq!(
             r,
@@ -603,13 +1333,53 @@ mod tests {
             }
         );
         assert_eq!(
-            run("seldon-no-such-program", &[], None, Duration::from_secs(1)),
+            run(
+                "seldon-no-such-program",
+                &[],
+                None,
+                Duration::from_secs(1),
+                OUTPUT_MAX
+            ),
             Run::NotFound
         );
         assert_eq!(
-            run("sleep", &["5"], None, Duration::from_millis(100)),
+            run(
+                "sleep",
+                &["5"],
+                None,
+                Duration::from_millis(100),
+                OUTPUT_MAX
+            ),
             Run::TimedOut
         );
+        // OUTPUT_MAX: a stdout over it is no answer, a stderr over it keeps
+        // exactly OUTPUT_MAX (WP-154 round 2)
+        let flood = |script: &str| {
+            run(
+                "sh",
+                &["-c", script],
+                None,
+                Duration::from_secs(10),
+                OUTPUT_MAX,
+            )
+        };
+        assert_eq!(flood("head -c 1048577 /dev/zero"), Run::Cut);
+        let r = flood("head -c 2097152 /dev/zero >&2; echo out");
+        assert!(
+            matches!(&r, Run::Exited { code: Some(0), stdout, stderr }
+                if stdout == "out\n" && stderr.len() == OUTPUT_MAX),
+            "{:?}",
+            matches!(&r, Run::Exited { .. })
+        );
+        // the whole output, however long
+        let r = run(
+            "sh",
+            &["-c", "head -c 2097152 /dev/zero"],
+            None,
+            Duration::from_secs(10),
+            WHOLE_OUTPUT,
+        );
+        assert!(matches!(&r, Run::Exited { stdout, .. } if stdout.len() == 2 * 1024 * 1024));
     }
 
     #[test]
@@ -696,5 +1466,23 @@ mod tests {
             sha256_hex(&[0u8; 64]),
             "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b"
         );
+    }
+
+    /// WP-113: the stream gives the one-shot digest wherever the pieces
+    /// are cut (inside a block, at its edge, empty pieces).
+    #[test]
+    fn sha256_stream_equals_one_shot() {
+        let bytes: Vec<u8> = (0..1000u32).map(|i| (i * 7 % 256) as u8).collect();
+        for cut in [0, 1, 55, 63, 64, 65, 127, 128, 500, 999, 1000] {
+            for step in [1, 3, 64, 100, 1000] {
+                let mut s = Sha256::new();
+                s.update(&bytes[..cut]);
+                s.update(&[]);
+                for piece in bytes[cut..].chunks(step) {
+                    s.update(piece);
+                }
+                assert_eq!(s.finish_hex(), sha256_hex(&bytes), "cut {cut}, step {step}");
+            }
+        }
     }
 }

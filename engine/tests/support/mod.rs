@@ -39,7 +39,7 @@ pub fn ts(s: &str) -> DateTime<FixedOffset> {
 }
 
 /// `created` of `fixtures/logbook/.seldon/logbook.toml`: the baseline the
-/// fixture story starts from (README: cursor 6129 in pacman.log).
+/// fixture story starts from (README: cursor 6245 in pacman.log).
 pub const FIXTURE_CREATED: &str = "2026-09-01T19:00:42+02:00";
 
 /// The local zone of the fixture story (all of it is summer time).
@@ -121,6 +121,7 @@ impl Bench {
         let sources = Sources {
             pacman_log: fixture("logs/pacman.log"),
             pacman_db_lock: scratch.path("db.lck"),
+            proc_stat: scratch.path("proc-stat"),
             snapper: scratch.stub_cat("snapper", &fixture("logs/snapper.json")),
             snapshots: scratch.path("no-snapshots"),
             omarchy_version: scratch.stub("omarchy-version", "echo 4.0.4-1"),
@@ -129,6 +130,7 @@ impl Bench {
             plugins_dir: Some(scratch.path("plugins")),
             theme_file: Some(scratch.path("theme.name")),
             omarchy_path: scratch.path("omarchy"),
+            etc_dir: scratch.path("etc"),
         };
         Bench {
             ledger: Ledger::at(scratch.path("logbook/ledger"), Redactor::builtin()),
@@ -310,7 +312,7 @@ pub fn story() -> Bench {
     assert!(out.ok, "{:?}", out.message);
     assert_eq!(
         out.events.len(),
-        15,
+        22,
         "fixtures/README.md: the ledger's pacman events, got {:?}",
         subjects(&out.events)
     );

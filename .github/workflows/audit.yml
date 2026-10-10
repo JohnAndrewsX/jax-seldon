@@ -14,7 +14,7 @@ on:
     - cron: '17 5 * * 1'  # Mondays 05:17 UTC
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, next]
     paths:
       - engine/Cargo.lock
       - packaging/audit-ignore.txt
@@ -31,10 +31,43 @@ permissions:
   contents: read
 
 jobs:
+  # The build image from GHCR, not Docker Hub (WP-195): on a push to
+  # main or next, copies the pinned digest from Docker Hub when GHCR does
+  # not have it yet. The only job with packages: write, and it never runs
+  # on a pull request; the jobs below pull by digest, after this job when
+  # it runs (packaging/mirror-image.sh; packaging/README.md, "Pinned
+  # actions and image").
+  mirror:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Mirror the build image to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash packaging/mirror-image.sh
+
   audit:
+    needs: mirror
+    # also when mirror was skipped (no push); never after it failed
+    if: ${{ !cancelled() && (needs.mirror.result == 'success' || needs.mirror.result == 'skipped') }}
     runs-on: ubuntu-latest
-    # pinned like ci.yml (packaging/README.md, "Pinned actions and image")
-    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
+    # pinned like ci.yml (packaging/README.md, "Pinned actions and image"),
+    # pulled from the GHCR copy
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/johnandrewsx/jax-seldon/archlinux@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     env:
       CARGO_TERM_COLOR: always
     steps:

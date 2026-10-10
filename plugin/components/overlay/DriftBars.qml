@@ -36,7 +36,7 @@ ChartCanvas {
     ctx.fillStyle = root.faint
     ctx.fillRect(root.plotX, root.yOf(max), root.plotW, 1)
     ctx.fillRect(root.plotX, root.plotBottom, root.plotW, 1)
-    ctx.fillStyle = root.muted
+    ctx.fillStyle = root.dim
     ctx.textAlign = "right"
     ctx.textBaseline = "middle"
     ctx.fillText(String(max), root.axisW - Style.spacing.sm, root.yOf(max))
@@ -54,7 +54,7 @@ ChartCanvas {
     }
 
     // Week labels ("W40") under the bars, every n-th so they do not touch.
-    ctx.fillStyle = root.muted
+    ctx.fillStyle = root.dim
     ctx.textBaseline = "bottom"
     ctx.textAlign = "center"
     var labelW = root.textWidth(ctx, "W00") + Style.spacing.md
@@ -75,7 +75,7 @@ ChartCanvas {
       ctx.fillStyle = items[b][1]
       ctx.fillRect(lx, 1, box, box)
       lx += box + gap
-      ctx.fillStyle = root.muted
+      ctx.fillStyle = root.dim
       ctx.fillText(items[b][0], lx, 0)
       lx += root.textWidth(ctx, items[b][0]) + Style.spacing.md
     }

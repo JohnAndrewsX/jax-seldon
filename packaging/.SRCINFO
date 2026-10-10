@@ -7,7 +7,7 @@ pkgbase = jax-seldon
 	license = MIT
 	makedepends = cargo
 	depends = gcc-libs
-	depends = git
+	depends = git>=2.44
 	depends = glibc
 	optdepends = snapper: snapshot events (needs read access to /.snapshots)
 	options = !debug

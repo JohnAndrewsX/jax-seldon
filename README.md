@@ -54,9 +54,10 @@ you or your agents give.
   `~/.claude/settings.json` and do nothing in your other sessions unless
   `config.toml` sets `[hooks] scope = "all"`. Every
   logbook carries an `AGENTS.md` with the rules agents follow there.
-- In the Omarchy shell, a bar pill counts active cases and open drift. A
-  panel with six tabs and the Prime Radiant overlay with charts follow
-  your Omarchy theme.
+- In the Omarchy shell, a bar pill counts active cases and crises. A
+  panel with six tabs, which also counts the other changes without a
+  case, and the Prime Radiant overlay with charts follow your Omarchy
+  theme.
 - The logbook is Markdown and YAML in `~/Seldon`, a git repository and,
   if you want, an Obsidian vault. `seldon rebuild` writes a guide that
   turns a fresh install into this machine again. Nothing leaves your
@@ -112,10 +113,11 @@ shell starts.
 seldon init
 ```
 
-The wizard asks where the logbook lives (`~/Seldon` by default) and a few
-more questions. Enter takes the default for each one; in a list, Space
-ticks an item. `seldon init --non-interactive` takes every default
-without asking. Then check the setup:
+It asks one question, where the logbook lives (`~/Seldon` by default),
+and takes the defaults for the rest: the first capture looks back 90 days
+and records that as history "before Seldon", without asking.
+`seldon init --defaults` asks nothing; `seldon init --ask` is the full
+wizard. Then check the setup:
 
 ```sh
 seldon doctor
@@ -135,48 +137,58 @@ omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enabl
 Omarchy asks before it clones the plugin. A pill with the Seldon mark
 then appears on the right of the bar: a left click opens the panel, a
 middle click the Prime Radiant. If the panel shows a banner instead of
-data, the banner's button is the fix.
+data, the banner's button is the fix. Seldon records the plugin's
+installation as routine history, not as drift. You can also add the
+plugin first: its setup card installs the engine and creates the logbook
+for you, one button each
+([Getting started](docs/user/en/01-getting-started.md)).
 
 ## A 60-second tour
 
-Change something without telling Seldon first. A theme switch is quick
-and easy to undo. Then ask Seldon what it saw:
+Change something without telling Seldon first. Omarchy's `~/.bashrc` has
+a place for your own aliases; one line there is quick and easy to undo.
+Then ask Seldon what it saw:
 
 ```sh
+echo "alias gs='git status'" >> ~/.bashrc
 seldon capture
 seldon drift
 ```
 
 ```text
-yellow  2026-10-02 19:54  theme/theme-set  gruvbox  01M3YW134EVKJ23C1GXVHDVVEH
+yellow     2026-10-09 19:22  config/config-change  ~/.bashrc  01M4GV0KZY6ZYF5BBTFT5DXZ48
 1 open drift item(s), 0 crisis
 ```
 
-The switch is drift: no case covers it. The pill now shows `· 1` after
-the mark. The plugin captures by itself every 15 minutes;
-`seldon capture` just saves you the wait. Explain the change with the
-event id from the last column:
+The change is drift: no case covers it. It is no crisis, so the pill
+stays as it was: by default its number after the mark counts crises
+only. The panel's Today tab counts it under *without a case*; the plugin
+setting `driftInBar` set to `all` counts it in the bar too. The plugin
+captures by itself every 15 minutes; `seldon capture` just saves you the
+wait. Explain the change with the event id from the last column:
 
 ```sh
-seldon drift explain <EVENT> -- "Tried another theme"
+seldon drift explain <EVENT> -- "A short git status"
 ```
 
-Seldon records your reason as a completed case and the drift is gone. The
-next change you plan first:
+Seldon records your reason as a completed case and the drift is gone.
+Some changes are no drift at all: a theme switch, a plugin toggle, a
+system upgrade and adding Seldon's own plugin are routine history.
+The next change you plan first:
 
 ```sh
-seldon plan new --area themes -- "Switch back to my usual theme"
+seldon plan new --area shell -- "Remove the gs alias again"
 seldon plan start <ID>
-seldon log --case <ID> -- "Switching back to my usual theme"
+seldon log --case <ID> -- "Removing the gs alias again"
 ```
 
-`plan new` prints the case id. Switch back, run `seldon capture` again
-and link the new theme change to the case with
+`plan new` prints the case id. Delete the alias line from `~/.bashrc`,
+run `seldon capture` again and link the new change to the case with
 `seldon drift link <EVENT> <ID>`. Close the case with
 `seldon plan verify <ID>` and `seldon plan done <ID>`. A change an agent
 makes through the hooks carries the active case on its own.
 
-Open the panel and press `2` for the Changelog: both switches, the note
+Open the panel and press `2` for the Changelog: both changes, the note
 and every step of the case are there. A middle click on the pill opens
 the Prime Radiant. Each step is also a git commit in your logbook:
 `git -C ~/Seldon log --oneline`.

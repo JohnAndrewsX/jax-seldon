@@ -14,10 +14,15 @@ publishes both through `.github/workflows/release.yml`.
 | `.SRCINFO` | `makepkg --printsrcinfo` of the PKGBUILD; the AUR needs it in every commit |
 | `set-version.sh VERSION SHA256` | sets `pkgver`, `pkgrel=1` and the source checksum (the workflow runs it) |
 | `check-srcinfo.sh` | checks `.SRCINFO` against the PKGBUILD without makepkg (`just check-packaging`) |
-| `release-notes.sh X.Y.Z [CHANGELOG]` | prints the version's `CHANGELOG.md` section, the release body; exit 1 without it (`tests/release/`) |
+| `release-notes.sh X.Y.Z [CHANGELOG]` | prints the release body from the version's `CHANGELOG.md` section: from 0.2.0 the standing paragraph, the `### Highlights` and a link to the section, before 0.2.0 the whole section; exit 1 without the section, or from 0.2.0 when the Highlights break the rules in docs/VERSIONING.md (`tests/release/`) |
 | `expected-files.txt` | the exact file list of the built package (`tar tf`, dot files left out) |
 | `audit-ignore.txt` | RustSec advisories accepted for `engine/Cargo.lock`, each with an expiry and a reason (CONTRIBUTING.md, "Dependency advisories") |
 | `audit-ignore.sh [FILE [TODAY]]` | checks that list and prints its ids for `cargo audit --ignore`; exit 1 on an expired or malformed entry (`tests/release/`) |
+| `omarchy-pin` | the `omacom/omarchy` commit and the sha256 of its `bin/omarchy-plugin-validate` (WP-190; "The Omarchy pin" below) |
+| `omarchy-validate.sh PLUGIN_DIR` | fetches that validator over HTTPS, refuses it unless the sha256 matches, runs it on `PLUGIN_DIR`: `just plugin-validate` without the omarchy CLI (CI), the release workflow on the plugin split (`tests/release/`) |
+| `mirror-image.sh [WORKFLOW_DIR]` | the `mirror` job of `ci.yml` and `audit.yml`, on a push to `main` or `next` only: copies the build image's pinned digest from Docker Hub to GHCR when GHCR does not serve it yet, and checks the copy (WP-195; "Pinned actions and image" below; `tests/release/`) |
+| `store/baseline.md` | the plugin store's security baseline predicted for the plugin split: each capability with the README line and the scanner line behind it (WP-042) |
+| `store/submission.md` | the store submission issue, drafted for the operator; filed only on the operator's go (WP-042) |
 
 ## What the package contains
 
@@ -69,11 +74,12 @@ The workflow then runs, in order:
 
 | Job | Runs on | Does |
 |---|---|---|
-| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md` (`release-notes.sh`, docs/VERSIONING.md); **`cargo audit` of `engine/Cargo.lock`, the release gate**: an advisory, an unmaintained or a yanked crate fails the build unless `audit-ignore.txt` accepts its id (an expired entry fails it too); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) `install.sh` and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` (its id; its `version` and `Model.js` `PLUGIN_VERSION` equal to the tag's, `plugin-version.sh`); **a build-provenance attestation** (`actions/attest-build-provenance`) of the binary tarball, the source tarball, `SHA256SUMS` and `install.sh` — the job alone has `id-token: write` and `attestations: write`; `install.sh` checks it with `gh attestation verify` (SECURITY.md, "Verifying a release") |
-| `release` | tag | GitHub release `vX.Y.Z` with the four assets (the three above and `install.sh`, also listed in `SHA256SUMS`; README.md "Install"); the release notes are that `CHANGELOG.md` section (`packaging/release-notes.sh`) |
+| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md`, or from 0.2.0 without its `### Highlights` (`release-notes.sh`, docs/VERSIONING.md); **`cargo audit` of `engine/Cargo.lock`, the release gate**: an advisory, an unmaintained or a yanked crate fails the build unless `audit-ignore.txt` accepts its id (an expired entry fails it too); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) `install.sh` and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` (its id; its `version` and `Model.js` `PLUGIN_VERSION` equal to the tag's, `plugin-version.sh`); **the split's own tree (`git archive` of the split, extracted) against Omarchy's pinned validator** (`omarchy-validate.sh`, WP-190), so the plugin the store installs is validated before anything is published; **a build-provenance attestation** (`actions/attest-build-provenance`) of the binary tarball, the source tarball, `SHA256SUMS` and `install.sh` — the job alone has `id-token: write` and `attestations: write`; `install.sh` checks it with `gh attestation verify` (SECURITY.md, "Verifying a release") |
+| `split` | tag and dry run | recomputes `git subtree split --prefix=plugin` on the `plugin` job's runner (both pinned to the label `ubuntu-24.04`, never `-latest`; no container: its git, not the Arch image's) and fails unless it is the split `build` validated (its `plugin_split` output). `release` needs it, and `bump`, `aur` and `plugin` need `release`, so a mismatch stops the release before anything is published (WP-190) |
+| `release` | tag | GitHub release `vX.Y.Z` with the four assets (the three above and `install.sh`, also listed in `SHA256SUMS`; README.md "Install"); the release notes are the body `packaging/release-notes.sh` makes of that `CHANGELOG.md` section (from 0.2.0 its Highlights and a link to it) |
 | `bump` | tag | commits the updated `PKGBUILD` and `.SRCINFO` to `main` (`packaging: jax-seldon X.Y.Z`). Skipped with a warning if `main`'s `packaging/` changed after the tag; then bump by hand (below) |
 | `aur` | tag | clones `ssh://aur@aur.archlinux.org/jax-seldon.git`, commits `PKGBUILD` + `.SRCINFO` (`Update to X.Y.Z`), pushes `master`. The host key is pinned (Ed25519 `SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4`, as published on aur.archlinux.org). **Skipped with a notice** without `AUR_SSH_PRIVATE_KEY` |
-| `plugin` | tag | `git subtree split --prefix=plugin`, pushes it to `jax-seldon-plugin` as `main` and as the tag. **Skipped with a notice** without `PLUGIN_REPO_TOKEN` |
+| `plugin` | tag | `git subtree split --prefix=plugin`; refuses unless it is the split `build` validated (its `plugin_split` output); pushes it to `jax-seldon-plugin` as `main` and as the tag in one `git push --atomic` (both or neither). **Skipped with a notice** without `PLUGIN_REPO_TOKEN` |
 
 `aur` and `plugin` wait for `release`, so the AUR source URL exists before
 the AUR knows the version. `bump` failing (for example a protected `main`)
@@ -93,7 +99,7 @@ gh workflow run release.yml --ref main
 gh run watch
 ```
 
-Only `build` runs. The version comes from `engine/Cargo.toml`, the source
+Only `build` and `split` run. The version comes from `engine/Cargo.toml`, the source
 tarball is `git archive` of the branch head (no tag needed). Nothing is
 pushed, released or committed. The attestation step runs too, so it is
 exercised before a tag depends on it: the dry run's assets get real,
@@ -130,8 +136,49 @@ image digest, with the dated tag as a comment:
 
 ```
 - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-container: archlinux:base-devel@sha256:51dd…cc3 # base-devel-20260927.0.600689
+container:
+  image: ghcr.io/johnandrewsx/jax-seldon/archlinux@sha256:51dd…cc3 # base-devel-20260927.0.600689
 ```
+
+**The image comes from GHCR, not Docker Hub (WP-195).** Docker Hub's
+anonymous pull limit stopped CI on GitHub's shared runners before any
+step ran ("toomanyrequests"). The image is still Docker Hub's
+`archlinux:base-devel` at the pinned digest; the jobs pull a copy with the
+same digest from `ghcr.io/johnandrewsx/jax-seldon/archlinux`, so the
+content is the same byte for byte.
+
+- **The copy runs on a push to `main` or `next` only.** `ci.yml` and
+  `audit.yml` have a `mirror` job (`if: github.event_name == 'push'`; both
+  workflows push-trigger on `main` and `next` only, never on tags). It runs
+  `mirror-image.sh`, which reads the one digest the workflows pin and its
+  tag comment, and copies `docker.io/library/archlinux@sha256:<digest>` to
+  `ghcr.io/johnandrewsx/jax-seldon/archlinux:<tag>` with `skopeo copy
+  --all --preserve-digests` only when GHCR does not serve that digest yet.
+  Docker Hub is therefore asked once per digest, not once per run. It is
+  the only job with `packages: write`, so that token never meets a pull
+  request's code.
+- **Everything else only pulls by digest:** pull requests (the `mirror`
+  job is skipped and the jobs after it run), Dependabot, the weekly audit
+  and the release workflow (tags and dry runs; the tag's commit was pushed
+  to `main` first). The jobs that use the image have `packages: read` and
+  log in with the job's token. A pull request that changes the digest
+  therefore cannot pull it until a push to `next` or `main` has mirrored
+  it (see "Refreshing the pins").
+- **GHCR down:** the pulls fail and the jobs fail; there is no fallback to
+  Docker Hub. The `mirror` job fails too, its message names Docker Hub's
+  limit, GHCR and the token. Run the jobs again later.
+- **Visibility: private at first.** A package published from a workflow
+  with the job's token is expected to be linked to the repository (its
+  workflows can read it) and to be **private** at its first publish, as
+  GitHub's docs say for a first publish (untested until that push). The
+  repository's own CI pulls it either way. After the first push to `next`:
+  the repository's *Packages* → `archlinux` → Package settings → *Change
+  visibility* → **Public**, so forks can pull it too.
+- **The first copy is one anonymous Docker Hub pull** from a shared
+  runner, the same kind of pull the limit stopped; `--retry-times 3`
+  retries within seconds, not across the limit's window. If it hits the
+  limit, the `mirror` job is red and the jobs after it are skipped:
+  *Re-run failed jobs* later.
 
 A run therefore uses exactly the reviewed action code and image until a
 commit changes the pin. `tests/release/workflow-pins.test.sh` (part of
@@ -160,17 +207,100 @@ three workflows (each action and the image have one pin everywhere):
   Read the action's release notes between the old and the new version
   before you change the pin.
 - *The image:* the digest of `base-devel` and the dated tag that has the
-  same digest:
+  same digest (Dependabot does not do this: it updates GitHub-repository
+  actions only, not `container:` images):
 
   ```
   curl -fsS 'https://hub.docker.com/v2/repositories/library/archlinux/tags?page_size=5&name=base-devel-' \
     | jq -r '.results[] | "\(.name) \(.digest)"'
   ```
 
-  Take the newest line; the digest goes after `@`, the name into the
-  comment.
+  Take the newest line; the digest goes after `@` of the `image:
+  ghcr.io/johnandrewsx/jax-seldon/archlinux@sha256:…` line in all three
+  workflows, the name into the comment. Pull requests do not copy (see
+  above), so push the refresh commit to `next` first: that push's `mirror`
+  job copies the new digest to GHCR, and every later run pulls it from
+  there. A pull request opened before that push fails at the pull; run it
+  again after the push. If Docker Hub refuses the one copy (its limit), run
+  the `mirror` job again later.
 - *Then:* `just check-packaging`, and the release dry run on the branch
   ("Dry run" above) must be green before the change is merged.
+
+## The memory limit of `seldon watch`
+
+`just check-rss` (docs/TESTING.md, "Memory bound") bounds the peak RSS
+of `seldon watch` at 11 MB, operator decision E8. **Proposed 12 MB,
+pending the operator** (WP-195): the dev host's measured peaks are
+11 348 to 11 632 kB, so 11 MB fails there on `next` itself. CI records
+five measurements in every run's summary (not gated); the test-host
+numbers follow after WP-195's merge.
+
+## Dependabot
+
+`.github/dependabot.yml` (WP-195; decided 2026-10-06, E70) has Dependabot
+open pull requests once a week: one with every action bump (the commit
+SHA and its `# vX.Y.Z` comment, one pin per action across the workflows),
+one with the engine's minor and patch crate updates (`engine/Cargo.toml`
+and `Cargo.lock`), and one per major crate update. They are reviewed like
+any change, never merged by themselves: an allowed crate only (AGENTS.md
+§7), and `scripts/check-no-network.sh` in `just check-packaging` fails on a
+network, TLS, async-runtime or DNS crate in the shipped graph or a
+`std::net` in `engine/src`. How to review one: docs/TESTING.md,
+"Dependabot pull requests". The image digest and the Omarchy pin stay
+manual (above and below).
+
+The version updates target `next`, the integration branch, until 0.2.0;
+after 0.2.0 `target-branch` moves to `main`. Security updates always go to
+the default branch, `main`.
+
+The repository settings are the operator's: *Dependabot alerts* and
+*Dependabot security updates* on (Settings → Advanced Security); the
+version updates come from the file, never from the settings page's
+*Configure* button (that writes straight to `main`).
+
+## The Omarchy pin
+
+`omarchy-pin` names one `omacom/omarchy` commit and the sha256 of
+`bin/omarchy-plugin-validate` at that commit, with the Omarchy version as
+a comment. Omarchy's validator is bash and jq; `omarchy-validate.sh`
+fetches that one file from `raw.githubusercontent.com` (HTTPS only,
+redirects too), refuses it on a sha256 mismatch and never runs it then,
+and runs it on a plugin folder. It runs where the omarchy CLI is absent:
+`just plugin-validate` in CI, and the release workflow on the extracted
+plugin split. On the dev host `just plugin-validate` keeps the installed
+`omarchy plugin validate` and prints a notice when the installed
+validator is not the pinned one. The pin mirrors the validator installed
+on the test host; it never replaces the installed tree as the reference
+(AGENTS.md §1).
+
+**Refreshing the pin**, like the action pins, is a manual step in one
+commit:
+
+- *When:* after the test host moves to a new Omarchy release, or when
+  `just plugin-validate` on the dev host prints the notice.
+- *The commit:* the release tag of the version `omarchy version` prints
+  on the test host (lightweight tags point at the commit; an annotated
+  one at a tag object, resolve it once more as for the actions):
+
+  ```
+  gh api repos/omacom/omarchy/git/ref/tags/v4.0.4 --jq '.object.type + " " + .object.sha'
+  ```
+
+- *The sha256:* of the file at that commit, which must equal the test
+  host's installed validator:
+
+  ```
+  curl -fsSL --proto '=https' https://raw.githubusercontent.com/omacom/omarchy/<commit>/bin/omarchy-plugin-validate | sha256sum
+  ssh <test-host> 'omarchy version; sha256sum /usr/share/omarchy/bin/omarchy-plugin-validate'
+  ```
+
+  If they differ, the test host runs a build between tags: pick the
+  commit whose file matches, and say so in the comment. Read the
+  validator's diff between the old and the new commit before you change
+  the pin.
+- *Then:* `just check-packaging` (`tests/release/omarchy-pin.test.sh`
+  runs the installed validator through the pin where they match), and
+  CI on the pull request runs the fetched one.
 
 ## One-time setup (operator)
 

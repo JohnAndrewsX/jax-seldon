@@ -423,7 +423,7 @@ fn git_runs_in_the_engines_process_group() {
     // remove the link first: writing to it would write the host's git
     std::fs::remove_file(bin.join("git")).unwrap();
     let wrapper = format!(
-        "#!/bin/sh\nread -r stat < /proc/$$/stat\necho \"git $1 $stat\" >> '{log}'\nexec '{git}' \"$@\"\n",
+        "#!/bin/sh\nread -r stat < /proc/$$/stat\nverb=-\nfor a in \"$@\"; do case $a in -*|*=*) ;; *) verb=$a; break ;; esac; done\necho \"git $verb $stat\" >> '{log}'\nexec '{git}' \"$@\"\n",
         log = log.display(),
         git = host_git.display()
     );
@@ -468,4 +468,447 @@ fn git_runs_in_the_engines_process_group() {
     assert!(calls.contains("git rev-parse "), "{calls}");
     assert!(calls.contains("git add "), "{calls}");
     assert!(git_calls > 3 && snapper_calls > 0, "{calls}");
+}
+
+// WP-154: the rules for every git call. A stdout or stderr flood is
+// capped, a read-only query never reaches the network, and a commit keeps
+// the user's hooks and signing.
+
+/// `program` on this test process's PATH (the environment's PATH is its
+/// stub directory alone).
+fn host_program(program: &str) -> Option<std::path::PathBuf> {
+    std::env::var("PATH")
+        .unwrap_or_default()
+        .split(':')
+        .map(|dir| Path::new(dir).join(program))
+        .find(|p| p.is_file())
+}
+
+/// The doctor's `git` check.
+fn git_check(env: &Env, root: &Path) -> serde_json::Value {
+    let out = env.seldon(&["--json", "doctor", "--path", root.to_str().unwrap()]);
+    json(&out)["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "git")
+        .cloned()
+        .unwrap_or_else(|| panic!("no git check: {}", stdout(&out)))
+}
+
+/// A git that writes 100 MB to stderr costs the engine 1 MiB of it: the
+/// doctor's message, git's stderr on one line, stops there.
+#[test]
+fn a_hundred_megabytes_from_git_are_capped() {
+    let env = Env::new(Snapper::NoPermissions);
+    let (Some(yes), Some(head)) = (host_program("yes"), host_program("head")) else {
+        return;
+    };
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    env.wrap_git(&format!(
+        "case \"$*\" in\n*--show-toplevel*) '{}' x | '{}' -c 100000000 >&2; exit 128 ;;\nesac\nexec \"$REAL_GIT\" \"$@\"",
+        yes.display(),
+        head.display()
+    ));
+    let check = git_check(&env, &root);
+    let message = check["message"].as_str().unwrap();
+    assert!(
+        message.contains("not a usable repository: x x x"),
+        "{}",
+        &message[..message.len().min(200)]
+    );
+    // one line of "x x x …" for git's 1 MiB of "x\n"
+    let mib = 1024 * 1024;
+    assert!(
+        (mib - 64..mib + 1024).contains(&message.len()),
+        "{} bytes",
+        message.len()
+    );
+}
+
+/// A git before 2.44 refuses `--no-lazy-fetch`: the engine asks once more
+/// without it, once per process, and every answer is the same.
+#[test]
+fn a_git_without_no_lazy_fetch_still_answers() {
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    let calls = env.tmp.path().join("git-calls.log");
+    env.wrap_git(&format!(
+        "printf '%s\\n' \"$*\" >> '{}'\nif [ \"$1\" = --no-lazy-fetch ]; then\n  echo 'unknown option: --no-lazy-fetch' >&2\n  echo 'usage: git [-v | --version] [-h | --help] [-C <path>]' >&2\n  exit 129\nfi\nexec \"$REAL_GIT\" \"$@\"",
+        calls.display()
+    ));
+    let out = env.at("2026-10-08T09:00:00+02:00", &["--json", "status"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let index: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(env.home.join(".local/state/seldon/index.json")).unwrap(),
+    )
+    .unwrap();
+    let git = &index["logbook"]["git"];
+    assert_eq!(git["head"].as_str(), Some(&head(&env, &root)[..7]), "{git}");
+    assert!(git["dirty"].is_boolean(), "{git}");
+    let log = std::fs::read_to_string(&calls).unwrap();
+    let tried = log
+        .lines()
+        .filter(|l| l.starts_with("--no-lazy-fetch"))
+        .count();
+    assert_eq!(tried, 1, "{log}");
+    assert!(
+        log.contains("\n-c core.fsmonitor=false status --porcelain\n"),
+        "{log}"
+    );
+    // doctor: one more process, the same rule
+    std::fs::remove_file(&calls).unwrap();
+    let check = git_check(&env, &root);
+    assert_eq!(check["status"], "ok", "{check}");
+    let log = std::fs::read_to_string(&calls).unwrap();
+    let tried = log
+        .lines()
+        .filter(|l| l.starts_with("--no-lazy-fetch"))
+        .count();
+    assert_eq!(tried, 1, "{log}");
+}
+
+/// A logbook that is a partial clone, its promisor remote an `ext::`
+/// command that would leave a marker, the clone's own config allowing that
+/// transport, and HEAD's tree missing: `seldon status` never starts the
+/// fetch. With the query rules off, `git status` would.
+#[test]
+fn a_partial_clone_logbook_never_fetches_during_status() {
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    let now = "2026-10-08T09:00:00+02:00";
+    // the first status writes its files and commits them; the second has
+    // nothing to commit, so only read-only queries run after the break
+    let out = env.at(now, &["--json", "status"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let out = env.at(now, &["--json", "status"]);
+    assert_eq!(json(&out)["git"]["committed"], false, "{}", stdout(&out));
+    let tree = stdout(&env.git(&root, &["rev-parse", "HEAD^{tree}"]))
+        .trim()
+        .to_string();
+    let marker = env.tmp.path().join("fetched");
+    let fetch = env.tmp.path().join("fetch.sh");
+    common::write_executable(
+        &fetch,
+        &format!("#!/bin/sh\n: > '{}'\nexit 1\n", marker.display()),
+    );
+    for (key, value) in [
+        ("core.repositoryformatversion", "1".to_string()),
+        ("extensions.partialClone", "origin".to_string()),
+        ("remote.origin.url", format!("ext::{}", fetch.display())),
+        ("remote.origin.promisor", "true".to_string()),
+        ("protocol.ext.allow", "always".to_string()),
+    ] {
+        let out = env.git(&root, &["config", key, &value]);
+        assert!(out.status.success(), "{}", stderr(&out));
+    }
+    // from here on the test's own git is never run (it would fetch)
+    let object = root.join(".git/objects").join(&tree[..2]).join(&tree[2..]);
+    std::fs::remove_file(&object).unwrap();
+
+    let out = env.at(now, &["--json", "status"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(!marker.exists(), "git ran the promisor's ext:: command");
+    assert_eq!(json(&out)["git"]["committed"], false, "{}", stdout(&out));
+    // the doctor's read-only queries do not fetch either
+    let _ = git_check(&env, &root);
+    assert!(
+        !marker.exists(),
+        "doctor: git ran the promisor's ext:: command"
+    );
+    // nor the import's check for pending changes (`git::is_dirty`): git
+    // cannot read HEAD's tree, so the import refuses before any write
+    let vault = env.home.join("vault");
+    common::copy_dir(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/vaults/omarchy-agent"),
+        &vault,
+    );
+    let out = env.at(
+        now,
+        &[
+            "--json",
+            "import",
+            "omarchy-agent",
+            vault.to_str().unwrap(),
+            "--apply",
+        ],
+    );
+    assert!(
+        stdout(&out).contains("cannot read the logbook's git status"),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(
+        !marker.exists(),
+        "import: git ran the promisor's ext:: command"
+    );
+}
+
+/// The autocommit is the user's commit: their global config signs it with
+/// their signing program, their hooks run, and neither sees the query
+/// rules (a hook may fetch).
+#[test]
+fn commits_still_sign_and_run_hooks_as_configured() {
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    let signer = env.tmp.path().join("signer");
+    let signed = env.tmp.path().join("signed.log");
+    // git's contract with gpg.program: the payload on stdin, the detached
+    // signature on stdout, SIG_CREATED on the status fd (2); no external
+    // program is needed (PATH is the stub directory)
+    common::write_executable(
+        &signer,
+        &format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nwhile IFS= read -r l || [ -n \"$l\" ]; do :; done\nprintf '\\n[GNUPG:] SIG_CREATED D 1 8 00 1759900000 0000\\n' >&2\nprintf '%s\\n' '-----BEGIN PGP SIGNATURE-----' '' 'c2VsZG9uLXRlc3Q=' '-----END PGP SIGNATURE-----'\n",
+            signed.display()
+        ),
+    );
+    let hooks = env.tmp.path().join("hooks");
+    let ran = env.tmp.path().join("hooks.log");
+    for hook in ["pre-commit", "post-commit"] {
+        common::write_executable(
+            &hooks.join(hook),
+            &format!(
+                "#!/bin/sh\necho \"{hook} ${{GIT_ALLOW_PROTOCOL-unset}} ${{GIT_NO_LAZY_FETCH-unset}}\" >> '{}'\n",
+                ran.display()
+            ),
+        );
+    }
+    std::fs::write(
+        env.home.join(".gitconfig"),
+        format!(
+            "[user]\n\tname = Logbook Owner\n\temail = owner@example.invalid\n[commit]\n\tgpgSign = true\n[gpg]\n\tprogram = {}\n[core]\n\thooksPath = {}\n",
+            signer.display(),
+            hooks.display()
+        ),
+    )
+    .unwrap();
+
+    let out = env.seldon(&["--json", "log", "--", "a signed note"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(json(&out)["git"]["committed"], true, "{}", stdout(&out));
+    let commit = stdout(&env.git(&root, &["cat-file", "commit", "HEAD"]));
+    assert!(
+        commit.contains("\ngpgsig -----BEGIN PGP SIGNATURE-----\n"),
+        "{commit}"
+    );
+    assert!(commit.contains("\n\nseldon: note"), "{commit}");
+    let signs = std::fs::read_to_string(&signed).unwrap();
+    assert!(signs.contains("-bsau"), "{signs}");
+    assert_eq!(
+        std::fs::read_to_string(&ran).unwrap(),
+        "pre-commit unset unset\npost-commit unset unset\n"
+    );
+}
+
+/// WP-154 round 2 (B1): rule 2 for each caller. A wrapper `git` logs
+/// every call the engine makes with both query variables: through `log`,
+/// `status`, a `capture` that upgrades the agent rules (`is_clean_path`,
+/// then a commit of `AGENTS.md` alone), `doctor`, and `doctor` on a
+/// detached HEAD (`branches`). Every call but `add` and `commit` is a
+/// query: `--no-lazy-fetch` first, `GIT_ALLOW_PROTOCOL=none`,
+/// `GIT_NO_LAZY_FETCH=1`; `add` and `commit` see neither.
+#[test]
+fn every_git_call_but_add_and_commit_is_a_query_without_network() {
+    let env = Env::new(Snapper::Allowed);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    // no maintenance child of a commit (it would be git's call, not ours)
+    std::fs::write(
+        env.home.join(".gitconfig"),
+        "[user]\n\tname = Logbook Owner\n\temail = owner@example.invalid\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n",
+    )
+    .unwrap();
+    // the agent rules as 0.1.3 shipped them: the capture upgrades them
+    let rules = root.join("AGENTS.md");
+    std::fs::write(
+        &rules,
+        common::read(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/rules-v3/AGENTS-wp111-en.md"),
+        ),
+    )
+    .unwrap();
+    let out = env.git(&root, &["commit", "-qam", "rules v3"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let calls = env.tmp.path().join("git-calls.log");
+    env.wrap_git(&format!(
+        "printf '%s %s | %s\\n' \"${{GIT_ALLOW_PROTOCOL-unset}}\" \"${{GIT_NO_LAZY_FETCH-unset}}\" \"$*\" >> '{}'\nexec \"$REAL_GIT\" \"$@\"",
+        calls.display()
+    ));
+
+    let now = "2026-10-08T09:00:00+02:00";
+    let out = env.at(now, &["--json", "log", "--", "a note"]);
+    assert_eq!(json(&out)["git"]["committed"], true, "{}", stdout(&out));
+    let out = env.at(now, &["--json", "status"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let out = env
+        .command(&["--json", "capture", "--all"])
+        .env("SELDON_NOW", now)
+        .env("SELDON_PACMAN_LOG", env.tmp.path().join("pacman.log"))
+        .env("SELDON_PACMAN_DB_LOCK", env.tmp.path().join("no-db.lck"))
+        .env("SELDON_OMARCHY_PLUGINS_DIR", env.tmp.path().join("plugins"))
+        .env("SELDON_THEME_FILE", env.tmp.path().join("theme.name"))
+        .env("SELDON_HARDWARE_ROOT", common::hardware_root())
+        .output()
+        .unwrap();
+    let v = json(&out);
+    assert_eq!(v["rulesUpdated"]["git"]["committed"], true, "{v}");
+    assert_eq!(git_check(&env, &root)["status"], "ok");
+    let out = env.git(&root, &["checkout", "-q", "--detach"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(git_check(&env, &root)["status"], "degraded");
+
+    let log = std::fs::read_to_string(&calls).unwrap();
+    let mut verbs = std::collections::BTreeSet::new();
+    for line in log.lines() {
+        let (vars, argv) = line.split_once(" | ").unwrap();
+        let args: Vec<&str> = argv.split(' ').collect();
+        // the test's own `checkout --detach` went through the wrapper too
+        if args[0] == "checkout" {
+            continue;
+        }
+        let verb = args
+            .iter()
+            .copied()
+            .find(|a| !a.starts_with('-') && !a.contains('='));
+        // WP-199: no call starts the fsmonitor daemon, no write starts
+        // maintenance
+        assert!(argv.contains("-c core.fsmonitor=false "), "{line}");
+        if verb.is_some_and(|v| ["add", "commit"].contains(&v)) {
+            assert_eq!(vars, "unset unset", "{line}");
+            assert!(
+                argv.starts_with("-c gc.auto=0 -c maintenance.auto=false -c core.fsmonitor=false "),
+                "{line}"
+            );
+            verbs.insert(verb.unwrap().to_string());
+        } else {
+            assert_eq!(vars, "none 1", "{line}");
+            assert!(
+                argv.starts_with("--no-lazy-fetch -c core.fsmonitor=false "),
+                "{line}"
+            );
+            verbs.insert(args[3].to_string());
+        }
+    }
+    // the queries the WP names, the five more the handover names (but
+    // `show-ref`, asked on an unborn branch only), and the two writes
+    for verb in [
+        "--version",
+        "rev-parse",
+        "status",
+        "symbolic-ref",
+        "for-each-ref",
+        "var",
+        "config",
+        "diff",
+        "add",
+        "commit",
+    ] {
+        assert!(verbs.contains(verb), "no {verb} in\n{log}");
+    }
+    for query in [
+        "rev-parse --show-toplevel --absolute-git-dir",
+        "rev-parse --verify -q HEAD",
+        "rev-parse --short HEAD",
+        "status --porcelain -- AGENTS.md",
+        "status --porcelain\n",
+        "for-each-ref --format=%(refname:short) refs/heads/",
+    ] {
+        assert!(
+            log.contains(&format!("--no-lazy-fetch -c core.fsmonitor=false {query}")),
+            "no {query:?} in\n{log}"
+        );
+    }
+}
+
+/// The processes whose working directory is `dir` or below it, as
+/// `<pid> <comm>`; processes of other users (no `cwd` to read) and those
+/// that end while they are read are left out.
+fn processes_in(dir: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir("/proc").unwrap().flatten() {
+        let pid = entry.file_name();
+        if !pid.to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(cwd) = std::fs::read_link(entry.path().join("cwd")) else {
+            continue;
+        };
+        if cwd.starts_with(dir) {
+            let comm = std::fs::read_to_string(entry.path().join("comm")).unwrap_or_default();
+            found.push(format!("{} {}", pid.to_string_lossy(), comm.trim()));
+        }
+    }
+    found
+}
+
+/// WP-199: `init` (its first commit) starts no git that outlives it. git
+/// 2.55's `commit` runs `git maintenance run --auto --detach`, which
+/// leaves the commit at once and creates and removes
+/// `.git/objects/maintenance.lock` after `init` has returned (a test that
+/// removed `.git` right after `init` failed on it under load). The
+/// user's `core.fsmonitor=true` would start `git fsmonitor--daemon`,
+/// which outlives `init` and watches the logbook from outside it. git's
+/// own trace (`GIT_TRACE2`, every git process `seldon` starts and their
+/// children) shows no `maintenance`, `gc` or `fsmonitor` child, and no
+/// process has its working directory in the logbook when `init` returns.
+/// Three logbooks, three chances to see a straggler. A daemon a
+/// regression started is stopped before the asserts.
+#[test]
+fn init_leaves_no_git_running_in_the_logbook() {
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    std::fs::write(env.home.join(".gitconfig"), "[core]\n\tfsmonitor = true\n").unwrap();
+    let trace = env.tmp.path().join("git-trace2.log");
+    let mut runs = Vec::new();
+    for n in 0..3 {
+        let root = env.tmp.path().join(format!("logbook-{n}"));
+        let out = env
+            .command(&[
+                "init",
+                "--non-interactive",
+                "--no-capture",
+                "--path",
+                root.to_str().unwrap(),
+            ])
+            .env("GIT_TRACE2", &trace)
+            .env("GIT_TRACE2_BRIEF", "1")
+            .output()
+            .unwrap();
+        let left = processes_in(&root.canonicalize().unwrap());
+        runs.push((root, out, left));
+    }
+    for (root, _, _) in &runs {
+        env.git(root, &["fsmonitor--daemon", "stop"]);
+    }
+    for (_, out, left) in &runs {
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(out));
+        assert!(left.is_empty(), "still running in the logbook: {left:?}");
+    }
+    let log = std::fs::read_to_string(&trace).unwrap();
+    // the trace saw the commits: the check below is not empty
+    assert!(log.contains("cmd_name commit "), "{log}");
+    let background: Vec<&str> = log
+        .lines()
+        .filter(|l| l.starts_with("child_start"))
+        .filter(|l| l.contains(" maintenance ") || l.contains(" gc ") || l.contains("fsmonitor"))
+        .collect();
+    assert!(background.is_empty(), "{background:?}\n{log}");
 }

@@ -44,7 +44,7 @@ ChartCanvas {
       ctx.fillStyle = root.faint
       ctx.fillRect(0, top + root.laneH - 1, root.plotW, 1)
 
-      ctx.fillStyle = root.muted
+      ctx.fillStyle = root.dim
       ctx.textBaseline = "top"
       ctx.fillText(lane.label + " " + lane.last, 0, top)
       ctx.textAlign = "right"
@@ -79,7 +79,7 @@ ChartCanvas {
     }
 
     // The period's first and last day under the lanes.
-    ctx.fillStyle = root.muted
+    ctx.fillStyle = root.dim
     ctx.textBaseline = "bottom"
     ctx.fillText(Model.dateOfDay(root.chart.x0), 0, h)
     ctx.textAlign = "right"

@@ -36,7 +36,7 @@ impl CaseFile {
     /// Reads a case file. Invalid frontmatter is the user's to fix (exit 1),
     /// with the file named.
     pub fn load(path: &Path) -> Result<CaseFile> {
-        let text = std::fs::read_to_string(path)
+        let text = sys::read_regular_string(path, sys::LOGBOOK_FILE_MAX)
             .with_context(|| format!("cannot read {}", path.display()))?;
         let (case, doc) = model::parse::<Case>(&text)
             .map_err(|e| Error::user(format!("{}: invalid case: {e}", path.display())))?;
@@ -90,7 +90,7 @@ impl CaseFile {
         let target = self.checked(logbook)?;
         let text = self.doc.render();
         if target == self.path {
-            sys::write_atomic(&self.path, text.as_bytes())?;
+            sys::write_atomic_nofollow(&self.path, text.as_bytes())?;
             return Ok(None);
         }
         if let Some(dir) = target.parent() {
@@ -105,7 +105,7 @@ impl CaseFile {
                 target.display()
             )
         })?;
-        sys::write_atomic(&target, text.as_bytes())?;
+        sys::write_atomic_nofollow(&target, text.as_bytes())?;
         Ok(Some(std::mem::replace(&mut self.path, target)))
     }
 
@@ -123,9 +123,12 @@ impl CaseFile {
     }
 
     /// The save's checks: the file is still there, the frontmatter takes
-    /// the case ([`model::update`], into `doc`), and the folder of its
-    /// status has no other file of this name. Returns the target path.
+    /// the case ([`model::update`], into `doc`), its folder and the folder
+    /// of its status are real folders of the logbook
+    /// ([`Logbook::checked_file`], WP-168), and that folder has no other
+    /// file of this name. Returns the target path.
     fn checked(&mut self, logbook: &Logbook) -> Result<PathBuf> {
+        logbook.checked_file(&self.path)?;
         if !self.path.is_file() {
             return Err(Error::user(format!(
                 "{} is gone (moved by another seldon?); nothing written",
@@ -139,10 +142,8 @@ impl CaseFile {
             .file_name()
             .context("a case file has a name")?
             .to_os_string();
-        let target = logbook
-            .path("work")
-            .join(self.case.status.folder())
-            .join(name);
+        let target =
+            logbook.checked_file(Path::new("work").join(self.case.status.folder()).join(name))?;
         if target != self.path && target.exists() {
             return Err(Error::user(format!(
                 "cannot move {} to {}: the target exists",
@@ -226,7 +227,7 @@ pub fn all(logbook: &Logbook) -> Result<(Vec<CaseFile>, Vec<String>)> {
     for path in logbook.case_files()? {
         // a file name may hold any character but `/` and NUL
         let rel = printable(&relative(logbook, &path));
-        let text = match std::fs::read_to_string(&path) {
+        let text = match sys::read_regular_string(&path, sys::LOGBOOK_FILE_MAX) {
             Ok(text) => text,
             Err(e) => {
                 warnings.push(format!("{rel}: cannot read: {e}; skipped"));
@@ -474,6 +475,81 @@ pub fn strip_comments(text: &str) -> String {
     out
 }
 
+/// The first paragraph of section `name` (ADR-0038 §2): its text without
+/// HTML comments, blank and heading lines before it skipped, then every
+/// line up to the next blank one, each trimmed at the end, joined by
+/// `\n`. `None` without the section or without such a line.
+pub fn first_paragraph(body: &str, name: &str) -> Option<String> {
+    paragraphs(&body[section(body, name)?], 1)
+        .into_iter()
+        .next()
+}
+
+/// The first `max` paragraphs of `text` as [`first_paragraph`] reads them:
+/// HTML comments left out (an unclosed one runs to the end, as in
+/// [`strip_comments`]), then blocks of non-blank lines; a heading line
+/// (`#` to `######` and a space) ends one and is no paragraph text. The
+/// scan stops after the `max`-th paragraph, and only the paragraphs
+/// returned are copied: a whole task file imported as an Intent costs no
+/// more than its first paragraphs on every index build (WP-127 round 2).
+pub fn paragraphs(text: &str, max: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut block: Vec<String> = Vec::new();
+    let mut line = String::new();
+    let mut pos = 0;
+    // one line of text without comments ends: text joins the block, a
+    // blank or heading line closes it
+    fn end_line(line: &mut String, block: &mut Vec<String>, out: &mut Vec<String>) {
+        let l = line.trim_end();
+        if l.trim().is_empty() || is_heading(l.trim_start()) {
+            if !block.is_empty() {
+                out.push(block.join("\n").trim_start().to_string());
+                block.clear();
+            }
+        } else {
+            block.push(l.to_string());
+        }
+        line.clear();
+    }
+    while pos < text.len() && out.len() < max {
+        let rest = &text[pos..];
+        let nl = rest.find('\n').unwrap_or(rest.len());
+        // a comment opening on this line: everything up to its close is
+        // left out, line breaks inside it too
+        match rest[..nl].find("<!--") {
+            Some(open) => {
+                line.push_str(&rest[..open]);
+                match rest[open + 4..].find("-->") {
+                    Some(close) => pos += open + 4 + close + 3,
+                    None => pos = text.len(),
+                }
+            }
+            None => {
+                line.push_str(&rest[..nl]);
+                pos += (nl + 1).min(rest.len());
+                end_line(&mut line, &mut block, &mut out);
+            }
+        }
+    }
+    if out.len() < max {
+        if !line.is_empty() {
+            end_line(&mut line, &mut block, &mut out);
+        }
+        if !block.is_empty() {
+            out.push(block.join("\n").trim_start().to_string());
+        }
+    }
+    out.truncate(max);
+    out
+}
+
+/// An ATX heading line: `#` to `######` followed by a space or nothing.
+fn is_heading(line: &str) -> bool {
+    let rest = line.trim_start_matches('#');
+    let level = line.len() - rest.len();
+    (1..=6).contains(&level) && (rest.is_empty() || rest.starts_with([' ', '\t']))
+}
+
 /// What an agent's close lacks (ADR-0027 §5): the *Result* has no text,
 /// and *Plan › Verification* — the `Verification:` item of the Plan with
 /// its indented continuation lines — has none. Text is [`has_text`]: a
@@ -509,36 +585,73 @@ fn verification_filled(body: &str) -> bool {
     let Some(range) = section(body, "Plan") else {
         return false;
     };
-    let indent = |l: &str| l.len() - l.trim_start().len();
     let lines: Vec<&str> = body[range].lines().collect();
     for (i, line) in lines.iter().enumerate() {
-        let item = line.trim_start();
-        let item = ["- ", "* ", "+ "]
-            .iter()
-            .find_map(|m| item.strip_prefix(m))
-            .unwrap_or(item)
-            .trim_start()
-            .trim_start_matches(['*', '_']);
-        let Some(head) = item.get(..12) else {
+        let Some(rest) = item_text(line, "verification") else {
             continue;
         };
-        if !head.eq_ignore_ascii_case("verification") {
-            continue;
-        }
-        let Some(rest) = item[12..].trim_start_matches(['*', '_']).strip_prefix(':') else {
-            continue;
-        };
-        let mut text = rest.trim_start_matches(['*', '_']).to_string();
-        for next in &lines[i + 1..] {
-            if !next.trim().is_empty() && indent(next) <= indent(line) {
-                break;
-            }
+        let mut text = rest.to_string();
+        for next in continuation(&lines[i + 1..], line) {
             text.push('\n');
             text.push_str(next);
         }
         return has_text(&text);
     }
     false
+}
+
+/// The text after `<label>:` when `line` is that Plan item
+/// (case-insensitive, a list item or a plain line, the label bold or
+/// not: `**Verification:**`, `**Verification**:`).
+fn item_text<'a>(line: &'a str, label: &str) -> Option<&'a str> {
+    let item = line.trim_start();
+    let item = ["- ", "* ", "+ "]
+        .iter()
+        .find_map(|m| item.strip_prefix(m))
+        .unwrap_or(item)
+        .trim_start()
+        .trim_start_matches(['*', '_']);
+    let head = item.get(..label.len())?;
+    if !head.eq_ignore_ascii_case(label) {
+        return None;
+    }
+    let rest = item[label.len()..]
+        .trim_start_matches(['*', '_'])
+        .strip_prefix(':')?;
+    Some(rest.trim_start_matches(['*', '_']))
+}
+
+/// The lines after an item's `line` that belong to it: up to the next
+/// non-blank line indented no deeper than the item.
+fn continuation<'a, 'b>(rest: &'b [&'a str], line: &str) -> impl Iterator<Item = &'b &'a str> {
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let own = indent(line);
+    rest.iter()
+        .take_while(move |next| next.trim().is_empty() || indent(next) > own)
+}
+
+/// `plan` (the text of a Plan section) without its `Stop if:` item and
+/// the lines indented below it (WP-143): what makes an agent stop is no
+/// subject the case plans, so rule 9 does not link by it.
+pub fn without_stop_if(plan: &str) -> String {
+    let lines: Vec<&str> = plan.split_inclusive('\n').collect();
+    let mut out = String::with_capacity(plan.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        i += 1;
+        if item_text(line.trim_end_matches(['\n', '\r']), "stop if").is_some() {
+            // its lines, without the blank ones after them
+            let mut n = continuation(&lines[i..], line).count();
+            while n > 0 && lines[i + n - 1].trim().is_empty() {
+                n -= 1;
+            }
+            i += n;
+            continue;
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 /// The `## Plan` checkboxes (`- [ ]`, `- [x]`): (total, done).
@@ -620,18 +733,46 @@ pub fn new_body(logbook: &Logbook, id: &str, title: &str) -> Result<String> {
     Ok(fill(&template, &[("id", id), ("title", title)]))
 }
 
-/// `.seldon/templates/<name>` of the logbook, else the built-in one.
+/// sha256 of every body template an earlier engine shipped into
+/// `.seldon/templates/` (`seldon init` copies them): a logbook copy that
+/// is still one of them, byte for byte, holds nothing of the user's and
+/// counts as the built-in template, so an existing logbook gets the
+/// current one without a write (WP-143). By template name: the case
+/// template of WP-006, en and de.
+const SHIPPED_TEMPLATES: [(&str, &str); 2] = [
+    (
+        "case.md",
+        "9e8d70708793925822b12806394e3d0dc991d16f71b1b0d91d2d49c6aaf59f06",
+    ),
+    (
+        "case.md",
+        "a0561f366ad32a90f903b1f079cd7934b71224b71769e5244c2f56c63c56cf4c",
+    ),
+];
+
+/// Whether `text` is a `.seldon/templates/<name>` an earlier engine
+/// shipped ([`SHIPPED_TEMPLATES`]).
+fn shipped_template(name: &str, text: &str) -> bool {
+    let hash = sys::sha256_hex(text.as_bytes());
+    SHIPPED_TEMPLATES.contains(&(name, hash.as_str()))
+}
+
+/// `.seldon/templates/<name>` of the logbook, else the built-in one; a
+/// copy an earlier engine shipped unchanged is the built-in one too
+/// ([`SHIPPED_TEMPLATES`]).
 pub fn logbook_template(logbook: &Logbook, name: &str) -> Result<String> {
     let rel = format!(".seldon/templates/{name}");
     let path = logbook.path(&rel);
-    match std::fs::read_to_string(&path) {
+    let built_in = || -> Result<String> {
+        let language: Language = logbook.meta.language;
+        templates::find(&rel)
+            .map(|t| t.text(language).to_string())
+            .ok_or_else(|| anyhow::anyhow!("no built-in template {rel}").into())
+    };
+    match sys::read_regular_string(&path, sys::LOGBOOK_FILE_MAX) {
+        Ok(text) if shipped_template(name, &text) => built_in(),
         Ok(text) => Ok(text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let language: Language = logbook.meta.language;
-            templates::find(&rel)
-                .map(|t| t.text(language).to_string())
-                .ok_or_else(|| anyhow::anyhow!("no built-in template {rel}").into())
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => built_in(),
         Err(e) => Err(anyhow::Error::new(e)
             .context(format!("cannot read {}", path.display()))
             .into()),
@@ -664,17 +805,34 @@ pub fn fill(template: &str, vars: &[(&str, &str)]) -> String {
     out
 }
 
+/// The case folders `work/{queued,active,completed}` are real folders of
+/// the logbook ([`Logbook::checked_dir`], WP-168). A command that writes a
+/// case checks them under the lock before it reads them: a case can move
+/// between them, the next id is read from all three, and a file in the
+/// place of one would otherwise fail the listing (exit 2).
+pub fn checked_folders(logbook: &Logbook) -> Result<()> {
+    for status in [
+        CaseStatus::Queued,
+        CaseStatus::Active,
+        CaseStatus::Completed,
+    ] {
+        logbook.checked_dir(format!("work/{}", status.folder()))?;
+    }
+    Ok(())
+}
+
 /// `.seldon/active-case`: the id of the case started last, if any.
 pub fn active_case(logbook: &Logbook) -> Option<String> {
-    let text = std::fs::read_to_string(logbook.path(ACTIVE_CASE_FILE)).ok()?;
+    let text =
+        sys::read_regular_string(&logbook.path(ACTIVE_CASE_FILE), sys::LOGBOOK_FILE_MAX).ok()?;
     let id = text.trim();
     is_case_id(id).then(|| id.to_string())
 }
 
 /// Writes `.seldon/active-case`.
 pub fn set_active_case(logbook: &Logbook, id: &str) -> Result<()> {
-    sys::write_atomic(
-        &logbook.path(ACTIVE_CASE_FILE),
+    sys::write_atomic_nofollow(
+        &logbook.checked_file(ACTIVE_CASE_FILE)?,
         format!("{id}\n").as_bytes(),
     )?;
     Ok(())
@@ -685,13 +843,14 @@ pub fn clear_active_case(logbook: &Logbook, id: &str) -> Result<bool> {
     if active_case(logbook).as_deref() != Some(id) {
         return Ok(false);
     }
-    let path = logbook.path(ACTIVE_CASE_FILE);
+    let path = logbook.checked_file(ACTIVE_CASE_FILE)?;
     std::fs::remove_file(&path).with_context(|| format!("cannot remove {}", path.display()))?;
     Ok(true)
 }
 
 /// Creates `areas/<area>/README.md` on first use. Returns the new file's
-/// relative path, or `None` when the area exists.
+/// relative path, or `None` when the area exists. A linked or non-directory
+/// `areas/` or `areas/<area>/` is refused either way (WP-168).
 pub fn ensure_area(logbook: &Logbook, area: &str) -> Result<Option<String>> {
     if !is_slug(area) {
         return Err(Error::user(format!(
@@ -699,7 +858,7 @@ pub fn ensure_area(logbook: &Logbook, area: &str) -> Result<Option<String>> {
         )));
     }
     let rel = format!("areas/{area}/README.md");
-    let path = logbook.path(&rel);
+    let path = logbook.checked_file(&rel)?;
     if path.is_file() {
         return Ok(None);
     }
@@ -708,7 +867,7 @@ pub fn ensure_area(logbook: &Logbook, area: &str) -> Result<Option<String>> {
         description: None,
     };
     let text = model::render_new(&record, &format!("# {area}\n"));
-    sys::write_atomic(&path, text.as_bytes())?;
+    sys::write_atomic_nofollow(&path, text.as_bytes())?;
     Ok(Some(rel))
 }
 
@@ -948,5 +1107,111 @@ mod tests {
             "# C-1 — {{id}} {{other}}"
         );
         assert_eq!(fill("{{unclosed", &[("unclosed", "x")]), "{{unclosed");
+    }
+
+    /// WP-143: WP-006's case template, en and de, is known by name and
+    /// hash; this engine's is not, nor a copy under another name.
+    #[test]
+    fn the_shipped_case_templates_are_known() {
+        for language in Language::ALL {
+            let now = templates::find(".seldon/templates/case.md")
+                .unwrap()
+                .text(language);
+            let old = now
+                .replace(
+                    "- Persists: <!-- survives reboot and update | reboot only | lost at reboot -->\n",
+                    "",
+                )
+                .replace("- Stop if:\n", "");
+            assert_ne!(old, now, "{language}");
+            assert!(shipped_template("case.md", &old), "{language}");
+            assert!(!shipped_template("decision.md", &old), "{language}");
+            assert!(!shipped_template("case.md", now), "{language}");
+            assert!(!shipped_template("case.md", &format!("{old}\n")));
+        }
+    }
+
+    /// WP-143: rule 9 reads the Plan without its `Stop if:` item.
+    #[test]
+    fn without_stop_if_drops_the_item_and_its_lines() {
+        let plan = "- Goal: zed\n- **Stop if:** `linux` is upgraded\n  - or `glibc`\n\n  - or `pam`\n\n- Verification: x\nstop if: `sddm`\n";
+        assert_eq!(without_stop_if(plan), "- Goal: zed\n\n- Verification: x\n");
+        let plan = "- Stop ifs: `a`\n- Stopif: `b`\n- Stop if\n";
+        assert_eq!(without_stop_if(plan), plan, "not the item");
+        assert_eq!(without_stop_if("- Stop if:"), "");
+        assert_eq!(without_stop_if("x\r\n- Stop if: y\r\nz\r\n"), "x\r\nz\r\n");
+    }
+
+    #[test]
+    fn first_paragraph_reads_one_block_of_a_section() {
+        let body = "# C — t\n\n## Intent\n<!-- Why? -->\n\n  First line \nsecond line\n\nlater\n\n## Plan\n- x\n\n## Result\n";
+        assert_eq!(
+            first_paragraph(body, "Intent").as_deref(),
+            Some("First line\nsecond line")
+        );
+        // an empty section, a comment only, no section at all
+        assert_eq!(first_paragraph(body, "Result"), None);
+        assert_eq!(
+            first_paragraph("## Intent\n<!-- a\n\nb -->\n", "Intent"),
+            None
+        );
+        assert_eq!(first_paragraph(body, "Log"), None);
+        // a heading is no text; a `#` word is
+        assert_eq!(
+            first_paragraph("## Result\n### Done\n#3 merged\n", "Result").as_deref(),
+            Some("#3 merged")
+        );
+        // CRLF lines lose their `\r`
+        assert_eq!(
+            first_paragraph("## Result\r\nok\r\n\r\nmore\r\n", "Result").as_deref(),
+            Some("ok")
+        );
+        assert_eq!(paragraphs("a\n\n\nb\nc\n", 9), ["a", "b\nc"]);
+        assert_eq!(paragraphs("a\n\n\nb\nc\n", 1), ["a"]);
+        assert_eq!(paragraphs("a\n\nb", 0), Vec::<String>::new());
+    }
+
+    /// The streaming [`paragraphs`] reads as `strip_comments` and then the
+    /// lines would (WP-127 round 2, N5): comments within a line, over line
+    /// breaks, unclosed, back to back, at a paragraph's edge.
+    #[test]
+    fn paragraphs_leave_comments_out_as_strip_comments_does() {
+        fn whole(text: &str) -> Vec<String> {
+            let text = strip_comments(text);
+            let mut out = Vec::new();
+            let mut block: Vec<&str> = Vec::new();
+            for line in text.lines() {
+                let line = line.trim_end();
+                if line.trim().is_empty() || is_heading(line.trim_start()) {
+                    if !block.is_empty() {
+                        out.push(block.join("\n").trim_start().to_string());
+                        block.clear();
+                    }
+                    continue;
+                }
+                block.push(line);
+            }
+            if !block.is_empty() {
+                out.push(block.join("\n").trim_start().to_string());
+            }
+            out
+        }
+        for text in [
+            "a<!-- x -->b\nc",
+            "a<!-- x\n\ny -->b\n\nc",
+            "<!-- only -->\n\nreal\n",
+            "a\n<!-- open\nnever closed\n\nmore",
+            "a<!--1--><!--2-->b<!--3\n-->\n\nc\r\nd\r\n",
+            "x\n<!--\n-->\ny\n\n## H\nz",
+            "  lead\n\t\n# h\n<!-- c -->tail\n\n",
+            "a-->b<!--c-->d<!--",
+            "",
+        ] {
+            assert_eq!(paragraphs(text, usize::MAX), whole(text), "{text:?}");
+            for max in 0..3 {
+                let want: Vec<String> = whole(text).into_iter().take(max).collect();
+                assert_eq!(paragraphs(text, max), want, "{text:?} max {max}");
+            }
+        }
     }
 }
