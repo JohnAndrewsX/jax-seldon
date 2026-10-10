@@ -230,3 +230,13 @@ No theme's own fg/bg is below 4.5; no tone was limited in any of the 22.
   The no-handler mutant of M2 fails `one-cursor-keys` #5 and #8.
 - `just check` not rerun this round (not asked); shellcheck *not run*
   (not installed; CI); test host *not run* (the orchestrator's live look).
+
+## Live look (orchestrator, 2026-10-10, test host, 0.1.4+next.2fb99116)
+
+Desk opened on Changelog in Tokyo Night, Rose Pine (light) and Miasma,
+screenshots on the test host (*test host*, *desktop* session): header,
+sidebar, filter chips, buttons, the subline and the empty-state text read
+clearly in all three; the selected sidebar row has its own look; no
+hard-coded colour visible. Not looked at live: the armed ring on a
+selected primary button and the hover after key moves (left to WP-126's
+theme sweep).
