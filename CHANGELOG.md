@@ -102,6 +102,14 @@ and the package does not exist yet. Update the plugin first:
   does not write. A package log that is not a regular file (a FIFO, a
   device) is now a degraded pacman source naming it, not a capture that
   waits forever.
+- **No git left running in the logbook after a commit (WP-199).** git
+  2.55 starts automatic maintenance after every commit and detaches it,
+  so it went on writing in the logbook's `.git` after `seldon` had
+  returned. The engine's `init`, `add` and `commit` now pass
+  `-c gc.auto=0 -c maintenance.auto=false`: when a command returns, no
+  git of its own is still running. Seldon's commits no longer pack the
+  logbook's objects on their own; a git command you run there still
+  does, and `git -C <logbook> gc` packs them by hand.
 - **Exit 3 says which folder, and why it cannot be used (WP-119).** With
   `--json`, "logbook not initialised" now carries `path`, the logbook
   path the engine resolved, and `reason` when `init` could not create the

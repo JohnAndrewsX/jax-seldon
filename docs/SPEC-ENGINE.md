@@ -1492,7 +1492,14 @@ git with the same environment. The
 user's git configuration applies to `init`, `add` and `commit` (hooks,
 `commit.gpgsign` and `gpg.program`, filters, transport, a passphrase
 prompt on the terminal; git runs in the engine's process group, other
-programs in their own, WP-064). Every other git call is a read-only query
+programs in their own, WP-064), except automatic `gc` and
+`maintenance`: `init`, `add` and `commit` start with
+`-c gc.auto=0 -c maintenance.auto=false` (WP-199). git
+2.55 detaches that maintenance from the commit; it then writes in
+`.git` (`objects/maintenance.lock`) after the engine has waited for the
+commit and returned. The engine waits for every git it starts; with the
+two options, none is left running in the logbook when a command
+returns. Every other git call is a read-only query
 (`rev-parse`, `status`, `symbolic-ref`, `show-ref`, `for-each-ref`, `var`,
 `config --get`, `diff --cached --quiet`, `--version`) and never reaches
 the network (WP-154): `GIT_ALLOW_PROTOCOL=none` (every transport refused,
