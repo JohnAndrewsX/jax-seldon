@@ -268,7 +268,7 @@ qmllint:
     python3 tests/plugin/check-tokens.py "$shell_dir" "${files[@]}"
     echo "qmllint: ok (${#files[@]} files)"
 
-# Plugin logic: Model.js under node; SPEC-PLUGIN §7's token house rules (check-tokens.py --rules and its self-test); the banners' terminal scripts under bash with stubs; Service.qml states, the desk (Desk.qml: width, layout, keys, settings writes, notices, IPC), the pill (BarWidget.qml) and an IPC exit with two pills in a private headless Quickshell (host only).
+# Plugin logic: Model.js under node; every Text block plain text (E72, with its mutants); SPEC-PLUGIN §7's token house rules (check-tokens.py --rules and its self-test); the banners' terminal scripts under bash with stubs; Service.qml states, the desk (Desk.qml: width, layout, keys, settings writes, notices, IPC), the pill (BarWidget.qml) and an IPC exit with two pills in a private headless Quickshell (host only).
 # The node and bash parts run everywhere, CI included (WP-190; there the
 # bench's budgets are tripled for a shared runner); SELDON_SKIP_HOST_CHECKS
 # skips only the Quickshell harnesses (WP-191 brings them to CI).
@@ -281,6 +281,7 @@ plugin-test: check-runtime-space
     set -euo pipefail
     command -v node >/dev/null || { echo "plugin-test: node not found" >&2; exit 1; }
     node tests/plugin/model.test.js
+    node tests/plugin/plaintext.test.js
     if [[ -n "{{ skip_host }}" ]]; then
       SELDON_BENCH_BUDGET_SCALE=3 node tests/plugin/model.bench.js
     else

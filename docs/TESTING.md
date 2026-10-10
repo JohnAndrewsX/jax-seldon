@@ -21,7 +21,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | Omarchy's plugin validator on `plugin/`: `omarchy plugin validate plugin/` where the omarchy CLI is installed (a notice when `$OMARCHY_PATH/bin/omarchy-plugin-validate` is not the pinned one); without it `packaging/omarchy-validate.sh plugin/`, the validator at the commit of `packaging/omarchy-pin`, fetched over HTTPS and refused unless its sha256 matches (WP-190; it is bash and jq, no Omarchy install needed) | yes (the pinned validator) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, `bash tests/plugin/check-tokens.test.sh` and `python3 tests/plugin/check-tokens.py --rules` on every plugin QML file (SPEC-PLUGIN §7's house rules, WP-177), then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | the node and bash parts yes (WP-190; the bench with `SELDON_BENCH_BUDGET_SCALE=3`); the Quickshell harnesses **no** (dev host; WP-191) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/plaintext.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, `bash tests/plugin/check-tokens.test.sh` and `python3 tests/plugin/check-tokens.py --rules` on every plugin QML file (SPEC-PLUGIN §7's house rules, WP-177), then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | the node and bash parts yes (WP-190; the bench with `SELDON_BENCH_BUDGET_SCALE=3`); the Quickshell harnesses **no** (dev host; WP-191) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`; CI measures it after `just bench` without
@@ -407,6 +407,8 @@ What CI runs for the plugin (WP-190):
   A broken manifest (a missing entry point, a kind without one, a symlink,
   an `omarchy.*` id) turns CI red.
 - **`node tests/plugin/model.test.js`**: a broken `Model.js` turns CI red.
+- **`node tests/plugin/plaintext.test.js`** (E72): a `Text` block without
+  `textFormat: Text.PlainText` turns CI red.
 - **`node tests/plugin/model.bench.js`** with its budgets tripled
   (`SELDON_BENCH_BUDGET_SCALE=3`; a shared runner is slower and noisier
   than the dev host, and the dev host keeps the plain budgets). The graph's
@@ -773,6 +775,19 @@ time gate sees it, under QV4 it costs 10 ms per tick.
 CI sets 3, WP-190: on one dev-host core shared with two busy loops the
 ×10 median was about 6 ms, so a slow runner stays clear of 30 ms while a
 regression of an order of magnitude still fails).
+
+**Plain text (E72).** `node tests/plugin/plaintext.test.js` reads every
+`plugin/**/*.qml` with comments and strings blanked and checks that each
+`Text {` block (an inline `component X: Text`, a `contentItem: Text` and a
+qualified `Q.Text` included) declares `textFormat: Text.PlainText` at its
+own level — not in a child, a binding block, a comment or a string — and
+that no `textFormat:` anywhere in the plugin is anything else, so a use
+site cannot switch a Text-based component back to rich text. An exception
+is a line `<file>#<id> <reason>` in `tests/plugin/plaintext-allow.txt`
+(empty today); a line that matches no block that needs it fails. The test
+proves itself: for every real block (178 in 52 files at 0.2.0) it removes
+that block's declaration and requires the failure at that line, and it
+runs 15 hand-made shapes that must fail and 7 that must pass.
 
 ### 2. `Service.qml` in a private headless Quickshell
 
