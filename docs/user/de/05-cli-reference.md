@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 488725cf -->
+<!-- source: en/05-cli-reference.md @ 54ace4f1 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
