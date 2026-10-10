@@ -21,7 +21,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | Omarchy's plugin validator on `plugin/`: `omarchy plugin validate plugin/` where the omarchy CLI is installed (a notice when `$OMARCHY_PATH/bin/omarchy-plugin-validate` is not the pinned one); without it `packaging/omarchy-validate.sh plugin/`, the validator at the commit of `packaging/omarchy-pin`, fetched over HTTPS and refused unless its sha256 matches (WP-190; it is bash and jq, no Omarchy install needed) | yes (the pinned validator) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, `bash tests/plugin/check-tokens.test.sh` and `python3 tests/plugin/check-tokens.py --rules` on every plugin QML file (SPEC-PLUGIN §7's house rules, WP-177), then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | the node and bash parts yes (WP-190; the bench with `SELDON_BENCH_BUDGET_SCALE=3`); the Quickshell harnesses **no** (dev host; WP-191) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/plaintext.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, `bash tests/plugin/check-tokens.test.sh` and `python3 tests/plugin/check-tokens.py --rules` on every plugin QML file (SPEC-PLUGIN §7's house rules, WP-177), then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | the node and bash parts yes (WP-190; the bench with `SELDON_BENCH_BUDGET_SCALE=3`); the Quickshell harnesses **no** (dev host; WP-191) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`; CI measures it after `just bench` without
@@ -407,6 +407,8 @@ What CI runs for the plugin (WP-190):
   A broken manifest (a missing entry point, a kind without one, a symlink,
   an `omarchy.*` id) turns CI red.
 - **`node tests/plugin/model.test.js`**: a broken `Model.js` turns CI red.
+- **`node tests/plugin/plaintext.test.js`** (E72): a `Text` block without
+  `textFormat: Text.PlainText` turns CI red.
 - **`node tests/plugin/model.bench.js`** with its budgets tripled
   (`SELDON_BENCH_BUDGET_SCALE=3`; a shared runner is slower and noisier
   than the dev host, and the dev host keeps the plain budgets). The graph's
@@ -774,6 +776,27 @@ CI sets 3, WP-190: on one dev-host core shared with two busy loops the
 ×10 median was about 6 ms, so a slow runner stays clear of 30 ms while a
 regression of an order of magnitude still fails).
 
+**Plain text (E72).** `node tests/plugin/plaintext.test.js` reads every
+`plugin/**/*.qml` with comments and strings blanked and checks that each
+`Text {` block (an inline `component X: Text`, a `contentItem: Text` and a
+qualified `Q.Text` included) declares `textFormat: Text.PlainText` at its
+own level — not in a child, a binding block, a comment or a string — and
+that no `textFormat:` anywhere in the plugin is anything else, so a use
+site cannot switch a Text-based component back to rich text. An exception
+is a line `<file>#<id> <reason>` in `tests/plugin/plaintext-allow.txt`
+(empty today); a line that matches no block that needs it fails. Two
+more rules close the gaps of that scan: the number of blocks it finds
+must equal a plain count of `Text {` on the source with only comments
+removed (a quote it misreads, as in a regex literal `/"/`, would hide
+every block after it), and an assignment to `textFormat`, a `Binding` on
+it (`"textFormat"`) and an alias or script access (`.textFormat`) are
+refused as unsupported. The test proves itself: for every real block
+(178 in 52 files at 0.2.0) it removes that block's declaration and
+requires the failure at that line; into every real file with a Text
+block it inserts a function with `/"/` and a bare Text block before the
+first one and requires the count failure; and it runs 21 hand-made
+shapes that must fail and 9 that must pass.
+
 ### 2. `Service.qml` in a private headless Quickshell
 
 `bash tests/plugin/service-states.sh` starts `tests/plugin/harness/shell.qml`
@@ -784,7 +807,11 @@ service (no parent), prints a JSON snapshot (`status`, `pill`, `banner`,
 to the running omarchy-shell and writes only to a temp dir.
 
 Scenarios: every status (fixture index, `PATH` without `seldon`,
-`index-variants/not-initialised.json`, a missing path, broken JSON,
+`index-variants/not-initialised.json`, a missing path, broken JSON, an
+index of about 1.15 MB (the sample with a long string, valid JSON: refused before
+`JSON.parse` by CONTRACT.md rule 5's budget, E72, with the "Index
+unreadable" banner naming 1.2 MB and its *Build index*; over 12 s the
+service reads the file three times and logs its warning once),
 `SELDON_NOW` three hours after `generatedAt`, `invalid/index.contract-v3.json`
 and the sample as contract 1 — the banner names both versions and the side
 to update —, and the plugin of the `v0.1.3` tag (`git archive`; without the
@@ -1064,6 +1091,8 @@ to agent ("agent working" on its row and in the bar); a stale desk heals
 from the engine's "already working" and "no agent is working" refusals
 (`FAKE_SELDON_SESSIONS_LATE`, `FAKE_SELDON_FOCUS_GONE`); an index change
 while the desk is open asks for the sessions again (`aside-index`);
+Today's case tile says "· agent working" for the case with a session and
+only for it (FEEDBACK 11, `aside-tile`);
 without Hyprland the engine tracks nothing and a second hand-off launches
 (`FAKE_SELDON_NO_TRACKING`, `aside-nowindow`); `a` four times and `e`
 three times send one call each, busy labels while in flight (the fake
@@ -1143,7 +1172,7 @@ from the pill, `decisions-accept-index`) disarm, the second click runs `decide
 accept ADR-0004 --json` once and no `open`, the decision arrives
 accepted without Accept; the engine's refusal and a held lock show in
 place (`decisions-accept-refused`, `-locked`); in dev mode Accept is
-disabled; System's five tiles with every
+disabled; System's tiles with every
 field optional and a failing collector, Memory, not initialised, the
 stacked layout and label fit at 1366 and 3840 px. Every case ends with a
 log free of warnings, `TypeError`s and binding loops. `DESK_SHOTS=<dir>`
@@ -1151,7 +1180,12 @@ also renders the desk in Tokyo Night, Kanagawa and Catppuccin Latte
 (Today at 100 % and 50 %, Settings, the Changelog, Work, Decisions,
 System, Memory, the Prime Radiant at 100 % and 50 % and with a hover,
 the graph settled, with a hover, at 50 % and in a replay at day 12, not
-initialised).
+initialised). Offscreen the harness's `hyprctl` stub fails, so
+`Style.cornerRadius` keeps the shell's default, 0: the shots are square.
+The rounding sweep of SPEC-PLUGIN §7 "Geometry" (Hyprland rounding 0, 6
+and 16: rows, tiles, notices and controls round with it, stripes, accent
+bars, progress bars and heatmap cells stay square) runs on the test host
+with the theme sweep, by eye on its shots.
 
 The graph (WP-125, section 11): on the sample it settles and sleeps
 (200 ticks, the Timer off, no tick and no paint after), each reported

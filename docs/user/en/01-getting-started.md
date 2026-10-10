@@ -31,7 +31,8 @@ omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enabl
 ```
 
 A small pill with the Seldon mark appears on the right of the bar. Click
-it. The Seldon desk opens on Today, and its overview shows the setup card:
+it. The Seldon desk opens on Today, over the full width of the screen,
+and its overview shows the setup card:
 
 ```text
 Set up Seldon · 3 of 3 steps to go
@@ -40,8 +41,12 @@ Set up Seldon · 3 of 3 steps to go
   3  Read snapshots (optional)
 ```
 
-The header shows the same line. Click it from anywhere in the desk to come
-back to the card.
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-setup.png; the desk on Today with the setup card "Set up Seldon · 3 of 3 steps to go" -->
+
+The header's status chip shows the same line. Click it from anywhere in
+the desk to come back to the card. The desk is the plugin's one window:
+[Find your way around the desk](#find-your-way-around-the-desk) shows its
+parts and keys, and how to make it narrower.
 
 No pill? Check that `omarchy plugin list` shows `jax.seldon` as enabled
 (else `omarchy plugin enable jax.seldon`), then restart the shell with
@@ -62,7 +67,7 @@ again every few seconds after its terminal opened.
    called `seldon`, from the project's GitHub release into
    `~/.local/bin`. The install script checks it against the release's
    checksums. It runs as your user and asks for no password. The terminal
-   ends with "The engine is installed. The Seldon panel finds it by
+   ends with "The engine is installed. The Seldon desk finds it by
    itself." The card now says "2 of 3 steps to go". The AUR package is
    coming soon; until then this is the way.
 
@@ -108,6 +113,62 @@ again every few seconds after its terminal opened.
 When nothing is left, the card gives way to "Seldon is recording. Nothing
 to do." Routine changes stay quiet in the Changelog; only a change that
 can affect boot, login or the shell and has no case colours the bar.
+
+## Find your way around the desk
+
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-today.png; the desk on Today with the sample logbook: header with KPI strip, sidebar with the nine sections, list and detail -->
+
+The desk has four parts:
+
+- The header: the Seldon mark, the machine, the Omarchy version and the
+  time of the last capture; a status chip while a notice is up; five
+  figures (active, verification and queued cases, crises, attention). A
+  click on a figure opens its section.
+- Notices under the header, each with its one-click fix.
+- The sidebar on the left: the nine sections with their counts, and the
+  search field at the bottom.
+- The section itself: a list, and on the right the detail of the
+  selected row, with its action bar at the top.
+
+Everything works with the mouse and with the keyboard:
+
+| Key | Does |
+|---|---|
+| `1` to `8` | Today, Changelog, Work, Decisions, System, Memory, Prime Radiant, Graph |
+| `,` | Settings |
+| `/` | the search: filters the current list; Enter keeps the filter, Esc clears it |
+| `↑`/`↓`, `k`/`j` | move in the list; the detail follows the selection |
+| `Enter` | the detail's first action that starts no program, for example the form of an open change |
+| `Esc` | closes a form, then clears the search, then closes the desk |
+| `c` | capture now |
+
+An action that writes to the logbook needs a second press: the first
+press (or click) arms it, and the action bar says what the second one
+does. Any other key disarms it. Enter never starts an agent. The full key
+list is in [Daily use](03-daily-use.md).
+
+The desk opens at 100 % of the screen's width. To make it narrower,
+press `,` and choose a width under Settings › Appearance: from 50 to
+100 %, with presets for 50 %, 67 %, 75 % and Full. The page shows how many
+pixels that is on this screen. *Sidebar* there switches between Open
+(names and counts) and Collapsed (icons only). Omarchy's bar settings
+show the same two settings for the Seldon widget: `deskWidth` (50 to 100)
+and `deskSidebar` (`open` or `collapsed`). The desk is never narrower
+than 960 pixels, unless the screen is.
+
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-50.png; the desk at 50 % width on a 1920 px screen, centred under the bar -->
+
+To open the desk with a key, add a binding to
+`~/.config/hypr/bindings.lua`. Seldon never installs it for you. The
+suggested key is Super+Shift+L (L for logbook), which Omarchy leaves
+free:
+
+```lua
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
+```
+
+Any other free key works as well; `omarchy menu keybindings --print`
+lists the keys in use.
 
 ## Step 3: Record an unplanned change
 
@@ -161,9 +222,10 @@ Seldon counts it as routine, and routine changes are history, not drift.)
    the event id (yours is different).
 
    It is no crisis, so the pill in the bar stays as it was: by default
-   the number after the mark counts crises only. The panel's Today tab
-   (key `1`) shows the change under *without a case*, and so does the
-   pill's tooltip. To count every change without a case in the bar too,
+   the number after the mark counts crises only. The desk lists the
+   change in the Changelog (key `2`) under the chip *open*, and its
+   header counts it under *attention*. The pill's tooltip says
+   "1 change without a case". To count every change without a case in the bar too,
    set the plugin setting `driftInBar` to `all`
    ([Configuration](06-configuration.md#plugin-settings)).
 
@@ -175,7 +237,8 @@ Seldon counts it as routine, and routine changes are history, not drift.)
    seldon drift explain <EVENT> -- "A short git status"
    ```
 
-   Replace `<EVENT>` with the id from your `seldon drift` output.
+   Replace `<EVENT>` with the id from your `seldon drift` output. In the
+   desk the same is *Explain…* on the change in the Changelog.
 
    ```text
    Explained 1 event(s) with the new completed case C-2026-001
@@ -279,9 +342,10 @@ Index: ~/.local/state/seldon/index.json
 The `snapper degraded` line is there until you grant the read access (step 2).
 Your counts differ.
 
-Open the plugin's panel and press `2` for the Changelog. You see both
-changes to `~/.bashrc`, the plugin's installation, the note and the case
-steps. Press `3` for Work: both cases sit in the Completed column.
+Open the desk and press `2` for the Changelog. The chip *open* is empty
+now; click *all*. You see both changes to `~/.bashrc`, the plugin's
+installation, the note and the case steps. Press `3` for Work: both cases
+sit in the COMPLETED group.
 
 The logbook is plain Markdown, and each step you took is a git commit:
 
@@ -357,7 +421,7 @@ seldon --version
 ```
 
 ```text
-seldon 0.1.4
+seldon 0.2.0
 ```
 
 If your shell says `command not found`, `~/.local/bin` is not on your
@@ -417,7 +481,7 @@ seldon doctor
 
 ```text
 seldon doctor · ~/Seldon
-  ok        engine   seldon 0.1.4, contract 2
+  ok        engine   seldon 0.2.0, contract 2
   ok        config   ~/.config/seldon/config.toml
   ok        logbook  ~/Seldon · machine <machine> · en · 0 cases, 0 decisions, 0 journal days
   ok        cases    every case id has one file
@@ -451,7 +515,7 @@ the same grant as the card's step 3.
 ## Where to go next
 
 - [Concepts](02-concepts.md): what cases, zones, risk and drift mean.
-- [Daily use](03-daily-use.md): the pill, the panel and the Prime Radiant.
+- [Daily use](03-daily-use.md): the pill and every section of the desk.
 - [Working with agents](04-working-with-agents.md): let Claude Code or
   another agent work a case while Seldon records what it does.
 

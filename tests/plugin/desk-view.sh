@@ -1968,6 +1968,18 @@ expect aside-index 2 "$tc.actions[0]" "Hand to agent"
 expect aside-index 5 "$tc.actions | join(\",\")" "Focus,To verification,Drop,Open in editor,Ask agent"
 clean_log aside-index
 
+# Today's case tile says "· agent working" while a session runs (FEEDBACK
+# 11): asked when the desk opens, the tile of C-2026-003 only.
+mkdir -p "$work/home-aside-tile"
+echo C-2026-003 >"$work/home-aside-tile/sessions"
+run aside-tile "" 1920x1080 "summon:{\"section\":\"today\"};settle;pause:800" \
+  HOME="$work/home-aside-tile" FAKE_SELDON_FIXTURE="$sample"
+expect aside-tile 3 "$sv.sessions | join(\",\")" "C-2026-003"
+expect aside-tile 3 "$tv.cases | join(\",\")" "C-2026-003,C-2026-004"
+expect aside-tile 3 "$tv.caseTexts | join(\"|\")" "4/5 steps · claude-code · agent working|2/4 steps · claude-code"
+shows aside-tile 3 "4/5 steps · claude-code · agent working"
+clean_log aside-tile
+
 # A failed open is no open: the same target again is sent at once (round 2,
 # N3/P5: the 2 s rule starts only from a successful open).
 mkdir -p "$work/home-aside-openfail"

@@ -21,8 +21,58 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
+## [0.2.0] - 2026-10-10
+
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
+and the package does not exist yet. Update the plugin first:
+`omarchy plugin update jax.seldon` (Omarchy shows the changes and asks
+`Update jax.seldon?`; answer yes), then `omarchy-restart-shell`.
+
+### Highlights
+
+- **Breaking:** the bar popup and the fullscreen Prime Radiant are one desk now: nine sections on `1`–`8` and `,`, at the width you choose.
+- **Breaking:** update the engine and the plugin together; both read and write index contract 2.
+- **Breaking:** the old `jax.seldon.panel` command only forwards to the desk and goes away in 0.3.0; bind `omarchy-shell shell toggle jax.seldon`.
+- **Breaking:** a logbook folder or file that is a symbolic link refuses writes; `seldon doctor` names it.
+- A fresh install sets itself up from one card on Today: the engine and the logbook in one click each, snapshots optional.
+- A new logbook looks back 90 days and records that as history, so your first day starts quiet.
+- Your agent can sort every open change into one proposal; you apply it in one click, each crisis on its own.
+- Hand a case to an agent from the desk: the desk steps aside, and the case says "agent working" while it runs.
+- Section 8 draws your machine's memory as a graph that grows day by day.
+- System lists the files you recently edited under `~/.config` and the packages pacman's upgrade skips.
+
 ### Breaking
 
+- **The desk replaces the panel and the overlay (ADR-0034).** The bar
+  popup with six tabs (`Panel.qml`) and the fullscreen Prime Radiant
+  (`Overlay.qml`) are gone, not kept behind a setting. One window, the
+  desk, takes their place: it opens over the desktop on the focused
+  monitor, below the bar, 50 to 100 % of the screen wide (`deskWidth`,
+  default 100), with a header (the status chip and the counts), the
+  notices, a sidebar with nine sections and a search, a list and a
+  detail. The pill keeps its look and counts: a left click opens the
+  desk, a middle click opens it at the Prime Radiant (section 7), a
+  right click captures. `omarchy-shell shell toggle jax.seldon` (and the
+  suggested binding, now `SUPER+SHIFT+L`: Omarchy gives `SUPER+SHIFT+S`
+  to Google Maps) opens the desk, no longer the overlay.
+- **A new keyboard map.** `1`–`8` are the sections (Today, Changelog,
+  Work, Decisions, System, Memory, Prime Radiant, Graph) and `,` is
+  Settings; `Alt+↓`/`Alt+↑` cycle them, `/` searches the current list.
+  The overlay's `1`–`4` periods are `←`/`→` or `h`/`l` in section 7; the
+  panel's `←`/`→` between tabs and Tab/Shift-Tab to the next bar panel
+  do nothing now. `n` is Today's note field, `+` Work's new case, `i` a
+  new case from one sentence. Writing actions still arm on the first
+  press and run on the second; Enter never starts an agent. The table is
+  in docs/KEYBINDINGS.md.
+- **The `jax.seldon.panel` IPC target is a shim, removed in 0.3.0.** It
+  forwards `open`, `show`, `close`, `hide`, `toggle`, `view` and `pill`
+  to the desk, `tab <name>` to that section, `resolve crisis|<eventId>`
+  and `filter <source>` to the Changelog. Scripts and bindings should use
+  `omarchy-shell shell toggle|summon jax.seldon` and `shell call
+  jax.seldon …` (plugin/README.md, "Configure"). A 0.1.x user needs no
+  other action: the settings keep their values, `deskWidth` and
+  `deskSidebar` take their defaults (100 %, open), and after `omarchy
+  plugin update` the restart notice appears once.
 - **Contract 2 (ADR-0035).** `index.json` says `contractVersion: 2`;
   engine and plugin must be updated together: a 0.1.x plugin shows the
   "Index format mismatch" banner against this engine, and this plugin
@@ -70,6 +120,37 @@ and the package does not exist yet. Update the plugin first:
   before. `seldon doctor` has a new `layout` row that names every linked
   folder and file where Seldon writes, so you see them before a write is
   refused (`error`; `degraded` for what is only skipped).
+
+Smaller changes for scripts are under Engine: `seldon init
+--non-interactive` looks back 90 days, `seldon decide accept` is a
+command (a decision titled "accept" needs `--`), and the package needs
+git 2.44 or later.
+
+### Added
+
+- **The desk (ADR-0034).** Today, Changelog, Work, Decisions, System,
+  Memory, Prime Radiant, Graph and Settings in one window; Settings ›
+  Appearance sets the width (a slider, 50 %, 67 %, 75 %, Full) and the
+  sidebar (open or icons only); a desk under 960 px shows icons only,
+  under 760 px the list and the detail stack.
+- **The setup card** on Today, until Seldon is set up, and a first-run
+  card after it; before the logbook exists, a preview of what the
+  machine remembers on its own (`seldon preview`).
+- **Bulk triage (ADR-0036):** *Agent sorts N open changes*, the proposal
+  with its evidence, *Apply proposals*, crises one by one, *Discard*;
+  *Ask agent* on a change and on a case.
+- **Agents on cases:** a new case from one sentence (`seldon agent start
+  --new`), *Hand to agent* and *Focus* (one agent per case, `seldon agent
+  focus`, `seldon agent sessions`), "agent working" on the case's row and
+  tile, *Reopen* (`seldon plan reopen`).
+- **The graph** (section 8, ADR-0034 §5), *Accept* on a proposed decision
+  (`seldon decide accept`), *Import tasks…* (`seldon import task`),
+  System's *Recently edited* and *Ignored by pacman* tiles with *Watch*
+  (`seldon config watch`).
+- **Contract 2 and forward reading:** `contractReadableFrom` lets a later
+  engine keep this plugin reading its index (ADR-0051).
+- **Release notes with Highlights** and a recorded live test per release
+  (`packaging/acceptance/vX.Y.Z.json`).
 
 ### Engine
 
@@ -432,6 +513,27 @@ and the package does not exist yet. Update the plugin first:
 
 ### Plugin
 
+- **An oversized index is refused before it is parsed (WP-126).** The
+  plugin parses `index.json` on the shell's thread; a text of 1 MB or
+  more (the contract's budget, CONTRACT.md rule 5) now gets the "Index
+  unreadable" notice with *Build index*, instead of a long stall. Its
+  detail names the size and the way out: "index.json is 1.2 MB, over the
+  1 MB the plugin reads; rebuild it from the logbook, and if it stays,
+  seldon status in a terminal names the largest section." The engine
+  only warns about an index over its budget and still writes it, so a
+  rebuild can write the same size again. The plugin logs the warning
+  once per size, not on each of its 5-second re-reads.
+- **Plain text everywhere (WP-126).** Every text block of the plugin is
+  plain text, never rich text: a `<a href>` or an `<img>` in a logbook
+  text shows as characters. A test over the whole plugin keeps it so.
+- **Square stripes, rounded rows (WP-126).** The stripes of the list rows
+  and the plan cards and the progress bars are square, the notices take
+  the shell's corner radius: rows, tiles, notices and controls follow
+  Hyprland's `decoration:rounding` as Omarchy's own panels do, and the
+  marks that carry a state stay square at any rounding.
+- **"· agent working" on Today's case tile (WP-126)** while an agent runs
+  on the case, as its Work row says.
+- The setup terminals and `install.sh` name the desk, not the panel.
 - **Ignored by pacman (WP-165, ADR-0052).** System has a seventh tile:
   the packages and groups pacman's full upgrade skips — "pacman's full
   upgrade skips them; `pacman -S` still updates them." A change of the
@@ -544,9 +646,9 @@ and the package does not exist yet. Update the plugin first:
   (AGENTS.md §7). CI pulls its Arch image from a GHCR copy with the same
   digest instead of Docker Hub, whose anonymous pull limit had stopped
   it; only a push to `main` or `next` copies an image there. `just
-  check-rss` prints its measurement and CI records it; its limit stays
-  11 MB (operator decision E8), and 12 MB, from the measurements in
-  docs/TESTING.md, is proposed to the operator.
+  check-rss` prints its measurement and CI records it; its limit is
+  12 MB (operator decision E79, was 11 MB), from the measurements in
+  docs/TESTING.md.
 - **A recorded live test per release (WP-192).** From 0.2.0 every
   release has `packaging/acceptance/vX.Y.Z.json`: the commit deployed to
   the test host, the Omarchy version and channel, the installed engine
@@ -555,6 +657,14 @@ and the package does not exist yet. Update the plugin first:
   checks it and refuses a release whose code changed after the tested
   commit (docs/VERSIONING.md, "Release acceptance record"); the test-host
   deploy prints the full commit for it.
+- **The guide, the READMEs and the specs describe the desk (WP-126).**
+  The user guide (English and German: getting started, concepts, daily
+  use, agents, troubleshooting, update with "What changed from 0.1.x"),
+  the plugin README (sections, keys, states, settings, the commands the
+  plugin runs), the README's states table, CONCEPT.md and
+  docs/KEYBINDINGS.md. `release-notes.sh` refuses a bullet before
+  `### Highlights`, and the release workflow prints the notes with
+  workflow commands stopped.
 - **Release notes you can read (WP-193).** From 0.2.0 a release opens
   with at most ten points on what changes for you, the Highlights at the
   top of its section here; the GitHub release shows them and one link to
@@ -1742,7 +1852,8 @@ plugin `jax.seldon` (published from `plugin/` as `jax-seldon-plugin`).
 - Specs (engine, plugin, logbook, contract), 22 ADRs, plugin README with
   security section, keybinding docs, preview image.
 
-[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.2.0
 [0.1.4]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.4
 [0.1.3]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.3
 [0.1.2]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.2

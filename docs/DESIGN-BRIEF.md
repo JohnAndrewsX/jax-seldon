@@ -15,26 +15,35 @@ Seldon is a **flight recorder and planning desk for an Omarchy Linux
 system**. It records every change to the machine (packages, configs,
 themes, plugins, Omarchy updates) in a Markdown logbook, reconciles those
 facts against *planned* work (cases), and shows the picture in the
-Omarchy shell: a small **pill** in the top bar, a **panel** with tabs, and
-a full-screen overlay called the **Prime Radiant** with charts.
+Omarchy shell: a small **pill** in the top bar and one window, the
+**desk** (from 0.2.0; ADR-0034), that opens over the desktop at 50 to
+100 % of the screen's width. The desk has a header with the mark and the
+machine's state, a sidebar with nine sections (Today, Changelog, Work,
+Decisions, System, Memory, the **Prime Radiant** with its charts, a
+Graph of the machine's memory, Settings), a list and a detail. Until
+0.1.x the plugin had a bar popup with six tabs and a full-screen Prime
+Radiant overlay instead; assets made for those (A5, A11, A12) live on in
+the desk's header, notices and charts.
 
 The name comes from Hari Seldon in Asimov's *Foundation*: the Seldon Plan
 predicts the future; the *Seldon Crises* are the moments where reality
-deviates from the plan. In our product a **crisis** is a change in the
-red zone with no explanation; **drift** is any change nobody planned; a
-**case** is a planned piece of work. The Prime Radiant in the novels is
-the device that displays the Plan's equations; ours shows the machine's
-history as charts.
+deviates from the plan. In our product a **crisis** is a change without a
+case that can break boot, login, the shell or security (ADR-0028);
+**drift** is a change nobody planned that is worth a look; a **case** is
+a planned piece of work. The Prime Radiant in the novels is the device
+that displays the Plan's equations; ours shows the machine's history as
+charts.
 
 Tone of the product: calm, precise, technical, trustworthy. It records,
 it does not nag. Think instrument, not mascot.
 
-Current placeholder: the bar pill shows the Unicode glyph `⟡` (U+27E1,
-white concave-sided diamond) before the counts, e.g. `⟡ 2 · 3`.
+The bar pill shows the A4 glyph, the Prime Radiant mark, before the
+counts, e.g. `2 · 1` (until round 1 the placeholder was the Unicode glyph
+`⟡`, U+27E1).
 
 Reference material in the repository:
-- `plugin/preview.png` — the panel and the Prime Radiant as they look today
-- `docs/images/` — further renders of the panel
+- `plugin/preview.png` — the plugin as it looks in the current release
+- `docs/images/` — further renders of the desk's sections
 - `work/completed/WP-03*/screenshots/` — renders in three Omarchy themes
 - `/usr/share/omarchy/logo.svg` and `icon.png` on any Omarchy machine —
   the host platform's own identity (we live next to it, we do not copy it)

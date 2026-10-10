@@ -3,10 +3,10 @@
 The normative source is [SPEC-PLUGIN.md](SPEC-PLUGIN.md) §5.3 (the desk's
 keys) and §8 (IPC, suggested binding). From 0.2.0 the plugin's one surface
 is the desk (ADR-0034); this page is the key reference for it. The user
-guide and the plugin README follow it in WP-126; until then
-[plugin/README.md → Keys](../plugin/README.md#keys) still describes the 0.1
-panel. A change to a key updates the spec, this page, the README table and
-the checks in `tests/plugin/desk-view.sh` together.
+guide ([Daily use](user/en/03-daily-use.md)) and
+[plugin/README.md → Keys](../plugin/README.md#keys) follow it. A change to
+a key updates the spec, this page, the README table, the guide and the
+checks in `tests/plugin/desk-view.sh` together.
 
 ## The desk
 
@@ -34,8 +34,9 @@ the checks in `tests/plugin/desk-view.sh` together.
 | `Space`, `Enter`, `p` | Graph: play the growth from the first day (on from the cut when it is earlier), again: pause |
 | `0`, `-`, `=` | Graph: fit the view, zoom out, zoom in |
 
-Decisions (`4`): *Accept* on a proposed decision opens it in the editor,
-as `e` does: set `status: accepted` there. The Prime Radiant (`7`) starts
+Decisions (`4`): *Accept* on a proposed decision arms on the first press
+or click (*Confirm accept*) and runs `seldon decide accept` on the second;
+`e` opens the decision in the editor. The Prime Radiant (`7`) starts
 on 90 d every time you enter it; its 0.1 keys `1`–`4` are the sections
 now. The graph (`8`) takes the mouse: drag a node or the background,
 the wheel zooms, a hover shows the card with *Open case*; Esc pauses the
@@ -69,13 +70,15 @@ Tab and Shift-Tab do nothing: the desk is not a bar popup.
 | `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section (an event, a case, a decision id, …; the graph: keep that node's card) |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`); an unknown id changes nothing |
 | `omarchy-shell shell call jax.seldon hover "heatmap 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (fractions of its plot; `""` clears), while it is shown |
-| `omarchy-shell jax.seldon.panel open\|close\|toggle\|tab <name>\|resolve <eventId\|crisis>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until 0.3.0 |
+| `omarchy-shell jax.seldon.panel open\|close\|show\|hide\|toggle\|tab <name>\|resolve <eventId\|crisis>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until 0.3.0 |
 | `omarchy-shell jax.seldon.service status\|refresh\|capture` | the service |
 
 The suggested Hyprland binding is documented, never installed by the
 plugin (AGENTS.md §6: no edits under `~/.config` outside the plugin
-folder):
+folder). Super+Shift+L (L for logbook) is free in Omarchy's default and
+config bindings (operator decision E81; Super+Shift+S is Omarchy's
+Google Maps key):
 
 ```
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```

@@ -130,7 +130,7 @@ cancelled() {
 install='curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'
 install_url='curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh'
 grant='sudo setfacl -m u:tester:rx /.snapshots'
-recorded="[2] Snapshots are now recorded. The panel updates by itself."
+recorded="[2] Snapshots are now recorded. The desk updates by itself."
 granted="[2] Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture."
 grant_failed="[1] Nothing changed. Snapshots stay off; Seldon works without them."
 install_failed="[1] The install did not finish. Run it again; your logbook is untouched."
@@ -183,7 +183,7 @@ run install-ok INSTALL_ENGINE_SCRIPT
 has install-ok out "[plain] Seldon: install the engine"
 has install-ok out "[plain] $install"
 has install-ok out "installer ran"
-has install-ok out "[2] The engine is installed. The Seldon panel finds it by itself."
+has install-ok out "[2] The engine is installed. The Seldon desk finds it by itself."
 has install-ok out "DONE"
 log_is install-ok "$install_url"
 run install-404 INSTALL_ENGINE_SCRIPT STUB_CURL_EXITS=22
@@ -197,7 +197,7 @@ cancelled install-ctrl-c "Cancelled. The install did not finish. Run it again; y
 
 # Engine update: the new engine rewrites the index once, on success only.
 run update-engine-ok UPDATE_ENGINE_SCRIPT
-has update-engine-ok out "[2] The engine is updated. In the Seldon panel, press Check again."
+has update-engine-ok out "[2] The engine is updated. In the Seldon desk, press Check again."
 log_is update-engine-ok "$(printf '%s\n' "$install_url" "seldon status")"
 run update-engine-404 UPDATE_ENGINE_SCRIPT STUB_CURL_EXITS=22
 has update-engine-404 out "[1] The update did not finish. Run it again; your logbook is untouched."
@@ -206,7 +206,7 @@ log_is update-engine-404 "$install_url"
 # Plugin update.
 run update-plugin-ok UPDATE_PLUGIN_SCRIPT
 has update-plugin-ok out "[plain] omarchy plugin update jax.seldon"
-has update-plugin-ok out "[2] If the plugin was updated, the Seldon panel offers Restart shell to load it."
+has update-plugin-ok out "[2] If the plugin was updated, the Seldon desk offers Restart shell to load it."
 log_is update-plugin-ok "omarchy plugin update jax.seldon"
 run update-plugin-failed UPDATE_PLUGIN_SCRIPT STUB_OMARCHY_EXITS=1
 has update-plugin-failed out "[1] Nothing changed. The plugin stays at its version."
@@ -215,26 +215,26 @@ has update-plugin-failed out "[1] Nothing changed. The plugin stays at its versi
 run init-ok INIT_SCRIPT
 has init-ok out "[plain] Seldon: create your logbook"
 has init-ok out "[plain] seldon init --defaults"
-has init-ok out "[2] Your logbook is ready. The panel updates by itself."
+has init-ok out "[2] Your logbook is ready. The desk updates by itself."
 log_is init-ok "seldon init --defaults"
 run init-failed INIT_SCRIPT STUB_SELDON_EXITS=1
-has init-failed out "[1] No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again."
+has init-failed out "[1] No logbook was created; the message above says why. When the folder is in use, the desk offers Choose a folder; else press Create logbook to try again."
 has init-failed out "DONE"
 run init-ctrl-c INIT_SCRIPT STUB_SELDON_SIGINT=die
-cancelled init-ctrl-c "Cancelled. Press Create logbook in the panel to start again."
+cancelled init-ctrl-c "Cancelled. Press Create logbook in the desk to start again."
 
 # plain seldon init, which asks where (the setup card's Choose a folder,
 # WP-119 round 2).
 run init-ask-ok INIT_ASK_SCRIPT
 has init-ask-ok out "[plain] Seldon: choose where your logbook goes"
 has init-ask-ok out "[plain] seldon init"
-has init-ask-ok out "[2] Your logbook is ready. The panel updates by itself."
+has init-ask-ok out "[2] Your logbook is ready. The desk updates by itself."
 log_is init-ask-ok "seldon init"
 run init-ask-failed INIT_ASK_SCRIPT STUB_SELDON_EXITS=1
-has init-ask-failed out "[1] No logbook was created; the message above says why. Press Choose a folder in the panel to try again."
+has init-ask-failed out "[1] No logbook was created; the message above says why. Press Choose a folder in the desk to try again."
 has init-ask-failed out "DONE"
 run init-ask-ctrl-c INIT_ASK_SCRIPT STUB_SELDON_SIGINT=die
-cancelled init-ask-ctrl-c "Cancelled. Press Choose a folder in the panel to start again."
+cancelled init-ask-ctrl-c "Cancelled. Press Choose a folder in the desk to start again."
 
 # The real gum takes every flag the scripts use (it exits non-zero on an
 # unknown one, and the text would be missing).
@@ -246,7 +246,7 @@ if command -v gum >/dev/null; then
   has real-gum out "Nothing changed. Snapshots stay off; Seldon works without them."
   lacks real-gum out "gum:"
   run real-gum-ok INIT_SCRIPT
-  has real-gum-ok out "Your logbook is ready. The panel updates by itself."
+  has real-gum-ok out "Your logbook is ready. The desk updates by itself."
   run real-gum-ctrl-c SNAPPER_FIX_SCRIPT STUB_SUDO_SIGINT=die
   has real-gum-ctrl-c out "Cancelled. Nothing changed."
   lacks real-gum-ctrl-c out "DONE"

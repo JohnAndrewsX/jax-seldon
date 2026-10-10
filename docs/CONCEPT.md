@@ -120,19 +120,46 @@ did, next to what it was asked to do.
 
 ## The plugin surfaces
 
-- **Bar pill** the Seldon mark, then `2 · 1` — active cases, crises (hidden at 0; `driftInBar` shows all changes without a case or none). Colour by worst state.
-  Click → panel. `SUPER+SHIFT+S` toggles (user-configurable).
-- **Panel** — tabs: *Today* (journal, quick entry), *Changelog* (ledger
-  timeline with source filter and snapshot markers), *Work* (queued /
-  active / completed, create case, start agent), *Decisions*, *System*
-  (dossier summary), *Memory*. Each tab is a `qs.Ui` list bound to one
-  index section.
-- **Prime Radiant** (overlay, fullscreen) — the picture: 365-day activity
-  heatmap, package count series, drift curve, risk distribution, timeline of
-  Omarchy releases and snapshots, and the current Plan (active cases with
-  progress). This is the screenshot people share.
-- **Empty and error states** — engine missing, logbook missing, index stale,
-  drift crisis — each a banner with one command and one button.
+Two surfaces from 0.2.0 (ADR-0034; the 0.1 bar popup and the fullscreen
+overlay are gone):
+
+- **Bar pill** — the Seldon mark, then `2 · 1`: active cases, crises
+  (hidden at 0; `driftInBar` shows all changes without a case or none).
+  Colour by worst state: accent while cases are active, urgent on a
+  crisis. Left click → the desk, middle click → the desk at the Prime
+  Radiant, right click → capture. `SUPER+SHIFT+L` toggles the desk
+  (suggested, user-configurable).
+- **The desk** — one window over the desktop, on the focused monitor, 50
+  to 100 % of the screen wide (`deskWidth`, default 100). A header with
+  the mark, the machine, the status chip and the counts (active,
+  verification, queued, crises, attention); notices with their one-click
+  fixes; a sidebar with nine sections and a search; a list and a detail
+  with the actions. The sections, each on a key:
+  - *1 Today* — the day: what needs you (the crises), the journal and the
+    note field, the active cases as tiles, a new case from one sentence;
+    until Seldon is set up, the setup card.
+  - *2 Changelog* — the ledger's events by day with the chips open,
+    crisis, attention, routine, in case, all; resolve a change (link,
+    explain, dismiss), or let the agent propose it for all open changes
+    and apply the proposal yourself (ADR-0036).
+  - *3 Work* — the cases by status; start, hand to an agent, verify,
+    complete, drop, reopen; import tasks.
+  - *4 Decisions*, *5 System* (the dossier as tiles), *6 Memory*.
+  - *7 Prime Radiant* — the picture: activity heatmap, package count
+    series, drift curve, risk distribution, timeline of Omarchy releases,
+    snapshots and crises, and the current Plan (active cases with
+    progress) over 30 d, 90 d, 365 d or all. This is the screenshot people
+    share.
+  - *8 Graph* — areas, cases, decisions and changes as a graph that grows
+    day by day.
+  - *Settings* (`,`) — the desk's width and sidebar; what is in force and
+    where it is set.
+  The desk only reads `index.json` and asks the engine for every write;
+  writing actions arm on the first press and run on the second.
+- **Empty and error states** — engine missing, logbook not initialised,
+  index missing, index stale, a contract mismatch — each a notice with
+  one command and one button, named in the header's chip; until Seldon is
+  set up, one setup card on Today takes their place.
 
 ## Agents and the logbook
 
@@ -184,5 +211,6 @@ harness's job). Not cloud. Not an Obsidian plugin. Not a general PKM tool.
 | Trace | the ordered events and sessions linked to a case |
 | Dossier | `system/` — documented actual state |
 | Memory | `memory/` — what agents learned about this machine |
-| Prime Radiant | the full-screen overlay |
+| Desk | the plugin's one window from 0.2.0: sidebar, list, detail (ADR-0034) |
+| Prime Radiant | the desk's section 7, the charts (the full-screen overlay until 0.1.x) |
 | Index | `~/.local/state/seldon/index.json`, the plugin's only input |

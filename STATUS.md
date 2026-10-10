@@ -678,6 +678,10 @@ submission). (see `work/queued/`)
 - E80 shellcheck runs before CI: the orchestrator's gate also runs it on
   the test host, where the operator installed it (no binary in the repo
   or on the dev host).
+- E81 the suggested desk key is `SUPER + SHIFT + L` (L for logbook)
+  instead of `SUPER + SHIFT + S`, which Omarchy binds to Google Maps;
+  `SUPER + SHIFT + L` is unbound in Omarchy 4.0.4 (stable and rc, default
+  and config bindings), so the docs need no `hl.unbind` step (WP-126).
 
 ## Decided 2026-10-09 (operator)
 - E39 ADR-0045 accepted (EASY | PRO; the header switch stores the mode for

@@ -9,6 +9,7 @@ for your Omarchy system.
 [![Release](https://img.shields.io/github/v/release/JohnAndrewsX/jax-seldon)](https://github.com/JohnAndrewsX/jax-seldon/releases/latest)
 [![Licence: MIT](https://img.shields.io/github/license/JohnAndrewsX/jax-seldon)](LICENSE)
 
+<!-- TODO(WP-126b) preview.png: reshoot as the desk (Today at 100 %, sample index, Tokyo Night) and rewrite this alt text; the current file shows the 0.1 panel and overlay -->
 ![Preview, 2480×1080: the Prime Radiant at 1920×1080 on the left, the panel's Today tab framed on the right, Tokyo Night](preview.png)
 
 *Offscreen renders of the real QML on the sample index, Tokyo Night theme.*
@@ -17,19 +18,19 @@ The Seldon engine records what changes on your machine (packages, Omarchy
 updates, themes, plugins, snapshots, config) in a plain-Markdown logbook
 and matches it against the changes you planned as cases. This plugin
 shows the result in the Omarchy shell. You write notes, plan cases and
-explain unexpected changes from the panel; the engine does the writing.
+explain unexpected changes from the desk; the engine does the writing.
 
 - A pill in the bar counts active cases and crises
   ([The pill](#the-pill)).
-- A panel with six tabs shows today's journal, the changelog, your work
-  cases, decisions, the system and your agents' memory
-  ([The panel](#the-panel)).
-- The Prime Radiant is a fullscreen overlay with charts and the plan
-  ([The Prime Radiant](#the-prime-radiant)).
-- From the panel you write notes, create cases, move them through their
-  steps and propose decisions; the engine writes each one.
-- One sheet resolves drift: link a change to a case, explain it or
-  dismiss it.
+- One desk shows today, the changelog, your work cases, decisions, the
+  system, your agents' memory, the Prime Radiant's charts and a graph of
+  your machine's memory, at the width you choose ([The desk](#the-desk)).
+- From the desk you write notes, create cases, move them through their
+  steps, hand them to an agent and accept decisions; the engine writes
+  each one.
+- One form resolves drift: link a change to a case, explain it or
+  dismiss it; or let your agent propose it for all open changes and apply
+  the proposal yourself.
 - Every degraded state, from a missing engine to a stale index, has a
   one-click fix ([States](#states)).
 
@@ -44,10 +45,11 @@ writes no file itself; only its own settings, through the shell
 ## Requirements
 
 - Omarchy 4 with the Omarchy shell.
-- The `seldon` engine (see [Install](#install)). Without it the plugin
-  shows "Seldon engine not installed" (see [States](#states)).
+- The `seldon` engine, 0.2.0 or later (see [Install](#install)). Without
+  it the desk's setup card offers to install it (see [States](#states)).
 - A logbook, created once with `seldon init` (in a terminal; it asks where
-  to put it, `~/Seldon` by default).
+  to put it, `~/Seldon` by default), or with the setup card's *Create
+  logbook*.
 
 ## Install
 
@@ -78,7 +80,7 @@ The checksum line checks that `install.sh` matches the release's
 (`gh`) logged in, the optional `gh attestation verify` line does: it
 passes only for a file that this project's release workflow built.
 If it fails, do not run `install.sh`. `install.sh` then checks the
-engine it downloads. The panel's *Install* button (see
+engine it downloads. The desk's *Install* button (see
 [States](#states)) runs the same script without that first check: it
 downloads `install.sh` with `curl` and pipes it to `bash`, in a terminal
 you see; `install.sh` still checks the engine.
@@ -106,9 +108,10 @@ yay -S jax-seldon                # update
 seldon init
 ```
 
-It asks where to put the logbook (`~/Seldon` by default) and a few more
-questions; Enter takes each default. `seldon doctor` then checks the
-setup.
+It asks one question, where to put the logbook (`~/Seldon` by default),
+and takes the defaults for the rest; it records the last 90 days as
+history. `seldon doctor` then checks the setup. Or skip this step: the
+desk's setup card runs `seldon init --defaults` for you.
 
 **3. The plugin:**
 
@@ -117,7 +120,7 @@ omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enabl
 ```
 
 Omarchy asks before it clones the plugin. The pill lands in the bar's
-right section. Without `--enable` the plugin is installed disabled; enable
+right section; a left click opens the desk. Without `--enable` the plugin is installed disabled; enable
 it later with `omarchy plugin enable jax.seldon`.
 
 **Development copy** (before a release, or to try local changes): copy the
@@ -139,7 +142,7 @@ omarchy-restart-shell
 The Seldon mark, then `A · D` — A active cases, D crises: changes that can
 affect boot, login or the shell and have no case (ADR-0028); zero parts are
 hidden (the mark alone, `2`, `· 1`). Other changes without a case are
-listed in the panel and never counted in the bar unless you set
+listed on the desk and never counted in the bar unless you set
 `driftInBar` to `all` (see [Configure](#configure)). Accent colour while
 cases are active, the theme's urgent colour while a crisis is open (in
 every `driftInBar` mode), dimmed while something needs fixing; the mark
@@ -149,88 +152,71 @@ cases, 1 crisis, 7 changes without a case, last capture 4 min ago".
 
 | Click | Does |
 |---|---|
-| Left | toggle the panel |
-| Middle | toggle the Prime Radiant |
+| Left | open or close the desk |
+| Middle | open the desk at the Prime Radiant |
 | Right | capture now (`seldon capture`, then `seldon status`) |
 
-### The panel
+### The desk
 
-Six tabs, each with a fixed number key:
+One window for everything: it opens over your desktop below the bar, on
+the monitor that has the focus, and a click outside it or Esc closes it.
+At the top the header: the mark, the machine, the Omarchy version and the
+last capture; the **status chip** while a notice is up (the first
+notice's title, "+N" for more; a click folds the notices); the counts
+active · verification · queued · crises · attention, each a click to its
+list; Settings and *Esc*. Under it the notices with their one-click
+fixes (see [States](#states)). On the left the sidebar with the nine
+sections and their counts and the search (`/`); then the section's list
+and the detail of the selected row, its actions in a bar at the top that
+stays while the detail scrolls.
 
-| # | Tab | Shows | Actions |
+<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-today.png; the desk at 100 % on Today, sample index, Tokyo Night -->
+
+| # | Section | Lists | Actions |
 |---|---|---|---|
-| 1 | Today | the date, today's counts (events today and in 7 days, active and queued cases, changes without a case that are no crisis), the QuickEntry, today's journal entries, yesterday's behind one row | write a note; *Open in editor* (today's journal) |
-| 2 | Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; snapshot rows highlighted; changes without a case marked (crises in the urgent colour, the others in the accent; every other row has a muted stripe whatever its zone), and a quiet "N changes without a case" line under the header | *Resolve…* on every change without a case; *Ledger* (this month's ledger); *Capture now* |
-| 3 | Work | your cases in three columns, Queued · Active (verification included) · Completed (the last 50, dropped ones struck through); "2 / 3 active" against your limit; the card of the case under the cursor | *New case*; the card's actions (below) |
-| 4 | Decisions | your decisions (ADRs), newest first: id, status (*proposed* marked, *superseded* struck through), title, date | *Open*; *New decision* |
-| 5 | System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine | *Open in editor* (the logbook's `STATUS.md`) |
-| 6 | Memory | what your agents read at session start: the headings of `memory/lessons.md` and the other memory files with path and last update | *Open* (the logbook folder) |
+| 1 | Today | the day's state, events today and in 7 days, the note field (`n`), NEEDS YOU (the crises), today's journal and yesterday's behind one row; the overview: the setup card until Seldon is set up, then "Seldon is recording. …", the active cases as tiles ("· agent working" while an agent runs on one), *New case* from one sentence (`i`) | write a note; *Open in editor* (`e`, today's journal); resolve a crisis in place |
+| 2 | Changelog | *Agent sorts N open changes* and the agent's proposal; the chips open · crisis · attention · routine · in case · all (`f` / `F`); every event, newest first by day, a stripe on open changes (crisis urgent, attention accent) | resolve a change (*Link*, *Explain*, *Dismiss*); *Apply proposals*, *Discard*; *Ask agent*; *Ledger* (`e`); *Capture now* (`c`) |
+| 3 | Work | one sentence to a new case and *Run* (`i`); "2 / 3 active" against your limit; *By agent*; *Import tasks…*; *New case* (`+`); the cases grouped ACTIVE · VERIFICATION · QUEUED · COMPLETED | by status (below); *Open in editor* (`e`); *Ask agent* |
+| 4 | Decisions | your decisions (ADRs), newest first, proposed ones marked; the detail shows the decision's first paragraph | *Accept* (twice); *New decision* (`d`); *Open in editor* (`e`) |
+| 5 | System | seven tiles: Omarchy, Packages, Snapshots, Deviations, Collectors, Recently edited (files under `~/.config` Seldon does not watch, each with *Watch*), Ignored by pacman; a tile's detail shows its rows and where they come from | *Watch*; *Open in editor* (`e`, the logbook's `STATUS.md`) |
+| 6 | Memory | what your agents read at session start: the headings of `memory/lessons.md` and the memory topics | *Open in editor* (`e`, the logbook folder) |
+| 7 | Prime Radiant | the charts and the plan (below) | the periods 30 d · 90 d · 365 d · All (`←`/`→`, `h`/`l`) |
+| 8 | Graph | areas, cases, decisions and changes of the index as a graph that grows day by day | play the growth (`Space`, `Enter`, `p`), the day (`←`/`→`), fit and zoom (`0`, `-`, `=`), drag, wheel, *Open case* on a node's card |
+| `,` | Settings | Appearance (desk width and sidebar), Capture, Agents, Quiet: what is in force and where it is set | the width slider and its presets, the sidebar; the rest is read-only |
 
-Above every tab: the status banner (see [States](#states)), the snapper
-banner when snapshots cannot be read, and, only while a crisis is open, a
-red strip "N changes that can affect boot, login or the shell have no case"
-(a click opens the drift sheet for the first of them). Nothing else asks
-for your attention: the other changes without a case wait quietly on the
-Changelog, and resolving them is up to you or your agent, never required.
+Nothing asks for your attention except a crisis: the other changes
+without a case wait quietly in the Changelog, and resolving them is up to
+you or your agent, never required.
 
-The panel is 460 spacing units wide (`Style.space(460)`), so it grows with
-your theme's font size (`[font] base-size`) and stays within the screen.
-Each tab button is at least as wide as its label; on a screen too narrow
-for all six, the tabs wrap onto a second line rather than cut a label off.
-The Changelog's filter chips wrap the same way.
+**Writing actions arm first.** A key or a click on an action that writes
+arms it; the action bar says so ("Press Enter again"), and the second
+press runs it. Any other key disarms. A held key counts as one press;
+only the keys that move repeat. A note, a new case from one sentence and
+*Reopen* run on the first press. **Enter never starts an agent**: only `a`
+or a click on *Hand to agent* does.
 
-**QuickEntry** (Today, or `n` from any tab): type a note and press Enter;
-it goes to today's journal through `seldon log`, exactly as typed. Pick an
-open case below the field to file the note under it. The line below shows
-the saved event's id or the engine's error; the field empties only once the
-note is saved, and a blank note is refused.
-
-**Capture now** (Changelog, `c`, or a right click on the pill) runs
-`seldon capture`, then `seldon status`; the button spins meanwhile and the
-line below says what the capture wrote. New rows arrive with the rewritten
-index, without a restart.
-
-**Open in editor** runs
-`seldon open <journal|ledger|status|logbook|case id|decision id> --editor`;
-the engine starts your default editor (`omarchy-launch-editor`).
-
-**Work.** One tile per case: id, steps done/total, title, the zone as the
-stripe colour, *verification* or *dropped*, and "N proposed" when the engine
-thinks open drift belongs to the case. The card of the case under the
-cursor shows id, status, zone, risk, title, area, priority, steps, dates,
-the proposed events and the actions its status allows:
+**Work.** The cases' actions by status:
 
 | Status | Actions |
 |---|---|
-| queued | *Start*, *Open* |
-| active | *Verify*, *Start agent*, *Drop*, *Open* |
-| verification | *Done*, *Drop*, *Open* |
-| completed, dropped | *Open* |
+| queued | *Start*, *Drop* |
+| active | *Hand to agent* (`a`), *To verification*, *Drop* (`x`); while an agent works on the case, *Focus* (`a`) in place of *Hand to agent* |
+| verification | *Complete*, *Drop* |
+| completed | *Reopen* (`r`) |
 
-*Start*, *Verify*, *Done* and *Drop* run
-`seldon plan start|verify|done|drop <id>`. A click runs the action, except
-*Drop* and *Start agent*, which ask for a second click. *Start agent* runs
-`seldon agent start <id>`: the engine makes the case the active case and
-launches the agent configured in `~/.config/seldon/config.toml`
-(`[agent] launcher`; by default `omarchy agent prompt`) with a prompt
-that names the case and the logbook. The line under
-the columns shows the engine's answer (`C-2026-005: queued → active`) or
-why it refused.
+*Start*, *To verification*, *Complete* and *Drop* run
+`seldon plan start|verify|done|drop <id>`; *Reopen* runs `seldon plan
+reopen <id>`, which makes a new active case. *Hand to agent* runs
+`seldon agent start <id>`: the engine launches the agent configured in
+`~/.config/seldon/config.toml` (`[agent] launcher`) with a prompt that
+names the case and the logbook. **The desk steps aside** for what it
+opens: after an agent start, an editor or a terminal fix it closes, so
+the new window is in front.
 
-**New case** (the button, or `+` from any tab): a title, the zone (green,
-yellow, red), the risk (R0–R3), the priority (high, normal, low) and an
-optional area slug; they start at the engine's defaults (yellow, R1,
-normal). Enter or *Create* runs `seldon plan new`. The fields keep their
-text until the case exists, so a refused case is not lost.
-
-**New decision** (the button, or `d` on Decisions): one field, the title.
-The engine writes the decision as *proposed* (`seldon decide`) and the
-plugin opens it in your editor.
-
-**Resolve drift** (Enter on a Changelog row without a case, its *Resolve…*
-button, or a click on the red strip). The sheet shows the change (what,
-who, when, its zone, "crisis" when it is one, the proposed case, every
-package of a transaction) and three ways to resolve it:
+**Resolve a change** (Enter on an open change in Today or the
+Changelog). The form shows the change (what, who, when, its zone, "crisis"
+when it is one, why it is loud, the proposed case, every package of a
+transaction) and three ways to resolve it:
 
 | Action | Runs | Afterwards |
 |---|---|---|
@@ -240,70 +226,56 @@ package of a transaction) and three ways to resolve it:
 
 A package transaction resolves as one (*All N*); *Only <package>* resolves
 just the row you opened (`--only`). Your text stays until the engine has
-resolved the change; if the logbook resolved it already, the sheet says
+resolved the change; if the logbook resolved it already, the form says
 "Already resolved: …" and nothing is written.
+
+**Agent sorts N open changes** (the Changelog's head) asks your default
+agent to sort the open changes. Its proposal shows as a row: every item
+with the change, the link or explanation and its evidence, evidence by an
+agent or of unknown authorship marked. *Apply proposals* applies it as
+you in one click, crises never with the rest: each has its own button.
+*Discard* throws the proposal away. The agent only proposes; you apply
+(ADR-0036).
 
 ### Keys
 
-**Panel** (the keys are the panel's while it is open):
+The desk's keys (the full table with every section's keys:
+[KEYBINDINGS.md](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/KEYBINDINGS.md)):
 
 | Key | Does |
 |---|---|
-| `1`–`6` | a tab by its fixed number: Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6 |
-| ← / →, `h` / `l` | previous / next tab |
-| ↑ / ↓, `k` / `j` | move in the list (the first press shows the cursor); on Work, through the cases column by column |
-| Tab / Shift-Tab | the bar's next / previous panel, as in every Omarchy panel (never cycles tabs) |
-| Enter, Space | open the row; on a Changelog row without a case, the drift sheet; on Work, the card's first action (*Open* at once; *Start*, *Verify* or *Done* on the second press); on Decisions and Memory, the file in the editor |
-| `x` | Work: drop the case under the cursor, on the second press |
-| `a` | Work: start an agent on the active case under the cursor, on the second press |
-| `f` / `F` | Changelog: next / previous source filter |
+| `1`–`8` | Today, Changelog, Work, Decisions, System, Memory, Prime Radiant, Graph |
+| `,` | Settings |
+| `Alt+↓` / `Alt+↑` | the next / previous section, wrapping |
+| `/` | the sidebar search: filters the current list; Enter keeps the filter, Esc clears it |
+| ↑ / ↓, `k` / `j` | move in the list; the detail follows |
+| Enter, Space | the detail's first action that launches nothing (arm, then run); on an open change, its form; on a narrow desk, the detail |
+| Esc | leave a form, then clear the search, then back to the list (narrow desk), then close |
 | `c` | capture now |
-| `n` | write a note: focuses the QuickEntry (from any tab) |
-| `+` | new case: opens the Work tab's sheet (from any tab) |
+| `n` | Today's note field |
+| `+` | Work's new case |
+| `i` | the one-sentence new case (Today, Work) |
+| `e` | open in the editor: the journal, this month's ledger, the case, the decision, `STATUS.md`, the logbook |
+| `f` / `F` | Changelog: the next / previous chip |
+| `a` | Work: hand the case to the agent (twice), or *Focus* while one works on it |
+| `x` | Work: drop the case (twice) |
+| `r` | Work: reopen a completed case |
 | `d` | Decisions: new decision |
-| `e` | open this tab's file in the editor: journal, ledger, the case under the cursor, the decision under the cursor, `STATUS.md`, the logbook folder |
-| Esc | close |
 
-**Two-press arming.** On the keyboard, the Work card's *Start*, *Verify*,
-*Done*, *Drop* (`x`) and *Start agent* (`a`), the drift sheet and the
-new-decision sheet take two presses. The first Enter (or `x`, or `a`) arms
-the action: its button is marked and the card says "Press Enter again:
-Start C-2026-005". The second press sends it; holding the key does not
-(only the keys that move repeat; no repeat arms, sends or confirms). A note (QuickEntry) and a new
-case are sent with one Enter. In a list, any other key or a cursor move
-disarms; in a sheet, only a change to the form disarms (Tab between fields
-keeps the arm). A mouse click on a button sends at once, except *Drop* and
-*Start agent*, which ask for a second click.
-
-**Fields and sheets.** While the QuickEntry or a sheet has focus, every key
-goes to it: Tab / Shift-Tab walk its fields and buttons, ↓ opens a picker,
-←/→ (`h`/`l`) move in a picker and Enter or Space picks, Enter in a text
-field or on the action button arms and the second Enter sends (the
-QuickEntry and the new-case sheet send on the first Enter). Esc gives the keys back to the panel
-and keeps what you typed.
-
-**Prime Radiant:**
-
-| Key | Does |
-|---|---|
-| `1` `2` `3` `4` | 30 d · 90 d · 365 d · All |
-| ← / →, `h` / `l` | previous / next period (wraps) |
-| Esc | close |
-
-A click on the dimmed area or on *Close* closes it too.
+A text field keeps every key while it has the focus; Esc in it gives the
+keys back and keeps the text. Tab and Shift-Tab do nothing: the desk is
+not a bar popup.
 
 ### The Prime Radiant
 
-A fullscreen overlay over a dimmed screen. Open it with a middle click on
-the pill, `omarchy-shell shell toggle jax.seldon`, or the suggested
-binding (see [Configure](#configure)).
+Section 7 of the desk (`7`, a middle click on the pill, or
+`omarchy-shell shell summon jax.seldon '{"section":"radiant"}'`).
 
-- **Header:** "Prime Radiant", the machine, the Omarchy version and when
-  the index was written; on the right the period selector (30 d · 90 d ·
-  365 d · All, default 90 d on every open), *Close*, and the period's dates.
-- **Periods** cover the days up to the index's today: 30 d is today and
-  the 29 days before it; a drift week counts when any of its days does, a
-  case when its span overlaps. *All* is everything the index carries.
+- **Periods** (30 d · 90 d · 365 d · All, 90 d each time you enter it;
+  `←`/`→` or `h`/`l`) cover the days up to the index's today: 30 d is
+  today and the 29 days before it; a drift week counts when any of its
+  days does, a case when its span overlaps. *All* is everything the index
+  carries.
 - **Charts**, in the theme's colours (accent, foreground, urgent):
   - *Heatmap*: events per day as a calendar, weeks as columns, Monday on
     top, five shades of the accent.
@@ -316,93 +288,97 @@ binding (see [Configure](#configure)).
     the agent; it has no period.
 - **Hover:** each chart's title row carries its summary ("62 events on 13
   of 90 days · busiest 2026-10-01 (30)"), replaced by the hovered item's
-  details (a day and its events by source, a package sample, a week's
-  counts, a risk class and its share, a release, snapshot or case) while
-  the pointer is on the chart. A chart without data in the period says
-  "no data in this period".
-- On a narrow screen the grid uses two columns, then one, and scrolls.
-- When the panel shows a banner, the overlay shows it too, with only the
-  *Copy* fix; the other fixes are in the panel. The overlay never runs
-  the engine.
+  details while the pointer is on the chart. A chart without data in the
+  period says "no data in this period".
+
+### The graph
+
+Section 8 draws the machine's memory from the index: areas as rings,
+cases in the accent, decisions as squares, changes as dots, crises in
+the urgent colour. *Play* (`Space`, `Enter` or `p`) grows it from the
+first day; `←`/`→` move the day it is cut at. Drag a node or the
+background, zoom with the wheel or `-`/`=`, `0` fits the view. A hover
+shows a node's card; a case's card has *Open case*.
 
 ### States
 
 Until Seldon is set up, Today shows one **setup card** instead of the
-three setup banners: *Set up Seldon · 2 of 3 steps to go* — install the
+setup notices: *Set up Seldon · 2 of 3 steps to go* — install the
 engine, create the logbook, read snapshots (optional) — done steps
-ticked, the next one with its button, no question asked. After each
+ticked, the next one with its button; only the optional snapshot grant
+asks for your password. After each
 step's terminal the card moves on by itself; *Not now* on the snapshot
 step ends it for good (Settings › Capture offers it again). The header's
 chip shows the same headline and leads to the card. A machine without
 snapper has two steps. Once set up, a first-day card says "Seldon is
 recording. Nothing to do."
 
-When something else is wrong the panel shows one banner with a one-click
-fix; the setup states below are the setup card's steps:
+When something else is wrong the desk shows a notice under the header,
+with its one-click fix, and the header's chip names it; the setup states
+below are the setup card's steps:
 
 | State | Banner | One-click fix |
 |---|---|---|
-| Engine missing | Install the engine (step 1 of the setup card); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the engine it downloads against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; the panel then finds it by itself; *Copy* puts the one-liner on the clipboard; *Check again* (on the urgent banner) looks for the engine again |
-| Logbook not initialised | Create your logbook (step 2 of the setup card, with what the machine remembers without Seldon) | *Create logbook* opens a terminal that says what happens, shows and runs `seldon init --defaults` (no question: `~/Seldon`, the last 90 days recorded as history "before Seldon"), then says whether the logbook was created; the panel then updates by itself; *Copy*; *Check again* |
-| Index missing | No index yet / Index unreadable | *Build index* runs `seldon status`, which writes it |
+| Engine missing | Install the engine (step 1 of the setup card); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the engine it downloads against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; the desk then finds it by itself; *Copy* puts the one-liner on the clipboard; *Check again* (on the urgent notice) looks for the engine again |
+| Logbook not initialised | Create the logbook, step 2 of the setup card, with what the machine remembers without Seldon (the card stands in for the notice "Create your logbook") | *Create logbook* opens a terminal that says what happens, shows and runs `seldon init --defaults` (no question: `~/Seldon`, the last 90 days recorded as history "before Seldon"), then says whether the logbook was created; the desk then updates by itself; *Copy*; *Check again*; when the folder already holds other files, *Choose a folder* runs `seldon init`, which asks where |
+| Index missing | No index yet / Index unreadable (also an `index.json` of 1 MB or more, which the plugin does not parse: "index.json is 1.2 MB, over the 1 MB the plugin reads; …") | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
 | Index format mismatch | Index format mismatch, with both contract versions | *Update* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older (then restart the shell, see [Update](#update)), the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
-| Engine newer than the plugin (an index of a newer contract that says this plugin can read it, ADR-0051) | The engine is newer than the plugin: "The engine writes index vN; this plugin reads v2 — update the plugin.", in the neutral tone; no status banner, the pill keeps its counts and colour | *Update* / *Copy*: `omarchy plugin update jax.seldon` (then restart the shell, see [Update](#update)) |
+| Engine newer than the plugin (an index of a newer contract that says this plugin can read it, ADR-0051) | The engine is newer than the plugin: "The engine writes index vN; this plugin reads v2 — update the plugin.", in the neutral tone; no status notice, the pill keeps its counts and colour | *Update* / *Copy*: `omarchy plugin update jax.seldon` (then restart the shell, see [Update](#update)) |
 | Engine too old (older than the plugin's `engineMin`) | Engine too old, with the version the plugin needs and the one `seldon` reports | *Update* runs the GitHub one-liner from *Engine missing* in a terminal (until the AUR package is live, ADR-0024); *Copy*; *Check again* looks for the engine again |
 | Snapshots not readable | Read snapshots (optional), step 3 of the setup card: one sentence on the one-time grant; what the grant gives: read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), no snapshot creation, change or deletion (ADR-0026) | *Grant* opens a terminal that says what the grant does and that it asks for your password once, shows and runs `sudo setfacl -m u:$USER:rx /.snapshots`, then runs `seldon capture` and says "Snapshots are now recorded" (or, if that capture did not run, that the snapshots were not recorded yet); the card moves on by itself (Seldon never runs the grant on its own). *Copy* copies the command; *Check again* runs a capture, like *Capture now*, for a grant you ran yourself; *Not now* (on the card) puts the step away for good |
-| Plugin updated, shell not restarted (the installed manifest names another version than the code running) | Restart the shell to finish the update, in the neutral tone above the other banners, with both versions | *Restart shell* runs `omarchy-restart-shell`, no arguments; the shell then loads the installed plugin |
-| Capture warned (a capture the plugin ran exited 0 with warnings) | Capture warned, in the neutral tone under the other banners: the first line of each warning as the engine wrote it (today the state reset and its restore hint, WP-081); the full text on hover | None: the warning names the user guide section to read. The notice stays until a capture the plugin runs (*Capture now*, *Check again*, the `c` key, the bar's right click, the timer) finishes without warnings; a failed or locked capture leaves it |
+| Plugin updated, shell not restarted (the installed manifest names another version than the code running) | Restart the shell to finish the update, in the neutral tone above the other notices, with both versions | *Restart shell* runs `omarchy-restart-shell`, no arguments; the shell then loads the installed plugin |
+| Capture warned (a capture the plugin ran exited 0 with warnings) | Capture warned, in the neutral tone under the other notices: the first line of each warning as the engine wrote it (today the state reset and its restore hint, WP-081); the full text on hover | None: the warning names the user guide section to read. The notice stays until a capture the plugin runs (*Capture now*, *Check again*, the `c` key, the bar's right click, the timer) finishes without warnings; a failed or locked capture leaves it |
 
-The engine is looked for when the shell starts, when the panel opens
+The engine is looked for when the shell starts, when the desk opens
 while it is missing, every few seconds for ten minutes after an *Install*
-terminal, and on the status banner's *Check again* (or `omarchy-shell
-jax.seldon.service refresh`), not on every capture.
+terminal, and on *Check again* (or `omarchy-shell jax.seldon.service
+refresh`), not on every capture.
 
 ## Configure
 
-**Settings** (Setup > Plugins > Seldon, or `omarchy bar set`):
+**Settings** (the desk's Settings › Appearance for the width and the
+sidebar; all of them in Omarchy's bar settings, Setup > Plugins >
+Seldon, or with `omarchy bar set`):
 
 | Key | Default | What it does |
 |---|---|---|
 | `captureIntervalMin` | `15` | How often (5–120 minutes) the engine captures system changes while the shell runs |
-| `wipLimit` | `3` | The Work tab shows active cases against this limit ("2 / 3 active"); 1–20; it warns, it never blocks. Cases in verification do not count |
+| `wipLimit` | `3` | Work shows active cases against this limit ("2 / 3 active"); 1–20; it warns, it never blocks. Cases in verification do not count |
 | `driftInBar` | `crisis` | What the bar's second number counts: `crisis` (changes that can affect boot, login or the shell and have no case), `all` (every change without a case, as before 0.1.4) or `none` (no number). The urgent colour on a crisis stays in every mode |
+| `deskWidth` | `100` | How wide the desk opens, 50–100 % of the screen's width between Omarchy's outer gaps; never narrower than 960 px unless the screen is. Settings › Appearance has a slider and the presets 50 %, 67 %, 75 % and Full |
+| `deskSidebar` | `open` | `open`: the sections with names and counts; `collapsed`: icons only (the fold button at the sidebar's foot switches it). A desk narrower than 960 px always shows icons only, and under 760 px the list and the detail stack |
 
 ```sh
 omarchy bar set jax.seldon captureIntervalMin 30 --json
 omarchy bar set jax.seldon driftInBar all
+omarchy bar set jax.seldon deskWidth 67
 omarchy bar move jax.seldon --section right
 ```
 
 **Suggested binding** (not installed by the plugin). Add it to your
-Hyprland bindings:
+Hyprland bindings (`~/.config/hypr/bindings.lua`); Omarchy leaves
+Super+Shift+L (L for logbook) free:
 
 ```
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
 **IPC targets:**
 
 | Command | Reaches |
 |---|---|
-| `omarchy-shell shell toggle jax.seldon` | the Prime Radiant (also `summon`, `hide`) |
-| `omarchy-shell shell summon jax.seldon '{"period":"30"}'` | the Prime Radiant on a period (`30`, `90`, `365`, `all`) |
-| `omarchy-shell shell call jax.seldon view ""` | what the open Prime Radiant shows, as JSON; `unknown` while it is closed |
-| `omarchy-shell shell call jax.seldon setPeriod 30` | pick a period in the open Prime Radiant |
-| `omarchy-shell shell call jax.seldon hover "series 0.5,0.5"` | the read-out at that point of a chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON; `hover ""` clears; a malformed argument returns `{"error": …}` and changes nothing. The heatmap's grid is square, height-bound and left-aligned (legend beside it), so at 30 d and 90 d only the left part of its plot holds cells: take the point from `Model.heatmapLayout` (docs/TESTING.md, "Runtime smoke test in the shell", step 4) |
-| `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
-| `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
-| `omarchy-shell jax.seldon.panel view` | what the panel shows, as JSON |
-| `omarchy-shell jax.seldon.panel tab today\|changelog\|work\|decisions\|system\|memory` | show a tab |
-| `omarchy-shell jax.seldon.panel filter all\|<source>` | set the Changelog source filter |
-| `omarchy-shell jax.seldon.panel resolve crisis\|<event id>` | open the drift sheet; sends nothing |
+| `omarchy-shell shell toggle jax.seldon` | open or close the desk (also `summon`, `hide`) |
+| `omarchy-shell shell summon jax.seldon '{"section":"work"}'` | open the desk at a section (`today`, `changelog`, `work`, `decisions`, `system`, `memory`, `radiant`, `graph`, `settings`); `"select":"<id>"` selects an item, `"filter":"crisis"` a Changelog chip, `"period":"30"` opens the Prime Radiant on a period |
+| `omarchy-shell shell call jax.seldon view ""` | what the open desk shows, as JSON |
+| `omarchy-shell shell call jax.seldon section <id>` | show a section of the open desk |
+| `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section |
+| `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`) |
+| `omarchy-shell shell call jax.seldon hover "series 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON, while section 7 is shown; `hover ""` clears; a malformed argument returns `{"error": …}` and changes nothing |
+| `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide\|tab <name>\|resolve crisis\|<event id>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk; removed in 0.3.0 |
 | `omarchy-shell jax.seldon.service status` | the service state, as JSON |
 | `omarchy-shell jax.seldon.service refresh` | look for the engine again and re-read the index |
 | `omarchy-shell jax.seldon.service capture` | capture now |
-
-Because the plugin declares an overlay, the shell's `summon`/`toggle` route
-opens the Prime Radiant, never the bar panel; the panel has its own target,
-`jax.seldon.panel`.
 
 ## Security, privacy, privileges
 
@@ -426,35 +402,56 @@ shell plugin. This is everything it does outside its own window:
   seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json
   seldon plan new --zone <z> --risk <r> [--area <slug>] [--priority <p>] --json -- <title>
   seldon plan start|verify|done|drop <id> --json
+  seldon plan reopen <caseId> --json
+  seldon plan show <caseId> --json
   seldon agent start <caseId> --json
+  seldon agent start --new --json -- <intent>
+  seldon agent focus <caseId> --json
+  seldon agent sessions --json
+  seldon agent ask triage --json
+  seldon agent ask drift|case <id> --json
+  seldon import task --json [--dry-run] [--area <slug>] -- <path>
   seldon drift link <eventId> <caseId> [--only] --json
   seldon drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <slug>] --json -- <text>
   seldon drift dismiss <eventId> [--only] --json -- <reason>
   seldon drift show <eventId> --json
+  seldon drift apply <proposalId> [--item <eventId>]… --json
+  seldon drift discard <proposalId> --json
   seldon decide --no-edit --json -- <title>
+  seldon decide accept <ADR-NNNN> --json
+  seldon preview --json
+  seldon doctor --only rules --json
+  seldon rules update --json
+  seldon config watch --json -- <path>
   seldon rebuild --json
   seldon update-impact --json
   ```
 
   `rebuild` and `update-impact` are allowed but not issued by this version.
   Every call goes through one check that refuses any argument list not on
-  this list. Ids (case, event, decision, also the one the engine reports
-  for a decision it just created) must match their schema pattern; zone,
-  risk, priority and area must be known values or a slug; free text (a
-  note, a title, an explanation, a reason) is exactly one non-empty
-  argument after `--`, without NUL characters.
-- **When it runs the engine:** `seldon --version --json` at shell start
-  and on *Check again*; `seldon capture` then `seldon status` at start and
-  every capture interval; everything else only on your click or key press.
-  `seldon open` makes the engine start your editor and
-  `seldon agent start` makes it start the agent launcher you configured in
-  `~/.config/seldon/config.toml`; those are the engine's actions, under
-  your configuration.
+  this list. Ids (case, event, decision, proposal, also the one the
+  engine reports for a decision it just created) must match their schema
+  pattern; zone, risk, priority and area must be known values or a slug;
+  free text (a note, a title, an intent, an explanation, a reason) and a
+  path are exactly one non-empty argument after `--`, without NUL
+  characters. The plugin never runs `seldon drift propose`: proposing is
+  the agent's command, applying is yours.
+- **When it runs the engine:** `seldon --version --json` at shell start,
+  when the desk opens while the engine is missing and on *Check again*;
+  `seldon capture` then `seldon status` at start and every capture
+  interval; the read-only `seldon agent sessions`, `seldon doctor --only
+  rules` and (before the logbook exists) `seldon preview` while the desk
+  is open; everything else only on your click or key press.
+  `seldon open` makes the engine start your editor, and
+  `seldon agent start` and `seldon agent ask` make it start the agent
+  launcher you configured in `~/.config/seldon/config.toml`; those are the
+  engine's actions, under your configuration.
 - **Two other programs, only when you click a banner button:**
   `wl-copy -- <command>` (*Copy*) and
   `omarchy-launch-floating-terminal-with-presentation <script>`
-  (*Install*, *Create*, *Grant*, *Update*). `<script>` is one of five
-  constant scripts in the plugin, one per command: a `gum style` line that
+  (*Install*, *Create logbook*, *Choose a folder*, *Grant*, *Update*).
+  `<script>` is one of six constant scripts in the plugin, one per
+  command: a `gum style` line that
   says what happens, the command shown, the command run, and a line that
   says what changed (or, on Ctrl+C, "Cancelled", and the window closes);
   nothing from the index or the logbook is in them.
@@ -462,7 +459,8 @@ shell plugin. This is everything it does outside its own window:
   `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`
   (the engine install while the AUR package does not exist; it fetches
   the script over TLS from this project's release and the script checks
-  the engine against `SHA256SUMS`), `seldon init`,
+  the engine against `SHA256SUMS`; the engine install and the engine
+  update), `seldon init --defaults`, `seldon init`,
   `omarchy plugin update jax.seldon`,
   `sudo setfacl -m u:$USER:rx /.snapshots`.
   Omarchy's launcher runs the script in a terminal window you see
@@ -488,8 +486,8 @@ shell plugin. This is everything it does outside its own window:
   shell writes the whole file back in its own formatting (indentation,
   key order), so hand formatting there is normalised.
 - **No network.** No sockets, no downloads, no update checks. The one
-  exception is yours to click: *Install* on the
-  engine-missing banner runs the `curl … | bash` install in a terminal
+  exception is yours to click: *Install* on the setup card or the
+  engine-missing notice runs the `curl … | bash` install in a terminal
   you see.
 - **No units, binaries or installers.** The plugin folder holds QML,
   JavaScript, this README, the licence, the manifest and the preview
@@ -500,7 +498,8 @@ shell plugin. This is everything it does outside its own window:
 - **Privileges.** The plugin runs as your user.
   No sudo or pkexec is required to use it.
   One button asks for your password, and only when you press it: the
-  optional snapshot grant (*Grant* on the snapshot banner, above) runs
+  optional snapshot grant (*Grant* on the setup card or the snapshot
+  notice, above) runs
   `sudo setfacl -m u:$USER:rx /.snapshots` in a terminal you see
   (ADR-0026). Outside the plugin, installing, updating or removing the
   engine's AUR package asks too, because pacman runs through sudo
@@ -515,12 +514,14 @@ shell plugin. This is everything it does outside its own window:
 | Symptom | Try |
 |---|---|
 | No pill in the bar | `omarchy plugin list` (is `jax.seldon` there and enabled?), `omarchy plugin enable jax.seldon`, `omarchy bar move jax.seldon --section right` |
-| A banner instead of data | its button is the fix; see [States](#states) |
-| The panel's install button runs `omarchy pkg aur add jax-seldon`, which fails | that is plugin 0.1.0: its button points to an AUR package that does not exist yet. Update the plugin first, `omarchy plugin update jax.seldon` (Omarchy shows the changes and asks `Update jax.seldon?`; answer yes), then `omarchy-restart-shell`; the new panel installs the engine from the GitHub release |
-| A key or `shell toggle jax.seldon` opens the overlay, not the panel | by design; the panel is `omarchy-shell jax.seldon.panel toggle` |
+| A notice or the setup card instead of data | its button is the fix; see [States](#states) |
+| The panel's install button runs `omarchy pkg aur add jax-seldon`, which fails | that is plugin 0.1.0: its button points to an AUR package that does not exist yet. Update the plugin first, `omarchy plugin update jax.seldon` (Omarchy shows the changes and asks `Update jax.seldon?`; answer yes), then `omarchy-restart-shell`; the desk installs the engine from the GitHub release |
+| After an update the pill still opens the old panel | the shell runs the old plugin code until it restarts: `omarchy-restart-shell` (the restart notice says the same); see [Update](#update) |
+| "Index format mismatch" after an update | engine and plugin are a different contract: update the other one too (0.2.0 needs engine and plugin 0.2.0); the notice's *Update* does it |
+| The desk is too wide or too narrow | Settings (`,`) › Appearance, or `omarchy bar set jax.seldon deskWidth 67`; see [Configure](#configure) |
 | An action says the index is behind your logbook | you changed the logbook elsewhere (a terminal); *Capture now* or `seldon status`, then try again |
 | Changes to plugin files do not show, or an update does not | `omarchy-restart-shell` (the shell caches plugin components; see [Update](#update)) |
-| What does the plugin see? | `omarchy-shell jax.seldon.service status` and `omarchy-shell jax.seldon.panel view` print it as JSON |
+| What does the plugin see? | `omarchy-shell jax.seldon.service status`, and while the desk is open `omarchy-shell shell call jax.seldon view ""`, print it as JSON |
 | The engine refuses something | run the same command with `seldon … --json` in a terminal for the full message; the engine's own docs are in the project repository |
 
 Plugin warnings go to the shell's log: `journalctl --user -t omarchy-shell`.
@@ -536,9 +537,19 @@ The update fetches the new plugin files and asks the shell to reload its
 plugins, but the shell keeps running the plugin code it loaded first
 until it restarts. `omarchy-restart-shell` restarts the bar, panels and
 overlays; your applications keep running. It refuses while the screen
-is locked. When the panel sees that the installed plugin is not the one
-running, it says so (see [States](#states)); a plugin version that does
-not know this notice yet shows nothing, so restart after every update.
+is locked. When the plugin sees that the installed plugin is not the one
+running, the desk says so (see [States](#states)); a plugin version that
+does not know this notice yet shows nothing, so restart after every
+update.
+
+**From 0.1.x to 0.2.0** update the engine and the plugin together: 0.2.0
+reads and writes index contract 2, and a 0.1.x plugin or engine shows
+"Index format mismatch" against it. The bar popup and the fullscreen
+Prime Radiant are replaced by the desk; the pill and its counts stay, and
+the `jax.seldon.panel` IPC target forwards to the desk until 0.3.0. Your
+settings keep their values; `deskWidth` and `deskSidebar` start at their
+defaults (100 %, open). The digits `1`–`8` are the desk's sections now;
+the Prime Radiant's periods moved to `←`/`→` and `h`/`l`.
 
 ## Remove
 

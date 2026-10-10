@@ -73,7 +73,7 @@ enum Command {
         #[arg(long, value_name = "DIR")]
         path: Option<PathBuf>,
         /// Run one check only; `rules`: the logbook's agent rules, without
-        /// starting omarchy, snapper or git (what the panel asks)
+        /// starting omarchy, snapper or git (what the desk asks)
         #[arg(long, value_name = "CHECK")]
         only: Option<commands::doctor::Only>,
     },

@@ -142,6 +142,45 @@ test("parseIndex rejects empty, broken and non-object input", () => {
   assert.strictEqual(M.parseIndex('{"contractVersion":2}').error, "shape")
 })
 
+// E72: CONTRACT.md rule 5's budget, checked before JSON.parse; over it the
+// plugin takes the parse error's banner, which names the size.
+test("parseIndex refuses a text of 1 MB or more before JSON.parse (E72)", () => {
+  assert.strictEqual(M.INDEX_MAX_CHARS, 1000000)
+  // the sample padded with spaces is valid JSON at every length
+  const pad = (n) => sample.replace(/\s*$/, "") + " ".repeat(n - sample.replace(/\s*$/, "").length)
+  const below = M.parseIndex(pad(M.INDEX_MAX_CHARS - 1))
+  assert.strictEqual(below.ok, true, "one character under the budget is read")
+  assert.strictEqual(below.size, M.INDEX_MAX_CHARS - 1)
+  const at = M.parseIndex(pad(M.INDEX_MAX_CHARS))
+  assert.strictEqual(at.ok, false)
+  assert.strictEqual(at.error, "size")
+  assert.strictEqual(at.size, M.INDEX_MAX_CHARS)
+  assert.strictEqual(at.index, null)
+  // refused before JSON.parse: broken JSON of that length is "size", not "parse"
+  assert.strictEqual(M.parseIndex("{".repeat(M.INDEX_MAX_CHARS + 5)).error, "size")
+  assert.strictEqual(M.parseIndex(" ".repeat(M.INDEX_MAX_CHARS)).error, "size")
+  assert.strictEqual(M.deriveStatus({ engine: "present", file: "invalid", parse: at, nowMs: gen }), "indexMissing")
+  const b = M.bannerFor("indexMissing", { parseError: "size", indexSize: 1234567 })
+  assert.strictEqual(b.title, "Index unreadable")
+  assert.strictEqual(b.detail, "index.json is 1.3 MB, over the 1 MB the plugin reads; rebuild it from the logbook, and if it stays, seldon status in a terminal names the largest section.")
+  same(b.actions, [{ id: "build", label: "Build index" }])
+  assert.strictEqual(M.megabytes(1000000), "1.0 MB")
+  assert.strictEqual(M.megabytes(1000001), "1.1 MB")
+  assert.strictEqual(M.megabytes(2000000), "2.0 MB")
+  // one warning line per reason: the same oversized file gives the same
+  // line (Service.qml logs it once), another size another line
+  const w = M.indexWarning(at)
+  assert.strictEqual(w, "jax.seldon: index.json unreadable: 1000000 characters, the contract's budget is under 1 MB")
+  assert.strictEqual(M.indexWarning(M.parseIndex(pad(M.INDEX_MAX_CHARS))), w)
+  assert.notStrictEqual(M.indexWarning(M.parseIndex(pad(M.INDEX_MAX_CHARS + 1))), w)
+  assert.ok(M.indexWarning(M.parseIndex("{")).startsWith("jax.seldon: index.json unreadable: "))
+  for (const r of [below, M.parseIndex(""), M.parseIndex(v3), null, undefined])
+    assert.strictEqual(M.indexWarning(r), "")
+  // the other unreadable texts are unchanged
+  assert.strictEqual(M.bannerFor("indexMissing", { parseError: "parse" }).detail,
+    "index.json could not be read. Rebuilding it from the logbook fixes this.")
+})
+
 // ADR-0051: a newer index that says a contract-2 plugin can read it is
 // read; the pill keeps its counts and the crisis colour, the unknown
 // parts fall back or are left out, and the desk asks for a plugin update.
@@ -388,7 +427,7 @@ const SCRIPTS = {
     "gum style --bold 'Seldon: install the engine'; " +
     "gum style --width 72 'Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.'; " +
     "gum style --padding '1 0 1 2' 'curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'; " +
-    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then gum style --padding '1 0 0 0' --foreground 2 'The engine is installed. The Seldon panel finds it by itself.'; trap - INT TERM; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then gum style --padding '1 0 0 0' --foreground 2 'The engine is installed. The Seldon desk finds it by itself.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The install did not finish. Run it again; your logbook is untouched.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'The install did not finish. Run it again; your logbook is untouched.'; " +
     "trap - INT TERM; fi",
@@ -397,7 +436,7 @@ const SCRIPTS = {
     "gum style --width 72 'Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.'; " +
     "gum style --padding '1 0 1 2' 'curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'; " +
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then seldon status >/dev/null 2>&1 || true; " +
-    "gum style --padding '1 0 0 0' --foreground 2 'The engine is updated. In the Seldon panel, press Check again.'; trap - INT TERM; " +
+    "gum style --padding '1 0 0 0' --foreground 2 'The engine is updated. In the Seldon desk, press Check again.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The update did not finish. Run it again; your logbook is untouched.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'The update did not finish. Run it again; your logbook is untouched.'; " +
     "trap - INT TERM; fi",
@@ -405,7 +444,7 @@ const SCRIPTS = {
     "gum style --bold 'Seldon: update the plugin'; " +
     "gum style --width 72 'Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.'; " +
     "gum style --padding '1 0 1 2' 'omarchy plugin update jax.seldon'; " +
-    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; omarchy plugin update jax.seldon); then gum style --padding '1 0 0 0' --foreground 2 'If the plugin was updated, the Seldon panel offers Restart shell to load it.'; trap - INT TERM; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; omarchy plugin update jax.seldon); then gum style --padding '1 0 0 0' --foreground 2 'If the plugin was updated, the Seldon desk offers Restart shell to load it.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The plugin update did not finish.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The plugin stays at its version.'; " +
     "trap - INT TERM; fi",
@@ -413,15 +452,15 @@ const SCRIPTS = {
     "gum style --bold 'Seldon: create your logbook'; " +
     "gum style --width 72 'Creates your logbook (in ~/Seldon unless your config names another folder) and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.'; " +
     "gum style --padding '1 0 1 2' 'seldon init --defaults'; " +
-    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init --defaults); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; trap - INT TERM; " +
-    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Create logbook in the panel to start again.'; trap - INT TERM; (exit 130); " +
-    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again.'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init --defaults); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The desk updates by itself.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Create logbook in the desk to start again.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. When the folder is in use, the desk offers Choose a folder; else press Create logbook to try again.'; " +
     "trap - INT TERM; fi",
   SNAPPER_FIX_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: let your user read the snapshot list'; " +
     "gum style --width 72 'Grants read access to /.snapshots: the listing and the snapshot info files, nothing else. No snapshot is created, changed or deleted. Asks for your password once.'; " +
     "gum style --padding '1 0 1 2' 'sudo setfacl -m u:$USER:rx /.snapshots'; " +
-    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; sudo setfacl -m u:${USER:?}:rx /.snapshots); then if seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }; then gum style --padding '1 0 0 0' --foreground 2 'Snapshots are now recorded. The panel updates by itself.'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; sudo setfacl -m u:${USER:?}:rx /.snapshots); then if seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }; then gum style --padding '1 0 0 0' --foreground 2 'Snapshots are now recorded. The desk updates by itself.'; " +
     "else gum style --padding '1 0 0 0' --foreground 2 'Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture.'; fi; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Nothing changed.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. Snapshots stay off; Seldon works without them.'; " +
@@ -430,9 +469,9 @@ const SCRIPTS = {
     "gum style --bold 'Seldon: choose where your logbook goes'; " +
     "gum style --width 72 'Asks where the logbook should live, then creates it there and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No password.'; " +
     "gum style --padding '1 0 1 2' 'seldon init'; " +
-    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; trap - INT TERM; " +
-    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Choose a folder in the panel to start again.'; trap - INT TERM; (exit 130); " +
-    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Choose a folder in the panel to try again.'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The desk updates by itself.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Choose a folder in the desk to start again.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Choose a folder in the desk to try again.'; " +
     "trap - INT TERM; fi"
 }
 
@@ -3582,6 +3621,27 @@ test("WP-156: an active case with a session shows Focus, once, in place of Hand 
   const queued = M.caseDetail(JSON.parse(sample), prepared, "C-2026-005")
   assert.strictEqual(M.withSession(queued, { "C-2026-005": { starting: false, workspace: "1", actor: "" } }), queued)
   assert.strictEqual(M.withSession(null, sessions), null)
+})
+
+test("FEEDBACK 11: Today's case tile says \"· agent working\" while a session runs", () => {
+  const ix = JSON.parse(sample)
+  const cases = M.deskToday(ix, M.deskChangelog(ix)).cases
+  same(cases.map(c => c.id), ["C-2026-003", "C-2026-004"])
+  const tiles = M.todayCaseTiles(cases, { "C-2026-003": { starting: false, workspace: "2", actor: "agent:default" } })
+  same(tiles.map(c => c.text), [cases[0].text + " · agent working", cases[1].text])
+  same(tiles.map(c => c.working === true), [true, false])
+  assert.strictEqual(tiles[1], cases[1], "a tile without a session comes back as it is")
+  assert.strictEqual(cases[0].working, undefined, "the prepared tile is not changed")
+  assert.ok(!cases[0].text.includes("agent working"))
+  // starting counts, as on the Work row; no sessions, null, a session of
+  // a case that has no tile: as they are
+  same(M.todayCaseTiles(cases, { "C-2026-004": { starting: true, workspace: "", actor: "" } }).map(c => c.text),
+    [cases[0].text, cases[1].text + " · agent working"])
+  same(M.todayCaseTiles(cases, {}).map(c => c.text), cases.map(c => c.text))
+  same(M.todayCaseTiles(cases, null).map(c => c.text), cases.map(c => c.text))
+  same(M.todayCaseTiles(cases, { "C-2026-099": { starting: false } }).map(c => c.text), cases.map(c => c.text))
+  same(M.todayCaseTiles(null, {}), [])
+  same(M.todayCaseTiles([{ id: "C-2026-001" }], { "C-2026-001": {} }).map(c => c.text), ["agent working"])
 })
 
 // ---- Triage (WP-124b, ADR-0036)

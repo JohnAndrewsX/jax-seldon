@@ -1,6 +1,6 @@
 # Seldon-Anleitung
 
-<!-- source: en/README.md @ 2e4bfa8 -->
+<!-- source: en/README.md @ 488725cf -->
 
 Seldon zeichnet jede Änderung an deinem Omarchy-System auf, gleicht sie
 mit dem ab, was du geplant hast, und zeigt den Unterschied. Diese
@@ -14,7 +14,7 @@ etwa fünfzehn Minuten.
 |---|---|
 | [1. Erste Schritte](01-getting-started.md) | du Seldon installierst und ein erstes Ergebnis willst |
 | [2. Konzepte](02-concepts.md) | du wissen willst, was Cases, Zonen, Risiko und Drift bedeuten |
-| [3. Alltag](03-daily-use.md) | du mit der Pill, dem Panel und dem Prime Radiant arbeitest |
+| [3. Alltag](03-daily-use.md) | du mit der Pill und dem Desk arbeitest: seinen Abschnitten, dem Prime Radiant und dem Graphen |
 | [4. Mit Agenten arbeiten](04-working-with-agents.md) | Claude Code oder ein anderer Agent einen Case bearbeiten soll |
 | [5. Befehlsreferenz](05-cli-reference.md) | du einen Befehl oder eine Option brauchst |
 | [6. Konfiguration](06-configuration.md) | du Collectors, beobachtete Pfade, Schwärzung oder den Agent-Launcher änderst |

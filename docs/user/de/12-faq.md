@@ -1,6 +1,6 @@
 # FAQ
 
-<!-- source: en/12-faq.md @ 65ad985 -->
+<!-- source: en/12-faq.md @ 488725cf -->
 
 Kurze Antworten auf die Fragen, die zuerst kommen. Jede Antwort verweist
 auf die Seite mit den Einzelheiten.
@@ -59,7 +59,8 @@ Theme-Wechsel, ein Schalter, ein System-Upgrade. Bei den anderen sieht
 ein Collector, dass sich etwas geändert hat, aber nicht, wer es war oder
 warum. Nur der Befehl eines Agenten, aufgezeichnet von einem Hook, trägt
 den aktiven Case. Deine eigene Änderung verknüpfst du mit
-`seldon drift link <EVENT> <CASE>` oder mit *Link* im Drift-Dialog. Siehe
+`seldon drift link <EVENT> <CASE>` oder auf dem Desk mit *Link to case…*
+im Detail der Änderung im Changelog (Abschnitt 2). Siehe
 [Konzepte](02-concepts.md#drift).
 
 ## Ist jedes Paket-Upgrade eine Krise?
@@ -67,7 +68,8 @@ den aktiven Case. Deine eigene Änderung verknüpfst du mit
 Nein. Ein Upgrade des ganzen Systems ist Routine: Geschichte im
 Changelog, keine Drift, auch wenn es einen neuen Kernel bringt. Ein
 Paket, das du ohne Case mit Namen installierst oder entfernst, ist
-Drift, leise: Das Panel listet es, die Pill zählt es nicht. Nur ein
+Drift, leise: Der Changelog des Desks listet es, die Pill zählt es
+nicht. Nur ein
 Paket von der Immer-rot-Liste (Kernel, systemd, glibc, Hyprland,
 Omarchy, Quickshell), das außerhalb eines Case mit Namen installiert
 oder entfernt wird, ist eine Krise.

@@ -1,0 +1,9 @@
+# Text blocks of plugin/ that may differ from `textFormat: Text.PlainText`
+# (E72; tests/plugin/plaintext.test.js). One line per block:
+#
+#   <file>#<id> <reason>
+#
+# e.g. `plugin/components/Foo.qml#legend Markup is a constant of Model.js,
+# never logbook text`. The block needs an `id`; a line that matches no
+# block, or a block that is PlainText anyway, fails the test. Empty: every
+# Text block is plain.

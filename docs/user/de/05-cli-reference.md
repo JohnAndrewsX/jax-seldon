@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ a5ae8924 -->
+<!-- source: en/05-cli-reference.md @ 54ace4f1 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -181,7 +181,7 @@ Befehl, der sie behebt. Exit 0, wenn nichts ein Fehler ist, 1, wenn eine
 Prüfung ein Fehler ist (auch, wenn `config.toml` nicht gelesen oder
 geparst werden kann), 3, wenn das Logbuch nicht angelegt ist.
 `--only rules` prüft nur die Agentenregeln in `AGENTS.md` und startet
-kein anderes Programm; das Panel fragt das, wenn es sich öffnet.
+kein anderes Programm; der Desk fragt das, wenn er sich öffnet.
 
 <!-- help: seldon doctor -->
 ```text
@@ -197,7 +197,7 @@ Options:
           Machine-readable output
 
       --only <CHECK>
-          Run one check only; `rules`: the logbook's agent rules, without starting omarchy, snapper or git (what the panel asks)
+          Run one check only; `rules`: the logbook's agent rules, without starting omarchy, snapper or git (what the desk asks)
 
           Possible values:
           - rules: The rules block of the logbook's `AGENTS.md`

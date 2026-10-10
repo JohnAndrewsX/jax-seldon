@@ -70,7 +70,7 @@ them in the page language where it helps.
 | proposed case | vorgeschlagener Case | the case whose *Plan* names a drift event's subject |
 | transaction group | Transaktionsgruppe | one package transaction as one drift item |
 | decision | Entscheidung | an ADR in `decisions/` |
-| memory | Memory | what agents learned, `memory/`; also the panel tab |
+| memory | Memory | what agents learned, `memory/`; also the desk's section 6 |
 | capture | Erfassung, erfassen | `seldon capture` |
 | collector | Collector | |
 | watched paths | beobachtete Pfade | `watchPaths` |
@@ -82,9 +82,13 @@ them in the page language where it helps.
 | trace | Spur | the events of one case, in order |
 | engine | Engine | the `seldon` program |
 | plugin | Plugin | `jax.seldon` |
-| Prime Radiant | Prime Radiant | the fullscreen overlay |
+| desk | Desk (der Desk) | the plugin's one surface from 0.2.0 (ADR-0034): a sidebar, a list and a detail |
+| section | Abschnitt | one of the desk's targets: Today (1) … Graph (8), Settings (`,`); the names stay English |
+| Prime Radiant | Prime Radiant | section 7 of the desk; the fullscreen overlay until 0.1.x |
+| graph | Graph | section 8 of the desk |
+| triage ("Agent sorts N open changes") | Triage | the agent's proposal for the open changes (ADR-0036) |
 | pill | Pill | the bar widget |
-| panel | Panel | the bar panel with six tabs |
+| panel | Panel | the 0.1 bar panel with six tabs; only when the guide talks about 0.1.x |
 | hook | Hook | |
 | snapshot | Snapshot | snapper snapshot |
 | sheet (drift sheet) | Dialog (Drift-Dialog) | the plugin's form for drift, a new case or a decision |
@@ -117,6 +121,11 @@ them in the page language where it helps.
 
 ## Screenshots
 
+- A picture that is planned but not shot yet is an HTML comment in its
+  place, the same in every language:
+  `<!-- TODO(WP-126b) screenshot: docs/images/<file>.png; <what it shows> -->`.
+  It is no image, so the page checks do not count it; the shot replaces
+  it with the image line.
 - Reuse the renders in the repository (`docs/images/`, `plugin/preview.png`).
   They show the sample index in the Tokyo Night theme. Do not take new
   screenshots of a real desktop.

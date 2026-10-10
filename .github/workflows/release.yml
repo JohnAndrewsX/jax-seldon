@@ -16,8 +16,10 @@
 #            unless it is the split build validated; release, and with it
 #            aur, bump and plugin, wait for it, so a mismatch stops the
 #            release before anything is published (WP-190).
-#   release  (tag only)  GitHub release with the assets; its notes are the
-#            version's CHANGELOG.md section (packaging/release-notes.sh).
+#   release  (tag only)  GitHub release with the assets; its notes are
+#            packaging/release-notes.sh's body: up to 0.1.x the version's
+#            whole CHANGELOG.md section, from 0.2.0 its standing paragraph,
+#            its ### Highlights and a link to the whole section.
 #   bump     (tag only)  the updated PKGBUILD/.SRCINFO committed to main;
 #            skipped with a warning when main's packaging/ differs from
 #            the tag's (a change after the tag is never overwritten).
@@ -344,13 +346,20 @@ jobs:
           name: dist
           path: dist
 
-      # the `## [X.Y.Z]` section of CHANGELOG.md is the release body; the
-      # job fails without it, so a tag without notes never ships and aur,
-      # plugin and bump do not run (docs/VERSIONING.md)
+      # the release body is packaging/release-notes.sh's output: from 0.2.0
+      # the `## [X.Y.Z]` section's standing paragraph and ### Highlights with
+      # a link to the whole section (the whole section up to 0.1.x); the job
+      # fails without it, so a tag without notes never ships and aur, plugin
+      # and bump do not run (docs/VERSIONING.md). The log shows the notes
+      # with workflow commands stopped, so a CHANGELOG line that starts with
+      # `::` is printed, never run.
       - name: Release notes from CHANGELOG.md
         run: |
           bash packaging/release-notes.sh "$VERSION" CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          stop=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+          echo "::stop-commands::$stop"
           cat "$RUNNER_TEMP/notes.md"
+          echo "::$stop::"
 
       - name: GitHub release
         env:

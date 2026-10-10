@@ -441,14 +441,14 @@ do_install() {
   local steps=()
   if [[ ! -f $SELDON_CONFIG_FILE ]]; then
     if [[ -d $PLUGIN_DIR ]]; then
-      steps+=("seldon init        create your logbook (or press Create in the Seldon panel)")
+      steps+=("seldon init        create your logbook (or press Create logbook on the Seldon desk)")
     else
       steps+=("seldon init        create your logbook")
     fi
   fi
   if [[ ! -d $PLUGIN_DIR ]]; then
     steps+=("omarchy plugin add $PLUGIN_URL --enable")
-    steps+=("                   the bar pill, panel and Prime Radiant")
+    steps+=("                   the bar pill and the Seldon desk")
   fi
   if [[ -n $unit_src ]]; then
     steps+=("systemctl --user daemon-reload && systemctl --user enable --now seldon-watch")

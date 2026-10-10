@@ -14,7 +14,14 @@ var CONTRACT_VERSION = 2
 // manifest from disk on every rescan but keeps running the plugin code it
 // compiled first (WP-090), so a manifest that says otherwise means the
 // plugin was updated under a running shell (restartShellNotice).
-var PLUGIN_VERSION = "0.1.4"
+var PLUGIN_VERSION = "0.2.0"
+
+// CONTRACT.md rule 5: index.json stays under 1 MB (the engine's
+// SIZE_BUDGET, 1 000 000 bytes). The text is parsed on the shell thread
+// (Service.qml), so a longer one is refused before JSON.parse (E72). A
+// character is at least one byte, so an index within that budget is never
+// refused.
+var INDEX_MAX_CHARS = 1000000
 
 // SPEC-PLUGIN §3: an index older than two hours is stale.
 var STALE_AFTER_MS = 2 * 60 * 60 * 1000
@@ -141,7 +148,7 @@ var INSTALL_ENGINE_SCRIPT = terminalScript({
   what: "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.",
   command: INSTALL_ENGINE_COMMAND,
   // the panel looks again by itself after this terminal (Service.setupWatch)
-  ok: "The engine is installed. The Seldon panel finds it by itself.",
+  ok: "The engine is installed. The Seldon desk finds it by itself.",
   failed: "The install did not finish. Run it again; your logbook is untouched.",
   cancelled: "Cancelled. The install did not finish. Run it again; your logbook is untouched."
 })
@@ -154,7 +161,7 @@ var UPDATE_ENGINE_SCRIPT = terminalScript({
   what: "Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.",
   command: UPDATE_ENGINE_COMMAND,
   after: "seldon status >/dev/null 2>&1 || true",
-  ok: "The engine is updated. In the Seldon panel, press Check again.",
+  ok: "The engine is updated. In the Seldon desk, press Check again.",
   failed: "The update did not finish. Run it again; your logbook is untouched.",
   cancelled: "Cancelled. The update did not finish. Run it again; your logbook is untouched."
 })
@@ -164,7 +171,7 @@ var UPDATE_PLUGIN_SCRIPT = terminalScript({
   title: "Seldon: update the plugin",
   what: "Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.",
   command: UPDATE_PLUGIN_COMMAND,
-  ok: "If the plugin was updated, the Seldon panel offers Restart shell to load it.",
+  ok: "If the plugin was updated, the Seldon desk offers Restart shell to load it.",
   failed: "Nothing changed. The plugin stays at its version.",
   cancelled: "Cancelled. The plugin update did not finish."
 })
@@ -175,9 +182,9 @@ var INIT_SCRIPT = terminalScript({
   title: "Seldon: create your logbook",
   what: "Creates your logbook (in ~/Seldon unless your config names another folder) and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.",
   command: INIT_COMMAND,
-  ok: "Your logbook is ready. The panel updates by itself.",
-  failed: "No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again.",
-  cancelled: "Cancelled. Press Create logbook in the panel to start again."
+  ok: "Your logbook is ready. The desk updates by itself.",
+  failed: "No logbook was created; the message above says why. When the folder is in use, the desk offers Choose a folder; else press Create logbook to try again.",
+  cancelled: "Cancelled. Press Create logbook in the desk to start again."
 })
 // The logbook step when its folder cannot be used (exit 3's `reason`,
 // CONTRACT.md rule 10): plain `seldon init` asks only where the logbook
@@ -187,9 +194,9 @@ var INIT_ASK_SCRIPT = terminalScript({
   title: "Seldon: choose where your logbook goes",
   what: "Asks where the logbook should live, then creates it there and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No password.",
   command: INIT_ASK_COMMAND,
-  ok: "Your logbook is ready. The panel updates by itself.",
-  failed: "No logbook was created; the message above says why. Press Choose a folder in the panel to try again.",
-  cancelled: "Cancelled. Press Choose a folder in the panel to start again."
+  ok: "Your logbook is ready. The desk updates by itself.",
+  failed: "No logbook was created; the message above says why. Press Choose a folder in the desk to try again.",
+  cancelled: "Cancelled. Press Choose a folder in the desk to start again."
 })
 // After the grant a capture records the snapshots and rewrites the index,
 // so the banner goes without a click. Exit 4 (the plugin's own timed
@@ -205,7 +212,7 @@ var SNAPPER_FIX_SCRIPT = terminalScript({
   command: SNAPPER_FIX_COMMAND,
   run: "sudo setfacl -m u:${USER:?}:rx /.snapshots",
   after: "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }",
-  ok: "Snapshots are now recorded. The panel updates by itself.",
+  ok: "Snapshots are now recorded. The desk updates by itself.",
   // WP-117 stage 2: report, never forecast; the setup card's re-probe
   // then shows the truth
   partial: "Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture.",
@@ -257,16 +264,23 @@ function readsContract(version, from) {
   return isFinite(version) && Math.floor(version) === version && version > CONTRACT_VERSION && from <= CONTRACT_VERSION
 }
 
-// Parse index.json text. Returns { ok, error, detail, contractVersion,
-// readableFrom, newer, index }. error: "" | "empty" | "parse" | "shape" |
-// "contract". Only a contractVersion this plugin reads yields an index: its
+// Parse index.json text. Returns { ok, error, detail, size,
+// contractVersion, readableFrom, newer, index }. error: "" | "empty" |
+// "size" | "parse" | "shape" | "contract"; "size" (the text is
+// INDEX_MAX_CHARS or longer, `size` its length) is refused before
+// JSON.parse and takes the parse error's banner. Only a contractVersion this plugin reads yields an index: its
 // own, or a newer one whose contractReadableFrom is at most its own
 // (ADR-0051; `newer` is then true and the desk asks for a plugin update).
 // A mismatch still reports the version found so the banner can show both
 // numbers (CONTRACT.md rule 3).
 function parseIndex(text) {
   var raw = text === undefined || text === null ? "" : String(text)
-  var result = { ok: false, error: "", detail: "", contractVersion: 0, readableFrom: 0, newer: false, index: null }
+  var result = { ok: false, error: "", detail: "", size: raw.length, contractVersion: 0, readableFrom: 0, newer: false, index: null }
+  if (raw.length >= INDEX_MAX_CHARS) {
+    result.error = "size"
+    result.detail = raw.length + " characters, the contract's budget is under 1 MB"
+    return result
+  }
   if (raw.trim() === "") {
     result.error = "empty"
     return result
@@ -562,10 +576,29 @@ function tooltipText(status, c, lastCaptureText, nowMs) {
 // Service.fix(): copy, terminal, recheck, build, capture. `command` (shown
 // and copied) is always one of the constants above, `script` (what the
 // terminal action runs) the matching terminal script.
-// ctx: { indexContractVersion, parseError, generatedAt, nowMs, indexExists }
+// ctx: { indexContractVersion, parseError, indexSize, generatedAt, nowMs, indexExists }
+// indexSize: the length of index.json's text, named when parseError is "size".
 // indexExists: an index file is there, so the engine wrote one before and
 // is gone now (urgent); without one the user has not installed it yet, a
 // setup step (accent).
+// The warning line for an index the plugin cannot read ("" when it reads
+// it, or it is empty or of another contract, which have their banners):
+// the reason and its detail, so a file that stays the same gives the same
+// line and Service.qml logs it once (an oversized file's detail names its
+// size: a new size is a new line).
+function indexWarning(result) {
+  if (!isObject(result)) return ""
+  if (result.error !== "parse" && result.error !== "shape" && result.error !== "size") return ""
+  return "jax.seldon: index.json unreadable: " + result.detail
+}
+
+// A size in characters as megabytes with one decimal, never rounded down
+// to the limit: 1 000 000 reads "1.0 MB", 1 049 999 "1.1 MB".
+function megabytes(chars) {
+  var n = Number(chars) || 0
+  return (Math.ceil(n / 100000) / 10).toFixed(1) + " MB"
+}
+
 function bannerFor(status, ctx) {
   ctx = ctx || {}
   if (status === "engineMissing") {
@@ -605,7 +638,9 @@ function bannerFor(status, ctx) {
       status: status,
       tone: "accent",
       title: unreadable ? "Index unreadable" : "No index yet",
-      detail: unreadable
+      detail: ctx.parseError === "size"
+        ? "index.json is " + megabytes(ctx.indexSize) + ", over the 1 MB the plugin reads; rebuild it from the logbook, and if it stays, seldon status in a terminal names the largest section."
+        : unreadable
         ? "index.json could not be read. Rebuilding it from the logbook fixes this."
         : "The engine has not written index.json yet.",
       command: "",
@@ -6379,6 +6414,23 @@ function withSession(detail, sessions) {
     : "working now" + (s.actor !== "" ? " · " + s.actor : "") + (s.workspace !== "" ? " · workspace " + s.workspace : "")
   out.kv = detail.kv.map(function(kv) { return kv[0] === "Agent" ? ["Agent", line] : kv })
   return out
+}
+
+// Today's case tiles (deskToday().cases) with what `sessions`
+// (sessionsResult) says (FEEDBACK 11): a case an agent works on, or is
+// starting on, gets `working` and "· agent working" after its line, as its
+// Work row says "agent working". Copies; the tiles without a session come
+// back as they are.
+function todayCaseTiles(cases, sessions) {
+  if (!Array.isArray(cases)) return []
+  return cases.map(function(c) {
+    if (!isObject(c) || !isObject(sessions) || !isObject(sessions[c.id])) return c
+    var out = ({})
+    for (var k in c) out[k] = c[k]
+    out.working = true
+    out.text = (c.text ? c.text + " · " : "") + "agent working"
+    return out
+  })
 }
 
 // ---- Before init: the preview (WP-138, ADR-0047) -------------------------

@@ -14,7 +14,9 @@
 # is that paragraph, the Highlights and one link to the whole section in
 # CHANGELOG.md at the tag. Exit 1 when Highlights is missing or not the
 # first part, has no bullet or more than ten, a bullet runs over one line,
-# names a WP, or a line is not a `- ` bullet, or when the link reference
+# names a WP, or a line is not a `- ` bullet, when the standing paragraph
+# holds a list item (it would be published beside the Highlights and slip
+# past the ten-point limit), or when the link reference
 # `[X.Y.Z]: …/releases/tag/vX.Y.Z` is missing.
 set -euo pipefail
 
@@ -73,6 +75,9 @@ body=$(printf '%s\n' "$notes" | awk -v version="$version" '
   part == 0 && /^### / { part = 3; opener = $0; next }
   part == 3 && $0 == "### Highlights" { late = 1; exit }
   part == 3 { next }
+  part == 0 && /^[[:space:]]*([-*+]|[0-9]+[.)])([[:space:]]|$)/ {
+    bad("a bullet before ### Highlights is a highlight; move it under the heading: " $0); next
+  }
   part == 0 { lead[++nl] = $0; next }
   part == 1 && /^### / { part = 2; exit }
   part == 1 && /^[[:space:]]*$/ { next }

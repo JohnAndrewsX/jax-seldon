@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ b5e6bac9 -->
+<!-- source: en/06-configuration.md @ caf2bcf2 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -470,7 +470,8 @@ gar nichts, setz die Plugin-Einstellung `driftInBar` (siehe
 
 ## Agent-Launcher
 
-`seldon agent start` (und *Start agent* im Panel) startet den Launcher.
+`seldon agent start` (und *Hand to agent* im Desk oder ein neuer Case aus
+einem Satz unter Today oder in Work) startet den Launcher.
 Die Vorgabe startet Omarchys Standard-Agenten in einem eigenen
 Terminalfenster:
 
@@ -513,7 +514,7 @@ codex = ["alacritty", "-e", "codex", "{prompt}"]
 Der Launcher startet losgelöst dort, wo `omarchy agent prompt` den
 Agenten starten würde: im Ordner, in dem `seldon agent start` läuft, und
 in `~/Work` (dein Home, wenn es keins gibt), wenn dieser Ordner dein Home
-oder `/` ist, wie aus dem Panel. Agenten vertrauen `~/Work`, und Seldons
+oder `/` ist, wie aus dem Desk. Agenten vertrauen `~/Work`, und Seldons
 Hooks zeichnen die Sitzung dort auf, weil Seldon sie gestartet hat. Damit
 Agenten wie vor 0.1.4 im Ordner des Logbuchs starten und die Hooks in den
 Einstellungen des Logbuchs bleiben (es wird keine nutzerweite Kopie
@@ -567,18 +568,21 @@ omarchy bar set jax.seldon captureIntervalMin 30 --json
 
 Die Pill verschieben: `omarchy bar move jax.seldon --section right`.
 
-## Eine Taste für den Prime Radiant
+## Eine Taste für den Desk
 
 Das Plugin richtet keine Tastenbelegung ein. Füg diese Zeile zu deinen
-Hyprland-Bindings hinzu, um den Prime Radiant mit Super+Shift+S zu
-öffnen:
+Hyprland-Bindings hinzu (`~/.config/hypr/bindings.lua`), um den Desk mit
+Super+Shift+L (L wie Logbuch) zu öffnen und zu schließen, eine Taste,
+die Omarchy frei lässt:
 
 ```text
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
-Das Panel hat ein eigenes Ziel. Um es über eine Taste oder ein Skript
-umzuschalten: `omarchy-shell jax.seldon.panel toggle`.
+`omarchy-shell shell summon jax.seldon '{"section":"radiant"}'` öffnet den
+Desk beim Prime Radiant. Das Ziel des 0.1-Panels,
+`omarchy-shell jax.seldon.panel toggle`, leitet bis 0.3.0 an den Desk
+weiter.
 
 ---
 

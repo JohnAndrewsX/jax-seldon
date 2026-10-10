@@ -49,7 +49,7 @@ An agent started inside a logbook follows the logbook's own `AGENTS.md`; the lon
 - [Logbook spec](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-LOGBOOK.md): layout, frontmatter, ledger lines
 - [Engine spec](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md): commands (§3), collectors, drift (§5), hooks (§8), wizard (§9)
 - [Contract](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/CONTRACT.md): engine ⇄ plugin rules and the commands the plugin runs
-- [Plugin spec](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-PLUGIN.md): pill, panel, overlay, states
+- [Plugin spec](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-PLUGIN.md): pill, desk, states
 
 ## Human docs
 

@@ -8,7 +8,8 @@ import "Model.js" as Model
 // Watches index.json, publishes `index` and `status`, detects the engine,
 // and runs it on a timer. Everything is asynchronous: FileView reads and
 // Process calls never block the shell thread. The index is parsed here on the
-// shell thread; the contract keeps it under 1 MB.
+// shell thread; the contract keeps it under 1 MB, and a longer text is
+// refused before JSON.parse (Model.parseIndex, INDEX_MAX_CHARS).
 //
 // The engine is only ever started with an argument list from CONTRACT.md,
 // checked by Model.validateArgs; fix commands and the terminal scripts
@@ -81,6 +82,8 @@ Item {
   // ---- Index file.
   property string fileState: "loading"     // loading | loaded | missing | invalid
   property var parsed: null
+  // The last index warning logged (Model.indexWarning), "" while readable.
+  property string indexWarned: ""
   readonly property var index: parsed && parsed.ok ? parsed.index : null
   readonly property int indexContractVersion: parsed ? parsed.contractVersion : 0
   readonly property bool ready: fileState !== "loading" && engineState !== "unknown"
@@ -104,6 +107,7 @@ Item {
     || Model.bannerFor(status, {
       indexContractVersion: indexContractVersion,
       parseError: parsed ? parsed.error : "",
+      indexSize: parsed ? parsed.size : 0,
       generatedAt: index ? index.generatedAt : "",
       nowMs: nowMs,
       indexExists: fileState === "loaded" || fileState === "invalid"
@@ -387,12 +391,18 @@ Item {
       root.engineNotInitialised = false
     root.parsed = result
     root.fileState = result.ok || result.error === "contract" ? "loaded" : "invalid"
-    if (result.error === "parse" || result.error === "shape")
-      console.warn("jax.seldon: index.json unreadable: " + result.detail)
+    // The 5 s look-again below re-reads an unreadable file: one warning
+    // per distinct reason (an oversized file's size is in its detail), not
+    // one per read.
+    var warning = Model.indexWarning(result)
+    if (warning !== "" && warning !== root.indexWarned) console.warn(warning)
+    root.indexWarned = warning
   }
 
   function ingestFailure(error) {
     root.parsed = null
+    // a file that comes back is a new reason to warn, even unchanged
+    root.indexWarned = ""
     root.fileState = error === FileViewError.FileNotFound ? "missing" : "invalid"
   }
 

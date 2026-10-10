@@ -437,7 +437,8 @@ nothing, set the plugin's `driftInBar` (see
 
 ## Agent launcher
 
-`seldon agent start` (and *Start agent* in the panel) runs the launcher.
+`seldon agent start` (and *Hand to agent* on the desk, or a new case from
+one sentence on Today or in Work) runs the launcher.
 The default starts Omarchy's default agent in its own terminal window:
 
 ```toml
@@ -477,7 +478,7 @@ codex = ["alacritty", "-e", "codex", "{prompt}"]
 The launcher starts detached where `omarchy agent prompt` would start the
 agent: in the folder `seldon agent start` runs in, and in `~/Work` (your
 home when there is none) when that folder is your home or `/`, as from
-the panel. Agents trust `~/Work`, and Seldon's hooks record the session
+the desk. Agents trust `~/Work`, and Seldon's hooks record the session
 there because Seldon started it. To start agents in the logbook folder,
 as before 0.1.4, and keep the hooks in the logbook's settings (no
 user-wide copy is made):
@@ -527,17 +528,19 @@ omarchy bar set jax.seldon captureIntervalMin 30 --json
 
 To move the pill: `omarchy bar move jax.seldon --section right`.
 
-## A key for the Prime Radiant
+## A key for the desk
 
 The plugin does not install a key binding. Add this line to your
-Hyprland bindings to open the Prime Radiant with Super+Shift+S:
+Hyprland bindings (`~/.config/hypr/bindings.lua`) to open and close the
+desk with Super+Shift+L (L for logbook), a key Omarchy leaves free:
 
 ```text
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
-The panel has its own target. To toggle it from a key or a script:
-`omarchy-shell jax.seldon.panel toggle`.
+`omarchy-shell shell summon jax.seldon '{"section":"radiant"}'` opens the
+desk at the Prime Radiant. The 0.1 panel's target,
+`omarchy-shell jax.seldon.panel toggle`, forwards to the desk until 0.3.0.
 
 ---
 

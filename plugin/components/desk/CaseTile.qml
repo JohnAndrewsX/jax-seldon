@@ -4,14 +4,15 @@ import qs.Ui
 import ".."
 
 // An active case on Today's overview (prototype `.tile`): "id · risk", the
-// title, the plan's progress, "2/4 steps · claude-code". A click opens the
+// title, the plan's progress, "2/4 steps · claude-code" and, while an agent
+// works on it, "· agent working" (Model.todayCaseTiles). A click opens the
 // case in Work. Plain text; the title wraps to two lines.
 BorderSurface {
   id: root
 
   readonly property Tone tone: Tone {}
 
-  // { id, risk, title, progress, text } from Model.deskToday().cases
+  // { id, risk, title, progress, text, working } from Model.todayCaseTiles
   property var caseData: null
   property color foreground: Color.popups.text
   property string fontFamily: Style.font.family

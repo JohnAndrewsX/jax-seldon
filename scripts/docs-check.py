@@ -82,6 +82,9 @@ HELP_BLOCK = re.compile(
     re.S,
 )
 OPTION_LINE = re.compile(r"^\s+((?:-[A-Za-z], )?--[a-z-]+(?: <[A-Z]+>)?)\s{2,}(.*)$")
+# An option alone on its line: clap's long help puts the text on the next
+# line when the option lists its possible values (`doctor --only <CHECK>`).
+OPTION_NAME_LINE = re.compile(r"^\s+((?:-[A-Za-z], )?--[a-z-]+(?: <[A-Z]+>)?)(?:\s{2,}.*)?$")
 
 
 class Report:
@@ -371,7 +374,7 @@ def option_names(lines):
     """Every option a help text lists: `--json`, `-V`, `--version`, …"""
     names = set()
     for line in lines:
-        m = OPTION_LINE.match(line)
+        m = OPTION_NAME_LINE.match(line)
         if m:
             names.update(re.findall(r"-{1,2}[A-Za-z][a-z-]*", m.group(1)))
     return names
