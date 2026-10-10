@@ -1509,13 +1509,19 @@ test("systemTiles: Ignored by pacman (WP-165, ADR-0052)", () => {
   idx.system.pacmanIgnore = { packages: ["linux"], groups: [], partial: true }
   assert.strictEqual(M.systemTiles(idx, now)[6].lead,
     "pacman's full upgrade skips them; `pacman -S` still updates them. Part of pacman's configuration could not be read; the list may be incomplete.")
-  // a name of another shape is left out and makes the list partial; a
-  // `partial` that is not true is none
-  idx.system.pacmanIgnore = { packages: ["linux", "$(rm -rf ~)", "a\u202eb", 7, null, "x".repeat(129)], groups: "kde", partial: "yes" }
-  const odd = M.pacmanIgnore(idx)
-  same(odd, { packages: ["linux"], groups: [], partial: true })
-  idx.system.pacmanIgnore = { packages: ["linux-*", "lib32-[a-z]*"], groups: [], partial: "yes" }
-  same(M.pacmanIgnore(idx), { packages: ["linux-*", "lib32-[a-z]*"], groups: [], partial: false })
+  // names the engine does not show: counted, with a row that says why;
+  // the big value counts them, the list stays complete
+  idx.system.pacmanIgnore = { packages: ["linux"], groups: [], hidden: 2 }
+  const hid = M.systemTiles(idx, now)[6]
+  same([hid.meta, hid.lead], ["3 ignored", "pacman's full upgrade skips them; `pacman -S` still updates them."])
+  same(hid.rows, [["IgnorePkg", "linux"], ["IgnoreGroup", "—"],
+    ["Not shown", "2 names (not a plain package or group name, or masked by your redaction)"]])
+  // a name of another shape counts as hidden too; a `hidden` that is no
+  // positive integer and a `partial` that is not true are none
+  idx.system.pacmanIgnore = { packages: ["linux", "$(rm -rf ~)", "a\u202eb", 7, null, "x".repeat(129)], groups: "kde", hidden: "2", partial: "yes" }
+  same(M.pacmanIgnore(idx), { packages: ["linux"], groups: [], hidden: 5, partial: false })
+  idx.system.pacmanIgnore = { packages: ["linux-*", "lib32-[a-z]*"], groups: [], hidden: -1, partial: true }
+  same(M.pacmanIgnore(idx), { packages: ["linux-*", "lib32-[a-z]*"], groups: [], hidden: 0, partial: true })
   // an index without the field (an earlier contract-2 build)
   delete idx.system.pacmanIgnore
   assert.strictEqual(M.pacmanIgnore(idx), null)
@@ -2555,7 +2561,7 @@ test("eventDetail: a file pacman left carries the pacdiff hint, as text only (WP
   same(d.kv[2], ["What", "/etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew"])
   // its transaction through meta.transaction (WP-137), as for every member
   same(d.kv[4], ["Transaction", "2 packages: 2 upgraded · left 1 file"])
-  same(d.kv[5], ["Hint", "Merge with pacdiff (from pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot tell whether that happened since."])
+  same(d.kv[5], ["Hint", "Merge with pacdiff (from pacman-contrib) in a terminal. Seldon does not read that file, so it cannot tell whether that happened since."])
   // and a package of that transaction counts the file it left
   const hypr = M.eventDetail(idx, p, "01M3V504QG60MBGRBA2257PVQC")
   assert.ok(hypr.kv.some(r => r[0] === "Transaction" && r[1].endsWith("left 1 file")))
