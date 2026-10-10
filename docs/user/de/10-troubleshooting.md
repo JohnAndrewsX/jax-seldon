@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ a6cac4ed -->
+<!-- source: en/10-troubleshooting.md @ a2adcea2 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Hinweise des Desks, die Exit-Codes

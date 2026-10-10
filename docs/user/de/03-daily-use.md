@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ a6cac4ed -->
+<!-- source: en/03-daily-use.md @ a2adcea2 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
