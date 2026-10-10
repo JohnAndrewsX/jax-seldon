@@ -2522,10 +2522,11 @@ clean_log decisions-locked "seldon decide exit 4: the logbook is locked by anoth
 #      so, and the Collectors tile keeps machine, engine and index time; a
 #      failing collector stripes its tile. The sixth, Recently edited
 #      (WP-139), lists the files with their age, "not watched" and Watch;
-#      Watch is refused in dev mode.
-run system "$sample" 1920x1080 "summon;text:5;key:Down;key:Down;key:Down;key:Down;text:e;click:Open in editor;key:Down;click:Watch"
+#      Watch is refused in dev mode. The seventh, Ignored by pacman
+#      (WP-165), lists the IgnorePkg and IgnoreGroup names as text.
+run system "$sample" 1920x1080 "summon;text:5;key:Down;key:Down;key:Down;key:Down;text:e;click:Open in editor;key:Down;click:Watch;key:Down"
 expect system 2 .view.section system
-expect system 2 '.view.sectionView.tiles | join(",")' "omarchy 4.0.7-1,packages 2009 installed,snapshots 115 newest,deviations 5 files,collectors 6/6 ok,recent 4 files"
+expect system 2 '.view.sectionView.tiles | join(",")' "omarchy 4.0.7-1,packages 2009 installed,snapshots 115 newest,deviations 5 files,collectors 6/6 ok,recent 4 files,ignored 2 ignored"
 expect system 2 '[.view.sectionView.cursor, .view.sectionView.big, .view.sectionView.actionMeta] | join(",")' "omarchy,4.0.7-1,STATUS.md"
 for text in "SYSTEM" "Omarchy" "Packages" "Snapshots" "Deviations" "Collectors" "2009 installed" "6/6 ok" \
   "OMARCHY" "4.0.7-1" "theme tokyo-night Â· updated 7 h ago" "Theme" "tokyo-night" "Plugins" "33 of 40 enabled" \
@@ -2553,7 +2554,13 @@ for text in "Recently edited" "4 files" "~/.config/zed/settings.json" "6 h ago Â
 done
 expect system 9 '[.texts[] | select(. == "Watch")] | length' 4
 expect system 10 .view.sectionView.watchResult ""
-for i in 2 3 4 5 6 9; do expect system $i '.overflow | join(" | ")' ""; done
+expect system 11 '[.view.sectionView.cursor, .view.sectionView.big, (.view.sectionView.detailRows | join(","))] | join("|")' "ignored|2|IgnorePkg,IgnoreGroup"
+expect system 11 '.view.sectionView.files | length' 0
+for text in "Ignored by pacman" "2 ignored" "zoom, slack-desktop" "pacman's full upgrade skips them; \`pacman -S\` still updates them." \
+  "From pacman.conf and the files it includes, read on every capture: the IgnorePkg and IgnoreGroup names only, nothing else of the files."; do
+  shows system 11 "$text"
+done
+for i in 2 3 4 5 6 9 11; do expect system $i '.overflow | join(" | ")' ""; done
 clean_log system
 
 # 10e'. Watch, live (WP-139, ADR-0046): each click runs `config watch --json

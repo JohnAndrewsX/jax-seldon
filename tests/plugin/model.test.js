@@ -1448,14 +1448,18 @@ test("decisionCases: the v2 field, titles from the case lists", () => {
   assert.strictEqual(M.decisionCases(null, "ADR-0004"), null)
 })
 
-test("systemTiles: six tiles, big values, every field optional", () => {
+test("systemTiles: seven tiles, big values, every field optional", () => {
   const now = Date.parse("2026-10-01T17:05:12+02:00")
   const t = M.systemTiles(sampleIndex, now)
-  same(t.map((x) => x.id), ["omarchy", "packages", "snapshots", "deviations", "collectors", "recent"])
-  same(t.map((x) => x.meta), ["4.0.7-1", "2009 installed", "115 newest", "5 files", "6/6 ok", "4 files"])
+  same(t.map((x) => x.id), ["omarchy", "packages", "snapshots", "deviations", "collectors", "recent", "ignored"])
+  same(t.map((x) => x.meta), ["4.0.7-1", "2009 installed", "115 newest", "5 files", "6/6 ok", "4 files", "2 ignored"])
   same(t.map((x) => x.lead), ["theme tokyo-night · updated 7 h ago", "327 explicit · 41 from the AUR",
     "6 snapshots in the index (the newest 10)", "Config files that differ from Omarchy's defaults; the list is in STATUS.md",
-    "last capture just now", "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed"])
+    "last capture just now", "Under ~/.config in the last 7 days, outside the watched paths: no record of what changed",
+    "pacman's full upgrade skips them; `pacman -S` still updates them."])
+  same(t.map((x) => x.source.split(";")[0].split(":")[0]), ["From the dossier", "From the dossier", "From the dossier",
+    "From the dossier", "From the dossier", "From the last capture's scan of ~/.config",
+    "From pacman.conf and the files it includes, read on every capture"])
   same(t[0].rows, [["Version", "4.0.7-1"], ["Theme", "tokyo-night"], ["Last update", "2026-10-01 09:21 · 7 h ago"],
     ["Plugins", "33 of 40 enabled"]])
   same(t[1].rows, [["Explicit", "327"], ["Installed", "2009"], ["AUR", "41"]])
@@ -1473,14 +1477,51 @@ test("systemTiles: six tiles, big values, every field optional", () => {
   bare.system = {}
   delete bare.state.collectors
   const b = M.systemTiles(bare, now)
-  same(b.map((x) => x.meta), ["—", "—", "—", "—", "—", "—"])
+  same(b.map((x) => x.meta), ["—", "—", "—", "—", "—", "—", "—"])
   same(b.map((x) => x.lead), ["Not in the index", "Not in the index", "Not in the index", "Not in the index", "last capture just now",
-    "Not in the index"])
+    "Not in the index", "Not in the index"])
   same(b[5].files, [])
   same(b[4].rows, [["Machine", "workstation-7f3a"], ["Engine", "0.1.0"], ["Index written", "2026-10-01 17:05"]])
   bare.system = { packages: { explicit: 3 }, deviations: 1 }
   same(M.systemTiles(bare, now).map((x) => x.meta).slice(1, 4), ["3 explicit", "—", "1 file"])
-  same(M.systemTiles(null, now).map((x) => x.meta), ["—", "—", "—", "—", "—", "—"])
+  same(M.systemTiles(null, now).map((x) => x.meta), ["—", "—", "—", "—", "—", "—", "—"])
+})
+
+test("systemTiles: Ignored by pacman (WP-165, ADR-0052)", () => {
+  const now = Date.parse("2026-10-01T17:05:12+02:00")
+  const g = M.systemTiles(sampleIndex, now)[6]
+  same([g.id, g.title, g.big, g.unit, g.stripe, g.empty], ["ignored", "Ignored by pacman", "2", "ignored", "", false])
+  same(g.rows, [["IgnorePkg", "zoom, slack-desktop"], ["IgnoreGroup", "—"]])
+  same(g.files, [])
+  // the variant: the human pinned the mesa downgrade
+  const changed = JSON.parse(fs.readFileSync(path.join(root, "fixtures/index-variants/pacman-ignore-changed.json"), "utf8"))
+  same(M.systemTiles(changed, now)[6].rows[0], ["IgnorePkg", "zoom, slack-desktop, mesa, vulkan-radeon, lib32-mesa"])
+  assert.strictEqual(M.systemTiles(changed, now)[6].meta, "5 ignored")
+  // groups count too; nothing ignored says so
+  const idx = JSON.parse(sample)
+  idx.system.pacmanIgnore = { packages: [], groups: ["kde-applications"] }
+  same(M.systemTiles(idx, now)[6].rows, [["IgnorePkg", "—"], ["IgnoreGroup", "kde-applications"]])
+  assert.strictEqual(M.systemTiles(idx, now)[6].meta, "1 ignored")
+  idx.system.pacmanIgnore = { packages: [], groups: [] }
+  const none = M.systemTiles(idx, now)[6]
+  same([none.meta, none.lead, none.empty], ["0 ignored", "pacman ignores nothing: no IgnorePkg or IgnoreGroup in pacman.conf.", false])
+  // partial (ADR-0052 §1): the list may be incomplete
+  idx.system.pacmanIgnore = { packages: ["linux"], groups: [], partial: true }
+  assert.strictEqual(M.systemTiles(idx, now)[6].lead,
+    "pacman's full upgrade skips them; `pacman -S` still updates them. Part of pacman's configuration could not be read; the list may be incomplete.")
+  // a name of another shape is left out and makes the list partial; a
+  // `partial` that is not true is none
+  idx.system.pacmanIgnore = { packages: ["linux", "$(rm -rf ~)", "a\u202eb", 7, null, "x".repeat(129)], groups: "kde", partial: "yes" }
+  const odd = M.pacmanIgnore(idx)
+  same(odd, { packages: ["linux"], groups: [], partial: true })
+  idx.system.pacmanIgnore = { packages: ["linux-*", "lib32-[a-z]*"], groups: [], partial: "yes" }
+  same(M.pacmanIgnore(idx), { packages: ["linux-*", "lib32-[a-z]*"], groups: [], partial: false })
+  // an index without the field (an earlier contract-2 build)
+  delete idx.system.pacmanIgnore
+  assert.strictEqual(M.pacmanIgnore(idx), null)
+  same([M.systemTiles(idx, now)[6].meta, M.systemTiles(idx, now)[6].lead], ["—", "Not in the index"])
+  same(M.systemTiles(idx, now)[6].rows, [])
+  assert.strictEqual(M.pacmanIgnore(null), null)
 })
 
 test("systemTiles: Recently edited (WP-139, ADR-0046)", () => {
@@ -2528,6 +2569,23 @@ test("eventDetail: a file pacman left carries the pacdiff hint, as text only (WP
       ["pacman", "note", "/etc/x.pacnew.bak"], ["pacman", "note", "/etc/pacnew"]])
     assert.strictEqual(hint(s, k, sub), "", `${s} ${k} ${sub}`)
   assert.ok(!M.eventDetail(idx, p, THEME).kv.some(r => r[0] === "Hint"))
+})
+
+test("eventDetail: a changed ignore list says what it means, as text only (WP-165, ADR-0052)", () => {
+  const IGNORE = "01M3H7FNZ0YRX0ZM73QC24X96H"
+  const idx = M.parseIndex(fs.readFileSync(path.join(root, "fixtures/index-variants/pacman-ignore-changed.json"), "utf8")).index
+  same(M.counts(idx), { active: 2, queued: 3, drift: 7, crisis: 2, attention: 5 })
+  const p = M.deskChangelog(idx)
+  const d = M.eventDetail(idx, p, IGNORE)
+  same([d.heading, d.title, d.cls, d.open], ["pacman · note", "/etc/pacman.conf", "attention", true])
+  same(d.kv.map(r => r[0]), ["When", "Who", "What", "Hint", "Case", "Rule", "Source", "Zone", "Event"])
+  same(d.kv[2], ["What", "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa."])
+  same(d.kv[3], ["Hint", "pacman's full upgrade skips the packages in IgnorePkg and IgnoreGroup; `pacman -S` still updates them. The list is in System."])
+  // a pacman note without meta.ignorePkg is no change of the list
+  assert.strictEqual(M.isIgnoreChange({ source: "pacman", kind: "note", meta: { ignoreGroup: "x" } }), false)
+  assert.strictEqual(M.isIgnoreChange({ source: "manual", kind: "note", meta: { ignorePkg: "x" } }), false)
+  assert.strictEqual(M.isIgnoreChange({ source: "pacman", kind: "note", meta: { ignorePkg: "" } }), true)
+  assert.strictEqual(M.isIgnoreChange(null), false)
 })
 
 test("cycleChip wraps both ways", () => {
