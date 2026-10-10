@@ -465,14 +465,15 @@ telling you the proposal's id.
 
 You apply it, as yourself. In the desk the proposal is a row at the top
 of the Changelog: "Proposal · 12 items proposed by agent:default at …,
-1 crisis held back — apply each below" (your numbers differ). Select it.
+1 crisis held back — apply each below" (your numbers differ). Select it:
+a click, or ↑ on the Changelog's first row.
 The detail lists every item: the change, the link or the explanation,
 and each piece of evidence with who wrote it. An item with evidence by an
 agent or by an unknown author says "Read twice: some evidence names an
 agent or an unknown author."
 
 - *Apply proposals (N)* applies every item except the crises, in one
-  click. The line under the bar says what happened: "Applied N · skipped
+  click (by key: Enter, then Enter again). The line under the bar says what happened: "Applied N · skipped
   S · refused R".
 - Under CRISES — EACH ON ITS OWN, each crisis has its own *Apply this
   crisis*.

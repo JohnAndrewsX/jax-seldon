@@ -333,8 +333,8 @@ icons only; the search is then reached by widening it).
 | `,` | Settings |
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search (filters the current section's list); Enter leaves it and keeps the filter, Esc clears it and leaves |
-| `↑`/`↓`, `k`/`j` | move in the list |
-| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
+| `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c) |
+| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c); Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
@@ -581,7 +581,18 @@ knows, so a refusal names the fix under the button): `agent ask triage
 engine's answer or refusal; and, while the index names a proposal
 (`index.triage`), its row "Proposal · N items proposed by <actor> at <at>,
 C crises held back — apply each below", which shows the proposal in the
-detail (below). Then the chips **open · crisis · attention · routine · in
+detail (below). The proposal row is the row above the first list row
+(WP-126c, `Model.changelogMove`): ↑/`k` on the first row moves the
+selection onto it and then no list row is selected; ↓/`j` goes back to
+the row the list was at. A key only selects, as on an event row: on a
+stacked desk the list stays and Enter shows the proposal's detail; a
+click, IPC and *Review* show it at once. A dim line under the row says
+so ("↑ from the first row, or a click, opens it"; while selected, "Enter
+twice applies · ↓ back to the list", on a stacked desk showing its list
+"Enter shows it · ↓ back to the list", `Model.proposalHint`). IPC
+`select proposal` (or the proposal's id; `Model.isProposalTarget`), a
+payload's `"select":"proposal"` and the shim's `resolve proposal` open it
+too. Then the chips **open · crisis · attention · routine · in
 case · all** with their counts (`f` / `F` the next / previous; default
 open). A row's class: open drift with `crisis` → crisis; other open drift,
 group members included → attention; else with a case → in case; else
@@ -625,8 +636,16 @@ service refuses the old id even when asked directly
 ("Proposal <id> is not there any more …") keeps the last answer about it
 shown. Only the answer about the opened id is shown. The sticky bar:
 *Apply proposals (N)* (N the items Apply takes that are still open; one
-click, `drift apply <id> --json`; enabled also with nothing open, so a
-second run says what it skipped) and *Discard* (it removes the agent's
+click, `drift apply <id> --json`; by key Enter arms it, hint "Apply N
+proposed changes as you? Press Enter again. Crises stay, each with its
+own button.", and the second Enter applies it, WP-126c; on a replaced
+proposal Enter is *Review the new proposal*; an armed Apply or Discard
+holds only for the current proposal and is dropped when the index
+replaces it, so the bar never asks to confirm a write that would not
+happen; a row click, another selection (IPC `select` included) or, on a
+stacked desk, the detail's Back disarms too (`Changelog.disarmTriage`,
+the prefix rule of Work's and Decisions' arms); enabled also with nothing open, so a second run says what it
+skipped) and *Discard* (it removes the agent's
 unapplied work, so it arms: "Confirm discard", hint "Discard proposal
 <id>? Click Confirm discard. The logbook does not change.", then `drift
 discard <id> --json`); **under its buttons, as the bar's hint, the line
@@ -1641,7 +1660,8 @@ id).
   `open`, `show` → `summon jax.seldon {}`; `close`, `hide` → `hide`;
   `toggle` → `toggle`; `tab <today|changelog|work|decisions|system|memory>`
   → summon at that section ("ok" / "unknown tab"); `resolve crisis` → the
-  Changelog with the crisis filter, `resolve <eventId>` → the Changelog
+  Changelog with the crisis filter, `resolve proposal` → the Changelog
+  with the agent's triage proposal shown (WP-126c), `resolve <eventId>` → the Changelog
   with that event selected ("unknown target" for anything else); `filter
   <source>` → the Changelog's `all` chip with the source in the sidebar
   search ("unknown source"); `view`

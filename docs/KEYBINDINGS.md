@@ -25,6 +25,7 @@ checks in `tests/plugin/desk-view.sh` together.
 | `i` | Today's New case field, Work's intent field |
 | `e` | open in the editor: Today the journal, Changelog this month's ledger, Work the case, Decisions the decision, System STATUS.md, Memory the logbook |
 | `f` / `F` | Changelog: the next / previous chip (open, crisis, attention, routine, in case, all) |
+| `↑` / `k` on the first row | Changelog: the agent's triage proposal (the row above the list); `↓` / `j` back to the list. On the proposal, Enter arms *Apply proposals*, a second Enter applies it (on a narrow desk the first Enter shows its detail); each crisis keeps its own button |
 | `a` | Work: hand the case to the agent (twice; the only key that starts one); while an agent works on the case, *Focus*: bring its window to the front (once) |
 | `x` | Work: drop the case (twice; final) |
 | `r` | Work: reopen a completed case (once) |
@@ -67,10 +68,10 @@ Tab and Shift-Tab do nothing: the desk is not a bar popup.
 | `omarchy-shell shell call jax.seldon view ""` | what the desk shows, as JSON (while it is open) |
 | `omarchy-shell shell call jax.seldon section <id>` | show a section |
 | `omarchy-shell shell summon jax.seldon '{"section":"changelog","filter":"crisis"}'` | the Changelog at a chip (`open`, `crisis`, `attention`, `routine`, `case`, `all`); `"select":"<eventId>"` selects an event |
-| `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section (an event, a case, a decision id, …; the graph: keep that node's card) |
+| `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section (an event, a case, a decision id, …; the Changelog: `proposal`, the agent's triage proposal; the graph: keep that node's card) |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`); an unknown id changes nothing |
 | `omarchy-shell shell call jax.seldon hover "heatmap 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (fractions of its plot; `""` clears), while it is shown |
-| `omarchy-shell jax.seldon.panel open\|close\|show\|hide\|toggle\|tab <name>\|resolve <eventId\|crisis>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until 0.3.0 |
+| `omarchy-shell jax.seldon.panel open\|close\|show\|hide\|toggle\|tab <name>\|resolve <eventId\|crisis\|proposal>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until 0.3.0 |
 | `omarchy-shell jax.seldon.service status\|refresh\|capture` | the service |
 
 The suggested Hyprland binding is documented, never installed by the

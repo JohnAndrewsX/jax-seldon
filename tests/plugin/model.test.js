@@ -3649,6 +3649,42 @@ test("FEEDBACK 11: Today's case tile says \"agent working\" first while a sessio
 const proposalFile = fs.readFileSync(path.join(root, "fixtures/proposals/01M3VZS4J0NDXZFC2F7RBBD3FJ.json"), "utf8")
 const PID = "01M3VZS4J0NDXZFC2F7RBBD3FJ"
 
+test("WP-126c: ↑ from the first Changelog row reaches the proposal, ↓ goes back", () => {
+  const mv = (s, dy) => M.changelogMove(s, dy)
+  const at = (o) => Object.assign({ rows: 6, cursor: 0, cursorRow: 0, proposal: true, triageShown: false }, o)
+  // ↑ on the first row: the proposal; without one, the first row stays
+  same(mv(at({}), -1), { triage: true, row: -1 })
+  same(mv(at({ proposal: false }), -1), { triage: false, row: 0 })
+  // elsewhere the keys move in the list as before; a page up stops at the first row
+  same(mv(at({ cursor: 3, cursorRow: 3 }), -1), { triage: false, row: 2 })
+  same(mv(at({ cursor: 3, cursorRow: 3 }), -10), { triage: false, row: 0 })
+  same(mv(at({}), 1), { triage: false, row: 1 })
+  same(mv(at({ cursor: 5, cursorRow: 5 }), 1), { triage: false, row: 5 })
+  // the selected event left the chip (cursor -1): from where the list was
+  same(mv(at({ cursor: -1, cursorRow: 0 }), -1), { triage: true, row: -1 })
+  same(mv(at({ cursor: -1, cursorRow: 2 }), 1), { triage: false, row: 2 })
+  // shown: ↓ back to the row the list was at, ↑ stays on the proposal
+  same(mv(at({ triageShown: true, cursor: -1, cursorRow: 4 }), 1), { triage: false, row: 4 })
+  same(mv(at({ triageShown: true, cursor: -1, cursorRow: 0 }), -1), { triage: true, row: -1 })
+  // an empty list: ↑ still reaches the proposal, nothing else moves
+  same(mv(at({ rows: 0, cursor: -1 }), -1), { triage: true, row: -1 })
+  same(mv(at({ rows: 0, cursor: -1 }), 1), { triage: false, row: -1 })
+  same(mv(at({ rows: 0, cursor: -1, triageShown: true }), 1), { triage: true, row: -1 })
+  // the targets that name the proposal (IPC select, payload, the shim's resolve)
+  const view = { id: "01M3VZS4J0NDXZFC2F7RBBD3FJ", head: "x" }
+  assert.strictEqual(M.isProposalTarget("proposal", view), true)
+  assert.strictEqual(M.isProposalTarget("01M3VZS4J0NDXZFC2F7RBBD3FJ", view), true)
+  assert.strictEqual(M.isProposalTarget("01M3VZS4J0NDXZFC2F7RBBD3FX", view), false)
+  assert.strictEqual(M.isProposalTarget("proposal", null), false)
+  assert.strictEqual(M.isProposalTarget("", { id: "" }), false)
+  assert.strictEqual(M.proposalHint(false), "↑ from the first row, or a click, opens it")
+  assert.strictEqual(M.proposalHint(true), "Enter twice applies · ↓ back to the list")
+  assert.strictEqual(M.proposalHint(true, false), "Enter twice applies · ↓ back to the list")
+  // a stacked desk showing its list: Enter first shows the detail (review F1)
+  assert.strictEqual(M.proposalHint(true, true), "Enter shows it · ↓ back to the list")
+  assert.strictEqual(M.proposalHint(false, true), "↑ from the first row, or a click, opens it")
+})
+
 test("triage argv: ids only, one --item, never propose (ADR-0036)", () => {
   const good = [
     ["agent", "ask", "triage", "--json"],

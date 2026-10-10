@@ -46,18 +46,28 @@ DetailPane {
   readonly property bool canWrite: !!root.service && root.service.canWrite
   readonly property var arm: root.section ? root.section.arm : null
   readonly property string discardKey: "triage:discard:" + root.seenId
-  readonly property bool discardArmed: !!root.arm && root.arm.armedId === root.discardKey
+  // An arm holds only for the current proposal: a replaced one drops it
+  // (review F2), so the bar never asks to confirm a write that would not
+  // happen.
+  readonly property bool discardArmed: root.current && !!root.arm && root.arm.armedId === root.discardKey
+  // Enter arms Apply proposals, the second Enter applies (WP-126c; a click
+  // applies at once, as before)
+  readonly property string applyKey: "triage:apply:" + root.seenId
+  readonly property bool applyArmed: root.current && !!root.arm && root.arm.armedId === root.applyKey
+  readonly property bool applyEnabled: !!root.proposal && root.canWrite && !root.pending && root.proposal.readable
   readonly property color foregroundColor: Color.popups.text
 
   title: "Proposal"
   meta: root.seenId
-  hint: root.discardArmed ? root.arm.hint : root.proposal ? root.proposal.head : root.seen.text
+  hint: root.discardArmed || root.applyArmed ? root.arm.hint : root.proposal ? root.proposal.head : root.seen.text
 
   // The bar's actions, rebuilt only when what they show changes (not on
   // every index reload).
   readonly property string actionsKey: [root.seen.state, root.seenId, root.proposal ? root.proposal.applyCount : -1,
-    root.proposal ? root.proposal.readable : false, root.canWrite, root.pending, root.discardArmed].join("|")
+    root.proposal ? root.proposal.readable : false, root.canWrite, root.pending, root.discardArmed, root.applyArmed].join("|")
   onActionsKeyChanged: root.actions = root.buildActions()
+  onCurrentChanged: if (!root.current && root.arm
+      && (root.arm.armedId === root.applyKey || root.arm.armedId === root.discardKey)) root.arm.disarm()
   Component.onCompleted: root.actions = root.buildActions()
 
   function buildActions() {
@@ -72,12 +82,26 @@ DetailPane {
       { id: "apply", primary: true,
         label: root.proposal.applyCount > 0 ? "Apply proposals (" + root.proposal.applyCount + ")" : "Apply proposals",
         // also with nothing open: a second run says what it skipped
-        enabled: root.canWrite && !root.pending && root.proposal.readable },
+        enabled: root.applyEnabled, armed: root.applyArmed },
       { id: "discard", label: root.discardArmed ? "Confirm discard" : "Discard", armed: root.discardArmed, enabled: root.canWrite && !root.pending }
     ]
   }
 
-  function activate() { return false }
+  // Enter (WP-126c): on a replaced proposal, Review the new one; else arm
+  // Apply proposals, and the second Enter applies it. The crises keep
+  // their own buttons (never with the rest, ADR-0036).
+  function activate() {
+    if (root.seen.state === "replaced") {
+      if (root.section) root.section.showTriage()
+      return true
+    }
+    if (!root.applyEnabled || !root.arm) return false
+    var n = root.proposal.applyCount
+    if (root.arm.press(root.applyKey, "Apply " + (n > 0 ? n + " " : "") + "proposed " + (n === 1 ? "change" : "changes")
+        + " as you? Press Enter again. Crises stay, each with its own button."))
+      root.service.applyProposal(root.seenId, "")
+    return true
+  }
   function back() { return false }
 
   onActionTriggered: function(id) {
@@ -121,6 +145,8 @@ DetailPane {
       state: v ? v.state : "",
       readable: v ? v.readable : false,
       actions: root.actions.map(function(a) { return a.label + (a.enabled === false ? " (off)" : "") }),
+      applyArmed: root.applyArmed,
+      discardArmed: root.discardArmed,
       result: root.result && !root.result.pending ? resultText.text : "",
       resultOk: root.result ? root.result.ok : true,
       built: items.status === Loader.Ready,

@@ -234,7 +234,8 @@ with the change, the link or explanation and its evidence, evidence by an
 agent or of unknown authorship marked. *Apply proposals* applies it as
 you in one click, crises never with the rest: each has its own button.
 *Discard* throws the proposal away. The agent only proposes; you apply
-(ADR-0036).
+(ADR-0036). By key: ↑ on the Changelog's first row opens the proposal,
+Enter arms *Apply proposals* and a second Enter applies it.
 
 ### Keys
 
@@ -256,6 +257,7 @@ The desk's keys (the full table with every section's keys:
 | `i` | the one-sentence new case (Today, Work) |
 | `e` | open in the editor: the journal, this month's ledger, the case, the decision, `STATUS.md`, the logbook |
 | `f` / `F` | Changelog: the next / previous chip |
+| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` back. On it, Enter twice applies it |
 | `a` | Work: hand the case to the agent (twice), or *Focus* while one works on it |
 | `x` | Work: drop the case (twice) |
 | `r` | Work: reopen a completed case |
@@ -374,7 +376,7 @@ o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 | `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`) |
 | `omarchy-shell shell call jax.seldon hover "series 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON, while section 7 is shown; `hover ""` clears; a malformed argument returns `{"error": …}` and changes nothing |
-| `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide\|tab <name>\|resolve crisis\|<event id>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk; removed in 0.3.0 |
+| `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide\|tab <name>\|resolve crisis\|proposal\|<event id>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk; removed in 0.3.0 |
 | `omarchy-shell jax.seldon.service status` | the service state, as JSON |
 | `omarchy-shell jax.seldon.service refresh` | look for the engine again and re-read the index |
 | `omarchy-shell jax.seldon.service capture` | capture now |

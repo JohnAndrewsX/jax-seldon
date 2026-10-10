@@ -592,6 +592,45 @@ function indexWarning(result) {
   return "jax.seldon: index.json unreadable: " + result.detail
 }
 
+// The Changelog's ↑/↓ (WP-126c): the selection is the cursor, and the
+// proposal row in the list head is the row above the first one, so the
+// keys reach the proposal as a click does. s: { rows (count), cursor (the
+// selected row's index, -1 when none), cursorRow (the row the list was
+// at), proposal (a proposal row is shown), triageShown }. Returns
+// { triage, row }: the proposal shown, or the row to select (-1: none).
+function changelogMove(s, dy) {
+  var rows = Math.max(0, Number(s && s.rows) || 0)
+  var proposal = !!(s && s.proposal)
+  var at = Number(s && s.cursorRow) || 0
+  var clamp = function(i) { return rows === 0 ? -1 : Math.max(0, Math.min(rows - 1, i)) }
+  if (s && s.triageShown) {
+    // ↓ goes back to the row the list was at; ↑ stays on the proposal
+    return dy > 0 && rows > 0 ? { triage: false, row: clamp(at) } : { triage: proposal, row: proposal ? -1 : clamp(at) }
+  }
+  if (rows === 0) return { triage: proposal && dy < 0, row: -1 }
+  var cursor = Number(s.cursor)
+  var from = cursor >= 0 ? cursor : dy > 0 ? at - 1 : at
+  if (dy < 0 && proposal && from === 0) return { triage: true, row: -1 }
+  return { triage: false, row: clamp(from + dy) }
+}
+
+// The key hint under the proposal row in the Changelog's head (WP-126c):
+// how the keys reach it, and, while it is the selection, what they do
+// there; `listOnly`: a stacked desk shows the list, not the detail, so
+// Enter first shows the detail (review F1).
+function proposalHint(shown, listOnly) {
+  if (!shown) return "↑ from the first row, or a click, opens it"
+  return listOnly ? "Enter shows it · ↓ back to the list" : "Enter twice applies · ↓ back to the list"
+}
+
+// Whether `id` (IPC `select`, a desk payload's `select`, the shim's
+// `resolve`) names the proposal: "proposal", or the id of the proposal
+// the index names. False while there is none.
+function isProposalTarget(id, triageView) {
+  if (!isObject(triageView) || typeof id !== "string") return false
+  return id === "proposal" || (typeof triageView.id === "string" && triageView.id !== "" && id === triageView.id)
+}
+
 // A size in characters as megabytes with one decimal, never rounded down
 // to the limit: 1 000 000 reads "1.0 MB", 1 049 999 "1.1 MB".
 function megabytes(chars) {

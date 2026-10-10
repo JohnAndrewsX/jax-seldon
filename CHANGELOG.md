@@ -535,6 +535,16 @@ git 2.44 or later.
 - **"agent working" on Today's case tile (WP-126)** while an agent runs
   on the case, first in its line as on its Work row, so a narrow desk
   never cuts it off.
+- **The triage proposal by key (WP-126c).** The proposal row is the row
+  above the Changelog's list: ↑ (or `k`) on the first row opens it, ↓
+  goes back, and Enter arms *Apply proposals*, a second Enter applies it
+  (a click still applies at once); on a narrow, stacked desk the first
+  Enter shows the proposal's detail. An armed Apply or Discard is dropped
+  when a newer proposal replaces the one shown, or when you select
+  something else; before, an armed Discard stayed armed. `shell call jax.seldon select
+  proposal`, a payload's `"select":"proposal"` and the old panel
+  target's `resolve proposal` open it too. Before, only a mouse click
+  reached it.
 - **The header's chip on a narrow desk (WP-126)** shows "N notices", then
   the count alone, never an elided word (50 % of a 1920 px screen cut
   "1 notice" to "1 not…").

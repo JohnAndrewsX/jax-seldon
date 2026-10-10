@@ -3158,6 +3158,84 @@ shows triage-dev 3 "Read twice: some evidence names an agent or an unknown autho
 shows triage-dev 3 "by agent:codex · the theme switch was mine, a test of the new palette, part of the Zed setup in C-2026-004 and nothing else"
 clean_log triage-dev
 
+# WP-126c: the proposal by keys alone. ↑ on the first row moves the
+# selection onto the proposal row (no list row selected, the hint says
+# what the keys do), ↓ goes back; Enter arms Apply proposals, a second
+# Enter applies it; the crisis stays for its own button. Also IPC: the
+# desk's `select proposal`, a payload's select and the shim's
+# `resolve proposal`.
+mkdir -p "$work/home-triage-keys"
+run triage-keys "" 1920x1080 \
+  "summon:$cl;key:Up;key:Down;text:k;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;text:1;call:select:proposal;text:2;key:Down;call:select:proposal;hide;summon:{\"section\":\"changelog\",\"select\":\"proposal\"};hide;shim:resolve:proposal" \
+  HOME="$work/home-triage-keys" FAKE_SELDON_FIXTURE="$sample"
+expect triage-keys 1 "[$tt.shown, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "false,0,$THEME"
+shows triage-keys 1 "↑ from the first row, or a click, opens it"
+expect triage-keys 2 "[$tt.shown, $tv.cursor, $ttd.head] | map(tostring) | join(\",\")" "true,-1,$head"
+expect triage-keys 2 '.marks.rows | join(",")' ""
+shows triage-keys 2 "Enter twice applies · ↓ back to the list"
+expect triage-keys 3 "[$tt.shown, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "false,0,$THEME"
+expect triage-keys 4 "$tt.shown" true
+expect triage-keys 5 "[$ttd.applyArmed, $ttd.hint] | map(tostring) | join(\",\")" \
+  "true,Apply 2 proposed changes as you? Press Enter again. Crises stay, each with its own button."
+expect triage-keys 7 "[$ttd.applyArmed, ([$ttd.regular[].outcome] | join(\"+\")), $ttd.crises[0].outcome] | map(tostring) | join(\",\")" \
+  "false,done+done,skipped: crisis: applied only one by one (\`--item\`), never with the rest"
+# IPC select from another section answers "not found"; in the Changelog "ok"
+expect triage-keys 9 ".call" "not found"
+expect triage-keys 11 "$tt.shown" false
+expect triage-keys 12 "[.call, $tt.shown] | map(tostring) | join(\",\")" "ok,true"
+expect triage-keys 14 "[.view.section, $tt.shown] | map(tostring) | join(\",\")" "changelog,true"
+expect triage-keys 16 "[.call, .view.section, $tt.shown] | map(tostring) | join(\",\")" "ok,changelog,true"
+argv_check triage-keys "$work/home-triage-keys" "$(printf '%s\n' "$startup" "$(q drift apply $PROPOSAL --json)")"
+clean_log triage-keys
+
+# The same on a stacked desk (700 px; review F1): ↑ only selects the
+# proposal row, as on an event row, the list stays and the hint says Enter
+# shows it; ↓ goes back to the first row; ↑ and Enter show the detail,
+# Enter, Enter applies; Esc back to the list.
+mkdir -p "$work/home-triage-keys-stacked"
+run triage-keys-stacked "" 700x900 \
+  "summon:$cl;key:Up;key:Down;key:Up;key:Return;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;key:Escape" \
+  HOME="$work/home-triage-keys-stacked" FAKE_SELDON_FIXTURE="$sample"
+expect triage-keys-stacked 1 "[.view.layout.stacked, .view.detailShown, $tt.shown, $tv.cursor] | map(tostring) | join(\",\")" "true,false,false,0"
+expect triage-keys-stacked 2 "[.view.detailShown, $tt.shown, $tv.cursor] | map(tostring) | join(\",\")" "false,true,-1"
+shows triage-keys-stacked 2 "Enter shows it · ↓ back to the list"
+expect triage-keys-stacked 3 "[.view.detailShown, $tt.shown, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "false,false,0,$THEME"
+expect triage-keys-stacked 5 "[.view.detailShown, $tt.shown, $ttd.applyArmed] | map(tostring) | join(\",\")" "true,true,false"
+expect triage-keys-stacked 6 "$ttd.applyArmed" true
+expect triage-keys-stacked 8 "[$ttd.applyArmed, ([$ttd.regular[].outcome] | join(\"+\"))] | map(tostring) | join(\",\")" "false,done+done"
+expect triage-keys-stacked 9 ".view.detailShown" false
+argv_check triage-keys-stacked "$work/home-triage-keys-stacked" "$(printf '%s\n' "$startup" "$(q drift apply $PROPOSAL --json)")"
+clean_log triage-keys-stacked
+
+# A detour drops the arm (WP-126c stage 2 F1): armed by Enter, then a row
+# click and the proposal again, or IPC select of an event and of the
+# proposal, or (stacked) the detail's Back: the next Enter only arms
+# again, nothing is applied. The same for Discard armed by a click.
+mkdir -p "$work/home-triage-detour"
+run triage-detour "" 1920x1080 \
+  "summon:$cl;key:Up;key:Return;click:ollama.service;clickName:proposalRow;key:Return;key:Left;key:Return;call:select:$UNIT;call:select:proposal;key:Return;key:Left;click:Discard;click:ollama.service;clickName:proposalRow" \
+  HOME="$work/home-triage-detour" FAKE_SELDON_FIXTURE="$sample"
+expect triage-detour 3 "$ttd.applyArmed" true
+expect triage-detour 5 "[$tt.shown, $ttd.applyArmed] | map(tostring) | join(\",\")" "true,false"
+expect triage-detour 6 "$ttd.applyArmed" true
+expect triage-detour 8 "$ttd.applyArmed" true
+expect triage-detour 10 "[.call, $tt.shown, $ttd.applyArmed] | map(tostring) | join(\",\")" "ok,true,false"
+expect triage-detour 11 "$ttd.applyArmed" true
+expect triage-detour 13 "$ttd.discardArmed" true
+expect triage-detour 15 "[$tt.shown, $ttd.discardArmed, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" "true,false,Apply proposals (2)+Discard"
+argv_check triage-detour "$work/home-triage-detour" "$startup"
+clean_log triage-detour
+mkdir -p "$work/home-triage-detour-stacked"
+run triage-detour-stacked "" 700x900 \
+  "summon:$cl;key:Up;key:Return;key:Return;click:‹ Back to the list;key:Return;view;key:Return" \
+  HOME="$work/home-triage-detour-stacked" FAKE_SELDON_FIXTURE="$sample"
+expect triage-detour-stacked 4 "[.view.detailShown, $ttd.applyArmed] | map(tostring) | join(\",\")" "true,true"
+expect triage-detour-stacked 5 "[.view.detailShown, $tt.shown, $ttd.applyArmed] | map(tostring) | join(\",\")" "false,true,false"
+expect triage-detour-stacked 7 "[.view.detailShown, $ttd.applyArmed] | map(tostring) | join(\",\")" "true,false"
+expect triage-detour-stacked 8 "$ttd.applyArmed" true
+argv_check triage-detour-stacked "$work/home-triage-detour-stacked" "$startup"
+clean_log triage-detour-stacked
+
 # B1 (WP-124b round 2): the proposal the user opened is the one Apply
 # names. A capture brings a newer proposal (agent:codex) while the detail
 # shows the first: the pane says so, Apply, the crises and Discard are off,
@@ -3185,6 +3263,25 @@ expect triage-swap 10 "[$ttd.id, $ttd.seen, ($ttd.actions | join(\"+\")), $ttd.r
 expect triage-swap 10 "$ttd.hint" "3 items proposed by agent:codex at 2026-10-01 17:30, 1 crisis held back — apply each below"
 argv_check triage-swap "$work/home-triage-swap" "$(printf '%s\n' "$startup" "$(q capture --all --json --quiet)" "$(q status --json)")"
 clean_log triage-swap
+
+# An arm does not outlive its proposal (review F2): Apply armed by key,
+# Discard armed by a click, then a capture (no key) brings a newer
+# proposal: neither stays armed, the hint says replaced, the next Enter is
+# Review; nothing is applied or discarded.
+for armed in apply discard; do
+  if [[ $armed == apply ]]; then steps="summon:$cl;key:Up;key:Return"; else steps="summon:$cl;clickName:proposalRow;click:Discard"; fi
+  mkdir -p "$work/home-triage-swap-$armed"
+  run "triage-swap-$armed" "" 1920x1080 \
+    "$steps;service:captureNow;wait:sectionView.triage.detail.seen=replaced;view;key:Return;view" \
+    HOME="$work/home-triage-swap-$armed" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$fx_work/swap/index.json"
+  expect "triage-swap-$armed" 3 "[$ttd.applyArmed, $ttd.discardArmed] | map(tostring) | join(\",\")" \
+    "$([[ $armed == apply ]] && echo true,false || echo false,true)"
+  expect "triage-swap-$armed" 6 "[$ttd.seen, $ttd.applyArmed, $ttd.discardArmed, $ttd.hint, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+    "replaced,false,false,$replaced,Review the new proposal+Apply proposals (off)+Discard (off)"
+  expect "triage-swap-$armed" 8 "[$ttd.id, $ttd.seen, $ttd.applyArmed] | map(tostring) | join(\",\")" "$SWAP,current,false"
+  argv_check "triage-swap-$armed" "$work/home-triage-swap-$armed" "$(printf '%s\n' "$startup" "$(q capture --all --json --quiet)" "$(q status --json)")"
+  clean_log "triage-swap-$armed"
+done
 
 # R2, R3: a proposal of 200 items × 10 refs of 256 characters (dev mode,
 # read-only). The items are built only when the detail shows; the desk

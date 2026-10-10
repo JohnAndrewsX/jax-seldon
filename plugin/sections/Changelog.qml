@@ -24,10 +24,13 @@ import "../Model.js" as Model
 // just linked) — the list then has no highlighted row and ↑/↓ continue
 // from where it was. A new chip starts at its first row.
 //
-// Keys: ↑/↓ j/k move, Enter opens the selected open item's default form
-// (Link when the engine proposes a case, else Explain), `f` / `F` the next
-// / previous chip, `e` this month's ledger in the editor, Esc hides a
-// shown form (its draft kept).
+// Keys: ↑/↓ j/k move (the agent's triage proposal, in the list head, is
+// the row above the first one: ↑ on the first row selects it, WP-126c),
+// Enter opens the selected open item's default form (Link when the engine
+// proposes a case, else Explain) or, on the proposal, arms Apply proposals
+// and applies on the second press (on a stacked desk Enter first shows the
+// detail, as for every row), `f` / `F` the next / previous chip, `e` this
+// month's ledger in the editor, Esc hides a shown form (its draft kept).
 Section {
   id: root
 
@@ -45,7 +48,8 @@ Section {
   readonly property var hidden: root.service ? root.service.deskHidden : ({})
   readonly property var rows: Model.changelogView(root.prepared, root.chip, root.hidden, root.searchText)
   readonly property var chips: Model.changelogChips(root.prepared, root.hidden)
-  readonly property int cursor: root.rowIndex(root.selectedId)
+  // While the proposal is shown it is the selection: no list row is.
+  readonly property int cursor: root.triageShown ? -1 : root.rowIndex(root.selectedId)
   readonly property int hiddenCount: Model.hiddenCount(root.prepared, root.hidden)
   readonly property string attentionText: Model.attentionText(root.index)
   readonly property string moreText: Model.moreDriftText(root.index)
@@ -73,6 +77,17 @@ Section {
 
   editing: !root.triageShown && detail.editing
 
+  // A triage arm (Apply or Discard) holds only while its proposal stays
+  // the shown selection: a row click, another selection (IPC included) or
+  // the stacked detail hidden by its Back drops it, as Work's and
+  // Decisions' arms drop on another selection (WP-126c stage 2 F1).
+  function disarmTriage() {
+    if (root.arm && root.arm.armedId.indexOf("triage:") === 0) root.arm.disarm()
+  }
+  onTriageShownChanged: if (!root.triageShown) root.disarmTriage()
+  onSelectedIdChanged: root.disarmTriage()
+  onDetailShownChanged: if (root.stacked && !root.detailShown) root.disarmTriage()
+
   function rowIndex(id) {
     var rows = root.rows || []
     for (var i = 0; i < rows.length; i++) if (rows[i].id === id) return i
@@ -88,10 +103,18 @@ Section {
     root.triageShown = false
   }
 
+  // ↑/↓: the proposal row in the list head is the row above the first
+  // one (Model.changelogMove, WP-126c).
   function move(dy) {
-    if (root.rows.length === 0) return true
-    var from = root.cursor >= 0 ? root.cursor : dy > 0 ? root.cursorRow - 1 : root.cursorRow
-    root.selectRow(from + dy)
+    var to = Model.changelogMove({ rows: root.rows.length, cursor: root.cursor, cursorRow: root.cursorRow,
+      proposal: root.proposalRowShown, triageShown: root.triageShown }, dy)
+    if (to.triage) {
+      // a key selects, as on an event row: on a stacked desk Enter shows
+      // the detail (review F1)
+      if (!root.triageShown) root.showTriage(false)
+    } else if (to.row >= 0) {
+      root.selectRow(to.row)
+    }
     return true
   }
 
@@ -103,11 +126,13 @@ Section {
     return root.triageShown ? triage.activate() : detail.activate()
   }
 
-  function showTriage() {
+  // The proposal as the selection; `openDetail` (a click, IPC, Review;
+  // not a key move) also shows the detail on a stacked desk.
+  function showTriage(openDetail) {
     if (!root.triageView) return
     root.seenProposalId = root.triageView.id
     root.triageShown = true
-    if (root.desk) root.desk.showDetail()
+    if (openDetail !== false && root.desk) root.desk.showDetail()
   }
 
   function setChip(id) {
@@ -131,6 +156,11 @@ Section {
   // chip when it has it, else under "all".
   function select(id) {
     var target = String(id)
+    // "proposal" or its id: the proposal's detail (WP-126c)
+    if (Model.isProposalTarget(target, root.triageView)) {
+      root.showTriage()
+      return true
+    }
     if (!Model.changelogRow(root.prepared, target)) return false
     // A payload's chip and its selection arrive together: keep this one.
     if (root.chipPending) root.chipKeepsSelection = true
@@ -290,24 +320,43 @@ Section {
         objectName: "proposalRow"
         width: parent.width
         visible: root.proposalRowShown
-        implicitHeight: proposalText.implicitHeight + Style.spacing.md * 2
+        implicitHeight: proposalColumn.implicitHeight + Style.spacing.md * 2
         radius: Style.cornerRadius
         color: root.triageShown ? Style.selectedFillFor(Color.accent, Color.accent) : "transparent"
         border.width: Math.max(1, Style.space(1))
         // shown: the accent tint plus a border of at least 3:1 (WP-177)
         border.color: root.triageShown ? root.tone.accentUi : Style.normalBorderFor(Color.accent, Color.accent)
 
-        Text {
-          id: proposalText
+        Column {
+          id: proposalColumn
           x: Style.spacing.md
           y: Style.spacing.md
           width: parent.width - Style.spacing.md * 2
-          textFormat: Text.PlainText
-          text: root.triageView ? "Proposal · " + root.triageView.head : ""
-          color: root.foreground
-          wrapMode: Text.Wrap
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          spacing: Style.spacing.xxs
+
+          Text {
+            id: proposalText
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.triageView ? "Proposal · " + root.triageView.head : ""
+            color: root.foreground
+            wrapMode: Text.Wrap
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          // the keys that reach it (WP-126c)
+          Text {
+            id: proposalHint
+            objectName: "proposalHint"
+            width: parent.width
+            textFormat: Text.PlainText
+            text: Model.proposalHint(root.triageShown, root.stacked && !root.detailShown)
+            color: root.dim
+            wrapMode: Text.Wrap
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
         }
 
         MouseArea {
@@ -487,7 +536,7 @@ Section {
       aside: modelData.age
       stripe: modelData.stripe
       alert: modelData.alert
-      selected: modelData.id === root.selectedId
+      selected: !root.triageShown && modelData.id === root.selectedId
       cursor: list.hoverIndex === index
       onClicked: {
         root.selectedId = modelData.id

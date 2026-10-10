@@ -265,3 +265,72 @@ plaintext.test.js ok, terminal-scripts 73/0, service-states 367/0,
 desk-view 2040/0 (with `rounding-16`, `rounding-0`, `chip-50`,
 `chip-narrow`), bar-view 196/0, ipc-restart 44/0. Where: headless (dev
 host, private runtime dirs on disk), shellcheck on the test host.
+
+## 126c (the triage proposal by key)
+
+Finding (Fable, 126b part 2 Q3.3): the proposal's detail opened only on a
+mouse click on its row; no key and no IPC reached it.
+
+| Change | Verified |
+|---|---|
+| The proposal row is the row above the Changelog's list (`Model.changelogMove`): ↑/`k` on the first row selects it, as a click does, and no list row stays selected (one highlight); ↓/`j` goes back to the row the list was at (`Model.changelogMove` also clamps a move of more than one row at the first row; the desk itself sends only ±1) | fixture (model.test.js); headless (desk-view `triage-keys`) |
+| Enter on the proposal arms *Apply proposals* (hint "Apply N proposed changes as you? Press Enter again. Crises stay, each with its own button."), the second Enter applies it (`drift apply <id> --json`, once); a click still applies at once; on a replaced proposal Enter is *Review the new proposal*. Each crisis keeps its own button, by click only; by key a crisis is resolved from its own row (Link, Explain, Dismiss work by key), as before | headless (`triage-keys`: armed, then done+done, the crisis skipped; exact argv) |
+| A dim line under the proposal row names the keys: "↑ from the first row, or a click, opens it"; while shown "Enter twice applies · ↓ back to the list" (`Model.proposalHint`) | fixture; headless |
+| IPC: `shell call jax.seldon select proposal` (or the proposal's id, `Model.isProposalTarget`; "not found" in another section), a payload's `"select":"proposal"`, the shim's `resolve proposal` | headless (`triage-keys` steps 9–16) |
+| The case against the plugin of 6e4672e0: fails at every step (no proposal by ↑, the row stays selected, no hint, `select proposal` "not found", `resolve proposal` "unknown target") | headless |
+| Docs: KEYBINDINGS.md (key row, `select`, shim), SPEC-PLUGIN §5.4 Changelog and §8, plugin README (keys, triage, IPC), guide 03 (key table, triage) and 04 en/de, CHANGELOG | fixture (docs-check, store-readme) |
+
+For the live scenario c: `omarchy-shell jax.seldon.panel resolve
+proposal` (or `omarchy-shell shell call jax.seldon select proposal` with
+the Changelog shown) opens the proposal, then `wtype` Return twice applies
+it; the crisis needs its own button (a click), which `wtype` cannot give.
+
+**Gate:** `SELDON_FULL_CHECK=1 just check` exited 0 on 7dbcd949 (only
+this handover follows, under `work/`); log `gates/check-dev-126c.log`:
+check-packaging ok (shellcheck on the test host through the kit
+wrapper, 8 calls), docs-check ok, qmllint ok (52 files), model.test.js
+217, service-states 367/0, desk-view 2056/0 (with `triage-keys`),
+bar-view 196/0, ipc-restart 44/0. Where: headless (dev host, private
+runtime dirs on disk), shellcheck on the test host. Nothing ran on the
+test host's desktop in this stage.
+
+### 126c round 2 (review 1: SEND BACK)
+
+| Finding | Fix | Verified |
+|---|---|---|
+| F1 stacked ↑ opened the detail; ↓ left the first event's detail under "↓ back to the list" | a key only selects (`showTriage(false)` from `move`): the list stays, Enter shows the detail as for an event row; a click, IPC and *Review* show it at once; the hint on a stacked desk showing its list reads "Enter shows it · ↓ back to the list" (`Model.proposalHint(shown, listOnly)`) | fixture (model.test.js); headless (`triage-keys-stacked`, 700x900: ↑ selects, ↓ back to row 0, ↑ Enter shows, Enter Enter applies once, Esc back to the list) |
+| F2 an armed Apply (and Discard) outlived a replaced proposal | `applyArmed` and `discardArmed` require the current proposal; `onCurrentChanged` drops such an arm | headless (`triage-swap-apply`, `triage-swap-discard`: armed by key or click, a capture without a key brings the newer proposal, neither stays armed, the hint says replaced, the next Enter is Review, no apply or discard reaches the engine) |
+| F3 | SPEC-PLUGIN §5.3 rows for ↑/↓ and Enter name the proposal; Changelog.qml's header comment too; §5.4 the stacked desk and the arm rule; KEYBINDINGS the narrow desk | fixture (docs-check) |
+| F4 | the handover's "page up" sentence reworded (the desk sends ±1 only) | — |
+
+The three new cases fail on f558e761 (9 expectations: the detail opened
+by a key when stacked, the stale arm hints). The per-crisis key inside a
+proposal is your 0.2.x follow-up; live scenario c resolves its crisis
+from the crisis's own row by key.
+
+**Gate:** `SELDON_FULL_CHECK=1 just check` exited 0 on cbebaa52 (only
+this handover follows); log `gates/check-dev-126c-r2.log`:
+check-packaging ok (shellcheck on the test host through the kit wrapper,
+8 calls), docs-check ok, qmllint ok, model.test.js 217, service-states
+367/0, desk-view 2076/0, bar-view 196/0, ipc-restart 44/0. Where:
+headless (dev host, private runtime dirs on disk), shellcheck on the test
+host.
+
+### 126c round 3 (stage 2: SEND BACK)
+
+| Finding | Fix | Verified |
+|---|---|---|
+| F1 a detour kept the triage arm, so the next Enter applied on one press | `Changelog.disarmTriage()` drops any `triage:` arm (Apply and Discard) when the proposal stops being the selection, the selected id changes, or the stacked detail is hidden by its Back (the prefix rule of Work's and Decisions' arms) | headless: `triage-detour` (armed by Enter, then a row click and the proposal again → not armed, the next Enter only arms; the same by IPC `select <eventId>` then `select proposal`; Discard armed by a click, then the same detour → not armed; no `drift apply`, no `drift discard` in the argv) and `triage-detour-stacked` (700x900: Enter, Enter arms, Back → not armed; Enter shows, Enter only arms). Both fail on d7883a86, where the engine got a `drift apply` after one press |
+| F2 | CHANGELOG 0.2.0: the stacked first Enter shows the detail; an armed Apply or Discard drops on a replaced proposal or another selection (a change for Discard from 0.1.x) | fixture (release-notes.test.sh, docs-check) |
+
+SPEC-PLUGIN §5.4 names what disarms (a row click, another selection, IPC
+select included, the stacked Back, a replaced proposal). F3 is yours
+(scenario c).
+
+**Gate:** `SELDON_FULL_CHECK=1 just check` exited 0 on 0fe2aa83 (only
+this handover follows); log `gates/check-dev-126c-r3.log`:
+check-packaging ok (shellcheck on the test host through the kit wrapper,
+8 calls), docs-check ok, qmllint ok, model.test.js 217, service-states
+367/0, desk-view 2092/0, bar-view 196/0, ipc-restart 44/0. Where:
+headless (dev host, private runtime dirs on disk), shellcheck on the test
+host.
