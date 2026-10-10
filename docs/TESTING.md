@@ -1163,7 +1163,7 @@ from the pill, `decisions-accept-index`) disarm, the second click runs `decide
 accept ADR-0004 --json` once and no `open`, the decision arrives
 accepted without Accept; the engine's refusal and a held lock show in
 place (`decisions-accept-refused`, `-locked`); in dev mode Accept is
-disabled; System's five tiles with every
+disabled; System's tiles with every
 field optional and a failing collector, Memory, not initialised, the
 stacked layout and label fit at 1366 and 3840 px. Every case ends with a
 log free of warnings, `TypeError`s and binding loops. `DESK_SHOTS=<dir>`
@@ -1171,7 +1171,12 @@ also renders the desk in Tokyo Night, Kanagawa and Catppuccin Latte
 (Today at 100 % and 50 %, Settings, the Changelog, Work, Decisions,
 System, Memory, the Prime Radiant at 100 % and 50 % and with a hover,
 the graph settled, with a hover, at 50 % and in a replay at day 12, not
-initialised).
+initialised). Offscreen the harness's `hyprctl` stub fails, so
+`Style.cornerRadius` keeps the shell's default, 0: the shots are square.
+The rounding sweep of SPEC-PLUGIN §7 "Geometry" (Hyprland rounding 0, 6
+and 16: rows, tiles, notices and controls round with it, stripes, accent
+bars, progress bars and heatmap cells stay square) runs on the test host
+with the theme sweep, by eye on its shots.
 
 The graph (WP-125, section 11): on the sample it settles and sleeps
 (200 ticks, the Timer off, no tick and no paint after), each reported
