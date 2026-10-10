@@ -303,7 +303,7 @@ check "latest: next steps on a fresh home: init and the plugin" has "
 Next steps:
   seldon init        create your logbook
   omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable
-                     the bar pill, panel and Prime Radiant
+                     the bar pill and the Seldon desk
 "
 check "latest: update and remove after a blank line, last" test "$(tail -n 2 <<<"$out")" = "
 Update: run install.sh again. Remove: install.sh --uninstall --prefix $p"
@@ -671,9 +671,9 @@ run
 check "with the plugin: exit 0" test "$rc" -eq 0
 # shellcheck disable=SC2016 # $1 is bash -c's argument
 check "with the plugin: no plugin line" bash -c '[[ $1 != *"plugin add"* ]]' _ "$out"
-check "with the plugin: init, or Create in the panel" has "
+check "with the plugin: init, or Create logbook on the desk" has "
 Next steps:
-  seldon init        create your logbook (or press Create in the Seldon panel)
+  seldon init        create your logbook (or press Create logbook on the Seldon desk)
 
 Update: run install.sh again."
 

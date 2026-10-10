@@ -148,7 +148,7 @@ var INSTALL_ENGINE_SCRIPT = terminalScript({
   what: "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.",
   command: INSTALL_ENGINE_COMMAND,
   // the panel looks again by itself after this terminal (Service.setupWatch)
-  ok: "The engine is installed. The Seldon panel finds it by itself.",
+  ok: "The engine is installed. The Seldon desk finds it by itself.",
   failed: "The install did not finish. Run it again; your logbook is untouched.",
   cancelled: "Cancelled. The install did not finish. Run it again; your logbook is untouched."
 })
@@ -161,7 +161,7 @@ var UPDATE_ENGINE_SCRIPT = terminalScript({
   what: "Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.",
   command: UPDATE_ENGINE_COMMAND,
   after: "seldon status >/dev/null 2>&1 || true",
-  ok: "The engine is updated. In the Seldon panel, press Check again.",
+  ok: "The engine is updated. In the Seldon desk, press Check again.",
   failed: "The update did not finish. Run it again; your logbook is untouched.",
   cancelled: "Cancelled. The update did not finish. Run it again; your logbook is untouched."
 })
@@ -171,7 +171,7 @@ var UPDATE_PLUGIN_SCRIPT = terminalScript({
   title: "Seldon: update the plugin",
   what: "Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.",
   command: UPDATE_PLUGIN_COMMAND,
-  ok: "If the plugin was updated, the Seldon panel offers Restart shell to load it.",
+  ok: "If the plugin was updated, the Seldon desk offers Restart shell to load it.",
   failed: "Nothing changed. The plugin stays at its version.",
   cancelled: "Cancelled. The plugin update did not finish."
 })
@@ -182,9 +182,9 @@ var INIT_SCRIPT = terminalScript({
   title: "Seldon: create your logbook",
   what: "Creates your logbook (in ~/Seldon unless your config names another folder) and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.",
   command: INIT_COMMAND,
-  ok: "Your logbook is ready. The panel updates by itself.",
-  failed: "No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again.",
-  cancelled: "Cancelled. Press Create logbook in the panel to start again."
+  ok: "Your logbook is ready. The desk updates by itself.",
+  failed: "No logbook was created; the message above says why. When the folder is in use, the desk offers Choose a folder; else press Create logbook to try again.",
+  cancelled: "Cancelled. Press Create logbook in the desk to start again."
 })
 // The logbook step when its folder cannot be used (exit 3's `reason`,
 // CONTRACT.md rule 10): plain `seldon init` asks only where the logbook
@@ -194,9 +194,9 @@ var INIT_ASK_SCRIPT = terminalScript({
   title: "Seldon: choose where your logbook goes",
   what: "Asks where the logbook should live, then creates it there and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No password.",
   command: INIT_ASK_COMMAND,
-  ok: "Your logbook is ready. The panel updates by itself.",
-  failed: "No logbook was created; the message above says why. Press Choose a folder in the panel to try again.",
-  cancelled: "Cancelled. Press Choose a folder in the panel to start again."
+  ok: "Your logbook is ready. The desk updates by itself.",
+  failed: "No logbook was created; the message above says why. Press Choose a folder in the desk to try again.",
+  cancelled: "Cancelled. Press Choose a folder in the desk to start again."
 })
 // After the grant a capture records the snapshots and rewrites the index,
 // so the banner goes without a click. Exit 4 (the plugin's own timed
@@ -212,7 +212,7 @@ var SNAPPER_FIX_SCRIPT = terminalScript({
   command: SNAPPER_FIX_COMMAND,
   run: "sudo setfacl -m u:${USER:?}:rx /.snapshots",
   after: "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }",
-  ok: "Snapshots are now recorded. The panel updates by itself.",
+  ok: "Snapshots are now recorded. The desk updates by itself.",
   // WP-117 stage 2: report, never forecast; the setup card's re-probe
   // then shows the truth
   partial: "Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture.",
