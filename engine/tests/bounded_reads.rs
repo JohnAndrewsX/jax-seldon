@@ -473,7 +473,7 @@ fn only_files_outside_the_logbook_are_read_without_the_bound() {
             "the watched config files and the collector's state",
         ),
         ("collectors/mod.rs", 1, "cursors.json (state)"),
-        ("collectors/pacman.rs", 2, "/proc/stat and pacman.log"),
+        ("collectors/pacman.rs", 1, "/proc/stat"),
         ("collectors/plugins.rs", 2, "the Omarchy plugin folders"),
         ("collectors/snapper.rs", 2, "the snapshots' info.xml"),
         ("collectors/theme.rs", 1, "Omarchy's theme name file"),
