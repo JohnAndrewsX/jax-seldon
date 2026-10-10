@@ -32,6 +32,9 @@ Item {
   readonly property bool solo: !!root.info && root.info.solo
   readonly property string searchText: root.desk ? root.desk.searchText : ""
   readonly property var arm: root.desk ? root.desk.arm : null
+  // Desk.keyPressed's count: every key the desk gets clears the pointer's
+  // row (ListColumn, one cursor, SPEC-PLUGIN §5.3).
+  readonly property int keyEvents: root.desk ? root.desk.keyEvents : 0
   // In the stacked layout: the detail is shown instead of the list.
   readonly property bool detailShown: !!root.desk && root.desk.detailShown
 

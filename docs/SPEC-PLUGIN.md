@@ -1359,12 +1359,13 @@ A state never reads by colour alone; a glyph or a word goes with it
 (WP-178), and a selection fill gets a second cue: an accent bar of at
 least 3:1 and, on a row, a bold title (WP-177).
 
-**Text tones** (WP-177). Text never takes a role colour as it is, and
+**Text tones** (WP-177). Text never takes `accent`, `urgent` or `muted`
+as they are (primary text is the raw foreground, `Color.popups.text`), and
 `Color.muted` is never a text colour. Secondary text, text in the accent
 and text in the urgent colour take the tones `Model.deskTones` derives
 from the active theme (`components/Tone.qml`: `dim`, `accentText`,
 `urgentText`); a UI part that must be seen takes `accentUi` (the
-selection bar) or `ui` (a ring, a line). The rule: the role is mixed
+selection bar) or `ui` (a ring, a line, the graph's cluster ring). The rule: the role is mixed
 towards the theme's own foreground, in steps of 2 %, until it reaches
 **4.7:1** for text and **3.2:1** for a UI part on every surface it sits
 on. Mixing never adds a colour the theme lacks: no black, no white, no
@@ -1383,8 +1384,8 @@ foreground at 12 %). The tones are derived once per theme change
 on three committed themes (`fixtures/themes/roles.json`) and on every
 theme under `$OMARCHY_PATH/themes/`; `tests/plugin/check-tokens.py`
 fails on `Color.muted` as a Text colour and on a literal
-`Util.alpha(…, <number>)` outside its allow-list (the data colours of the
-charts and the graph).
+`Util.alpha(…, <number>)` outside its allow-list: named colour properties
+of the charts and the graph (data colours), each with its alpha.
 
 **Geometry.** Rows and `qs.Ui` controls take `Style.cornerRadius`
 (Hyprland's `decoration:rounding`, 0 by default), as Omarchy's own
@@ -1407,7 +1408,8 @@ may change them): fill normal 0.04, hover/cursor 0.08, selected 0.18,
 pressed 0.22, selection 0.35; border normal 0.4, hover/cursor 0.25,
 selected 1.0; focus follows hover (fill 0.08, border 0.25). With that
 default, Omarchy's focus border (the foreground at 0.25, 1 px) reaches
-1.4–2.0:1 on the 22 shipped themes, below WCAG 1.4.11's 3:1, so
+1.4–2.0:1 on the 22 shipped themes (the lower of its contrast against the
+popup background and against the normal fill), below WCAG 1.4.11's 3:1, so
 Seldon's own controls draw their own ring (§5.3) and yield to a theme
 whose focus border reaches 3:1.
 

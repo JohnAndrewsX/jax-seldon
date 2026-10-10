@@ -3037,6 +3037,15 @@ for i in 5 6 7 8; do
 done
 expect one-cursor 2 '.marks.rings | length' 0
 clean_log one-cursor
+# Any key clears the pointer's row, also one that moves nothing: Up on the
+# first row, Return (the detail is shown beside the list already).
+run one-cursor-keys "$sample" 1920x1080 \
+  "summon;text:4;hover:ADR-0002 · accepted;hover:Snapshots vor jedem Red-Zone-Eingriff;key:Up;hover:ADR-0002 · accepted;hover:Snapshots vor jedem Red-Zone-Eingriff;key:Return"
+expect one-cursor-keys 4 '.marks.rows | sort | join(",")' "cursor:Snapshots vor jedem Red-Zone-Eingriff,selected:Ollama nur als User-Service mit Case"
+expect one-cursor-keys 5 '.marks.rows | sort | join(",")' "selected:Ollama nur als User-Service mit Case"
+expect one-cursor-keys 7 '.marks.rows | sort | join(",")' "cursor:Snapshots vor jedem Red-Zone-Eingriff,selected:Ollama nur als User-Service mit Case"
+expect one-cursor-keys 8 '.marks.rows | sort | join(",")' "selected:Ollama nur als User-Service mit Case"
+clean_log one-cursor-keys
 
 # WP-177: the desk's tones in QML are Model.deskTones of the theme's roles
 # as the shell reads them (Color.popups.*, Style's fills at their alphas):

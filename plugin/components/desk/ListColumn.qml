@@ -12,7 +12,8 @@ import ".."
 // One cursor (SPEC-PLUGIN §5.3, WP-177): `hoverIndex` is the row under the
 // pointer, set only when the pointer really moved (Omarchy's
 // Ui/PointerMoveGate.qml: rows that move under a still pointer do not
-// count) and cleared by a keyboard move, a scroll and the pointer leaving.
+// count) and cleared by any key, a selection change, a scroll and the
+// pointer leaving.
 // A delegate passes `cursor: list.hoverIndex === index` to its ListRow.
 Item {
   id: root
@@ -30,6 +31,11 @@ Item {
 
   readonly property ListView view: list
   property int hoverIndex: -1
+  // The desk's key count (Section.keyEvents): any key clears the pointer's
+  // row, also one that moves nothing (Down on the last row, Enter, a letter).
+  property int keyEvents: 0
+
+  onKeyEventsChanged: root.dropPointer()
 
   readonly property Tone tone: Tone {}
 

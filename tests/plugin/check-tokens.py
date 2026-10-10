@@ -12,12 +12,14 @@ Two house rules of SPEC-PLUGIN §7 (WP-177) need no shell and run with
 check on the dev host:
   - no `Color.muted` as the colour of a Text (also not through a colour
     property set to it): text takes Tone's `dim` (components/Tone.qml);
-  - `Util.alpha(…, <number>)` only where ALPHA_ALLOWED lists it: fills and
-    borders come from Omarchy's state tokens, text and lines from Tone.
+  - `Util.alpha(…, <number>)` only on a colour property ALPHA_ALLOWED lists
+    with that number (chart and graph data colours): fills and borders come
+    from Omarchy's state tokens, text and lines from Tone.
 
 Usage: check-tokens.py <shell dir> <file.qml>...
        check-tokens.py --rules <file.qml>...
 """
+import os
 import pathlib
 import re
 import sys
@@ -31,16 +33,22 @@ REF = re.compile(r"\b(" + "|".join(SINGLETONS) + r")\.(\w+)(?:\.(\w+))?")
 # Literal alphas that are data colours, not states or text: the Prime
 # Radiant's charts and the graph draw the theme's roles at opacities
 # (SPEC-PLUGIN §7: "charts use accent, foreground at opacities"; the graph's
-# shapes and opacities tell kinds apart). Path relative to plugin/ → alphas.
+# shapes and opacities tell kinds apart). Per named colour property, so a
+# new literal (a text dim) in the same file fails: path relative to plugin/
+# → property declared on that line → its alphas.
 ALPHA_ALLOWED = {
-    "components/overlay/Series.qml": {"0.7"},
-    "components/overlay/Timeline.qml": {"0.4", "0.7"},
-    "components/overlay/RiskDonut.qml": {"0.3", "0.6"},
-    "components/overlay/DriftBars.qml": {"0.45"},
-    # the Timeline legend's snapshot marker, in Timeline.qml's colour
-    "sections/Radiant.qml": {"0.7"},
-    "components/graph/GraphCanvas.qml": {"0.14", "0.22", "0.3", "0.42", "0.5", "0.6", "0.65", "0.72", "0.9"},
+    "components/overlay/Series.qml": {"lineColors": {"0.7"}},
+    "components/overlay/Timeline.qml": {"closedColor": {"0.4"}, "snapshotColor": {"0.7"}},
+    "components/overlay/RiskDonut.qml": {"partColors": {"0.3", "0.6"}},
+    "components/overlay/DriftBars.qml": {"resolvedColor": {"0.45"}},
+    # the Timeline legend's snapshot marker, Timeline.qml's snapshotColor
+    "sections/Radiant.qml": {"snapshotMarker": {"0.7"}},
+    "components/graph/GraphCanvas.qml": {
+        "edgeColor": {"0.22"}, "edgeBright": {"0.6"}, "areaFill": {"0.14"}, "areaRing": {"0.9"},
+        "decisionColor": {"0.72"}, "changeColor": {"0.42"}, "clusterFill": {"0.3"}, "doneColor": {"0.5"},
+    },
 }
+DECLARED = re.compile(r"\bproperty\s+[\w<>.]+\s+(\w+)\s*:")
 TEXT_TYPES = {"Text"}
 INLINE = re.compile(r"\bcomponent\s+(\w+)\s*:\s*(\w+)\s*\{")
 TOKEN = re.compile(r"(?:\bcomponent\s+\w+\s*:\s*)?\b(?P<element>[A-Z]\w*)\s*\{|(?P<key>(?<![.\w])color\s*:)|\{|\}")
@@ -109,10 +117,12 @@ def house_rules(path, plugin_root):
         m = MUTED_PROPERTY.search(line)
         if m:
             errors.append(f"{path}:{number}: colour property {m.group(1)} set to Color.muted; text takes Tone's dim (SPEC-PLUGIN §7)")
+        declared = DECLARED.search(line)
+        allowed = ALPHA_ALLOWED.get(rel, {}).get(declared.group(1), set()) if declared else set()
         for value in alpha_literals(line):
-            if value not in ALPHA_ALLOWED.get(rel, set()):
+            if value not in allowed:
                 errors.append(f"{path}:{number}: Util.alpha(…, {value}): a literal alpha; use Omarchy's state tokens or Tone, "
-                              "or list a data colour in ALPHA_ALLOWED (SPEC-PLUGIN §7)")
+                              "or name a data colour in ALPHA_ALLOWED (SPEC-PLUGIN §7)")
     return errors
 
 
@@ -150,7 +160,9 @@ def declared(path):
 
 
 def main():
-    plugin_root = pathlib.Path(__file__).resolve().parent.parent.parent / "plugin"
+    # CHECK_TOKENS_PLUGIN_ROOT: another plugin tree (the self-test's copy)
+    plugin_root = pathlib.Path(os.environ.get("CHECK_TOKENS_PLUGIN_ROOT")
+                               or pathlib.Path(__file__).resolve().parent.parent.parent / "plugin")
     if len(sys.argv) >= 3 and sys.argv[1] == "--rules":
         errors = [e for name in sys.argv[2:] for e in house_rules(pathlib.Path(name), plugin_root)]
         for error in errors:

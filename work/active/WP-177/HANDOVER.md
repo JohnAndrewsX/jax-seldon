@@ -1,5 +1,43 @@
 # WP-177 — handover
 
+## Round 2 (review 1: SEND BACK, B1, M1–M4)
+
+- **B1.** `model.test.js` pins `TONE_TEXT_TARGET === 4.7`,
+  `TONE_UI_TARGET === 3.2` (and `TONE_FOCUS_MIN`, `TONE_STEPS`), and
+  `checkTheme` asserts the literal WCAG floors, 4.5 for text and 3 for UI
+  parts, unless the tone is listed as limited. Mutants: text target 3.5 →
+  3 FAIL; UI target 2.0 → 3 FAIL; the linearisation branch dropped → 1
+  FAIL (a new test on `#090909`; the reviewer's survivor).
+- **M1.** `ui` (the ring and lines) is derived on all four surfaces, the
+  selected fill included, so the ring is ≥ 3:1 also on an armed primary
+  button (ring/selected 3.20–3.34 on the 22 themes, table below); the
+  test checks `ui` like the other tones (mutant `plain.slice(0, 3)` → 2
+  FAIL). The ring moved from ~3.7:1 to ~4.6–5.3:1 on the background.
+- **M2.** Every key the desk gets clears the pointer's row in code:
+  `Section.keyEvents` (Desk.keyPressed's count) → `ListColumn.keyEvents`
+  → `dropPointer()`; the sidebar the same. `desk-view.sh one-cursor-keys`:
+  Up on the first row and Return (keys that move nothing) clear it; the
+  mutant without the handler fails #5 and #8. SPEC §5.3 unchanged ("any
+  key").
+- **M3.** SPEC §7: "Text never takes `accent`, `urgent` or `muted` as
+  they are (primary text is the raw foreground, `Color.popups.text`)".
+- **M4.** Strict zero: GraphCanvas `clusterRing` is `tone.ui`; 0 uses of
+  `alpha(…, 0.65)` in `plugin/`. `check-tokens.py`'s allow-list is per
+  named colour property now (file → property → alphas); the graph's
+  inline neighbourhood edge and the Radiant legend's snapshot marker
+  became named properties (`edgeBright`, `snapshotMarker`). Self-test
+  14/14, incl. a listed property passing and the same alpha on another
+  property, another alpha on a listed one and a literal outside a property
+  failing (`CHECK_TOKENS_PLUGIN_ROOT` points the check at a copy).
+- Notes taken: (b) the E54 table states its definitions and adds the
+  border over its own focus fill; (c) the fallbacks cite Color.qml's
+  defaults. Not taken: (a) check-tokens blind spots (`property var` alias,
+  value on the next line), (d) sidebar/popups-surface harness cases, (e)
+  dim close to fg — as the review says, no action for merge.
+- Live look on the test host: the orchestrator's, after the merge.
+
+## Round 1
+
 Branch `wp/177-readability` (from `next` at e75c83f4), worktree `wt/WP-177`.
 Plugin only; no contract change, no ADR (SPEC-PLUGIN §7 rule).
 
@@ -105,35 +143,46 @@ Plugin only; no contract change, no ADR (SPEC-PLUGIN §7 rule).
 ## Focus-border numbers for the operator's upstream report (E54)
 
 Omarchy's default focus border (`focus-border-alpha = 0.25`, 1 px, the
-foreground) composited on each theme's popup background, against that
-background; `node tests/plugin/model.test.js` with `SELDON_TONE_REPORT=1`
-on the dev host's 22 installed themes. "ring" is what Seldon draws
-instead (`ui` tone, 2 px). No theme reaches 3:1.
+foreground) on each of the dev host's 22 installed themes (node over
+`Model.deskTones`; `SELDON_TONE_REPORT=1 node tests/plugin/model.test.js`
+prints the first five columns). Definitions, so the report can state them:
 
-| Theme | fg/bg | muted/bg (old secondary text) | dim/bg (new) | focus border/bg | Seldon ring/bg |
-|---|---|---|---|---|---|
-| catppuccin | 11.34 | 2.46 | 7.54 | 1.79 | 3.86 |
-| catppuccin-latte | 7.06 | 1.91 | 6.44 | 1.40 | 3.64 |
-| ethereal | 13.67 | 4.90 | 6.97 | 1.73 | 3.69 |
-| everforest | 7.38 | 1.55 | 7.21 | 1.61 | 3.81 |
-| flexoki-light | 18.62 | 2.00 | 7.26 | 1.62 | 3.80 |
-| gruvbox | 8.16 | 2.26 | 7.16 | 1.64 | 3.86 |
-| hackerman | 17.45 | 1.59 | 7.69 | 1.94 | 3.83 |
-| kanagawa | 11.26 | 2.23 | 7.51 | 1.78 | 3.84 |
-| last-horizon | 19.07 | 2.45 | 7.78 | 1.99 | 3.86 |
-| lumon | 12.06 | 1.68 | 7.74 | 1.85 | 3.91 |
-| lupine | 15.43 | 2.57 | 6.82 | 1.54 | 3.73 |
-| matte-black | 10.08 | 1.48 | 6.91 | 1.62 | 3.67 |
-| miasma | 8.82 | 2.77 | 7.09 | 1.66 | 3.83 |
-| nord | 9.25 | 1.69 | 7.65 | 1.75 | 4.04 |
-| osaka-jade | 9.65 | 2.91 | 7.01 | 1.64 | 3.73 |
-| retro-82 | 13.39 | 2.95 | 7.58 | 1.80 | 3.80 |
-| ristretto | 10.95 | 2.82 | 7.72 | 1.81 | 3.93 |
-| rose-pine | 6.66 | 1.48 | 6.18 | 1.39 | 3.60 |
-| solitude | 11.56 | 2.24 | 7.20 | 1.71 | 3.79 |
-| tokyo-night | 8.10 | 1.91 | 6.81 | 1.58 | 3.72 |
-| vantablack | 21.00 | 4.89 | 7.46 | 1.91 | 3.66 |
-| white | 21.00 | 3.95 | 7.23 | 1.69 | 3.90 |
+- *focus/bg*: the border composited on the popup background; the lower of
+  its contrast against that background and against Omarchy's normal fill
+  (0.04) — `focusRatio`, what Seldon's yield rule tests against 3:1.
+- *focus on its fill*: the border composited over the focus fill (0.08)
+  that Omarchy draws inside it, against that fill.
+- *ring/bg*, *ring/selected*: Seldon's ring (`ui`, 2 px) against the
+  background and, since round 2, against the selected fill (0.18) of a
+  primary button.
+
+No theme's focus border reaches 3:1 either way; every ring does on all
+four surfaces.
+
+| Theme | fg/bg | muted/bg (old secondary text) | dim/bg (new) | focus/bg | focus on its fill | ring/bg | ring/selected |
+|---|---|---|---|---|---|---|---|
+| catppuccin | 11.34 | 2.46 | 7.54 | 1.79 | 1.92 | 5.18 | 3.26 |
+| catppuccin-latte | 7.06 | 1.91 | 6.44 | 1.40 | 1.44 | 4.19 | 3.20 |
+| ethereal | 13.67 | 4.90 | 6.97 | 1.73 | 1.94 | 4.91 | 3.32 |
+| everforest | 7.38 | 1.55 | 7.21 | 1.61 | 1.71 | 4.85 | 3.23 |
+| flexoki-light | 18.62 | 2.00 | 7.26 | 1.62 | 1.74 | 4.83 | 3.25 |
+| gruvbox | 8.16 | 2.26 | 7.16 | 1.64 | 1.74 | 4.92 | 3.28 |
+| hackerman | 17.45 | 1.59 | 7.69 | 1.94 | 2.17 | 5.20 | 3.24 |
+| kanagawa | 11.26 | 2.23 | 7.51 | 1.78 | 1.92 | 5.16 | 3.26 |
+| last-horizon | 19.07 | 2.45 | 7.78 | 1.99 | 2.26 | 5.33 | 3.26 |
+| lumon | 12.06 | 1.68 | 7.74 | 1.85 | 1.97 | 5.30 | 3.24 |
+| lupine | 15.43 | 2.57 | 6.82 | 1.54 | 1.65 | 4.61 | 3.21 |
+| matte-black | 10.08 | 1.48 | 6.91 | 1.62 | 1.77 | 4.61 | 3.20 |
+| miasma | 8.82 | 2.77 | 7.09 | 1.66 | 1.76 | 4.93 | 3.27 |
+| nord | 9.25 | 1.69 | 7.65 | 1.75 | 1.83 | 5.29 | 3.28 |
+| osaka-jade | 9.65 | 2.91 | 7.01 | 1.64 | 1.78 | 4.80 | 3.25 |
+| retro-82 | 13.39 | 2.95 | 7.58 | 1.80 | 1.98 | 5.14 | 3.29 |
+| ristretto | 10.95 | 2.82 | 7.72 | 1.81 | 1.93 | 5.24 | 3.24 |
+| rose-pine | 6.66 | 1.48 | 6.18 | 1.39 | 1.43 | 4.25 | 3.26 |
+| solitude | 11.56 | 2.24 | 7.20 | 1.71 | 1.88 | 4.88 | 3.27 |
+| tokyo-night | 8.10 | 1.91 | 6.81 | 1.58 | 1.69 | 4.64 | 3.24 |
+| vantablack | 21.00 | 4.89 | 7.46 | 1.91 | 2.25 | 4.96 | 3.21 |
+| white | 21.00 | 3.95 | 7.23 | 1.69 | 1.82 | 5.10 | 3.34 |
 
 No theme's own fg/bg is below 4.5; no tone was limited in any of the 22.
 
@@ -165,3 +214,19 @@ No theme's own fg/bg is below 4.5; no tone was limited in any of the 22.
   additions: *not run* locally (not installed); CI runs it.
 - Test host, desktop: *not run* (the live look across themes is WP-126's
   sweep).
+
+### Round 2, how it was verified
+
+- `node tests/plugin/model.test.js`: 204 passed — *fixture* (3 committed
+  themes) and the 22 host themes; the four mutants above each fail it.
+- `bash tests/plugin/check-tokens.test.sh` 14/14 and `check-tokens.py
+  --rules` on the 51 plugin QML files — *fixture*; `just qmllint` (with
+  the shell token check) and `omarchy plugin validate plugin/` — dev
+  host, pass; `validate-fixtures.sh` ok.
+- `bash tests/plugin/desk-view.sh` full: 1948 passed, 0 failed, incl.
+  `one-cursor`, `one-cursor-keys`, `tones-default`, `tones-tokyo` —
+  *headless* (private HOME, on-disk `TMPDIR` and 0700 `XDG_RUNTIME_DIR`;
+  the harness's own short `/tmp/seldon-rt.*` is the accepted exception).
+  The no-handler mutant of M2 fails `one-cursor-keys` #5 and #8.
+- `just check` not rerun this round (not asked); shellcheck *not run*
+  (not installed; CI); test host *not run* (the orchestrator's live look).

@@ -618,6 +618,7 @@ Item {
               height: parent.height
               icons: root.layout.sidebar === "icons"
               current: root.sectionId
+              keyEvents: root.keyEvents
               counts: Model.deskCounts(root.indexData)
               searchText: root.searchText
               foreground: root.foreground

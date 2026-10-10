@@ -4079,6 +4079,15 @@ function onMixLine(c, from, to) {
   return false
 }
 
+test("WP-177: the targets are 4.7:1 for text and 3.2:1 for UI parts, above WCAG's 4.5 and 3", () => {
+  assert.strictEqual(M.TONE_TEXT_TARGET, 4.7)
+  assert.strictEqual(M.TONE_UI_TARGET, 3.2)
+  assert.strictEqual(M.TONE_FOCUS_MIN, 3)
+  assert.strictEqual(M.TONE_STEPS, 50)
+  // the linear part of the sRGB curve counts (channels below 10/255)
+  assert.strictEqual(M.contrastRatio("#000000", "#090909").toFixed(4), (((9 / 255) / 12.92 + 0.05) / 0.05).toFixed(4))
+})
+
 test("WP-177: colour helpers read QML and hex colours, WCAG contrast", () => {
   same(M.colourRgba("#ff0000"), { r: 1, g: 0, b: 0, a: 1 })
   same(M.colourRgba("#f00"), { r: 1, g: 0, b: 0, a: 1 })
@@ -4149,16 +4158,21 @@ function checkTheme(name, r, reports) {
     ["dim", r.muted, tintBoth, M.TONE_TEXT_TARGET],
     ["accentText", r.accent, s.plain.concat([s.accentTint]), M.TONE_TEXT_TARGET],
     ["urgentText", r.urgent, s.plain.concat([s.urgentTint]), M.TONE_TEXT_TARGET],
-    ["accentUi", r.accent, s.plain.concat([s.accentTint]), M.TONE_UI_TARGET]
+    ["accentUi", r.accent, s.plain.concat([s.accentTint]), M.TONE_UI_TARGET],
+    // the ring and lines: on the background and all three fills (a ring on a selected button)
+    ["ui", M.colourHex(M.mixColour(M.colourRgba(r.background), M.colourRgba(r.foreground), M.TONE_LINE_START)), s.plain, M.TONE_UI_TARGET]
   ]
   for (const [key, from, surfaces, target] of cases) {
     const worst = Math.min(...surfaces.map((x) => M.contrastRatio(t[key], x)))
     assert.ok(onMixLine(t[key], from, r.foreground), name + " " + key + " " + t[key] + " is not a mix of " + from + " and " + r.foreground)
+    // WCAG's own floors, as literals (not read from the code under test):
+    // 4.5:1 for text, 3:1 for a UI part, unless the theme cannot
+    const floor = target === M.TONE_TEXT_TARGET ? 4.5 : 3
+    assert.ok(worst >= floor || t.limited.includes(key), name + " " + key + " " + worst.toFixed(2) + " < " + floor)
     if (worst >= target) continue
     assert.strictEqual(t[key], r.foreground.toLowerCase(), name + " " + key + " " + worst.toFixed(2))
     assert.ok(t.limited.includes(key), name + " " + key + " not listed as limited")
   }
-  assert.ok(Math.min(...s.plain.slice(0, 3).map((x) => M.contrastRatio(t.ui, x))) >= M.TONE_UI_TARGET || t.limited.includes("ui"), name + " ui")
   // the ring: the theme's own focus border where it reaches 3:1, else ui
   assert.strictEqual(t.focusRing, t.themeFocus ? t.focusRing : t.ui, name)
   assert.strictEqual(t.themeFocus, t.focusRatio >= M.TONE_FOCUS_MIN, name)

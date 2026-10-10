@@ -11,7 +11,7 @@ import ".."
 // when `icons` (the setting `deskSidebar`, or a desk narrower than 960 px).
 // It only reports clicks; Desk.qml decides. One cursor (WP-177): the
 // pointer's target draws Omarchy's hover fill only after a real pointer
-// move (PointerMoveGate) and not after a section change by key; the
+// move (PointerMoveGate); any key and a section change clear it; the
 // current section has the accent tint plus an accent bar of at least 3:1.
 Item {
   id: root
@@ -32,10 +32,16 @@ Item {
   // The target under a pointer that moved ("" none).
   property string pointerId: ""
 
-  onCurrentChanged: {
+  // Desk.keyPressed's count: any key clears the pointer's target.
+  property int keyEvents: 0
+
+  function dropPointer() {
     gate.reset()
     root.pointerId = ""
   }
+
+  onCurrentChanged: root.dropPointer()
+  onKeyEventsChanged: root.dropPointer()
 
   PointerMoveGate {
     id: gate

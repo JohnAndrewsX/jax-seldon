@@ -41,6 +41,8 @@ Section {
   readonly property var grid: Model.overlayGrid(gridArea.width, gridArea.height, Style.spacing.panelGap,
     Style.space(240), Style.space(120))
   readonly property color foreground: Color.popups.text
+  // the Timeline legend's snapshot marker, Timeline.qml's snapshotColor
+  readonly property color snapshotMarker: Util.alpha(root.foreground, 0.7)
   readonly property string fontFamily: Style.font.family
   // The Timeline's legend (A12): the markers in the colours its canvas
   // uses (Timeline.markerColor), shown in the slot's title row.
@@ -48,7 +50,7 @@ Section {
     return {
       files: e.markers.map(function(k) { return Model.markerFile(k, Style.space(12)) }),
       label: e.label,
-      color: e.tone === "urgent" ? Color.urgent : e.tone === "snapshot" ? Util.alpha(root.foreground, 0.7) : Color.accent
+      color: e.tone === "urgent" ? Color.urgent : e.tone === "snapshot" ? root.snapshotMarker : Color.accent
     }
   })
 

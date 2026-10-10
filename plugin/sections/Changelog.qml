@@ -228,6 +228,7 @@ Section {
 
   ListColumn {
     id: list
+    keyEvents: root.keyEvents
     visible: !root.stacked || !root.detailShown
     width: root.stacked ? root.width : (root.layout ? root.layout.listW : 0)
     height: root.height

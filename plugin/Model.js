@@ -6313,7 +6313,8 @@ var deskTonesBuilds = 0
 //   urgentText  text in the urgent colour (errors, crisis titles)
 //   accentUi    the selection's accent bar (also on the accent tint of the
 //               sidebar's current section) and a selected chip's bar
-//   ui          a line or ring that must be seen: from 40 % foreground
+//   ui          a line or ring that must be seen: from 40 % foreground,
+//               on the background and all three fills
 //   focusRing   Seldon's ring on its own controls: the theme's focus border
 //               where it reaches TONE_FOCUS_MIN (themeFocus true), else ui
 //   divider     the hairlines, foreground at TONE_DIVIDER_ALPHA
@@ -6321,6 +6322,8 @@ var deskTonesBuilds = 0
 //               theme's own foreground does not (A9: no fallback colour)
 function deskTones(theme) {
   var t = isObject(theme) ? theme : {}
+  // fallbacks for input that is no colour: Color.qml's own defaults
+  // ($OMARCHY_PATH/shell/Commons/Color.qml, foreground … muted)
   var role = function(c, fallback) { return colourRgba(c) || colourRgba(fallback) }
   var fg = role(t.foreground, "#cacccc")
   var bg = role(t.background, "#101315")
@@ -6366,7 +6369,8 @@ function deskTones(theme) {
     accentText: derive("accentText", accent, plain.concat([accentTint]), TONE_TEXT_TARGET),
     urgentText: derive("urgentText", urgent, plain.concat([urgentTint]), TONE_TEXT_TARGET),
     accentUi: derive("accentUi", accent, plain.concat([accentTint]), TONE_UI_TARGET),
-    ui: derive("ui", mixColour(base, fg, TONE_LINE_START), plain.slice(0, 3), TONE_UI_TARGET),
+    // on all four: a ring also sits on a selected (primary) button
+    ui: derive("ui", mixColour(base, fg, TONE_LINE_START), plain, TONE_UI_TARGET),
     focusRing: "",
     themeFocus: themeFocus,
     focusRatio: Math.round(focusRatio * 100) / 100,

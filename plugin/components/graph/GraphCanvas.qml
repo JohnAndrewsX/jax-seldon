@@ -98,8 +98,11 @@ Item {
   readonly property color decisionColor: Util.alpha(root.foreground, 0.72)
   readonly property color changeColor: Util.alpha(root.foreground, 0.42)
   readonly property color clusterFill: Util.alpha(root.foreground, 0.3)
-  readonly property color clusterRing: Util.alpha(root.foreground, 0.65)
+  // a ring that must be seen: the ui tone (≥ 3:1, WP-177)
+  readonly property color clusterRing: root.tone.ui
   readonly property color doneColor: Util.alpha(root.accent, 0.5)
+  // an edge of the hovered node's neighbourhood
+  readonly property color edgeBright: Util.alpha(root.foreground, 0.6)
 
   signal openCase(string id)
 
@@ -398,7 +401,7 @@ Item {
       }
     }
     ctx.lineWidth = (bright && near !== null ? 1.5 : 1) / root.viewK
-    ctx.strokeStyle = bright && near !== null ? Util.alpha(root.foreground, 0.6) : root.edgeColor
+    ctx.strokeStyle = bright && near !== null ? root.edgeBright : root.edgeColor
     ctx.stroke()
   }
 
