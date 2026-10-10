@@ -77,6 +77,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passes `--no-capture` and runs `seldon capture --all` afterwards. Harnesses stay as the
   config says (none on a fresh machine); the summary's Agents row then
   says "none; add one with seldon hook install claude-code (or skills)".
+- **The first capture reads the package log as a stream (WP-198).** The
+  pacman collector now reads `/var/log/pacman.log` one line at a time
+  instead of loading it whole, and on the first capture skips the lines
+  older than the 90-day look-back after reading only their times. A
+  synthetic 234 MiB log took `init --defaults` 61 s and 2.2 GiB of memory
+  before and 17.7 s and 22 MiB now (debug build; 1.5 s and 11 MiB
+  optimised). What is recorded is unchanged, and a second capture still
+  writes nothing. A line longer than 1 MiB is ignored like any line pacman
+  does not write. A package log that is not a regular file (a FIFO, a
+  device) is now a degraded pacman source naming it, not a capture that
+  waits forever.
 - **Exit 3 says which folder, and why it cannot be used (WP-119).** With
   `--json`, "logbook not initialised" now carries `path`, the logbook
   path the engine resolved, and `reason` when `init` could not create the
