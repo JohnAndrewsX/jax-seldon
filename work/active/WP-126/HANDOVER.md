@@ -12,7 +12,7 @@ E80 wrapper; no next→main merge, no tag.
      working"; §7 "Geometry" rewritten for B10 (rows, cards, `qs.Ui`
      controls take `Style.cornerRadius`; stripes, accent bars, progress
      bars and heatmap cells square; the sweep at rounding 0, 6, 16); §8
-     the binding frees Super+Shift+S first; §9 the reload as measured
+     the suggested binding is Super+Shift+L (E81, round 2); §9 the reload as measured
      (a reload happens, new code needs a shell restart); §10 why the
      engine is called by name on `PATH`.
    - CONCEPT.md "The plugin surfaces" and glossary, DESIGN-BRIEF §1 (C10).
@@ -130,7 +130,7 @@ and the package does not exist yet. Update the plugin first:
 - **Breaking:** update the engine and the plugin together; both read and write index contract 2.
 - **Breaking:** the old `jax.seldon.panel` command only forwards to the desk and goes away in 0.3.0; bind `omarchy-shell shell toggle jax.seldon`.
 - **Breaking:** a logbook folder or file that is a symbolic link refuses writes; `seldon doctor` names it.
-- A fresh install sets itself up from one card on Today: the engine, the logbook, snapshots, no question asked.
+- A fresh install sets itself up from one card on Today: the engine and the logbook in one click each, snapshots optional.
 - A new logbook looks back 90 days and records that as history, so your first day starts quiet.
 - Your agent can sort every open change into one proposal; you apply it in one click, each crisis on its own.
 - Hand a case to an agent from the desk: the desk steps aside, and the case says "agent working" while it runs.
@@ -140,13 +140,37 @@ and the package does not exist yet. Update the plugin first:
 Every change in 0.2.0: [CHANGELOG.md](https://github.com/JohnAndrewsX/jax-seldon/blob/v0.2.0/CHANGELOG.md#020---2026-10-10)
 ```
 
+## Round 2 (review 1: SEND BACK)
+
+| Finding | Fix | Verified |
+|---|---|---|
+| F1 Highlight said "no question asked" | "the engine and the logbook in one click each, snapshots optional"; the plugin README's card text names the password of the optional grant | fixture (release-notes.sh 0.2.0 output) |
+| F2 step 2 misquoted | README and plugin README quote the card, "Create the logbook" (the plugin README row also names the banner "Create your logbook", which model.test.js's States check needs) | fixture (model.test.js) |
+| F3 guide 06 said panel | en/de: *Hand to agent* on the desk, a new case from one sentence, "as from the desk" | fixture (docs-check) |
+| F4 size dead end | CHANGELOG claim dropped and the engine's warn-only behaviour stated; the detail now ends "…rebuild it from the logbook, and if it stays, seldon status in a terminal names the largest section."; `Model.indexWarning` + `Service.indexWarned`: one warning per reason and size, not per 5 s re-read | fixture (model.test.js); headless (service-states `index-oversized` 12 s: three reads, one warning; mutant "log every read" → 3 warnings, red) |
+| F5 regex-quote hole | the scan's block count must equal a plain `Text {` count on comment-stripped source; a regex-quote mutant in each of the 34 real files with Text blocks, plus two shapes | fixture (the reviewer's own `plugin/ZzMutant.qml` mutant fails) |
+| F6 imperative routes | an assignment to `textFormat`, `"textFormat"` (Binding) and `.textFormat` (alias, script) fail as unsupported; one shape each, two passing shapes (a `==` comparison, a commented-out assignment; a URL in a string) | fixture |
+| F7 fixed-token mutant | exactly one `stop=` in release.yml, the urandom line | fixture (`; stop=seldon` and `stop=seldon` both red) |
+| F10 shim verbs | KEYBINDINGS.md lists `show\|hide` | fixture (docs-check) |
+| E81 | Super+Shift+L everywhere (guide 01/03/06 en/de, KEYBINDINGS, both READMEs, SPEC §8, CONCEPT, CHANGELOG), no `hl.unbind` step; STATUS.md E81 after E80; no code or test named the key | fixture (grep: only the two notes that name the old key as Omarchy's Google Maps key) |
+
+F8 and F9 are for the 126b shots (the tile caption at 50 %, square bars
+against rows at rounding 16); Q-A (an engine cap on the index budget) is
+the orchestrator's follow-up, not in this WP.
+
+**Gate, round 2:** `SELDON_FULL_CHECK=1 just check` exited 0 on 4e3c1816
+(only this handover follows, under `work/`); log `gates/check-dev-126-r2.log`:
+check-packaging ok (shellcheck on the test host through the wrapper, 8
+calls), install 230/0, deploy-test-host 327/0, runtime-dir 45/0,
+docs-check ok, plugin-validate ok, qmllint ok (52 files), model.test.js
+216, plaintext.test.js (178 + 34 regex-quote mutants, 30 shapes),
+terminal-scripts 73/0, service-states 365/0, desk-view 2027/0, bar-view
+196/0, ipc-restart 44/0. Where: headless (dev host, private runtime
+dirs on disk), shellcheck on the test host.
+
 ## Open questions
 
-1. **Super+Shift+S is Omarchy's Google Maps key**
-   (`$OMARCHY_PATH/default/hypr/bindings/applications.lua`). The docs now
-   show `hl.unbind("SUPER + SHIFT + S")` before the suggested `o.bind`,
-   as Omarchy's `bindings.lua` template does. Keep the key, or suggest a
-   free one? Operator's call.
+1. ~~Super+Shift+S~~ decided: E81, Super+Shift+L.
 2. **The header's status chip is a capsule** (`radius: height / 2`), as
    are the setup steps' number rings. B10 names only stripes, accent bars
    and heatmap cells; SPEC §7 now records the chip as round by design.
@@ -158,5 +182,4 @@ Every change in 0.2.0: [CHANGELOG.md](https://github.com/JohnAndrewsX/jax-seldon
 4. The 0.1 crisis line (`Model.crisisText`) is no longer rendered on the
    desk, only in the service read-out; the guide describes where crises
    show now (header, NEEDS YOU, the detail). Remove the leftover later?
-5. The setup card's step says "Create the logbook", the hidden banner
-   behind it "Create your logbook"; the docs quote what the user sees.
+5. ~~The two setup texts~~ fixed in round 2 (F2).
