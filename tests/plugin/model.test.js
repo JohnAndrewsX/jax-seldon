@@ -356,14 +356,14 @@ test("bannerFor engineMissing: a setup step without an index, urgent when the en
   assert.strictEqual(gone.script, b.script)
 })
 
-test("bannerFor notInitialised: Create runs seldon init in the terminal (WP-117)", () => {
+test("bannerFor notInitialised: Create logbook runs seldon init --defaults in the terminal (WP-117, WP-119)", () => {
   const b = M.bannerFor("notInitialised", { indexExists: true })
   assert.strictEqual(b.tone, "accent")
   assert.strictEqual(b.title, "Create your logbook")
-  assert.strictEqual(b.detail, "Sets up your logbook and starts recording; the terminal asks a few questions, no password.")
-  assert.strictEqual(b.command, "seldon init")
+  assert.strictEqual(b.detail, "Creates ~/Seldon and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password.")
+  assert.strictEqual(b.command, "seldon init --defaults")
   assert.strictEqual(b.script, M.INIT_SCRIPT)
-  same(b.actions, [{ id: "terminal", label: "Create" }, { id: "copy", label: "Copy" }, { id: "recheck", label: "Check again" }])
+  same(b.actions, [{ id: "terminal", label: "Create logbook" }, { id: "copy", label: "Copy" }, { id: "recheck", label: "Check again" }])
 })
 
 test("bannerFor contractMismatch names the side to update", () => {
@@ -387,7 +387,7 @@ const SCRIPTS = {
     "gum style --bold 'Seldon: install the engine'; " +
     "gum style --width 72 'Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.'; " +
     "gum style --padding '1 0 1 2' 'curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'; " +
-    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then gum style --padding '1 0 0 0' --foreground 2 'The engine is installed. In the Seldon panel, press Check again.'; trap - INT TERM; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then gum style --padding '1 0 0 0' --foreground 2 'The engine is installed. The Seldon panel finds it by itself.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The install did not finish. Run it again; your logbook is untouched.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'The install did not finish. Run it again; your logbook is untouched.'; " +
     "trap - INT TERM; fi",
@@ -410,18 +410,18 @@ const SCRIPTS = {
     "trap - INT TERM; fi",
   INIT_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: create your logbook'; " +
-    "gum style --width 72 'Sets up the logbook folder and starts recording. Asks a few questions; Enter takes the suggested answer. No password.'; " +
-    "gum style --padding '1 0 1 2' 'seldon init'; " +
-    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; trap - INT TERM; " +
-    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Create in the panel to start again.'; trap - INT TERM; (exit 130); " +
-    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Create in the panel to try again.'; " +
+    "gum style --width 72 'Creates the logbook in ~/Seldon and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.'; " +
+    "gum style --padding '1 0 1 2' 'seldon init --defaults'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init --defaults); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Create logbook in the panel to start again.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Create logbook in the panel to try again.'; " +
     "trap - INT TERM; fi",
   SNAPPER_FIX_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: let your user read the snapshot list'; " +
     "gum style --width 72 'Grants read access to /.snapshots: the listing and the snapshot info files, nothing else. No snapshot is created, changed or deleted. Asks for your password once.'; " +
     "gum style --padding '1 0 1 2' 'sudo setfacl -m u:$USER:rx /.snapshots'; " +
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; sudo setfacl -m u:${USER:?}:rx /.snapshots); then if seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }; then gum style --padding '1 0 0 0' --foreground 2 'Snapshots are now recorded. The panel updates by itself.'; " +
-    "else gum style --padding '1 0 0 0' --foreground 2 'Read access granted. Seldon records snapshots at its next capture.'; fi; trap - INT TERM; " +
+    "else gum style --padding '1 0 0 0' --foreground 2 'Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture.'; fi; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Nothing changed.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. Snapshots stay off; Seldon works without them.'; " +
     "trap - INT TERM; fi"
@@ -4007,13 +4007,175 @@ test("WP-138: previewSummary says what was found, what is pending and what faile
   assert.strictEqual(M.previewSummary(null), "Reading what this machine remembers…")
   assert.strictEqual(M.previewSummary({ ok: false, pending: true, text: "" }), "Reading what this machine remembers…")
   assert.strictEqual(M.previewSummary(M.previewResult(2, "", "boom")), "boom")
-  assert.strictEqual(M.PREVIEW_LEAD, "This is without memory: no who, no why, gone when the logs rotate. Set up Seldon?")
+  assert.strictEqual(M.PREVIEW_LEAD, "This is without memory: no who, no why, gone when the logs rotate.")
 })
 
 test("WP-138: Today shows the preview as plain text", () => {
   const qml = fs.readFileSync(path.join(root, "plugin/sections/Today.qml"), "utf8")
   assert.ok(!/StyledText|RichText|MarkdownText|AutoText/.test(qml))
   for (const b of qml.split(/\n\s*Text \{/).slice(1)) assert.ok(/^[^{}]*textFormat: Text\.PlainText/.test(b), b.slice(0, 120))
+})
+
+
+// ---- WP-119: the setup card ------------------------------------------------
+
+const setupIndex = (snapper) => {
+  const ix = JSON.parse(sample)
+  ix.state.collectors = ix.state.collectors.map((c) => c.name === "snapper" ? Object.assign({ name: "snapper" }, snapper) : c)
+  return ix
+}
+const card = (over) => M.setupCard(Object.assign({ status: "ok", indexExists: true, index: null, later: false,
+  bannerStatus: "", bannerTitle: "", snapperReady: false }, over))
+const stepStates = (c) => c.steps.map((s) => s.id + ":" + (s.done ? "done" : s.later ? "later" : s.current ? "current" : "waiting"))
+
+test("setupCard: engine → logbook → snapshots, the headline counts what is left (WP-119, A8)", () => {
+  // nothing installed yet: three steps, the snapshot step counted before
+  // the engine can tell whether this machine has snapper
+  const fresh = card({ status: "engineMissing", indexExists: false, bannerStatus: "engineMissing", bannerTitle: "Install the engine" })
+  assert.strictEqual(fresh.headline, "Set up Seldon · 3 of 3 steps to go")
+  same(stepStates(fresh), ["engine:current", "logbook:waiting", "snapshots:waiting"])
+  same([fresh.open, fresh.total, fresh.current, fresh.optionalOnly], [3, 3, "engine", false])
+  same(fresh.steps.map((s) => s.number), [1, 2, 3])
+  same(fresh.steps[0].actions.map((a) => a.label), ["Install", "Copy"])
+  assert.strictEqual(fresh.steps[0].ready, true)
+  assert.strictEqual(fresh.steps[0].command, M.INSTALL_ENGINE_COMMAND)
+  assert.strictEqual(fresh.steps[0].banner, "status")
+  assert.strictEqual(fresh.lead, "No questions; only the optional snapshot step asks for your password. Seldon records nothing before the logbook exists.")
+  // only the current step is ready; the waiting ones have no buttons to press
+  assert.ok(fresh.steps.slice(1).every((s) => !s.ready && !s.current))
+
+  // the engine is there: step 2, `seldon init --defaults`
+  const init = card({ status: "notInitialised", indexExists: true, bannerStatus: "notInitialised", bannerTitle: "Create your logbook" })
+  assert.strictEqual(init.headline, "Set up Seldon · 2 of 3 steps to go")
+  same(stepStates(init), ["engine:done", "logbook:current", "snapshots:waiting"])
+  same(init.steps[1].actions.map((a) => a.label), ["Create logbook", "Copy"])
+  assert.strictEqual(init.steps[1].command, "seldon init --defaults")
+  assert.strictEqual(init.steps[1].detail, M.INIT_DETAIL)
+  assert.strictEqual(init.steps[1].ready, true)
+  assert.strictEqual(init.steps[1].waiting, "")
+
+  // recording, snapshots not readable: the optional step, " (optional)"
+  const snap = card({ index: setupIndex({ enabled: true, ok: false, message: "snapper: No permissions." }), snapperReady: true })
+  assert.strictEqual(snap.headline, "Set up Seldon · 1 of 3 steps to go (optional)")
+  same(stepStates(snap), ["engine:done", "logbook:done", "snapshots:current"])
+  assert.strictEqual(snap.optionalOnly, true)
+  same(snap.steps[2].actions.map((a) => [a.id, a.label]), [["terminal", "Grant"], ["copy", "Copy"], ["later", "Not now"]])
+  assert.strictEqual(snap.steps[2].banner, "snapper")
+  assert.strictEqual(snap.steps[2].command, M.SNAPPER_FIX_COMMAND)
+  assert.strictEqual(snap.steps[2].optional, true)
+  assert.strictEqual(snap.steps[2].ready, true)
+  assert.strictEqual(snap.steps[2].hint, M.SNAPPER_FIX_GRANTS)
+  assert.strictEqual(snap.lead, "Seldon is recording. One optional step is left: snapshots in the timeline.")
+  // the stale index is still recording: the card stays
+  assert.strictEqual(card({ status: "indexStale", index: setupIndex({ enabled: true, ok: false }), snapperReady: true }).current, "snapshots")
+  // the snapshot step waits for its banner (the index's collector row)
+  assert.strictEqual(card({ index: setupIndex({ enabled: true, ok: false }) }).steps[2].ready, false)
+
+  // done: no card
+  assert.strictEqual(card({ index: setupIndex({ enabled: true, ok: true }) }), null)
+})
+
+test("setupCard: the denominator fits the machine; no snapper → of 2 (A8)", () => {
+  for (const snapper of [{ enabled: true, ok: false, message: M.SNAPPER_NOT_INSTALLED }, { enabled: false, ok: true }]) {
+    // once the index says so: nothing left
+    assert.strictEqual(card({ index: setupIndex(snapper) }), null, JSON.stringify(snapper))
+    same(M.snapperStep(setupIndex(snapper)), "none")
+    // and no snapshot notice either: no grant helps there
+    assert.strictEqual(M.snapperBanner(setupIndex(snapper)), null, JSON.stringify(snapper))
+  }
+  assert.ok(M.snapperBanner(setupIndex({ enabled: true, ok: false, message: "snapper did not answer in time" })))
+  assert.strictEqual(M.SNAPPER_NOT_INSTALLED, "snapper is not installed")
+  // an index without a snapper row: no step either
+  const none = JSON.parse(sample)
+  none.state.collectors = none.state.collectors.filter((c) => c.name !== "snapper")
+  assert.strictEqual(M.snapperStep(none), "none")
+  assert.strictEqual(M.snapperStep(null), "none")
+  same([M.snapperStep(setupIndex({ enabled: true, ok: true })), M.snapperStep(setupIndex({ enabled: true, ok: false }))], ["done", "open"])
+})
+
+test("setupCard: Not now is final for the snapshot step; the rest still counts it (A8)", () => {
+  const index = setupIndex({ enabled: true, ok: false, message: "snapper: No permissions." })
+  assert.strictEqual(card({ index, later: true, snapperReady: true }), null)
+  // before the logbook exists the step is put away too, and still part of the 3
+  const init = card({ status: "notInitialised", later: true, bannerStatus: "notInitialised" })
+  assert.strictEqual(init.headline, "Set up Seldon · 1 of 3 steps to go")
+  same(stepStates(init), ["engine:done", "logbook:current", "snapshots:later"])
+  // stored once in the entry, only this value counts
+  assert.strictEqual(M.setupLaterStored({ setupSnapshots: "not-now" }), true)
+  for (const e of [{}, null, undefined, { setupSnapshots: "later" }, { setupSnapshots: true }, "not-now"])
+    assert.strictEqual(M.setupLaterStored(e), false, JSON.stringify(e))
+  same([M.SETUP_LATER_KEY, M.SETUP_LATER_VALUE], ["setupSnapshots", "not-now"])
+  // Settings › Capture says what the step is, and when it was put away
+  assert.strictEqual(M.snapshotSetting(index, true), "not read; you chose Not now on the setup card")
+  assert.strictEqual(M.snapshotSetting(index, false), "not readable yet; the setup card offers the read grant")
+  assert.strictEqual(M.snapshotSetting(setupIndex({ enabled: true, ok: true }), true), "recorded")
+  assert.strictEqual(M.snapshotSetting(setupIndex({ enabled: false, ok: true }), false), "off ([collectors] snapper)")
+  assert.strictEqual(M.snapshotSetting(setupIndex({ enabled: true, ok: false, message: M.SNAPPER_NOT_INSTALLED }), false),
+    "no snapper on this machine")
+  assert.strictEqual(M.snapshotSetting(null, false), "not known yet (no index)")
+  // the desk writes the key, and takes it out again (Offer again)
+  same(M.deskSettingsWrite({ id: "jax.seldon", deskWidth: 67 }, "setupSnapshots", "not-now"), { deskWidth: 67, setupSnapshots: "not-now" })
+  same(M.deskSettingsWrite({ deskWidth: 67, setupSnapshots: "not-now" }, "setupSnapshots", undefined), { deskWidth: 67 })
+  assert.strictEqual(M.deskSettingsWrite({ deskWidth: 67 }, "setupSnapshots", undefined), null)
+})
+
+test("setupCard: no card where a notice says it (engine gone, index missing, mismatch)", () => {
+  // the engine was there and is gone: the urgent banner, not a setup step
+  assert.strictEqual(card({ status: "engineMissing", indexExists: true, bannerStatus: "engineMissing" }), null)
+  for (const status of ["indexMissing", "contractMismatch", "", undefined])
+    assert.strictEqual(card({ status, index: setupIndex({ enabled: true, ok: false }) }), null, String(status))
+  assert.strictEqual(M.setupCard(null), null)
+  // an engine older than engineMin takes the status banner's place: the
+  // logbook step waits for its update and says so
+  const old = card({ status: "notInitialised", bannerStatus: "engineOutdated", bannerTitle: "Engine too old" })
+  assert.strictEqual(old.current, "logbook")
+  assert.strictEqual(old.steps[1].ready, false)
+  assert.strictEqual(old.steps[1].waiting, "First: Engine too old (the notice above).")
+})
+
+test("isSetupNotice: the card stands for the setup banners, nothing else (WP-119)", () => {
+  const setup = card({ status: "notInitialised", bannerStatus: "notInitialised" })
+  const engineSetup = M.bannerFor("engineMissing", { indexExists: false })
+  const engineGone = M.bannerFor("engineMissing", { indexExists: true })
+  const init = M.bannerFor("notInitialised")
+  const snap = M.snapperBanner(degraded, false)
+  assert.strictEqual(M.isSetupNotice("status", engineSetup, setup, false), true)
+  assert.strictEqual(M.isSetupNotice("status", init, setup, false), true)
+  assert.strictEqual(M.isSetupNotice("status", engineGone, setup, false), false)
+  assert.strictEqual(M.isSetupNotice("status", init, null, false), false)
+  assert.strictEqual(M.isSetupNotice("status", M.engineOutdatedBanner("ok", "0.0.1", "9.0.0"), setup, false), false)
+  assert.strictEqual(M.isSetupNotice("status", M.bannerFor("indexStale", {}), setup, false), false)
+  assert.strictEqual(M.isSetupNotice("snapper", snap, setup, false), true)
+  // after Not now the snapshot banner stays away without the card
+  assert.strictEqual(M.isSetupNotice("snapper", snap, null, true), true)
+  assert.strictEqual(M.isSetupNotice("snapper", snap, null, false), false)
+  assert.strictEqual(M.isSetupNotice("rules", M.bannerFor("indexStale", {}), setup, true), false)
+  assert.strictEqual(M.isSetupNotice("status", null, setup, false), false)
+  // which terminal is a setup step (the service looks again after it)
+  same([engineSetup, engineGone, init, snap, M.bannerFor("contractMismatch", {}), null].map(M.setupStepOf),
+    ["engine", "engine", "logbook", "snapshots", "", ""])
+  assert.ok(M.SETUP_PROBE_MS <= 5000 && M.SETUP_CAPTURE_MS >= M.SETUP_PROBE_MS && M.SETUP_WATCH_MS === 600000)
+})
+
+test("deskToday: the first-run card and the quiet zero tiles (WP-119)", () => {
+  const fresh = JSON.parse(sample)
+  fresh.cases = { queued: [], active: [], verification: [], completed: [] }
+  fresh.summary = Object.assign({}, fresh.summary, { openDrift: 0, crisis: 0, eventsToday: 0, events7d: 4, activeCases: 0, queuedCases: 0 })
+  const t = M.deskToday(fresh, M.deskChangelog(fresh))
+  assert.strictEqual(t.firstRun, true)
+  same(t.tiles.map((x) => [x.label, x.value, x.dim]), [["events today", 0, true], ["7 days", 4, false]])
+  assert.strictEqual(M.FIRST_RUN_TITLE, "Seldon is recording. Nothing to do.")
+  assert.ok(M.FIRST_RUN_LEAD.indexOf("only a crisis colours the bar") !== -1)
+  // a case, or anything open, ends it
+  const withCase = JSON.parse(JSON.stringify(fresh))
+  withCase.cases.completed = JSON.parse(sample).cases.completed.slice(0, 1)
+  assert.strictEqual(M.deskToday(withCase, M.deskChangelog(withCase)).firstRun, false)
+  const open = JSON.parse(JSON.stringify(fresh))
+  open.summary.openDrift = 1
+  assert.strictEqual(M.deskToday(open, M.deskChangelog(open)).firstRun, false)
+  // the sample (cases, drift) is no first run; no index, none either
+  assert.strictEqual(M.deskToday(JSON.parse(sample), M.deskChangelog(JSON.parse(sample))).firstRun, false)
+  assert.strictEqual(M.deskToday(null, M.deskChangelog(null)).firstRun, false)
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import ".."
+import "../../Model.js" as Model
 
 // The notices under the desk's header (ADR-0034 §2: today's banner states,
 // with their one-click fixes): the restart notice after a plugin update
@@ -9,7 +10,10 @@ import ".."
 // the outdated agent rules (WP-101) and what their update did (WP-111),
 // and the last capture's warnings (WP-085). The service builds them
 // (Service.qml); a click on a fix goes back to Service.fix with the
-// banner's id. The header's chip folds the whole strip.
+// banner's id. The header's chip folds the whole strip. The setup states
+// (engine not installed yet, logbook not created, snapshots not readable)
+// are not notices while the setup card in Today shows them (WP-119,
+// Model.isSetupNotice), and the snapshot one not after its Not now.
 Column {
   id: root
 
@@ -25,14 +29,20 @@ Column {
     if (!s) return []
     var all = [
       { id: "restart", banner: s.restartNotice },
-      { id: "status", banner: s.banner },
+      { id: "status", banner: root.shown("status", s.banner) },
       { id: "contract", banner: s.contractNotice },
-      { id: "snapper", banner: s.snapperBanner },
+      { id: "snapper", banner: root.shown("snapper", s.snapperBanner) },
       { id: "rules", banner: s.rulesBanner },
       { id: "rulesNotice", banner: s.rulesNotice },
       { id: "capture", banner: s.captureNotice }
     ]
     return all.filter(function(n) { return !!n.banner })
+  }
+
+  // The banner, or null while the setup card stands for it.
+  function shown(id, banner) {
+    var s = root.service
+    return s && Model.isSetupNotice(id, banner, s.setup, s.setupLater) ? null : banner
   }
   readonly property var statusBanner: statusItem
   readonly property var snapperBanner: snapperItem
@@ -61,7 +71,7 @@ Column {
   Banner {
     id: statusItem
     width: root.width - root.leftPadding - root.rightPadding
-    banner: root.service ? root.service.banner : null
+    banner: root.service ? root.shown("status", root.service.banner) : null
     foreground: root.foreground
     urgent: root.urgent
     fontFamily: root.fontFamily
@@ -80,7 +90,7 @@ Column {
   Banner {
     id: snapperItem
     width: root.width - root.leftPadding - root.rightPadding
-    banner: root.service ? root.service.snapperBanner : null
+    banner: root.service ? root.shown("snapper", root.service.snapperBanner) : null
     foreground: root.foreground
     urgent: root.urgent
     fontFamily: root.fontFamily

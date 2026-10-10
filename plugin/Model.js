@@ -66,7 +66,9 @@ var INSTALL_ENGINE_COMMAND = "curl -fsSL https://github.com/JohnAndrewsX/jax-sel
 // installer (ADR-0024); flip back together with INSTALL_ENGINE_COMMAND.
 var UPDATE_ENGINE_COMMAND = INSTALL_ENGINE_COMMAND
 var UPDATE_PLUGIN_COMMAND = "omarchy plugin update jax.seldon"
-var INIT_COMMAND = "seldon init"
+// The setup card's step 2 (WP-119, ADR-0033): no question, the last 90
+// days recorded as history before Seldon.
+var INIT_COMMAND = "seldon init --defaults"
 // ADR-0026: the one-time read grant on the snapshot directory that lets the
 // snapper collector read the snapshot info files. `$USER` is expanded by the
 // shell the user pastes it into (or by the terminal launcher's bash -c);
@@ -138,7 +140,8 @@ var INSTALL_ENGINE_SCRIPT = terminalScript({
   title: "Seldon: install the engine",
   what: "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.",
   command: INSTALL_ENGINE_COMMAND,
-  ok: "The engine is installed. In the Seldon panel, press Check again.",
+  // the panel looks again by itself after this terminal (Service.setupWatch)
+  ok: "The engine is installed. The Seldon panel finds it by itself.",
   failed: "The install did not finish. Run it again; your logbook is untouched.",
   cancelled: "Cancelled. The install did not finish. Run it again; your logbook is untouched."
 })
@@ -165,15 +168,16 @@ var UPDATE_PLUGIN_SCRIPT = terminalScript({
   failed: "Nothing changed. The plugin stays at its version.",
   cancelled: "Cancelled. The plugin update did not finish."
 })
-// `seldon init` writes the index; the service's FileView picks it up and
-// the banner goes (Service.ingest).
+// `seldon init --defaults` asks nothing and writes the index; the
+// service's FileView picks it up and the setup card moves on
+// (Service.ingest).
 var INIT_SCRIPT = terminalScript({
   title: "Seldon: create your logbook",
-  what: "Sets up the logbook folder and starts recording. Asks a few questions; Enter takes the suggested answer. No password.",
+  what: "Creates the logbook in ~/Seldon and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.",
   command: INIT_COMMAND,
   ok: "Your logbook is ready. The panel updates by itself.",
-  failed: "No logbook was created; the message above says why. Press Create in the panel to try again.",
-  cancelled: "Cancelled. Press Create in the panel to start again."
+  failed: "No logbook was created; the message above says why. Press Create logbook in the panel to try again.",
+  cancelled: "Cancelled. Press Create logbook in the panel to start again."
 })
 // After the grant a capture records the snapshots and rewrites the index,
 // so the banner goes without a click. Exit 4 (the plugin's own timed
@@ -190,7 +194,9 @@ var SNAPPER_FIX_SCRIPT = terminalScript({
   run: "sudo setfacl -m u:${USER:?}:rx /.snapshots",
   after: "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }",
   ok: "Snapshots are now recorded. The panel updates by itself.",
-  partial: "Read access granted. Seldon records snapshots at its next capture.",
+  // WP-117 stage 2: report, never forecast; the setup card's re-probe
+  // then shows the truth
+  partial: "Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture.",
   failed: "Nothing changed. Snapshots stay off; Seldon works without them.",
   cancelled: "Cancelled. Nothing changed."
 })
@@ -570,11 +576,11 @@ function bannerFor(status, ctx) {
       status: status,
       tone: "accent",
       title: "Create your logbook",
-      detail: "Sets up your logbook and starts recording; the terminal asks a few questions, no password.",
+      detail: INIT_DETAIL,
       command: INIT_COMMAND,
       script: INIT_SCRIPT,
       actions: [
-        { id: "terminal", label: "Create" },
+        { id: "terminal", label: "Create logbook" },
         { id: "copy", label: "Copy" },
         { id: "recheck", label: "Check again" }
       ]
@@ -967,12 +973,15 @@ function collectors(index) {
 // Service.fix(actionId, "snapper"). *Check again* is a capture (the same
 // call as *Capture now*), for a grant run outside the panel: only a capture
 // rewrites the collector state this banner reads; reloading the index
-// would not (WP-054).
+// would not (WP-054). None on a machine without snapper (the engine's
+// "snapper is not installed", SNAPPER_NOT_INSTALLED): no grant helps there
+// (WP-119).
 function snapperBanner(index) {
   var list = collectors(index)
   for (var i = 0; i < list.length; i++) {
     var c = list[i]
     if (!isObject(c) || c.name !== "snapper" || c.enabled !== true || c.ok !== false) continue
+    if (c.message === SNAPPER_NOT_INSTALLED) return null
     return {
       status: "snapperDegraded",
       tone: "accent",
@@ -991,6 +1000,166 @@ function snapperBanner(index) {
     }
   }
   return null
+}
+
+// ---- Setup card (WP-119) ---------------------------------------------------
+
+// The three setup states — engine missing (no index yet), logbook not
+// initialised, snapshots not readable — as one card in Today's overview
+// (SPEC-PLUGIN §5.4 "Setup card"): engine → logbook → snapshots, done
+// steps ticked, the next one with its buttons. The banners stay the model
+// behind it (bannerFor, snapperBanner): a step's terminal and Copy go to
+// Service.fix with the banner's id, as the notices did. The card has no
+// mode logic; EASY (ADR-0045 §6) shows the same card, and its open steps
+// are what WP-179's Needs you counts.
+
+var SETUP_TITLE = "Set up Seldon"
+// What `seldon init --defaults` does, in one sentence (the step's detail
+// and the notInitialised banner's).
+var INIT_DETAIL = "Creates ~/Seldon and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password."
+// The engine's degraded message when the machine has no snapper
+// (engine/src/collectors/snapper.rs NOT_INSTALLED): no snapshot step.
+var SNAPPER_NOT_INSTALLED = "snapper is not installed"
+// *Not now* on the snapshot step: stored once in the plugin's shell.json
+// entry (a state key, not in the manifest's schema), offered again only
+// from Settings › Capture.
+var SETUP_LATER_KEY = "setupSnapshots"
+var SETUP_LATER_VALUE = "not-now"
+// After a step's terminal opened, how long and how often the service
+// looks again by itself (Service.setupWatch): the engine probe for step
+// 1, the index for step 2, a capture for step 3 (only a capture rewrites
+// the collector state).
+var SETUP_WATCH_MS = 10 * 60 * 1000
+var SETUP_PROBE_MS = 5000
+var SETUP_CAPTURE_MS = 30000
+var SETUP_LAUNCHED_TEXT = "A terminal opened. This card moves on by itself when the step is done."
+
+// Whether *Not now* is stored in this shell.json entry.
+function setupLaterStored(entry) {
+  return isObject(entry) && entry[SETUP_LATER_KEY] === SETUP_LATER_VALUE
+}
+
+// The snapshot step as the index tells it: "none" (no snapper here, or
+// its collector is off), "done" (snapshots are read) or "open".
+function snapperStep(index) {
+  var list = collectors(index)
+  for (var i = 0; i < list.length; i++) {
+    var c = list[i]
+    if (!isObject(c) || c.name !== "snapper") continue
+    if (c.enabled !== true) return "none"
+    if (c.ok === true) return "done"
+    return c.message === SNAPPER_NOT_INSTALLED ? "none" : "open"
+  }
+  return "none"
+}
+
+// s: { status, indexExists, index, later, bannerStatus, bannerTitle,
+// snapperReady }. null when nothing is left to set up — and while the
+// engine that was there is gone (its urgent banner says so), or in a
+// status the notices handle (index missing, contract mismatch). Dev mode
+// shows it too, from the fixture (its buttons open the terminals; the
+// service runs no engine call). Before the logbook exists
+// the machine's snapper is not known yet, so the snapshot step counts;
+// once the index says there is none, the denominator is 2. A step is
+// `ready` while the banner behind it is up (the status banner of its
+// state, the snapshot banner): an engine older than the plugin's
+// engineMin takes the status banner's place, and the logbook step waits
+// for its update (`waiting` names the notice).
+// → { headline, lead, open, total, optionalOnly, current, steps: [{ id,
+//   number, title, detail, hint, done, later, optional, current, ready,
+//   waiting, banner, command, actions: [{ id, label }] }] }
+function setupCard(s) {
+  s = isObject(s) ? s : {}
+  var status = s.status
+  var before = status === "engineMissing" || status === "notInitialised"
+  if (status === "engineMissing" && s.indexExists === true) return null
+  if (!before && status !== "ok" && status !== "indexStale") return null
+  var engineDone = status !== "engineMissing"
+  var snap = before ? "open" : snapperStep(s.index)
+  var steps = [
+    { id: "engine", title: "Install the engine", detail: ENGINE_MISSING_DETAIL, done: engineDone,
+      hint: "Opens a terminal that shows the installer and runs it", banner: "status", command: INSTALL_ENGINE_COMMAND,
+      actions: [{ id: "terminal", label: "Install" }, { id: "copy", label: "Copy" }] },
+    { id: "logbook", title: "Create the logbook", detail: INIT_DETAIL, done: engineDone && !before,
+      hint: "Opens a terminal that creates your logbook and starts recording", banner: "status", command: INIT_COMMAND,
+      actions: [{ id: "terminal", label: "Create logbook" }, { id: "copy", label: "Copy" }] }
+  ]
+  if (snap !== "none") {
+    steps.push({ id: "snapshots", title: "Read snapshots (optional)", optional: true,
+      detail: "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it.",
+      done: snap === "done", hint: SNAPPER_FIX_GRANTS, banner: "snapper", command: SNAPPER_FIX_COMMAND,
+      actions: [{ id: "terminal", label: "Grant" }, { id: "copy", label: "Copy" }, { id: "later", label: "Not now" }] })
+  }
+  var open = 0
+  var current = ""
+  for (var i = 0; i < steps.length; i++) {
+    var st = steps[i]
+    st.number = i + 1
+    st.optional = st.optional === true
+    st.later = !st.done && st.optional && s.later === true
+    if (st.done || st.later) continue
+    open++
+    if (current === "") current = st.id
+  }
+  if (open === 0) return null
+  var ready = {
+    engine: s.bannerStatus === "engineMissing",
+    logbook: s.bannerStatus === "notInitialised",
+    snapshots: s.snapperReady === true
+  }
+  for (var j = 0; j < steps.length; j++) {
+    var sj = steps[j]
+    sj.current = sj.id === current
+    sj.ready = sj.current && ready[sj.id] === true
+    sj.waiting = sj.current && !sj.ready && sj.banner === "status" && typeof s.bannerTitle === "string" && s.bannerTitle !== ""
+      ? "First: " + s.bannerTitle + " (the notice above)." : ""
+  }
+  var optionalOnly = current === "snapshots"
+  return {
+    headline: SETUP_TITLE + " · " + open + " of " + steps.length + " steps to go" + (optionalOnly ? " (optional)" : ""),
+    lead: optionalOnly ? "Seldon is recording. One optional step is left: snapshots in the timeline."
+      : snap === "none" ? "No questions, no password. Seldon records nothing before the logbook exists."
+      : "No questions; only the optional snapshot step asks for your password. Seldon records nothing before the logbook exists.",
+    open: open,
+    total: steps.length,
+    optionalOnly: optionalOnly,
+    current: current,
+    steps: steps
+  }
+}
+
+// The setup step a banner's terminal fix does ("engine", "logbook",
+// "snapshots"), else "": after it the service looks again by itself.
+function setupStepOf(banner) {
+  if (!isObject(banner)) return ""
+  if (banner.status === "engineMissing") return "engine"
+  if (banner.status === "notInitialised") return "logbook"
+  if (banner.status === "snapperDegraded") return "snapshots"
+  return ""
+}
+
+// Whether a notice is a setup state the card shows instead (the status
+// banner of a setup step, the snapshot banner): the notices leave it out
+// while the card is up, and the snapshot banner after *Not now* too.
+function isSetupNotice(id, banner, setup, later) {
+  if (!isObject(banner)) return false
+  if (id === "snapper") return setup !== null || later === true
+  if (id !== "status" || setup === null) return false
+  return (banner.status === "engineMissing" && banner.tone !== "urgent") || banner.status === "notInitialised"
+}
+
+// Settings › Capture: what the snapshot step is now, in one line.
+function snapshotSetting(index, later) {
+  var snap = snapperStep(index)
+  if (!index) return "not known yet (no index)"
+  if (snap === "done") return "recorded"
+  if (snap === "none") {
+    var list = collectors(index)
+    for (var i = 0; i < list.length; i++)
+      if (isObject(list[i]) && list[i].name === "snapper" && list[i].enabled !== true) return "off ([collectors] snapper)"
+    return "no snapper on this machine"
+  }
+  return later ? "not read; you chose Not now on the setup card" : "not readable yet; the setup card offers the read grant"
 }
 
 // ---- Panel: tab keys ----------------------------------------------------------
@@ -3864,13 +4033,15 @@ function deskSubline(index, lastCaptureText, nowMs) {
 // { id } + settings: every key of the current entry (unknown ones too, the
 // id left out) and the one that changes. null when the value is already
 // stored (the facade would report "nothing changed" as false, which the
-// desk must not read as a refusal).
+// desk must not read as a refusal). `value` undefined takes the key out
+// (the setup card's Offer again, WP-119).
 function deskSettingsWrite(entry, key, value) {
   var next = {}
   var current = isObject(entry) ? entry : {}
   for (var k in current) if (k !== "id") next[k] = current[k]
   if (next[key] === value) return null
-  next[key] = value
+  if (value === undefined) delete next[key]
+  else next[key] = value
   return next
 }
 
@@ -4522,10 +4693,24 @@ function discardResult(exitCode, stdoutText, stderrText) {
 
 // ---- Today
 
+// The first-run card (WP-119): Today's overview on a logbook with no case
+// yet and nothing open, in place of the sentence and its lead.
+var FIRST_RUN_TITLE = "Seldon is recording. Nothing to do."
+var FIRST_RUN_LEAD = "Every change to this machine lands in the Changelog. Plan a change below, or just keep working: routine stays quiet, and only a crisis colours the bar."
+
+// Whether the logbook has a case in any column.
+function anyCase(index) {
+  var c = index && isObject(index.cases) ? index.cases : {}
+  var lists = [c.queued, c.active, c.verification, c.completed]
+  for (var i = 0; i < lists.length; i++) if (Array.isArray(lists[i]) && lists[i].length > 0) return true
+  return false
+}
+
 // Today's list and overview (prototype `today`): the date and the day's
-// state, the tiles, NEEDS YOU (the crises, a group by its leader), the
-// journal of today and yesterday, the active cases as tiles, and the
-// overview's sentence.
+// state, the tiles (a zero one `dim`, WP-119), NEEDS YOU (the crises, a
+// group by its leader), the journal of today and yesterday, the active
+// cases as tiles, the overview's sentence, and `firstRun` while no case
+// exists and nothing is open (the first-run card).
 function deskToday(index, prepared) {
   var v = todayView(index)
   var summary = index && isObject(index.summary) ? index.summary : {}
@@ -4558,9 +4743,11 @@ function deskToday(index, prepared) {
     title: v.title,
     state: todayState(c0),
     tiles: index ? [
-      { label: count(summary.eventsToday) === 1 ? "event today" : "events today", value: count(summary.eventsToday) },
-      { label: "7 days", value: count(summary.events7d) }
+      { label: count(summary.eventsToday) === 1 ? "event today" : "events today", value: count(summary.eventsToday),
+        dim: count(summary.eventsToday) === 0 },
+      { label: "7 days", value: count(summary.events7d), dim: count(summary.events7d) === 0 }
     ] : [],
+    firstRun: !!index && !anyCase(index) && !!c0 && c0.drift === 0 && c0.crisis === 0,
     needs: needs,
     entries: v.entries,
     yesterday: v.yesterday,
@@ -6065,9 +6252,8 @@ var PREVIEW_REFRESH_MS = 5 * 60 * 1000
 var PREVIEW_ROWS = 200
 var PREVIEW_FILES = 80
 var PREVIEW_PACKAGES = 10
-var PREVIEW_TITLE = "Before Seldon"
-var PREVIEW_LEAD = "This is without memory: no who, no why, gone when the logs rotate. Set up Seldon?"
-var PREVIEW_SETUP = "Set up Seldon"
+// The setup card's step 2 says it after the preview's line (WP-119).
+var PREVIEW_LEAD = "This is without memory: no who, no why, gone when the logs rotate."
 var PREVIEW_KINDS = { install: "Installed", remove: "Removed", upgrade: "Upgraded", downgrade: "Downgraded",
   reinstall: "Reinstalled" }
 var PREVIEW_STATUSES = ["failed", "interrupted", "unfinished"]

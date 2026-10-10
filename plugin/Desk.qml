@@ -104,6 +104,9 @@ Item {
     })
   property Section currentSection: null
   readonly property bool editing: sidebar.searchFocused || (!!root.currentSection && root.currentSection.editing)
+  // The setup card (WP-119): while it is up, the header's chip names it
+  // and leads to it.
+  readonly property var setup: root.service ? root.service.setup : null
 
   readonly property color foreground: Color.popups.text
   readonly property string fontFamily: Style.font.family
@@ -206,6 +209,15 @@ Item {
     var s = root.currentSection
     if (!s || !s.select(String(id))) return "not found"
     return "ok"
+  }
+
+  // The header chip while setup steps are open: Today's overview, where
+  // the setup card is, with the notices unfolded.
+  function showSetup() {
+    root.section("today")
+    if (root.currentSection) root.currentSection.selectedId = ""
+    root.noticesFolded = false
+    root.showDetail()
   }
 
   function showDetail() {
@@ -456,7 +468,12 @@ Item {
         fits: notices.snapperBanner.tooltipFits
       },
       noticesFolded: root.noticesFolded,
+      // the setup card's state, whichever section is shown (WP-119)
+      setup: root.setup ? root.setup.headline : "",
+      setupLater: !!root.service && root.service.setupLater,
+      setupWatch: root.service && root.service.setupWatch ? root.service.setupWatch.step : "",
       chip: header.chipText,
+      chipTone: header.chipTone,
       chipShown: header.chipShown,
       settings: {
         stored: root.storedWidth,
@@ -576,16 +593,18 @@ Item {
             subline: Model.deskSubline(root.indexData, root.service ? root.service.lastCapture : "",
               root.service ? root.service.nowMs : Date.now())
             kpis: Model.deskKpis(root.indexData)
-            chipText: notices.items.length === 0 ? ""
+            chipText: root.setup ? root.setup.headline + (notices.items.length > 0 ? " +" + notices.items.length : "")
+              : notices.items.length === 0 ? ""
               : notices.items[0].banner.title + (notices.items.length > 1 ? " +" + (notices.items.length - 1) : "")
-            chipCount: notices.items.length
-            chipTone: notices.items.length === 0 ? "" : String(notices.items[0].banner.tone || "")
+            chipCount: notices.items.length + (root.setup ? 1 : 0)
+            chipTone: root.setup ? "accent" : notices.items.length === 0 ? "" : String(notices.items[0].banner.tone || "")
             noticesFolded: root.noticesFolded
             foreground: root.foreground
             fontFamily: root.fontFamily
             onSettingsRequested: root.section("settings")
             onCloseRequested: root.dismiss()
-            onChipClicked: root.noticesFolded = !root.noticesFolded
+            onChipClicked: if (root.setup) root.showSetup()
+              else root.noticesFolded = !root.noticesFolded
             onKpiPicked: function(id) {
               root.section(id === "crises" || id === "attention" ? "changelog" : "work")
               if (root.currentSection)

@@ -144,7 +144,9 @@ run not-initialised 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/not-
 expect not-initialised .status notInitialised
 expect not-initialised .banner "Create your logbook"
 expect not-initialised .bannerTone accent
-expect not-initialised '.bannerActions | join(",")' "terminal:Create,copy:Copy,recheck:Check again"
+expect not-initialised '.bannerActions | join(",")' "terminal:Create logbook,copy:Copy,recheck:Check again"
+# the setup card stands for it (WP-119): the logbook step is the current one
+expect not-initialised '[.setup.headline, .setup.current, .setup.ready] | map(tostring) | join("|")' "Set up Seldon · 2 of 3 steps to go|logbook|true"
 expect not-initialised .pill ""
 
 # 4. No index file.

@@ -15,8 +15,10 @@ import "Model.js" as Model
 // behind them are constants from Model.js.
 //
 // The index lives at ${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json
-// (CONTRACT.md rule 1). The engine is probed once at start and again only on
-// the status banner's "Check again"; the capture timer never probes.
+// (CONTRACT.md rule 1). The engine is probed once at start, again on the
+// status banner's "Check again", when the desk opens while it is missing,
+// and every few seconds after the setup card opened its install terminal
+// (WP-119); the capture timer never probes.
 //
 // Development overrides (never set them in a real session):
 //   SELDON_INDEX  read this file instead of the state index.
@@ -26,6 +28,9 @@ import "Model.js" as Model
 //                 so a fixture never turns stale on its own.
 //   SELDON_LOCK_RETRY_MS  the wait before a capture or status that found the
 //                 lock held runs again (default 30000; the harness's).
+//   SELDON_SETUP_CAPTURE_MS  the wait before the setup card's own capture
+//                 after the snapshot grant's terminal, and between two
+//                 (default Model.SETUP_CAPTURE_MS; the harness's).
 Item {
   id: root
 
@@ -104,6 +109,30 @@ Item {
   readonly property bool indexShown: index !== null && Model.showsCounts(status)
   readonly property string crisisText: indexShown ? Model.crisisText(index) : ""
   readonly property var snapperBanner: indexShown ? Model.snapperBanner(index) : null
+  // The setup card (WP-119): engine → logbook → snapshots, from the same
+  // states as the banners (Model.setupCard), null when nothing is left.
+  // *Not now* on its snapshot step is stored in the shell.json entry
+  // (Model.SETUP_LATER_KEY, written by the desk); `setupLaterOverride`
+  // holds the click (true) or Settings' *Offer again* (false) until the
+  // entry the shell sends back says the same, and for this shell's life
+  // when the write did not happen.
+  property var setupLaterOverride: null
+  readonly property bool setupLater: root.setupLaterOverride !== null ? root.setupLaterOverride === true
+    : Model.setupLaterStored(root.entryKnown ? root.entrySettings : root.localEntry)
+  readonly property var setup: Model.setupCard({
+    status: root.status,
+    indexExists: root.fileState === "loaded" || root.fileState === "invalid",
+    index: root.indexShown ? root.index : null,
+    later: root.setupLater,
+    bannerStatus: root.banner ? root.banner.status : "",
+    bannerTitle: root.banner ? root.banner.title : "",
+    snapperReady: !!root.snapperBanner
+  })
+  // After a step's terminal opened: { step, untilMs, captureAtMs }, while
+  // the service looks again by itself (setupTick); null otherwise.
+  property var setupWatch: null
+  // The line under the card's current step after Not now or Offer again.
+  property string setupResult: ""
   // The Prime Radiant's windows, series rows, slot counts and chart data for
   // every period (Model.periodTable: one pass per series, then the charts),
   // computed when the index changes: the overlay is created anew on each
@@ -228,6 +257,8 @@ Item {
   property int lockRetries: 0
   readonly property int lockRetryMs: Number(Quickshell.env("SELDON_LOCK_RETRY_MS")) > 0
     ? Number(Quickshell.env("SELDON_LOCK_RETRY_MS")) : Model.LOCK_RETRY_MS
+  readonly property int setupCaptureMs: Number(Quickshell.env("SELDON_SETUP_CAPTURE_MS")) > 0
+    ? Number(Quickshell.env("SELDON_SETUP_CAPTURE_MS")) : Model.SETUP_CAPTURE_MS
 
   // Capture (and the status that follows it) is queued, running or waiting
   // for a held lock.
@@ -321,6 +352,9 @@ Item {
       for (var k in entry) copy[k] = entry[k]
     root.entrySettings = copy
     root.entryKnown = true
+    // the shell brought the setup card's choice back: the entry decides
+    if (root.setupLaterOverride !== null && Model.setupLaterStored(copy) === root.setupLaterOverride)
+      root.setupLaterOverride = null
     root.deskWidth = Model.clampDeskWidth(copy.deskWidth)
     root.deskSidebar = Model.deskSidebarMode(copy.deskSidebar)
   }
@@ -333,8 +367,11 @@ Item {
     // index drops the others (resolved, or reclassified), which are asked
     // again if they are selected as a crisis.
     root.driftRules = Model.keptDriftRules(root.driftRules, result.ok ? result.index : null)
+    // The engine writes whole seconds: an index written in the second of
+    // the exit 3 is the new one (`seldon init` right after the setup
+    // card's probe, WP-119), an older one is a leftover.
     if (root.engineNotInitialised && result.ok
-        && Model.timeMs(result.index.generatedAt) > root.notInitialisedAtMs)
+        && Model.timeMs(result.index.generatedAt) >= Math.floor(root.notInitialisedAtMs / 1000) * 1000)
       root.engineNotInitialised = false
     root.parsed = result
     root.fileState = result.ok || result.error === "contract" ? "loaded" : "invalid"
@@ -1102,6 +1139,10 @@ Item {
     } else if (actionId === "terminal" && terminal) {
       // Opens on the explicit click only (ADR-0004); the script is a constant.
       Quickshell.execDetached(terminal)
+      // The install, the logbook and the grant: look again by itself
+      // (WP-119), the engine's install also from the urgent notice.
+      var stepId = Model.setupStepOf(source)
+      if (stepId !== "") root.watchSetup(stepId)
       // No answer comes back from a detached launch: step aside at once,
       // as Omarchy's menus do (WP-156).
       root.stepAside()
@@ -1117,6 +1158,77 @@ Item {
       return false
     }
     return true
+  }
+
+  // ---- Setup card (WP-119). One of the current step's actions: the
+  // terminal fix of the banner behind it (then the service looks again by
+  // itself, setupTick), Copy, or Not now on the snapshot step, which the
+  // desk stores in the shell.json entry (Desk.writeSetting). Returns
+  // whether it was taken.
+  function setupAction(stepId, actionId) {
+    var card = root.setup
+    var steps = card ? card.steps : []
+    var step = null
+    for (var i = 0; i < steps.length; i++) if (steps[i].id === stepId && steps[i].current) step = steps[i]
+    if (!step || !step.ready) return false
+    if (actionId === "later") {
+      if (stepId !== "snapshots") return false
+      return root.setSetupLater(true)
+    }
+    if (actionId === "copy") return root.fix("copy", step.banner)
+    if (actionId !== "terminal") return false
+    return root.fix("terminal", step.banner)
+  }
+
+  // A setup terminal opened (the card's or a notice's): look again by
+  // itself until the step is done (setupTick).
+  function watchSetup(stepId) {
+    root.setupResult = ""
+    root.setupWatch = { step: stepId, untilMs: Date.now() + Model.SETUP_WATCH_MS,
+      captureAtMs: Date.now() + root.setupCaptureMs }
+  }
+
+  // Not now (true) or Settings' Offer again (false): held here at once,
+  // stored by the desk in the shell.json entry; without a desk or an
+  // entry it holds for this shell's life (the line says so).
+  function setSetupLater(later) {
+    root.setupLaterOverride = later === true
+    var written = root.desk ? root.desk.writeSetting(Model.SETUP_LATER_KEY, later === true ? Model.SETUP_LATER_VALUE : undefined) : "session"
+    root.setupResult = written === "written" || written === "unchanged" ? ""
+      : written === "refused" ? "The shell did not take the change; it holds until the shell restarts. " + Model.DESK_REFUSED_TEXT
+      : Model.DESK_NO_ENTRY_TEXT
+    if (later !== true) root.setupWatch = null
+    return true
+  }
+
+  // Every Model.SETUP_PROBE_MS while setupWatch is set: the engine probe
+  // for step 1, the index for step 2 (the FileView watches it too), a
+  // capture every Model.SETUP_CAPTURE_MS for step 3 (only a capture
+  // rewrites the collector state; the grant's own capture comes first).
+  // Ends when the step is done, the card is gone, or after
+  // Model.SETUP_WATCH_MS.
+  function setupTick() {
+    var w = root.setupWatch
+    if (!w) return
+    var steps = root.setup ? root.setup.steps : []
+    var step = null
+    for (var i = 0; i < steps.length; i++) if (steps[i].id === w.step) step = steps[i]
+    var now = Date.now()
+    var done = w.step === "engine" ? root.engineState === "present"
+      : w.step === "logbook" ? root.status !== "notInitialised"
+      : !step || step.done || step.later
+    if (done || now > w.untilMs) {
+      root.setupWatch = null
+      return
+    }
+    if (w.step === "engine") {
+      root.probeEngine()
+    } else if (w.step === "logbook") {
+      root.reloadIndex()
+    } else if (w.step === "snapshots" && now >= w.captureAtMs && !root.capturing) {
+      root.setupWatch = { step: w.step, untilMs: w.untilMs, captureAtMs: now + root.setupCaptureMs }
+      root.captureNow()
+    }
   }
 
   function snapshot() {
@@ -1135,6 +1247,19 @@ Item {
       engineDetail: root.engineDetail,
       busy: root.busy,
       preview: root.preview ? Model.previewSummary(root.preview) : "",
+      setup: root.setup ? {
+        headline: root.setup.headline,
+        current: root.setup.current,
+        open: root.setup.open,
+        total: root.setup.total,
+        steps: root.setup.steps.map(function(s) {
+          return s.id + ":" + (s.done ? "done" : s.later ? "later" : s.current ? "current" : "waiting")
+        }),
+        ready: root.setup.steps.some(function(s) { return s.current && s.ready })
+      } : null,
+      setupLater: root.setupLater,
+      setupWatch: root.setupWatch ? root.setupWatch.step : "",
+      setupResult: root.setupResult,
       capturing: root.capturing,
       lockRetries: root.lockRetries,
       engineMin: root.engineMin,
@@ -1302,6 +1427,14 @@ Item {
     onFileChanged: proposalFile.reload()
   }
 
+  // The setup card's own look again after a step's terminal (setupTick).
+  Timer {
+    interval: Model.SETUP_PROBE_MS
+    repeat: true
+    running: root.setupWatch !== null
+    onTriggered: root.setupTick()
+  }
+
   // A watch cannot sit on a file that does not exist yet; look again until
   // it does.
   Timer {
@@ -1312,8 +1445,9 @@ Item {
   }
 
   // Capture cycle (ADR-0005). A missing engine is looked for again only on
-  // the status banner's "Check again", so a machine without it logs one
-  // probe per shell start.
+  // the status banner's "Check again", a desk open and the setup card's
+  // watch, so a machine without it logs one probe per shell start and
+  // per desk open.
   Timer {
     interval: root.captureIntervalMin * 60000
     repeat: true
@@ -1338,6 +1472,8 @@ Item {
     onTriggered: root.refreshSessions()
   }
   onDeskOpenChanged: if (root.deskOpen) {
+    // the setup card's first step may have been done outside the desk
+    if (root.engineState === "missing" && !root.devMode) root.probeEngine()
     root.refreshSessions()
     root.refreshPreview(false)
   }

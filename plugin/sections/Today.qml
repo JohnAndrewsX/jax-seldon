@@ -15,8 +15,11 @@ import "../Model.js" as Model
 // first, a group by its leader (the 0.1 red strip's successor) — and
 // JOURNAL: today's entries, the yesterday row, which opens in place.
 //
-// The detail: nothing selected (on entry), the overview — WP-119's setup
-// card slot, one sentence ("Seldon is recording. 2 changes need you."),
+// The detail: nothing selected (on entry), the overview — the setup card
+// while Seldon is not set up (SetupCard.qml, WP-119: engine → logbook →
+// snapshots), one sentence ("Seldon is recording. 2 changes need you."),
+// or, on a first day with no case and nothing open, the first-run card
+// ("Seldon is recording. Nothing to do."; the zero tiles quiet),
 // the active cases as tiles with their progress (a click opens the case in
 // Work) and **New case**: one sentence → `seldon agent start --new --json
 // -- <intent>` (Service.startAgentNew, the call and result line Work's Run
@@ -31,9 +34,8 @@ import "../Model.js" as Model
 // Before the logbook exists (status notInitialised, WP-138) the list shows
 // what the machine remembers on its own (Service.preview, `seldon preview
 // --json`): PACKAGES, one row per pacman transaction, and EDITED CONFIG
-// FILES, one row per file under ~/.config; the overview's setup slot holds the card
-// that says what that is without memory and **Set up Seldon**, the
-// notInitialised banner's terminal fix (WP-119's setup card replaces it).
+// FILES, one row per file under ~/.config; the setup card's step 2 says
+// what that is without memory and creates the logbook.
 Section {
   id: root
 
@@ -46,8 +48,9 @@ Section {
   // WP-138: the preview while the logbook is not initialised (null in dev
   // mode, where the engine never runs)
   readonly property var preview: root.service && root.service.status === "notInitialised" ? root.service.preview : null
-  readonly property bool setupFixable: !!root.service && !!root.service.banner
-    && root.service.banner.status === "notInitialised"
+  // WP-119: the setup card, and the first-run card once it is done.
+  readonly property var setup: root.service ? root.service.setup : null
+  readonly property bool firstRun: !root.setup && !!root.today && root.today.firstRun === true
   readonly property var rows: root.preview ? Model.previewRows(root.preview, root.searchText)
     : Model.todayRows(root.today, root.yesterdayOpen, root.searchText)
   readonly property int cursor: root.rowIndex(root.selectedId)
@@ -129,9 +132,9 @@ Section {
     return true
   }
 
-  // Set up Seldon (WP-138): the notInitialised banner's terminal fix.
-  function setUp() {
-    return root.setupFixable && root.service.fix("terminal", "status")
+  // One of the setup card's buttons (Service.setupAction).
+  function setupAction(stepId, actionId) {
+    return !!root.service && root.service.setupAction(stepId, actionId)
   }
 
   function back() {
@@ -157,13 +160,16 @@ Section {
       cursor: root.cursor,
       selected: root.selectedId,
       shown: root.eventShown ? "event" : "overview",
-      headline: root.today ? root.today.headline : "",
+      headline: headline.visible ? headline.text : "",
+      firstRun: firstRunCard.visible,
+      dimTiles: root.today ? root.today.tiles.filter(function(t) { return t.dim }).map(function(t) { return t.label }) : [],
       cases: root.today ? root.today.cases.map(function(c) { return c.id }) : [],
       setupSlot: setupSlot.visible,
+      setup: setupCard.view(),
       preview: {
-        shown: previewCard.visible,
+        shown: !!root.preview && setupCard.visible,
         summary: root.preview ? Model.previewSummary(root.preview) : "",
-        setUp: setupButton.enabled,
+        setUp: setupCard.view().current === "logbook" && setupCard.view().ready,
         groups: root.rows.filter(function(r, i) { return i === 0 || root.rows[i - 1].group !== r.group })
           .map(function(r) { return r.groupTitle || "" })
       },
@@ -279,6 +285,7 @@ Section {
 
           width: (tileRow.width - tileRow.spacing) / 2
           implicitHeight: tileColumn.implicitHeight + Style.spacing.lg * 2
+          // a zero is quiet (WP-119): the figure in the muted tone
           radius: Style.cornerRadius
           color: Style.normalFill
           borderSpec: Border.flat(Util.alpha(root.foreground, 0.12), Math.max(1, Style.space(1)))
@@ -304,7 +311,7 @@ Section {
               width: parent.width
               textFormat: Text.PlainText
               text: String(tile.modelData.value)
-              color: root.foreground
+              color: tile.modelData.dim ? Color.muted : root.foreground
               font.family: Style.font.family
               font.pixelSize: Style.font.title
               font.bold: true
@@ -371,26 +378,52 @@ Section {
     title: "Overview"
     onBackRequested: if (root.desk) root.desk.back()
 
-    // WP-119's setup card (engine → logbook → snapshots) takes this slot
-    // while Seldon is not recording; until then it holds the preview card
-    // before the logbook exists (WP-138).
+    // The setup card (WP-119): engine → logbook → snapshots, while a step
+    // is left; step 2 carries what the machine remembers without Seldon
+    // (WP-138's preview, ADR-0047).
     Item {
       id: setupSlot
       objectName: "todaySetupSlot"
       width: parent.width
-      visible: !!root.preview
-      implicitHeight: root.preview ? previewCard.implicitHeight : 0
+      visible: !!root.setup
+      implicitHeight: visible ? setupCard.implicitHeight : 0
+
+      SetupCard {
+        id: setupCard
+        objectName: "todaySetupCard"
+        width: parent.width
+        setup: root.setup
+        previewText: root.preview ? Model.previewSummary(root.preview) + " " + Model.PREVIEW_LEAD : ""
+        launched: root.service && root.service.setupWatch ? root.service.setupWatch.step : ""
+        resultText: root.service ? root.service.setupResult : ""
+        foreground: root.foreground
+        onActionRequested: function(stepId, actionId) { root.setupAction(stepId, actionId) }
+      }
+    }
+
+    // The first-run card (WP-119): the first day, no case, nothing open.
+    BorderSurface {
+      id: firstRunCard
+      objectName: "todayFirstRun"
+      width: parent.width
+      visible: root.firstRun
+      implicitHeight: visible ? firstRunColumn.implicitHeight + contentTopInset + contentBottomInset : 0
+      radius: Style.cornerRadius
+      color: Style.selectedFillFor(Color.accent, Color.accent)
+      borderSpec: Border.controlSpec("normal", Color.accent, Color.accent)
+      padding: Style.spacing.xl
 
       Column {
-        id: previewCard
-        objectName: "todayPreview"
-        width: parent.width
+        id: firstRunColumn
+        x: firstRunCard.contentLeftInset
+        y: firstRunCard.contentTopInset
+        width: firstRunCard.width - firstRunCard.contentLeftInset - firstRunCard.contentRightInset
         spacing: Style.spacing.md
 
         Text {
           width: parent.width
           textFormat: Text.PlainText
-          text: Model.PREVIEW_TITLE
+          text: Model.FIRST_RUN_TITLE
           color: root.foreground
           wrapMode: Text.Wrap
           font.family: Style.font.family
@@ -401,43 +434,19 @@ Section {
         Text {
           width: parent.width
           textFormat: Text.PlainText
-          text: Model.PREVIEW_LEAD
+          text: Model.FIRST_RUN_LEAD
           color: root.foreground
           wrapMode: Text.Wrap
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
         }
-
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: root.preview ? Model.previewSummary(root.preview) : ""
-          color: root.preview && root.preview.ok === false && root.preview.pending !== true ? Color.urgent : Color.muted
-          wrapMode: Text.Wrap
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-        }
-
-        Button {
-          id: setupButton
-          objectName: "todaySetUp"
-          text: Model.PREVIEW_SETUP
-          tooltipText: "Opens a terminal that creates your logbook and starts recording"
-          enabled: root.setupFixable
-          selected: true
-          bordered: true
-          foreground: root.foreground
-          fontFamily: Style.font.family
-          fontSize: Style.font.caption
-          verticalPadding: Style.spacing.xs
-          onClicked: root.setUp()
-        }
       }
     }
 
     Text {
+      id: headline
       width: parent.width
-      visible: !root.preview
+      visible: !root.setup && !root.firstRun
       textFormat: Text.PlainText
       text: root.today ? root.today.headline : ""
       color: root.foreground
@@ -449,7 +458,7 @@ Section {
 
     Text {
       width: parent.width
-      visible: !!root.index
+      visible: !!root.index && !root.firstRun
       textFormat: Text.PlainText
       text: root.today ? root.today.lead : ""
       color: Color.muted
