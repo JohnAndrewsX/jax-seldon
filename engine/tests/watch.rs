@@ -503,10 +503,10 @@ mod with_feature {
     /// run's peak bound covers.
     #[test]
     fn rss_peak_stays_under_the_limit_on_the_x10_fixture() {
-        // 11 MB: operator decision E8 (2026-10-07). WP-195 proposes 12 MB
-        // from measured peaks (dev host 11 348 to 11 632 kB), pending the
-        // operator; docs/TESTING.md, "Memory bound"
-        const LIMIT_KB: u64 = 11 * 1024;
+        // 12 MB: operator decision E79 (2026-10-10; 11 MB before, E8), from
+        // measured peaks (dev host 11 348 to 11 632 kB, CI 11 168 to
+        // 11 480 kB); docs/TESTING.md, "Memory bound"
+        const LIMIT_KB: u64 = 12 * 1024;
         let env = Env::new(Snapper::Missing);
         let tmp = TempDir::new("watch-x10");
         let root = tmp.path().join("logbook");

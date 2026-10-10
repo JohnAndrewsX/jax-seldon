@@ -662,21 +662,22 @@ submission). (see `work/queued/`)
   `--baseline`, `--no-capture` keep the choice (WP-119).
 - O3 Desk rows: Omarchy's pointer-moved hover, any key clears it, one
   cursor highlight at a time (WP-177).
-- Pending operator decision: ADR-0052 (WP-165): pacman's IgnorePkg and
-  IgnoreGroup names from /etc/pacman.conf and every file it includes —
-  also under a home directory if root includes one — names only, as the
-  optional contract-2 field `system.pacmanIgnore`; a change is attention
-  `ignore-list`, no crisis; unshowable names only counted; raw names in
-  the private cursors.json. Fable: approve. Alternative: refuse includes
-  under home → list partial.
-- Pending operator decision: the check-rss limit 11 MB (E8) → 12 MB
-  (WP-195): the engine's peak on this host is 11.34–11.48 MB with an
-  unchanged heap (toolchain/host, not a regression); 12 MB from measured
-  peaks plus margin; CI measures but does not gate yet.
-- Pending operator decision: CONTRACT.md rule 10 (a closed list of values
-  the plugin keys on outside the schema, e.g. the literal `snapper is not
-  installed`, until contract 3) as an E-entry without an ADR (WP-119;
-  Fable: acceptable, recommends yes).
+
+## Decided 2026-10-10 (operator, all as recommended)
+- E77 ADR-0052 accepted (pacman's IgnorePkg and IgnoreGroup names from
+  /etc/pacman.conf and every file it includes, also under a home
+  directory, names only, as the optional contract-2 field
+  `system.pacmanIgnore`; a change is attention `ignore-list`) → WP-165
+  merged.
+- E78 CONTRACT.md rule 10 (a closed list of values the plugin keys on
+  outside the schema, e.g. `snapper is not installed`, until contract 3)
+  as an operator decision without an ADR.
+- E79 `just check-rss`: the peak limit is 12 MB (was 11 MB, E8); measured
+  dev host 11 348–11 632 kB, CI 11 168–11 480 kB (docs/TESTING.md,
+  "Memory bound").
+- E80 shellcheck runs before CI: the orchestrator's gate also runs it on
+  the test host, where the operator installed it (no binary in the repo
+  or on the dev host).
 
 ## Decided 2026-10-09 (operator)
 - E39 ADR-0045 accepted (EASY | PRO; the header switch stores the mode for

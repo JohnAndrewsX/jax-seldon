@@ -185,7 +185,8 @@ exists (ADR-0047). This file explains it; the schema decides.
      `meta.ignoreGroup` (the new lists, space-separated; a name not shown
      as `(hidden)`), attention
      `ignore-list` in `drift[].rule`.
-10. Values the plugin keys on outside the schema (WP-119; no bump, E42).
+10. Values the plugin keys on outside the schema (WP-119; no bump, E42;
+    operator decision 2026-10-10, E78).
     This list is closed: an entry is added only by an operator decision
     or an ADR.
     Engine changes must keep them byte for byte, or move them into

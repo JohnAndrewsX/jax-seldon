@@ -1,6 +1,6 @@
 # ADR-0052 — pacman's ignore list in the index: the IgnorePkg and IgnoreGroup names, an optional v2 field; a change is attention
 
-**Status:** proposed (the operator accepts it)
+**Status:** accepted (operator decision 2026-10-10, E77)
 **Date:** 2026-10-10
 
 > Adds one **optional** field to contract 2 under ADR-0035 §6, before
