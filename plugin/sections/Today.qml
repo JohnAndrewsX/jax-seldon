@@ -201,6 +201,7 @@ Section {
 
   ListColumn {
     id: list
+    keyEvents: root.keyEvents
     visible: !root.stacked || !root.detailShown
     width: root.stacked ? root.width : (root.layout ? root.layout.listW : 0)
     height: root.height
@@ -281,7 +282,7 @@ Section {
           implicitHeight: tileColumn.implicitHeight + Style.spacing.lg * 2
           radius: Style.cornerRadius
           color: Style.normalFill
-          borderSpec: Border.flat(Util.alpha(root.foreground, 0.12), Math.max(1, Style.space(1)))
+          borderSpec: Border.flat(root.tone.divider, Math.max(1, Style.space(1)))
 
           Column {
             id: tileColumn
@@ -294,7 +295,7 @@ Section {
               width: parent.width
               textFormat: Text.PlainText
               text: tile.modelData.label
-              color: Color.muted
+              color: root.tone.dim
               elide: Text.ElideRight
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -339,7 +340,7 @@ Section {
       stripe: modelData.stripe
       alert: modelData.alert || ""
       selected: modelData.id === root.selectedId
-      cursor: false
+      cursor: list.hoverIndex === index
       onClicked: {
         root.selectedId = modelData.id
         if (modelData.type === "toggle") root.yesterdayOpen = !root.yesterdayOpen
@@ -412,7 +413,7 @@ Section {
           width: parent.width
           textFormat: Text.PlainText
           text: root.preview ? Model.previewSummary(root.preview) : ""
-          color: root.preview && root.preview.ok === false && root.preview.pending !== true ? Color.urgent : Color.muted
+          color: root.preview && root.preview.ok === false && root.preview.pending !== true ? root.tone.urgentText : root.tone.dim
           wrapMode: Text.Wrap
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -452,7 +453,7 @@ Section {
       visible: !!root.index
       textFormat: Text.PlainText
       text: root.today ? root.today.lead : ""
-      color: Color.muted
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall
@@ -467,7 +468,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: "ACTIVE CASES"
-        color: Color.muted
+        color: root.tone.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
         font.letterSpacing: Style.space(1)
@@ -479,7 +480,7 @@ Section {
         visible: !!root.today && root.today.cases.length === 0
         textFormat: Text.PlainText
         text: "No case is active."
-        color: Color.muted
+        color: root.tone.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
@@ -515,7 +516,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: "NEW CASE"
-        color: Color.muted
+        color: root.tone.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
         font.letterSpacing: Style.space(1)
@@ -580,7 +581,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: root.result ? root.result.text : "Starts your default agent on a new case, as Omarchy starts it."
-        color: root.result && !root.result.ok ? Color.urgent : Color.muted
+        color: root.result && !root.result.ok ? root.tone.urgentText : root.tone.dim
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.caption

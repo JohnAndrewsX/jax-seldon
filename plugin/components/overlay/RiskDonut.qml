@@ -65,7 +65,7 @@ ChartCanvas {
     ctx.font = root.canvasFont
     if (root.labelFits) {
       ctx.textBaseline = "top"
-      ctx.fillStyle = root.muted
+      ctx.fillStyle = root.dim
       ctx.fillText("all time", root.cx, root.cy + Style.spacing.xs)
     }
     ctx.textAlign = "left"
@@ -77,7 +77,7 @@ ChartCanvas {
       var y = root.legendY + (k + 0.5) * root.legendRowH
       ctx.fillStyle = root.partColors[k]
       ctx.fillRect(root.legendX, y - box / 2, box, box)
-      ctx.fillStyle = parts[k].count > 0 ? root.foreground : root.muted
+      ctx.fillStyle = parts[k].count > 0 ? root.foreground : root.dim
       ctx.fillText(parts[k].risk + "  " + parts[k].count + "  " + Math.round(parts[k].share * 100) + "%",
         root.legendX + box + Style.spacing.sm, y)
     }

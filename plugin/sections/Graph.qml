@@ -159,7 +159,7 @@ Section {
           + root.build.numbers.crises) + " areas, cases, decisions and crises are more than the "
           + Model.GRAPH_CAP + " nodes the layout moves"
         : "This machine since its logbook began · cases, changes, decisions, areas"
-      color: Color.muted
+      color: root.tone.dim
       elide: Text.ElideRight
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -226,7 +226,7 @@ Section {
         width: dateMetrics.advanceWidth
         textFormat: Text.PlainText
         text: root.dateText
-        color: Color.muted
+        color: root.tone.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         font.features: { "tnum": 1 }
@@ -290,7 +290,7 @@ Section {
             anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText
             text: entry.modelData.label
-            color: Color.muted
+            color: root.tone.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
@@ -304,7 +304,7 @@ Section {
       visible: parent.width >= legendFlow.implicitWidth + implicitWidth + Style.spacing.panelGap
       textFormat: Text.PlainText
       text: "←/→ day · Space play · drag, scroll · 0 fit"
-      color: Color.muted
+      color: root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }
@@ -338,7 +338,7 @@ Section {
     horizontalAlignment: Text.AlignHCenter
     textFormat: Text.PlainText
     text: !root.index ? "No index to show" : "Nothing to draw yet: no areas, cases, decisions or changes in the index"
-    color: Color.muted
+    color: root.tone.dim
     wrapMode: Text.Wrap
     font.family: root.fontFamily
     font.pixelSize: Style.font.body
@@ -351,7 +351,7 @@ Section {
     width: head.width
     textFormat: Text.PlainText
     text: root.hasGraph ? root.build.footer : ""
-    color: Color.muted
+    color: root.tone.dim
     elide: Text.ElideRight
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption

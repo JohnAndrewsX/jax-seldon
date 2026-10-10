@@ -2,14 +2,21 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Ui
 import "../../Model.js" as Model
+import ".."
 
 // The desk's sidebar (ADR-0034 §2): the nine targets with their icons and
 // counts (Model.deskCounts), the search, and the fold button. Icons only
 // when `icons` (the setting `deskSidebar`, or a desk narrower than 960 px).
-// It only reports clicks; Desk.qml decides.
+// It only reports clicks; Desk.qml decides. One cursor (WP-177): the
+// pointer's target draws Omarchy's hover fill only after a real pointer
+// move (PointerMoveGate); any key and a section change clear it; the
+// current section has the accent tint plus an accent bar of at least 3:1.
 Item {
   id: root
+
+  readonly property Tone tone: Tone {}
 
   property bool icons: false
   property string current: ""
@@ -21,7 +28,25 @@ Item {
   property string fontFamily: Style.font.family
 
   readonly property bool searchFocused: search.focused
-  readonly property color dim: Color.muted
+  readonly property color dim: root.tone.dim
+  // The target under a pointer that moved ("" none).
+  property string pointerId: ""
+
+  // Desk.keyPressed's count: any key clears the pointer's target.
+  property int keyEvents: 0
+
+  function dropPointer() {
+    gate.reset()
+    root.pointerId = ""
+  }
+
+  onCurrentChanged: root.dropPointer()
+  onKeyEventsChanged: root.dropPointer()
+
+  PointerMoveGate {
+    id: gate
+    referenceItem: root
+  }
 
   signal picked(string id)
   signal foldRequested()
@@ -37,7 +62,7 @@ Item {
     anchors.right: parent.right
     width: Style.spacing.hairline
     height: parent.height
-    color: Util.alpha(root.foreground, 0.12)
+    color: root.tone.divider
   }
 
   Column {
@@ -53,7 +78,7 @@ Item {
       bottomPadding: Style.spacing.sm
       textFormat: Text.PlainText
       text: "SECTIONS"
-      color: root.dim
+      color: root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.letterSpacing: Style.space(1)
@@ -77,14 +102,14 @@ Item {
           anchors.fill: parent
           radius: Style.cornerRadius
           color: navRow.selected ? Style.selectedFillFor(root.accent, root.accent)
-            : hover.hovered ? Style.hoverFill : "transparent"
+            : root.pointerId === navRow.modelData.id ? Style.hoverFill : "transparent"
         }
 
         Rectangle {
           visible: navRow.selected
           width: Math.max(2, Style.space(2))
           height: parent.height
-          color: root.accent
+          color: root.tone.accentUi
         }
 
         NavIcon {
@@ -94,7 +119,7 @@ Item {
           width: Style.space(16)
           height: Style.space(16)
           path: navRow.modelData.icon
-          color: navRow.selected ? root.accent : root.foreground
+          color: navRow.selected ? root.tone.accentUi : root.foreground
         }
 
         Text {
@@ -107,7 +132,7 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
           text: navRow.modelData.label
-          color: navRow.selected ? root.accent : root.foreground
+          color: navRow.selected ? root.tone.accentText : root.foreground
           elide: Text.ElideRight
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -121,13 +146,14 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
           text: navRow.count.text
-          color: navRow.count.tone === "urgent" ? root.urgent : root.dim
+          color: navRow.count.tone === "urgent" ? root.tone.urgentText : root.tone.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
         }
 
         HoverHandler {
-          id: hover
+          onPointChanged: if (gate.moved(navRow, point.position)) root.pointerId = navRow.modelData.id
+          onHoveredChanged: if (!hovered && root.pointerId === navRow.modelData.id) root.pointerId = ""
         }
 
         MouseArea {
@@ -178,7 +204,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: "Collapse"
-        color: root.dim
+        color: root.tone.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
       }

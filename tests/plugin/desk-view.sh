@@ -3023,6 +3023,67 @@ clean_log triage-big
 echo "     triage-big: desk created in $(sed -n 2p "$work/triage-big.steps" | jq -r '.firstFrame.createMs') ms," \
   "the click took $(sed -n 3p "$work/triage-big.steps" | jq -r '.call') ms"
 
+# WP-177, one cursor: the pointer's row is drawn (Omarchy's hover cursor)
+# only once the pointer really moved — the first sample primes Omarchy's
+# PointerMoveGate — and a keyboard move under the still pointer leaves one
+# highlight, the selection; the same point again draws nothing.
+run one-cursor "$sample" 1920x1080 \
+  "summon;text:4;hover:ADR-0002 · accepted;hover:Snapshots vor jedem Red-Zone-Eingriff;key:Down;view;hover:Snapshots vor jedem Red-Zone-Eingriff;leave"
+expect one-cursor 2 '.marks.rows | sort | join(",")' "selected:Ollama nur als User-Service mit Case"
+expect one-cursor 3 '.marks.rows | sort | join(",")' "selected:Ollama nur als User-Service mit Case"
+expect one-cursor 4 '.marks.rows | sort | join(",")' "cursor:Snapshots vor jedem Red-Zone-Eingriff,selected:Ollama nur als User-Service mit Case"
+for i in 5 6 7 8; do
+  expect one-cursor $i '.marks.rows | sort | join(",")' "selected:Zed statt VS Code als Zweiteditor"
+done
+expect one-cursor 2 '.marks.rings | length' 0
+clean_log one-cursor
+# Any key clears the pointer's row, also one that moves nothing: Up on the
+# first row, Return (the detail is shown beside the list already).
+run one-cursor-keys "$sample" 1920x1080 \
+  "summon;text:4;hover:ADR-0002 · accepted;hover:Snapshots vor jedem Red-Zone-Eingriff;key:Up;hover:ADR-0002 · accepted;hover:Snapshots vor jedem Red-Zone-Eingriff;key:Return"
+expect one-cursor-keys 4 '.marks.rows | sort | join(",")' "cursor:Snapshots vor jedem Red-Zone-Eingriff,selected:Ollama nur als User-Service mit Case"
+expect one-cursor-keys 5 '.marks.rows | sort | join(",")' "selected:Ollama nur als User-Service mit Case"
+expect one-cursor-keys 7 '.marks.rows | sort | join(",")' "cursor:Snapshots vor jedem Red-Zone-Eingriff,selected:Ollama nur als User-Service mit Case"
+expect one-cursor-keys 8 '.marks.rows | sort | join(",")' "selected:Ollama nur als User-Service mit Case"
+clean_log one-cursor-keys
+
+# WP-177: the desk's tones in QML are Model.deskTones of the theme's roles
+# as the shell reads them (Color.popups.*, Style's fills at their alphas):
+# Color.qml's defaults without a theme, Tokyo Night with one. A Seldon
+# KeyButton with the keys wears the ring in the `ui` tone at 2 px (no theme
+# reaches 3:1 with Omarchy's default focus border); a qs.Ui field none.
+# tones <foreground> <background> <accent> <urgent> <muted> — the tones as JSON.
+tones() {
+  node -e '
+    const fs = require("fs"), vm = require("vm"), M = {}
+    vm.createContext(M)
+    vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), M)
+    const [fg, bg, accent, urgent, muted] = process.argv.slice(2)
+    const at = (a) => Object.assign(M.colourRgba(fg), { a })
+    console.log(JSON.stringify(M.deskTones({ foreground: fg, background: bg, accent, urgent, muted,
+      normal: at(0.04), hover: at(0.08), selected: at(0.18), focusBorder: at(0.25), focusBorderWidth: 1 })))
+  ' "$root/plugin/Model.js" "$@"
+}
+want=$(tones "#cacccc" "#101315" "#cacccc" "#a55555" "#707880")
+mkdir -p "$work/home-tones-default"
+run tones-default "" 1920x1080 "summon:$wk;click:Import tasks…;type:~/projects/TODO.md;focusName:importDryRun" \
+  HOME="$work/home-tones-default" FAKE_SELDON_FIXTURE="$sample"
+for key in dim accentText urgentText accentUi ui focusRing themeFocus divider; do
+  expect tones-default 1 ".tones.$key | tostring" "$(jq -r ".$key | tostring" <<<"$want")"
+done
+expect tones-default 3 '.marks.rings | length' 0
+expect tones-default 4 '.marks.rings | join(",")' "$(jq -r '.ui' <<<"$want") 2"
+clean_log tones-default
+home="$work/home-tones-tokyo"
+mkdir -p "$home/.local/state/omarchy/current/theme"
+cp "$omarchy/themes/tokyo-night/colors.toml" "$home/.local/state/omarchy/current/theme/colors.toml"
+want=$(tones "#a9b1d6" "#1a1b26" "#7aa2f7" "#f7768e" "#414868")
+run tones-tokyo "$sample" 1920x1080 "summon" HOME="$home"
+for key in dim accentText urgentText accentUi ui focusRing divider; do
+  expect tones-tokyo 1 ".tones.$key | tostring" "$(jq -r ".$key | tostring" <<<"$want")"
+done
+clean_log tones-tokyo
+
 # ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live
 # screenshots): Today at 100 % and 50 %, Settings, the Changelog, Work,

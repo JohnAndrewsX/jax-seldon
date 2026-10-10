@@ -1,9 +1,10 @@
 import QtQuick
 import qs.Commons
+import ".."
 
 // A desk list delegate with an optional group header above its row (the
 // Changelog's day, Today's NEEDS YOU / JOURNAL, Work's ACTIVE · 2): the
-// header in muted small capitals when `header` is set (the first row of
+// header in dim small capitals when `header` is set (the first row of
 // its group), then a ListRow. The ListView stays one list, so the cursor
 // walks rows only.
 Column {
@@ -20,6 +21,8 @@ Column {
   property color foreground: Color.popups.text
   property string fontFamily: Style.font.family
 
+  readonly property Tone tone: Tone {}
+
   signal clicked()
 
   spacing: Style.spacing.sm
@@ -30,7 +33,7 @@ Column {
     topPadding: Style.spacing.md
     textFormat: Text.PlainText
     text: root.header.toUpperCase()
-    color: Color.muted
+    color: root.tone.dim
     elide: Text.ElideRight
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption

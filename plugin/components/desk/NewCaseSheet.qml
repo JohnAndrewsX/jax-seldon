@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../../Model.js" as Model
+import ".."
 
 // The new-case sheet in the Work section's detail (desk section 3,
 // SPEC-PLUGIN §5.4; WP-020), the hand-made case: title, zone,
@@ -21,6 +22,8 @@ import "../../Model.js" as Model
 // Esc closes the sheet and gives the keys back.
 FocusScope {
   id: root
+
+  readonly property Tone tone: Tone {}
 
   property var service: null
   property color foreground: Color.foreground
@@ -49,7 +52,7 @@ FocusScope {
   readonly property string resultText: root.notice !== "" ? root.notice
     : result && (result.pending || !result.ok) ? result.text : ""
   readonly property bool areaValid: root.area === "" || Model.AREA.test(root.area)
-  readonly property color dim: Util.alpha(foreground, 0.65)
+  readonly property color dim: root.tone.dim
   readonly property real labelWidth: Style.space(64)
 
   signal leaveRequested()
@@ -241,7 +244,7 @@ FocusScope {
       visible: !root.areaValid
       textFormat: Text.PlainText
       text: "Area: lowercase letters, digits and -, starting with a letter or digit"
-      color: root.urgent
+      color: root.tone.urgentText
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -287,7 +290,7 @@ FocusScope {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.resultText
-      color: root.notice === "" && root.result && !root.result.ok ? root.urgent : root.dim
+      color: root.notice === "" && root.result && !root.result.ok ? root.tone.urgentText : root.tone.dim
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption

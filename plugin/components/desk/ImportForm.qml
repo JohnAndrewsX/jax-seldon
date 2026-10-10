@@ -4,6 +4,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../../Model.js" as Model
+import ".."
 
 // *Import tasks…* in the Work section's detail (WP-102b, ADR-0034 §2): the
 // user's own Markdown task file becomes cases. A path (from the home, `~/…`,
@@ -26,6 +27,8 @@ import "../../Model.js" as Model
 // Tab walks path → area → buttons; Esc closes the form (its fields kept).
 FocusScope {
   id: root
+
+  readonly property Tone tone: Tone {}
 
   property var service: null
   property color foreground: Color.foreground
@@ -57,7 +60,7 @@ FocusScope {
   readonly property bool canImport: root.canDryRun && root.dryRunShown && root.toCreate > 0
   readonly property string resultText: root.notice !== "" ? root.notice
     : root.result && root.current ? root.result.text : ""
-  readonly property color dim: Util.alpha(foreground, 0.65)
+  readonly property color dim: root.tone.dim
   readonly property real labelWidth: Style.space(64)
 
   signal leaveRequested()
@@ -126,7 +129,7 @@ FocusScope {
       width: parent.width
       textFormat: Text.PlainText
       text: "A Markdown task file under your home. Each open - [ ] item becomes a queued case; a file without checkboxes is one case. The file is only read. An imported case is started by you, after you have read its whole Intent."
-      color: root.dim
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -151,7 +154,7 @@ FocusScope {
       visible: root.pathError !== ""
       textFormat: Text.PlainText
       text: root.pathError
-      color: root.urgent
+      color: root.tone.urgentText
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -167,7 +170,7 @@ FocusScope {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: "Area"
-        color: root.dim
+        color: root.tone.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
       }
@@ -193,7 +196,7 @@ FocusScope {
       visible: !root.areaValid
       textFormat: Text.PlainText
       text: "Area: lowercase letters, digits and -, starting with a letter or digit"
-      color: root.urgent
+      color: root.tone.urgentText
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -260,7 +263,7 @@ FocusScope {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.resultText
-      color: root.notice === "" && root.result && !root.result.ok ? root.urgent : root.foreground
+      color: root.notice === "" && root.result && !root.result.ok ? root.tone.urgentText : root.foreground
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -294,7 +297,7 @@ FocusScope {
           text: [createdRow.modelData.status, createdRow.modelData.source,
             createdRow.modelData.replaces !== "" ? "changed since " + createdRow.modelData.replaces : ""]
             .filter(function(p) { return p !== "" }).join(" · ")
-          color: root.dim
+          color: root.tone.dim
           wrapMode: Text.Wrap
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -312,7 +315,7 @@ FocusScope {
         textFormat: Text.PlainText
         text: "Skipped " + skippedRow.modelData.source + ": " + skippedRow.modelData.reason
           + (skippedRow.modelData.caseId !== "" ? " (" + skippedRow.modelData.caseId + ")" : "")
-        color: root.dim
+        color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption

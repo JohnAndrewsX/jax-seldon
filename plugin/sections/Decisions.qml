@@ -64,6 +64,7 @@ ReadingSection {
     return {
       id: a.id,
       label: a.id === "accept" && root.armed ? "Confirm accept" : a.label,
+      armed: a.id === "accept" && root.armed,
       primary: a.primary,
       enabled: a.enabled && (!a.write || (root.canWrite && !root.accepting))
     }
@@ -194,7 +195,7 @@ ReadingSection {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.result && !root.formOpen && !root.result.pending ? root.result.text : ""
-      color: root.result && !root.result.ok ? Color.urgent : Color.muted
+      color: root.result && !root.result.ok ? root.tone.urgentText : root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -223,7 +224,7 @@ ReadingSection {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.openResult ? root.openResult.text : ""
-      color: root.openResult && !root.openResult.ok ? Color.urgent : Color.muted
+      color: root.openResult && !root.openResult.ok ? root.tone.urgentText : root.tone.dim
       wrapMode: Text.WrapAnywhere
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -235,7 +236,7 @@ ReadingSection {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.acceptText
-      color: root.acceptResult && !root.acceptResult.ok ? Color.urgent : Color.muted
+      color: root.acceptResult && !root.acceptResult.ok ? root.tone.urgentText : root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -258,7 +259,7 @@ ReadingSection {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.decision ? root.decision.note : ""
-      color: root.current && root.current.status === "proposed" ? Color.accent : Color.muted
+      color: root.current && root.current.status === "proposed" ? root.tone.accentText : root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall
@@ -292,7 +293,7 @@ ReadingSection {
         width: parent.width
         textFormat: Text.PlainText
         text: "CASES · " + (root.cases ? root.cases.length : 0)
-        color: Color.muted
+        color: root.tone.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
         font.letterSpacing: Style.space(1)
@@ -304,7 +305,7 @@ ReadingSection {
         width: parent.width
         textFormat: Text.PlainText
         text: "This decision names no case."
-        color: Color.muted
+        color: root.tone.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
@@ -315,6 +316,7 @@ ReadingSection {
         ListRow {
           required property var modelData
           width: parent.width
+          pointerHover: true
           title: modelData.title !== "" ? modelData.title : modelData.id
           meta: modelData.title !== "" ? modelData.id + (modelData.status !== "" ? " · " + modelData.status : "") : "not in the index"
           onClicked: if (root.desk && modelData.actionable) {
@@ -329,7 +331,7 @@ ReadingSection {
       width: parent.width
       textFormat: Text.PlainText
       text: root.decision ? root.decision.lead : ""
-      color: Color.muted
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall

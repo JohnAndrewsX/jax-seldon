@@ -52,7 +52,7 @@ Section {
   readonly property bool capturing: !!root.service && root.service.capturing
   readonly property var captureResult: root.service ? root.service.captureResult : null
   readonly property color foreground: Color.popups.text
-  readonly property color dim: Util.alpha(root.foreground, 0.65)
+  readonly property color dim: root.tone.dim
   // Bulk triage (WP-124b): the button, the last ask, the proposal.
   readonly property var triageButton: root.service ? root.service.triageButton : null
   readonly property var askResult: root.service && root.service.askResult && root.service.askResult.what === "triage"
@@ -228,6 +228,7 @@ Section {
 
   ListColumn {
     id: list
+    keyEvents: root.keyEvents
     visible: !root.stacked || !root.detailShown
     width: root.stacked ? root.width : (root.layout ? root.layout.listW : 0)
     height: root.height
@@ -278,7 +279,7 @@ Section {
         visible: root.askLineShown
         textFormat: Text.PlainText
         text: root.askResult ? root.askResult.text : ""
-        color: root.askResult && !root.askResult.ok ? Color.urgent : root.dim
+        color: root.askResult && !root.askResult.ok ? root.tone.urgentText : root.tone.dim
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
@@ -291,9 +292,10 @@ Section {
         visible: root.proposalRowShown
         implicitHeight: proposalText.implicitHeight + Style.spacing.md * 2
         radius: Style.cornerRadius
-        color: root.triageShown ? Util.alpha(Color.accent, 0.15) : "transparent"
+        color: root.triageShown ? Style.selectedFillFor(Color.accent, Color.accent) : "transparent"
         border.width: Math.max(1, Style.space(1))
-        border.color: Util.alpha(Color.accent, 0.6)
+        // shown: the accent tint plus a border of at least 3:1 (WP-177)
+        border.color: root.triageShown ? root.tone.accentUi : Style.normalBorderFor(Color.accent, Color.accent)
 
         Text {
           id: proposalText
@@ -335,6 +337,19 @@ Section {
           horizontalPadding: Style.spacing.md
           verticalPadding: Style.spacing.xs
           onClicked: root.setChip(modelData.id)
+
+          // The chosen chip's second cue besides its fill (WP-177): an
+          // accent bar of at least 3:1 along the bottom; the bold label is
+          // Omarchy's.
+          Rectangle {
+            objectName: "chipSelectionBar"
+            visible: parent.selected
+            x: Style.cornerRadius
+            y: parent.height - height
+            width: parent.width - Style.cornerRadius * 2
+            height: Math.max(2, Style.space(2))
+            color: root.tone.accentUi
+          }
         }
       }
     }
@@ -352,7 +367,7 @@ Section {
         textFormat: Text.PlainText
         text: (Model.DRIFT_CHIPS.indexOf(root.chip) !== -1 ? Model.plural(root.rows.length, "change", "changes")
           : Model.plural(root.rows.length, "event", "events")) + " · newest first"
-        color: root.dim
+        color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
@@ -400,7 +415,7 @@ Section {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.attentionText
-      color: root.dim
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -411,7 +426,7 @@ Section {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.moreText
-      color: root.dim
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -430,7 +445,7 @@ Section {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: Model.plural(root.hiddenCount, "change", "changes") + " hidden this session"
-        color: root.dim
+        color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
@@ -455,7 +470,7 @@ Section {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.captureResult && !root.captureResult.pending ? "Last capture: " + root.captureResult.text : ""
-      color: root.captureResult && !root.captureResult.ok ? Color.urgent : root.dim
+      color: root.captureResult && !root.captureResult.ok ? root.tone.urgentText : root.tone.dim
       elide: Text.ElideRight
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -473,7 +488,7 @@ Section {
       stripe: modelData.stripe
       alert: modelData.alert
       selected: modelData.id === root.selectedId
-      cursor: false
+      cursor: list.hoverIndex === index
       onClicked: {
         root.selectedId = modelData.id
         root.cursorRow = index

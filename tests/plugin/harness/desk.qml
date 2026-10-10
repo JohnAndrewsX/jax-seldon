@@ -26,7 +26,10 @@ import qs.Ui
 // last call's result, the service's launch read-out (`service`: how often
 // the desk stepped aside, the live sessions, the open and plan results;
 // WP-156), every visible text and every text outside the
-// window, the desk or the Prime Radiant slot it sits in.
+// window, the desk or the Prime Radiant slot it sits in, the rows drawn
+// with a mark (`marks.rows`: "cursor:<title>" for Omarchy's hover cursor,
+// "selected:<title>" for the selection; WP-177), the focus rings shown
+// (`marks.rings`: "<colour> <width>") and the desk's tones (`tones`).
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin copy (required)
 //   HARNESS_W/H         window size in logical pixels (default 1920 × 1080)
@@ -250,6 +253,22 @@ ShellRoot {
     return out
   }
 
+  // The visible list rows with a mark and the visible focus rings (WP-177).
+  function marks(item, out) {
+    if (!item || item.visible === false) return out
+    var name = String(item.objectName || "")
+    if (name === "deskRow") {
+      var title = item.parent && item.parent.title !== undefined ? String(item.parent.title) : ""
+      if (item.hasCursor) out.rows.push("cursor:" + title)
+      if (item.current) out.rows.push("selected:" + title)
+    } else if (name === "focusRing") {
+      out.rings.push(String(item.border.color) + " " + item.border.width)
+    }
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) marks(kids[i], out)
+    return out
+  }
+
   // Every visible text that reaches outside the window, outside the desk
   // card it sits in, or outside its Prime Radiant slot. An elided text
   // counts by its box. Inside an item that clips (a list scrolled, a detail
@@ -367,7 +386,9 @@ ShellRoot {
         busyRefusals: root.service.busyRefusals
       } : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
-      texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined)
+      texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined),
+      marks: marks(win.contentItem, { rows: [], rings: [] }),
+      tones: root.desk && root.desk.tone ? root.desk.tone.tones : null
     }))
   }
 

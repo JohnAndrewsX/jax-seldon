@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../../Model.js" as Model
+import ".."
 
 // Today's journal field (desk section 1, SPEC-PLUGIN §5.4; the 0.1
 // QuickEntry): a note for today's journal, optionally for one open case.
@@ -17,6 +18,8 @@ import "../../Model.js" as Model
 // FocusScope, so `activeFocus` covers the picker's inner trigger too.
 FocusScope {
   id: root
+
+  readonly property Tone tone: Tone {}
 
   property var service: null
   property var indexData: null
@@ -35,7 +38,7 @@ FocusScope {
   readonly property var result: service ? service.logResult : null
   readonly property bool pending: !!result && result.pending
   readonly property string resultText: result ? result.text : ""
-  readonly property color dim: Util.alpha(foreground, 0.65)
+  readonly property color dim: root.tone.dim
   property alias text: field.text
 
   // Asked to give the keys back to the desk (Esc).
@@ -156,7 +159,7 @@ FocusScope {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.resultText
-      color: root.result && !root.result.ok ? root.urgent : root.dim
+      color: root.result && !root.result.ok ? root.tone.urgentText : root.tone.dim
       elide: Text.ElideRight
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption

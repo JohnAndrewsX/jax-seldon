@@ -1,4 +1,5 @@
 import QtQuick
+import ".."
 import "../../Model.js" as Model
 
 // The base of every desk section (sections/*.qml, SPEC-PLUGIN §5). The desk
@@ -18,6 +19,9 @@ Item {
   property var desk: null
   property string sectionId: ""
 
+  // The theme's text and UI tones (components/Tone.qml), for every section.
+  readonly property Tone tone: Tone {}
+
   readonly property var info: Model.deskSection(root.sectionId)
   readonly property string title: root.info ? root.info.label : ""
   readonly property bool active: !!root.desk && root.desk.opened && root.desk.sectionId === root.sectionId
@@ -28,6 +32,9 @@ Item {
   readonly property bool solo: !!root.info && root.info.solo
   readonly property string searchText: root.desk ? root.desk.searchText : ""
   readonly property var arm: root.desk ? root.desk.arm : null
+  // Desk.keyPressed's count: every key the desk gets clears the pointer's
+  // row (ListColumn, one cursor, SPEC-PLUGIN §5.3).
+  readonly property int keyEvents: root.desk ? root.desk.keyEvents : 0
   // In the stacked layout: the detail is shown instead of the list.
   readonly property bool detailShown: !!root.desk && root.desk.detailShown
 

@@ -3,16 +3,20 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import qs.Ui
+import ".."
 
 // The sticky action bar at the top of a detail (ADR-0034 §2, prototype
-// round 2): the actions as buttons (`primary` drawn selected), the item's
+// round 2): the actions as buttons (`primary` drawn selected, `armed` with
+// the desk's focus ring while it waits for its second press), the item's
 // id and risk at the right, and the arm hint under them while a writing
 // action waits for its second press (Arm.qml). It sits outside the
 // detail's Flickable, so it stays while the detail scrolls.
 Item {
   id: root
 
-  // [{ id, label, primary, enabled }]
+  readonly property Tone tone: Tone {}
+
+  // [{ id, label, primary, enabled, armed }]
   property var actions: []
   property string meta: ""
   property string hint: ""
@@ -29,7 +33,7 @@ Item {
     anchors.bottom: parent.bottom
     width: parent.width
     height: Style.spacing.hairline
-    color: Util.alpha(root.foreground, 0.12)
+    color: root.tone.divider
   }
 
   Column {
@@ -52,6 +56,7 @@ Item {
           model: root.actions
 
           Button {
+            id: actionButton
             required property var modelData
             text: modelData.label
             bordered: true
@@ -62,6 +67,10 @@ Item {
             fontFamily: root.fontFamily
             fontSize: Style.font.bodySmall
             onClicked: root.triggered(modelData.id)
+
+            FocusRing {
+              shown: actionButton.modelData.armed === true
+            }
           }
         }
       }
@@ -73,7 +82,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: root.meta
-        color: Color.muted
+        color: root.tone.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
       }
@@ -84,7 +93,7 @@ Item {
       width: parent.width
       textFormat: Text.PlainText
       text: root.hint
-      color: root.accent
+      color: root.tone.accentText
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
