@@ -84,7 +84,7 @@ ReadingSection {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.openResult ? root.openResult.text : ""
-      color: root.openResult && !root.openResult.ok ? Color.urgent : Color.muted
+      color: root.openResult && !root.openResult.ok ? root.tone.urgentText : root.tone.dim
       wrapMode: Text.WrapAnywhere
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -111,7 +111,7 @@ ReadingSection {
       width: parent.width
       textFormat: Text.PlainText
       text: "Every agent reads this at the start of a session. The index carries the headings; the text is in the logbook's memory/ folder."
-      color: Color.muted
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall

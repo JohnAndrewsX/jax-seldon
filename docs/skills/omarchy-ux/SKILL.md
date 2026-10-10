@@ -37,7 +37,7 @@ installed today are cited only *when shipped*.
 - [ ] Only `Color`'s five roles and surface groups; the desk's surface is `Color.popups.*`
       (`Commons/Color.qml:19-23,78-81`). No hex, no theme file read.
 - [ ] No state by colour alone: glyph or word with it (WP-178); a selection fill gets a second cue
-      (WP-177). Text tones derived for contrast: WP-177 writes the rule into SPEC §7.
+      (bar + bold). Text in `root.tone.*` (`components/Tone.qml`), never `Color.muted` (SPEC §7).
 - [ ] Rows and `qs.Ui` controls take `Style.cornerRadius` (`Ui/CursorSurface.qml:27`); only
       stripes, accent bars and heatmap cells are square (radius 0).
 - [ ] Sizes from `Style.spacing.*` / `Style.space(N)`, type from `Style.font.*`
@@ -60,7 +60,7 @@ installed today are cited only *when shipped*.
 
 ## 5. Keys (SPEC §5.3)
 
-- [ ] The selection is the cursor; a ring only on real `activeFocus`.
+- [ ] One cursor highlight at a time, the selection its own look; a ring only on `activeFocus` (§5.3).
 - [ ] Digits are the desk's (dispatched before `Section.textKey`); the registry is WP-181's.
 - [ ] One meaning per letter (ADR-0034 §2); nothing on Super; a focused field keeps every key.
 - [ ] Writing actions arm first; a held key never confirms (SPEC §5.3, WP-173).

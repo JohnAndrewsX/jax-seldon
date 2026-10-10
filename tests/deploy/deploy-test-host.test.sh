@@ -504,6 +504,8 @@ check "deploy: one log line" test "$(wc -l <"$jsonl")" = 1
 check "deploy: the log line" jqe --arg v "0.1.3+main.$short" \
   '.mode == "main" and .version == $v and .pluginChanged and .restart == "done" and .smoke == "ok" and (.movedAside | test("plugin-git-")) and .failures == []' "$jsonl"
 check "deploy: summary" has "runs 0.1.3+main.$short"
+check "deploy: summary has the full commit for the acceptance record" \
+  has "  commit   $(git -C "$repo" rev-parse HEAD) (\"commit\" in packaging/acceptance/v0.1.3.json)"
 check "deploy: an inactive watcher is left alone" has "seldon-watch.service not active; left as it is"
 check "deploy: no watcher restart" test "$(count "watch restart")" = 0
 
@@ -691,6 +693,7 @@ check "release: the dev copy moved aside" test -n "$(find "$R/home/.local/state/
 check "release: restarted" test "$(count restart)" = 1
 check "release: smoke expects 0.1.2" has "ok   service engineVersion"
 check "release: logged" jqe -s '.[-1].mode == "release" and .[-1].version == "0.1.2" and .[-1].smoke == "ok"' "$jsonl"
+check "release: no commit line (no main build)" test -z "$(grep -F '  commit   ' <<<"$out")"
 reset_remote
 deploy "$log" >/dev/null
 touch "$R/watch_active"

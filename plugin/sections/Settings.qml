@@ -93,6 +93,7 @@ Section {
 
   ListColumn {
     id: list
+    keyEvents: root.keyEvents
     visible: !root.stacked || !root.detailShown
     width: root.stacked ? root.width : (root.layout ? root.layout.listW : 0)
     height: root.height
@@ -108,7 +109,7 @@ Section {
       title: modelData.label
       meta: modelData.lead
       selected: root.selectedId === modelData.id
-      cursor: root.cursor === index
+      cursor: list.hoverIndex === index
       onClicked: root.select(modelData.id)
     }
   }
@@ -143,7 +144,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: "From 50 % the desk shows sidebar, list and detail side by side; never narrower than 960 px unless the screen is."
-        color: Color.muted
+        color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
@@ -214,7 +215,7 @@ Section {
           width: parent.width
           textFormat: Text.PlainText
           text: root.desk ? Model.deskWidthPreview(root.desk.windowWidth, root.desk.widthPct, Style.gapsOut) : ""
-          color: Color.muted
+          color: root.tone.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
         }
@@ -226,14 +227,14 @@ Section {
           radius: Style.cornerRadius
           color: "transparent"
           border.width: Math.max(1, Style.space(1))
-          border.color: Util.alpha(Color.popups.text, 0.2)
+          border.color: Style.normalBorderFor(Color.popups.text, Color.accent)
 
           Rectangle {
             readonly property real share: root.desk && root.desk.geometry.avail > 0 ? root.desk.geometry.w / root.desk.geometry.avail : 1
             x: (parent.width - width) / 2
-            y: Style.space(4)
+            y: Style.spacing.sm
             width: parent.width * share
-            height: parent.height - Style.space(8)
+            height: parent.height - Style.spacing.sm * 2
             radius: Style.cornerRadius
             color: Style.selectedFillFor(Color.accent, Color.accent)
             border.width: Math.max(1, Style.space(1))

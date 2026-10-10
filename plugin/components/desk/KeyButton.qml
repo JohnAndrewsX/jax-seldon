@@ -7,6 +7,7 @@ import qs.Ui
 // on *Import* would import again and again. Here the key presses it once
 // per press and a repeat does nothing; a click is a click. Disabled
 // (`enabled: false`), it is no Tab stop and neither key nor click acts.
+// With the keys it wears the desk's focus ring (FocusRing.qml, ≥ 3:1).
 Item {
   id: root
 
@@ -48,5 +49,9 @@ Item {
     anchors.fill: parent
     hasCursor: root.activeFocus
     onClicked: root.clicked()
+  }
+
+  FocusRing {
+    shown: root.activeFocus
   }
 }

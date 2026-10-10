@@ -78,7 +78,7 @@ ChartCanvas {
     ctx.fillStyle = root.faint
     ctx.fillRect(0, L.bandY, w, 1)
     ctx.fillRect(0, root.laneArea, w, 1)
-    ctx.fillStyle = root.muted
+    ctx.fillStyle = root.dim
     ctx.textBaseline = "bottom"
     var startLabel = Model.dateOfDay(c.x0)
     var endLabel = Model.dateOfDay(c.x1 - 1)
@@ -94,7 +94,7 @@ ChartCanvas {
       ctx.fillRect(mx, 0, 1, root.laneArea)
       var label = c.months[d].label
       if (mx >= free && mx + root.textWidth(ctx, label) <= stop) {
-        ctx.fillStyle = root.muted
+        ctx.fillStyle = root.dim
         ctx.fillText(label, mx, h)
         free = mx + root.textWidth(ctx, label) + Style.spacing.lg
       }

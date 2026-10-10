@@ -2365,6 +2365,10 @@ def collect_instances():
             # engine state, not contract: its shape is `system.recentConfig`'s, checked through the
             # derived sample (derive_recent_config)
             continue
+        elif r == "themes/roles.json":
+            # theme roles for the plugin's tone tests (WP-177), not contract: its shape (three
+            # themes, the five roles each) is checked by tests/plugin/model.test.js
+            continue
         elif r == "forward/index.contract-v3-readable.json":
             # ADR-0051: a later contract's index, no v2 index (checked against the sample below)
             sid, bad = INDEX, True

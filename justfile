@@ -95,6 +95,8 @@ check-perf:
 # The Omarchy validator pin and its fetch-and-verify script (WP-190).
 # The plugin split as the store scans it: no downloader piped to a shell
 # in its README or SECURITY.md, no agent files (WP-042).
+# The release acceptance record checker against a scratch repository
+# (WP-192).
 check-packaging:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -104,7 +106,8 @@ check-packaging:
       tests/release/workflow-pins.test.sh \
       packaging/plugin-version.sh tests/release/plugin-version.test.sh \
       packaging/omarchy-validate.sh tests/release/omarchy-pin.test.sh \
-      tests/release/store-readme.test.sh
+      tests/release/store-readme.test.sh \
+      packaging/acceptance-check.sh tests/release/acceptance-check.test.sh
     if command -v shellcheck >/dev/null; then
       # PKGBUILD variables are read by makepkg, $srcdir/$pkgdir set by it
       shellcheck -s bash -e SC2034,SC2154,SC2164 packaging/PKGBUILD
@@ -114,7 +117,8 @@ check-packaging:
         tests/release/workflow-pins.test.sh \
         packaging/plugin-version.sh tests/release/plugin-version.test.sh \
         packaging/omarchy-validate.sh tests/release/omarchy-pin.test.sh \
-        tests/release/store-readme.test.sh
+        tests/release/store-readme.test.sh \
+        packaging/acceptance-check.sh tests/release/acceptance-check.test.sh
     else
       echo "check-packaging: shellcheck not installed; bash -n only"
     fi
@@ -131,6 +135,7 @@ check-packaging:
     bash tests/release/plugin-version.test.sh
     bash tests/release/omarchy-pin.test.sh
     bash tests/release/store-readme.test.sh
+    bash tests/release/acceptance-check.test.sh
     echo "check-packaging: ok"
 
 # install.sh (WP-044) against a local mock of the release layout (file://
@@ -252,7 +257,7 @@ qmllint:
     python3 tests/plugin/check-tokens.py "$shell_dir" "${files[@]}"
     echo "qmllint: ok (${#files[@]} files)"
 
-# Plugin logic: Model.js under node; the banners' terminal scripts under bash with stubs; Service.qml states, the desk (Desk.qml: width, layout, keys, settings writes, notices, IPC), the pill (BarWidget.qml) and an IPC exit with two pills in a private headless Quickshell (host only).
+# Plugin logic: Model.js under node; SPEC-PLUGIN §7's token house rules (check-tokens.py --rules and its self-test); the banners' terminal scripts under bash with stubs; Service.qml states, the desk (Desk.qml: width, layout, keys, settings writes, notices, IPC), the pill (BarWidget.qml) and an IPC exit with two pills in a private headless Quickshell (host only).
 # The node and bash parts run everywhere, CI included (WP-190; there the
 # bench's budgets are tripled for a shared runner); SELDON_SKIP_HOST_CHECKS
 # skips only the Quickshell harnesses (WP-191 brings them to CI).
@@ -272,6 +277,11 @@ plugin-test: check-runtime-space
     fi
     bash tests/plugin/terminal-scripts.sh
     bash tests/plugin/real-home-guard.test.sh
+    # SPEC-PLUGIN §7's house rules (WP-177) need no shell tree: everywhere.
+    bash tests/plugin/check-tokens.test.sh
+    shopt -s nullglob
+    qml=(plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml plugin/components/desk/*.qml plugin/components/graph/*.qml plugin/sections/*.qml)
+    python3 tests/plugin/check-tokens.py --rules "${qml[@]}"
     if [[ -n "{{ skip_host }}" ]]; then
       echo "plugin-test: Quickshell harnesses skipped (SELDON_SKIP_HOST_CHECKS set; they need quickshell and the installed shell)"
       echo "plugin-test: ok (node and bash parts)"

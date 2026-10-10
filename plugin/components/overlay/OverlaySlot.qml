@@ -15,6 +15,8 @@ import ".."
 BorderSurface {
   id: root
 
+  readonly property Tone tone: Tone {}
+
   property var summary: null
   property color foreground: Color.popups.text
   property color accent: Color.accent
@@ -67,7 +69,7 @@ BorderSurface {
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
       text: root.chart ? root.chart.caption : ""
-      color: root.chart && root.chart.hoverText !== "" ? root.foreground : Color.muted
+      color: root.chart && root.chart.hoverText !== "" ? root.foreground : root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       elide: Text.ElideRight
@@ -83,7 +85,7 @@ BorderSurface {
       visible: root.legend.length === 0 && width >= Style.font.bodySmall * 4
       textFormat: Text.PlainText
       text: root.summary ? root.summary.subtitle : ""
-      color: Color.muted
+      color: root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       elide: Text.ElideRight
@@ -127,7 +129,7 @@ BorderSurface {
             y: Math.round((entry.height - height) / 2)
             textFormat: Text.PlainText
             text: entry.modelData.label
-            color: Color.muted
+            color: root.tone.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
           }
@@ -156,7 +158,7 @@ BorderSurface {
         horizontalAlignment: Text.AlignHCenter
         textFormat: Text.PlainText
         text: root.summary ? root.summary.count : ""
-        color: root.accent
+        color: root.tone.accentText
         font.family: root.fontFamily
         font.pixelSize: Style.font.display
         elide: Text.ElideRight

@@ -471,6 +471,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default (crises) and where the other changes without a case are (the
   panel's Today tab, the tooltip, `driftInBar = all`), and that a case
   whose *Plan* names the file links the change by itself.
+- **A recorded live test per release (WP-192).** From 0.2.0 every
+  release has `packaging/acceptance/vX.Y.Z.json`: the commit deployed to
+  the test host, the Omarchy version and channel, the installed engine
+  and plugin, each scenario with where it ran, its result and its
+  counts, and what was not covered. `packaging/acceptance-check.sh X.Y.Z`
+  checks it and refuses a release whose code changed after the tested
+  commit (docs/VERSIONING.md, "Release acceptance record"); the test-host
+  deploy prints the full commit for it.
 
 ## [0.1.4] - 2026-10-08
 

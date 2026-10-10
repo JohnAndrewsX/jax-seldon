@@ -618,6 +618,8 @@ log_line
 
 say ""
 say "deploy-test-host: $host runs $version${head:+ (commit ${head:0:12})}"
+# the full commit, as packaging/acceptance/vX.Y.Z.json records it (WP-192)
+[[ -z $head ]] || say "  commit   $head (\"commit\" in packaging/acceptance/v${version%%+*}.json)"
 engine_was=$(value engine "$probe")
 if [[ -n $engine_was ]]; then
   say "  engine   ~/.local/bin/seldon (previous kept as seldon.prev; was $engine_was)"

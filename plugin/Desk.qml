@@ -53,6 +53,8 @@ import "Model.js" as Model
 Item {
   id: root
 
+  readonly property Tone tone: Tone {}
+
   // Injected by omarchy-shell's panel loader.
   property var shell: null
   property var manifest: null
@@ -635,6 +637,7 @@ Item {
               height: parent.height
               icons: root.layout.sidebar === "icons"
               current: root.sectionId
+              keyEvents: root.keyEvents
               counts: Model.deskCounts(root.indexData)
               searchText: root.searchText
               foreground: root.foreground
@@ -692,7 +695,7 @@ Item {
             Rectangle {
               width: parent.width
               height: Style.spacing.hairline
-              color: Util.alpha(root.foreground, 0.12)
+              color: root.tone.divider
             }
 
             Text {
@@ -705,7 +708,7 @@ Item {
                 : root.service.lastError !== "" ? root.service.lastError
                 : root.service.devMode ? "Dev mode, read-only: " + root.service.indexPath
                 : ""
-              color: root.service && root.service.lastError !== "" ? Color.urgent : Color.muted
+              color: root.service && root.service.lastError !== "" ? root.tone.urgentText : root.tone.dim
               elide: Text.ElideMiddle
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -718,7 +721,7 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
               text: "1–8 sections · , settings · Alt+↑/↓ next · / search · Esc close"
-              color: Color.muted
+              color: root.tone.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }

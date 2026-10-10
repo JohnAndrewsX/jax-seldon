@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import qs.Ui
+import ".."
 import "../../Model.js" as Model
 
 // The setup card (WP-119, SPEC-PLUGIN §5.4 "Setup card"): one card in
@@ -14,7 +15,9 @@ import "../../Model.js" as Model
 // the preview's line (ADR-0047). Renders one Model.setupCard() object and
 // only reports clicks (actionRequested); Service.setupAction carries them
 // out. No mode logic: EASY and PRO show this same card. Every string is
-// plain text.
+// plain text. Its surface is the normal fill with an accent border, as a
+// notice's frame, never the selected fill (that is the cursor's, SPEC-PLUGIN
+// §5.3); text takes the theme's tones (components/Tone.qml, WP-177).
 BorderSurface {
   id: root
 
@@ -28,6 +31,9 @@ BorderSurface {
   property color foreground: Color.popups.text
   property color accent: Color.accent
   property string fontFamily: Style.font.family
+
+  // The theme's text and UI tones (WP-177).
+  readonly property Tone tone: Tone {}
 
   signal actionRequested(string stepId, string actionId)
 
@@ -53,8 +59,8 @@ BorderSurface {
   visible: root.setup !== null
   implicitHeight: visible ? content.implicitHeight + contentTopInset + contentBottomInset : 0
   radius: Style.cornerRadius
-  color: Style.selectedFillFor(root.accent, root.accent)
-  borderSpec: Border.controlSpec("normal", root.accent, root.accent)
+  color: Style.normalFillFor(root.foreground, root.accent)
+  borderSpec: Border.controlSpec("normal", root.tone.accentUi, root.tone.accentUi)
   padding: Style.spacing.xl
 
   Column {
@@ -102,7 +108,9 @@ BorderSurface {
           readonly property bool done: step.modelData.done === true
           readonly property bool current: step.modelData.current === true
           // the current step in the accent, a done one plain, the rest quiet
-          readonly property color tone: step.current ? root.accent : step.done ? root.foreground : Color.muted
+          // (text tones, WP-177; the mark's ring takes the UI tone)
+          readonly property color textTone: step.current ? root.tone.accentText : step.done ? root.foreground : root.tone.dim
+          readonly property color ringTone: step.current ? root.tone.accentUi : step.done ? root.foreground : root.tone.dim
 
           width: steps.width
           implicitHeight: Math.max(mark.height, body.implicitHeight)
@@ -113,14 +121,14 @@ BorderSurface {
             width: Style.spacing.controlHeight
             height: Style.spacing.controlHeight
             radius: height / 2
-            color: step.current ? Style.selectedFillFor(root.accent, root.accent) : "transparent"
-            borderSpec: Border.controlSpec("normal", step.tone, step.tone)
+            color: "transparent"
+            borderSpec: Border.controlSpec(step.current ? "selected" : "normal", step.ringTone, step.ringTone)
 
             Text {
               anchors.centerIn: parent
               textFormat: Text.PlainText
               text: step.done ? "✓" : String(step.modelData.number)
-              color: step.tone
+              color: step.textTone
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               font.bold: true
@@ -137,7 +145,7 @@ BorderSurface {
               width: parent.width
               textFormat: Text.PlainText
               text: step.modelData.title + (step.done ? " · done" : step.modelData.later ? " · not now" : "")
-              color: step.tone
+              color: step.textTone
               wrapMode: Text.Wrap
               font.family: root.fontFamily
               font.pixelSize: Style.font.subtitle
@@ -149,7 +157,7 @@ BorderSurface {
               visible: !step.done
               textFormat: Text.PlainText
               text: step.modelData.detail
-              color: step.current ? root.foreground : Color.muted
+              color: step.current ? root.foreground : root.tone.dim
               wrapMode: Text.Wrap
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -161,7 +169,7 @@ BorderSurface {
               visible: !step.done && step.modelData.id === "logbook" && root.previewText !== ""
               textFormat: Text.PlainText
               text: root.previewText
-              color: Color.muted
+              color: root.tone.dim
               wrapMode: Text.Wrap
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -173,7 +181,7 @@ BorderSurface {
               visible: step.current
               textFormat: Text.PlainText
               text: step.modelData.command
-              color: Color.muted
+              color: root.tone.dim
               wrapMode: Text.WrapAnywhere
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -214,7 +222,7 @@ BorderSurface {
               text: step.modelData.waiting !== "" ? step.modelData.waiting
                 : root.resultText !== "" ? root.resultText
                 : root.launched === step.modelData.id ? Model.SETUP_LAUNCHED_TEXT : ""
-              color: Color.muted
+              color: root.tone.dim
               wrapMode: Text.Wrap
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption

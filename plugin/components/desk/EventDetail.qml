@@ -199,7 +199,7 @@ DetailPane {
     textFormat: Text.PlainText
     text: !root.indexData ? "No index to show" : root.eventId === "" ? "Nothing selected."
       : "This event is not in the index any more."
-    color: Color.muted
+    color: root.tone.dim
     wrapMode: Text.Wrap
     font.family: root.fontFamily
     font.pixelSize: Style.font.body
@@ -228,7 +228,7 @@ DetailPane {
       visible: !!root.askResult
       textFormat: Text.PlainText
       text: root.askResult ? root.askResult.text : ""
-      color: root.askResult && !root.askResult.ok ? Color.urgent : Color.muted
+      color: root.askResult && !root.askResult.ok ? root.tone.urgentText : root.tone.dim
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -238,8 +238,8 @@ DetailPane {
       width: parent.width
       textFormat: Text.PlainText
       text: root.detail ? root.detail.classLabel + (root.hidden ? " · hidden this session" : "") : ""
-      color: root.detail && root.detail.cls === "crisis" ? Color.urgent
-        : root.detail && root.detail.cls === "attention" ? Color.accent : Color.muted
+      color: root.detail && root.detail.cls === "crisis" ? root.tone.urgentText
+        : root.detail && root.detail.cls === "attention" ? root.tone.accentText : root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       font.bold: true
@@ -267,7 +267,7 @@ DetailPane {
           width: parent.width
           textFormat: Text.PlainText
           text: "Why loud?"
-          color: Color.urgent
+          color: root.tone.urgentText
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
           font.bold: true
@@ -310,7 +310,7 @@ DetailPane {
           width: parent.width
           textFormat: Text.PlainText
           text: root.transaction ? root.transaction.title : ""
-          color: Color.urgent
+          color: root.tone.urgentText
           wrapMode: Text.Wrap
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
@@ -350,7 +350,7 @@ DetailPane {
           ? root.service.openResult.text
           : root.caseMissing + " is not in the index any more (it keeps the last 50 completed cases)."
         color: root.caseEditorAsked && root.service && root.service.openResult && !root.service.openResult.ok
-          ? Color.urgent : Color.muted
+          ? root.tone.urgentText : root.tone.dim
         wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -396,7 +396,7 @@ DetailPane {
         width: parent.width
         textFormat: Text.PlainText
         text: root.transaction ? root.transaction.summary + " in this transaction" : ""
-        color: Color.muted
+        color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -450,7 +450,7 @@ DetailPane {
         textFormat: Text.PlainText
         text: root.transaction ? "pacman left " + Model.plural(root.transaction.files, "file", "files")
           + " beside these packages; each has its own row." : ""
-        color: Color.muted
+        color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -465,7 +465,7 @@ DetailPane {
         textFormat: Text.PlainText
         text: "The index lists the newest " + Model.INDEX_EVENTS_MAX
           + " events; older lines of this transaction are in the ledger."
-        color: Color.muted
+        color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -490,7 +490,7 @@ DetailPane {
       visible: !!root.detail && root.detail.open
       textFormat: Text.PlainText
       text: "None of this is required. An agent explains only what it can prove."
-      color: Color.muted
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption

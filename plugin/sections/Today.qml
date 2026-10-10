@@ -209,6 +209,7 @@ Section {
 
   ListColumn {
     id: list
+    keyEvents: root.keyEvents
     visible: !root.stacked || !root.detailShown
     width: root.stacked ? root.width : (root.layout ? root.layout.listW : 0)
     height: root.height
@@ -290,7 +291,7 @@ Section {
           // a zero is quiet (WP-119): the figure in the muted tone
           radius: Style.cornerRadius
           color: Style.normalFill
-          borderSpec: Border.flat(Util.alpha(root.foreground, 0.12), Math.max(1, Style.space(1)))
+          borderSpec: Border.flat(root.tone.divider, Math.max(1, Style.space(1)))
 
           Column {
             id: tileColumn
@@ -303,7 +304,7 @@ Section {
               width: parent.width
               textFormat: Text.PlainText
               text: tile.modelData.label
-              color: Color.muted
+              color: root.tone.dim
               elide: Text.ElideRight
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -313,7 +314,7 @@ Section {
               width: parent.width
               textFormat: Text.PlainText
               text: String(tile.modelData.value)
-              color: tile.modelData.dim ? Color.muted : root.foreground
+              color: tile.modelData.dim ? root.tone.dim : root.foreground
               font.family: Style.font.family
               font.pixelSize: Style.font.title
               font.bold: true
@@ -348,7 +349,7 @@ Section {
       stripe: modelData.stripe
       alert: modelData.alert || ""
       selected: modelData.id === root.selectedId
-      cursor: false
+      cursor: list.hoverIndex === index
       onClicked: {
         root.selectedId = modelData.id
         if (modelData.type === "toggle") root.yesterdayOpen = !root.yesterdayOpen
@@ -411,8 +412,9 @@ Section {
       visible: root.firstRun
       implicitHeight: visible ? firstRunColumn.implicitHeight + contentTopInset + contentBottomInset : 0
       radius: Style.cornerRadius
-      color: Style.selectedFillFor(Color.accent, Color.accent)
-      borderSpec: Border.controlSpec("normal", Color.accent, Color.accent)
+      // a notice's frame on the normal fill, never the cursor's selected fill
+      color: Style.normalFillFor(root.foreground, Color.accent)
+      borderSpec: Border.controlSpec("normal", root.tone.accentUi, root.tone.accentUi)
       padding: Style.spacing.xl
 
       Column {
@@ -463,7 +465,7 @@ Section {
       visible: !!root.index && !root.firstRun
       textFormat: Text.PlainText
       text: root.today ? root.today.lead : ""
-      color: Color.muted
+      color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall
@@ -478,7 +480,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: "ACTIVE CASES"
-        color: Color.muted
+        color: root.tone.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
         font.letterSpacing: Style.space(1)
@@ -490,7 +492,7 @@ Section {
         visible: !!root.today && root.today.cases.length === 0
         textFormat: Text.PlainText
         text: "No case is active."
-        color: Color.muted
+        color: root.tone.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
@@ -526,7 +528,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: "NEW CASE"
-        color: Color.muted
+        color: root.tone.dim
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
         font.letterSpacing: Style.space(1)
@@ -591,7 +593,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: root.result ? root.result.text : "Starts your default agent on a new case, as Omarchy starts it."
-        color: root.result && !root.result.ok ? Color.urgent : Color.muted
+        color: root.result && !root.result.ok ? root.tone.urgentText : root.tone.dim
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.caption

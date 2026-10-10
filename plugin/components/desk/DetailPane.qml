@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import ".."
 
 // The desk's detail pane (ADR-0034 §2): in the stacked layout a "back to
 // the list" row, then the sticky ActionBar, then the scrolling content
@@ -7,6 +8,8 @@ import qs.Commons
 // `title` first). The action bar is outside the Flickable, so it stays.
 Item {
   id: root
+
+  readonly property Tone tone: Tone {}
 
   property string title: ""
   property bool backVisible: false
@@ -36,7 +39,7 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
       text: "‹ Back to the list"
-      color: Color.accent
+      color: root.tone.accentText
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
     }
@@ -82,7 +85,7 @@ Item {
         width: parent.width
         textFormat: Text.PlainText
         text: root.title.toUpperCase()
-        color: Color.muted
+        color: root.tone.dim
         elide: Text.ElideRight
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
