@@ -1,6 +1,6 @@
 # Seldon-Anleitung
 
-<!-- source: en/README.md @ 2e4bfa8 -->
+<!-- source: en/README.md @ 488725cf -->
 
 Seldon zeichnet jede Änderung an deinem Omarchy-System auf, gleicht sie
 mit dem ab, was du geplant hast, und zeigt den Unterschied. Diese

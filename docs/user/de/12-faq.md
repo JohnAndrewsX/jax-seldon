@@ -1,6 +1,6 @@
 # FAQ
 
-<!-- source: en/12-faq.md @ 65ad985 -->
+<!-- source: en/12-faq.md @ 488725cf -->
 
 Kurze Antworten auf die Fragen, die zuerst kommen. Jede Antwort verweist
 auf die Seite mit den Einzelheiten.
