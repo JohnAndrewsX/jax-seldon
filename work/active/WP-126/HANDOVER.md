@@ -273,7 +273,7 @@ mouse click on its row; no key and no IPC reached it.
 
 | Change | Verified |
 |---|---|
-| The proposal row is the row above the Changelog's list (`Model.changelogMove`): ↑/`k` on the first row selects it, as a click does, and no list row stays selected (one highlight); ↓/`j` goes back to the row the list was at; a page up stops at the first row | fixture (model.test.js); headless (desk-view `triage-keys`) |
+| The proposal row is the row above the Changelog's list (`Model.changelogMove`): ↑/`k` on the first row selects it, as a click does, and no list row stays selected (one highlight); ↓/`j` goes back to the row the list was at (`Model.changelogMove` also clamps a move of more than one row at the first row; the desk itself sends only ±1) | fixture (model.test.js); headless (desk-view `triage-keys`) |
 | Enter on the proposal arms *Apply proposals* (hint "Apply N proposed changes as you? Press Enter again. Crises stay, each with its own button."), the second Enter applies it (`drift apply <id> --json`, once); a click still applies at once; on a replaced proposal Enter is *Review the new proposal*. Each crisis keeps its own button, by click only; by key a crisis is resolved from its own row (Link, Explain, Dismiss work by key), as before | headless (`triage-keys`: armed, then done+done, the crisis skipped; exact argv) |
 | A dim line under the proposal row names the keys: "↑ from the first row, or a click, opens it"; while shown "Enter twice applies · ↓ back to the list" (`Model.proposalHint`) | fixture; headless |
 | IPC: `shell call jax.seldon select proposal` (or the proposal's id, `Model.isProposalTarget`; "not found" in another section), a payload's `"select":"proposal"`, the shim's `resolve proposal` | headless (`triage-keys` steps 9–16) |

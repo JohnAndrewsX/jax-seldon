@@ -25,7 +25,7 @@ checks in `tests/plugin/desk-view.sh` together.
 | `i` | Today's New case field, Work's intent field |
 | `e` | open in the editor: Today the journal, Changelog this month's ledger, Work the case, Decisions the decision, System STATUS.md, Memory the logbook |
 | `f` / `F` | Changelog: the next / previous chip (open, crisis, attention, routine, in case, all) |
-| `↑` / `k` on the first row | Changelog: the agent's triage proposal (the row above the list); `↓` / `j` back to the list. On the proposal, Enter arms *Apply proposals*, a second Enter applies it; each crisis keeps its own button |
+| `↑` / `k` on the first row | Changelog: the agent's triage proposal (the row above the list); `↓` / `j` back to the list. On the proposal, Enter arms *Apply proposals*, a second Enter applies it (on a narrow desk the first Enter shows its detail); each crisis keeps its own button |
 | `a` | Work: hand the case to the agent (twice; the only key that starts one); while an agent works on the case, *Focus*: bring its window to the front (once) |
 | `x` | Work: drop the case (twice; final) |
 | `r` | Work: reopen a completed case (once) |
