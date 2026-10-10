@@ -22,10 +22,11 @@ permissions:
   contents: read
 
 jobs:
-  # The build image from GHCR, not Docker Hub (WP-195): copies the pinned
-  # digest from Docker Hub once, when GHCR does not have it yet; the other jobs pull
-  # it from there. The only job with packages: write
-  # (packaging/mirror-image.sh, packaging/README.md "Pinned actions and image").
+  # The build image from GHCR, not Docker Hub (WP-195): copies the
+  # pinned digest from Docker Hub once, when GHCR does not have it yet;
+  # the other jobs pull it from there. The only job with packages: write
+  # (packaging/mirror-image.sh; packaging/README.md, "Pinned actions
+  # and image").
   image:
     runs-on: ubuntu-24.04
     permissions:
