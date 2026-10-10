@@ -106,3 +106,49 @@ touched. git 2.55.0.
   (CHANGELOG says so). If that should be Seldon's job, a later WP could
   run a foreground `git gc --auto` (waited for, no detach) in `doctor
   --fix` or similar.
+
+## Round 2 (review 1: APPROVE, two items folded in)
+
+- **N3, no fsmonitor daemon.** `NO_FSMONITOR` = `-c core.fsmonitor=false`
+  on every engine git call (`logbook/git.rs`). In a write it comes after
+  `NO_BACKGROUND`: `-c gc.auto=0 -c maintenance.auto=false -c
+  core.fsmonitor=false <verb> …`. In a query it comes after
+  `--no-lazy-fetch`, which stays first as WP-154 and SPEC require:
+  `--no-lazy-fetch -c core.fsmonitor=false <verb> …`. Without
+  `--no-lazy-fetch` (an old git) the query starts with the option.
+  `git --version` carries it too. Checked by hand on git 2.55: a
+  `status` with `-c core.fsmonitor=true` starts `git fsmonitor--daemon
+  start` and `run --detach`; with `-c core.fsmonitor=false` after it,
+  0 children. I stopped that hand-started daemon (`fsmonitor--daemon
+  stop`), and `pgrep` shows none. The plugins collector already had the
+  option (`GIT_OPTIONS`).
+- **Pins.** Unit `a_query_never_reaches_the_network_and_a_commit_is_the_users`:
+  the query argv with and without `--no-lazy-fetch`, `--version` and the
+  commit argv, literally. `every_git_call_but_add_and_commit_is_a_query_without_network`
+  checks every logged call: writes start with all three options, and
+  queries start with `--no-lazy-fetch -c core.fsmonitor=false`.
+  `a_git_without_no_lazy_fetch_still_answers` expects the retried
+  `status` with the option.
+- **Integration.** `init_leaves_no_git_running_in_the_logbook` now has
+  `core.fsmonitor = true` in the test home's `.gitconfig` and also
+  rejects any `fsmonitor` child in the trace. Mutation (both
+  `extend_from_slice(&NO_FSMONITOR)` removed): FAILED with
+  `child_start[0] git fsmonitor--daemon start` / `run --detach` per
+  logbook. The test runs `git fsmonitor--daemon stop` in each logbook
+  before its asserts, and after the mutation run `pgrep` showed no daemon.
+- **SPEC-ENGINE**: the fsmonitor rule, and one sentence saying the
+  options are per call, never written to a config file, and reach the
+  user's own hooks (and any git they start) through
+  `GIT_CONFIG_PARAMETERS`. The query paragraph now says
+  `--no-lazy-fetch` first, then the option. TESTING row and CHANGELOG
+  updated.
+- **Verified** (desktop, same on-disk target, TMPDIR and private 0700
+  XDG_RUNTIME_DIR; no network; real `~/Seldon`, `~/.local/state/seldon`,
+  `~/.config` untouched):
+  - *fixture*: `cargo test -j 4 --locked --test git --test doctor --test
+    init`: 14, 39 and 47 passed.
+  - *fixture*: `--lib logbook::git`: 6 passed.
+  - *fixture*: full `cargo test -j 4 --locked`: exit 0, 55 binaries ok.
+  - *fixture*: clippy `-D warnings` clean, fmt clean.
+  - *not run* in round 2: `just check` and the 50/50 doctor load run.
+    The change after round 1 is an argv option and its tests.

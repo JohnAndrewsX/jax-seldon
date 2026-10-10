@@ -558,7 +558,10 @@ fn a_git_without_no_lazy_fetch_still_answers() {
         .filter(|l| l.starts_with("--no-lazy-fetch"))
         .count();
     assert_eq!(tried, 1, "{log}");
-    assert!(log.contains("\nstatus --porcelain\n"), "{log}");
+    assert!(
+        log.contains("\n-c core.fsmonitor=false status --porcelain\n"),
+        "{log}"
+    );
     // doctor: one more process, the same rule
     std::fs::remove_file(&calls).unwrap();
     let check = git_check(&env, &root);
@@ -783,14 +786,23 @@ fn every_git_call_but_add_and_commit_is_a_query_without_network() {
             .iter()
             .copied()
             .find(|a| !a.starts_with('-') && !a.contains('='));
+        // WP-199: no call starts the fsmonitor daemon, no write starts
+        // maintenance
+        assert!(argv.contains("-c core.fsmonitor=false "), "{line}");
         if verb.is_some_and(|v| ["add", "commit"].contains(&v)) {
             assert_eq!(vars, "unset unset", "{line}");
-            assert_ne!(args[0], "--no-lazy-fetch", "{line}");
+            assert!(
+                argv.starts_with("-c gc.auto=0 -c maintenance.auto=false -c core.fsmonitor=false "),
+                "{line}"
+            );
             verbs.insert(verb.unwrap().to_string());
         } else {
             assert_eq!(vars, "none 1", "{line}");
-            assert_eq!(args[0], "--no-lazy-fetch", "{line}");
-            verbs.insert(args[1].to_string());
+            assert!(
+                argv.starts_with("--no-lazy-fetch -c core.fsmonitor=false "),
+                "{line}"
+            );
+            verbs.insert(args[3].to_string());
         }
     }
     // the queries the WP names, the five more the handover names (but
@@ -818,7 +830,7 @@ fn every_git_call_but_add_and_commit_is_a_query_without_network() {
         "for-each-ref --format=%(refname:short) refs/heads/",
     ] {
         assert!(
-            log.contains(&format!("--no-lazy-fetch {query}")),
+            log.contains(&format!("--no-lazy-fetch -c core.fsmonitor=false {query}")),
             "no {query:?} in\n{log}"
         );
     }
@@ -849,18 +861,23 @@ fn processes_in(dir: &Path) -> Vec<String> {
 /// 2.55's `commit` runs `git maintenance run --auto --detach`, which
 /// leaves the commit at once and creates and removes
 /// `.git/objects/maintenance.lock` after `init` has returned (a test that
-/// removed `.git` right after `init` failed on it under load). git's own
-/// trace (`GIT_TRACE2`, every git process `seldon` starts and their
-/// children) shows no `maintenance` and no `gc` child, and no process has
-/// its working directory in the logbook when `init` returns. Three
-/// logbooks, three chances to see a straggler.
+/// removed `.git` right after `init` failed on it under load). The
+/// user's `core.fsmonitor=true` would start `git fsmonitor--daemon`,
+/// which outlives `init` and watches the logbook from outside it. git's
+/// own trace (`GIT_TRACE2`, every git process `seldon` starts and their
+/// children) shows no `maintenance`, `gc` or `fsmonitor` child, and no
+/// process has its working directory in the logbook when `init` returns.
+/// Three logbooks, three chances to see a straggler. A daemon a
+/// regression started is stopped before the asserts.
 #[test]
 fn init_leaves_no_git_running_in_the_logbook() {
     let env = Env::new(Snapper::NoPermissions);
     if !env.has_git {
         return;
     }
+    std::fs::write(env.home.join(".gitconfig"), "[core]\n\tfsmonitor = true\n").unwrap();
     let trace = env.tmp.path().join("git-trace2.log");
+    let mut runs = Vec::new();
     for n in 0..3 {
         let root = env.tmp.path().join(format!("logbook-{n}"));
         let out = env
@@ -875,8 +892,14 @@ fn init_leaves_no_git_running_in_the_logbook() {
             .env("GIT_TRACE2_BRIEF", "1")
             .output()
             .unwrap();
-        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
         let left = processes_in(&root.canonicalize().unwrap());
+        runs.push((root, out, left));
+    }
+    for (root, _, _) in &runs {
+        env.git(root, &["fsmonitor--daemon", "stop"]);
+    }
+    for (_, out, left) in &runs {
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(out));
         assert!(left.is_empty(), "still running in the logbook: {left:?}");
     }
     let log = std::fs::read_to_string(&trace).unwrap();
@@ -885,7 +908,7 @@ fn init_leaves_no_git_running_in_the_logbook() {
     let background: Vec<&str> = log
         .lines()
         .filter(|l| l.starts_with("child_start"))
-        .filter(|l| l.contains(" maintenance ") || l.contains(" gc "))
+        .filter(|l| l.contains(" maintenance ") || l.contains(" gc ") || l.contains("fsmonitor"))
         .collect();
     assert!(background.is_empty(), "{background:?}\n{log}");
 }

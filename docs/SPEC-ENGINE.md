@@ -1497,14 +1497,22 @@ programs in their own, WP-064), except automatic `gc` and
 `-c gc.auto=0 -c maintenance.auto=false` (WP-199). git
 2.55 detaches that maintenance from the commit; it then writes in
 `.git` (`objects/maintenance.lock`) after the engine has waited for the
-commit and returned. The engine waits for every git it starts; with the
-two options, none is left running in the logbook when a command
-returns. Every other git call is a read-only query
+commit and returned. Every git call in the logbook, query or write,
+carries `-c core.fsmonitor=false` (WP-199): a user's
+`core.fsmonitor=true` would make a `status` or an `add` start
+`git fsmonitor--daemon`, which outlives the command and keeps watching
+the logbook. The engine waits for every git it starts; with these
+options, none is left running in the logbook when a command returns.
+They are per call, never written to a config file, and git passes them
+on through `GIT_CONFIG_PARAMETERS`: the user's own hooks that a commit
+runs (and any git those hooks start) inherit `gc.auto=0`,
+`maintenance.auto=false` and `core.fsmonitor=false`. Every other git call is a read-only query
 (`rev-parse`, `status`, `symbolic-ref`, `show-ref`, `for-each-ref`, `var`,
 `config --get`, `diff --cached --quiet`, `--version`) and never reaches
 the network (WP-154): `GIT_ALLOW_PROTOCOL=none` (every transport refused,
 overriding the repository's own `protocol.<name>.allow`),
-`GIT_NO_LAZY_FETCH=1` and `--no-lazy-fetch` first in argv (a partial
+`GIT_NO_LAZY_FETCH=1` and `--no-lazy-fetch` first in argv, then
+`-c core.fsmonitor=false` (a partial
 clone's missing object is not fetched; the promisor's URL may be an
 `ext::` command). The logbook's own and the user's git configuration
 otherwise apply to queries too (`core.fsmonitor`, `post-index-change`,

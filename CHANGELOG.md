@@ -106,8 +106,12 @@ and the package does not exist yet. Update the plugin first:
   2.55 starts automatic maintenance after every commit and detaches it,
   so it went on writing in the logbook's `.git` after `seldon` had
   returned. The engine's `init`, `add` and `commit` now pass
-  `-c gc.auto=0 -c maintenance.auto=false`: when a command returns, no
-  git of its own is still running. Seldon's commits no longer pack the
+  `-c gc.auto=0 -c maintenance.auto=false`, and every git call in the
+  logbook passes `-c core.fsmonitor=false` (with `core.fsmonitor=true` in
+  your git config, a `status` started a file system monitor daemon that
+  kept watching the logbook). When a command returns, no git of its own
+  is still running. Your git hooks that a commit runs inherit these
+  three settings. Seldon's commits no longer pack the
   logbook's objects on their own; a git command you run there still
   does, and `git -C <logbook> gc` packs them by hand.
 - **Exit 3 says which folder, and why it cannot be used (WP-119).** With
