@@ -1,6 +1,6 @@
 # WP-195 — Handover (part 1, the Docker Hub limit, check-rss)
 
-Round 2 (review 1: APPROVE, fold-ins) is at the end.
+Rounds 2 (review 1: APPROVE, fold-ins) and 3 (Fable stage 2: APPROVE, fold-ins) are at the end. **check-rss: the limit is 11 MB (operator decision E8); proposed 12 MB, pending the operator** (round 3).
 
 Branch `wp/195-supply-chain` (from `next` at `fdaca081`), worktree
 `wt/WP-195`. Nothing pushed, no workflow triggered, no secret created.
@@ -154,17 +154,16 @@ touched; no guard block occurred; nothing was written under `/tmp`.
    security updates* **Enable**. Do **not** press *Configure* under
    *Dependabot version updates*: the file comes with this merge. (The same
    as `jax-seldon-private/study-tcballard/BRANCH-PROTECTION.md`, Part C.)
-2. **GHCR: nothing beforehand, one check after the first push to
-   `next`.** The `mirror` job creates the package `jax-seldon/archlinux`
-   with the workflow's token on that push. A package published that way is
-   expected to be linked to the repository and to inherit its visibility,
-   but this is **untested** (round 2, F3). After that push: the
-   repository's *Packages* → `archlinux` → it is **public** and linked to
-   `jax-seldon`. If it is private: Package settings → *Change visibility* →
-   **Public**. If the first `mirror` run fails with `denied:
-   permission_denied`: Package settings → *Manage Actions access* → add
-   `jax-seldon` with role **Write**, then run the job again. No secret, no
-   token.
+2. **GHCR: nothing beforehand; make the package public after the first
+   push to `next`.** The `mirror` job creates the package
+   `jax-seldon/archlinux` with the workflow's token on that push. Expect it
+   **private** at first (GitHub's default for a first publish; untested
+   here); the repository's own CI pulls it anyway. Then: the repository's
+   *Packages* → `archlinux` → Package settings → *Change visibility* →
+   **Public**, so forks can pull it too. If the first `mirror` run fails
+   with `denied: permission_denied`: Package settings → *Manage Actions
+   access* → add `jax-seldon` with role **Write**, then re-run the job. No
+   secret, no token.
 3. After the merge, look once at Insights → **Dependency graph** →
    **Dependabot** tab: `.github/dependabot.yml` listed, no error.
 
@@ -257,3 +256,41 @@ Commits `2750bcb7` (workflows, pin test, script), `e7ab6063` (Dependabot),
 | `SELDON_FULL_CHECK=1 just check` | not run in round 2 (no engine, plugin or schema change since `4788bea9`, where it was green on the desktop) | — |
 | shellcheck | not run, CI | — |
 | the first `mirror` run on a push to `next`, Dependabot against `next`, pull requests pulling from GHCR | not run, CI | — |
+
+## Round 3 (Fable stage 2: APPROVE, fold-ins)
+
+- **The check-rss limit is back at 11 MB (operator decision E8).
+  Proposed: 12 MB, pending the operator.** Only the value is reverted
+  (`LIMIT_KB = 11 * 1024`, SPEC-ENGINE's budget line back to 11 MB). Kept:
+  the measurements and the rule in docs/TESTING.md (now "how a limit is
+  proposed; the operator decides it"), the test's new name, `--nocapture`,
+  and the CI measurement step. With 11 MB, `just check-rss` fails on the
+  dev host on `next` itself (as before WP-195), and the CI step will warn
+  until the operator decides. packaging/README.md ("The memory limit of
+  `seldon watch`"), the justfile comment, the test's comment and the
+  CHANGELOG say "proposed 12 MB, pending the operator".
+- **Visibility:** packaging/README.md and operator click 2 above now
+  expect the package **private** at first publish, then Packages →
+  `archlinux` → *Change visibility* → Public.
+- **3a, the first copy:** it is one anonymous Docker Hub pull from a
+  shared runner, so it can hit the same limit that stopped PR #7; then
+  `mirror` is red and `check`/`audit` are skipped, and the fix is
+  *Re-run failed jobs* later, not a change.
+- **3b, a pull request that changes the digest** (this WP's own, if it
+  lands through one) has red `check` and `audit` by design until the push
+  to `next` creates the mirror; the orchestrator's local merge and push to
+  `next` avoids it. (Fable: if `next` or `main` ever require `check`, add
+  a `workflow_dispatch` path to the mirror first.)
+- **skopeo on `ubuntu-24.04`: confirmed.** actions/runner-images,
+  `images/ubuntu/Ubuntu2404-Readme.md` (Image Version 20261004.327.1, read
+  2026-10-10), lists "Skopeo 1.13.3" under Tools. No install step added.
+
+**Verified (round 3):**
+
+| Check | Where | Result |
+|---|---|---|
+| `just check-packaging` | fixture | ok |
+| `cargo clippy --all-targets --features watch -D warnings`, `cargo fmt --check` | fixture | ok |
+| `just check-rss` with the 11 MB limit | desktop | **fails, as expected and as on `next`:** 3 runs, peak 11 368 to 11 480 kB ≥ 11 264 kB (heap 3 184 to 3 336 kB); passes once the proposed 12 MB is accepted |
+| `SELDON_FULL_CHECK=1 just check` | not run in round 3 (only a test constant and docs changed; green at `4788bea9` on the desktop) | — |
+| the first `mirror` run, GHCR visibility | not run, CI | — |
