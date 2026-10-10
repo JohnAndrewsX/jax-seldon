@@ -77,7 +77,7 @@ not see an option whose long help puts its text on the next line
 
 ## Not done (stage 126b, on the test host)
 
-- Screenshots. Markers `<!-- TODO(WP-126b) screenshot: docs/images/<file>.png; … -->`
+- Screenshots (done in 126b part 1, below). Markers `<!-- TODO(WP-…) screenshot: docs/images/<file>.png; … -->`
   (same place in en and de) replace the 0.1 panel images; the old
   `docs/images/panel-*.png` and `overlay-*.png` files are still in the
   tree, now unreferenced by the guide. Files wanted:
@@ -183,3 +183,85 @@ dirs on disk), shellcheck on the test host.
    desk, only in the service read-out; the guide describes where crises
    show now (header, NEEDS YOU, the detail). Remove the leftover later?
 5. ~~The two setup texts~~ fixed in round 2 (F2).
+
+
+## 126b part 1 (screenshots, theme sweep, preview.png)
+
+Branch at next 5f6e5b8e plus this part's commits. The test host ran
+0.2.0+next.5f6e5b8e (the orchestrator's deploy); I deployed nothing.
+
+### What was done, and where
+
+| Step | Where |
+|---|---|
+| Backup of the test host's `~/Seldon` (540 entries), `~/.local/state/seldon` (7), `~/.config/seldon` (2) and `~/.config/omarchy/shell.json` into `~/seldon-backup-126b/`, proven by `diff -r`/`cmp` before any change | test host |
+| The sample in place: `fixtures/logbook/` as `~/Seldon`, the golden test's state (`cursors.json` with the pacman cursor, the proposal bound to the logbook, `recent-config.json` moved to now), a `config.toml` with every collector off and no autocommit, `seldon index` (83 events, 2 crises), `seldon rules update`, two `seldon log` notes; for Work's "agent working" a launcher that only opens a terminal of class `org.omarchy.agent` and `seldon agent start C-2026-003` | test host |
+| 11 of the 12 `docs/images/desk-tokyo-night-*.png` and `plugin/preview.png` (1920×1080, Today at 100 %): live shots, Tokyo Night, rounding 0, cropped, 256-colour PNG, 22–106 KB each | test host |
+| `desk-tokyo-night-triage.png`: the proposal's detail opens only on a click and the test host has no pointer tool (only `wtype`), so it is the harness's `shot:` of the real QML on the sample index, cropped above the dev-mode footer | headless |
+| Every screenshot marker of this stage (34 in the guide, en and de, and both READMEs) is the picture with alt text that describes the shot as taken; a grep for the stage's marker is empty across the tree (STYLE.md's convention now reads `TODO(WP-NNN)`) | fixture (docs-check: 514 links) |
+| `docs/images/panel-*.png` (6) and `overlay-tokyo-night-1920x1080.png` deleted: nothing references them; TESTING.md's preview recipe rewritten for the live shots | fixture |
+| Theme sweep: Tokyo Night, Kanagawa, Catppuccin Latte × 100 % and 50 % × rounding 0, 6, 16, Today and Changelog (36 shots), plus the status chip at rounding 0 in Tokyo Night and Latte; kept in the private `refs/live-126b/`, each looked at | test host |
+| `python3 tests/plugin/check-tokens.py` on every plugin QML file: ok (990 references, house rules ok) | fixture |
+| Restore: `~/Seldon`, `~/.local/state/seldon`, `~/.config/seldon`, `shell.json` copied back from the backup and proven identical (`diff -r`, `cmp`; 540/7/2), no `deskWidth` key (`{"id":"jax.seldon"}`), theme Tokyo Night, rounding 0, `seldon-watch` inactive as before, shell restarted, plugin status ok on the host's own logbook; temp files removed. The backup stays in `~/seldon-backup-126b/` for you to delete | test host |
+
+Note on the method: `omarchy theme set` reloads Hyprland's config and
+resets a rounding set with `hyprctl eval`, and the shell reads the
+rounding only when it starts. The first pass at 6 and 16 was therefore
+really 0; it was shot again as theme set → rounding → `omarchy-restart-shell`
+(`getoption` 6 and 16 confirmed before each set).
+
+### Answers
+
+- **F8, the tile at 50 %:** cut. On the live 50 % desk the tile read
+  "4/5 steps · claude-code · agent …" (session live, `seldon agent
+  sessions` showed it). Fixed: `Model.todayCaseTiles` now puts "agent
+  working · " first, as Work's row does, so the elide cuts the agent's
+  name (b0fb8968; model.test.js, desk-view `aside-tile`; SPEC, guide 03
+  en/de, plugin README, CHANGELOG, TESTING). The deployed host still runs
+  the old text; the docs' Today shots were taken without a session.
+- **F9, square bars at rounding 16:** yes, the list rows' selection bar
+  and stripe and the sidebar's selection bar ran square past the rounded
+  rows. An inset would make the sidebar's bar vanish (a 30 px row at
+  rounding 16 is a pill), so each bar is now a slice of its row's own
+  shape: an Item that clips a rectangle of the row's size and
+  `Style.cornerRadius`, square along the straight edge, following the
+  corner (3ea19e70; ListRow.qml, Sidebar.qml). The harness reports every
+  such bar (`marks.bars`, `marks.barsOutside`); desk-view `rounding-16`
+  (a `hyprctl` stub answering 16) and `rounding-0` pass, and the old
+  plain-rectangle stripe fails both. Verified headless; a live look at
+  rounding 16 fits after your deploy of this branch.
+- **The status chip at rounding 0:** the capsule looks right in Tokyo
+  Night and Latte, like Omarchy's own chips. But on a 50 % desk its text
+  was elided to "▾ 1 not…": even the short form did not fit beside the
+  KPI strip in the bar font. Fixed: the chip falls back to the count
+  alone ("▾ 1") before it would elide (3ea19e70; Header.qml; desk-view
+  `chip-50` and `chip-narrow` at a 920 px window, where headless "1
+  notice" stops fitting; the old two-step version fails `chip-narrow`).
+  Below about 912 px even "▾ 1" is cut (a screen that narrow only).
+- **Catppuccin Latte:** no colour or contrast problem seen at 100 % or
+  50 %, rounding 0, 6, 16: primary and dim text, the stripes (urgent and
+  accent), the crisis figures, the selection and the chip read clearly.
+  Kanagawa (accent near white) is fine too.
+
+### Images
+
+`docs/images/`: `desk-tokyo-night-today.png` (1920×640),
+`-50.png` (1120×1080), `-changelog.png` (1920×780), `-triage.png`
+(1920×650, headless), `-work.png` (1920×980), `-decisions.png`,
+`-system.png`, `-memory.png` (1920×560), `-radiant.png`, `-graph.png`
+(1920×1080), `-settings.png` (1920×820), `-setup.png` (1330×320, the
+card only: the preview beside it lists the host's own packages);
+`plugin/preview.png` (1920×1080). The bar in the shots names the parked
+sample-agent window ("Seldon sample agent"); no host name, user or
+private path is visible.
+
+**Gate:** `SELDON_FULL_CHECK=1 just check` exited 0 on 18d389f4 (the
+last plugin and image commit; only this handover follows, under
+`work/`); log `gates/check-dev-126b.log`: check-packaging ok (shellcheck
+on the test host through the kit wrapper, 8 calls), install 230/0,
+deploy-test-host 327/0, runtime-dir 45/0, docs-check ok (514 links),
+plugin-validate ok, qmllint ok (52 files), model.test.js 216,
+plaintext.test.js ok, terminal-scripts 73/0, service-states 367/0,
+desk-view 2040/0 (with `rounding-16`, `rounding-0`, `chip-50`,
+`chip-narrow`), bar-view 196/0, ipc-restart 44/0. Where: headless (dev
+host, private runtime dirs on disk), shellcheck on the test host.
