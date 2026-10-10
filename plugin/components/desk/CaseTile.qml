@@ -5,7 +5,7 @@ import ".."
 
 // An active case on Today's overview (prototype `.tile`): "id · risk", the
 // title, the plan's progress, "2/4 steps · claude-code" and, while an agent
-// works on it, "· agent working" (Model.todayCaseTiles). A click opens the
+// works on it, "agent working" first (Model.todayCaseTiles). A click opens the
 // case in Work. Plain text; the title wraps to two lines.
 BorderSurface {
   id: root

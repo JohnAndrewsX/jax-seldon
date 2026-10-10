@@ -6418,8 +6418,9 @@ function withSession(detail, sessions) {
 
 // Today's case tiles (deskToday().cases) with what `sessions`
 // (sessionsResult) says (FEEDBACK 11): a case an agent works on, or is
-// starting on, gets `working` and "· agent working" after its line, as its
-// Work row says "agent working". Copies; the tiles without a session come
+// starting on, gets `working` and "agent working · " before its line, as
+// its Work row puts it first: an elided line on a narrow desk cuts the
+// agent's name, not the state (review F8). Copies; the tiles without a session come
 // back as they are.
 function todayCaseTiles(cases, sessions) {
   if (!Array.isArray(cases)) return []
@@ -6428,7 +6429,7 @@ function todayCaseTiles(cases, sessions) {
     var out = ({})
     for (var k in c) out[k] = c[k]
     out.working = true
-    out.text = (c.text ? c.text + " · " : "") + "agent working"
+    out.text = "agent working" + (c.text ? " · " + c.text : "")
     return out
   })
 }

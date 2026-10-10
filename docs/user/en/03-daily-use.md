@@ -186,7 +186,7 @@ With nothing selected, the detail is the overview: one sentence ("Seldon
 is recording. 2 changes need you."), your active cases as tiles and *New
 case*. A tile shows the case's id, risk, title and plan progress
 ("2/4 steps · claude-code"); while an agent session runs on the case, the
-line ends in "· agent working". A click on a tile opens the case in Work.
+line starts with "agent working · ". A click on a tile opens the case in Work.
 *New case* (`i`) starts a case from one sentence, as Work's *Run* does
 (see below).
 

@@ -3623,12 +3623,12 @@ test("WP-156: an active case with a session shows Focus, once, in place of Hand 
   assert.strictEqual(M.withSession(null, sessions), null)
 })
 
-test("FEEDBACK 11: Today's case tile says \"· agent working\" while a session runs", () => {
+test("FEEDBACK 11: Today's case tile says \"agent working\" first while a session runs", () => {
   const ix = JSON.parse(sample)
   const cases = M.deskToday(ix, M.deskChangelog(ix)).cases
   same(cases.map(c => c.id), ["C-2026-003", "C-2026-004"])
   const tiles = M.todayCaseTiles(cases, { "C-2026-003": { starting: false, workspace: "2", actor: "agent:default" } })
-  same(tiles.map(c => c.text), [cases[0].text + " · agent working", cases[1].text])
+  same(tiles.map(c => c.text), ["agent working · " + cases[0].text, cases[1].text])
   same(tiles.map(c => c.working === true), [true, false])
   assert.strictEqual(tiles[1], cases[1], "a tile without a session comes back as it is")
   assert.strictEqual(cases[0].working, undefined, "the prepared tile is not changed")
@@ -3636,7 +3636,7 @@ test("FEEDBACK 11: Today's case tile says \"· agent working\" while a session r
   // starting counts, as on the Work row; no sessions, null, a session of
   // a case that has no tile: as they are
   same(M.todayCaseTiles(cases, { "C-2026-004": { starting: true, workspace: "", actor: "" } }).map(c => c.text),
-    [cases[0].text, cases[1].text + " · agent working"])
+    [cases[0].text, "agent working · " + cases[1].text])
   same(M.todayCaseTiles(cases, {}).map(c => c.text), cases.map(c => c.text))
   same(M.todayCaseTiles(cases, null).map(c => c.text), cases.map(c => c.text))
   same(M.todayCaseTiles(cases, { "C-2026-099": { starting: false } }).map(c => c.text), cases.map(c => c.text))

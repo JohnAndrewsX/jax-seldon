@@ -459,10 +459,11 @@ the logbook has no case and nothing is open, the **first-run card**
 "Seldon is recording. Nothing to do." with one line on what Seldon does
 from here (WP-119; a tile whose figure is 0 shows it in the muted tone),
 a lead on what stays quiet, the active cases as tiles (id · risk, title, the plan's
-progress, "2/4 steps · claude-code", and "· agent working" while an agent
-`seldon agent start` launched runs or starts on the case, from the
-service's sessions as Work's row says it, `Model.todayCaseTiles`,
-FEEDBACK 11; a click opens the case in Work) and
+progress, "2/4 steps · claude-code", and "agent working · " before that
+line while an agent `seldon agent start` launched runs or starts on the
+case, from the service's sessions, first as on Work's row so that the
+elide of a narrow tile cuts the agent's name and not the state,
+`Model.todayCaseTiles`, FEEDBACK 11; a click opens the case in Work) and
 **New case**: one sentence → `seldon agent start --new --json --
 <intent>` (`i` focuses it; the call and the result line Work's *Run*
 shares; the field keeps its text until the engine has made the case). A

@@ -202,7 +202,7 @@ Ist nichts gewählt, ist das Detail die Übersicht: ein Satz („Seldon is
 recording. 2 changes need you.“), deine aktiven Cases als Kacheln und
 *New case*. Eine Kachel zeigt ID, Risiko, Titel und Fortschritt des
 Plans („2/4 steps · claude-code“); solange eine Agenten-Sitzung an dem
-Case läuft, endet die Zeile mit „· agent working“. Ein Klick auf eine
+Case läuft, beginnt die Zeile mit „agent working · “. Ein Klick auf eine
 Kachel öffnet den Case in Work. *New case* (`i`) startet einen Case mit
 einem Satz, wie *Run* in Work (siehe unten).
 
