@@ -63,7 +63,13 @@ parser (`ini.c`, `conf.c`) is followed:
   any other absolute path below that directory's parent — `/` on the
   host, the guard in tests, so no test reads the host. A relative path
   (pacman resolves it against its working directory, which Seldon cannot
-  know) is not read.
+  know) is not read. An include that lies under a home directory (`/home/*`,
+  `/root`), named by `pacman.conf` or reached through a symbolic link in
+  `/etc`, is read like any other: root made it part of pacman's
+  configuration, pacman reads it, and only the two lists' names leave it
+  (AGENTS.md §6, S9). The §6 rule for files under `~/.config` (E41: paths
+  and modification times only) governs the recent-config scan, not a
+  file pacman includes.
 - In the `[options]` section the values of `IgnorePkg` and `IgnoreGroup`
   add up over repeated lines. Names keep pacman's order (the include
   chain's), without repeats.
@@ -235,6 +241,10 @@ plugin reads contract 2 yet, so no reader can misread it.
 - *Show patterns resolved to installed packages:* needs the package
   database and changes with every install; the names as written are what
   the user can find and edit.
+- *Refuse an include under a home directory:* would make such a
+  configuration permanently partial (F6) for a case pacman itself
+  handles; kept as the fallback if the operator does not want these files
+  read.
 - *An unshown name or an include outside `/etc` makes the list partial*
   (the first draft): one typo (`IgnorePkg = linux,nvidia-utils`) would
   silence every later change. Partial is kept for reads that are really
