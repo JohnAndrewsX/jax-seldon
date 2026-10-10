@@ -221,3 +221,10 @@ this session; WP-126 scenario (a)); shellcheck (not installed; CI).
 - Verified: `model.test.js` 212 passed, `terminal-scripts.sh` passed
   (fixture, headless stubs). The full check was not rerun for these text
   edits.
+
+## Completion note (orchestrator, 2026-10-10)
+
+Merged after Opus stage 1 (two rounds) and Fable stage 2 (APPROVE). The
+counted live check of the setup card on a fresh logbook on the test host
+was not run in this WP; it moves into WP-126 (a), the 0.2.0 integration
+and theme sweep. CONTRACT.md rule 10 waits for the operator's E-entry.
