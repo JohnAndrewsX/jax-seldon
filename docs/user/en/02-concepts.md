@@ -220,8 +220,8 @@ The baseline settles that. The setup card and `seldon init` dismiss every
 item the backfill opens with the reason "before Seldon", without a
 question. The events stay in the ledger and on the charts; they no
 longer ask for a reason. `seldon init --ask` lets you choose the date and
-asks before it dismisses; `seldon init --non-interactive` records from
-now on, so there is nothing to baseline.
+asks before it dismisses; with `--since` and without `--baseline`,
+`seldon init --non-interactive` leaves the backfill open as drift.
 
 ## Decisions
 

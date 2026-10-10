@@ -882,7 +882,11 @@ Global flags: `--json`, `--logbook DIR` (overrides config and
 
 Exit codes: 0 ok · 1 user error (bad args, unknown case) · 2 engine error ·
 3 logbook not initialised · 4 lock held. Argument-parse errors are user
-errors (1), never 2; `--help` exits 0.
+errors (1), never 2; `--help` exits 0. With `--json` an error is
+`{"error": {"code", "message"}}`; exit 3 adds `path`, the logbook path
+the engine resolved, and `reason` when `init` could not create a logbook
+there: `logbook-folder-not-empty` or `logbook-folder-not-a-folder`
+(`logbook::layout::blocked_reason`; CONTRACT.md rule 10, WP-119).
 
 JSON shapes of the always-available commands (not part of `schema/`, so no
 `contractVersion` bump when they change; the plugin's engine detection
@@ -3377,24 +3381,31 @@ Four ways to ask (WP-119, ADR-0033), one flag each, excluding each other:
   `md.obsidian.Obsidian.desktop` in the `applications/` folder of
   `$XDG_DATA_HOME`, default `~/.local/share`, or of a `$XDG_DATA_DIRS`
   entry, default `/usr/local/share:/usr/share`; whether the file is
-  there, nothing read), and, unless `--since` or `--no-capture` says
-  otherwise, the **look-back**: the first capture records from local
-  midnight 90 days before today (`$SELDON_NOW` sets the clock) and the
-  baseline dismisses every drift item it opens with the reason `before
-  Seldon`, without a question; a `--since` backfill is dismissed the same
-  way. Harnesses come from the config (none on a fresh machine; operator
-  decision 2026-10-10), the theme hook stays off. The History row is one
-  line, "Looked back 90 days: N changes recorded as history before
-  Seldon".
+  there, nothing read); a `--since` backfill is dismissed "before
+  Seldon" too, without a question. The theme hook stays off.
 - **Plain `seldon init`** (no mode flag) asks one question, where the
   logbook goes (unless `--path` or `--logbook` names it), and takes the
   rest as `--defaults` does. It needs a terminal when it asks.
 - **`--ask`** is the full wizard below; it needs a terminal. Its Obsidian
   question defaults to what the detection says, its backfill question to
   the look-back's date ("none" records from now on).
-- **`--non-interactive`** is the scripting form, unchanged (operator
-  decision 2026-10-10): flags, the config, the defaults; from now on, no
-  backfill, no detection (below).
+- **`--non-interactive`** is the scripting form: flags, the config, the
+  defaults (below), the look-back; no detection (Obsidian only with
+  `--obsidian`).
+
+Every mode follows ADR-0033 §1–§2 (orchestrator 2026-10-10, correcting
+the first answer that kept `--non-interactive` as before): unless
+`--since` or `--no-capture` says otherwise, the **look-back** — the first
+capture records from local midnight 90 days before today, in the clock's
+offset (`$SELDON_NOW` sets the clock), and the baseline dismisses every
+drift item it opens with the reason `before Seldon`, without a question
+(`--ask` asks it, default yes). The History row is one line, "Looked back
+90 days: N changes recorded as history before Seldon". A `--since`
+keeps its own choice under `--non-interactive` and `--ask` (`--baseline`
+or not, ADR-0033 §3). No mode sets up an agent harness on its own:
+harnesses come from flags and the config (none on a fresh machine;
+operator decision 2026-10-10); without one the summary's `Agents` row
+says "none; add one with seldon hook install claude-code (or skills)".
 
 Without a terminal, `--ask`, and plain `init` without `--path` or
 `--logbook`, stop with exit 1 and name `--defaults` and
@@ -3451,7 +3462,8 @@ holds the lock it writes nothing and is reported without a fix → the
 result (WP-118): aligned rows `Logbook` (path, language, git, Obsidian),
 `Config` (the file, where noisy files go), `Recording` (the collectors,
 the theme hook), `Agents` (the harnesses set up; one more line per
-harness that is not), `History` (the first capture, the backfill and its
+harness that is not; without any, "none; add one with seldon hook install
+claude-code (or skills)", no step), `History` (the first capture, the backfill and its
 baseline, open drift, degraded collectors), `Snapshots`; then `Next
 steps:` with only what is left to do (`seldon capture --all`, `seldon
 dossier`, `seldon drift` when drift stays open, `seldon doctor` for a
@@ -3480,8 +3492,8 @@ language from the locale, all collectors, default watched paths,
 harnesses from the config (none on a fresh machine), git from the
 config's `[git] autocommit` (on without a config; `--git`/`--no-git`
 win, and the wizard pre-selects the same, so a re-run keeps a hand-set
-`autocommit = false`), first
-capture from now (no backfill, no baseline), no Obsidian, no theme hook.
+`autocommit = false`), the first capture with the look-back above, no
+Obsidian, no theme hook.
 `SELDON_TEST_GUARD=<dir>`: the engine refuses to run (exit 2) when its
 resolved home/config/state dirs lie outside that dir — set by every test
 harness and manual recipe so a lost environment can never reach the real

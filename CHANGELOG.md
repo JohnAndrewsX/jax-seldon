@@ -70,9 +70,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded as history before Seldon" — and add Obsidian's settings when
   Obsidian is installed (its desktop entry is found), instead of asking.
   The baseline's reason is "before Seldon" also for `--since --baseline`
-  (it was "pre-Seldon baseline"). `--non-interactive` is unchanged: from
-  now on, no backfill, no detection. Harnesses stay as the config says
-  (none on a fresh machine).
+  (it was "pre-Seldon baseline"). `--non-interactive` looks back 90 days
+  too (ADR-0033), but detects nothing; with `--since` and without
+  `--baseline` its backfill stays open as before. Harnesses stay as the
+  config says (none on a fresh machine); the summary's Agents row then
+  says "none; add one with seldon hook install claude-code (or skills)".
+- **Exit 3 says which folder, and why it cannot be used (WP-119).** With
+  `--json`, "logbook not initialised" now carries `path`, the logbook
+  path the engine resolved, and `reason` when `init` could not create the
+  logbook there: `logbook-folder-not-empty` or
+  `logbook-folder-not-a-folder` (CONTRACT.md rule 10; no contract bump).
 - **The index says which plugin can read it (WP-176, ADR-0051).** Every
   `index.json` carries `contractReadableFrom: 2`, the oldest plugin
   contract that reads it without misreading a field it keys on (optional
@@ -384,7 +391,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Capture offers it again. A machine without snapper has two steps and
   no snapshot notice. The header's chip shows the same line and leads to
   the card. Then a first-run card: "Seldon is recording. Nothing to do.",
-  with the tiles that read 0 in the muted tone. The grant's result line
+  with the tiles that read 0 in the muted tone. When the logbook's folder
+  already holds other files, step 2 says so and offers *Choose a folder*
+  (`seldon init`, which asks where). An urgent notice still takes the
+  header's chip from the card. The grant's result line
   reports instead of forecasting: "The snapshots were not recorded yet;
   Seldon tries again at its next capture."
 - **A newer engine no longer dims the bar when its index is readable

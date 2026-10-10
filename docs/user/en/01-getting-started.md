@@ -74,13 +74,16 @@ again every few seconds after its terminal opened.
    language of your locale, with git, and the first capture looks back
    90 days. That history is recorded as "before Seldon": it stays in the
    timeline and asks nothing of you. If Obsidian is installed, the
-   logbook gets Obsidian's settings, so you can open it as a vault. The
-   terminal ends like this (your numbers differ):
+   logbook gets Obsidian's settings, so you can open it as a vault. If
+   the folder already holds other files, the step says so and offers
+   *Choose a folder* instead: `seldon init` asks where the logbook should
+   go. The terminal ends like this (your numbers differ):
 
    ```text
    Logbook     ~/Seldon (English, git repository)
    Config      ~/.config/seldon/config.toml; list noisy or secret files in its [redaction] skipPaths
    Recording   snapshots, packages, Omarchy updates, plugins, themes, config files
+   Agents      none; add one with seldon hook install claude-code (or skills)
    History     Looked back 90 days: 1692 changes recorded as history before Seldon
    Snapshots   not readable yet; optional, Seldon works without them
 
@@ -402,7 +405,9 @@ asks nothing more of you. [Concepts](02-concepts.md#baseline) explains it.
 
 `seldon init --non-interactive` asks nothing either, for scripts. It
 takes `~/Seldon`, the language of your locale, all collectors and git,
-and records from now on, without a backfill.
+and looks back 90 days too; it detects nothing (`--obsidian` adds
+Obsidian's settings). `--since` sets another start, `--no-capture`
+records nothing yet.
 
 ### Check the setup
 

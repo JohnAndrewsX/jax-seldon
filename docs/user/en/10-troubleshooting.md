@@ -45,7 +45,7 @@ shows one banner at the top, with a button that fixes it.
 | Banner | Cause | Fix |
 |---|---|---|
 | Install the engine (step 1 of the setup card); Seldon engine missing, in red, when the engine was there before | the plugin cannot run `seldon` | *Install* opens a terminal that says what it does and runs the GitHub installer; or install it yourself ([Getting started](01-getting-started.md#install-the-engine)); the panel finds the engine by itself, or press *Check again* on the red banner |
-| Create your logbook (step 2 of the setup card) | there is no logbook yet | *Create logbook* opens a terminal that runs `seldon init --defaults` (no question); the panel updates by itself when the logbook is there |
+| Create your logbook (step 2 of the setup card) | there is no logbook yet | *Create logbook* opens a terminal that runs `seldon init --defaults` (no question); the panel updates by itself when the logbook is there. When that folder already holds other files, the step says so and *Choose a folder* runs `seldon init`, which asks where |
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` is missing or broken | *Build index* runs `seldon status` |
 | Index is stale | the index is more than two hours old | *Capture now* |
 | Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`, then `omarchy-restart-shell`. Engine: *Update* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |

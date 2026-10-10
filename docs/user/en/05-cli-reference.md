@@ -109,7 +109,8 @@ settings when Obsidian is installed, and a first capture that looks back
 asks nothing (the plugin's setup card runs it); `--ask` asks every
 question, each flag skipping its own. It refuses a directory that is not
 empty and never overwrites a file. `--non-interactive` takes the flags,
-then an existing config, then the defaults, and records from now on.
+then an existing config, then the defaults, looks back 90 days too and
+detects nothing.
 `--since` takes a date (`2026-09-29`, local midnight) or an RFC 3339
 time; `--baseline` needs `--since`; `--no-capture` cannot go with
 `--since`. See [Getting started](01-getting-started.md#create-your-logbook).
@@ -129,7 +130,7 @@ Options:
       --path <DIR>           Logbook directory (default ~/Seldon)
       --defaults             Ask nothing: ~/Seldon (or the config's logbook), language from the locale, Obsidian settings when Obsidian is installed, and the last 90 days recorded as history before Seldon
       --ask                  The full wizard: every question, the defaults pre-selected
-      --non-interactive      Ask nothing; take flags, then the existing config, then the defaults: ~/Seldon, language from the locale, all collectors, git on, first capture from now on, no backfill, no theme hook
+      --non-interactive      Ask nothing, detect nothing; take flags, then the existing config, then the defaults: ~/Seldon, language from the locale, all collectors, git on, the last 90 days recorded as history before Seldon, no theme hook
       --language <LANGUAGE>  Language of the logbook prose [possible values: en, de]
       --obsidian             Add Obsidian settings (.obsidian/)
       --harness <NAME>       Agent harness to set up (repeatable) [possible values: claude-code, omarchy-agent, skills]

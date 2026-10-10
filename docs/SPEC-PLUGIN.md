@@ -479,29 +479,49 @@ model behind it (`bannerFor`, `snapperBanner`): a step's buttons go to
   left. T is 3 until the index says otherwise: the snapshot step is
   missing (T = 2) when the index's snapper collector is off or its
   message is the engine's `snapper is not installed`
-  (`Model.SNAPPER_NOT_INSTALLED`, `NOT_INSTALLED` in the engine), and
-  done when it reads snapshots. One lead line under it.
-- Steps, numbered, done ones ticked (✓, "· done"), the waiting ones in
-  the muted tone; only the current step has buttons, its command (small,
-  as *Copy* copies it) and its line: (1) **Install the engine** — the
+  (`Model.SNAPPER_NOT_INSTALLED`, `NOT_INSTALLED` in the engine; a value
+  the plugin keys on, CONTRACT.md rule 10), and done when it reads
+  snapshots. One lead line under it.
+- The card's surface is the normal fill with a border in the accent's UI
+  tone, as a notice's frame; never the selected fill, which is the
+  cursor's (§5.3 "one cursor highlight"). Its text takes the theme's
+  tones (§7): the current step in `accentText`, done steps in the
+  foreground, waiting steps and captions in `dim`.
+- Steps, numbered, done ones ticked (✓, "· done"), the waiting ones
+  quiet; only the current step has buttons, its command (small, as
+  *Copy* copies it) and its line: (1) **Install the engine** — the
   engine-missing banner's text, *Install* (the install terminal) and
-  *Copy*; (2) **Create the logbook** — "Creates ~/Seldon and starts
+  *Copy*; (2) **Create the logbook** — "Creates <folder> and starts
   recording; the last 90 days become history “before Seldon”. No
-  questions, no password.", the preview's line (above), *Create logbook*
-  (`seldon init --defaults` in the init terminal) and *Copy*; (3) **Read
+  questions, no password." (the folder the engine names: exit 3's
+  `path`, else the notInitialised index's `logbook.path`, "~/…"), the
+  preview's line (above), *Create logbook* (`seldon init --defaults` in
+  the init terminal) and *Copy*. When exit 3's `reason` says the folder
+  cannot be used (CONTRACT.md rule 10), step 2 says so instead ("~/Seldon
+  holds other files, so Seldon does not create its logbook there. Choose
+  another folder: seldon init asks where.") and offers **Choose a
+  folder**: the sixth terminal script, `INIT_ASK_SCRIPT`, plain `seldon
+  init`, which asks only where (`Model.INIT_ASK_FIX`, `Service.fix`'s
+  `initAsk`), and *Copy*; (3) **Read
   snapshots (optional)** — the snapper banner's sentence, *Grant* (the
   grant terminal; its tooltip says what the grant gives), *Copy* and
   **Not now**. No *Check again*: after a step's terminal opened (from the
   card or from a notice) the service looks again by itself every 5 s for
-  at most ten minutes (`Service.setupWatch`): the engine probe for step 1,
-  the index for step 2 (the FileView watches it too), a capture every
-  30 s for step 3 (only a capture rewrites the collector row; the grant
-  script's own capture comes first). Meanwhile the step's line says "A
+  at most ten minutes (`Service.setupWatch`): the engine probe for step 1
+  (every 5 s for two minutes, then every 30 s: each failed probe is a line
+  in the shell's log, about 40 at most), the index for step 2 (the
+  FileView watches it too) and `status --json` every 30 s (its exit 3
+  tells why an init failed), a capture every 30 s for step 3 (only a
+  capture rewrites the collector row; the grant script's own capture
+  comes first). Meanwhile the step's line says "A
   terminal opened. This card moves on by itself when the step is done."
   A desk opened while the engine is missing probes it once.
 - An engine older than `engineMin` takes the status banner's place
   (§5.6): the logbook step is not ready and says "First: Engine too old
   (the notice above)." — an old engine would refuse `init --defaults`.
+- While only the optional step is left (Seldon records), Today's
+  sentence ("Seldon is recording. 2 changes need you.") and its lead stay
+  under the card.
 - **Not now** is final: stored once as `setupSnapshots: "not-now"` in the
   plugin's `shell.json` entry through the desk's one settings path
   (§5.5); the step, the card (when nothing else is left), the chip and
@@ -510,7 +530,8 @@ model behind it (`bannerFor`, `snapperBanner`): a step's buttons go to
   write, it holds until the shell restarts, and Settings › Capture says
   so (§5.5's no-entry sentence, or "The shell did not take the change; it
   holds until the shell restarts."): the key is not in Omarchy's bar
-  settings.
+  settings. This exception is accepted and documented (orchestrator,
+  2026-10-10): the desk without the pill is rare.
 - It is null — and the notices show the banners as before — when the
   engine that was there is gone (an index exists: the urgent "Seldon
   engine missing"), for an index missing or unreadable, and for a
@@ -520,9 +541,12 @@ model behind it (`bannerFor`, `snapperBanner`): a step's buttons go to
   are what WP-179's `Model.needs` counts.
 
 When the card is done the first-run card (above) follows. The header's
-chip shows the card's headline (accent) while it is up, "+N" for the
-notices beside it; a click leads to Today's overview with the card
-(`Desk.showSetup`) instead of folding the notices.
+chip (`Model.deskChip`) shows the card's headline (accent) while it is
+up, "+N" for the notices beside it, and a click leads to Today's overview
+with the card (`Desk.showSetup`) instead of folding the notices — unless
+a notice is urgent ("Engine too old", "Seldon engine missing", a contract
+mismatch): the urgent one takes the chip, in its tone, and the click
+folds the notices as before.
 
 #### Changelog (2)
 
@@ -1170,9 +1194,9 @@ Terminal scripts (WP-117). *Copy* puts the banner's plain command on the
 clipboard; *Install*, *Create*, *Grant* and *Update* open Omarchy's
 presentation terminal (`omarchy-launch-floating-terminal-with-presentation`:
 logo, the script, "Done!", the theme's gum colours) with the banner's
-script, one of five constants in `Model.js` (`INSTALL_ENGINE_SCRIPT`,
+script, one of six constants in `Model.js` (`INSTALL_ENGINE_SCRIPT`,
 `UPDATE_ENGINE_SCRIPT`, `UPDATE_PLUGIN_SCRIPT`, `INIT_SCRIPT`,
-`SNAPPER_FIX_SCRIPT`); the service launches nothing else
+`SNAPPER_FIX_SCRIPT`, and the setup card's `INIT_ASK_SCRIPT`); the service launches nothing else
 (`Model.terminalArgv`). Each follows Omarchy's own scripts: a bold `gum
 style` line "Seldon: <what>", one paragraph (why; whether it asks for a
 password), the command indented as *Copy* copies it, the command run in
