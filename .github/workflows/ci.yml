@@ -72,3 +72,24 @@ jobs:
 
       - name: just bench (index build < 100 ms on x10 fixtures, release)
         run: just bench
+
+      # Measured, not gated (WP-195): the peak RSS of `seldon watch` on the
+      # x10 fixture, five runs on this runner, into the run summary; a run
+      # over check-rss's limit is a warning here, not a failure, until the
+      # limit is confirmed on CI too (docs/TESTING.md, "Memory bound").
+      - name: just check-rss (measured, not gated)
+        shell: bash
+        run: |
+          over=0
+          for run in 1 2 3 4 5; do
+            if ! just check-rss 2>&1 | tee -a rss.log; then over=$((over + 1)); fi
+          done
+          {
+            echo '## check-rss: peak RSS of seldon watch on the x10 fixture'
+            echo '```'
+            grep -E 'watch on|≥' rss.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if ((over > 0)); then
+            echo "::warning title=check-rss::$over of 5 runs over the limit (see the run summary; docs/TESTING.md, Memory bound)"
+          fi
