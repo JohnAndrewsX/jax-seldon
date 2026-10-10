@@ -8,7 +8,8 @@ import "Model.js" as Model
 // Watches index.json, publishes `index` and `status`, detects the engine,
 // and runs it on a timer. Everything is asynchronous: FileView reads and
 // Process calls never block the shell thread. The index is parsed here on the
-// shell thread; the contract keeps it under 1 MB.
+// shell thread; the contract keeps it under 1 MB, and a longer text is
+// refused before JSON.parse (Model.parseIndex, INDEX_MAX_CHARS).
 //
 // The engine is only ever started with an argument list from CONTRACT.md,
 // checked by Model.validateArgs; fix commands and the terminal scripts
@@ -104,6 +105,7 @@ Item {
     || Model.bannerFor(status, {
       indexContractVersion: indexContractVersion,
       parseError: parsed ? parsed.error : "",
+      indexSize: parsed ? parsed.size : 0,
       generatedAt: index ? index.generatedAt : "",
       nowMs: nowMs,
       indexExists: fileState === "loaded" || fileState === "invalid"
@@ -387,7 +389,7 @@ Item {
       root.engineNotInitialised = false
     root.parsed = result
     root.fileState = result.ok || result.error === "contract" ? "loaded" : "invalid"
-    if (result.error === "parse" || result.error === "shape")
+    if (result.error === "parse" || result.error === "shape" || result.error === "size")
       console.warn("jax.seldon: index.json unreadable: " + result.detail)
   }
 

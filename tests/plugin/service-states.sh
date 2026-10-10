@@ -161,6 +161,18 @@ run index-unreadable 2500 PATH="$fake_path" SELDON_INDEX="$work/broken.json"
 expect index-unreadable .status indexMissing
 expect index-unreadable .banner "Index unreadable"
 
+# 5b. An index of 1 MB or more (E72, CONTRACT.md rule 5): refused before
+# JSON.parse, the parse error's banner with its fix, the size named. Valid
+# JSON (the sample with a long string), so only the size can refuse it.
+head -c 1100000 /dev/zero | tr '\0' x >"$work/padding.txt"
+jq -c --rawfile pad "$work/padding.txt" '.padding = $pad' "$fx/index.sample.json" >"$work/oversized.json"
+run index-oversized 2500 PATH="$fake_path" SELDON_INDEX="$work/oversized.json"
+expect index-oversized .status indexMissing
+expect index-oversized .banner "Index unreadable"
+expect index-oversized .bannerDetail "index.json is 1.2 MB, over the 1 MB the plugin reads; rebuild it from the logbook."
+expect index-oversized .pill ""
+clean_log index-oversized "jax.seldon: index.json unreadable: [0-9]+ characters, the contract's budget is under 1 MB"
+
 # 6. Stale: the dev clock three hours after the fixture's generatedAt.
 run index-stale 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T20:05:12+02:00"
 expect index-stale .status indexStale

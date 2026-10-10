@@ -142,6 +142,36 @@ test("parseIndex rejects empty, broken and non-object input", () => {
   assert.strictEqual(M.parseIndex('{"contractVersion":2}').error, "shape")
 })
 
+// E72: CONTRACT.md rule 5's budget, checked before JSON.parse; over it the
+// plugin takes the parse error's banner, which names the size.
+test("parseIndex refuses a text of 1 MB or more before JSON.parse (E72)", () => {
+  assert.strictEqual(M.INDEX_MAX_CHARS, 1000000)
+  // the sample padded with spaces is valid JSON at every length
+  const pad = (n) => sample.replace(/\s*$/, "") + " ".repeat(n - sample.replace(/\s*$/, "").length)
+  const below = M.parseIndex(pad(M.INDEX_MAX_CHARS - 1))
+  assert.strictEqual(below.ok, true, "one character under the budget is read")
+  assert.strictEqual(below.size, M.INDEX_MAX_CHARS - 1)
+  const at = M.parseIndex(pad(M.INDEX_MAX_CHARS))
+  assert.strictEqual(at.ok, false)
+  assert.strictEqual(at.error, "size")
+  assert.strictEqual(at.size, M.INDEX_MAX_CHARS)
+  assert.strictEqual(at.index, null)
+  // refused before JSON.parse: broken JSON of that length is "size", not "parse"
+  assert.strictEqual(M.parseIndex("{".repeat(M.INDEX_MAX_CHARS + 5)).error, "size")
+  assert.strictEqual(M.parseIndex(" ".repeat(M.INDEX_MAX_CHARS)).error, "size")
+  assert.strictEqual(M.deriveStatus({ engine: "present", file: "invalid", parse: at, nowMs: gen }), "indexMissing")
+  const b = M.bannerFor("indexMissing", { parseError: "size", indexSize: 1234567 })
+  assert.strictEqual(b.title, "Index unreadable")
+  assert.strictEqual(b.detail, "index.json is 1.3 MB, over the 1 MB the plugin reads; rebuild it from the logbook.")
+  same(b.actions, [{ id: "build", label: "Build index" }])
+  assert.strictEqual(M.megabytes(1000000), "1.0 MB")
+  assert.strictEqual(M.megabytes(1000001), "1.1 MB")
+  assert.strictEqual(M.megabytes(2000000), "2.0 MB")
+  // the other unreadable texts are unchanged
+  assert.strictEqual(M.bannerFor("indexMissing", { parseError: "parse" }).detail,
+    "index.json could not be read. Rebuilding it from the logbook fixes this.")
+})
+
 // ADR-0051: a newer index that says a contract-2 plugin can read it is
 // read; the pill keeps its counts and the crisis colour, the unknown
 // parts fall back or are left out, and the desk asks for a plugin update.

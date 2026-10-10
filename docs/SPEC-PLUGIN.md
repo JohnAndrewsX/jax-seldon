@@ -77,7 +77,17 @@ plugin/
   `contractReadableFrom`, CONTRACT.md rule 3, ADR-0051), publish
   `index` property. Parsing happens on the shell thread — the index is
   small (< 1 MB by contract); if it grows, move parsing to a `Process`
-  that emits a trimmed view.
+  that emits a trimmed view. A text of 1 000 000 characters or more is
+  refused before `JSON.parse` (`Model.INDEX_MAX_CHARS`, E72): the plugin
+  takes the parse error's path, the "Index unreadable" banner with its
+  *Build index*, and the detail names the size ("index.json is 1.2 MB,
+  over the 1 MB the plugin reads; …"). No new state, no contract change; a
+  character is at least one byte, so an index within the engine's budget
+  is never refused.
+- Every `Text` block declares `textFormat: Text.PlainText` (E72;
+  `tests/plugin/plaintext.test.js`, exceptions only with a line and a
+  reason in `tests/plugin/plaintext-allow.txt`): no logbook or index text
+  is ever read as markup.
 - Timer: every 15 min and at start, `Process { command: ["seldon",
   "capture", "--all", "--json", "--quiet"] }`; then `["seldon", "status",
   "--json"]`. Never both at once; a `busy` flag serialises calls.

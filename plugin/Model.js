@@ -16,6 +16,13 @@ var CONTRACT_VERSION = 2
 // plugin was updated under a running shell (restartShellNotice).
 var PLUGIN_VERSION = "0.1.4"
 
+// CONTRACT.md rule 5: index.json stays under 1 MB (the engine's
+// SIZE_BUDGET, 1 000 000 bytes). The text is parsed on the shell thread
+// (Service.qml), so a longer one is refused before JSON.parse (E72). A
+// character is at least one byte, so an index within that budget is never
+// refused.
+var INDEX_MAX_CHARS = 1000000
+
 // SPEC-PLUGIN §3: an index older than two hours is stale.
 var STALE_AFTER_MS = 2 * 60 * 60 * 1000
 
@@ -257,16 +264,23 @@ function readsContract(version, from) {
   return isFinite(version) && Math.floor(version) === version && version > CONTRACT_VERSION && from <= CONTRACT_VERSION
 }
 
-// Parse index.json text. Returns { ok, error, detail, contractVersion,
-// readableFrom, newer, index }. error: "" | "empty" | "parse" | "shape" |
-// "contract". Only a contractVersion this plugin reads yields an index: its
+// Parse index.json text. Returns { ok, error, detail, size,
+// contractVersion, readableFrom, newer, index }. error: "" | "empty" |
+// "size" | "parse" | "shape" | "contract"; "size" (the text is
+// INDEX_MAX_CHARS or longer, `size` its length) is refused before
+// JSON.parse and takes the parse error's banner. Only a contractVersion this plugin reads yields an index: its
 // own, or a newer one whose contractReadableFrom is at most its own
 // (ADR-0051; `newer` is then true and the desk asks for a plugin update).
 // A mismatch still reports the version found so the banner can show both
 // numbers (CONTRACT.md rule 3).
 function parseIndex(text) {
   var raw = text === undefined || text === null ? "" : String(text)
-  var result = { ok: false, error: "", detail: "", contractVersion: 0, readableFrom: 0, newer: false, index: null }
+  var result = { ok: false, error: "", detail: "", size: raw.length, contractVersion: 0, readableFrom: 0, newer: false, index: null }
+  if (raw.length >= INDEX_MAX_CHARS) {
+    result.error = "size"
+    result.detail = raw.length + " characters, the contract's budget is under 1 MB"
+    return result
+  }
   if (raw.trim() === "") {
     result.error = "empty"
     return result
@@ -562,10 +576,18 @@ function tooltipText(status, c, lastCaptureText, nowMs) {
 // Service.fix(): copy, terminal, recheck, build, capture. `command` (shown
 // and copied) is always one of the constants above, `script` (what the
 // terminal action runs) the matching terminal script.
-// ctx: { indexContractVersion, parseError, generatedAt, nowMs, indexExists }
+// ctx: { indexContractVersion, parseError, indexSize, generatedAt, nowMs, indexExists }
+// indexSize: the length of index.json's text, named when parseError is "size".
 // indexExists: an index file is there, so the engine wrote one before and
 // is gone now (urgent); without one the user has not installed it yet, a
 // setup step (accent).
+// A size in characters as megabytes with one decimal, never rounded down
+// to the limit: 1 000 000 reads "1.0 MB", 1 049 999 "1.1 MB".
+function megabytes(chars) {
+  var n = Number(chars) || 0
+  return (Math.ceil(n / 100000) / 10).toFixed(1) + " MB"
+}
+
 function bannerFor(status, ctx) {
   ctx = ctx || {}
   if (status === "engineMissing") {
@@ -605,7 +627,9 @@ function bannerFor(status, ctx) {
       status: status,
       tone: "accent",
       title: unreadable ? "Index unreadable" : "No index yet",
-      detail: unreadable
+      detail: ctx.parseError === "size"
+        ? "index.json is " + megabytes(ctx.indexSize) + ", over the 1 MB the plugin reads; rebuild it from the logbook."
+        : unreadable
         ? "index.json could not be read. Rebuilding it from the logbook fixes this."
         : "The engine has not written index.json yet.",
       command: "",
