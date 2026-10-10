@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ b65d998e -->
+<!-- source: en/05-cli-reference.md @ 30f3d0b5 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -105,14 +105,19 @@ Options:
 ### seldon init
 
 Legt das Logbuch, die Konfigurationsdatei, die erste Erfassung und das
-Dossier an. Ohne Optionen stellt es Fragen; jede Option überspringt ihre
-Frage. Es lehnt einen Ordner ab, der nicht leer ist, und überschreibt nie
-eine Datei. `--non-interactive` nimmt die Optionen, dann eine vorhandene
-Konfiguration, dann die Vorgaben. `--since` nimmt ein Datum
-(`2026-09-29`, Mitternacht Ortszeit) oder eine Zeit nach RFC 3339;
-`--baseline` braucht `--since`; `--no-capture` geht nicht zusammen mit
-`--since`. Siehe
-[Erste Schritte](01-getting-started.md#schritt-2-dein-logbuch-anlegen).
+Dossier an. Ohne Optionen stellt es eine Frage, wohin das Logbuch soll,
+und nimmt für den Rest die Vorgaben: die Sprache deiner Locale, git, die
+Einstellungen von Obsidian, wenn Obsidian installiert ist, und eine erste
+Erfassung, die 90 Tage zurückschaut und verwirft, was dabei offen bleibt,
+als „before Seldon“. `--defaults` fragt nichts (das führt die
+Einrichtungskarte des Plugins aus); `--ask` stellt jede Frage, und jede
+Option überspringt ihre eigene. Es lehnt einen Ordner ab, der nicht leer
+ist, und überschreibt nie eine Datei. `--non-interactive` nimmt die
+Optionen, dann eine vorhandene Konfiguration, dann die Vorgaben, und
+zeichnet ab jetzt auf. `--since` nimmt ein Datum (`2026-09-29`,
+Mitternacht Ortszeit) oder eine Zeit nach RFC 3339; `--baseline` braucht
+`--since`; `--no-capture` geht nicht zusammen mit `--since`. Siehe
+[Erste Schritte](01-getting-started.md#dein-logbuch-anlegen).
 `--harness skills` installiert den Seldon-Agentenskill, wie es
 [`seldon hook install skills`](#seldon-hook-install) tut.
 `--remove-theme-hook` ist die einzige Option, die kein Logbuch anlegt:
