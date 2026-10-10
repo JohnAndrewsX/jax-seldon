@@ -55,7 +55,7 @@ BorderSurface {
   visible: banner !== null
   implicitWidth: Style.space(320)
   implicitHeight: visible ? Math.max(content.implicitHeight, pictogramIcon.visible ? pictogramIcon.height : 0) + contentTopInset + contentBottomInset : 0
-  radius: Style.spacing.labelGap
+  radius: Style.cornerRadius
   color: Style.selectedFillFor(toneColor, toneColor)
   borderSpec: Border.controlSpec("normal", toneColor, toneColor)
   padding: Style.spacing.xl

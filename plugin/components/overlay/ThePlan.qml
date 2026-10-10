@@ -80,7 +80,6 @@ ChartCanvas {
         y: Style.spacing.lg
         width: Style.spacing.xs
         height: card.height - Style.spacing.lg * 2
-        radius: width / 2
         color: root.toneColor(card.modelData.tone)
       }
 

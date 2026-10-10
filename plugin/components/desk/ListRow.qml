@@ -64,12 +64,14 @@ Item {
     color: root.tone.accentUi
   }
 
+  // The stripe is square (radius 0, SPEC-PLUGIN §7 "Geometry"); the row
+  // around it keeps Style.cornerRadius.
   Rectangle {
+    objectName: "rowStripe"
     visible: root.stripe !== ""
     x: root.barWidth + Style.spacing.xxs
     width: Math.max(2, Style.space(3))
     height: parent.height
-    radius: width / 2
     color: root.stripe === "crisis" ? root.urgent : root.accent
   }
 
