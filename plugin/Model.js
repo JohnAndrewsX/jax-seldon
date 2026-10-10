@@ -615,9 +615,12 @@ function changelogMove(s, dy) {
 }
 
 // The key hint under the proposal row in the Changelog's head (WP-126c):
-// how the keys reach it, and, while it is shown, what they do there.
-function proposalHint(shown) {
-  return shown ? "Enter twice applies · ↓ back to the list" : "↑ from the first row, or a click, opens it"
+// how the keys reach it, and, while it is the selection, what they do
+// there; `listOnly`: a stacked desk shows the list, not the detail, so
+// Enter first shows the detail (review F1).
+function proposalHint(shown, listOnly) {
+  if (!shown) return "↑ from the first row, or a click, opens it"
+  return listOnly ? "Enter shows it · ↓ back to the list" : "Enter twice applies · ↓ back to the list"
 }
 
 // Whether `id` (IPC `select`, a desk payload's `select`, the shim's

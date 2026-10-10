@@ -3679,6 +3679,10 @@ test("WP-126c: ↑ from the first Changelog row reaches the proposal, ↓ goes b
   assert.strictEqual(M.isProposalTarget("", { id: "" }), false)
   assert.strictEqual(M.proposalHint(false), "↑ from the first row, or a click, opens it")
   assert.strictEqual(M.proposalHint(true), "Enter twice applies · ↓ back to the list")
+  assert.strictEqual(M.proposalHint(true, false), "Enter twice applies · ↓ back to the list")
+  // a stacked desk showing its list: Enter first shows the detail (review F1)
+  assert.strictEqual(M.proposalHint(true, true), "Enter shows it · ↓ back to the list")
+  assert.strictEqual(M.proposalHint(false, true), "↑ from the first row, or a click, opens it")
 })
 
 test("triage argv: ids only, one --item, never propose (ADR-0036)", () => {

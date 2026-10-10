@@ -24,10 +24,13 @@ import "../Model.js" as Model
 // just linked) — the list then has no highlighted row and ↑/↓ continue
 // from where it was. A new chip starts at its first row.
 //
-// Keys: ↑/↓ j/k move, Enter opens the selected open item's default form
-// (Link when the engine proposes a case, else Explain), `f` / `F` the next
-// / previous chip, `e` this month's ledger in the editor, Esc hides a
-// shown form (its draft kept).
+// Keys: ↑/↓ j/k move (the agent's triage proposal, in the list head, is
+// the row above the first one: ↑ on the first row selects it, WP-126c),
+// Enter opens the selected open item's default form (Link when the engine
+// proposes a case, else Explain) or, on the proposal, arms Apply proposals
+// and applies on the second press (on a stacked desk Enter first shows the
+// detail, as for every row), `f` / `F` the next / previous chip, `e` this
+// month's ledger in the editor, Esc hides a shown form (its draft kept).
 Section {
   id: root
 
@@ -95,7 +98,9 @@ Section {
     var to = Model.changelogMove({ rows: root.rows.length, cursor: root.cursor, cursorRow: root.cursorRow,
       proposal: root.proposalRowShown, triageShown: root.triageShown }, dy)
     if (to.triage) {
-      if (!root.triageShown) root.showTriage()
+      // a key selects, as on an event row: on a stacked desk Enter shows
+      // the detail (review F1)
+      if (!root.triageShown) root.showTriage(false)
     } else if (to.row >= 0) {
       root.selectRow(to.row)
     }
@@ -110,11 +115,13 @@ Section {
     return root.triageShown ? triage.activate() : detail.activate()
   }
 
-  function showTriage() {
+  // The proposal as the selection; `openDetail` (a click, IPC, Review;
+  // not a key move) also shows the detail on a stacked desk.
+  function showTriage(openDetail) {
     if (!root.triageView) return
     root.seenProposalId = root.triageView.id
     root.triageShown = true
-    if (root.desk) root.desk.showDetail()
+    if (openDetail !== false && root.desk) root.desk.showDetail()
   }
 
   function setChip(id) {
@@ -333,7 +340,7 @@ Section {
             objectName: "proposalHint"
             width: parent.width
             textFormat: Text.PlainText
-            text: Model.proposalHint(root.triageShown)
+            text: Model.proposalHint(root.triageShown, root.stacked && !root.detailShown)
             color: root.dim
             wrapMode: Text.Wrap
             font.family: Style.font.family

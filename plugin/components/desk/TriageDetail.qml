@@ -46,11 +46,14 @@ DetailPane {
   readonly property bool canWrite: !!root.service && root.service.canWrite
   readonly property var arm: root.section ? root.section.arm : null
   readonly property string discardKey: "triage:discard:" + root.seenId
-  readonly property bool discardArmed: !!root.arm && root.arm.armedId === root.discardKey
+  // An arm holds only for the current proposal: a replaced one drops it
+  // (review F2), so the bar never asks to confirm a write that would not
+  // happen.
+  readonly property bool discardArmed: root.current && !!root.arm && root.arm.armedId === root.discardKey
   // Enter arms Apply proposals, the second Enter applies (WP-126c; a click
   // applies at once, as before)
   readonly property string applyKey: "triage:apply:" + root.seenId
-  readonly property bool applyArmed: !!root.arm && root.arm.armedId === root.applyKey
+  readonly property bool applyArmed: root.current && !!root.arm && root.arm.armedId === root.applyKey
   readonly property bool applyEnabled: !!root.proposal && root.canWrite && !root.pending && root.proposal.readable
   readonly property color foregroundColor: Color.popups.text
 
@@ -63,6 +66,8 @@ DetailPane {
   readonly property string actionsKey: [root.seen.state, root.seenId, root.proposal ? root.proposal.applyCount : -1,
     root.proposal ? root.proposal.readable : false, root.canWrite, root.pending, root.discardArmed, root.applyArmed].join("|")
   onActionsKeyChanged: root.actions = root.buildActions()
+  onCurrentChanged: if (!root.current && root.arm
+      && (root.arm.armedId === root.applyKey || root.arm.armedId === root.discardKey)) root.arm.disarm()
   Component.onCompleted: root.actions = root.buildActions()
 
   function buildActions() {
@@ -141,6 +146,7 @@ DetailPane {
       readable: v ? v.readable : false,
       actions: root.actions.map(function(a) { return a.label + (a.enabled === false ? " (off)" : "") }),
       applyArmed: root.applyArmed,
+      discardArmed: root.discardArmed,
       result: root.result && !root.result.pending ? resultText.text : "",
       resultOk: root.result ? root.result.ok : true,
       built: items.status === Loader.Ready,
