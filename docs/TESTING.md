@@ -1082,6 +1082,8 @@ to agent ("agent working" on its row and in the bar); a stale desk heals
 from the engine's "already working" and "no agent is working" refusals
 (`FAKE_SELDON_SESSIONS_LATE`, `FAKE_SELDON_FOCUS_GONE`); an index change
 while the desk is open asks for the sessions again (`aside-index`);
+Today's case tile says "· agent working" for the case with a session and
+only for it (FEEDBACK 11, `aside-tile`);
 without Hyprland the engine tracks nothing and a second hand-off launches
 (`FAKE_SELDON_NO_TRACKING`, `aside-nowindow`); `a` four times and `e`
 three times send one call each, busy labels while in flight (the fake
