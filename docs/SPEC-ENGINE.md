@@ -3388,7 +3388,7 @@ Four ways to ask (WP-119, ADR-0033), one flag each, excluding each other:
   Seldon".
 - **Plain `seldon init`** (no mode flag) asks one question, where the
   logbook goes (unless `--path` or `--logbook` names it), and takes the
-  rest as `--defaults` does. It needs a terminal.
+  rest as `--defaults` does. It needs a terminal when it asks.
 - **`--ask`** is the full wizard below; it needs a terminal. Its Obsidian
   question defaults to what the detection says, its backfill question to
   the look-back's date ("none" records from now on).
@@ -3396,8 +3396,9 @@ Four ways to ask (WP-119, ADR-0033), one flag each, excluding each other:
   decision 2026-10-10): flags, the config, the defaults; from now on, no
   backfill, no detection (below).
 
-Without a terminal, plain `init` and `--ask` stop with exit 1 and name
-`--defaults` and `--non-interactive`; nothing is written.
+Without a terminal, `--ask`, and plain `init` without `--path` or
+`--logbook`, stop with exit 1 and name `--defaults` and
+`--non-interactive`; nothing is written.
 
 The full wizard (`--ask`) is interactive via `dialoguer` (no `gum`
 dependency). It asks: path (the options of ADR-0010: `~/Seldon`,

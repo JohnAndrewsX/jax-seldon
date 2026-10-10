@@ -88,9 +88,14 @@ impl InitMode {
         }
     }
 
-    /// Whether this mode asks questions in a terminal.
-    pub fn asks(self) -> bool {
-        matches!(self, InitMode::Location | InitMode::Ask)
+    /// Whether this run asks a question: `--ask` always, plain `init`
+    /// only while no `--path` or `--logbook` names the location.
+    pub fn asks_with(self, location_given: bool) -> bool {
+        match self {
+            InitMode::Ask => true,
+            InitMode::Location => !location_given,
+            InitMode::Defaults | InitMode::NonInteractive => false,
+        }
     }
 }
 
@@ -168,7 +173,10 @@ pub fn path_options(dirs: &crate::config::Dirs) -> Vec<PathOption> {
 pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     let config_file = ctx.config_file.clone();
     let existing = ctx.load_config()?;
-    if args.mode.asks() && !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
+    let location_given = args.path.is_some() || ctx.logbook_flag.is_some();
+    if args.mode.asks_with(location_given)
+        && !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal())
+    {
         return Err(Error::user(
             "not a terminal; use `seldon init --defaults` to ask nothing, or `seldon init --non-interactive` with --path, --language, …",
         ));
@@ -1385,8 +1393,10 @@ mod tests {
     /// WP-119: which modes ask, and what `--json` calls them.
     #[test]
     fn only_plain_init_and_ask_need_a_terminal() {
-        assert!(InitMode::Location.asks() && InitMode::Ask.asks());
-        assert!(!InitMode::Defaults.asks() && !InitMode::NonInteractive.asks());
+        // plain init with its location named asks nothing
+        assert!(InitMode::Location.asks_with(false) && !InitMode::Location.asks_with(true));
+        assert!(InitMode::Ask.asks_with(true) && InitMode::Ask.asks_with(false));
+        assert!(!InitMode::Defaults.asks_with(false) && !InitMode::NonInteractive.asks_with(false));
         assert_eq!(InitMode::default(), InitMode::Location);
         assert_eq!(
             [

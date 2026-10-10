@@ -2096,6 +2096,38 @@ mod defaults {
         assert_eq!(v["capture"]["reason"], "--no-capture");
     }
 
+    /// Plain `init` with `--path` has nothing to ask: it runs without a
+    /// terminal and takes the same defaults as `--defaults` (WP-119).
+    #[test]
+    fn plain_init_with_a_path_asks_nothing() {
+        let env = Env::new(Snapper::Allowed);
+        let path = env.tmp.path().join("logbook");
+        let tmp = env.tmp.path();
+        let out = env
+            .command(&[
+                "init",
+                "--no-git",
+                "--json",
+                "--path",
+                path.to_str().unwrap(),
+            ])
+            .env("SELDON_NOW", NOW)
+            .env("SELDON_PACMAN_LOG", log(&env))
+            .env("SELDON_PACMAN_DB_LOCK", tmp.join("no-db.lck"))
+            .env("SELDON_OMARCHY", tmp.join("no-omarchy"))
+            .env("SELDON_OMARCHY_PLUGINS_DIR", tmp.join("plugins"))
+            .env("SELDON_THEME_FILE", tmp.join("theme.name"))
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v = json(&out);
+        assert_eq!(v["mode"], "location");
+        assert_eq!(v["capture"]["lookbackDays"], 90);
+        assert_eq!(v["capture"]["baseline"]["reason"], "before Seldon");
+        assert_eq!(v["capture"]["openDrift"], 0);
+    }
+
     /// `--non-interactive` is unchanged (operator, 2026-10-10): from now
     /// on, no look-back, no detection.
     #[test]
