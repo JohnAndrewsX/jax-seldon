@@ -653,6 +653,20 @@ submission). (see `work/queued/`)
 - The test host is the orchestrator's until the operator announces the
   reinstall.
 
+## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
+- O1 `seldon init --defaults` (the panel path) sets up no agent harness:
+  Seldon never writes into foreign agent files without asking (S7); the
+  Agents line says none and how to add one (WP-119).
+- O2 Correction of an overnight answer: `--non-interactive` follows
+  ADR-0033 §1 (every new logbook looks back 90 days); only `--since`,
+  `--baseline`, `--no-capture` keep the choice (WP-119).
+- O3 Desk rows: Omarchy's pointer-moved hover, any key clears it, one
+  cursor highlight at a time (WP-177).
+- Pending operator decision: CONTRACT.md rule 10 (a closed list of values
+  the plugin keys on outside the schema, e.g. the literal `snapper is not
+  installed`, until contract 3) as an E-entry without an ADR (WP-119;
+  Fable: acceptable, recommends yes).
+
 ## Decided 2026-10-09 (operator)
 - E39 ADR-0045 accepted (EASY | PRO; the header switch stores the mode for
   good). E40 ADR-0047 accepted (`seldon preview` before init) → WP-138.
