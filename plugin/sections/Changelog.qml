@@ -77,6 +77,17 @@ Section {
 
   editing: !root.triageShown && detail.editing
 
+  // A triage arm (Apply or Discard) holds only while its proposal stays
+  // the shown selection: a row click, another selection (IPC included) or
+  // the stacked detail hidden by its Back drops it, as Work's and
+  // Decisions' arms drop on another selection (WP-126c stage 2 F1).
+  function disarmTriage() {
+    if (root.arm && root.arm.armedId.indexOf("triage:") === 0) root.arm.disarm()
+  }
+  onTriageShownChanged: if (!root.triageShown) root.disarmTriage()
+  onSelectedIdChanged: root.disarmTriage()
+  onDetailShownChanged: if (root.stacked && !root.detailShown) root.disarmTriage()
+
   function rowIndex(id) {
     var rows = root.rows || []
     for (var i = 0; i < rows.length; i++) if (rows[i].id === id) return i

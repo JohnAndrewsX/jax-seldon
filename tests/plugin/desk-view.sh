@@ -3207,6 +3207,35 @@ expect triage-keys-stacked 9 ".view.detailShown" false
 argv_check triage-keys-stacked "$work/home-triage-keys-stacked" "$(printf '%s\n' "$startup" "$(q drift apply $PROPOSAL --json)")"
 clean_log triage-keys-stacked
 
+# A detour drops the arm (WP-126c stage 2 F1): armed by Enter, then a row
+# click and the proposal again, or IPC select of an event and of the
+# proposal, or (stacked) the detail's Back: the next Enter only arms
+# again, nothing is applied. The same for Discard armed by a click.
+mkdir -p "$work/home-triage-detour"
+run triage-detour "" 1920x1080 \
+  "summon:$cl;key:Up;key:Return;click:ollama.service;clickName:proposalRow;key:Return;key:Left;key:Return;call:select:$UNIT;call:select:proposal;key:Return;key:Left;click:Discard;click:ollama.service;clickName:proposalRow" \
+  HOME="$work/home-triage-detour" FAKE_SELDON_FIXTURE="$sample"
+expect triage-detour 3 "$ttd.applyArmed" true
+expect triage-detour 5 "[$tt.shown, $ttd.applyArmed] | map(tostring) | join(\",\")" "true,false"
+expect triage-detour 6 "$ttd.applyArmed" true
+expect triage-detour 8 "$ttd.applyArmed" true
+expect triage-detour 10 "[.call, $tt.shown, $ttd.applyArmed] | map(tostring) | join(\",\")" "ok,true,false"
+expect triage-detour 11 "$ttd.applyArmed" true
+expect triage-detour 13 "$ttd.discardArmed" true
+expect triage-detour 15 "[$tt.shown, $ttd.discardArmed, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" "true,false,Apply proposals (2)+Discard"
+argv_check triage-detour "$work/home-triage-detour" "$startup"
+clean_log triage-detour
+mkdir -p "$work/home-triage-detour-stacked"
+run triage-detour-stacked "" 700x900 \
+  "summon:$cl;key:Up;key:Return;key:Return;click:‹ Back to the list;key:Return;view;key:Return" \
+  HOME="$work/home-triage-detour-stacked" FAKE_SELDON_FIXTURE="$sample"
+expect triage-detour-stacked 4 "[.view.detailShown, $ttd.applyArmed] | map(tostring) | join(\",\")" "true,true"
+expect triage-detour-stacked 5 "[.view.detailShown, $tt.shown, $ttd.applyArmed] | map(tostring) | join(\",\")" "false,true,false"
+expect triage-detour-stacked 7 "[.view.detailShown, $ttd.applyArmed] | map(tostring) | join(\",\")" "true,false"
+expect triage-detour-stacked 8 "$ttd.applyArmed" true
+argv_check triage-detour-stacked "$work/home-triage-detour-stacked" "$startup"
+clean_log triage-detour-stacked
+
 # B1 (WP-124b round 2): the proposal the user opened is the one Apply
 # names. A capture brings a newer proposal (agent:codex) while the detail
 # shows the first: the pane says so, Apply, the crises and Discard are off,
