@@ -65,7 +65,7 @@
     "openDrift": 6,
     "crisis": 2,
     "eventsToday": 33,
-    "events7d": 54
+    "events7d": 55
   },
   "today": {
     "date": "2026-10-01",
@@ -753,6 +753,22 @@
       "zone": "yellow",
       "meta": {
         "hashFrom": "6d81c41202034fff47fdb480400142b8472fcfed536bab61a1fd785d6315c272"
+      }
+    },
+    {
+      "id": "01M3H7FNZ0YRX0ZM73QC24X96H",
+      "ts": "2026-09-27T12:45:00+02:00",
+      "source": "pacman",
+      "kind": "note",
+      "subject": "/etc/pacman.conf",
+      "detail": "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa.",
+      "actor": "system",
+      "zone": "red",
+      "resolution": "explained",
+      "resolutionDetail": "Mesa 26.2 friert Hyprland auf der RX 7800 ein; gesperrt, bis 26.2.1 da ist.",
+      "meta": {
+        "ignoreGroup": "",
+        "ignorePkg": "mesa vulkan-radeon lib32-mesa"
       }
     },
     {
@@ -1709,6 +1725,14 @@
           "mtime": "2026-09-27T19:02:11+02:00"
         }
       ]
+    },
+    "pacmanIgnore": {
+      "packages": [
+        "mesa",
+        "vulkan-radeon",
+        "lib32-mesa"
+      ],
+      "groups": []
     }
   },
   "memory": {
@@ -3224,9 +3248,9 @@
       },
       {
         "date": "2026-09-27",
-        "total": 3,
+        "total": 4,
         "bySource": {
-          "pacman": 3
+          "pacman": 4
         }
       },
       {
@@ -3307,8 +3331,8 @@
       },
       {
         "week": "2026-W39",
-        "opened": 3,
-        "resolved": 2
+        "opened": 4,
+        "resolved": 3
       },
       {
         "week": "2026-W40",

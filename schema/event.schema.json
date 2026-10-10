@@ -17,7 +17,7 @@
                           "command", "note", "resolution", "correction",
                           "case-created", "case-started", "case-verified", "case-completed", "case-dropped",
                           "case-updated", "state-loss"] },
-    "subject": { "type": "string", "minLength": 1, "maxLength": 512, "description": "package name, path (~-relative; absolute for the boot files under /etc, WP-164), theme slug, plugin id, snapshot number, case id (case-*), program name (command), 'journal' (note without case), 'state-reset' (state-loss), or the target's subject (resolution, correction)" },
+    "subject": { "type": "string", "minLength": 1, "maxLength": 512, "description": "package name, path (~-relative; absolute for the boot files under /etc, WP-164, and for /etc/pacman.conf, the pacman note of a changed ignore list, ADR-0052), theme slug, plugin id, snapshot number, case id (case-*), program name (command), 'journal' (note without case), 'state-reset' (state-loss), or the target's subject (resolution, correction)" },
     "detail":  { "type": "string", "maxLength": 4096, "description": "human-readable, redacted (SPEC-ENGINE §7)" },
     "actor":   { "$ref": "#/$defs/actor" },
     "case":    { "$ref": "#/$defs/caseId" },
@@ -37,7 +37,7 @@
         "txStatus": { "enum": ["failed", "interrupted", "unfinished"], "description": "pacman, on every package line of a transaction that did not complete (ADR-0043): pacman logged `transaction failed` or `transaction interrupted`, or no end line (unfinished); absent when it completed and on lines written before ADR-0043" }
       },
       "additionalProperties": { "type": ["string", "number", "boolean", "null"] },
-      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre), enabled (plugin-add/-enable/-disable), txId (resolution of a drift group), transaction (pacman note: the txId of the transaction that left the file, ADR-0042), risk (case-created/-started/-updated), sources/files (state-loss), txStatus (pacman: a transaction that did not complete), truncated (index only)"
+      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre), enabled (plugin-add/-enable/-disable), txId (resolution of a drift group), transaction (pacman note: the txId of the transaction that left the file, ADR-0042), risk (case-created/-started/-updated), sources/files (state-loss), txStatus (pacman: a transaction that did not complete), ignorePkg/ignoreGroup (pacman note on /etc/pacman.conf: the new IgnorePkg and IgnoreGroup names, space-separated, both always present; written by the pacman collector only, ADR-0052), truncated (index only)"
     }
   },
   "allOf": [

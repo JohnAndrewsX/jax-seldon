@@ -91,7 +91,13 @@
           "properties": {
             "scannedAt": { "type": "string", "format": "date-time" },
             "files": { "type": "array", "maxItems": 80, "items": { "type": "object", "required": ["path", "mtime"], "additionalProperties": false, "properties": { "path": { "type": "string", "pattern": "^~/\\.config/", "maxLength": 512, "description": "user content (CONTRACT.md rule 6); passed only as the one argument after -- of `seldon config watch --json`" }, "mtime": { "type": "string", "format": "date-time" } } } },
-            "partial": { "const": true, "description": "present only when the scan stopped early (entry budget, deadline) or left folders below its depth unread: the list may be incomplete" } } }
+            "partial": { "const": true, "description": "present only when the scan stopped early (entry budget, deadline) or left folders below its depth unread: the list may be incomplete" } } },
+        "pacmanIgnore": { "type": "object", "required": ["packages", "groups"], "additionalProperties": false,
+          "description": "optional (ADR-0052): the IgnorePkg and IgnoreGroup names of /etc/pacman.conf and its includes as the pacman collector last read them, in pacman's order; names only, nothing else of the files; absent while the pacman collector is disabled, before its first read and while [redaction] patterns do not compile; `partial` marks a list that may be incomplete",
+          "properties": {
+            "packages": { "type": "array", "maxItems": 256, "items": { "type": "string", "pattern": "^[A-Za-z0-9@._+*?!^\\[\\]-]{1,128}$", "description": "user content (CONTRACT.md rule 6): a package or group name or an fnmatch pattern of one, as written in pacman.conf; plain text, never an argument" } },
+            "groups": { "type": "array", "maxItems": 256, "items": { "type": "string", "pattern": "^[A-Za-z0-9@._+*?!^\\[\\]-]{1,128}$", "description": "user content (CONTRACT.md rule 6): a package or group name or an fnmatch pattern of one, as written in pacman.conf; plain text, never an argument" } },
+            "partial": { "const": true, "description": "present only when part of the configuration could not be read or a name was left out (a bound, its shape, the redaction): the list may be incomplete" } } }
       }
     },
     "memory": { "type": "object", "additionalProperties": false, "properties": {

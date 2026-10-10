@@ -229,6 +229,14 @@
           "mtime": "2026-09-27T19:02:11+02:00"
         }
       ]
+    },
+    "pacmanIgnore": {
+      "packages": [
+        "mesa",
+        "vulkan-radeon",
+        "lib32-mesa"
+      ],
+      "groups": []
     }
   },
   "memory": {
@@ -1744,9 +1752,9 @@
       },
       {
         "date": "2026-09-27",
-        "total": 3,
+        "total": 4,
         "bySource": {
-          "pacman": 3
+          "pacman": 4
         }
       },
       {
@@ -1827,8 +1835,8 @@
       },
       {
         "week": "2026-W39",
-        "opened": 3,
-        "resolved": 2
+        "opened": 4,
+        "resolved": 3
       },
       {
         "week": "2026-W40",

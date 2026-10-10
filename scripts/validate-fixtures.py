@@ -66,6 +66,11 @@ WATCH_PATHS = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.ba
 SKIP_PATHS = ["~/.config/omarchy/**/history.json", "~/.config/omarchy/**/history/",
               "~/.config/omarchy/**/state.json", "~/.config/omarchy/**/cache/", "~/.config/omarchy/**/*.log"]
 RECENT_DAYS, RECENT_MAX = 7, 80
+# ADR-0052: the pacman collector's cursor of the 17:05 capture (the engine's state dir), the source
+# of `system.pacmanIgnore`; engine: collectors::pacman_ignore (NAME, MAX_NAMES)
+PACMAN_CURSOR = os.path.join(FIX, "state", "pacman-cursor.json")
+IGNORE_NAME = re.compile(r"[A-Za-z0-9@._+*?!^\[\]-]{1,128}")
+IGNORE_MAX = 256
 EXT = {
     "snapper": ID + "external/snapper-list.schema.json",
     "plugin-list": ID + "external/omarchy-plugin-list.schema.json",
@@ -323,6 +328,9 @@ class Classifier:
         """(class, rule), or None for a dependency of a named transaction (it follows)."""
         src, kind, subject = e["source"], e["kind"], e["subject"]
         meta = e.get("meta", {})
+        if src == "pacman" and kind == "note" and isinstance(meta.get("ignorePkg"), str):
+            # ADR-0052 §4: pacman's ignore list changed
+            return ("attention", "ignore-list")
         if src == "pacman" and kind == "note":
             # a file pacman left (WP-141): its own item, never routine
             file = next((subject[:-len(x)] for x in PACNEW_SUFFIXES if subject.endswith(x)), subject)
@@ -1669,6 +1677,37 @@ def derive_recent_config(generated_at, problems):
     return out
 
 
+def derive_pacman_ignore(ledger, problems):
+    """engine: index::collector_state + collectors::pacman_ignore::shown — `system.pacmanIgnore`
+    from the pacman cursor's `ignore` (ADR-0052 §5): the names of NAME's shape (the sample has no
+    redaction pattern), at most 256 per list, `partial` when one was left out or the read was.
+    The cursor's `ignoreKnown` must be the lists of the ledger's last ignore-list note (the
+    capture that wrote it saved the cursor). None without the file."""
+    if not os.path.exists(PACMAN_CURSOR):
+        return None
+    with open(PACMAN_CURSOR, encoding="utf-8") as fh:
+        cursor = json.load(fh)
+    ignore = cursor.get("ignore")
+    if ignore is None:
+        return None
+    partial = ignore.get("partial") is True
+    out = {}
+    for k in ("packages", "groups"):
+        names = [n for n in ignore[k] if IGNORE_NAME.fullmatch(n)]
+        partial |= len(names) != len(ignore[k])
+        out[k] = names[:IGNORE_MAX]
+    if partial:
+        out["partial"] = True
+    notes = [e for e in ledger if e["source"] == "pacman" and e["kind"] == "note"
+             and isinstance(e.get("meta", {}).get("ignorePkg"), str)]
+    known = cursor.get("ignoreKnown")
+    if notes and known is not None:
+        last = notes[-1]["meta"]
+        if (last["ignorePkg"], last.get("ignoreGroup")) != (" ".join(known["packages"]), " ".join(known["groups"])):
+            problems.append(f"{rel(PACMAN_CURSOR)}: ignoreKnown is not the lists of {notes[-1]['id']}")
+    return out
+
+
 def check_proposals(sample):
     """Every fixture proposal proposes for open drift items of the sample: `eventId` an item's
     eventId, `crisis` its crisis, a link's case an open case, at least one item of each action
@@ -1814,9 +1853,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/77/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/77/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/77/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/78/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/78/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/78/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".
@@ -1830,9 +1869,9 @@ VARIANTS = {
     # metadata, `meta.hashBasis: "stat"`). Both are open attention items. Index only, like
     # drift-explained-case: in the logbook they would move every list the plugin harness walks.
     "boot-config": [
-        {"op": "test", "path": "/events/55/ts", "value": "2026-09-22T20:10:00+02:00"},
-        {"op": "add", "path": "/events/55", "value": {"id": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "meta": {"hashFrom": "8276d859e9e973d922e3a2adf580b1c061fe8507ff28318ef761e1e355e7eb7d", "hashTo": "ebe226cdad440acc4006c3a4058dc87ff1db9158f7a46442003ef889ed1e6623"}}},
-        {"op": "add", "path": "/events/55", "value": {"id": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "meta": {"hashTo": "140b21ced41879c8ef31256c8b35302b27df920c7efa2a56e6426a7ca056d017", "hashBasis": "stat"}}},
+        {"op": "test", "path": "/events/56/ts", "value": "2026-09-22T20:10:00+02:00"},
+        {"op": "add", "path": "/events/56", "value": {"id": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "meta": {"hashFrom": "8276d859e9e973d922e3a2adf580b1c061fe8507ff28318ef761e1e355e7eb7d", "hashTo": "ebe226cdad440acc4006c3a4058dc87ff1db9158f7a46442003ef889ed1e6623"}}},
+        {"op": "add", "path": "/events/56", "value": {"id": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "meta": {"hashTo": "140b21ced41879c8ef31256c8b35302b27df920c7efa2a56e6426a7ca056d017", "hashBasis": "stat"}}},
         {"op": "test", "path": "/drift/5/ts", "value": "2026-09-27T12:30:00+02:00"},
         {"op": "add", "path": "/drift/6", "value": {"eventId": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "crisis": False, "proposedCase": None, "rule": "config"}},
         {"op": "add", "path": "/drift/7", "value": {"eventId": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "crisis": False, "proposedCase": None, "rule": "config"}},
@@ -1859,9 +1898,9 @@ VARIANTS = {
     # the mesa downgrade group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [
         {"op": "test", "path": "/drift/5/members", "value": 3},
-        {"op": "test", "path": "/events/49/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
-        {"op": "test", "path": "/events/49/subject", "value": "lib32-mesa"},
-        {"op": "remove", "path": "/events/49"},
+        {"op": "test", "path": "/events/50/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
+        {"op": "test", "path": "/events/50/subject", "value": "lib32-mesa"},
+        {"op": "remove", "path": "/events/50"},
     ],
 }
 
@@ -1885,8 +1924,8 @@ FORWARD_OPS = [
     {"op": "replace", "path": "/summary/openDrift", "value": 7},
     {"op": "test", "path": "/summary/eventsToday", "value": 33},
     {"op": "replace", "path": "/summary/eventsToday", "value": 35},
-    {"op": "test", "path": "/summary/events7d", "value": 54},
-    {"op": "replace", "path": "/summary/events7d", "value": 56},
+    {"op": "test", "path": "/summary/events7d", "value": 55},
+    {"op": "replace", "path": "/summary/events7d", "value": 57},
     {"op": "test", "path": "/series/heatmap/365/date", "value": "2026-10-01"},
     {"op": "test", "path": "/series/heatmap/365/total", "value": 33},
     {"op": "replace", "path": "/series/heatmap/365/total", "value": 35},
@@ -2303,13 +2342,23 @@ def self_checks(today):
                 "meta": {"command": "pacman -Syu", "transaction": "tx-20261001T165600"}}))
         return m
 
+    def add_ignore(subject):
+        # ADR-0052 §4: a caseless change of pacman's ignore list
+        def m(ledger):
+            ledger.append(("<self-check>:ignore", {
+                "id": "7" + "Z" * 23 + "IG", "ts": "2026-10-01T16:56:00+02:00", "source": "pacman", "kind": "note",
+                "subject": subject, "detail": "IgnorePkg: added linux.", "actor": "system", "zone": "red",
+                "meta": {"ignorePkg": "linux", "ignoreGroup": ""}}))
+        return m
+
     pacnew = [
-        ("a .pacnew beside a PAM file is a crisis", "/etc/pam.d/system-auth.pacnew", (True, "pacnew-red")),
-        ("a .pacnew in /etc/security is attention", "/etc/security/faillock.conf.pacnew", (False, "pacnew")),
+        ("a .pacnew beside a PAM file is a crisis", "/etc/pam.d/system-auth.pacnew", (True, "pacnew-red"), add_left),
+        ("a .pacnew in /etc/security is attention", "/etc/security/faillock.conf.pacnew", (False, "pacnew"), add_left),
+        ("a changed ignore list is attention", "/etc/pacman.conf", (False, "ignore-list"), add_ignore),
     ]
-    for label, subject, want in pacnew:
+    for label, subject, want, add in pacnew:
         problems = []
-        derived, _, _ = derive(LOGBOOK, today, problems, add_left(subject))
+        derived, _, _ = derive(LOGBOOK, today, problems, add(subject))
         got = [(d["crisis"], d.get("rule"), d.get("txId"), d.get("members")) for d in derived["drift"]
                if d["subject"] == subject]
         err = problems[:1] or ([] if got == [want + (None, None)] else [f"items {got}, want [{want + (None, None)}]"])
@@ -2381,6 +2430,10 @@ def collect_instances():
             sid, bad = PROPOSAL, False
         elif r == "preview.sample.json":
             sid, bad = PREVIEW, False
+        elif r == "state/pacman-cursor.json":
+            # engine state, not contract: its `ignore` is `system.pacmanIgnore`'s shape, checked
+            # through the derived sample (derive_pacman_ignore)
+            continue
         elif r == "state/recent-config.json":
             # engine state, not contract: its shape is `system.recentConfig`'s, checked through the
             # derived sample (derive_recent_config)
@@ -2440,6 +2493,7 @@ def main():
     derived_all, _, _ = derive(LOGBOOK, today, problems, legacy=True)
     triage = derive_triage(sample["logbook"]["path"], problems)
     recent = derive_recent_config(sample["generatedAt"], problems)
+    ignore = derive_pacman_ignore([e for _, e in ledger], problems)
 
     def as_sample(d):
         out = {"contractVersion": sample["contractVersion"], "contractReadableFrom": CONTRACT_READABLE_FROM}
@@ -2452,6 +2506,8 @@ def main():
             out[k] = d[k]
         if recent is not None:
             out["system"] = {**d["system"], "recentConfig": recent}
+        if ignore is not None:
+            out["system"] = {**out["system"], "pacmanIgnore": ignore}
         if triage is not None:
             out["triage"] = triage
         return out

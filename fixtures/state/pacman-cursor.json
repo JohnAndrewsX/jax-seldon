@@ -1,0 +1,12 @@
+{
+  "inode": 1,
+  "offset": 13475,
+  "ignore": {
+    "packages": ["mesa", "vulkan-radeon", "lib32-mesa"],
+    "groups": []
+  },
+  "ignoreKnown": {
+    "packages": ["mesa", "vulkan-radeon", "lib32-mesa"],
+    "groups": []
+  }
+}
