@@ -183,8 +183,11 @@ fragt nach einem Titel, legt die Entscheidung als *proposed* an und
 
 System zeigt die Maschine: Omarchy-Version, Theme und letztes Update,
 Paketzahlen, Abweichungen, Plugins, Snapshots, Bereiche, den Zustand
-jedes Collectors, den Namen der Maschine und die Version der Engine.
-*Open in editor* öffnet `STATUS.md`.
+jedes Collectors, den Namen der Maschine und die Version der Engine, die
+unter `~/.config` bearbeiteten Dateien, die kein beobachteter Pfad
+abdeckt, und *Ignored by pacman*: die Pakete und Gruppen, die pacmans
+volles Update auslässt (`IgnorePkg`, `IgnoreGroup`; `pacman -S`
+aktualisiert sie trotzdem). *Open in editor* öffnet `STATUS.md`.
 
 ### Memory (6)
 

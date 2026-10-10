@@ -108,7 +108,7 @@ Sprache des nächsten Logbuchs fest, das `seldon init` anlegt.
 | Collector | Liest | Zeichnet auf |
 |---|---|---|
 | `snapper` | `snapper --jsonout list` | angelegte und gelöschte Snapshots |
-| `pacman` | `/var/log/pacman.log` | installierte, entfernte, aktualisierte und zurückgestufte Pakete, nach Transaktion gruppiert |
+| `pacman` | `/var/log/pacman.log`; die Namen in `IgnorePkg` und `IgnoreGroup` von `/etc/pacman.conf` und den Dateien, die sie einbindet | installierte, entfernte, aktualisierte und zurückgestufte Pakete, nach Transaktion gruppiert; eine Änderung der Pakete, die pacman auslässt |
 | `omarchy` | `omarchy-version` | Wechsel der Omarchy-Version |
 | `plugins` | `omarchy plugin list --json` | Shell-Plugins: hinzugefügt, entfernt, aktiviert, deaktiviert, aktualisiert |
 | `theme` | `~/.local/state/omarchy/current/theme.name` | Theme-Wechsel |
@@ -116,6 +116,19 @@ Sprache des nächsten Logbuchs fest, das `seldon init` anlegt.
 
 Jeder Collector liest nur. Mit `false` schaltest du einen aus;
 `seldon capture --source <name>` startet ihn trotzdem bei Bedarf.
+
+Der `pacman`-Collector liest außerdem `/etc/pacman.conf` und jede Datei,
+die sie einbindet (auf Omarchy die Mirrorlist und Drop-ins wie
+`/etc/pacman.d/*.conf`), so wie pacman sie liest. Er behält nur die Namen
+in `IgnorePkg` und `IgnoreGroup`, also die Pakete, die pacmans volles
+Update auslässt; sonst wird aus diesen Dateien nichts behalten oder
+aufgezeichnet. System zeigt die Liste. Die erste Erfassung nimmt sie, wie
+sie ist; danach ist eine Änderung – deine Bearbeitung oder `omarchy
+refresh pacman`, das die Datei ersetzt – eine Änderung, die du erklärst.
+Ein Name, der kein einfacher Paket- oder Gruppenname ist oder den deine
+Schwärzung maskiert, wird gezählt, aber nicht gezeigt. Lässt sich ein
+Teil der Konfiguration nicht lesen, gilt die Liste als unvollständig,
+und bis dahin wird keine Änderung aufgezeichnet.
 
 Ein Shell-Plugin, das du mit `omarchy plugin add` hinzugefügt hast, ist
 ein git-Klon. Seine Aktualisierung nennt die Commits: wie viele ein Pull
@@ -206,8 +219,9 @@ ein `omarchy-settings`-Update, das eine Datei geändert hat. Aufgezeichnet
 werden nur Hashes, nie der Inhalt (eine Kernel-Befehlszeile nennt deine
 Platten). Einem Symlink in einem dieser Ordner folgt Seldon zu seiner
 Datei und zeichnet nur deren Hash auf; ein Link auf eine Datei, die ein
-Paket mitbringt, zählt dort wie jede andere Änderung. Sonst liest Seldon
-nichts unter `/etc`. Die `.pacnew`-Dateien,
+Paket mitbringt, zählt dort wie jede andere Änderung. Daneben liest
+Seldon nur `/etc/pacman.conf` und ihre eingebundenen Dateien, für die
+ausgelassenen Namen (oben); sonst nichts unter `/etc`. Die `.pacnew`-Dateien,
 die pacman dort hinterlässt, werden nicht gehasht: Der Pacman-Collector
 listet jede schon auf, und wenn du sie mit `pacdiff` zusammenführst, wird
 die Änderung der Datei selbst aufgezeichnet.

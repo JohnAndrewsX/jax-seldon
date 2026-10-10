@@ -169,8 +169,11 @@ decision as *proposed* and opens it.
 
 System shows the machine: Omarchy version, theme and last update,
 package counts, deviations, plugins, snapshots, areas, the state of each
-collector, the machine name and the engine version. *Open in editor*
-opens `STATUS.md`.
+collector, the machine name and the engine version, the files edited
+under `~/.config` that no watch path covers, and *Ignored by pacman*:
+the packages and groups pacman's full upgrade skips (`IgnorePkg`,
+`IgnoreGroup`; `pacman -S` still updates them). *Open in editor* opens
+`STATUS.md`.
 
 ### Memory (6)
 

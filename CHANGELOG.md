@@ -81,7 +81,9 @@ and the package does not exist yet. Update the plugin first:
   taken as it is; from then on a change of the list (an edit, or
   `omarchy refresh pacman` replacing the file) is one pacman note on
   `/etc/pacman.conf`, attention `ignore-list` until you explain it. A
-  read that could not see everything marks the list `partial` and
+  name that is no plain package or group name, or that your redaction
+  masks, is counted but not shown. A read that could not see everything
+  (a file it cannot read, its budget) marks the list `partial` and
   reports no change.
 - **`seldon init` asks only where, and looks back 90 days (WP-119,
   ADR-0033).** Plain `seldon init` asks one question, the logbook's

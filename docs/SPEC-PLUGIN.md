@@ -679,7 +679,7 @@ drift item's `truncated`, contract 2 — reads "(clipped in the index; the
 ledger has it in full)"; for a file pacman left — a pacman `note` whose
 subject ends in `.pacnew`, `.pacsave` or `.pacorig`, SPEC-ENGINE §4,
 WP-141 — a row **Hint** after What: "Merge with pacdiff (from
-pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot
+pacman-contrib) in a terminal. Seldon does not read that file, so it cannot
 tell whether that happened since." — text only, never a button or a
 command the plugin runs, AGENTS.md §8; for the change of pacman's ignore
 list — a pacman `note` with `meta.ignorePkg`, ADR-0052 — the Hint
@@ -967,14 +967,16 @@ and no action runs.
   then it reads "The scan stopped early; the list may be incomplete.",
   which a non-empty list's lead also ends with. An index without the
   field shows "—".
-  Ignored by pacman (`Model.pacmanIgnore`; a name not of the engine's
-  shape is left out and the list counts as partial): the lead "pacman's
+  Ignored by pacman (`Model.pacmanIgnore`): the lead "pacman's
   full upgrade skips them; `pacman -S` still updates them.", with no
   name "pacman ignores nothing: no IgnorePkg or IgnoreGroup in
   pacman.conf.", and for a partial list " Part of pacman's configuration
   could not be read; the list may be incomplete." after it; the rows
   IgnorePkg and IgnoreGroup with the names comma-separated as plain text
-  ("—" for none); no stripe and no action. Its footer: "From pacman.conf
+  ("—" for none), and with hidden names (`hidden`, plus any name not of
+  the engine's shape) "Not shown" · "N names (not a plain package or
+  group name, or masked by your redaction)", which the big value counts
+  too; no stripe and no action. Its footer: "From pacman.conf
   and the files it includes, read on every capture: the IgnorePkg and
   IgnoreGroup names only, nothing else of the files." An index without
   the field shows "—".

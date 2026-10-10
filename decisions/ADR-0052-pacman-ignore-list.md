@@ -39,61 +39,87 @@
 
 The **pacman collector** reads them on every run that reads `pacman.log`
 (a degraded run reads nothing, as today). It reads `/etc/pacman.conf`
-(`Sources::etc_dir`) as pacman does (`pacman.conf(5)`, pacman's
-`conf.c`/`ini.c`):
+(`Sources::etc_dir`) and its includes as pacman does. What
+`pacman.conf(5)` documents is followed as written: keys in CamelCase
+(exact match), `Include = <path>` expanded by glob(7) rules, `IgnorePkg =
+package ...` and `IgnoreGroup = group ...` with the names separated by
+**spaces** (a tab or a comma is part of a name, as in pacman's
+`setrepeatingoption`). Where the page is silent or narrower, pacman's
+parser (`ini.c`, `conf.c`) is followed:
 
-- `#` to the end of the line is a comment; lines are trimmed; empty lines
-  are skipped.
+- `#` cuts the rest of a line. The page says comments begin a line;
+  pacman's parser also drops end-of-line comments, so `IgnorePkg = linux
+  # the kernel` holds `linux` only. Lines are trimmed, empty lines
+  skipped; `[]` is refused by pacman and makes the read incomplete.
 - `[name]` starts a section. The section is **shared across includes**:
   a header in an included file changes it for the rest of the includer,
   as pacman's parser keeps one section state.
-- `Include = <pattern>` is followed wherever it stands: the pattern is
-  expanded like `glob(3)` (`*`, `?`, `[…]` in any component; a leading
-  `.` is matched only explicitly; matches sorted by name) and every match
-  is read in turn, at most 10 levels deep (pacman's limit). Only absolute
-  paths under `/etc` are followed (under `SELDON_ETC_DIR`, or the test
-  guard's `<guard>/etc`, they are read there); a relative path or one
-  outside `/etc` is not read and makes the list *partial*.
-- In the `[options]` section, the values of `IgnorePkg` and `IgnoreGroup`
-  (exact key, as pacman matches it) are split on white space; repeated
-  lines add up. Names keep pacman's order (the include chain's), without
-  repeats.
+- `Include` is followed wherever it stands: matches sorted by name, a
+  leading `.` matched only explicitly, every match read in turn, at most
+  **10 levels below `pacman.conf`** (the page names no depth; this is
+  the recursion limit as the implementer read pacman's `conf.c`,
+  unverified against a running pacman). An include is read wherever it
+  lies, as pacman reads it: a path under `/etc` below `Sources::etc_dir`,
+  any other absolute path below that directory's parent — `/` on the
+  host, the guard in tests, so no test reads the host. A relative path
+  (pacman resolves it against its working directory, which Seldon cannot
+  know) is not read.
+- In the `[options]` section the values of `IgnorePkg` and `IgnoreGroup`
+  add up over repeated lines. Names keep pacman's order (the include
+  chain's), without repeats.
 - **Nothing else is kept.** Every other line, key and value — servers,
   repositories, signature levels, other options — is read past and
   dropped; nothing of it reaches a cursor, an event, the index or a log.
 
-Bounds (WP-174's readers): a file is read only when it is a regular file
-(`sys::open_regular`) of at most 1 MiB; at most 64 files per run; a name
-is 1–128 characters of `[A-Za-z0-9@._+*?!^[]-]` (a package name or an
-`fnmatch` pattern, as pacman allows in both lists); at most 256 names per
-list. A file that cannot be read, a missing literal include, a file or
-name past a bound and a name outside the set make the list **partial**:
-the names read are kept, the rest is left out. A pattern that matches
-nothing is no error.
+**Bounds** (WP-174): a file is read only when it is a regular file
+(`sys::open_regular`) of at most 1 MiB. One read has one budget, counted,
+never timed: 64 files (`pacman.conf` included), 64 `Include` lines
+followed, 16 384 directory entries looked at by all its globs together;
+at most 256 names per list; a name longer than 512 bytes is kept in the
+cursor as `sha256:<hex>` of its bytes.
+
+**Partial means incomplete.** Only a read that could not see everything
+is *partial*: a file that cannot be read (missing, not regular, too
+large, no permission), a relative include, the depth, `[]`, the budget,
+names past 256. A partial read keeps what it read and records no change
+(§2). A name Seldon will not show is **not** an incomplete read (§5).
 
 If `/etc/pacman.conf` itself cannot be read, the run keeps the last list,
 marked partial (none before the first read).
 
 ### 2. The cursor
 
-`PacmanCursor` gains two optional members (absent in 0.1.x cursors, which
-read unchanged):
+`PacmanCursor` gains three optional members (absent in 0.1.x cursors,
+which read unchanged):
 
 - `ignore` `{packages, groups, partial?}`: the list as the last run read
-  it — what the index shows;
+  it, the raw names — what the index shows (§5);
 - `ignoreKnown` `{packages, groups}`: the last **complete** list — what a
-  change is measured against.
+  change is measured against;
+- `ignoreAt`: when `ignoreKnown` was read (RFC 3339, the capture time).
+
+The raw names are engine-private state in the user's state directory,
+as the orchestrator accepted (review round 1, Q3).
 
 A run without a cursor, or with a cursor without `ignoreKnown` (the first
 run of this engine, a lost state directory), takes the list as it is, **no
 event** — a baseline, as every collector takes one. A partial read writes
-no event and leaves `ignoreKnown` alone, so a file that could not be read
-is never reported as names removed. Because `capture` saves cursors only
-after the ledger write, a failed write never loses a change, and a second
-capture writes nothing (idempotent). A change whose names the ledger's
-newest ignore-list note already records (the cursor save after the write
-failed, an older state directory restored) is not written again; the
-ledger is read for that only when the list changed.
+no event and leaves `ignoreKnown` and `ignoreAt` alone, so a file that
+could not be read is never reported as names removed. Every complete read
+sets both. Names are compared as sets: another order, across lines and
+files, is no change. Because `capture` saves cursors only after the
+ledger write, a failed write never loses a change, and a second capture
+writes nothing (idempotent).
+
+A change can already be in the ledger although the cursor does not know
+it: the cursor save after the write failed, or an older state directory
+was restored. Then the newest ignore-list note **at or after `ignoreAt`**
+records the new lists exactly as the ledger wrote them (through the
+logbook's redaction), and the change is not written again. A note from
+before `ignoreAt` never counts: after a state loss the known list is a
+new baseline, and a change after it is a change, whatever older notes
+say (review round 1, F1). The ledger is read for this only when the list
+changed, and only since `ignoreAt`.
 
 ### 3. The event
 
@@ -107,6 +133,9 @@ event:
 - `meta.ignorePkg` and `meta.ignoreGroup`: the **new** lists, names
   separated by one space as pacman.conf writes them (`""` for an empty
   one); both always present on this event, and only on it.
+- A name Seldon does not show by its shape (§5) is written as `(hidden)`
+  in `detail` and `meta`; it still makes a change. The ledger's
+  redaction applies as to every line.
 
 `seldon event` refuses `--meta ignorePkg=…` and `--meta ignoreGroup=…`
 (exit 1): the collector writes them. A line with them that is not a pacman
@@ -127,9 +156,13 @@ upgrade`). ADR-0028's three tests, its other rows and §3–§7 stand.
 ### 5. The index field
 
 `system.pacmanIgnore` (optional) = `{packages: [name], groups: [name],
-partial?: true}`: the pacman cursor's `ignore` (§2), in pacman's order;
-`partial` present only when true. Every index build drops a name the
-logbook's redaction would change (and marks the list partial); the field
+hidden?: n, partial?: true}`: the pacman cursor's `ignore` (§2), in
+pacman's order. A name is shown when it is 1–128 characters of
+`[A-Za-z0-9@._+*?!^[]-]` (a package or group name, or an `fnmatch`
+pattern of one) and the logbook's redaction leaves it unchanged, on
+every index build; the others are counted in `hidden` (present only when
+not 0), never shown. `partial` (present only when true) is the read's
+(§1). The field
 is absent while the pacman collector is disabled, when `cursors.json` is
 another logbook's or holds no list, and while `[redaction] patterns` do
 not compile (as ADR-0038 §2 withholds its texts). Names are user content
@@ -139,12 +172,15 @@ argument of any command.
 ### 6. The desk
 
 The System section (5) gains a seventh tile, **Ignored by pacman**: the
-big value is the number of names in both lists ("ignored"); the lead,
+big value is the number of names in both lists, hidden ones included
+("ignored"); the lead,
 when there is one, is **"pacman's full upgrade skips them; `pacman -S`
 still updates them."**, with none "pacman ignores nothing: no IgnorePkg or
 IgnoreGroup in pacman.conf."; a partial list adds "Part of pacman's
 configuration could not be read; the list may be incomplete." The rows
-are IgnorePkg and IgnoreGroup with their names. No stripe: the list is
+are IgnorePkg and IgnoreGroup with their names, and with hidden names
+"Not shown · N names (not a plain package or group name, or masked by
+your redaction)". No stripe: the list is
 a fact, the change is the drift.
 
 The event's detail (Changelog, Today) gets the row **Hint**: "pacman's
@@ -199,3 +235,11 @@ plugin reads contract 2 yet, so no reader can misread it.
 - *Show patterns resolved to installed packages:* needs the package
   database and changes with every install; the names as written are what
   the user can find and edit.
+- *An unshown name or an include outside `/etc` makes the list partial*
+  (the first draft): one typo (`IgnorePkg = linux,nvidia-utils`) would
+  silence every later change. Partial is kept for reads that are really
+  incomplete (review round 1, F6).
+- *The ledger's newest note decides alone whether a change is new* (the
+  first draft): after a state loss an older note can name the new list,
+  and a real change goes unrecorded (review round 1, F1). Bounded by
+  `ignoreAt` instead.
