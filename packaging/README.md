@@ -167,13 +167,18 @@ content is the same byte for byte.
 - **GHCR down:** the pulls fail and the jobs fail; there is no fallback to
   Docker Hub. The `mirror` job fails too, its message names Docker Hub's
   limit, GHCR and the token. Run the jobs again later.
-- **Visibility, untested until the first push:** a package published from
-  a workflow with the job's token is expected to be linked to the
-  repository and to inherit its visibility (GitHub's docs), so a public
-  repository gets a public package and nothing needs to be set up. This has
-  not been tried; after the first push to `next` with this setup, check
-  that the package `jax-seldon/archlinux` (the repository's *Packages*) is
-  public and linked to `jax-seldon`.
+- **Visibility: private at first.** A package published from a workflow
+  with the job's token is expected to be linked to the repository (its
+  workflows can read it) and to be **private** at its first publish, as
+  GitHub's docs say for a first publish (untested until that push). The
+  repository's own CI pulls it either way. After the first push to `next`:
+  the repository's *Packages* → `archlinux` → Package settings → *Change
+  visibility* → **Public**, so forks can pull it too.
+- **The first copy is one anonymous Docker Hub pull** from a shared
+  runner, the same kind of pull the limit stopped; `--retry-times 3`
+  retries within seconds, not across the limit's window. If it hits the
+  limit, the `mirror` job is red and the jobs after it are skipped:
+  *Re-run failed jobs* later.
 
 A run therefore uses exactly the reviewed action code and image until a
 commit changes the pin. `tests/release/workflow-pins.test.sh` (part of
@@ -220,6 +225,15 @@ three workflows (each action and the image have one pin everywhere):
   the `mirror` job again later.
 - *Then:* `just check-packaging`, and the release dry run on the branch
   ("Dry run" above) must be green before the change is merged.
+
+## The memory limit of `seldon watch`
+
+`just check-rss` (docs/TESTING.md, "Memory bound") bounds the peak RSS
+of `seldon watch` at 11 MB, operator decision E8. **Proposed 12 MB,
+pending the operator** (WP-195): the dev host's measured peaks are
+11 348 to 11 632 kB, so 11 MB fails there on `next` itself. CI records
+five measurements in every run's summary (not gated); the test-host
+numbers follow after WP-195's merge.
 
 ## Dependabot
 

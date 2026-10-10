@@ -324,7 +324,7 @@ file takes ~12 s; the timing assertions allow 4 s of slack for a loaded
 machine. `Watch::start` consumes the `watching` line and the rebuild at
 start, so each test sees only the rebuilds its own writes cause.
 
-**Memory bound (PLAN.md: RSS < 10 MB; 11 MB since 2026-10-07; 12 MB, measured, since WP-195).** The test runs the watcher on the
+**Memory bound (PLAN.md: RSS < 10 MB; 11 MB since 2026-10-07; 12 MB proposed by WP-195, pending the operator).** The test runs the watcher on the
 ×10 fixture (`tests/common/scale.rs`) with the state lock held (so the
 rebuild at start waits), reads the idle size, releases the lock, lets the
 rebuild at start and one change-triggered rebuild run (500 events in the
@@ -337,7 +337,7 @@ information only: most of them are the debug binary's file-mapped pages,
 whose idle share moves by up to ~0.8 MB between builds of the same code
 (WP-091 round 3). `just check-rss` runs
 the test under `--profile bench` and prints the measurement; the peak must
-stay under 12 MB (12 288 kB). The heap-growth bound above stays the real
+stay under 11 MB (11 264 kB; operator decision E8). The heap-growth bound above stays the real
 limit; the peak also counts the binary's own file-backed pages, which grow
 with the code (WP-175 traced +785 kB of `.text` and +368 kB of heap over
 about ten WPs on `next`, no leak).
@@ -346,17 +346,18 @@ touches `engine/src/index/` or `engine/src/commands/watch.rs`. CI runs it
 five times after `just bench` and writes the five lines to the run summary;
 a run over the limit is a warning there, not a failure.
 
-*How the limit is set (WP-195).* The limit is the highest peak measured
+*How a limit is proposed (WP-195; the operator decides it).* A limit is the highest peak measured
 on the dev host, the test host and CI, plus a margin of at least twice
 the spread between runs, rounded up to a whole MB. Measure with
 `just check-rss` (one line `watch on ×10 (optimised): idle …, after
 rebuild …, peak … kB; heap (RssAnon) … → … kB` per run), at least five
 runs per place, on a quiet machine; record the numbers here. History: 10 MB
 (PLAN.md), 11 MB (operator decision 2026-10-07: the 10 MB peak was
-exceeded by 0.3–0.6 MB of the binary's own pages on the dev host), 12 MB
-(WP-195, replacing operator decision E8 pending the operator's yes:
-11 MB sat below `next`'s own peak on the dev host, 11.26–11.46 MB
-in WP-175 and WP-165).
+exceeded by 0.3–0.6 MB of the binary's own pages on the dev host; E8).
+**Proposed: 12 MB** (WP-195, pending the operator; the limit stays 11 MB
+until the operator says yes): 11 MB sits below `next`'s own peak on the
+dev host, 11.26–11.46 MB in WP-175 and WP-165, so `just check-rss` fails
+there today.
 
 | Where | When, build | Peak, runs | Heap after the rebuild |
 |---|---|---|---|
@@ -364,10 +365,10 @@ in WP-175 and WP-165).
 | test host | — | not run yet: measured after WP-195's merge (WP-195's brief allowed no network) | — |
 | CI (`ubuntu-latest`, Arch container) | — | not run yet: the first CI run after the merge records it (the run summary) | — |
 
-12 MB = 11 632 kB + 656 kB: more than twice the 284 kB spread of the dev
-host's eight runs. The test host and CI rows are open: when they are
-measured, the limit is set again by the rule above (lower, if all three
-places stay well under it). To measure another binary, e.g. the musl release build with the
+The proposed 12 MB = 11 632 kB + 656 kB: more than twice the 284 kB
+spread of the dev host's eight runs. The test host and CI rows are open:
+when they are measured, the proposal is redone by the rule above (lower,
+if all three places stay well under it) and goes to the operator. To measure another binary, e.g. the musl release build with the
 feature:
 
 ```

@@ -528,9 +528,9 @@ and the package does not exist yet. Update the plugin first:
   (AGENTS.md §7). CI pulls its Arch image from a GHCR copy with the same
   digest instead of Docker Hub, whose anonymous pull limit had stopped
   it; only a push to `main` or `next` copies an image there. `just
-  check-rss`'s limit is 12 MB, set from measurements recorded in
-  docs/TESTING.md; it replaces operator decision E8 (11 MB) pending the
-  operator's yes. CI measures it.
+  check-rss` prints its measurement and CI records it; its limit stays
+  11 MB (operator decision E8), and 12 MB, from the measurements in
+  docs/TESTING.md, is proposed to the operator.
 - **A recorded live test per release (WP-192).** From 0.2.0 every
   release has `packaging/acceptance/vX.Y.Z.json`: the commit deployed to
   the test host, the Omarchy version and channel, the installed engine
