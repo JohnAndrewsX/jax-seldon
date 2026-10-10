@@ -802,10 +802,15 @@ mod setup {
         let v = json(&out);
         let capture = &v["capture"];
         assert_eq!(capture["ran"], true, "{capture}");
-        assert_eq!(capture["since"], serde_json::Value::Null);
+        // ADR-0033: --non-interactive looks back 90 days too (WP-119 round 2)
+        assert_eq!(capture["lookbackDays"], 90, "{capture}");
+        assert!(capture["since"].is_string(), "{capture}");
         assert_eq!(capture["written"], 0);
         assert_eq!(capture["openDrift"], 0);
-        assert_eq!(capture["baseline"], serde_json::Value::Null);
+        assert_eq!(capture["baseline"]["reason"], "before Seldon");
+        assert_eq!(capture["baseline"]["items"], 0);
+        // no harness set up: the Agents row says how to add one
+        assert_eq!(v["harnesses"], serde_json::json!([]));
         let names: Vec<&str> = capture["collectors"]
             .as_array()
             .unwrap()
@@ -875,9 +880,20 @@ mod setup {
         // the plugins and theme sources are not stubbed here
         assert!(
             text.contains(
-                "\nHistory     from now on; the first capture recorded 0 event(s); plugins, theme degraded\n"
+                "\nHistory     Looked back 90 days: 0 changes recorded as history before Seldon; plugins, theme degraded\n"
             ),
             "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "\nAgents      {}\n",
+                seldon::commands::init::NO_AGENTS
+            )),
+            "{text}"
+        );
+        assert_eq!(
+            seldon::commands::init::NO_AGENTS,
+            "none; add one with seldon hook install claude-code (or skills)"
         );
         assert!(
             text.contains("\nNext steps:\n  seldon doctor   # degraded: plugins, theme\n"),
@@ -2128,10 +2144,12 @@ mod defaults {
         assert_eq!(v["capture"]["openDrift"], 0);
     }
 
-    /// `--non-interactive` is unchanged (operator, 2026-10-10): from now
-    /// on, no look-back, no detection.
+    /// `--non-interactive` follows ADR-0033 too (orchestrator, 2026-10-10,
+    /// correcting the first answer): the 90-day look-back dismissed "before
+    /// Seldon", but no detection (Obsidian only with `--obsidian`) and no
+    /// harness; `--since` without `--baseline` keeps its drift open.
     #[test]
-    fn non_interactive_records_from_now_on() {
+    fn non_interactive_looks_back_without_detection() {
         let env = Env::new(Snapper::Allowed);
         let apps = env.tmp.path().join("xdg-data/applications");
         std::fs::create_dir_all(&apps).unwrap();
@@ -2159,8 +2177,69 @@ mod defaults {
         let v = json(&out);
         assert_eq!(v["mode"], "non-interactive");
         assert_eq!(v["obsidian"], false);
-        assert_eq!(v["capture"]["since"], serde_json::Value::Null);
-        assert_eq!(v["capture"]["lookbackDays"], serde_json::Value::Null);
-        assert_eq!(v["capture"]["baseline"], serde_json::Value::Null);
+        assert_eq!(v["harnesses"], serde_json::json!([]));
+        assert_eq!(v["capture"]["since"], START);
+        assert_eq!(v["capture"]["lookbackDays"], 90);
+        assert_eq!(v["capture"]["baseline"]["reason"], "before Seldon");
+        assert_eq!(v["capture"]["openDrift"], 0);
+        let mut seen = subjects(&path);
+        seen.sort();
+        assert_eq!(seen, ["first-day", "month-ago", "yesterday"]);
+    }
+}
+
+/// WP-119 round 2 (CONTRACT.md rule 10): before `init`, exit 3's `--json`
+/// error names the logbook path and, when `init` could not create the
+/// logbook there, why — so the setup card offers another folder instead of
+/// the same button. Held equal to `fixtures/errors/`.
+mod not_initialised {
+    use std::path::Path;
+
+    use super::*;
+
+    fn fixture(name: &str) -> serde_json::Value {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../fixtures/errors")
+            .join(name);
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    /// `seldon status --json` against the default logbook, its path made
+    /// the fixture's.
+    fn status(env: &Env) -> serde_json::Value {
+        let out = env.seldon(&["status", "--json"]);
+        assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
+        let root = env.home.join("Seldon");
+        let text = stdout(&out).replace(root.to_str().unwrap(), "/home/user/Seldon");
+        serde_json::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn exit_3_says_why_the_folder_cannot_be_used() {
+        // no folder, or an empty one: free, no reason
+        let env = Env::new(Snapper::Allowed);
+        assert_eq!(status(&env), fixture("not-initialised.json"));
+        std::fs::create_dir_all(env.home.join("Seldon")).unwrap();
+        assert_eq!(status(&env), fixture("not-initialised.json"));
+        // a folder with files in it: init --defaults would refuse it
+        std::fs::write(env.home.join("Seldon/notes.md"), "mine\n").unwrap();
+        assert_eq!(status(&env), fixture("not-initialised-not-empty.json"));
+        let refused = env.seldon(&["init", "--defaults", "--no-capture", "--json"]);
+        assert_eq!(refused.status.code(), Some(1));
+        // a file where the folder would go
+        let env = Env::new(Snapper::Allowed);
+        std::fs::write(env.home.join("Seldon"), "").unwrap();
+        assert_eq!(
+            status(&env)["error"]["reason"],
+            "logbook-folder-not-a-folder"
+        );
+        // the text form is unchanged
+        let out = env.seldon(&["status"]);
+        assert_eq!(out.status.code(), Some(3));
+        assert!(
+            stderr(&out).contains("logbook not initialised at"),
+            "{}",
+            stderr(&out)
+        );
     }
 }

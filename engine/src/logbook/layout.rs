@@ -138,6 +138,23 @@ pub fn is_vacant(dir: &Path) -> std::io::Result<bool> {
     }
 }
 
+/// Why `init` cannot create a logbook at `root` (WP-119): a folder that
+/// holds files (`"logbook-folder-not-empty"`) or something that is no
+/// folder (`"logbook-folder-not-a-folder"`); `None` when the path is free or
+/// an empty folder, or cannot be read (`init` then says why). Exit 3's
+/// `--json` error carries it as `reason` (CONTRACT.md rule 10), so the
+/// plugin's setup card offers another folder instead of the same button.
+pub fn blocked_reason(root: &Path) -> Option<&'static str> {
+    let meta = std::fs::symlink_metadata(root).ok()?;
+    if !meta.is_dir() && !(meta.is_symlink() && root.is_dir()) {
+        return Some("logbook-folder-not-a-folder");
+    }
+    match is_vacant(root) {
+        Ok(false) => Some("logbook-folder-not-empty"),
+        _ => None,
+    }
+}
+
 fn write_new(root: &Path, rel: &str, text: &str, written: &mut Vec<PathBuf>) -> anyhow::Result<()> {
     let path = root.join(rel);
     if let Some(dir) = path.parent() {

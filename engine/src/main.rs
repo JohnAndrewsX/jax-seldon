@@ -200,9 +200,10 @@ struct InitCmd {
     #[arg(long, conflicts_with = "non_interactive")]
     ask: bool,
 
-    /// Ask nothing; take flags, then the existing config, then the
-    /// defaults: ~/Seldon, language from the locale, all collectors, git
-    /// on, first capture from now on, no backfill, no theme hook
+    /// Ask nothing, detect nothing; take flags, then the existing config,
+    /// then the defaults: ~/Seldon, language from the locale, all
+    /// collectors, git on, the last 90 days recorded as history before
+    /// Seldon, no theme hook
     #[arg(long)]
     non_interactive: bool,
 
@@ -301,7 +302,32 @@ fn main() -> ExitCode {
                 Err(e) => stdout_failed(&e),
             }
         }
-        Err(err) => fail(json, err.exit(), &err.to_string()),
+        Err(err) => fail_with(json, &err),
+    }
+}
+
+/// [`fail`] for a command's error. Exit 3 adds, to the `--json` error, the
+/// logbook path and, when `init` could not create a logbook there, why
+/// (`reason`, [`seldon::logbook::layout::blocked_reason`]; CONTRACT.md rule
+/// 10, WP-119).
+fn fail_with(as_json: bool, err: &Error) -> ExitCode {
+    let Error::NotInitialised(root) = err else {
+        return fail(as_json, err.exit(), &err.to_string());
+    };
+    if !as_json {
+        return fail(false, err.exit(), &err.to_string());
+    }
+    let mut error = json!({
+        "code": Exit::NotInitialised as u8,
+        "message": err.to_string(),
+        "path": root,
+    });
+    if let Some(reason) = seldon::logbook::layout::blocked_reason(root) {
+        error["reason"] = json!(reason);
+    }
+    match print_line(&json!({ "error": error }).to_string()) {
+        Ok(()) => Exit::NotInitialised.into(),
+        Err(e) => stdout_failed(&e),
     }
 }
 

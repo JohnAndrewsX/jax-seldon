@@ -5,12 +5,13 @@
 //! logbook goes; `--ask` is the full wizard — path → language → Obsidian →
 //! collectors → watched paths → harnesses → theme hook → git → backfill —
 //! each step skipped when its flag is given; `--non-interactive` asks
-//! nothing and takes flags, then the config, then the defaults, and records
-//! from now on (the scripting form, as before ADR-0033). The first three
-//! look back [`LOOKBACK_DAYS`] days and mark that history "before Seldon"
-//! ([`setup::BASELINE_REASON`]) without a question (`--ask` offers the date
-//! and asks about the baseline), and add Obsidian's settings when Obsidian
-//! is installed ([`obsidian_installed`]). Defaults come from an existing
+//! nothing and takes flags, then the config, then the defaults (the
+//! scripting form). Every mode looks back [`LOOKBACK_DAYS`] days and marks
+//! that history "before Seldon" ([`setup::BASELINE_REASON`]) without a
+//! question, unless `--since`, `--baseline` or `--no-capture` says
+//! otherwise (ADR-0033 §3; `--ask` offers the date and asks about the
+//! baseline). `--defaults` and plain `init` also add Obsidian's settings
+//! when Obsidian is installed ([`obsidian_installed`]). Defaults come from an existing
 //! `config.toml` where it has a value (a file without `language` leaves the
 //! language to the locale).
 //!
@@ -72,8 +73,8 @@ pub enum InitMode {
     Defaults,
     /// `--ask`: the full wizard; needs a terminal.
     Ask,
-    /// `--non-interactive`: no question, flags and the config, records from
-    /// now on; no backfill and no detection unless a flag asks for it.
+    /// `--non-interactive`: no question, flags and the config; the
+    /// look-back of ADR-0033 unless a flag says otherwise; no detection.
     NonInteractive,
 }
 
@@ -186,7 +187,11 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         InitMode::Ask => wizard(ctx, &args, existing.as_ref())?,
         InitMode::Location => location(ctx, &args, existing.as_ref())?,
         InitMode::Defaults => no_questions(ctx, &args, existing.as_ref()),
-        InitMode::NonInteractive => defaults(ctx, &args, existing.as_ref()),
+        InitMode::NonInteractive => {
+            let mut c = defaults(ctx, &args, existing.as_ref());
+            look_back(ctx, &mut c);
+            c
+        }
     };
     let root = choices.root.clone();
     let lock = lock::acquire(&ctx.dirs.lock_file())?;
@@ -378,6 +383,10 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
                 summary.step(format!("seldon hook install {}", h.name));
             }
         }
+    } else {
+        // no harness asked for (the default on a fresh machine): say how
+        // to add one, without making it a step (WP-119 round 2)
+        summary.row("Agents", NO_AGENTS);
     }
 
     summary.row("History", capture.row.clone());
@@ -728,14 +737,23 @@ fn defaults(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Choice
 fn no_questions(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Choices {
     let mut c = defaults(ctx, args, existing);
     c.obsidian = c.obsidian || obsidian_installed(&ctx.dirs);
-    if c.capture && c.since.is_none() {
-        c.since = Some(lookback_start(ctx.now, LOOKBACK_DAYS));
-        c.lookback = Some(LOOKBACK_DAYS);
-    }
+    look_back(ctx, &mut c);
     if c.since.is_some() {
         c.baseline = Some(true);
     }
     c
+}
+
+/// ADR-0033 §1, §2 for every mode that asks no date: without `--since` and
+/// with a first capture, the capture records the last [`LOOKBACK_DAYS`]
+/// days and the baseline marks what that opens "before Seldon". A
+/// `--since` keeps its own choice (`--baseline` or not).
+fn look_back(ctx: &Context, c: &mut Choices) {
+    if c.capture && c.since.is_none() {
+        c.since = Some(lookback_start(ctx.now, LOOKBACK_DAYS));
+        c.lookback = Some(LOOKBACK_DAYS);
+        c.baseline = Some(true);
+    }
 }
 
 /// Plain `seldon init`: [`no_questions`], and the one question where the
@@ -1158,6 +1176,9 @@ impl Summary {
         out.join("\n")
     }
 }
+
+/// The Agents row when no harness is set up.
+pub const NO_AGENTS: &str = "none; add one with seldon hook install claude-code (or skills)";
 
 /// The last line of a clean `init`.
 pub const NOTHING_TO_DO: &str = "Seldon is recording. Nothing else to do.";
