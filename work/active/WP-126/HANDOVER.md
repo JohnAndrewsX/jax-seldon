@@ -293,3 +293,25 @@ wrapper, 8 calls), docs-check ok, qmllint ok (52 files), model.test.js
 bar-view 196/0, ipc-restart 44/0. Where: headless (dev host, private
 runtime dirs on disk), shellcheck on the test host. Nothing ran on the
 test host's desktop in this stage.
+
+### 126c round 2 (review 1: SEND BACK)
+
+| Finding | Fix | Verified |
+|---|---|---|
+| F1 stacked ↑ opened the detail; ↓ left the first event's detail under "↓ back to the list" | a key only selects (`showTriage(false)` from `move`): the list stays, Enter shows the detail as for an event row; a click, IPC and *Review* show it at once; the hint on a stacked desk showing its list reads "Enter shows it · ↓ back to the list" (`Model.proposalHint(shown, listOnly)`) | fixture (model.test.js); headless (`triage-keys-stacked`, 700x900: ↑ selects, ↓ back to row 0, ↑ Enter shows, Enter Enter applies once, Esc back to the list) |
+| F2 an armed Apply (and Discard) outlived a replaced proposal | `applyArmed` and `discardArmed` require the current proposal; `onCurrentChanged` drops such an arm | headless (`triage-swap-apply`, `triage-swap-discard`: armed by key or click, a capture without a key brings the newer proposal, neither stays armed, the hint says replaced, the next Enter is Review, no apply or discard reaches the engine) |
+| F3 | SPEC-PLUGIN §5.3 rows for ↑/↓ and Enter name the proposal; Changelog.qml's header comment too; §5.4 the stacked desk and the arm rule; KEYBINDINGS the narrow desk | fixture (docs-check) |
+| F4 | the handover's "page up" sentence reworded (the desk sends ±1 only) | — |
+
+The three new cases fail on f558e761 (9 expectations: the detail opened
+by a key when stacked, the stale arm hints). The per-crisis key inside a
+proposal is your 0.2.x follow-up; live scenario c resolves its crisis
+from the crisis's own row by key.
+
+**Gate:** `SELDON_FULL_CHECK=1 just check` exited 0 on cbebaa52 (only
+this handover follows); log `gates/check-dev-126c-r2.log`:
+check-packaging ok (shellcheck on the test host through the kit wrapper,
+8 calls), docs-check ok, qmllint ok, model.test.js 217, service-states
+367/0, desk-view 2076/0, bar-view 196/0, ipc-restart 44/0. Where:
+headless (dev host, private runtime dirs on disk), shellcheck on the test
+host.
