@@ -10,10 +10,13 @@
 #   - every `container:` and `image:` is `name@sha256:<64 hex> # <tag>`;
 #   - one action or image has one pin across all workflows;
 #   - every image comes from the GHCR mirror, never from Docker Hub
-#     (WP-195): a job with a container needs the workflow's `image` job,
-#     reads packages and logs in with the job's token; the `image` job
-#     runs packaging/mirror-image.sh with exactly contents: read and
-#     packages: write, and no other job may write packages;
+#     (WP-195): a job with a container reads packages and logs in with
+#     the job's token; ci.yml has a `mirror` job, which runs
+#     packaging/mirror-image.sh with exactly contents: read and packages:
+#     write and only on a push (`if: github.event_name == 'push'`) in a
+#     workflow pushed on branches [main, next] only, never on tags; in a
+#     workflow with one, the container jobs need it and run when it
+#     succeeded or was skipped; no other job may write packages;
 #   - release.yml's build job installs cargo-audit and runs
 #     `cargo audit` with the reviewed ignore list before `just check`;
 #     the step has no `if:` or `shell:` of its own, nothing in its run
@@ -107,40 +110,56 @@ job_perms() {
   awk '/^    permissions:/ { on = 1; next } on && /^      / { print; next } on { exit }' <<< "$1" | LC_ALL=C sort
 }
 
-# mirror FILE...: the build image comes from GHCR, never Docker Hub
-# (WP-195; packaging/mirror-image.sh)
+# mirror FILE...: the build image comes from GHCR, never Docker Hub, and
+# only a push to main or next may copy it there (WP-195;
+# packaging/mirror-image.sh)
 mirror() {
-  local f j text
+  local f j text on_push have
   grep -n -E '^[[:space:]]*(-[[:space:]]+)?(container|image):[[:space:]]*[^[:space:]#]' "$@" \
     | grep -v -E ':[[:space:]]*(-[[:space:]]+)?(container|image):[[:space:]]+ghcr\.io/johnandrewsx/jax-seldon/' \
     | sed 's/$/ (pulls from Docker Hub: use the GHCR mirror, packaging\/mirror-image.sh)/' || true
   for f in "$@"; do
+    have=$(job "$f" mirror)
+    if [[ -n $have ]]; then
+      # the push trigger of `on:`: branches main and next only, no tags
+      on_push=$(awk '/^on:/ { on = 1; next } on && /^[^ #]/ { exit }
+        on && /^  push:/ { p = 1; next } on && p && /^  [^ ]/ { p = 0 } p { print }' "$f")
+      grep -x -q -F '    branches: [main, next]' <<< "$on_push" \
+        && ! grep -E -q '^    (tags|tags-ignore|branches-ignore):' <<< "$on_push" \
+        || echo "$f: a workflow with a mirror job must push-trigger on branches [main, next] only (no tags)"
+    elif [[ $(basename "$f") == ci.yml ]]; then
+      echo "$f: ci.yml has no mirror job"
+    fi
     while read -r j; do
       [[ -n $j ]] || continue
       text=$(job "$f" "$j")
-      if [[ $j == image ]]; then
+      if [[ $j == mirror ]]; then
         [[ $(job_perms "$text") == "$(printf '      %s\n' 'contents: read' 'packages: write')" ]] \
-          || echo "$f: the image job's permissions are not exactly contents: read, packages: write"
+          || echo "$f: the mirror job's permissions are not exactly contents: read, packages: write"
         grep -x -q -F '        run: bash packaging/mirror-image.sh' <<< "$text" \
-          || echo "$f: the image job does not run packaging/mirror-image.sh"
-        ! grep -E -q '^    (if|container):' <<< "$text" \
-          || echo "$f: the image job has an if: or a container"
+          || echo "$f: the mirror job does not run packaging/mirror-image.sh"
+        [[ $(grep -E '^    if:' <<< "$text") == "    if: github.event_name == 'push'" ]] \
+          || echo "$f: the mirror job does not run on a push only (if: github.event_name == 'push')"
+        ! grep -E -q '^    container:' <<< "$text" \
+          || echo "$f: the mirror job has a container"
         continue
       fi
       ! grep -E -q '^[[:space:]]+packages:[[:space:]]*write' <<< "$text" \
-        || echo "$f: the $j job writes packages (only the image job may)"
+        || echo "$f: the $j job writes packages (only the mirror job may)"
       grep -E -q '^    container:' <<< "$text" || continue
-      grep -E -q '^    needs:[[:space:]]*(image|\[([^]]*[[:space:],])?image([[:space:],][^]]*)?\])[[:space:]]*$' <<< "$text" \
-        || echo "$f: the $j job uses the image but does not need the image job"
+      if [[ -n $have ]]; then
+        grep -E -q '^    needs:[[:space:]]*(mirror|\[([^]]*[[:space:],])?mirror([[:space:],][^]]*)?\])[[:space:]]*$' <<< "$text" \
+          || echo "$f: the $j job uses the image but does not need the mirror job"
+        # shellcheck disable=SC2016  # the workflow's expression, literally
+        grep -x -q -F "    if: \${{ !cancelled() && (needs.mirror.result == 'success' || needs.mirror.result == 'skipped') }}" <<< "$text" \
+          || echo "$f: the $j job does not run after a skipped mirror job, or runs after a failed one"
+      fi
       grep -E -q '^      packages: read$' <<< "$text" \
         || echo "$f: the $j job uses the image but has no packages: read"
       # shellcheck disable=SC2016  # the workflow's expression, literally
       grep -x -q -F '        password: ${{ secrets.GITHUB_TOKEN }}' <<< "$text" \
         || echo "$f: the $j job's container does not log in with the job's token"
     done <<< "$(jobs_of "$f")"
-    if grep -E -q '^    container:' "$f" && [[ -z $(job "$f" image) ]]; then
-      echo "$f: a job uses the image but the workflow has no image job"
-    fi
   done
 }
 
@@ -369,22 +388,34 @@ expect_problem "check job writes packages" "check job writes packages" \
   's/^      packages: read$/      packages: write/' ci.yml
 expect_problem "build job writes packages" "build job writes packages" \
   's/^      packages: read$/      packages: write/'
-expect_problem "check job without needs: image" "does not need the image job" \
-  '/^    needs: image$/d' ci.yml
-expect_problem "build job needs another job" "does not need the image job" \
-  's/^    needs: image$/    needs: [imagery]/'
+expect_problem "check job without needs: mirror" "does not need the mirror job" \
+  '/^    needs: mirror$/d' ci.yml
+expect_problem "audit job needs another job" "does not need the mirror job" \
+  's/^    needs: mirror$/    needs: [mirrors]/' audit.yml
+expect_problem "check job skipped with the mirror job" "does not run after a skipped mirror job" \
+  '/^    if: \$\{\{ !cancelled\(\) /d' ci.yml
+expect_problem "check job after a failed mirror job" "runs after a failed one" \
+  "s/^(    if: \\\$\{\{ )!cancelled\(\) && .*/\1always() }}/" ci.yml
 expect_problem "audit job without packages: read" "has no packages: read" \
   '/^      packages: read$/d' audit.yml
 expect_problem "container without the token" "does not log in" \
   '/^        password: /d' ci.yml
-expect_problem "no image job" "has no image job" \
-  's/^  image:$/  mirror:/' audit.yml
-expect_problem "image job without the script" "does not run packaging/mirror-image.sh" \
+expect_problem "no mirror job in ci.yml" "ci.yml has no mirror job" \
+  's/^  mirror:$/  copy:/' ci.yml
+expect_problem "mirror job without the script" "does not run packaging/mirror-image.sh" \
   's/^        run: bash packaging\/mirror-image.sh$/        run: true/' ci.yml
-expect_problem "image job with id-token" "image job's permissions are not exactly" \
+expect_problem "mirror job with id-token" "mirror job's permissions are not exactly" \
   's/^(      packages: write)$/\1\n      id-token: write/' ci.yml
-expect_problem "image job only on push" "image job has an if:" \
-  's/^(  image:)$/\1\n    if: github.event_name == '"'push'"'/' release.yml
+expect_problem "mirror job on pull requests too" "does not run on a push only" \
+  "/^  mirror:$/,/^    runs-on:/{/^    if: /d}" ci.yml
+expect_problem "mirror job on every event but pull_request_target" "does not run on a push only" \
+  "s/^    if: github.event_name == 'push'$/    if: github.event_name != 'pull_request_target'/" audit.yml
+expect_problem "mirror job in a container" "mirror job has a container" \
+  "s/^(  mirror:)$/\1\n    container:\n      image: ghcr.io\/johnandrewsx\/jax-seldon\/archlinux@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689/" ci.yml
+expect_problem "mirror on tag pushes" "branches \[main, next\] only" \
+  "s/^(    branches: \[main, next\])$/\1\n    tags: ['v*']/" ci.yml
+expect_problem "mirror on every branch" "branches \[main, next\] only" \
+  "s/^    branches: \[main, next\]$/    branches: ['**']/" audit.yml
 expect_problem "service image by tag" "image not pinned" \
   's/^(    runs-on: ubuntu-latest)$/\1\n    services:\n      db:\n        image: postgres:16/' ci.yml
 expect_problem "one action, two commits" "more than one version: actions/checkout" \

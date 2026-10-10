@@ -14,7 +14,7 @@ on:
     - cron: '17 5 * * 1'  # Mondays 05:17 UTC
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, next]
     paths:
       - engine/Cargo.lock
       - packaging/audit-ignore.txt
@@ -31,12 +31,14 @@ permissions:
   contents: read
 
 jobs:
-  # The build image from GHCR, not Docker Hub (WP-195): copies the
-  # pinned digest from Docker Hub once, when GHCR does not have it yet;
-  # the audit job pulls it from there. The only job with packages: write
-  # (packaging/mirror-image.sh; packaging/README.md, "Pinned actions
-  # and image").
-  image:
+  # The build image from GHCR, not Docker Hub (WP-195): on a push to
+  # main or next, copies the pinned digest from Docker Hub when GHCR does
+  # not have it yet. The only job with packages: write, and it never runs
+  # on a pull request; the jobs below pull by digest, after this job when
+  # it runs (packaging/mirror-image.sh; packaging/README.md, "Pinned
+  # actions and image").
+  mirror:
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -52,7 +54,9 @@ jobs:
         run: bash packaging/mirror-image.sh
 
   audit:
-    needs: image
+    needs: mirror
+    # also when mirror was skipped (no push); never after it failed
+    if: ${{ !cancelled() && (needs.mirror.result == 'success' || needs.mirror.result == 'skipped') }}
     runs-on: ubuntu-latest
     # pinned like ci.yml (packaging/README.md, "Pinned actions and image"),
     # pulled from the GHCR copy

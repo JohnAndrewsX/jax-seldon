@@ -115,8 +115,8 @@ else
 fi
 
 PRESENT= run refused "$pinned" FAKE_COPY=fail
-if [[ $code == 2 && $out == *"the copy failed"*"Dependabot"* ]]; then
-  pass "a failed copy: exit 2 with the hint"
+if [[ $code == 2 && $out == *"the copy failed"*"Docker Hub"*"GHCR may be unavailable"*"packages: write"* ]]; then
+  pass "a failed copy: exit 2, the hint names Docker Hub, GHCR and the token"
 else
   fail "a failed copy (exit $code): $out"
 fi

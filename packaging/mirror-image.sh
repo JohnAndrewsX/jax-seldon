@@ -6,17 +6,19 @@
 # a copy of `docker.io/library/archlinux@sha256:<digest>` with the same
 # digest: the pinned content is the same, only the registry differs.
 #
-# The `image` job of each workflow runs this script before the jobs that
-# use the image. It reads the one mirror digest the workflows pin (and its
-# tag comment), and copies that image from Docker Hub to GHCR only when
-# GHCR does not have it yet, so Docker Hub is asked once per digest, not
-# once per run. After a copy it checks that GHCR serves the digest.
+# The `mirror` job runs this script on a push to main or next only (ci.yml
+# and audit.yml; never on a pull request, so the token that can write
+# packages never meets a pull request's code), before the jobs that use
+# the image. It reads the one mirror digest the workflows pin (and its tag
+# comment), and copies that image from Docker Hub to GHCR only when GHCR
+# does not have it yet, so Docker Hub is asked once per digest, not once
+# per run. After a copy it checks that GHCR serves the digest. Pull
+# requests and the release workflow only pull by digest.
 #
 # Needs skopeo (GitHub's ubuntu-24.04 runner image has it), GITHUB_TOKEN
-# (packages: write for a copy; read is enough when the image is there)
-# and GITHUB_ACTOR. A pull request with a read-only token (a fork,
-# Dependabot) passes when the digest is mirrored and fails with a hint
-# when it is not.
+# (packages: write for a copy) and GITHUB_ACTOR. No fallback to Docker
+# Hub: when GHCR is down, the copy fails here and the pulls fail in the
+# jobs that use the image; run them again later.
 #
 # Usage: bash packaging/mirror-image.sh [WORKFLOW_DIR]
 #   (default .github/workflows; SKOPEO=<program> replaces skopeo, tests)
@@ -73,7 +75,7 @@ fi
 echo "mirror-image: not on GHCR yet; copying $upstream@sha256:$digest to $mirror:$tag"
 if ! "$skopeo" copy --all --preserve-digests --retry-times 3 --dest-authfile "$auth" \
   "docker://$upstream@sha256:$digest" "docker://$mirror:$tag"; then
-  echo "mirror-image: the copy failed. Docker Hub may have refused the pull (its limit: run the job again later), or the token cannot write packages (a pull request from a fork or Dependabot: the digest must be mirrored by a run on this repository first, e.g. the CI of a branch pushed here)" >&2
+  echo "mirror-image: the copy failed. Docker Hub may have refused the pull (its limit), or GHCR may be unavailable: run the job again later. Or the token cannot write packages (the job needs packages: write; packaging/README.md, \"Pinned actions and image\")" >&2
   exit 2
 fi
 if ! served; then

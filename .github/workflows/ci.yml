@@ -15,19 +15,21 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  # The build image from GHCR, not Docker Hub (WP-195): copies the
-  # pinned digest from Docker Hub once, when GHCR does not have it yet;
-  # the other jobs pull it from there. The only job with packages: write
-  # (packaging/mirror-image.sh; packaging/README.md, "Pinned actions
-  # and image").
-  image:
+  # The build image from GHCR, not Docker Hub (WP-195): on a push to
+  # main or next, copies the pinned digest from Docker Hub when GHCR does
+  # not have it yet. The only job with packages: write, and it never runs
+  # on a pull request; the jobs below pull by digest, after this job when
+  # it runs (packaging/mirror-image.sh; packaging/README.md, "Pinned
+  # actions and image").
+  mirror:
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -43,7 +45,9 @@ jobs:
         run: bash packaging/mirror-image.sh
 
   check:
-    needs: image
+    needs: mirror
+    # also when mirror was skipped (no push); never after it failed
+    if: ${{ !cancelled() && (needs.mirror.result == 'success' || needs.mirror.result == 'skipped') }}
     runs-on: ubuntu-latest
     # Actions and the image are pinned (commit SHA, image digest) with the
     # version as a comment; packaging/README.md says how to refresh them.
@@ -81,16 +85,22 @@ jobs:
       - name: just check-rss (measured, not gated)
         shell: bash
         run: |
-          over=0
+          failed=0
           for run in 1 2 3 4 5; do
-            if ! just check-rss 2>&1 | tee -a rss.log; then over=$((over + 1)); fi
+            if ! just check-rss 2>&1 | tee -a rss.log; then failed=$((failed + 1)); fi
           done
+          lines=$(grep -E 'watch on|≥' rss.log || true)
           {
             echo '## check-rss: peak RSS of seldon watch on the x10 fixture'
             echo '```'
-            grep -E 'watch on|≥' rss.log
+            echo "${lines:-(no measurement line: check-rss did not build or run its test)}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          if ((over > 0)); then
-            echo "::warning title=check-rss::$over of 5 runs over the limit (see the run summary; docs/TESTING.md, Memory bound)"
+          # no measurement is a broken test, not a number: fail, and say so
+          if [[ -z $lines ]]; then
+            echo "::error title=check-rss::no measurement line in 5 runs: check-rss did not build or run its test (see this step's log)"
+            exit 1
+          fi
+          if ((failed > 0)); then
+            echo "::warning title=check-rss::$failed of 5 runs failed or were over the limit (see the run summary; docs/TESTING.md, Memory bound)"
           fi
