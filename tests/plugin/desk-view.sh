@@ -478,6 +478,15 @@ check "snapper: Grant opened the terminal with the grant script" \
   "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$script" --)"
 clean_log snapper
 
+# 7a'. Not now that the shell refuses to store: the card goes for this
+#      shell's life, and Settings › Capture says so.
+run snapper-refused "$fx/index-variants/snapper-degraded.json" 1920x1080 \
+  "summon;clickName:setup-snapshots-later;text:,;key:Down" HARNESS_REFUSE=1
+expect snapper-refused 2 '[(.writes | length), .view.setup, .view.setupLater] | map(tostring) | join("|")' "1||true"
+shows snapper-refused 4 "The shell did not take the change; it holds until the shell restarts."
+expect snapper-refused 4 "$tv.offerAgain" true
+clean_log snapper-refused
+
 # 7b. Not initialised (dev mode, WP-119): no notice — the setup card, "2 of
 #     3 steps to go", the engine ticked, Create logbook (`seldon init
 #     --defaults`) and Copy; no KPI figures, no counts; no preview (dev

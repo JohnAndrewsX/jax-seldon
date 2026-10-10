@@ -313,6 +313,19 @@ Section {
         verticalPadding: Style.spacing.xs
         onClicked: if (root.service) root.service.setSetupLater(false)
       }
+
+      // Not now or Offer again not kept in shell.json (no bar entry, or
+      // the shell refused): it holds until the shell restarts.
+      Text {
+        width: parent.width
+        visible: !!root.service && root.service.setupResult !== ""
+        textFormat: Text.PlainText
+        text: root.service ? root.service.setupResult : ""
+        color: Color.popups.text
+        wrapMode: Text.Wrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
     }
 
     // ---- Agents

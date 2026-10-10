@@ -492,8 +492,10 @@ model behind it (`bannerFor`, `snapperBanner`): a step's buttons go to
   (§5.5); the step, the card (when nothing else is left), the chip and
   the snapshot notice go, and nothing asks again. Only Settings › Capture
   offers it again. Without a bar entry, or when the shell refuses the
-  write, it holds until the shell restarts and the card's line says so
-  (§5.5's sentences).
+  write, it holds until the shell restarts, and Settings › Capture says
+  so (§5.5's no-entry sentence, or "The shell did not take the change; it
+  holds until the shell restarts."): the key is not in Omarchy's bar
+  settings.
 - It is null — and the notices show the banners as before — when the
   engine that was there is gone (an index exists: the urgent "Seldon
   engine missing"), for an index missing or unreadable, and for a

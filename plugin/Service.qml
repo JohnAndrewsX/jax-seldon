@@ -131,7 +131,9 @@ Item {
   // After a step's terminal opened: { step, untilMs, captureAtMs }, while
   // the service looks again by itself (setupTick); null otherwise.
   property var setupWatch: null
-  // The line under the card's current step after Not now or Offer again.
+  // Why Not now or Offer again holds only until the shell restarts (no
+  // bar entry, or the shell refused the write); "" when it was stored.
+  // Settings › Capture shows it (the card is gone after Not now).
   property string setupResult: ""
   // The Prime Radiant's windows, series rows, slot counts and chart data for
   // every period (Model.periodTable: one pass per series, then the charts),
@@ -1195,7 +1197,7 @@ Item {
     root.setupLaterOverride = later === true
     var written = root.desk ? root.desk.writeSetting(Model.SETUP_LATER_KEY, later === true ? Model.SETUP_LATER_VALUE : undefined) : "session"
     root.setupResult = written === "written" || written === "unchanged" ? ""
-      : written === "refused" ? "The shell did not take the change; it holds until the shell restarts. " + Model.DESK_REFUSED_TEXT
+      : written === "refused" ? "The shell did not take the change; it holds until the shell restarts."
       : Model.DESK_NO_ENTRY_TEXT
     if (later !== true) root.setupWatch = null
     return true
