@@ -87,7 +87,7 @@ else
   fail "on GHCR (exit $code): $out / $calls"
 fi
 
-PRESENT= run absent "$pinned"
+PRESENT='' run absent "$pinned"
 want="copy --all --preserve-digests --retry-times 3 --dest-authfile "
 if [[ $code == 0 && $out == *"copied; GHCR serves the digest"* \
   && $calls == *"$want"*" docker://docker.io/library/archlinux@sha256:$digest docker://$mirror:base-devel-20260927.0.600689"* ]]; then
@@ -114,14 +114,14 @@ else
   fail "other bytes on GHCR (exit $code): $out"
 fi
 
-PRESENT= run refused "$pinned" FAKE_COPY=fail
+PRESENT='' run refused "$pinned" FAKE_COPY=fail
 if [[ $code == 2 && $out == *"the copy failed"*"Docker Hub"*"GHCR may be unavailable"*"packages: write"* ]]; then
   pass "a failed copy: exit 2, the hint names Docker Hub, GHCR and the token"
 else
   fail "a failed copy (exit $code): $out"
 fi
 
-PRESENT= run wrong "$pinned" FAKE_COPY=wrong
+PRESENT='' run wrong "$pinned" FAKE_COPY=wrong
 if [[ $code == 2 && $out == *"does not serve"* ]]; then
   pass "a copy GHCR does not serve: exit 2"
 else
@@ -130,7 +130,7 @@ fi
 
 two=$(workflows two "$mirror@sha256:$digest # base-devel-1" "$mirror@sha256:$(printf '%064d' 0) # base-devel-2")
 [[ $two == "$pinned" ]] && fail "the second digest is the first"
-PRESENT= run two "$two"
+PRESENT='' run two "$two"
 if [[ $code == 1 && $out == *"more than one digest"* && -z $calls ]]; then
   pass "two mirror digests: exit 1 before any registry call"
 else
@@ -138,14 +138,14 @@ else
 fi
 
 hub=$(workflows hub "archlinux:base-devel@sha256:$digest # base-devel-1")
-PRESENT= run hub "$hub"
+PRESENT='' run hub "$hub"
 if [[ $code == 1 && $out == *"no workflow"* && -z $calls ]]; then
   pass "no mirror pin: exit 1"
 else
   fail "no mirror pin (exit $code): $out"
 fi
 
-PRESENT= run notoken "$pinned" GITHUB_TOKEN=
+PRESENT='' run notoken "$pinned" GITHUB_TOKEN=
 if [[ $code != 0 && $out == *"GITHUB_TOKEN is not set"* && -z $calls ]]; then
   pass "no token: refused before any registry call"
 else
@@ -155,7 +155,7 @@ fi
 # the real workflows pin exactly one mirror digest, the one ci.yml names,
 # and the copy asks for it (the fake GHCR cannot serve it: exit 2)
 real=$(sed -n -E 's|^ *image: ghcr\.io/johnandrewsx/jax-seldon/archlinux@sha256:([0-9a-f]{64}) # (.*)|\1 \2|p' "$root/.github/workflows/ci.yml")
-PRESENT= run real "$root/.github/workflows"
+PRESENT='' run real "$root/.github/workflows"
 if [[ -n $real && $out == *"mirror-image: $mirror@sha256:${real% *} (${real#* })"* \
   && $calls == *" docker://docker.io/library/archlinux@sha256:${real% *} docker://$mirror:${real#* }"* ]]; then
   pass "the real workflows: one mirror digest (${real% *}, ${real#* })"
