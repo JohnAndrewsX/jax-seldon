@@ -70,7 +70,7 @@ cargo test --manifest-path engine/Cargo.toml log::                # notes, journ
 | `engine/tests/own_writes.rs` | SPEC-ENGINE §5 rule 7 (WP-038): `init --theme-hook` and `hook install` under a watched path, the next capture explains the `config-add`/`config-change` and opens no drift. The removals (WP-049): `init --remove-theme-hook` deletes the hook and its script, records `op: delete`, the next capture's `config-remove` is explained `removed by seldon init --remove-theme-hook` and drift stays 0; a second removal does nothing; removed before any capture saw it → no event; edited by hand, then removed → the removal is drift; `hook uninstall` of a watched file with only Seldon's hooks → an explained `config-remove`, of a shared file → an explained `config-change` (`op: remove`); the theme hook under the lock (WP-074, WP-052): an `omarchy` stub that copies the hook and then runs a real `seldon capture` gets exit 4 for that capture, and the next capture explains the `config-add` (a lock-after-write mutant lets the capture record unexplained drift); with the lock held, `init --theme-hook` exits 4 with the temp tree byte-identical, no `owned.json` and no `omarchy` call. The unit test `commands::setup::tests::the_theme_hook_step_writes_nothing_while_the_lock_is_held` covers the step alone |
 | `engine/tests/own_changes.rs` | SPEC-ENGINE §5 rule 8 (WP-086): updating, enabling and disabling `jax.seldon` and upgrading `jax-seldon` are explained by the capture that writes them (actor kept, other plugins and packages stay drift, adding, downgrading and removing Seldon stay drift, idempotent); WP-088: own changes left open by an earlier capture are explained by the next one, a dismissed row keeps its resolution, add and downgrade stay drift, no case is created; a month file that cannot be read still lets the new change be explained (with the "not checked" warning) and the next capture catches up; an own change dated after the capture clock is explained at its own time, the index folds it, and a dismissal written before it in the ledger is kept |
 | `engine/tests/frontmatter.rs` | `round_trip::` every case, journal, decision, area, memory file and `PROJECT.md` of `fixtures/logbook/` parses into its typed record and re-serialises byte-identical; a lossless update changes only the edited lines; `refused_saves::` (WP-077): `log`, `event` and `drift link` on a case whose save would be refused (an `events:` flow list continued at column 0) exit 1 and leave every file of the logbook as it was (`hooks.rs::claude_code::a_case_whose_save_is_refused_records_nothing` for the hook); `case_ids::a_refused_value_is_named_escaped` (WP-077): an ESC sequence in a case, decision, journal or area value is named as `\u{1b}`, serde's `unknown variant` messages included; `hooks.rs::generic::a_refused_payload_value_is_named_escaped` does the same for the generic hook's `actor`, `case` and `startedAt` |
-| `engine/tests/init.rs` | `init::` layout (SPEC-LOGBOOK §2), JSON output, git first commit, `--no-commit`, German templates, Obsidian, path precedence, refusals (existing logbook, non-empty dir, no terminal), lock held → exit 4. `setup::` (WP-024): the first capture (stubbed sources, cursors set, a second capture writes nothing, `--no-capture`), `--since` backfill → open drift, `--baseline` → zero open drift with one `dismissed` "pre-Seldon baseline" line per member and the commit `seldon: first capture and pre-Seldon baseline`, flag errors before anything is written, `--harness claude-code` (settings in the first commit, `hook install` afterwards changes nothing), `--harness omarchy-agent` with a kit (copied, modes kept, merged with Claude Code's hooks) and without one, the theme hook (a recording `omarchy` stub: exactly one `hook install theme-set <script>` on opt-in, none without, a failure with its fix, an existing hook not reinstalled), the templates (written as rendered; frontmatter keys, headings, fences and table headers identical in `en` and `de` and equal to `tests/golden/init-skeleton.txt`, `SELDON_BLESS=1` rewrites it; German prose); the agent rules (WP-047): the generated `AGENTS.md` in `en` and `de` has the ten sections in order (Session start, The engine is the only writer, Work in cases, Zones, Commands, Journal and memory, Drift, Hooks, Ending a session, Never), each with its key `seldon` commands, links `docs/AGENT-GUIDE.md`, and `init` writes no `CLAUDE.md`; the config (WP-074): a config without `language` leaves it to the locale (`LANG=de_DE.UTF-8` → `de`, written back), a `language` key wins over the locale; a read-only config folder → exit 2 with nothing in the logbook folder, the same `init` runs once it is writable; a layout that cannot start (read-only parent) → the config byte-identical, or still absent; a layout stopped half-way (a logbook path whose `areas/hyprland/README.md` exceeds PATH_MAX) → the config restored, the folder `init` created removed, an empty folder that was there emptied again, a second `init` succeeds; `layout::create` writes the marker last; `--no-git` writes `autocommit = false` and `doctor`'s git check is ok; a re-run keeps a hand-set `autocommit = false` (no repository) unless `--git`. WP-079: the read grant is the optional snapper step; a user listed in `ALLOW_USERS` gets the revert plus the read grant as a recommended step, another user no snapper step |
+| `engine/tests/init.rs` | `init::` layout (SPEC-LOGBOOK §2), JSON output, git first commit, `--no-commit`, German templates, Obsidian, path precedence, refusals (existing logbook, non-empty dir, plain `init` and `--ask` without a terminal naming `--defaults`), `--defaults`/`--ask`/`--non-interactive` exclusive, lock held → exit 4. `defaults::` (WP-119, ADR-0033): `--defaults` with a stdin pipe held open and never written (a prompt that read it would hang: the run must end within its deadline) looks back from local midnight 90 days before `SELDON_NOW` (a transaction 100 days back stays out, the first day's is in), dismisses every opened item "before Seldon", prints the one History line, and a second capture writes nothing; Obsidian's settings only with `obsidian.desktop` in `$XDG_DATA_DIRS` or the Flatpak's in `$XDG_DATA_HOME`; `--since` and `--no-capture` still decide; `--non-interactive` looks back too, without detection or a harness, and the Agents row says how to add one. `not_initialised::` (CONTRACT.md rule 10): exit 3's `--json` error equals `fixtures/errors/not-initialised.json` for no folder and an empty one, `not-initialised-not-empty.json` for a folder with a file (and `init --defaults` refuses it), `reason: logbook-folder-not-a-folder` for a file in its place; the text form is unchanged. `setup::` (WP-024): the first capture (stubbed sources, cursors set, a second capture writes nothing, `--no-capture`), `--since` backfill → open drift, `--baseline` → zero open drift with one `dismissed` "before Seldon" line per member and the commit `seldon: first capture and pre-Seldon baseline`, flag errors before anything is written, `--harness claude-code` (settings in the first commit, `hook install` afterwards changes nothing), `--harness omarchy-agent` with a kit (copied, modes kept, merged with Claude Code's hooks) and without one, the theme hook (a recording `omarchy` stub: exactly one `hook install theme-set <script>` on opt-in, none without, a failure with its fix, an existing hook not reinstalled), the templates (written as rendered; frontmatter keys, headings, fences and table headers identical in `en` and `de` and equal to `tests/golden/init-skeleton.txt`, `SELDON_BLESS=1` rewrites it; German prose); the agent rules (WP-047): the generated `AGENTS.md` in `en` and `de` has the ten sections in order (Session start, The engine is the only writer, Work in cases, Zones, Commands, Journal and memory, Drift, Hooks, Ending a session, Never), each with its key `seldon` commands, links `docs/AGENT-GUIDE.md`, and `init` writes no `CLAUDE.md`; the config (WP-074): a config without `language` leaves it to the locale (`LANG=de_DE.UTF-8` → `de`, written back), a `language` key wins over the locale; a read-only config folder → exit 2 with nothing in the logbook folder, the same `init` runs once it is writable; a layout that cannot start (read-only parent) → the config byte-identical, or still absent; a layout stopped half-way (a logbook path whose `areas/hyprland/README.md` exceeds PATH_MAX) → the config restored, the folder `init` created removed, an empty folder that was there emptied again, a second `init` succeeds; `layout::create` writes the marker last; `--no-git` writes `autocommit = false` and `doctor`'s git check is ok; a re-run keeps a hand-set `autocommit = false` (no repository) unless `--git`. WP-079: the read grant is the optional snapper step; a user listed in `ALLOW_USERS` gets the revert plus the read grant as a recommended step, another user no snapper step |
 | `engine/tests/plan.rs` | `plan::` new (template, canonical frontmatter, area on first use, ids never reused), start/verify/done/drop (folder moves per ADR-0012 §9, `started`/`closed`/`snapshotBefore`, `.seldon/active-case`, body byte-identical outside the Log), invalid transitions → exit 1 and nothing written, list/show against `case.schema.json`, `plan list` with one invalid case file (a warning line naming it, the others listed, exit 0; WP-077), a case file name with an ESC sequence named escaped in the warnings of `plan list` and `index` (`a_warning_names_a_case_file_escaped`), the fixture logbook (a copy), git autocommit with `--no-commit` and `git.autocommit = false` |
 | `engine/tests/log.rs` | `log::` notes with and without a case (`case.events`, `agents`), the Log section append-only over three steps, the journal appended not rewritten, free text as one argument (spaces, quotes, `$(…)`, `--json` after `--`), month and day by timestamp, redaction, exit 3/4 |
 | `engine/tests/journal.rs` | `journal::` appends to a fixture day (only the `cases:` line changes), CRLF days, the `plan done` stub in the logbook language |
@@ -268,7 +268,7 @@ $B init --non-interactive --path $S/logbook --language de \
 #               Omarchy-Agent kit: no kit at $S/data/seldon/harness/omarchy-agent; nothing copied …
 rm -rf $S/logbook $S/state $S/config
 $B --json init --non-interactive --path $S/logbook --since "$(date -d '-7 days' +%F)" --baseline
-#   capture.baseline {"items": 22, "events": 1230, "reason": "pre-Seldon baseline"}, openDrift 0
+#   capture.baseline {"items": 22, "events": 1230, "reason": "before Seldon"}, openDrift 0
 $B --json drift          # "openDrift": 0, "crisis": 0
 $B --json capture --all  # "written": 0
 git -C $S/logbook log --format=%s   # first capture and pre-Seldon baseline / init logbook
@@ -279,18 +279,20 @@ The interactive wizard needs a terminal; `script` provides one. Keys:
 Enter takes the default, Space toggles a multi-select item, `y`/`n` answer a
 confirmation. Export the scratch environment and `SELDON_TEST_GUARD`
 *before* `script` (as above; `script` passes the environment on), pass
-`--path` so the path step is skipped (its default is `~/Seldon`), and stub
+`--ask` for the full wizard and `--path` so the path step is skipped (its
+default is `~/Seldon`), and stub
 `omarchy` with `SELDON_OMARCHY` in case the theme hook is answered with yes:
 
 ```
 export SELDON_OMARCHY=$S/omarchy-stub    # a script that only records "$*"
 (sleep 1; for k in '\r' '\r' '\r' '\r' '\r' ' ' '\r' '\r' '\r'; do printf "$k"; sleep 0.4; done
  printf "$(date -d '-3 days' +%F)\r"; sleep 4; printf '\r'; sleep 3) \
-  | script -qec "$B init --path $S/logbook" /dev/null
+  | script -qec "$B init --ask --path $S/logbook" /dev/null
 # language, Obsidian, collectors, watched paths, more paths, agent setup
 # (Space: claude-code; the kit item only with the kit), theme hook (no), git
-# (yes), backfill date, then after the capture: "The backfill opened N drift
-# item(s) …" and "Mark them as the pre-Seldon baseline?" (Enter: yes)
+# (yes), backfill date (Enter alone takes the date 90 days back), then
+# after the capture: "The backfill opened N drift item(s) …" and "Dismiss
+# them as "before Seldon"?" (Enter: yes)
 ```
 
 Why the guard: on 2026-10-01 a wizard run with only `HOME` overridden
@@ -937,9 +939,27 @@ sentence); open and close through
 the shell, the pill and the shim (`tab work` lands on section 3, the
 section remembered across a hide, `{"period":"30"}` on section 7); the
 stacked Esc order; and the notices under the header with their fixes
-(snapper, not initialised and the chip, the restart notice and its one
-launch, the rules update live with doctor beside the queue, capture
-warnings and `c`). Sections 1–3 (WP-122; the 0.1 panel's scenarios for
+(the restart notice and its one launch, the chip folding them, the rules
+update live with doctor beside the queue, capture warnings and `c`). The
+setup card (WP-119): from the fixtures, the snapshot step "1 of 3 steps to
+go (optional)" (Grant opens the grant script, the watch starts, Not now
+writes `setupSnapshots` once and card, chip and notice go, Settings ›
+Capture's Offer again takes the key out and the card is back) and not
+initialised "2 of 3" (Create logbook, `seldon init --defaults`, the chip
+leading to Today's overview); live, the whole setup from no engine on
+PATH (a stand-in terminal installs the fake engine, switches its mode as
+`init` would and grants; the card moves 3 → 2 → 1 → done by its own
+probe, index and capture, then the first-run card with the zero tile
+muted; the three scripts launched once each, in order); the grant whose
+own capture did not run, found by the card's capture
+(`SELDON_SETUP_CAPTURE_MS`); an engine older than `engineMin` (the
+logbook step waits for its notice; the urgent notice takes the chip); no
+snapper (the `snapper-not-installed` variant) or the collector off (no
+card, no notice); the `first-run` variant (the card, both tiles quiet);
+a folder in use (the fake engine's exit 3 with
+`FAKE_SELDON_UNINIT_REASON`: Choose a folder, which opens
+`INIT_ASK_SCRIPT`); while only the optional step is open the sentence
+stays. Sections 1–3 (WP-122; the 0.1 panel's scenarios for
 these tabs, one to one): Today on the sample (state, tiles, NEEDS YOU, the
 journal, yesterday in place, the overview and its case tiles, the sidebar
 search) and live (the journal field with `--help 2` as one argument, a

@@ -64,8 +64,8 @@ them in the page language where it helps.
 | routine | Routine | a change without a case that is history, not drift (ADR-0028) |
 | attention | zur Kenntnis (Punkt zur Kenntnis) | drift listed quietly (ADR-0028) |
 | crisis | Krise | a change without a case that can break boot, login, the shell or security (ADR-0028); no longer "drift in the red zone" |
-| baseline | Baseline | the pre-Seldon baseline after a backfill |
-| backfill | Nacherfassung | `init --since` |
+| baseline | Baseline | the dismissal "before Seldon" after a backfill (ADR-0033) |
+| backfill | Nacherfassung | the 90-day look-back of a new logbook; `init --since` |
 | link, explain, dismiss | verknüpfen, erklären, verwerfen | the three drift actions |
 | proposed case | vorgeschlagener Case | the case whose *Plan* names a drift event's subject |
 | transaction group | Transaktionsgruppe | one package transaction as one drift item |

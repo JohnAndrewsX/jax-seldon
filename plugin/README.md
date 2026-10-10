@@ -327,24 +327,36 @@ binding (see [Configure](#configure)).
 
 ### States
 
-When something is wrong the panel shows one banner with a one-click fix:
+Until Seldon is set up, Today shows one **setup card** instead of the
+three setup banners: *Set up Seldon · 2 of 3 steps to go* — install the
+engine, create the logbook, read snapshots (optional) — done steps
+ticked, the next one with its button, no question asked. After each
+step's terminal the card moves on by itself; *Not now* on the snapshot
+step ends it for good (Settings › Capture offers it again). The header's
+chip shows the same headline and leads to the card. A machine without
+snapper has two steps. Once set up, a first-day card says "Seldon is
+recording. Nothing to do."
+
+When something else is wrong the panel shows one banner with a one-click
+fix; the setup states below are the setup card's steps:
 
 | State | Banner | One-click fix |
 |---|---|---|
-| Engine missing | Install the engine, in the accent tone (a setup step); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the engine it downloads against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; *Copy* puts the one-liner on the clipboard; *Check again* looks for the engine again |
-| Logbook not initialised | Create your logbook | *Create* opens a terminal that says what happens, shows and runs `seldon init` (it asks where to put the logbook), then says whether the logbook was created; the panel then updates by itself; *Copy*; *Check again* |
+| Engine missing | Install the engine (step 1 of the setup card); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the engine it downloads against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; the panel then finds it by itself; *Copy* puts the one-liner on the clipboard; *Check again* (on the urgent banner) looks for the engine again |
+| Logbook not initialised | Create your logbook (step 2 of the setup card, with what the machine remembers without Seldon) | *Create logbook* opens a terminal that says what happens, shows and runs `seldon init --defaults` (no question: `~/Seldon`, the last 90 days recorded as history "before Seldon"), then says whether the logbook was created; the panel then updates by itself; *Copy*; *Check again* |
 | Index missing | No index yet / Index unreadable | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
 | Index format mismatch | Index format mismatch, with both contract versions | *Update* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older (then restart the shell, see [Update](#update)), the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
 | Engine newer than the plugin (an index of a newer contract that says this plugin can read it, ADR-0051) | The engine is newer than the plugin: "The engine writes index vN; this plugin reads v2 — update the plugin.", in the neutral tone; no status banner, the pill keeps its counts and colour | *Update* / *Copy*: `omarchy plugin update jax.seldon` (then restart the shell, see [Update](#update)) |
 | Engine too old (older than the plugin's `engineMin`) | Engine too old, with the version the plugin needs and the one `seldon` reports | *Update* runs the GitHub one-liner from *Engine missing* in a terminal (until the AUR package is live, ADR-0024); *Copy*; *Check again* looks for the engine again |
-| Snapshots not readable | Read snapshots (optional): one sentence on the one-time grant; on hover the engine's message and what the grant gives: read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), no snapshot creation, change or deletion (ADR-0026) | *Grant* opens a terminal that says what the grant does and that it asks for your password once, shows and runs `sudo setfacl -m u:$USER:rx /.snapshots`, then runs `seldon capture` and says "Snapshots are now recorded" (or, if that capture did not run, that the next capture records them); the banner goes by itself (Seldon never runs the grant on its own). *Copy* copies the command; *Check again* runs a capture, like *Capture now*, for a grant you ran yourself |
+| Snapshots not readable | Read snapshots (optional), step 3 of the setup card: one sentence on the one-time grant; what the grant gives: read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), no snapshot creation, change or deletion (ADR-0026) | *Grant* opens a terminal that says what the grant does and that it asks for your password once, shows and runs `sudo setfacl -m u:$USER:rx /.snapshots`, then runs `seldon capture` and says "Snapshots are now recorded" (or, if that capture did not run, that the snapshots were not recorded yet); the card moves on by itself (Seldon never runs the grant on its own). *Copy* copies the command; *Check again* runs a capture, like *Capture now*, for a grant you ran yourself; *Not now* (on the card) puts the step away for good |
 | Plugin updated, shell not restarted (the installed manifest names another version than the code running) | Restart the shell to finish the update, in the neutral tone above the other banners, with both versions | *Restart shell* runs `omarchy-restart-shell`, no arguments; the shell then loads the installed plugin |
 | Capture warned (a capture the plugin ran exited 0 with warnings) | Capture warned, in the neutral tone under the other banners: the first line of each warning as the engine wrote it (today the state reset and its restore hint, WP-081); the full text on hover | None: the warning names the user guide section to read. The notice stays until a capture the plugin runs (*Capture now*, *Check again*, the `c` key, the bar's right click, the timer) finishes without warnings; a failed or locked capture leaves it |
 
-The engine is looked for when the shell starts and again on the status
-banner's *Check again* (or `omarchy-shell jax.seldon.service refresh`),
-not on every capture.
+The engine is looked for when the shell starts, when the panel opens
+while it is missing, every few seconds for ten minutes after an *Install*
+terminal, and on the status banner's *Check again* (or `omarchy-shell
+jax.seldon.service refresh`), not on every capture.
 
 ## Configure
 

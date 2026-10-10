@@ -10,9 +10,14 @@
 #
 #   FAKE_SELDON_MODE     ok (default) | uninit; $HOME/mode overrides it, so a
 #                        test can run `seldon init` halfway through
+#   FAKE_SELDON_UNINIT_REASON  the `reason` exit 3 reports (CONTRACT.md rule
+#                        10, WP-119), e.g. logbook-folder-not-empty; exit 3
+#                        always names the path $HOME/Seldon
 #   FAKE_SELDON_FIXTURE  index written by `status` in mode ok to
 #                        ${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json;
-#                        generatedAt is replaced with the current time
+#                        generatedAt is replaced with the current time;
+#                        $HOME/fixture (a path) overrides it, so a test
+#                        can change what the next `status` writes (WP-119)
 #   FAKE_SELDON_FIXTURE_AFTER  if set, `status` writes this index instead
 #                        once `capture` has run twice (the user's
 #                        "Capture now" after the start-up capture)
@@ -227,7 +232,11 @@ echo "start $cmd" >>"$log"
 trap 'echo "end $cmd" >>"$log"' EXIT
 
 uninit() {
-  echo '{"error":{"code":3,"message":"logbook not initialised"}}'
+  if [[ -n ${FAKE_SELDON_UNINIT_REASON:-} ]]; then
+    echo "{\"error\":{\"code\":3,\"message\":\"logbook not initialised\",\"path\":\"$HOME/Seldon\",\"reason\":\"$FAKE_SELDON_UNINIT_REASON\"}}"
+  else
+    echo "{\"error\":{\"code\":3,\"message\":\"logbook not initialised\",\"path\":\"$HOME/Seldon\"}}"
+  fi
   exit 3
 }
 
@@ -870,6 +879,7 @@ case "$cmd" in
     dir="$state/seldon"
     mkdir -p "$dir"
     fixture=$FAKE_SELDON_FIXTURE
+    [[ -f $HOME/fixture ]] && fixture=$(<"$HOME/fixture")
     captures=0
     [[ -f $HOME/captures ]] && captures=$(<"$HOME/captures")
     [[ -n ${FAKE_SELDON_FIXTURE_AFTER:-} && $captures -ge 2 ]] && fixture=$FAKE_SELDON_FIXTURE_AFTER

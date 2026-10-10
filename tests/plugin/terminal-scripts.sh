@@ -131,7 +131,7 @@ install='curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/d
 install_url='curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh'
 grant='sudo setfacl -m u:tester:rx /.snapshots'
 recorded="[2] Snapshots are now recorded. The panel updates by itself."
-granted="[2] Read access granted. Seldon records snapshots at its next capture."
+granted="[2] Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture."
 grant_failed="[1] Nothing changed. Snapshots stay off; Seldon works without them."
 install_failed="[1] The install did not finish. Run it again; your logbook is untouched."
 
@@ -183,7 +183,7 @@ run install-ok INSTALL_ENGINE_SCRIPT
 has install-ok out "[plain] Seldon: install the engine"
 has install-ok out "[plain] $install"
 has install-ok out "installer ran"
-has install-ok out "[2] The engine is installed. In the Seldon panel, press Check again."
+has install-ok out "[2] The engine is installed. The Seldon panel finds it by itself."
 has install-ok out "DONE"
 log_is install-ok "$install_url"
 run install-404 INSTALL_ENGINE_SCRIPT STUB_CURL_EXITS=22
@@ -211,17 +211,30 @@ log_is update-plugin-ok "omarchy plugin update jax.seldon"
 run update-plugin-failed UPDATE_PLUGIN_SCRIPT STUB_OMARCHY_EXITS=1
 has update-plugin-failed out "[1] Nothing changed. The plugin stays at its version."
 
-# seldon init.
+# seldon init --defaults: no question (WP-119, ADR-0033).
 run init-ok INIT_SCRIPT
 has init-ok out "[plain] Seldon: create your logbook"
-has init-ok out "[plain] seldon init"
+has init-ok out "[plain] seldon init --defaults"
 has init-ok out "[2] Your logbook is ready. The panel updates by itself."
-log_is init-ok "seldon init"
+log_is init-ok "seldon init --defaults"
 run init-failed INIT_SCRIPT STUB_SELDON_EXITS=1
-has init-failed out "[1] No logbook was created; the message above says why. Press Create in the panel to try again."
+has init-failed out "[1] No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again."
 has init-failed out "DONE"
 run init-ctrl-c INIT_SCRIPT STUB_SELDON_SIGINT=die
-cancelled init-ctrl-c "Cancelled. Press Create in the panel to start again."
+cancelled init-ctrl-c "Cancelled. Press Create logbook in the panel to start again."
+
+# plain seldon init, which asks where (the setup card's Choose a folder,
+# WP-119 round 2).
+run init-ask-ok INIT_ASK_SCRIPT
+has init-ask-ok out "[plain] Seldon: choose where your logbook goes"
+has init-ask-ok out "[plain] seldon init"
+has init-ask-ok out "[2] Your logbook is ready. The panel updates by itself."
+log_is init-ask-ok "seldon init"
+run init-ask-failed INIT_ASK_SCRIPT STUB_SELDON_EXITS=1
+has init-ask-failed out "[1] No logbook was created; the message above says why. Press Choose a folder in the panel to try again."
+has init-ask-failed out "DONE"
+run init-ask-ctrl-c INIT_ASK_SCRIPT STUB_SELDON_SIGINT=die
+cancelled init-ask-ctrl-c "Cancelled. Press Choose a folder in the panel to start again."
 
 # The real gum takes every flag the scripts use (it exits non-zero on an
 # unknown one, and the text would be missing).

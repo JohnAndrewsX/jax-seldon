@@ -708,6 +708,8 @@ mod collectors {
 
         b.sources.snapper = b.scratch.path("bin/missing").to_string_lossy().into_owned();
         let out = b.run(&Snapper, "2026-10-01T17:05:00+02:00");
+        // literal: the plugin's setup card reads it as "no snapper on this
+        // machine" (Model.SNAPPER_NOT_INSTALLED, WP-119)
         assert_eq!(
             (out.ok, out.message.as_deref()),
             (false, Some("snapper is not installed"))

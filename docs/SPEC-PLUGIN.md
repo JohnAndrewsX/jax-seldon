@@ -37,7 +37,11 @@ storage rule 3) and appear in Omarchy's bar settings from `barWidget.schema`:
 `deskWidth` (integer 50–100, step 1, default 100: the desk's width in per
 cent of the screen, §5.1) and `deskSidebar` (`open` | `collapsed`, default
 `open`, §5.2). The pill pushes the whole entry to the service (§4); a key a
-user never set takes its default.
+user never set takes its default. One state key rides in the same entry
+and is not in `barWidget.schema` (Omarchy's settings panel does not show
+it): `setupSnapshots: "not-now"`, written once by the setup card's *Not
+now* and taken out by Settings › Capture's *Offer again* (§5.4, §5.5;
+WP-119).
 
 ## 2. Files
 
@@ -92,6 +96,10 @@ plugin/
   `ENGINE_MISSING_DETAIL`; they flip back to `omarchy pkg aur add
   jax-seldon` and an AUR text together when the package is live
   (WP-044), with the texts of `INSTALL_ENGINE_SCRIPT` (§5).
+  The engine is probed again on the status banner's *Check again*, when
+  the desk opens while it is missing, and every 5 s for at most ten
+  minutes after a setup terminal opened (the setup card's watch, §5.4
+  "Setup card"); never by the capture timer.
 - Exposes `function run(args)` for other files; **only fixed argument
   arrays**, never strings assembled from index content except as single
   arguments (case ids, event ids validated by regex before use).
@@ -428,10 +436,13 @@ crises, newest first, a group by its leader (the 0.1 red strip's
 successor) — and **JOURNAL**: today's entries, "Nothing in today's journal
 yet.", the yesterday row (Enter or a click opens it in place). The sidebar
 search filters the crises and entries, yesterday's included. Nothing is
-selected on entry, so the detail is the **overview**: an empty slot for
-WP-119's setup card (`todaySetupSlot`), one sentence ("Seldon is
-recording. 2 changes need you." / "… Nothing needs you."), a lead on what
-stays quiet, the active cases as tiles (id · risk, title, the plan's
+selected on entry, so the detail is the **overview**: the setup card
+while a setup step is left (`todaySetupSlot`, below), one sentence ("Seldon is
+recording. 2 changes need you." / "… Nothing needs you."), or, while
+the logbook has no case and nothing is open, the **first-run card**
+"Seldon is recording. Nothing to do." with one line on what Seldon does
+from here (WP-119; a tile whose figure is 0 shows it in the muted tone),
+a lead on what stays quiet, the active cases as tiles (id · risk, title, the plan's
 progress, "2/4 steps · claude-code"; a click opens the case in Work) and
 **New case**: one sentence → `seldon agent start --new --json --
 <intent>` (`i` focuses it; the call and the result line Work's *Run*
@@ -450,12 +461,92 @@ the command line, `failed`/`interrupted`/`unfinished` aside), and
 **EDITED CONFIG FILES**, one row per file under `~/.config` (path, day and
 time); a group
 without rows says so, a source not read says why. The search finds any
-listed package. The overview's setup slot holds the card *Before Seldon*:
-"This is without memory: no who, no why, gone when the logs rotate. Set up
-Seldon?", one line of what was found ("The last 7 days: 6 pacman
-transactions and 4 files edited under ~/.config.") or why nothing is, and
-**Set up Seldon**, the notInitialised notice's terminal fix (the init
-script; the desk steps aside). WP-119's setup card takes the slot over.
+listed package. The setup card's step 2 says what was found ("The last 7
+days: 6 pacman transactions and 4 files edited under ~/.config.") or why
+nothing is, then "This is without memory: no who, no why, gone when the
+logs rotate."
+
+**Setup card** (WP-119; ADR-0033, ADR-0045 §6, the prototype debate's
+A8; `components/desk/SetupCard.qml`, `Model.setupCard`). Until Seldon is
+set up, the three setup states are one card in Today's overview instead
+of three notices: **engine → logbook → snapshots**. The banners stay the
+model behind it (`bannerFor`, `snapperBanner`): a step's buttons go to
+`Service.fix` with the banner's id, as the notices' did, and a step is
+`ready` only while its banner is up. The card:
+
+- Headline "Set up Seldon · N of T steps to go", N the open steps, T the
+  steps this machine has; " (optional)" when only the snapshot step is
+  left. T is 3 until the index says otherwise: the snapshot step is
+  missing (T = 2) when the index's snapper collector is off or its
+  message is the engine's `snapper is not installed`
+  (`Model.SNAPPER_NOT_INSTALLED`, `NOT_INSTALLED` in the engine; a value
+  the plugin keys on, CONTRACT.md rule 10), and done when it reads
+  snapshots. One lead line under it.
+- The card's surface is the normal fill with a border in the accent's UI
+  tone, as a notice's frame; never the selected fill, which is the
+  cursor's (§5.3 "one cursor highlight"). Its text takes the theme's
+  tones (§7): the current step in `accentText`, done steps in the
+  foreground, waiting steps and captions in `dim`.
+- Steps, numbered, done ones ticked (✓, "· done"), the waiting ones
+  quiet; only the current step has buttons, its command (small, as
+  *Copy* copies it) and its line: (1) **Install the engine** — the
+  engine-missing banner's text, *Install* (the install terminal) and
+  *Copy*; (2) **Create the logbook** — "Creates <folder> and starts
+  recording; the last 90 days become history “before Seldon”. No
+  questions, no password." (the folder the engine names: exit 3's
+  `path`, else the notInitialised index's `logbook.path`, "~/…"), the
+  preview's line (above), *Create logbook* (`seldon init --defaults` in
+  the init terminal) and *Copy*. When exit 3's `reason` says the folder
+  cannot be used (CONTRACT.md rule 10), step 2 says so instead ("~/Seldon
+  holds other files, so Seldon does not create its logbook there. Choose
+  another folder: seldon init asks where.") and offers **Choose a
+  folder**: the sixth terminal script, `INIT_ASK_SCRIPT`, plain `seldon
+  init`, which asks only where (`Model.INIT_ASK_FIX`, `Service.fix`'s
+  `initAsk`), and *Copy*; (3) **Read
+  snapshots (optional)** — the snapper banner's sentence, *Grant* (the
+  grant terminal; its tooltip says what the grant gives), *Copy* and
+  **Not now**. No *Check again*: after a step's terminal opened (from the
+  card or from a notice) the service looks again by itself every 5 s for
+  at most ten minutes (`Service.setupWatch`): the engine probe for step 1
+  (every 5 s for two minutes, then every 30 s: each failed probe is a line
+  in the shell's log, about 40 at most), the index for step 2 (the
+  FileView watches it too) and `status --json` every 30 s (its exit 3
+  tells why an init failed), a capture every 30 s for step 3 (only a
+  capture rewrites the collector row; the grant script's own capture
+  comes first). Meanwhile the step's line says "A
+  terminal opened. This card moves on by itself when the step is done."
+  A desk opened while the engine is missing probes it once.
+- An engine older than `engineMin` takes the status banner's place
+  (§5.6): the logbook step is not ready and says "First: Engine too old
+  (the notice above)." — an old engine would refuse `init --defaults`.
+- While only the optional step is left (Seldon records), Today's
+  sentence ("Seldon is recording. 2 changes need you.") and its lead stay
+  under the card.
+- **Not now** is final: stored once as `setupSnapshots: "not-now"` in the
+  plugin's `shell.json` entry through the desk's one settings path
+  (§5.5); the step, the card (when nothing else is left), the chip and
+  the snapshot notice go, and nothing asks again. Only Settings › Capture
+  offers it again. Without a bar entry, or when the shell refuses the
+  write, it holds until the shell restarts, and Settings › Capture says
+  so (§5.5's no-entry sentence, or "The shell did not take the change; it
+  holds until the shell restarts."): the key is not in Omarchy's bar
+  settings. This exception is accepted and documented (orchestrator,
+  2026-10-10): the desk without the pill is rare.
+- It is null — and the notices show the banners as before — when the
+  engine that was there is gone (an index exists: the urgent "Seldon
+  engine missing"), for an index missing or unreadable, and for a
+  contract mismatch. Dev mode shows it from the fixture; its buttons open
+  the terminals, its own captures are refused as every engine call is.
+- No mode logic: EASY (ADR-0045 §6) shows this same card. Its open steps
+  are what WP-179's `Model.needs` counts.
+
+When the card is done the first-run card (above) follows. The header's
+chip (`Model.deskChip`) shows the card's headline (accent) while it is
+up, "+N" for the notices beside it, and a click leads to Today's overview
+with the card (`Desk.showSetup`) instead of folding the notices — unless
+a notice is urgent ("Engine too old", "Seldon engine missing", a contract
+mismatch): the urgent one takes the chip, in its tone, and the click
+folds the notices as before.
 
 #### Changelog (2)
 
@@ -1023,12 +1114,21 @@ Four groups in the list; Appearance is selected first.
   "changes counted in the bar" in Omarchy's bar settings; the collectors,
   the launcher, the start folder and what may be loud in
   `~/.config/seldon/config.toml` (SPEC-ENGINE §2). The desk never edits
-  `config.toml`.
+  `config.toml`. Capture also names the snapshots (`Model.snapshotSetting`:
+  recorded, not readable yet, put off with *Not now*, off, or no snapper
+  on this machine) and, while the setup card's snapshot step is put off
+  and still open, its one button **Offer again**, which takes
+  `setupSnapshots` out of the entry through the same write (§1) and
+  brings the step back to the card (WP-119).
 
 ### 5.6 Notices, header mark, pictograms
 
 The notices under the header are the 0.1 panel's banners with their
-one-click fixes, in this order: the restart notice after a plugin update,
+one-click fixes — the setup states excepted, which the setup card in
+Today shows while it is up (§5.4 "Setup card", `Model.isSetupNotice`:
+the engine not installed yet, the logbook not created, snapshots not
+readable, the last also after its *Not now*) — in this order: the
+restart notice after a plugin update,
 the status banner, the engine newer than the plugin, snapshots not
 readable, the outdated agent rules,
 what their update did, the capture warnings. Each is `Banner.qml` on the
@@ -1069,7 +1169,7 @@ banner's hover text; *Check again*
 runs a capture, the same call as *Capture now* (`capture --all --json
 --quiet`, then `status --json`), because only a capture rewrites the
 collector state this banner reads (reloading the index would not; WP-054);
-not initialised → "Create your logbook", `seldon init`, with *Create*,
+not initialised → "Create your logbook", `seldon init --defaults`, with *Create logbook*,
 *Copy* and *Check again*; index stale →
 *Capture now*; outdated agent rules (WP-101, ADR-0027 migration) → "The
 logbook's agent rules are outdated (v1)" from the `rules` row of `seldon
@@ -1094,9 +1194,9 @@ Terminal scripts (WP-117). *Copy* puts the banner's plain command on the
 clipboard; *Install*, *Create*, *Grant* and *Update* open Omarchy's
 presentation terminal (`omarchy-launch-floating-terminal-with-presentation`:
 logo, the script, "Done!", the theme's gum colours) with the banner's
-script, one of five constants in `Model.js` (`INSTALL_ENGINE_SCRIPT`,
+script, one of six constants in `Model.js` (`INSTALL_ENGINE_SCRIPT`,
 `UPDATE_ENGINE_SCRIPT`, `UPDATE_PLUGIN_SCRIPT`, `INIT_SCRIPT`,
-`SNAPPER_FIX_SCRIPT`); the service launches nothing else
+`SNAPPER_FIX_SCRIPT`, and the setup card's `INIT_ASK_SCRIPT`); the service launches nothing else
 (`Model.terminalArgv`). Each follows Omarchy's own scripts: a bold `gum
 style` line "Seldon: <what>", one paragraph (why; whether it asks for a
 password), the command indented as *Copy* copies it, the command run in
@@ -1113,11 +1213,15 @@ closes, as with Omarchy's own scripts. After a successful snapshot grant
 the script runs `seldon capture` (once more if the lock is held), which
 rewrites the index, so the banner goes without a click; only when a
 capture succeeded does it say "Snapshots are now recorded. The panel
-updates by itself.", else "Read access granted. Seldon records snapshots
-at its next capture." After an engine update it runs `seldon status`, so
-the new engine rewrites the index. `seldon init` writes the index itself.
-After an install or update the engine is probed only on *Check again*,
-and the result line says so. The scripts are built once from string
+updates by itself.", else "Read access granted. The snapshots were not
+recorded yet; Seldon tries again at its next capture." (it reports, never
+forecasts; the setup card's own capture then shows the truth, WP-117
+stage 2). After an engine update it runs `seldon status`, so the new
+engine rewrites the index. `seldon init --defaults` writes the index
+itself. After an install the service probes the engine by itself (the
+setup card's watch, §5.4), so the result line says "The engine is
+installed. The Seldon panel finds it by itself."; after an engine update
+it is probed on *Check again*, and the result line says so. The scripts are built once from string
 literals: nothing from the index, the logbook or the environment is in
 them (AGENTS.md §8); `$USER` stays literal in the shown command and is
 expanded only where it runs, there as `${USER:?}` in the grant, which

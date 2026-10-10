@@ -1,6 +1,6 @@
 # Konzepte
 
-<!-- source: en/02-concepts.md @ b5e6bac9 -->
+<!-- source: en/02-concepts.md @ a5ae8924 -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
 Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory. Lies sie
@@ -231,17 +231,18 @@ Leiste gezählt.
 
 ## Baseline
 
-Ein neues Logbuch zeichnet ab dem Moment auf, in dem du es anlegst. Der
-Assistent kann auch *nacherfassen*: Änderungen seit einem früheren Datum
-aufzeichnen, aus dem Paketlog und von Snapper. Keine dieser älteren
-Änderungen gehört zu einem Case, also öffnen viele davon als Drift.
+Ein neues Logbuch *erfasst* auch *nach*: Seine erste Erfassung zeichnet
+die letzten 90 Tage aus dem Paketlog und von Snapper auf. Keine dieser
+älteren Änderungen gehört zu einem Case, also würden viele davon als
+Drift öffnen.
 
-Die Baseline räumt das auf. Nach einer Nacherfassung fragt der
-Assistent, ob er alles Gefundene als Baseline vor Seldon markieren soll.
-Sagst du ja, verwirft die Engine jeden offenen Eintrag mit dem Grund
-„pre-Seldon baseline“. Die Ereignisse bleiben im Ledger und in den
-Diagrammen; sie verlangen nur keinen Grund mehr. Ohne Nacherfassung gibt
-es keine Baseline.
+Die Baseline räumt das auf. Die Einrichtungskarte und `seldon init`
+verwerfen jeden Eintrag, den die Nacherfassung öffnet, mit dem Grund
+„before Seldon“, ohne zu fragen. Die Ereignisse bleiben im Ledger und in
+den Diagrammen; sie verlangen nur keinen Grund mehr. Mit `seldon init
+--ask` wählst du das Datum selbst und wirst vor dem Verwerfen gefragt;
+mit `--since` und ohne `--baseline` lässt `seldon init
+--non-interactive` die Nacherfassung als Drift offen.
 
 ## Entscheidungen
 

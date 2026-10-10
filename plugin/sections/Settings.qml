@@ -21,7 +21,9 @@ import "../Model.js" as Model
 //
 // Capture, Agents, Quiet (read-only): the values in force and where each
 // is set — Omarchy's bar settings for the widget's keys, Seldon's
-// config.toml for the engine's. The desk never edits config.toml.
+// config.toml for the engine's. The desk never edits config.toml. One
+// button: Capture's *Offer again* brings back the setup card's snapshot
+// step after its *Not now* (WP-119), the only place that offers it again.
 Section {
   id: root
 
@@ -72,8 +74,14 @@ Section {
     }).join(" · ")
   }
 
+  // The setup card's snapshot step was put off and is still open.
+  readonly property bool snapshotsLater: !!root.service && root.service.setupLater
+    && Model.snapperStep(root.index) === "open"
+
   function view() {
     return {
+      snapshots: Model.snapshotSetting(root.index, !!root.service && root.service.setupLater),
+      offerAgain: offerAgain.visible,
       group: root.selectedId,
       groups: root.groups.map(function(g) { return g.id }),
       slider: root.desk ? root.desk.widthPct : 0,
@@ -277,15 +285,48 @@ Section {
     }
 
     // ---- Capture
-    KeyValues {
+    Column {
       visible: root.selectedId === "capture"
       width: parent.width
-      rows: [
-        ["Capture interval", (root.service ? root.service.captureIntervalMin : Model.CAPTURE_INTERVAL_MIN_DEFAULT) + " min, and at shell start"],
-        ["Set in", root.barSettings],
-        ["Collectors", root.collectorsText()],
-        ["Switched in", root.configPath + ", [collectors]"]
-      ]
+      spacing: Style.spacing.xxl
+
+      KeyValues {
+        width: parent.width
+        rows: [
+          ["Capture interval", (root.service ? root.service.captureIntervalMin : Model.CAPTURE_INTERVAL_MIN_DEFAULT) + " min, and at shell start"],
+          ["Set in", root.barSettings],
+          ["Collectors", root.collectorsText()],
+          ["Switched in", root.configPath + ", [collectors]"],
+          ["Snapshots", Model.snapshotSetting(root.index, !!root.service && root.service.setupLater)]
+        ]
+      }
+
+      Button {
+        id: offerAgain
+        objectName: "settingsOfferSnapshots"
+        visible: root.snapshotsLater
+        text: "Offer again"
+        tooltipText: "Brings the snapshot step back to the setup card in Today"
+        bordered: true
+        foreground: Color.popups.text
+        fontFamily: Style.font.family
+        fontSize: Style.font.caption
+        verticalPadding: Style.spacing.xs
+        onClicked: if (root.service) root.service.setSetupLater(false)
+      }
+
+      // Not now or Offer again not kept in shell.json (no bar entry, or
+      // the shell refused): it holds until the shell restarts.
+      Text {
+        width: parent.width
+        visible: !!root.service && root.service.setupResult !== ""
+        textFormat: Text.PlainText
+        text: root.service ? root.service.setupResult : ""
+        color: Color.popups.text
+        wrapMode: Text.Wrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
     }
 
     // ---- Agents

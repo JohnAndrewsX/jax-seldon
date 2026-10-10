@@ -212,16 +212,16 @@ update: listed, never counted in the bar.
 
 ## Baseline
 
-A new logbook records from the moment you create it. The wizard can also
-*backfill*: record changes since a past date, from the package log and
-snapper. None of those older changes belongs to a case, so many of them
-open as drift.
+A new logbook also *backfills*: its first capture records the last 90
+days from the package log and snapper. None of those older changes
+belongs to a case, so many of them would open as drift.
 
-The baseline settles that. After a backfill the wizard asks whether
-to mark everything it found as the pre-Seldon baseline. Say yes, and the
-engine dismisses every open item with the reason "pre-Seldon baseline".
-The events stay in the ledger and on the charts; they no longer ask for
-a reason. Without a backfill there is nothing to baseline.
+The baseline settles that. The setup card and `seldon init` dismiss every
+item the backfill opens with the reason "before Seldon", without a
+question. The events stay in the ledger and on the charts; they no
+longer ask for a reason. `seldon init --ask` lets you choose the date and
+asks before it dismisses; with `--since` and without `--baseline`,
+`seldon init --non-interactive` leaves the backfill open as drift.
 
 ## Decisions
 

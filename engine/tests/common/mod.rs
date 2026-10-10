@@ -125,6 +125,9 @@ impl Env {
             // Omarchy's package lists (dossier, WP-036): the fixture copies,
             // never the host's `/usr/share/omarchy`
             .env("SELDON_OMARCHY_PACKAGES", omarchy_packages())
+            // the application folders `init` looks for Obsidian in
+            // (WP-119): this temp dir's, never the host's /usr/share
+            .env("XDG_DATA_DIRS", self.tmp.path().join("xdg-data"))
             // the silent upgrades run only for a user (sys::runner); CI runs
             // the tests as root, so the probe is a file a user owns
             .env("SELDON_TEST_ROOT_PROBE", self.user_probe())

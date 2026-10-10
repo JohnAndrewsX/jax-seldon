@@ -1747,6 +1747,26 @@ VARIANTS = {
         {"op": "add", "path": "/state/collectors/1/message",
          "value": "snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; `seldon doctor` prints the read grant."},
     ],
+    # WP-119: a machine without snapper. The engine's message is the literal the plugin keys on
+    # (CONTRACT.md rule 10): no snapshot step on the setup card, no snapshot notice.
+    "snapper-not-installed": [
+        {"op": "test", "path": "/state/collectors/1/name", "value": "snapper"},
+        {"op": "replace", "path": "/state/collectors/1/ok", "value": False},
+        {"op": "add", "path": "/state/collectors/1/message", "value": "snapper is not installed"},
+    ],
+    # WP-119: the first day after the setup card: no case in any column, nothing open (the look-back
+    # was dismissed "before Seldon"), nothing recorded today, no proposal. Today shows the first-run
+    # card ("Seldon is recording. Nothing to do.") and its tiles at 0, quiet.
+    "first-run": [
+        {"op": "replace", "path": "/summary", "value": {"activeCases": 0, "queuedCases": 0, "openDrift": 0, "crisis": 0,
+                                                        "eventsToday": 0, "events7d": 0}},
+        {"op": "replace", "path": "/today/entries", "value": []},
+        {"op": "remove", "path": "/today/yesterday"},
+        {"op": "replace", "path": "/events", "value": []},
+        {"op": "replace", "path": "/drift", "value": []},
+        {"op": "replace", "path": "/cases", "value": {"queued": [], "active": [], "verification": [], "completed": []}},
+        {"op": "remove", "path": "/triage"},
+    ],
     # `seldon index` before `seldon init`: no logbook, every section empty.
     "not-initialised": [
         {"op": "replace", "path": "/logbook", "value": {"path": "/home/user/Seldon", "language": "en", "machine": ""}},
@@ -2364,6 +2384,10 @@ def collect_instances():
         elif r == "state/recent-config.json":
             # engine state, not contract: its shape is `system.recentConfig`'s, checked through the
             # derived sample (derive_recent_config)
+            continue
+        elif re.fullmatch(r"errors/[a-z0-9-]+\.json", r):
+            # a command's `--json` error the plugin reads (CONTRACT.md rule 10, WP-119): held equal
+            # to the engine's output by engine/tests/init.rs and read by tests/plugin/model.test.js
             continue
         elif r == "themes/roles.json":
             # theme roles for the plugin's tone tests (WP-177), not contract: its shape (three

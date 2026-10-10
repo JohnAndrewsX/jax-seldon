@@ -427,34 +427,46 @@ clean_log stacked
 # ---------------------------------------------------------------------------
 # 7. The notices under the header (today's banners, with their fixes) and
 #    the header's chip.
-# 7a. Snapper not readable (ADR-0026, WP-054): the notice with Grant, Copy
-#     and Check again (WP-117): one sentence, the plain command; the
-#     engine's message and what the grant gives on hover. Grant opens the
-#     terminal script and adds no hint. On a narrow desk the chip's title
-#     does not fit beside the KPI strip: it says "1 notice". Grant opens a
-#     window, so the desk steps aside at once (WP-156); the case opens it
-#     again.
+# The current section's view (also set again for section 8 below).
+tv='.view.sectionView'
+# 7a. Snapshots not readable (ADR-0026, WP-054, WP-119): no notice — the
+#     setup card in Today's overview has the step, "1 of 3 steps to go
+#     (optional)", and the chip says the same; Grant, Copy, Not now, the
+#     plain command, one sentence (WP-117). Grant opens the grant script,
+#     the desk steps aside (WP-156) and the service watches the step
+#     (dev mode: its capture is refused, nothing runs). Not now stores
+#     `setupSnapshots` once in the entry: card, chip and notice are gone;
+#     Settings › Capture says why and offers it again, which takes the key
+#     out: the card is back. On a narrow desk the chip says "1 notice".
 run snapper "$fx/index-variants/snapper-degraded.json" 1920x1080 \
-  "summon;click:Grant;summon;hover:Read snapshots (optional);wait:snapperTip.shown=true;view;resize:1000x900" \
+  "summon;clickName:setup-snapshots-terminal;summon;clickName:setup-snapshots-later;pause:200;text:,;key:Down;clickName:settingsOfferSnapshots;pause:200;text:1;resize:1000x900" \
   HARNESS_RECORD="$work/snapper.record"
-expect snapper 1 '.view.notices | join(",")' "Read snapshots (optional)"
-expect snapper 1 .view.chip "Read snapshots (optional)"
+optional="Set up Seldon · 1 of 3 steps to go (optional)"
+expect snapper 1 '.view.notices | length' 0
+expect snapper 1 '[.view.chip, .view.chipTone, .view.setup] | join("|")' "$optional|accent|$optional"
+expect snapper 1 "$tv.setup.steps | join(\",\")" "engine:done,logbook:done,snapshots:current"
+expect snapper 1 "[$tv.setup.current, ($tv.setup.actions | join(\",\")), $tv.setup.ready] | map(tostring) | join(\"|\")" "snapshots|Grant,Copy,Not now|true"
+shows snapper 1 "$optional"
+shows snapper 1 "Seldon is recording. One optional step is left: snapshots in the timeline."
+# the sentence stays under the card while only the optional step is open (S2)
+expect snapper 1 "$tv.headline" "Seldon is recording. 2 changes need you."
 shows snapper 1 'sudo setfacl -m u:$USER:rx /.snapshots'
 shows snapper 1 "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it."
-shows snapper 1 "Grant"
-shows snapper 1 "Copy"
-shows snapper 1 "Check again"
-expect snapper 1 '[.texts[] | select(. == "Run in terminal")] | length' 0
-expect snapper 1 '[.texts[] | select(contains("snapshot directory listing"))] | length' 0
+shows snapper 1 "Install the engine · done"
+shows snapper 1 "Create the logbook · done"
+expect snapper 1 '[.texts[] | select(. == "Check again" or . == "Run in terminal")] | length' 0
 expect snapper 2 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
 expect snapper 2 '.calls | map(select(startswith("hide"))) | length' 1
-expect snapper 3 '[.texts[] | select(startswith("When the command has finished"))] | length' 0
-snapper_grants="The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
-snapper_message=$(jq -r '.state.collectors[] | select(.name == "snapper") | .message' "$fx/index-variants/snapper-degraded.json")
-expect snapper 1 .view.snapperTip.shown false
-expect snapper 6 .view.snapperTip.text "$snapper_message"$'\n'"$snapper_grants"
-expect snapper 6 .view.snapperTip.shown true
-expect snapper 6 .view.snapperTip.fits true
+expect snapper 3 '[.view.setupWatch, .view.setup] | join("|")' "snapshots|$optional"
+shows snapper 3 "A terminal opened. This card moves on by itself when the step is done."
+expect snapper 4 '.writes | length' 1
+expect snapper 5 '[(.writes | last | .settings.setupSnapshots), .view.setup, .view.chip, (.view.notices | length), .view.setupLater] | map(tostring) | join("|")' "not-now|||0|true"
+expect snapper 5 "$tv.setup.shown" false
+expect snapper 7 "[$tv.snapshots, $tv.offerAgain] | map(tostring) | join(\"|\")" "not read; you chose Not now on the setup card|true"
+expect snapper 9 '[(.writes | length), (.writes | last | .settings | has("setupSnapshots")), .view.setupLater, .view.setup] | map(tostring) | join("|")' "2|false|false|$optional"
+expect snapper 10 "[.view.section, $tv.setup.current] | join(\",\")" "today,snapshots"
+expect snapper 11 .view.chipShown "▾ 1 notice"
+expect snapper 11 '.overflow | join(" | ")' ""
 # the launcher's argv is the grant script, verbatim (model.test.js pins its text)
 script=$(node -e '
   const fs = require("fs"), vm = require("vm"), M = {}
@@ -466,25 +478,38 @@ until [[ -s $work/snapper.record ]] || ((SECONDS >= deadline)); do sleep 0.2; do
 check "snapper: Grant opened the terminal with the grant script" \
   "$(cat "$work/snapper.record" 2>/dev/null || true)" \
   "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$script" --)"
-expect snapper 1 .view.chipShown "▾ Read snapshots (optional)"
-expect snapper 7 .view.chipShown "▾ 1 notice"
-expect snapper 7 '.overflow | join(" | ")' ""
 clean_log snapper
 
-# 7b. Not initialised: the status notice with its pictogram's fix, no KPI
-#     figures, no counts; the chip folds and unfolds the notices.
-run uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon;clickName:deskChip;clickName:deskChip"
+# 7a'. Not now that the shell refuses to store: the card goes for this
+#      shell's life, and Settings › Capture says so.
+run snapper-refused "$fx/index-variants/snapper-degraded.json" 1920x1080 \
+  "summon;clickName:setup-snapshots-later;text:,;key:Down" HARNESS_REFUSE=1
+expect snapper-refused 2 '[(.writes | length), .view.setup, .view.setupLater] | map(tostring) | join("|")' "1||true"
+shows snapper-refused 4 "The shell did not take the change; it holds until the shell restarts."
+expect snapper-refused 4 "$tv.offerAgain" true
+clean_log snapper-refused
+
+# 7b. Not initialised (dev mode, WP-119): no notice — the setup card, "2 of
+#     3 steps to go", the engine ticked, Create logbook (`seldon init
+#     --defaults`) and Copy; no KPI figures, no counts; no preview (dev
+#     mode runs no engine, WP-138). From another section the chip leads to
+#     the card in Today's overview.
+run uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon;text:2;clickName:deskChip"
+two="Set up Seldon · 2 of 3 steps to go"
 expect uninit 1 .view.status notInitialised
-expect uninit 1 '.view.notices | join(",")' "Create your logbook"
+expect uninit 1 '[(.view.notices | length), .view.chip, .view.chipTone] | map(tostring) | join("|")' "0|$two|accent"
 expect uninit 1 '.view.kpis | length' 0
 expect uninit 1 '[.view.counts[] | .text] | join("")' ""
-shows uninit 1 "Sets up your logbook and starts recording; the terminal asks a few questions, no password."
-shows uninit 1 "seldon init"
-shows uninit 1 "Create"
-expect uninit 2 .view.noticesFolded true
-expect uninit 2 '[.texts[] | select(. == "Sets up your logbook and starts recording; the terminal asks a few questions, no password.")] | length' 0
-shows uninit 2 "▸ Create your logbook"
-expect uninit 3 .view.noticesFolded false
+expect uninit 1 "$tv.setup.steps | join(\",\")" "engine:done,logbook:current,snapshots:waiting"
+expect uninit 1 "[($tv.setup.actions | join(\",\")), $tv.setup.ready] | map(tostring) | join(\"|\")" "Create logbook,Copy|true"
+# the folder is the index's logbook path (the fixture's, outside this HOME)
+shows uninit 1 "Creates /home/user/Seldon and starts recording; the last 90 days become history “before Seldon”. No questions, no password."
+shows uninit 1 "seldon init --defaults"
+shows uninit 1 "No questions; only the optional snapshot step asks for your password. Seldon records nothing before the logbook exists."
+shows uninit 1 "Read snapshots (optional)"
+expect uninit 1 '[.texts[] | select(. == "Create your logbook" or . == "Create")] | length' 0
+expect uninit 2 .view.section changelog
+expect uninit 3 '[.view.section, .view.selected, .view.noticesFolded, .view.sectionView.shown] | map(tostring) | join(",")' "today,,false,overview"
 # dev mode runs no engine: no preview (WP-138)
 expect uninit 1 '[.view.sectionView.preview.shown, .view.sectionView.preview.summary] | map(tostring) | join(",")' "false,"
 clean_log uninit
@@ -500,8 +525,8 @@ expect restart-same 1 .view.chip ""
 clean_log restart-same
 run restart-updated "$fx/index-variants/not-initialised.json" 1920x1080 "summon;click:Restart shell;click:Restart shell" \
   HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")" HARNESS_RECORD="$work/restart-updated.record"
-expect restart-updated 1 '.view.notices | join(",")' "Restart the shell to finish the update,Create your logbook"
-expect restart-updated 1 .view.chip "Restart the shell to finish the update +1"
+expect restart-updated 1 '.view.notices | join(",")' "Restart the shell to finish the update"
+expect restart-updated 1 .view.chip "Set up Seldon · 2 of 3 steps to go +1"
 shows restart-updated 1 "Seldon 99.0.0 is installed, but the shell still runs $(jq -r .version <<<"$manifest"). The shell loads new plugin code only when it restarts."
 deadline=$((SECONDS + 15))
 until [[ -s $work/restart-updated.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
@@ -509,6 +534,15 @@ sleep 1
 check "restart-updated: Restart shell runs omarchy-restart-shell once, no arguments" \
   "$(cat "$work/restart-updated.record" 2>/dev/null || true)" "$(printf '%s\n' omarchy-restart-shell --)"
 clean_log restart-updated
+# without a setup step the chip folds and unfolds the notices
+run fold "$sample" 1920x1080 "summon;clickName:deskChip;clickName:deskChip" \
+  HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")"
+expect fold 1 '[.view.chip, .view.noticesFolded] | map(tostring) | join("|")' "Restart the shell to finish the update|false"
+expect fold 2 .view.noticesFolded true
+shows fold 2 "▸ Restart the shell to finish the update"
+expect fold 2 '[.texts[] | select(startswith("Seldon 99.0.0 is installed"))] | length' 0
+expect fold 3 .view.noticesFolded false
+clean_log fold
 
 # 7d. The rules notice (WP-101, WP-111), live against the fake engine:
 #     doctor when the desk opens (beside the queue), Update rules runs
@@ -554,6 +588,145 @@ expect capture-warned 5 '.view.notices | length' 0
 expect capture-warned 5 '.view.subline | test("^workstation-7f3a · Omarchy 4.0.7-1 · captured ")' true
 check "capture-warned: captures" "$(cat "$work/home-capture-warned/captures" 2>/dev/null || echo 0)" 2
 clean_log capture-warned
+
+# 7f. The setup card end to end (WP-119), live: no engine on PATH and no
+#     index — "3 of 3 steps to go". Each step's button opens its terminal;
+#     a stand-in terminal records it and does what the real script would:
+#     installs the fake engine, runs init (the fake's mode switch and its
+#     index), grants and captures. The card moves on by itself — the
+#     service probes the engine every few seconds after Install, the index
+#     FileView sees the logbook, the grant's capture rewrites the collector
+#     row — and the chip follows. Then the first-run card: no case, nothing
+#     open, the zero tile quiet.
+setup_bin="$work/bin-setup" setup_late="$work/bin-setup-late"
+mkdir -p "$setup_bin" "$setup_late" "$work/home-setup"
+for f in "$work"/bin/*; do
+  n=$(basename "$f")
+  [[ $n == seldon || $n == omarchy-launch-floating-terminal-with-presentation ]] && continue
+  ln -s "$f" "$setup_bin/$n"
+done
+first_run="$fx/index-variants/first-run.json"
+# setup_terminal <grant> — the stand-in terminal; <grant> is what the
+# grant's step does after the recorder: "capture" (the script's own
+# capture succeeds) or "partial" (it does not: only the next capture finds
+# the grant, the fake's $HOME/fixture)
+setup_terminal() {
+  local grant='echo "'"$first_run"'" >"$HOME/fixture"; seldon capture >/dev/null; seldon status >/dev/null'
+  [[ $1 == partial ]] && grant='echo "'"$first_run"'" >"$HOME/fixture"'
+  cat >"$setup_bin/omarchy-launch-floating-terminal-with-presentation" <<EOF
+#!$(command -v bash)
+"$work/bin/omarchy-launch-floating-terminal-with-presentation" "\$@"
+case \$1 in
+  *install.sh*) $(command -v cp) "$root/tests/plugin/fake-seldon" "$setup_late/seldon"; $(command -v chmod) 755 "$setup_late/seldon" ;;
+  *"seldon init --defaults"*) echo ok >"\$HOME/mode"; seldon status >/dev/null ;;
+  *setfacl*) $grant ;;
+esac
+EOF
+  chmod 755 "$setup_bin/omarchy-launch-floating-terminal-with-presentation"
+}
+setup_terminal capture
+three="Set up Seldon · 3 of 3 steps to go" two="Set up Seldon · 2 of 3 steps to go"
+optional="Set up Seldon · 1 of 3 steps to go (optional)"
+run setup-flow "" 1920x1080 \
+  "summon;wait:setup=$three;clickName:setup-engine-terminal;summon;wait:setup=$two;clickName:setup-logbook-terminal;summon;wait:setup=$optional;clickName:setup-snapshots-terminal;summon;wait:sectionView.firstRun=true;view" \
+  HOME="$work/home-setup" PATH="$setup_late:$setup_bin" FAKE_SELDON_MODE=uninit \
+  FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" HARNESS_RECORD="$work/setup-flow.record"
+expect setup-flow 2 '[.view.status, (.view.notices | length), .view.chip] | map(tostring) | join("|")' "engineMissing|0|$three"
+expect setup-flow 2 "$tv.setup.steps | join(\",\")" "engine:current,logbook:waiting,snapshots:waiting"
+expect setup-flow 2 "[($tv.setup.actions | join(\",\")), $tv.setup.ready] | map(tostring) | join(\"|\")" "Install,Copy|true"
+shows setup-flow 2 "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it; runs as your user, no password."
+expect setup-flow 3 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+expect setup-flow 5 "[.view.status, ($tv.setup.steps | join(\",\"))] | join(\"|\")" "notInitialised|engine:done,logbook:current,snapshots:waiting"
+expect setup-flow 5 "[($tv.setup.actions | join(\",\")), $tv.setup.ready] | map(tostring) | join(\"|\")" "Create logbook,Copy|true"
+expect setup-flow 8 "[.view.status, ($tv.setup.steps | join(\",\")), $tv.setup.current] | join(\"|\")" "ok|engine:done,logbook:done,snapshots:current|snapshots"
+expect setup-flow 11 "[.view.setup, .view.chip, (.view.notices | length), $tv.setup.shown, $tv.firstRun] | map(tostring) | join(\"|\")" "||0|false|true"
+shows setup-flow 11 "Seldon is recording. Nothing to do."
+expect setup-flow 11 "$tv.dimTiles | join(\",\")" "events today,7 days"
+expect setup-flow 11 "[.texts[] | select(. == \"Seldon is recording. Nothing needs you.\")] | length" 0
+scripts=$(node -e '
+  const fs = require("fs"), vm = require("vm"), M = {}
+  vm.createContext(M)
+  vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), M)
+  const t = "omarchy-launch-floating-terminal-with-presentation"
+  process.stdout.write([M.INSTALL_ENGINE_SCRIPT, M.INIT_SCRIPT, M.SNAPPER_FIX_SCRIPT].map((s) => t + "\n" + s + "\n--\n").join(""))' "$root/plugin/Model.js")
+check "setup-flow: Install, Create logbook and Grant opened their scripts, once each, in order" \
+  "$(cat "$work/setup-flow.record" 2>/dev/null || true)" "${scripts%$'\n'}"
+check "setup-flow: the engine was probed again after Install, never run before it" \
+  "$(head -n 1 "$work/home-setup/argv.log" 2>/dev/null)" "$(q --version --json)"
+clean_log setup-flow "seldon (capture|agent) exit 3: logbook not initialised|Process failed to start"
+
+# 7g. The grant's own capture did not run (the terminal's "not recorded
+#     yet" line): the setup card captures by itself after a while
+#     (SELDON_SETUP_CAPTURE_MS, shortened here) and finds the grant.
+mkdir -p "$work/home-setup-partial"
+cp "$root/tests/plugin/fake-seldon" "$setup_late/seldon"
+chmod 755 "$setup_late/seldon"
+setup_terminal partial
+run setup-partial "" 1920x1080 "summon;settle;wait:setup=$optional;clickName:setup-snapshots-terminal;summon;wait:setup=;wait:setupWatch=;view" \
+  HOME="$work/home-setup-partial" PATH="$setup_late:$setup_bin" SELDON_SETUP_CAPTURE_MS=1500 \
+  FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" HARNESS_RECORD="$work/setup-partial.record"
+expect setup-partial 3 "$tv.setup.current" snapshots
+expect setup-partial 7 '[.view.setup, .view.setupWatch] | join("|")' "|"
+expect setup-partial 8 "$tv.firstRun" true
+check "setup-partial: the card's own capture, then status" \
+  "$(grep -c -x "$(q capture --all --json --quiet)" "$work/home-setup-partial/argv.log")" 2
+clean_log setup-partial
+
+# 7h. An engine older than engineMin before init (WP-119): the card's
+#     logbook step waits for the "Engine too old" notice (its terminal
+#     would run an engine without `init --defaults`); no Create logbook
+#     to press.
+run setup-old-engine "$fx/index-variants/not-initialised.json" 1920x1080 "summon" \
+  HARNESS_MANIFEST="$(jq -c '.seldon.engineMin = "100.0.0"' "$root/plugin/manifest.json")"
+# the urgent notice takes the chip (S3); the card stays in Today
+expect setup-old-engine 1 '[(.view.notices | join(",")), .view.chip, .view.chipTone, .view.setup] | join("|")' "Engine too old|Engine too old +1|urgent|Set up Seldon · 2 of 3 steps to go"
+expect setup-old-engine 1 "[$tv.setup.current, $tv.setup.ready, $tv.setup.waiting] | map(tostring) | join(\"|\")" "logbook|false|First: Engine too old (the notice above)."
+shows setup-old-engine 1 "First: Engine too old (the notice above)."
+clean_log setup-old-engine "engine 99\.0\.0-fake is older than engineMin 100\.0\.0"
+
+# 7i. No snapper on this machine (the engine's "snapper is not installed")
+#     or its collector off: no snapshot step, so nothing is left — no card,
+#     no notice, no chip (A8: the denominator fits the machine).
+# (the engine's literal, CONTRACT.md rule 10: fixtures/index-variants/snapper-not-installed)
+cp "$fx/index-variants/snapper-not-installed.json" "$work/no-snapper-missing.json"
+jq '(.state.collectors[] | select(.name == "snapper")) |= {name: "snapper", enabled: false, ok: true}' "$sample" >"$work/no-snapper-off.json"
+for kind in missing off; do
+  run "no-snapper-$kind" "$work/no-snapper-$kind.json" 1920x1080 "summon"
+  expect "no-snapper-$kind" 1 "[.view.setup, .view.chip, (.view.notices | length), $tv.setup.shown] | map(tostring) | join(\"|\")" "||0|false"
+  clean_log "no-snapper-$kind"
+done
+
+# 7j. The first-run card from its fixture (dev mode): no case, nothing
+#     open, nothing today — "Seldon is recording. Nothing to do.", both
+#     tiles quiet, no sentence, no setup card.
+run first-run "$fx/index-variants/first-run.json" 1920x1080 "summon"
+expect first-run 1 "[$tv.firstRun, $tv.setup.shown, $tv.headline, ($tv.dimTiles | join(\",\")), .view.chip] | map(tostring) | join(\"|\")" "true|false||events today,7 days|"
+shows first-run 1 "Seldon is recording. Nothing to do."
+expect first-run 1 '.overflow | join(" | ")' ""
+clean_log first-run
+
+# 7k. The logbook's folder is in use (exit 3's reason, CONTRACT.md rule 10;
+#     WP-119 round 2, S5), live: step 2 says why and offers Choose a folder,
+#     which opens plain `seldon init` (it asks where) in the terminal.
+mkdir -p "$work/home-blocked"
+run setup-blocked "" 1920x1080 "summon;wait:sectionView.setup.actions.0=Choose a folder;clickName:setup-logbook-terminal" \
+  HOME="$work/home-blocked" FAKE_SELDON_MODE=uninit FAKE_SELDON_UNINIT_REASON=logbook-folder-not-empty \
+  HARNESS_RECORD="$work/setup-blocked.record"
+expect setup-blocked 2 "[$tv.setup.current, ($tv.setup.actions | join(\",\")), $tv.setup.ready] | map(tostring) | join(\"|\")" "logbook|Choose a folder,Copy|true"
+shows setup-blocked 2 "~/Seldon holds other files, so Seldon does not create its logbook there. Choose another folder: seldon init asks where."
+shows setup-blocked 2 "seldon init"
+expect setup-blocked 3 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+ask_script=$(node -e '
+  const fs = require("fs"), vm = require("vm"), M = {}
+  vm.createContext(M)
+  vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), M)
+  process.stdout.write(M.INIT_ASK_SCRIPT)' "$root/plugin/Model.js")
+deadline=$((SECONDS + 15))
+until [[ -s $work/setup-blocked.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
+check "setup-blocked: Choose a folder opened plain seldon init" \
+  "$(cat "$work/setup-blocked.record" 2>/dev/null || true)" \
+  "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$ask_script" --)"
+clean_log setup-blocked "seldon (capture|agent) exit 3: logbook not initialised"
 
 # ---------------------------------------------------------------------------
 # 8. Sections 1–3: Today, Changelog, Work (WP-122; ADR-0034 §2). The 0.1
@@ -1520,10 +1693,11 @@ for i in 1 2 5 10; do expect stacked-sections $i '.overflow | join(" | ")' ""; d
 clean_log stacked-sections
 
 # Not initialised (panel 5): the three sections are empty and say so;
-# `+` opens no sheet, Enter does nothing.
+# `+` opens no sheet, Enter does nothing. Today's overview holds the setup
+# card in place of its sentence (WP-119).
 run sections-uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon;text:2;text:3;text:+;key:Return"
-expect sections-uninit 1 "[$tv.rows, $tv.headline, $tv.state] | map(tostring) | join(\",\")" "1,No index to show,"
-shows sections-uninit 1 "No index to show"
+expect sections-uninit 1 "[$tv.rows, $tv.headline, $tv.state, $tv.setup.current] | map(tostring) | join(\",\")" "1,,,logbook"
+shows sections-uninit 1 "Set up Seldon · 2 of 3 steps to go"
 expect sections-uninit 2 "[$tv.rows, ($tv.chips | join(\"+\")), $tv.detail.found] | map(tostring) | join(\",\")" "0,open 0+crisis 0+attention 0+routine 0+case 0+all 0,false"
 shows sections-uninit 2 "No index to show"
 expect sections-uninit 3 "[($tv.ids | length), $tv.case, $tv.wip] | map(tostring) | join(\",\")" "0,null,0 / 3 active"
@@ -2067,7 +2241,7 @@ clean_log radiant-reflow
 # 9f. A logbook that is not initialised (overlay scenario 7): the desk's
 #     notice (7b); every chart in its empty state, nothing painted, no hover.
 run radiant-uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon:$radiant;call:hover:heatmap 0.5,0.5;call:hover:timeline 0.5,0.5"
-expect radiant-uninit 1 '.view.notices | join(",")' "Create your logbook"
+expect radiant-uninit 1 '[(.view.notices | length), .view.setup] | map(tostring) | join("|")' "0|Set up Seldon · 2 of 3 steps to go"
 rfits radiant-uninit 1
 rcounts radiant-uninit 1 90 "0,0,0,0,0,0"
 expect radiant-uninit 1 '[.view.sectionView.slots[] | .chart.empty] | all' true
@@ -2085,7 +2259,8 @@ clean_log radiant-uninit
 #     gets its final height a frame late and each chart paints once more.
 for variant in "$fx"/index-variants/*.json; do
   name=$(basename "$variant" .json)
-  [[ $name == not-initialised ]] && continue
+  # no case at all: the plan chart is empty by design (7j shows the variant)
+  [[ $name == not-initialised || $name == first-run ]] && continue
   run "radiant-variant-$name" "$variant" 1920x1080 "fresh:$radiant;view"
   expect "radiant-variant-$name" 2 '[.view.sectionView.slots[] | .chart.empty] | any' false
   if [[ $name == index-stale || $name == snapper-degraded ]]; then
@@ -2504,21 +2679,21 @@ clean_log uninit-sections "seldon capture exit 3: logbook not initialised"
 # 10g2. Before init (WP-138): Today lists what the machine remembers on its
 #       own — `seldon preview --json`, in its own process beside the queue —
 #       one row per pacman transaction and per file edited under ~/.config,
-#       and the card says what that is without memory; Set up Seldon opens
-#       the init terminal (the notInitialised banner's fix) and steps aside.
-#       The state index already says notInitialised before the engine has
-#       answered anything.
+#       and the setup card's step 2 says what that is without memory (WP-119);
+#       Create logbook opens the init terminal (the notInitialised banner's
+#       fix) and steps aside. The state index already says notInitialised
+#       before the engine has answered anything.
 mkdir -p "$work/home-preview/.local/state/seldon"
 cp "$fx/index-variants/not-initialised.json" "$work/home-preview/.local/state/seldon/index.json"
-run preview-uninit "" 1920x1080 "summon;wait:sectionView.preview.summary^=The last;clickName:todaySetUp" \
+run preview-uninit "" 1920x1080 "summon;wait:sectionView.preview.summary^=The last;clickName:setup-logbook-terminal" \
   HOME="$work/home-preview" FAKE_SELDON_MODE=uninit FAKE_SELDON_PREVIEW="$fx/preview.sample.json" \
   HARNESS_RECORD="$work/preview.record"
 expect preview-uninit 2 "[.view.status, .view.section, $tv.preview.shown, $tv.preview.setUp, $tv.rows] | map(tostring) | join(\",\")" \
   "notInitialised,today,true,true,10"
 expect preview-uninit 2 "$tv.preview.groups | join(\",\")" "Packages · last 7 days,Edited config files"
 expect preview-uninit 2 "$tv.preview.summary" "The last 7 days: 6 pacman transactions and 4 files edited under ~/.config. The newest are shown."
-for text in "Before Seldon" "This is without memory: no who, no why, gone when the logs rotate. Set up Seldon?" \
-  "Set up Seldon" "PACKAGES · LAST 7 DAYS" "Upgraded linux, linux-headers, mesa and 11 more" \
+for text in "The last 7 days: 6 pacman transactions and 4 files edited under ~/.config. The newest are shown. This is without memory: no who, no why, gone when the logs rotate." \
+  "Set up Seldon · 2 of 3 steps to go" "Create logbook" "PACKAGES · LAST 7 DAYS" "Upgraded linux, linux-headers, mesa and 11 more" \
   "Installed qt6-websockets, obs-studio" "failed" "Mon 5 Oct 21:14 · pacman -Syu --noconfirm" \
   "EDITED CONFIG FILES" "~/.config/alacritty/alacritty.toml" "Yesterday 21:15"; do
   shows preview-uninit 2 "$text"
@@ -2532,15 +2707,15 @@ init_script=$(node -e '
   process.stdout.write(M.INIT_SCRIPT)' "$root/plugin/Model.js")
 deadline=$((SECONDS + 15))
 until [[ -s $work/preview.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
-check "preview-uninit: Set up Seldon opened the init terminal" \
+check "preview-uninit: Create logbook opened the init terminal" \
   "$(cat "$work/preview.record" 2>/dev/null || true)" \
   "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$init_script" --)"
 check "preview-uninit: preview ran in its own process, with the fixed argv" \
   "$(sort -u "$work/home-preview/preview.log")|$(grep -c '^preview' "$work/home-preview/argv.log" || true)" "preview --json |0"
 clean_log preview-uninit "seldon (capture|agent) exit 3: logbook not initialised"
 
-# 10g3. A preview that fails says so in the list and on the card; Set up
-#       Seldon stays. No state index, and the probe held 3 s
+# 10g3. A preview that fails says so in the list and on the setup card;
+#       Create logbook stays. No state index, and the probe held 3 s
 #       (FAKE_SELDON_VERSION_DELAY; the harness waits for it), so the desk
 #       opens while the first capture still runs: the status becomes
 #       notInitialised only at its exit 3, which asks for the preview.
@@ -2548,7 +2723,8 @@ mkdir -p "$work/home-preview-failed"
 run preview-failed "" 1920x1080 "summon;wait:sectionView.preview.summary=cannot read the preview" \
   HOME="$work/home-preview-failed" FAKE_SELDON_MODE=uninit FAKE_SELDON_PREVIEW_EXIT=2 FAKE_SELDON_VERSION_DELAY=3
 expect preview-failed 2 "[$tv.preview.shown, $tv.preview.setUp, $tv.rows] | map(tostring) | join(\",\")" "true,true,0"
-expect preview-failed 2 '[.texts[] | select(. == "cannot read the preview")] | length' 2
+expect preview-failed 2 '[.texts[] | select(. == "cannot read the preview")] | length' 1
+shows preview-failed 2 "cannot read the preview This is without memory: no who, no why, gone when the logs rotate."
 # the desk asks for the agent sessions before it knows the logbook is missing
 clean_log preview-failed "seldon (capture|agent) exit 3: logbook not initialised|seldon preview exit 2: cannot read the preview"
 

@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 59a4bcda -->
+<!-- source: en/11-update-and-uninstall.md @ 30f3d0b5 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -9,7 +9,7 @@ entfernst. Nichts davon berührt dein Logbuch, außer du löschst es selbst.
 ## Die Engine aktualisieren
 
 Führ den Installer noch einmal aus, in einer der beiden Formen aus
-[Erste Schritte](01-getting-started.md#schritt-1-die-engine-installieren).
+[Erste Schritte](01-getting-started.md#die-engine-installieren).
 Der Einzeiler:
 
 ```sh

@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ b65d998e -->
+<!-- source: en/05-cli-reference.md @ a5ae8924 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -28,7 +28,7 @@ Usage: seldon [OPTIONS] [COMMAND]
 
 Commands:
   contract-version  Print the engine/plugin contract version
-  init              Create a logbook (wizard; --non-interactive takes defaults)
+  init              Create a logbook (asks only where; --defaults asks nothing, --ask everything)
   doctor            Check engine, config, logbook, collector state, agent skill, omarchy, snapper and git
   capture           Run collectors and append new events to the ledger
   log               Write a note: a ledger event and a journal entry
@@ -105,14 +105,19 @@ Options:
 ### seldon init
 
 Legt das Logbuch, die Konfigurationsdatei, die erste Erfassung und das
-Dossier an. Ohne Optionen stellt es Fragen; jede Option überspringt ihre
-Frage. Es lehnt einen Ordner ab, der nicht leer ist, und überschreibt nie
-eine Datei. `--non-interactive` nimmt die Optionen, dann eine vorhandene
-Konfiguration, dann die Vorgaben. `--since` nimmt ein Datum
-(`2026-09-29`, Mitternacht Ortszeit) oder eine Zeit nach RFC 3339;
-`--baseline` braucht `--since`; `--no-capture` geht nicht zusammen mit
-`--since`. Siehe
-[Erste Schritte](01-getting-started.md#schritt-2-dein-logbuch-anlegen).
+Dossier an. Ohne Optionen stellt es eine Frage, wohin das Logbuch soll,
+und nimmt für den Rest die Vorgaben: die Sprache deiner Locale, git, die
+Einstellungen von Obsidian, wenn Obsidian installiert ist, und eine erste
+Erfassung, die 90 Tage zurückschaut und verwirft, was dabei offen bleibt,
+als „before Seldon“. `--defaults` fragt nichts (das führt die
+Einrichtungskarte des Plugins aus); `--ask` stellt jede Frage, und jede
+Option überspringt ihre eigene. Es lehnt einen Ordner ab, der nicht leer
+ist, und überschreibt nie eine Datei. `--non-interactive` nimmt die
+Optionen, dann eine vorhandene Konfiguration, dann die Vorgaben, schaut
+ebenfalls 90 Tage zurück und erkennt nichts. `--since` nimmt ein Datum (`2026-09-29`,
+Mitternacht Ortszeit) oder eine Zeit nach RFC 3339; `--baseline` braucht
+`--since`; `--no-capture` geht nicht zusammen mit `--since`. Siehe
+[Erste Schritte](01-getting-started.md#dein-logbuch-anlegen).
 `--harness skills` installiert den Seldon-Agentenskill, wie es
 [`seldon hook install skills`](#seldon-hook-install) tut.
 `--remove-theme-hook` ist die einzige Option, die kein Logbuch anlegt:
@@ -122,26 +127,33 @@ mit keiner anderen Option zusammen. Siehe
 
 <!-- help: seldon init -->
 ```text
-Create a logbook (wizard; --non-interactive takes defaults)
+Create a logbook (asks only where; --defaults asks nothing, --ask everything)
 
 Usage: seldon init [OPTIONS]
 
 Options:
       --path <DIR>           Logbook directory (default ~/Seldon)
-      --non-interactive      Ask nothing; take flags, then the existing config, then the defaults: ~/Seldon, language from the locale, all collectors, git on, first capture from now on, no backfill, no theme hook
+      --defaults             Ask nothing: ~/Seldon (or the config's logbook), language from the locale, Obsidian settings when Obsidian is installed, and the last 90 days recorded as history before Seldon
+      --ask                  The full wizard: every question, the defaults pre-selected
+      --non-interactive      Ask nothing, detect nothing; take flags, then the existing config, then the defaults: ~/Seldon, language from the locale, all collectors, git on, the last 90 days recorded as history before Seldon, no theme hook
       --language <LANGUAGE>  Language of the logbook prose [possible values: en, de]
       --obsidian             Add Obsidian settings (.obsidian/)
       --harness <NAME>       Agent harness to set up (repeatable) [possible values: claude-code, omarchy-agent, skills]
       --since <TS>           Backfill: the first capture also records changes since TS, a date (YYYY-MM-DD, local midnight) or an RFC 3339 time; each one opens as drift
-      --baseline             Mark the backfilled drift as the pre-Seldon baseline (dismissed)
+      --baseline             Dismiss the drift the backfill opens as "before Seldon" (--defaults and plain init do it without the flag)
       --no-capture           Do not run the first capture
       --theme-hook           Install Omarchy's theme-set hook (`omarchy hook install theme-set`)
       --remove-theme-hook    Remove the theme-set hook that --theme-hook installed, and nothing else; needs no logbook
       --git                  Make the logbook a git repository with a first commit (default unless the existing config says otherwise)
       --no-git               Do not use git
 
+Without --defaults, --ask or --non-interactive, init asks only where the
+logbook goes and takes the defaults for the rest.
+
 Examples:
   seldon init
+  seldon init --defaults
+  seldon init --ask
   seldon init --non-interactive --since 2026-09-01 --baseline
   seldon init --remove-theme-hook
 ```

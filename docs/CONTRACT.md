@@ -169,6 +169,28 @@ exists (ADR-0047). This file explains it; the schema decides.
      shown as plain text and passed only as the one argument after `--`
      of `seldon config watch --json`. Absent before the first scan and
      while `[redaction] patterns` do not compile.
+10. Values the plugin keys on outside the schema (WP-119; no bump, E42).
+    This list is closed: an entry is added only by an operator decision
+    or an ADR.
+    Engine changes must keep them byte for byte, or move them into
+    contract 3 (WP-184) first:
+    - `state.collectors[].message` of `snapper` is exactly `snapper is not
+      installed` when the machine has no `snapper` (the engine's
+      `collectors::snapper::NOT_INSTALLED`). The setup card then has no
+      snapshot step and the snapshot notice does not show; any other
+      message of a failing snapper still offers the read grant. Fixture:
+      `index-variants/snapper-not-installed.json`. Contract 3 replaces the
+      text match with a field.
+    - Exit 3's `--json` error (`status`, `capture`, and every command that
+      opens the logbook) is `{"error": {"code": 3, "message", "path",
+      "reason"?}}`: `path` the logbook path the engine resolved (the
+      folder `init --defaults` would create; user content, rule 6),
+      `reason` present only when `init` could not create the logbook
+      there — `logbook-folder-not-empty` (a folder with files in it) or
+      `logbook-folder-not-a-folder`. The setup card then offers *Choose a
+      folder* (plain `seldon init`, in the terminal) instead of *Create
+      logbook*; an unknown reason is read as none. Fixtures:
+      `errors/not-initialised.json`, `errors/not-initialised-not-empty.json`.
 
 ## Changing the contract
 

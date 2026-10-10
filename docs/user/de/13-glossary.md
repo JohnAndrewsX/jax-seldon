@@ -1,6 +1,6 @@
 # Glossar
 
-<!-- source: en/13-glossary.md @ 1bae1cd -->
+<!-- source: en/13-glossary.md @ 30f3d0b5 -->
 
 Jeder Begriff von Seldon in einer Tabelle, mit dem englischen Wort, das
 die Oberfläche und die englische Anleitung verwenden. Befehle,
@@ -13,7 +13,7 @@ Dateinamen und Werte im Code bleiben in beiden Sprachen englisch.
 | arm, disarm | scharf schalten, entschärfen | das erste Enter einer schreibenden Aktion im Panel schaltet sie scharf, das zweite sendet sie; jede andere Taste entschärft sie |
 | attention | zur Kenntnis | Drift, die leise aufgelistet wird: ein Paket, mit Namen installiert, ein Plugin eines Dritten, eine Überschreibung; niemand muss sie erklären |
 | backfill | Nacherfassung | Änderungen von vor dem Logbuch aufzeichnen, mit `seldon init --since` |
-| baseline | Baseline | das Verwerfen aller Drift, die eine Nacherfassung gefunden hat, mit dem Grund „pre-Seldon baseline“ |
+| baseline | Baseline | das Verwerfen aller Drift, die eine Nacherfassung gefunden hat, mit dem Grund „before Seldon“ („pre-Seldon baseline“ vor 0.2.0) |
 | capture | Erfassung | ein Lauf der Collectors; `seldon capture` |
 | case | Case | eine geplante Änderung, `C-YYYY-NNN`, eine Datei in `work/` |
 | collector | Collector | ein Teil der Engine, der eine Quelle liest: `snapper`, `pacman`, `omarchy`, `plugins`, `theme`, `config` |
