@@ -45,6 +45,10 @@ Section {
   property string sentIntent: ""
 
   readonly property var today: root.service ? root.service.deskToday : null
+  // The active cases' tiles, "· agent working" on a case an agent works on
+  // (FEEDBACK 11, WP-156's sessions).
+  readonly property var caseTiles: Model.todayCaseTiles(root.today ? root.today.cases : [],
+    root.service ? root.service.agentSessions : null)
   // WP-138: the preview while the logbook is not initialised (null in dev
   // mode, where the engine never runs)
   readonly property var preview: root.service && root.service.status === "notInitialised" ? root.service.preview : null
@@ -169,6 +173,7 @@ Section {
       firstRun: firstRunCard.visible,
       dimTiles: root.today ? root.today.tiles.filter(function(t) { return t.dim }).map(function(t) { return t.label }) : [],
       cases: root.today ? root.today.cases.map(function(c) { return c.id }) : [],
+      caseTexts: root.caseTiles.map(function(c) { return c.text }),
       setupSlot: setupSlot.visible,
       setup: setupCard.view(),
       preview: {
@@ -506,7 +511,7 @@ Section {
         spacing: Style.spacing.md
 
         Repeater {
-          model: root.today ? root.today.cases : []
+          model: root.caseTiles
 
           CaseTile {
             required property var modelData
