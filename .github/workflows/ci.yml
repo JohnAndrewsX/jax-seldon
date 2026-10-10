@@ -22,11 +22,40 @@ permissions:
   contents: read
 
 jobs:
+  # The build image from GHCR, not Docker Hub (WP-195): copies the pinned
+  # digest from Docker Hub once, when GHCR does not have it yet; the other jobs pull
+  # it from there. The only job with packages: write
+  # (packaging/mirror-image.sh, packaging/README.md "Pinned actions and image").
+  image:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Mirror the build image to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash packaging/mirror-image.sh
+
   check:
+    needs: image
     runs-on: ubuntu-latest
     # Actions and the image are pinned (commit SHA, image digest) with the
     # version as a comment; packaging/README.md says how to refresh them.
-    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
+    # The image is Docker Hub's archlinux:base-devel, pulled from its GHCR
+    # copy (same digest); the token reads it.
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/johnandrewsx/jax-seldon/archlinux@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     env:
       SELDON_SKIP_HOST_CHECKS: "1"
       CARGO_TERM_COLOR: always

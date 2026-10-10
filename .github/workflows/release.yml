@@ -1,5 +1,8 @@
 # Release: a tag vX.Y.Z publishes the engine and the plugin (WP-040).
 #
+#   image    (tag and dry run)  the build image's pinned digest copied from
+#            Docker Hub to GHCR when GHCR does not have it yet; build
+#            pulls it from GHCR (WP-195, packaging/mirror-image.sh).
 #   build    (tag and dry run)  the version's CHANGELOG.md section exists;
 #            `cargo audit` passes (the release gate); `just check`;
 #            static musl binary with the watch feature;
@@ -29,9 +32,10 @@
 #            skipped when PLUGIN_REPO_TOKEN is absent.
 #
 # Dry run: start the workflow by hand (Actions → release → Run workflow,
-# or `gh workflow run release.yml --ref <branch>`). Only `build` and `split` run;
-# nothing is pushed or published. Its summary and the `dist` and
-# `package` artifacts show what a tag would publish. packaging/README.md.
+# or `gh workflow run release.yml --ref <branch>`). Only `image`, `build`
+# and `split` run; nothing is pushed or published (the image job's GHCR
+# copy aside). Its summary and the `dist` and `package` artifacts show
+# what a tag would publish. packaging/README.md.
 # The attestation step runs in a dry run too, so it is exercised before a
 # tag needs it; its attestations name the branch as their source ref, and
 # install.sh accepts only those of the release's tag (refs/tags/vX.Y.Z).
@@ -59,15 +63,42 @@ env:
   MUSL_TARGET: x86_64-unknown-linux-musl
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    # pinned like ci.yml (packaging/README.md, "Pinned actions and image")
-    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
-    # contents as for the whole workflow; id-token and attestations only
-    # for the attestation step (a Sigstore certificate from the job's OIDC
-    # token, stored in the repository's attestations)
+  # The build image from GHCR, not Docker Hub (WP-195): copies the pinned
+  # digest from Docker Hub once, when GHCR does not have it yet; the build job pulls
+  # it from there. The only job with packages: write
+  # (packaging/mirror-image.sh, packaging/README.md "Pinned actions and image").
+  image:
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Mirror the build image to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash packaging/mirror-image.sh
+
+  build:
+    needs: image
+    runs-on: ubuntu-latest
+    # pinned like ci.yml (packaging/README.md, "Pinned actions and image"),
+    # pulled from the GHCR copy
+    container:
+      image: ghcr.io/johnandrewsx/jax-seldon/archlinux@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    # contents as for the whole workflow; packages: read pulls the image;
+    # id-token and attestations only for the attestation step (a Sigstore
+    # certificate from the job's OIDC token, stored in the repository's
+    # attestations)
+    permissions:
+      contents: read
+      packages: read
       id-token: write
       attestations: write
     env:
