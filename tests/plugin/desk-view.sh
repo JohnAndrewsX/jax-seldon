@@ -2609,13 +2609,13 @@ expect system-partial 3 '[.texts[] | select(startswith("Nothing under"))] | leng
 clean_log system-partial
 jq '.system = {} | del(.state.collectors)' "$sample" >"$work/system-empty.json"
 run system-empty "$work/system-empty.json" 1920x1080 "summon;text:5;key:Down*4"
-expect system-empty 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations —,collectors —,recent —"
+expect system-empty 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations —,collectors —,recent —,ignored —"
 shows system-empty 2 "Not in the index"
 expect system-empty 3 '.view.sectionView.detailRows | join(",")' "Machine,Engine,Index written"
 clean_log system-empty
 jq '.system = {packages: {aur: 3}, deviations: 1} | del(.state.collectors)' "$sample" >"$work/system-sparse.json"
 run system-sparse "$work/system-sparse.json" 1920x1080 "summon;text:5;key:Down"
-expect system-sparse 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations 1 file,collectors —,recent —"
+expect system-sparse 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations 1 file,collectors —,recent —,ignored —"
 expect system-sparse 3 '.view.sectionView.detailRows | join(",")' "AUR"
 shows system-sparse 3 "3 from the AUR"
 clean_log system-sparse
@@ -2656,7 +2656,7 @@ clean_log memory
 run search-sections "$sample" 1920x1080 \
   "summon;text:5;text:/;type:aur;key:Return;key:Escape;text:/;type:installed;key:Return;key:Escape;text:6;text:/;type:hyprland;key:Return;text:j;text:k;key:Escape;text:/;type:memory/hyp;key:Return"
 expect search-sections 5 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "packages|packages|true"
-expect search-sections 6 '[(.view.sectionView.rows | length), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "6|omarchy|false"
+expect search-sections 6 '[(.view.sectionView.rows | length), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "7|omarchy|false"
 expect search-sections 9 '.view.sectionView.rows | join(",")' "packages"
 expect search-sections 14 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor] | join("|")' "lesson:Hyprland reload nach bindings.conf,topic:hyprland|lesson:Hyprland reload nach bindings.conf"
 expect search-sections 14 .view.selected 'lesson:`omarchy pkg add` statt yay direkt'

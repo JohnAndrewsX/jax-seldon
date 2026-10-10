@@ -124,6 +124,8 @@ fn the_list_is_a_baseline_then_a_change_is_one_attention_note() {
 
     // `omarchy refresh pacman` copies the template: the pins are gone, and
     // the user pins mesa again by hand
+    let cursors = env.home.join(".local/state/seldon/cursors.json");
+    let before = std::fs::read(&cursors).unwrap();
     omarchy_conf(&env, "IgnorePkg = mesa");
     std::fs::remove_file(etc(&env).join("pacman.d/10-pins.conf")).unwrap();
     capture(&env, "2026-10-10T11:00:00+02:00");
@@ -146,6 +148,11 @@ fn the_list_is_a_baseline_then_a_change_is_one_attention_note() {
 
     // idempotent: a second capture writes nothing
     capture(&env, "2026-10-10T11:05:00+02:00");
+    assert_eq!(pacman_events(&env).len(), 1);
+    // nor one with the cursors from before the change (a failed cursor
+    // save, an older state directory restored): the ledger has it
+    std::fs::write(&cursors, &before).unwrap();
+    capture(&env, "2026-10-10T11:05:30+02:00");
     assert_eq!(pacman_events(&env).len(), 1);
 
     // attention, never a crisis

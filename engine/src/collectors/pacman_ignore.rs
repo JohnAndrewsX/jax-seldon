@@ -366,6 +366,27 @@ pub fn event(old: &Ignore, new: &Ignore, now: DateTime<FixedOffset>) -> Event {
     e
 }
 
+/// The lists the newest change in `events` (ledger order) recorded, if
+/// any: what a change already written says is the list now.
+pub fn last_recorded(events: &[Event]) -> Option<Ignore> {
+    let e = events.iter().rev().find(|e| is_change(e))?;
+    let names = |key: &str| -> Vec<String> {
+        e.meta
+            .extra
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(String::from)
+            .collect()
+    };
+    Some(Ignore {
+        packages: names(META_PKG),
+        groups: names(META_GROUP),
+        partial: false,
+    })
+}
+
 /// Whether `e` is the collector's record of a changed list: a pacman
 /// `note` with `meta.ignorePkg` (ADR-0052 §4).
 pub fn is_change(e: &Event) -> bool {
@@ -657,6 +678,23 @@ mod tests {
         let e = e.unwrap();
         assert_eq!(e.detail.as_deref(), Some("IgnorePkg: removed a."));
         assert_eq!(e.meta.extra[META_PKG], "");
+    }
+
+    #[test]
+    fn the_last_recorded_change_wins() {
+        let l = |p: &[&str]| Ignore {
+            packages: names(p),
+            ..Default::default()
+        };
+        assert_eq!(last_recorded(&[]), None);
+        let a = event(&l(&[]), &l(&["a"]), now());
+        let b = event(&l(&["a"]), &l(&["b", "c"]), now());
+        let other = Event::new(now(), Source::Pacman, Kind::Note, "/etc/x.pacnew");
+        assert_eq!(
+            last_recorded(&[a.clone(), b, other.clone()]),
+            Some(l(&["b", "c"]))
+        );
+        assert_eq!(last_recorded(&[a, other]), Some(l(&["a"])));
     }
 
     #[test]

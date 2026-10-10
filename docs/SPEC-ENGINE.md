@@ -1706,7 +1706,11 @@ git itself is killed, with the same bounded pipe wait. Rules:
   note`, `subject: /etc/pacman.conf`, `actor: system`, no `txId`,
   `detail` `IgnorePkg: added a, b; removed c. IgnoreGroup: added g.`,
   `meta.ignorePkg` and `meta.ignoreGroup` the new lists, space-separated
-  (`""` when empty). `seldon event` refuses both keys (exit 1).
+  (`""` when empty). A change whose names the ledger's newest such note
+  already records (a cursor save that failed after the write, an older
+  state directory restored) is not written again; the ledger is read for
+  that only when the list changed. `seldon event` refuses both keys
+  (exit 1).
 - **snapper** — `snapper --jsonout list`. New snapshot numbers become
   `snapshot` events with description; a `pre`/`post` pair is linked via
   `meta.pairOf`. The cursor keeps each snapshot's number, type,

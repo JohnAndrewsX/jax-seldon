@@ -183,12 +183,22 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
     let events = dedupe(ctx, events)?;
     let mut events = attribute(ctx, events, &began)?;
     // ADR-0052: the ignore list, names only; its change is not attributed
-    let (ignore, ignore_known, change) = pacman_ignore::step(
+    let (ignore, ignore_known, mut change) = pacman_ignore::step(
         cursor.as_ref().and_then(|c| c.ignore.as_ref()),
         cursor.as_ref().and_then(|c| c.ignore_known.as_ref()),
         pacman_ignore::read(&ctx.sources.etc_dir),
         ctx.now,
     );
+    // a change the ledger records already (the cursor save after its
+    // write failed, an older state directory restored) is not written
+    // again; the ledger is read only when the list changed
+    if change.is_some()
+        && let Some(known) = &ignore_known
+        && pacman_ignore::last_recorded(&ctx.ledger.read_all()?)
+            .is_some_and(|last| last.same_names(known))
+    {
+        change = None;
+    }
     events.extend(change);
     Ok((
         events,

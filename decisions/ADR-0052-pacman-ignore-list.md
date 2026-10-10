@@ -90,7 +90,10 @@ event** — a baseline, as every collector takes one. A partial read writes
 no event and leaves `ignoreKnown` alone, so a file that could not be read
 is never reported as names removed. Because `capture` saves cursors only
 after the ledger write, a failed write never loses a change, and a second
-capture writes nothing (idempotent).
+capture writes nothing (idempotent). A change whose names the ledger's
+newest ignore-list note already records (the cursor save after the write
+failed, an older state directory restored) is not written again; the
+ledger is read for that only when the list changed.
 
 ### 3. The event
 
