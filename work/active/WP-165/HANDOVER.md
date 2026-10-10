@@ -132,3 +132,87 @@ guards say so).
 2. `omarchy refresh pacman` wiping the list gives one attention item per
    machine that had pins — intended (ADR-0052 Context 2), worth a look
    on the test host after the operator's acceptance.
+
+## Round 2 (review 1: SEND BACK; orchestrator decisions F1–F7, Q3)
+
+Commits `ea15c210` (engine), `59c50e97` (contract, fixtures), `81860483`
+(plugin), `c4bb02aa` (docs), this file.
+
+- **F1, fixed.** The cursor gains `ignoreAt` (when `ignoreKnown` was read,
+  set by every complete read). Only the newest ignore-list note at or
+  after `ignoreAt` can count as "already recorded"; the ledger is read
+  only when the list changed, and only from `ignoreAt` on
+  (`read_range`, no longer `read_all`). The review's scenario is the test
+  `a_change_after_a_state_loss_is_recorded` (baseline → note →
+  `cursors.json` removed → baseline → re-pin: a second note).
+- **F2, fixed.** `recorded_since` compares the note's `meta` with the new
+  lists as the ledger writes them (`(hidden)` for unshown names, then the
+  logbook's redaction over the whole value, as `Ledger::append` does).
+  Test `a_redacted_change_is_not_written_twice` (`corp-[a-z]+`, cursors
+  restored → still one note).
+- **F3, fixed.** `Limits` per read, counted, never timed: 64 files, 64
+  `Include` lines (a line matching nothing counts), 16 384 directory
+  entries over all globs together; past any → `partial`.
+- **F4, fixed.** Two-name reorder in both lists (unit), reorder across
+  lines and files (integration), 65 includes → 63 names + partial with
+  the defaults, the include and entry budgets at their edges, a broken
+  `[redaction] patterns` entry → no field (in-process
+  `index::derive_at`, since every command refuses such a config). I re-ran
+  the review's survivors as mutations of a copy of the module (restored,
+  `cmp` checked): M2 (ordered compare), M12 (files cap), M13 (entries
+  cap) killed, plus F1 (drop the `ignoreAt` bound), F2 (compare
+  unredacted) and the includes cap — all killed by `--lib`. M14 is killed
+  by `an_invalid_pattern_withholds_the_list` (reasoned: the derive's
+  `zip` with the redactor is the only withholding; not run as a mutation).
+- **F5, fixed.** User guide en/de `06-configuration.md`: the pacman row
+  of the collector table, a paragraph (pacman.conf and its includes, names
+  only, nothing else kept, first read a baseline, hidden names,
+  incomplete reads), and "besides these, only `/etc/pacman.conf` and its
+  includes … nothing else under `/etc`". `03-daily-use.md` en/de: the
+  System tile. The low item too: the pacdiff hint and SPEC-PLUGIN now say
+  "Seldon does not read that file" (ADR-0042, accepted, left as is).
+- **F6, done as decided.** `partial` only for an incomplete read (a file
+  that cannot be read, a relative include, depth, `[]`, the budget, names
+  past 256). Every name is kept in the cursor (raw, Q3; over 512 bytes as
+  `sha256:<hex>`) and counts for a change; the note writes an unshown one
+  as `(hidden)`; the index shows names of the shown shape that the
+  redaction leaves unchanged and counts the rest in the new optional
+  `system.pacmanIgnore.hidden` (schema, CONTRACT rule 9, derive, plugin
+  row "Not shown · N names (…)", the big value counts them). An include
+  outside `/etc` is read: an absolute path below `etc_dir`'s parent (`/`
+  on the host, `<guard>` in tests; `..` resolved lexically). Test
+  `a_name_seldon_does_not_show_silences_nothing` (the review's comma
+  typo).
+- **F7.** Verified against `man 5 pacman.conf` on the desktop (read with
+  `man`, no pacman or pacman-conf run — red zone): keys are CamelCase
+  (we match exactly), `Include` uses glob(7) rules, `IgnorePkg = package
+  ...` / `IgnoreGroup = group ...`. Changed: names split on spaces only
+  (a tab or comma stays in the name; unit test). The page documents no
+  include depth, and says comments only begin a line. Not changed, and
+  **not verified**: (a) the depth stays 10 levels below `pacman.conf`
+  (11 files in a chain) — the review recalls pacman refusing at
+  `depth + 1 >= 10` (10 files), I recall the check before the increment;
+  neither of us ran pacman; (b) `#` still cuts the rest of a line (my
+  reading of pacman's `ini.c`, "end of line comments"); following the
+  page literally would turn `IgnorePkg = linux # kernel` into the names
+  `linux`, `#`, `kernel`. Both are stated in ADR-0052 §1 as parser
+  readings, not page facts. If the operator wants certainty, one
+  `pacman-conf --config <scratch> IgnorePkg` on the test host settles
+  both.
+- **Q3** recorded in ADR-0052 §2 (raw names in `cursors.json`).
+- ADR-0052 stays **proposed**; §1, §2, §3, §5, §6 and the alternatives
+  updated for F1/F3/F6/F7.
+
+### How round 2 was verified (desktop; target, TMPDIR, 0700
+XDG_RUNTIME_DIR on disk; no network)
+
+- `cargo fmt`, `cargo clippy --all-targets -D warnings`: clean.
+- `cargo test -j 4 --no-fail-fast`: **1426 passed, 0 failed** (plain
+  features; `--features watch` not run this round).
+- `node tests/plugin/model.test.js`: 214 passed.
+- `validate-fixtures.sh`: ok (154 instances, 14 variants, 57
+  self-checks). `docs-check`: ok.
+- **Not run this round:** the Quickshell harnesses, qmllint,
+  plugin-validate (no QML changed; `Model.js` only), `SELDON_FULL_CHECK=1
+  just check`, check-rss/check-perf, shellcheck (not installed), test
+  host, CI.
