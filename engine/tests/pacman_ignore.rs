@@ -299,3 +299,156 @@ fn seldon_event_refuses_the_collectors_keys() {
     }
     assert_eq!(pacman_events(&env), Vec::<Value>::new());
 }
+
+/// The review's F1: after a state loss the cursor's known list is newer
+/// than the ledger's last note; a later change must still be recorded.
+#[test]
+fn a_change_after_a_state_loss_is_recorded() {
+    let env = setup();
+    omarchy_conf(&env, "IgnorePkg = linux");
+    capture(&env, "2026-10-10T10:00:00+02:00");
+    omarchy_conf(&env, "IgnorePkg = linux mesa");
+    capture(&env, "2026-10-10T10:05:00+02:00");
+    assert_eq!(pacman_events(&env).len(), 1);
+
+    // the state directory's cursors are lost: a new baseline, no event
+    std::fs::remove_file(env.home.join(".local/state/seldon/cursors.json")).unwrap();
+    omarchy_conf(&env, "IgnorePkg = linux");
+    capture(&env, "2026-10-10T10:10:00+02:00");
+    assert_eq!(pacman_events(&env).len(), 1);
+
+    // mesa pinned again: the 10:05 note is older than the known list
+    omarchy_conf(&env, "IgnorePkg = linux mesa");
+    capture(&env, "2026-10-10T10:15:00+02:00");
+    let events = pacman_events(&env);
+    assert_eq!(events.len(), 2, "{events:?}");
+    assert_eq!(events[1]["detail"], "IgnorePkg: added mesa.");
+    assert_eq!(events[1]["ts"], "2026-10-10T10:15:00+02:00");
+}
+
+/// The review's F2: the ledger redacts the note; the check compares what
+/// the ledger wrote.
+#[test]
+fn a_redacted_change_is_not_written_twice() {
+    let env = setup();
+    let config = env.config_file();
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert!(text.contains("\npatterns = []"), "{text}");
+    write(
+        &config,
+        text.replace("\npatterns = []", "\npatterns = [\"corp-[a-z]+\"]"),
+    );
+    omarchy_conf(&env, "IgnorePkg = linux");
+    capture(&env, "2026-10-10T10:00:00+02:00");
+    let cursors = env.home.join(".local/state/seldon/cursors.json");
+    let before = std::fs::read(&cursors).unwrap();
+    omarchy_conf(&env, "IgnorePkg = linux corp-agent mesa");
+    capture(&env, "2026-10-10T10:30:00+02:00");
+    let events = pacman_events(&env);
+    assert_eq!(events.len(), 1);
+    assert!(
+        !events[0].to_string().contains("corp-agent"),
+        "{}",
+        events[0]
+    );
+    // the cursor from before the change (a failed save): no second note
+    std::fs::write(&cursors, &before).unwrap();
+    capture(&env, "2026-10-10T10:35:00+02:00");
+    assert_eq!(pacman_events(&env).len(), 1);
+    // the masked name is counted, not shown
+    assert_eq!(
+        index(&env)["system"]["pacmanIgnore"],
+        j!({"packages": ["linux", "mesa"], "groups": [], "hidden": 1})
+    );
+}
+
+/// The review's F4: the same names in another order, across lines and
+/// files, are no change.
+#[test]
+fn another_order_across_lines_and_files_is_no_change() {
+    let env = setup();
+    omarchy_conf(&env, "IgnorePkg = linux mesa zoom\nIgnoreGroup = kde gnome");
+    capture(&env, "2026-10-10T10:00:00+02:00");
+    omarchy_conf(
+        &env,
+        "IgnorePkg = zoom\nIgnorePkg = mesa\nIgnoreGroup = gnome",
+    );
+    write(
+        etc(&env).join("pacman.d/10-pins.conf"),
+        "IgnoreGroup = kde\nIgnorePkg = linux\n",
+    );
+    capture(&env, "2026-10-10T10:05:00+02:00");
+    assert_eq!(pacman_events(&env), Vec::<Value>::new());
+    assert_eq!(
+        index(&env)["system"]["pacmanIgnore"],
+        j!({"packages": ["zoom", "mesa", "linux"], "groups": ["gnome", "kde"]})
+    );
+}
+
+/// The review's F6: a name Seldon does not show is no incomplete read; a
+/// change of the others is still recorded.
+#[test]
+fn a_name_seldon_does_not_show_silences_nothing() {
+    let env = setup();
+    omarchy_conf(&env, "IgnorePkg = linux,nvidia-utils");
+    capture(&env, "2026-10-10T10:00:00+02:00");
+    assert_eq!(
+        index(&env)["system"]["pacmanIgnore"],
+        j!({"packages": [], "groups": [], "hidden": 1})
+    );
+    omarchy_conf(&env, "IgnorePkg = linux,nvidia-utils mesa");
+    capture(&env, "2026-10-10T10:05:00+02:00");
+    let events = pacman_events(&env);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0]["detail"], "IgnorePkg: added mesa.");
+    assert_eq!(
+        events[0]["meta"],
+        j!({"ignorePkg": "(hidden) mesa", "ignoreGroup": ""})
+    );
+    // the typo fixed: one name gone, one added
+    omarchy_conf(&env, "IgnorePkg = linux nvidia-utils mesa");
+    capture(&env, "2026-10-10T10:10:00+02:00");
+    let events = pacman_events(&env);
+    assert_eq!(
+        events[1]["detail"],
+        "IgnorePkg: added linux, nvidia-utils; removed (hidden)."
+    );
+}
+
+/// The review's F4: while `[redaction] patterns` do not compile the index
+/// withholds the list. Every command refuses such a config, so the derive
+/// runs in-process with the config as loaded and one pattern broken.
+#[test]
+fn an_invalid_pattern_withholds_the_list() {
+    let env = setup();
+    omarchy_conf(&env, "IgnorePkg = mesa");
+    capture(&env, "2026-10-10T10:00:00+02:00");
+    assert_eq!(
+        index(&env)["system"]["pacmanIgnore"]["packages"],
+        j!(["mesa"])
+    );
+
+    let dirs = seldon::config::Dirs {
+        home: env.home.clone(),
+        xdg_config_home: env.home.join(".config"),
+        state_dir: env.home.join(".local/state/seldon"),
+    };
+    let mut config = seldon::config::Config::load(&env.config_file())
+        .unwrap()
+        .unwrap();
+    let logbook = seldon::logbook::Logbook::open(&env.tmp.path().join("logbook")).unwrap();
+    let now = chrono::DateTime::parse_from_rfc3339("2026-10-10T10:05:00+02:00").unwrap();
+    let derive = |config: &seldon::config::Config| {
+        seldon::index::derive_at(&dirs, config, &logbook, now)
+            .unwrap()
+            .index
+            .system
+            .pacman_ignore
+    };
+    assert!(
+        derive(&config).is_some(),
+        "the list with a working redaction"
+    );
+    config.redaction.patterns = vec!["(".into()];
+    assert_eq!(derive(&config), None);
+}
