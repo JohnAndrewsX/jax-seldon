@@ -8,15 +8,17 @@ A flight recorder and planning desk for your Omarchy machine.
 [![Release](https://img.shields.io/github/v/release/JohnAndrewsX/jax-seldon)](https://github.com/JohnAndrewsX/jax-seldon/releases/latest)
 [![Licence: MIT](https://img.shields.io/github/license/JohnAndrewsX/jax-seldon)](LICENSE)
 
+<!-- TODO(WP-126b) plugin/preview.png: reshoot as the desk and rewrite this alt text; the current file shows the 0.1 panel and overlay -->
 ![The Prime Radiant overlay on the left with heatmap, package series, drift bars, risk donut, timeline and the plan; the bar panel's Today tab on the right; Tokyo Night theme, sample data](plugin/preview.png)
 
 Seldon keeps a plain-Markdown logbook of everything that changes on your
 Omarchy system: packages, config files, themes, plugins, snapshots and
 Omarchy updates. You plan changes as *cases*. Seldon matches what
 actually happened against those cases and shows every change nobody
-planned as *drift*, so you can explain it. A bar pill, a panel and a
-fullscreen overlay, the *Prime Radiant*, show the picture in the Omarchy
-shell. Seldon only records: it never installs anything, never changes
+planned as *drift*, so you can explain it. A bar pill and one window,
+the *desk*, show the picture in the Omarchy shell: today, the changelog,
+your cases, the charts of the *Prime Radiant* and a graph of your
+machine's memory. Seldon only records: it never installs anything, never changes
 your system and never blocks a command.
 
 The name comes from Hari Seldon in Asimov's *Foundation*: the Plan
@@ -46,7 +48,8 @@ you or your agents give.
   yellow, red), a risk class and a plan. It moves from queued to active,
   verification and completed.
 - A change that no case covers is drift. You link it to a case, explain
-  it or dismiss it, from the terminal or the panel.
+  it or dismiss it, from the terminal or the desk; or your agent proposes
+  it for all open changes and you apply the proposal.
 - Claude Code's hooks, or one `seldon hook` command for any other agent,
   record each changing command with the agent's name and the active
   case, for agent sessions inside the logbook and for the sessions Seldon
@@ -54,10 +57,11 @@ you or your agents give.
   `~/.claude/settings.json` and do nothing in your other sessions unless
   `config.toml` sets `[hooks] scope = "all"`. Every
   logbook carries an `AGENTS.md` with the rules agents follow there.
-- In the Omarchy shell, a bar pill counts active cases and crises. A
-  panel with six tabs, which also counts the other changes without a
-  case, and the Prime Radiant overlay with charts follow your Omarchy
-  theme.
+- In the Omarchy shell, a bar pill counts active cases and crises. The
+  desk opens over your desktop at the width you choose: nine sections on
+  number keys, from Today and the Changelog (which also counts the other
+  changes without a case) to the Prime Radiant's charts and the graph,
+  all in your Omarchy theme.
 - The logbook is Markdown and YAML in `~/Seldon`, a git repository and,
   if you want, an Obsidian vault. `seldon rebuild` writes a guide that
   turns a fresh install into this machine again. Nothing leaves your
@@ -135,13 +139,25 @@ omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enabl
 ```
 
 Omarchy asks before it clones the plugin. A pill with the Seldon mark
-then appears on the right of the bar: a left click opens the panel, a
-middle click the Prime Radiant. If the panel shows a banner instead of
-data, the banner's button is the fix. Seldon records the plugin's
+then appears on the right of the bar: a left click opens the desk at
+Today, a middle click at the Prime Radiant. Seldon records the plugin's
 installation as routine history, not as drift. You can also add the
-plugin first: its setup card installs the engine and creates the logbook
-for you, one button each
+plugin first: its setup card on Today installs the engine and creates
+the logbook for you, one button each
 ([Getting started](docs/user/en/01-getting-started.md)).
+
+When something is missing, the desk says so in its header's chip and
+offers the fix as one click:
+
+| State | The desk shows | One click |
+|---|---|---|
+| Engine missing | the setup card's step 1, "Install the engine" (or "Seldon engine missing" once it was there) | *Install*: `install.sh` from the release, in a terminal you see |
+| Logbook not initialised | the setup card's step 2, "Create your logbook" | *Create logbook*: `seldon init --defaults` in a terminal |
+| Index missing or unreadable | "No index yet" / "Index unreadable" | *Build index*: `seldon status` writes it |
+| Index stale (older than 2 h) | "Index is stale" | *Capture now* |
+
+The full list, contract mismatch and restart notice included, is in the
+[plugin README](plugin/README.md#states).
 
 ## A 60-second tour
 
@@ -162,7 +178,7 @@ yellow     2026-10-09 19:22  config/config-change  ~/.bashrc  01M4GV0KZY6ZYF5BBT
 
 The change is drift: no case covers it. It is no crisis, so the pill
 stays as it was: by default its number after the mark counts crises
-only. The panel's Today tab counts it under *without a case*; the plugin
+only. The desk's header counts it under *attention*; the plugin
 setting `driftInBar` set to `all` counts it in the bar too. The plugin
 captures by itself every 15 minutes; `seldon capture` just saves you the
 wait. Explain the change with the event id from the last column:
@@ -188,9 +204,9 @@ run `seldon capture` again and link the new change to the case with
 `seldon plan verify <ID>` and `seldon plan done <ID>`. A change an agent
 makes through the hooks carries the active case on its own.
 
-Open the panel and press `2` for the Changelog: both changes, the note
-and every step of the case are there. A middle click on the pill opens
-the Prime Radiant. Each step is also a git commit in your logbook:
+Open the desk and press `2` for the Changelog: both changes, the note
+and every step of the case are there. `7` shows the Prime Radiant, `8`
+the graph. Each step is also a git commit in your logbook:
 `git -C ~/Seldon log --oneline`.
 
 The full walk-through, with the output of every command, is
@@ -214,10 +230,11 @@ Options (with the one-liner: `| bash -s -- --unit`):
   when the release is newer; with the same version it changes nothing.
   Update the plugin with `omarchy plugin update jax.seldon`, then restart
   the shell with `omarchy-restart-shell`: until it restarts, the shell
-  keeps running the old plugin code. The panel then shows "Restart the
+  keeps running the old plugin code. The plugin then shows "Restart the
   shell to finish the update" with a *Restart shell* button; a plugin
   version without this notice shows nothing, so restart after every
-  update.
+  update. From 0.1.x to 0.2.0, update the engine and the plugin together
+  (index contract 2): [what changed](docs/user/en/11-update-and-uninstall.md).
 - **Remove:** `bash install.sh --uninstall`, or with the one-liner
   `… | bash -s -- --uninstall`. It removes exactly the files it
   installed (a file you changed since is kept, and it says so). Your
@@ -242,7 +259,7 @@ Install from one source only: both put a `seldon` on your `PATH`.
 |---|---|
 | Use Seldon, step by step | User guide: [English](docs/user/en/README.md) · [Deutsch](docs/user/de/README.md) |
 | Get going in fifteen minutes | [Getting started](docs/user/en/01-getting-started.md) · [Erste Schritte](docs/user/de/01-getting-started.md) |
-| Know every pill, panel and overlay key | [Plugin README](plugin/README.md) |
+| Know every pill and desk key | [Plugin README](plugin/README.md) · [Keybindings](docs/KEYBINDINGS.md) |
 | Let an AI agent work in your logbook | [Agent guide](docs/AGENT-GUIDE.md) · [`llms.txt`](llms.txt) |
 | Understand how it works | [Concept](docs/CONCEPT.md) · specs for the [logbook](docs/SPEC-LOGBOOK.md), [engine](docs/SPEC-ENGINE.md), [plugin](docs/SPEC-PLUGIN.md) and the [contract](docs/CONTRACT.md) · [decisions](DECISIONS.md) |
 | Work on Seldon itself | [Contributing](CONTRIBUTING.md) · [Development](docs/DEVELOPMENT.md) |
@@ -254,10 +271,10 @@ an agent working on this repository follows the repository's
 
 ## Project status
 
-v0.1.4 (2026-10-08): Seldon stays quiet (routine changes are history, the
-bar counts only what can break boot, login or the shell), one click
-starts an agent on a case, and the shell no longer crashes on a restart
-with the pill on two monitors. Before 1.0.0 a
+v0.2.0: the desk replaces the bar popup and the fullscreen overlay (one
+window, nine sections, your width), your agent can sort the open changes
+for you to apply, and a new logbook looks back 90 days without asking.
+Engine and plugin move to index contract 2 together. Before 1.0.0 a
 minor release may still change the CLI, the logbook layout or the
 contract; the [changelog](CHANGELOG.md) then says so under Breaking.
 Next: the AUR package, the listing in the Omarchy plugin directory and
