@@ -20,7 +20,7 @@ publishes both through `.github/workflows/release.yml`.
 | `audit-ignore.sh [FILE [TODAY]]` | checks that list and prints its ids for `cargo audit --ignore`; exit 1 on an expired or malformed entry (`tests/release/`) |
 | `omarchy-pin` | the `omacom/omarchy` commit and the sha256 of its `bin/omarchy-plugin-validate` (WP-190; "The Omarchy pin" below) |
 | `omarchy-validate.sh PLUGIN_DIR` | fetches that validator over HTTPS, refuses it unless the sha256 matches, runs it on `PLUGIN_DIR`: `just plugin-validate` without the omarchy CLI (CI), the release workflow on the plugin split (`tests/release/`) |
-| `mirror-image.sh [WORKFLOW_DIR]` | the workflows' `image` job: copies the build image's pinned digest from Docker Hub to GHCR when GHCR does not serve it yet, and checks the copy (WP-195; "Pinned actions and image" below; `tests/release/`) |
+| `mirror-image.sh [WORKFLOW_DIR]` | the `mirror` job of `ci.yml` and `audit.yml`, on a push to `main` or `next` only: copies the build image's pinned digest from Docker Hub to GHCR when GHCR does not serve it yet, and checks the copy (WP-195; "Pinned actions and image" below; `tests/release/`) |
 | `store/baseline.md` | the plugin store's security baseline predicted for the plugin split: each capability with the README line and the scanner line behind it (WP-042) |
 | `store/submission.md` | the store submission issue, drafted for the operator; filed only on the operator's go (WP-042) |
 
@@ -74,7 +74,6 @@ The workflow then runs, in order:
 
 | Job | Runs on | Does |
 |---|---|---|
-| `image` | tag and dry run | the build image from GHCR: `mirror-image.sh` copies the pinned digest from Docker Hub when GHCR does not have it yet (the only job with `packages: write`); `build` needs it |
 | `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md`, or from 0.2.0 without its `### Highlights` (`release-notes.sh`, docs/VERSIONING.md); **`cargo audit` of `engine/Cargo.lock`, the release gate**: an advisory, an unmaintained or a yanked crate fails the build unless `audit-ignore.txt` accepts its id (an expired entry fails it too); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) `install.sh` and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` (its id; its `version` and `Model.js` `PLUGIN_VERSION` equal to the tag's, `plugin-version.sh`); **the split's own tree (`git archive` of the split, extracted) against Omarchy's pinned validator** (`omarchy-validate.sh`, WP-190), so the plugin the store installs is validated before anything is published; **a build-provenance attestation** (`actions/attest-build-provenance`) of the binary tarball, the source tarball, `SHA256SUMS` and `install.sh` — the job alone has `id-token: write` and `attestations: write`; `install.sh` checks it with `gh attestation verify` (SECURITY.md, "Verifying a release") |
 | `split` | tag and dry run | recomputes `git subtree split --prefix=plugin` on the `plugin` job's runner (both pinned to the label `ubuntu-24.04`, never `-latest`; no container: its git, not the Arch image's) and fails unless it is the split `build` validated (its `plugin_split` output). `release` needs it, and `bump`, `aur` and `plugin` need `release`, so a mismatch stops the release before anything is published (WP-190) |
 | `release` | tag | GitHub release `vX.Y.Z` with the four assets (the three above and `install.sh`, also listed in `SHA256SUMS`; README.md "Install"); the release notes are the body `packaging/release-notes.sh` makes of that `CHANGELOG.md` section (from 0.2.0 its Highlights and a link to it) |
@@ -100,7 +99,7 @@ gh workflow run release.yml --ref main
 gh run watch
 ```
 
-Only `image`, `build` and `split` run. The version comes from `engine/Cargo.toml`, the source
+Only `build` and `split` run. The version comes from `engine/Cargo.toml`, the source
 tarball is `git archive` of the branch head (no tag needed). Nothing is
 pushed, released or committed. The attestation step runs too, so it is
 exercised before a tag depends on it: the dry run's assets get real,
@@ -146,18 +145,35 @@ anonymous pull limit stopped CI on GitHub's shared runners before any
 step ran ("toomanyrequests"). The image is still Docker Hub's
 `archlinux:base-devel` at the pinned digest; the jobs pull a copy with the
 same digest from `ghcr.io/johnandrewsx/jax-seldon/archlinux`, so the
-content is the same byte for byte. Each workflow (`ci`, `audit`,
-`release`) has an `image` job before the jobs that use the image: it runs
-`mirror-image.sh`, which reads the one digest the workflows pin and its tag
-comment, and copies `docker.io/library/archlinux@sha256:<digest>` to
-`ghcr.io/johnandrewsx/jax-seldon/archlinux:<tag>` with `skopeo copy --all
---preserve-digests` only when GHCR does not serve that digest yet. Docker
-Hub is therefore asked once per digest, not once per run. It is the only
-job with `packages: write`; the jobs that use the image have `packages:
-read` and log in with the job's token. A pull request with a read-only
-token (a fork, Dependabot) passes when the digest is mirrored and fails
-in the `image` job, with a hint, when it is not. The package inherits the
-repository's visibility; nothing to set up.
+content is the same byte for byte.
+
+- **The copy runs on a push to `main` or `next` only.** `ci.yml` and
+  `audit.yml` have a `mirror` job (`if: github.event_name == 'push'`; both
+  workflows push-trigger on `main` and `next` only, never on tags). It runs
+  `mirror-image.sh`, which reads the one digest the workflows pin and its
+  tag comment, and copies `docker.io/library/archlinux@sha256:<digest>` to
+  `ghcr.io/johnandrewsx/jax-seldon/archlinux:<tag>` with `skopeo copy
+  --all --preserve-digests` only when GHCR does not serve that digest yet.
+  Docker Hub is therefore asked once per digest, not once per run. It is
+  the only job with `packages: write`, so that token never meets a pull
+  request's code.
+- **Everything else only pulls by digest:** pull requests (the `mirror`
+  job is skipped and the jobs after it run), Dependabot, the weekly audit
+  and the release workflow (tags and dry runs; the tag's commit was pushed
+  to `main` first). The jobs that use the image have `packages: read` and
+  log in with the job's token. A pull request that changes the digest
+  therefore cannot pull it until a push to `next` or `main` has mirrored
+  it (see "Refreshing the pins").
+- **GHCR down:** the pulls fail and the jobs fail; there is no fallback to
+  Docker Hub. The `mirror` job fails too, its message names Docker Hub's
+  limit, GHCR and the token. Run the jobs again later.
+- **Visibility, untested until the first push:** a package published from
+  a workflow with the job's token is expected to be linked to the
+  repository and to inherit its visibility (GitHub's docs), so a public
+  repository gets a public package and nothing needs to be set up. This has
+  not been tried; after the first push to `next` with this setup, check
+  that the package `jax-seldon/archlinux` (the repository's *Packages*) is
+  public and linked to `jax-seldon`.
 
 A run therefore uses exactly the reviewed action code and image until a
 commit changes the pin. `tests/release/workflow-pins.test.sh` (part of
@@ -196,10 +212,12 @@ three workflows (each action and the image have one pin everywhere):
 
   Take the newest line; the digest goes after `@` of the `image:
   ghcr.io/johnandrewsx/jax-seldon/archlinux@sha256:…` line in all three
-  workflows, the name into the comment. Commit it on a branch of this
-  repository (not a fork): its first CI run copies the new digest to GHCR,
-  the later runs pull it from there. If Docker Hub refuses that one copy
-  (its limit), run the job again later.
+  workflows, the name into the comment. Pull requests do not copy (see
+  above), so push the refresh commit to `next` first: that push's `mirror`
+  job copies the new digest to GHCR, and every later run pulls it from
+  there. A pull request opened before that push fails at the pull; run it
+  again after the push. If Docker Hub refuses the one copy (its limit), run
+  the `mirror` job again later.
 - *Then:* `just check-packaging`, and the release dry run on the branch
   ("Dry run" above) must be green before the change is merged.
 
@@ -216,6 +234,10 @@ network, TLS, async-runtime or DNS crate in the shipped graph or a
 `std::net` in `engine/src`. How to review one: docs/TESTING.md,
 "Dependabot pull requests". The image digest and the Omarchy pin stay
 manual (above and below).
+
+The version updates target `next`, the integration branch, until 0.2.0;
+after 0.2.0 `target-branch` moves to `main`. Security updates always go to
+the default branch, `main`.
 
 The repository settings are the operator's: *Dependabot alerts* and
 *Dependabot security updates* on (Settings → Advanced Security); the

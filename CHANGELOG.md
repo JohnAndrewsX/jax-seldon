@@ -527,8 +527,10 @@ and the package does not exist yet. Update the plugin first:
   crate in the engine's shipped crate graph or a `std::net` in its source
   (AGENTS.md §7). CI pulls its Arch image from a GHCR copy with the same
   digest instead of Docker Hub, whose anonymous pull limit had stopped
-  it. `just check-rss`'s limit is 12 MB, set from measurements recorded
-  in docs/TESTING.md; CI measures it.
+  it; only a push to `main` or `next` copies an image there. `just
+  check-rss`'s limit is 12 MB, set from measurements recorded in
+  docs/TESTING.md; it replaces operator decision E8 (11 MB) pending the
+  operator's yes. CI measures it.
 - **A recorded live test per release (WP-192).** From 0.2.0 every
   release has `packaging/acceptance/vX.Y.Z.json`: the commit deployed to
   the test host, the Omarchy version and channel, the installed engine
