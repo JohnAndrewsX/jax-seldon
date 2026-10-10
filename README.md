@@ -113,10 +113,11 @@ shell starts.
 seldon init
 ```
 
-The wizard asks where the logbook lives (`~/Seldon` by default) and a few
-more questions. Enter takes the default for each one; in a list, Space
-ticks an item. `seldon init --non-interactive` takes every default
-without asking. Then check the setup:
+It asks one question, where the logbook lives (`~/Seldon` by default),
+and takes the defaults for the rest: the first capture looks back 90 days
+and records that as history "before Seldon", without asking.
+`seldon init --defaults` asks nothing; `seldon init --ask` is the full
+wizard. Then check the setup:
 
 ```sh
 seldon doctor
@@ -137,7 +138,10 @@ Omarchy asks before it clones the plugin. A pill with the Seldon mark
 then appears on the right of the bar: a left click opens the panel, a
 middle click the Prime Radiant. If the panel shows a banner instead of
 data, the banner's button is the fix. Seldon records the plugin's
-installation as routine history, not as drift.
+installation as routine history, not as drift. You can also add the
+plugin first: its setup card installs the engine and creates the logbook
+for you, one button each
+([Getting started](docs/user/en/01-getting-started.md)).
 
 ## A 60-second tour
 
