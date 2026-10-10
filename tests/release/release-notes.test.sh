@@ -297,14 +297,17 @@ expect_refusal "a link reference to another tag" "no link reference" 0.2.0 "$tmp
 # --- release.yml prints the notes with workflow commands stopped ---
 # A CHANGELOG line that starts with `::` must never run as a workflow
 # command (WP-193 review): every line that prints notes.md sits between
-# `::stop-commands::<token>` and `::<token>::`, the token random per run.
+# `::stop-commands::<token>` and `::<token>::`, the token random per run:
+# one `stop=` in the file, the od line alone (a later `; stop=seldon`
+# would make it fixed).
 wf=$root/.github/workflows/release.yml
 if awk '
   /echo "::stop-commands::\$stop"/ { if (stop) bad = 1; stop = 1; next }
   /echo "::\$stop::"/ { if (!stop) bad = 1; stop = 0; next }
   /^[[:space:]]*cat .*notes\.md/ { printed++; if (!stop) bad = 1 }
-  /stop=\$\(od -An -N16 -tx1 \/dev\/urandom/ { token = 1 }
-  END { exit (bad || stop || printed != 1 || !token) }
+  /stop=\$\(od -An -N16 -tx1 \/dev\/urandom \| tr -d .* \\n.\)$/ { token++ }
+  { assigned += gsub(/(^|[^[:alnum:]_])stop=/, "&") }
+  END { exit (bad || stop || printed != 1 || token != 1 || assigned != 1) }
 ' "$wf"; then
   pass "release.yml prints notes.md only between ::stop-commands:: and its random token"
 else
