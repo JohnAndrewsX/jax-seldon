@@ -356,9 +356,12 @@ omarchy bar move jax.seldon --section right
 ```
 
 **Suggested binding** (not installed by the plugin). Add it to your
-Hyprland bindings:
+Hyprland bindings (`~/.config/hypr/bindings.lua`). Omarchy gives
+Super+Shift+S to its Google Maps web app, so the first line frees it;
+with a free key of your own, leave it out:
 
 ```
+hl.unbind("SUPER + SHIFT + S")
 o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 

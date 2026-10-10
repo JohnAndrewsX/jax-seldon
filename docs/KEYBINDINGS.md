@@ -75,8 +75,11 @@ Tab and Shift-Tab do nothing: the desk is not a bar popup.
 
 The suggested Hyprland binding is documented, never installed by the
 plugin (AGENTS.md §6: no edits under `~/.config` outside the plugin
-folder):
+folder). Omarchy binds Super+Shift+S to its Google Maps web app, so the
+binding frees the key first (Omarchy's `bindings.lua` template: unbind,
+then bind again):
 
 ```
+hl.unbind("SUPER + SHIFT + S")
 o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
