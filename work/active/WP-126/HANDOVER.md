@@ -315,3 +315,22 @@ check-packaging ok (shellcheck on the test host through the kit wrapper,
 367/0, desk-view 2076/0, bar-view 196/0, ipc-restart 44/0. Where:
 headless (dev host, private runtime dirs on disk), shellcheck on the test
 host.
+
+### 126c round 3 (stage 2: SEND BACK)
+
+| Finding | Fix | Verified |
+|---|---|---|
+| F1 a detour kept the triage arm, so the next Enter applied on one press | `Changelog.disarmTriage()` drops any `triage:` arm (Apply and Discard) when the proposal stops being the selection, the selected id changes, or the stacked detail is hidden by its Back (the prefix rule of Work's and Decisions' arms) | headless: `triage-detour` (armed by Enter, then a row click and the proposal again → not armed, the next Enter only arms; the same by IPC `select <eventId>` then `select proposal`; Discard armed by a click, then the same detour → not armed; no `drift apply`, no `drift discard` in the argv) and `triage-detour-stacked` (700x900: Enter, Enter arms, Back → not armed; Enter shows, Enter only arms). Both fail on d7883a86, where the engine got a `drift apply` after one press |
+| F2 | CHANGELOG 0.2.0: the stacked first Enter shows the detail; an armed Apply or Discard drops on a replaced proposal or another selection (a change for Discard from 0.1.x) | fixture (release-notes.test.sh, docs-check) |
+
+SPEC-PLUGIN §5.4 names what disarms (a row click, another selection, IPC
+select included, the stacked Back, a replaced proposal). F3 is yours
+(scenario c).
+
+**Gate:** `SELDON_FULL_CHECK=1 just check` exited 0 on 0fe2aa83 (only
+this handover follows); log `gates/check-dev-126c-r3.log`:
+check-packaging ok (shellcheck on the test host through the kit wrapper,
+8 calls), docs-check ok, qmllint ok, model.test.js 217, service-states
+367/0, desk-view 2092/0, bar-view 196/0, ipc-restart 44/0. Where:
+headless (dev host, private runtime dirs on disk), shellcheck on the test
+host.
