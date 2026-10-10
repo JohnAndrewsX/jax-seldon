@@ -168,3 +168,42 @@ the harness's design, not changed here.
 - The first-run card shows while no case exists and nothing is open, with
   no close button (the UX review allowed "or the user closes it"). Enough,
   or a dismiss stored like *Not now*?
+
+---
+
+## Round 2 (after review 1: SEND BACK)
+
+Review packet: private `review-0.1.1/handovers/WP-119-review-1.md`.
+Orchestrator decisions applied as given.
+
+| Item | Done |
+|---|---|
+| 0 — `--non-interactive` follows ADR-0033 (correction of the first answer) | `look_back()` for every mode that asks no date: 90 days, dismissed "before Seldon"; still no detection (Obsidian only with `--obsidian`) and no harness. `--since` without `--baseline` keeps its drift open (ADR-0033 §3). Tests changed: `init_runs_the_first_capture` (look-back row, Agents row), `non_interactive_looks_back_without_detection`. No other engine test or script relied on the old behaviour (`Env::init_logbook*` passes `--no-capture`, e2e.sh `--since`). SPEC-ENGINE §9, CLI help and reference, guides 01/02/05 en/de. |
+| B1 — merge `next` (WP-177) | Merged `next` @ 340954d9; `Today.qml` and `model.test.js` resolved. SetupCard, the first-run card and the zero tile take Tone (`dim`, `accentText`, `accentUi`, incl. the old ternary at `SetupCard.qml:105`); both cards' surface is the normal fill with an `accentUi` border, never the selected fill (§5.3 one cursor highlight). `check-tokens.py --rules`: ok on all 52 plugin QML files. |
+| B2 — the message key in the contract | CONTRACT.md rule 10 names the literal `snapper is not installed` and exit 3's `path`/`reason`; fixtures `index-variants/snapper-not-installed.json`, `index-variants/first-run.json` (overlays in `validate-fixtures.py`), `errors/not-initialised.json`, `errors/not-initialised-not-empty.json` (held equal by `engine/tests/init.rs`, read by `model.test.js`). No bump. WP-184 got the line for the contract-3 field. |
+| S1 | Kept as the accepted, documented exception (SPEC-PLUGIN §5.4 says so). |
+| S2 | Today keeps "Seldon is recording. N changes need you." and its lead while only the optional step is open (`Today.sentenceShown`); harness `snapper` checks it. |
+| S3 | `Model.deskChip`: an urgent notice takes the chip (its title, "+N", urgent tone, a click folds); else the setup card; else the first notice. Model test; harness `setup-old-engine` now expects "Engine too old +1", urgent. |
+| S4 | `Agents   none; add one with seldon hook install claude-code (or skills)` when no harness is set up (`init::NO_AGENTS`, no next step). |
+| S5 | Exit 3's `--json` error names `path` and, when `init` could not create the logbook there, `reason` (`logbook-folder-not-empty`, `logbook-folder-not-a-folder`; `logbook::layout::blocked_reason`). The plugin keeps it (`Service.notInitialisedInfo`), step 2 names the real folder ("Creates <path> …") and, with a reason, says why and offers **Choose a folder**: a sixth terminal script, `INIT_ASK_SCRIPT`, plain `seldon init` (asks only where). The step-2 watch runs `status --json` every 30 s, so a failed init's reason shows. INIT_SCRIPT's failed line names the way out. "Already a logbook" cannot meet exit 3 at the resolved path (`status` opens it), so it has no reason value. Guide 10 row (en/de). |
+| S6 | (a) the undefined branch tested by key (`Object.keys`, `hasOwnProperty`); (b) the engine probe after Install every 5 s for two minutes (`SETUP_PROBES_FAST` = 24), then every 30 s: about 40 failed-probe lines at most per watch; (c) unchanged (documented "in now's offset"). |
+| N1 | Not here (the orchestrator queued WP-198). |
+
+New harness cases: `first-run` (dev, the fixture), `setup-blocked` (live,
+`FAKE_SELDON_UNINIT_REASON`, Choose a folder → `INIT_ASK_SCRIPT`),
+`no-snapper-missing` now from the fixture; terminal-scripts: three
+`init-ask-*` cases. The fake engine's exit 3 names `$HOME/Seldon`.
+
+Still not run: the counted live check on the test host (no network in
+this session; WP-126 scenario (a)); shellcheck (not installed; CI).
+
+### How round 2 was verified
+
+| Check | Where | Result |
+|---|---|---|
+| `cargo test -j 4 --no-fail-fast` | fixture | all green |
+| `node tests/plugin/model.test.js` | fixture | 212 passed |
+| `terminal-scripts.sh` | headless (stubs) | 73 passed |
+| `check-tokens.py --rules`, qmllint | dev host | ok (52 files) |
+| `validate-fixtures.sh`, docs-check | fixture | ok |
+| `SELDON_FULL_CHECK=1 just check` | dev host (headless harnesses, private XDG_RUNTIME_DIR, disk TMPDIR/CARGO_TARGET_DIR) | see the last line |
