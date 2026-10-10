@@ -1662,10 +1662,11 @@ for i in 1 2 5 10; do expect stacked-sections $i '.overflow | join(" | ")' ""; d
 clean_log stacked-sections
 
 # Not initialised (panel 5): the three sections are empty and say so;
-# `+` opens no sheet, Enter does nothing.
+# `+` opens no sheet, Enter does nothing. Today's overview holds the setup
+# card in place of its sentence (WP-119).
 run sections-uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon;text:2;text:3;text:+;key:Return"
-expect sections-uninit 1 "[$tv.rows, $tv.headline, $tv.state] | map(tostring) | join(\",\")" "1,No index to show,"
-shows sections-uninit 1 "No index to show"
+expect sections-uninit 1 "[$tv.rows, $tv.headline, $tv.state, $tv.setup.current] | map(tostring) | join(\",\")" "1,,,logbook"
+shows sections-uninit 1 "Set up Seldon · 2 of 3 steps to go"
 expect sections-uninit 2 "[$tv.rows, ($tv.chips | join(\"+\")), $tv.detail.found] | map(tostring) | join(\",\")" "0,open 0+crisis 0+attention 0+routine 0+case 0+all 0,false"
 shows sections-uninit 2 "No index to show"
 expect sections-uninit 3 "[($tv.ids | length), $tv.case, $tv.wip] | map(tostring) | join(\",\")" "0,null,0 / 3 active"

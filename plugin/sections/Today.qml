@@ -160,7 +160,9 @@ Section {
       cursor: root.cursor,
       selected: root.selectedId,
       shown: root.eventShown ? "event" : "overview",
-      headline: headline.visible ? headline.text : "",
+      // the overview's sentence, also while an event is shown; "" while the
+      // setup card or the first-run card takes its place
+      headline: !root.setup && !root.firstRun && root.today ? root.today.headline : "",
       firstRun: firstRunCard.visible,
       dimTiles: root.today ? root.today.tiles.filter(function(t) { return t.dim }).map(function(t) { return t.label }) : [],
       cases: root.today ? root.today.cases.map(function(c) { return c.id }) : [],
