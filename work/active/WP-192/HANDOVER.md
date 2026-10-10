@@ -107,3 +107,41 @@ Part 2 (the tag refusal in `release.yml`) is WP-188's and was not touched.
   ask for the literal rule.
 - For WP-188: should the CI gate require `passed` only, or accept a
   `partial` record with the operator's recorded go?
+
+## Round 2 (review 1: SEND BACK, small)
+
+Packet: `jax-seldon-private/review-0.1.1/handovers/WP-192-review-1.md`.
+
+- **B1** — the host lists are read with `while read -r name id _ || [[
+  -n $name ]]`, so a last line without a newline counts, as in
+  `deploy-test-host.sh`. Test: a `guard-hosts.local` written with
+  `printf` and no final newline, its last host in a note → refused.
+- **B2** — new case: `packaging/PKGBUILD` changed after the tested
+  commit → refused, `packaging/PKGBUILD` printed. The reviewer's mutant
+  (`packaging/*` allowed) is now in the test's own mutant list and caught.
+- **N1** — the second column of `deploy-hosts.local` (the pinned
+  machine-id) is refused like the alias. Test: the pinned id in a note.
+- **N2** — a key given twice is refused before anything else: the
+  record's leaf events from `jq --stream` outnumber those of the parsed
+  record (`tostream`), and the message names the paths. Tests: a
+  top-level `status` twice, `omarchy` twice with different fields,
+  a scenario's `id` twice.
+- **N3** — `/root/…` counts as a private path. Test: `/root/` in a note.
+- **Decision 1 confirmed** by the orchestrator: `*.md` under `engine/`
+  counts as code. `work/queued/WP-188.md` (tag refusal) now has the same
+  wording, and an open operator question: does the 0.3 tag gate accept
+  `partial` with a recorded operator go, or `passed` only.
+- **Stage 2:** Fable reviews part 1 and part 2 together, once, in WP-188
+  (recorded there too); no separate stage 2 for part 1.
+- VERSIONING.md: the rules and the checker paragraph name the duplicate
+  key, `/root/` and machine-id checks.
+
+### How round 2 was verified
+
+| Check | Where |
+|---|---|
+| `bash tests/release/acceptance-check.test.sh`: 108 ok, 0 failed (6 mutants caught) | fixture (scratch repository, dev host) |
+| Each fix reverted by hand in turn (B1, N1, N2, N3): the test fails (1, 1, 3, 1 FAIL) | fixture |
+| `just check-packaging`: ok | fixture (dev host) |
+| `SELDON_FULL_CHECK=1 just check` on b28a6fee (this handover commit is `work/` only): `check: ok`, `exit 0`, Quickshell harnesses run | fixture + headless (dev host; private on-disk XDG_RUNTIME_DIR 0700, TMPDIR and CARGO_TARGET_DIR on disk) |
+| shellcheck | not run (not installed), CI |
