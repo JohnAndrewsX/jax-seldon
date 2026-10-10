@@ -63,9 +63,11 @@ check-watch:
 
 # Not part of `check` (it needs an optimised compile); required before the
 # handover of a WP that touches engine/src/index/ or commands/watch.rs.
-# `seldon watch` RSS < 11 MB on the x10 fixture, bench profile (10 MB until 2026-10-07).
+# `seldon watch` peak RSS < 11 MB on the x10 fixture, bench profile (10 MB
+# until 2026-10-07; 12 MB proposed by WP-195, pending the operator); prints
+# the measurement.
 check-rss:
-    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_stays_under_11_mb
+    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_peak_stays_under_the_limit -- --nocapture
 
 # Not part of `check` (optimised compile, timing on a quiet host); required
 # before the handover of a WP that touches the index build, `status` or the
@@ -97,6 +99,9 @@ check-perf:
 # in its README or SECURITY.md, no agent files (WP-042).
 # The release acceptance record checker against a scratch repository
 # (WP-192).
+# No network crate in the shipped crate graph and no `std::net` in
+# engine/src (AGENTS.md §7), and the build image's GHCR mirror script
+# against a fake registry (WP-195).
 check-packaging:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -107,7 +112,9 @@ check-packaging:
       packaging/plugin-version.sh tests/release/plugin-version.test.sh \
       packaging/omarchy-validate.sh tests/release/omarchy-pin.test.sh \
       tests/release/store-readme.test.sh \
-      packaging/acceptance-check.sh tests/release/acceptance-check.test.sh
+      packaging/acceptance-check.sh tests/release/acceptance-check.test.sh \
+      scripts/check-no-network.sh tests/release/no-network.test.sh \
+      packaging/mirror-image.sh tests/release/mirror-image.test.sh
     if command -v shellcheck >/dev/null; then
       # PKGBUILD variables are read by makepkg, $srcdir/$pkgdir set by it
       shellcheck -s bash -e SC2034,SC2154,SC2164 packaging/PKGBUILD
@@ -118,7 +125,9 @@ check-packaging:
         packaging/plugin-version.sh tests/release/plugin-version.test.sh \
         packaging/omarchy-validate.sh tests/release/omarchy-pin.test.sh \
         tests/release/store-readme.test.sh \
-        packaging/acceptance-check.sh tests/release/acceptance-check.test.sh
+        packaging/acceptance-check.sh tests/release/acceptance-check.test.sh \
+        scripts/check-no-network.sh tests/release/no-network.test.sh \
+        packaging/mirror-image.sh tests/release/mirror-image.test.sh
     else
       echo "check-packaging: shellcheck not installed; bash -n only"
     fi
@@ -136,6 +145,9 @@ check-packaging:
     bash tests/release/omarchy-pin.test.sh
     bash tests/release/store-readme.test.sh
     bash tests/release/acceptance-check.test.sh
+    bash scripts/check-no-network.sh
+    bash tests/release/no-network.test.sh
+    bash tests/release/mirror-image.test.sh
     echo "check-packaging: ok"
 
 # install.sh (WP-044) against a local mock of the release layout (file://

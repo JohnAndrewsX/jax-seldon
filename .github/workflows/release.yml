@@ -61,13 +61,21 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # pinned like ci.yml (packaging/README.md, "Pinned actions and image")
-    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
-    # contents as for the whole workflow; id-token and attestations only
-    # for the attestation step (a Sigstore certificate from the job's OIDC
-    # token, stored in the repository's attestations)
+    # pinned like ci.yml (packaging/README.md, "Pinned actions and image"),
+    # pulled by digest from the GHCR copy that ci.yml's mirror job made on
+    # the push to main before the tag (WP-195)
+    container:
+      image: ghcr.io/johnandrewsx/jax-seldon/archlinux@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    # contents as for the whole workflow; packages: read pulls the image;
+    # id-token and attestations only for the attestation step (a Sigstore
+    # certificate from the job's OIDC token, stored in the repository's
+    # attestations)
     permissions:
       contents: read
+      packages: read
       id-token: write
       attestations: write
     env:

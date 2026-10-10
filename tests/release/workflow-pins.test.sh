@@ -9,6 +9,14 @@
 #   - every `uses:` is `owner/repo@<40-hex commit> # vX.Y.Z`;
 #   - every `container:` and `image:` is `name@sha256:<64 hex> # <tag>`;
 #   - one action or image has one pin across all workflows;
+#   - every image comes from the GHCR mirror, never from Docker Hub
+#     (WP-195): a job with a container reads packages and logs in with
+#     the job's token; ci.yml has a `mirror` job, which runs
+#     packaging/mirror-image.sh with exactly contents: read and packages:
+#     write and only on a push (`if: github.event_name == 'push'`) in a
+#     workflow pushed on branches [main, next] only, never on tags; in a
+#     workflow with one, the container jobs need it and run when it
+#     succeeded or was skipped; no other job may write packages;
 #   - release.yml's build job installs cargo-audit and runs
 #     `cargo audit` with the reviewed ignore list before `just check`;
 #     the step has no `if:` or `shell:` of its own, nothing in its run
@@ -17,7 +25,7 @@
 #     bump, aur and plugin need [build, release];
 #   - release.yml's workflow permissions are `contents: read` alone; its
 #     build job has exactly contents: read, id-token: write and
-#     attestations: write, and an unconditional `Attest the release
+#     attestations: write (and packages: read for the image), and an unconditional `Attest the release
 #     assets` step (actions/attest-build-provenance) that names the binary
 #     tarball, the source tarball, SHA256SUMS and install.sh (WP-080);
 #     that step is the last one before `Summary`, after every check, and
@@ -92,6 +100,69 @@ refuses() {
     END { print fi + 0, at + 0 }'
 }
 
+# the job names of a workflow, in order
+jobs_of() {
+  awk '/^jobs:/ { on = 1; next } on && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { sub(/:.*/, ""); print $1 } on && /^[^ #]/ { on = 0 }' "$1"
+}
+
+# the lines of a job's `permissions:` block, sorted
+job_perms() {
+  awk '/^    permissions:/ { on = 1; next } on && /^      / { print; next } on { exit }' <<< "$1" | LC_ALL=C sort
+}
+
+# mirror FILE...: the build image comes from GHCR, never Docker Hub, and
+# only a push to main or next may copy it there (WP-195;
+# packaging/mirror-image.sh)
+mirror() {
+  local f j text on_push have
+  grep -n -E '^[[:space:]]*(-[[:space:]]+)?(container|image):[[:space:]]*[^[:space:]#]' "$@" \
+    | grep -v -E ':[[:space:]]*(-[[:space:]]+)?(container|image):[[:space:]]+ghcr\.io/johnandrewsx/jax-seldon/' \
+    | sed 's/$/ (pulls from Docker Hub: use the GHCR mirror, packaging\/mirror-image.sh)/' || true
+  for f in "$@"; do
+    have=$(job "$f" mirror)
+    if [[ -n $have ]]; then
+      # the push trigger of `on:`: branches main and next only, no tags
+      on_push=$(awk '/^on:/ { on = 1; next } on && /^[^ #]/ { exit }
+        on && /^  push:/ { p = 1; next } on && p && /^  [^ ]/ { p = 0 } p { print }' "$f")
+      grep -x -q -F '    branches: [main, next]' <<< "$on_push" \
+        && ! grep -E -q '^    (tags|tags-ignore|branches-ignore):' <<< "$on_push" \
+        || echo "$f: a workflow with a mirror job must push-trigger on branches [main, next] only (no tags)"
+    elif [[ $(basename "$f") == ci.yml ]]; then
+      echo "$f: ci.yml has no mirror job"
+    fi
+    while read -r j; do
+      [[ -n $j ]] || continue
+      text=$(job "$f" "$j")
+      if [[ $j == mirror ]]; then
+        [[ $(job_perms "$text") == "$(printf '      %s\n' 'contents: read' 'packages: write')" ]] \
+          || echo "$f: the mirror job's permissions are not exactly contents: read, packages: write"
+        grep -x -q -F '        run: bash packaging/mirror-image.sh' <<< "$text" \
+          || echo "$f: the mirror job does not run packaging/mirror-image.sh"
+        [[ $(grep -E '^    if:' <<< "$text") == "    if: github.event_name == 'push'" ]] \
+          || echo "$f: the mirror job does not run on a push only (if: github.event_name == 'push')"
+        ! grep -E -q '^    container:' <<< "$text" \
+          || echo "$f: the mirror job has a container"
+        continue
+      fi
+      ! grep -E -q '^[[:space:]]+packages:[[:space:]]*write' <<< "$text" \
+        || echo "$f: the $j job writes packages (only the mirror job may)"
+      grep -E -q '^    container:' <<< "$text" || continue
+      if [[ -n $have ]]; then
+        grep -E -q '^    needs:[[:space:]]*(mirror|\[([^]]*[[:space:],])?mirror([[:space:],][^]]*)?\])[[:space:]]*$' <<< "$text" \
+          || echo "$f: the $j job uses the image but does not need the mirror job"
+        # shellcheck disable=SC2016  # the workflow's expression, literally
+        grep -x -q -F "    if: \${{ !cancelled() && (needs.mirror.result == 'success' || needs.mirror.result == 'skipped') }}" <<< "$text" \
+          || echo "$f: the $j job does not run after a skipped mirror job, or runs after a failed one"
+      fi
+      grep -E -q '^      packages: read$' <<< "$text" \
+        || echo "$f: the $j job uses the image but has no packages: read"
+      # shellcheck disable=SC2016  # the workflow's expression, literally
+      grep -x -q -F '        password: ${{ secrets.GITHUB_TOKEN }}' <<< "$text" \
+        || echo "$f: the $j job's container does not log in with the job's token"
+    done <<< "$(jobs_of "$f")"
+  done
+}
+
 # problems DIR: one line per problem in the workflows of DIR; none = ok
 problems() {
   local dir=$1 f
@@ -112,6 +183,7 @@ problems() {
     done || true
   done
   # the same action (or image) pinned twice to different commits (digests)
+  mirror "${files[@]}"
   sed -n -E 's/^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+([^@[:space:]]+)@([^[:space:]]+).*/\2 \3/p;
              s/^[[:space:]]*(-[[:space:]]+)?(container|image):[[:space:]]+([^@[:space:]]+)@([^[:space:]]+).*/\3 \4/p' \
     "${files[@]}" | sort -u | awk '{ n[$1]++ } END { for (a in n) if (n[a] > 1) print "pinned to more than one version: " a }'
@@ -164,10 +236,10 @@ problems() {
   top=$(awk '/^permissions:/ { on = 1; next } on && /^  / { print; next } on { exit }' "$release")
   [[ $top == "  contents: read" ]] \
     || echo "$release: the workflow permissions are not contents: read alone"
-  perms=$(awk '/^    permissions:/ { on = 1; next } on && /^      / { print; next } on { exit }' <<< "$build" | LC_ALL=C sort)
-  want=$(printf '      %s\n' 'attestations: write' 'contents: read' 'id-token: write')
+  perms=$(job_perms "$build")
+  want=$(printf '      %s\n' 'attestations: write' 'contents: read' 'id-token: write' 'packages: read')
   [[ $perms == "$want" ]] \
-    || echo "$release: the build job's permissions are not exactly contents: read, id-token: write, attestations: write"
+    || echo "$release: the build job's permissions are not exactly contents: read, packages: read, id-token: write, attestations: write"
   attest=$(step "$build" "Attest the release assets")
   if [[ -z $attest ]]; then
     echo "$release: the build job has no step named Attest the release assets"
@@ -258,7 +330,7 @@ problems() {
     [[ $j == build ]] && continue
     ! grep -E -q '^[[:space:]]+(id-token|attestations):' <<< "$(job "$release" "$j")" \
       || echo "$release: the $j job has id-token or attestations permissions (only build signs)"
-  done <<< "$(awk '/^jobs:/ { on = 1; next } on && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { sub(/:.*/, ""); print $1 } on && /^[^ #]/ { on = 0 }' "$release")"
+  done <<< "$(jobs_of "$release")"
   for j in bump aur plugin; do
     grep -E -q '^    needs:[[:space:]]*\[[[:space:]]*build[[:space:]]*,[[:space:]]*release[[:space:]]*\][[:space:]]*$' <<< "$(job "$release" "$j")" \
       || echo "$release: the $j job does not need [build, release]"
@@ -305,9 +377,45 @@ expect_problem "action by short SHA" "not pinned to a commit" \
 expect_problem "action without the version comment" "not pinned to a commit" \
   '0,/(uses: actions\/download-artifact@[0-9a-f]{40}).*/s//\1/'
 expect_problem "image by tag" "image not pinned" \
-  's/container: archlinux:base-devel@sha256:[0-9a-f]{64}/container: archlinux:base-devel/' audit.yml
+  's/image: (ghcr[^ ]+)@sha256:[0-9a-f]{64}/image: \1:base-devel/' audit.yml
 expect_problem "image without the tag comment" "image not pinned" \
-  's/(container: [^ ]+@sha256:[0-9a-f]{64}).*/\1/' ci.yml
+  's/(image: [^ ]+@sha256:[0-9a-f]{64}).*/\1/' ci.yml
+expect_problem "image from Docker Hub" "pulls from Docker Hub" \
+  's/image: ghcr.io\/johnandrewsx\/jax-seldon\/archlinux@/image: archlinux:base-devel@/' ci.yml
+expect_problem "image from Docker Hub, explicit" "pulls from Docker Hub" \
+  's/image: ghcr.io\/johnandrewsx\/jax-seldon\/archlinux@/image: docker.io\/library\/archlinux@/' audit.yml
+expect_problem "check job writes packages" "check job writes packages" \
+  's/^      packages: read$/      packages: write/' ci.yml
+expect_problem "build job writes packages" "build job writes packages" \
+  's/^      packages: read$/      packages: write/'
+expect_problem "check job without needs: mirror" "does not need the mirror job" \
+  '/^    needs: mirror$/d' ci.yml
+expect_problem "audit job needs another job" "does not need the mirror job" \
+  's/^    needs: mirror$/    needs: [mirrors]/' audit.yml
+expect_problem "check job skipped with the mirror job" "does not run after a skipped mirror job" \
+  '/^    if: \$\{\{ !cancelled\(\) /d' ci.yml
+expect_problem "check job after a failed mirror job" "runs after a failed one" \
+  "s/^(    if: \\\$\{\{ )!cancelled\(\) && .*/\1always() }}/" ci.yml
+expect_problem "audit job without packages: read" "has no packages: read" \
+  '/^      packages: read$/d' audit.yml
+expect_problem "container without the token" "does not log in" \
+  '/^        password: /d' ci.yml
+expect_problem "no mirror job in ci.yml" "ci.yml has no mirror job" \
+  's/^  mirror:$/  copy:/' ci.yml
+expect_problem "mirror job without the script" "does not run packaging/mirror-image.sh" \
+  's/^        run: bash packaging\/mirror-image.sh$/        run: true/' ci.yml
+expect_problem "mirror job with id-token" "mirror job's permissions are not exactly" \
+  's/^(      packages: write)$/\1\n      id-token: write/' ci.yml
+expect_problem "mirror job on pull requests too" "does not run on a push only" \
+  "/^  mirror:$/,/^    runs-on:/{/^    if: /d}" ci.yml
+expect_problem "mirror job on every event but pull_request_target" "does not run on a push only" \
+  "s/^    if: github.event_name == 'push'$/    if: github.event_name != 'pull_request_target'/" audit.yml
+expect_problem "mirror job in a container" "mirror job has a container" \
+  "s/^(  mirror:)$/\1\n    container:\n      image: ghcr.io\/johnandrewsx\/jax-seldon\/archlinux@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689/" ci.yml
+expect_problem "mirror on tag pushes" "branches \[main, next\] only" \
+  "s/^(    branches: \[main, next\])$/\1\n    tags: ['v*']/" ci.yml
+expect_problem "mirror on every branch" "branches \[main, next\] only" \
+  "s/^    branches: \[main, next\]$/    branches: ['**']/" audit.yml
 expect_problem "service image by tag" "image not pinned" \
   's/^(    runs-on: ubuntu-latest)$/\1\n    services:\n      db:\n        image: postgres:16/' ci.yml
 expect_problem "one action, two commits" "more than one version: actions/checkout" \
@@ -350,6 +458,8 @@ expect_problem "build job without id-token" "permissions are not exactly" \
   '/^      id-token: write$/d'
 expect_problem "build job with packages: write" "permissions are not exactly" \
   's/^(      attestations: write)$/\1\n      packages: write/'
+expect_problem "build job without packages: read" "permissions are not exactly" \
+  '/^  build:$/,/^    steps:$/{/^      packages: read$/d}'
 expect_problem "no attest step" "no step named Attest" \
   's/^      - name: Attest the release assets$/      - name: Attest/'
 expect_problem "attest step with if: false" "attest step has an if:" \

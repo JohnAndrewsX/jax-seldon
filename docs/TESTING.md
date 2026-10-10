@@ -12,7 +12,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Lint | `clippy` | `cargo clippy --all-targets -- -D warnings` | yes |
 | Tests | `test` | `cargo test` (unit + CLI tests in `engine/tests/`) | yes |
 | Watch feature | `check-watch` | `cargo clippy --all-targets --features watch -- -D warnings`, `cargo test --features watch` (see "The `watch` feature") | yes |
-| Packaging | `check-packaging` | `bash -n` and (when installed) `shellcheck` on `packaging/PKGBUILD` and its scripts, `packaging/check-srcinfo.sh` (`.SRCINFO` in step with the PKGBUILD), `bash tests/release/release-notes.test.sh` (the release body from `CHANGELOG.md`: the real `0.1.0` and `0.1.4` sections whole, `[Unreleased]` opening with `### Highlights`; before 0.2.0 a middle and a last section, outer blank lines trimmed; from 0.2.0 the standing paragraph, the Highlights and the link to the section, with and without a date; missing, empty and prefix-only versions, malformed input exit 1, and from 0.2.0 each Highlights rule against a passing ten-bullet base: missing or not first, no bullet, eleven, wrapped or nested, a WP number, prose or a `*` bullet, an empty bullet, a missing, `http` or wrong-tag link reference), `bash tests/release/omarchy-pin.test.sh` (WP-190, offline: `packaging/omarchy-pin` names `omacom/omarchy`, a 40-hex commit and a 64-hex sha256; against a scratch mirror served as `file://` URLs, `packaging/omarchy-validate.sh` runs a validator with the pinned sha256 on the folder and fails with it, refuses and never runs one with another sha256 (also through the real pin), refuses a malformed pin (short or upper-case commit, a key missing, twice or unknown, a trailing space, a repo with a path), a missing file, a plain `http://` URL and a missing folder; where the installed validator equals the pin, it is served from the mirror and passes `plugin/` and fails a missing entry point file, a kind without its entry point and an `omarchy.*` id), `bash tests/release/workflow-pins.test.sh` (the pinned actions and image, the release gate, and the plugin split's validation in `release.yml`, each with mutants), `bash tests/release/store-readme.test.sh` (the plugin split as the Omarchy plugin store scans it, WP-042: no command in `plugin/README.md` or `plugin/SECURITY.md` pipes a download into a shell, no agent files under `plugin/`; one mutant per case, and controls that a code span in prose may name the panel's one-liner) | yes |
+| Packaging | `check-packaging` | `bash -n` and (when installed) `shellcheck` on `packaging/PKGBUILD` and its scripts, `packaging/check-srcinfo.sh` (`.SRCINFO` in step with the PKGBUILD), `bash tests/release/release-notes.test.sh` (the release body from `CHANGELOG.md`: the real `0.1.0` and `0.1.4` sections whole, `[Unreleased]` opening with `### Highlights`; before 0.2.0 a middle and a last section, outer blank lines trimmed; from 0.2.0 the standing paragraph, the Highlights and the link to the section, with and without a date; missing, empty and prefix-only versions, malformed input exit 1, and from 0.2.0 each Highlights rule against a passing ten-bullet base: missing or not first, no bullet, eleven, wrapped or nested, a WP number, prose or a `*` bullet, an empty bullet, a missing, `http` or wrong-tag link reference), `bash tests/release/omarchy-pin.test.sh` (WP-190, offline: `packaging/omarchy-pin` names `omacom/omarchy`, a 40-hex commit and a 64-hex sha256; against a scratch mirror served as `file://` URLs, `packaging/omarchy-validate.sh` runs a validator with the pinned sha256 on the folder and fails with it, refuses and never runs one with another sha256 (also through the real pin), refuses a malformed pin (short or upper-case commit, a key missing, twice or unknown, a trailing space, a repo with a path), a missing file, a plain `http://` URL and a missing folder; where the installed validator equals the pin, it is served from the mirror and passes `plugin/` and fails a missing entry point file, a kind without its entry point and an `omarchy.*` id), `bash tests/release/workflow-pins.test.sh` (the pinned actions and image, the image pulled from its GHCR mirror, only the `mirror` job writing packages and only on a push to `main` or `next`, the jobs after it running when it was skipped and not when it failed (WP-195), the release gate, and the plugin split's validation in `release.yml`, each with mutants), `bash scripts/check-no-network.sh` (AGENTS.md §7, WP-195: the shipped crate graph, `cargo tree --locked --offline -e normal,build --all-features`, has none of the denied network, TLS, async-runtime and DNS crates listed in the script; `mio` is allowed, notify's poll loop; and `engine/src` names no `std::net`, `TcpStream`, `UdpSocket` or `TcpListener`), `bash tests/release/no-network.test.sh` (that check on fake crate graphs and scratch sources: each denied crate, one marked `(*)`, and each network name in a scratch `.rs` file turn it red; `mio`, `curly` and `tokio-free-parser` and a name in prose or outside a `.rs` file do not; an empty graph is exit 2), `bash tests/release/mirror-image.test.sh` (`packaging/mirror-image.sh` against a fake `skopeo`: no copy when GHCR serves the digest; a copy by digest with digests preserved when it does not, checked again after it; a GHCR that serves other bytes copied again; a failed copy and a copy GHCR does not serve exit 2; no or two mirror digests and no token refused before any registry call; the real workflows pin one digest), `bash tests/release/store-readme.test.sh` (the plugin split as the Omarchy plugin store scans it, WP-042: no command in `plugin/README.md` or `plugin/SECURITY.md` pipes a download into a shell, no agent files under `plugin/`; one mutant per case, and controls that a code span in prose may name the panel's one-liner) | yes |
 | Install script | `check-install` | `bash tests/install/install.test.sh`: `install.sh` against a mock of the release layout served as `file://` URLs, scratch `HOME` and prefixes, no network — latest via the API with and without `jq`, a re-run changes nothing (bytes and mtimes), update and downgrade, `--unit` (the unit byte-identical for `~/.local`, `ExecStart` rewritten for other prefixes, never enabled), refusals before the first write (checksum mismatch, no `SHA256SUMS` line, wrong binary version, missing release, bad arguments, a foreign `jax-seldon`), the script piped to `bash` and truncated, `--uninstall` (only matching files; refused while the unit is enabled), the man page and the completions (WP-049: the fake binary answers `completions`/`mangen`; a scratch `/usr/share` via `SELDON_INSTALL_SHARE` has the bash-completion, fish and zsh directories, and fake `fish`/`zsh` in a PATH dir decide which shells exist (the host's zsh and fish are left off PATH): zsh's directory without `zsh` installs nothing, a fake `zsh` adds its completion and the `fpath` hint, `fish` without its directory installs nothing; a release without the commands skips them; a foreign completion is kept unless `--force`; a completion of a shell that is gone stays in the manifest and `--uninstall` removes it), the build-provenance check (WP-080: the host's `gh` is left off PATH; `gh` stubs that verify against the mock releases' attestations, fail on their own, are not logged in, too old or missing an option, or absent, each with and without `--require-verified`, plus `--skip-provenance`; a tampered release, one attested only for a branch, one from a self-hosted runner, one before attestations (v0.1.1), a `GH_HOST` of another server, the exact `gh` argv), no `sudo`/`systemctl` call, the real `~/.local/bin`, `~/.config/systemd/user`, completions and man page untouched; `shellcheck` when installed | yes (`shellcheck` in the release workflow's container) |
 | Deploy script | `check-deploy` | `bash tests/deploy/deploy-test-host.test.sh` (WP-098): `scripts/deploy-test-host.sh` in a scratch git repository with a bare origin, against a fake test host — an `ssh` stub runs the remote scripts here under `env -i` with a scratch `HOME` and a `PATH` of stubs (`omarchy-shell`, `omarchy-restart-shell`, `omarchy`, `curl`, `git clone`) plus single linked tools, so the host's real `omarchy-*`, `quickshell`, `hyprctl` and `systemctl` are out of reach; a `cargo` stub builds a fake engine. Refusals before any build or change (no or unlisted host, a machine-id that does not match the pin (one ssh call, no id printed), no pin or no pin file (with the hint; a commented pin does not count), a prefix or comment word of a listed one, an ssh option as host, no host list, the host is this machine, not on `main`, a modified or untracked file, HEAD not pushed, a check log missing, not ending in `exit 0`, saying the Quickshell harnesses were skipped (WP-161), without a first line `head <full sha>`, with a short, unknown or other-branch sha, or with `engine/`, `plugin/`, `schema/` or the script changed since that sha — a docs-only commit passes —, Windows line endings, bad arguments, a symlinked plugin dir, a missing remote tool); `--branch next` (WP-155): the same refusals for `next` (not on next, `--branch main` or no `--branch` on next, no `origin/next`, a modified file, HEAD not pushed, a plugin change since the checked commit, main's check log, a log that skipped the harnesses), a bad or missing `--branch` value, `--branch` with `--release`; a dry run (the `next.<sha>` build, the backup planned, nothing changed), next over a main build (`+next.<sha>` engine and marker, `seldon.prev` the main build, the backup `backup-before-next-<UTC stamp>` with `shell.json`, `~/.config/seldon`, the state dir, the logbook, the main engine and the main plugin copy, a `RESTORE.txt` with a line per entry, in the order watcher stop, engine, logbook, config, state, `shell.json`, then the main deploy, then the watcher start, named and printed in the summary and the log line), next onto next (no second backup), next onto a release (the backup and `RESTORE.txt` hold what exists), an active watcher (stopped before the copy, started again on the old engine before the swap, restarted on the new one), a watcher that does not stop or start again (exit 2, engine and plugin unchanged), no engine and an engine that names no logbook (refused, with the fix), an engine that is already next under a main marker (no backup; a main deploy warns), the engine and `shell.json` as links to files outside the fake home (backed up as links), a newline in the logbook path (refused, nothing measured), a logbook the engine names that does not exist (the dry run says "absent"), a host `du` that prints nothing (refused), a logbook at `/`, a parent of the home, the home, above `seldon-dev`, outside the home or linked out of it (refused before any build, never measured or copied), the size cap (refused, its message; a cap that is not a number; under the default cap), a logbook that turns into a link out of the home after the probe (the install step refuses it before the copy), a failed backup (the fake `cp` fails on the state dir, as root too: exit 2, engine, plugin and state unchanged, logged with the partial backup, only the state dir missing, the watcher started again; the retry backs up again), main and `--release` onto next (a warning pointing to `RESTORE.txt`); the test dir under `target/`, and `cp` and `du` on the fake host refuse every path outside it; dry run (no build, the host unchanged); first deploy (marked build with `--features watch` into the repo's target dir, `ssh -G` and the engine found in the dry run, a host without an engine, `ping` before the restart, `seldon.prev`, the release clone moved out of the plugins dir, HEAD's plugin files plus `.seldon-dev-build`, one restart, smoke, log line); an engine-only change (no restart, unchanged plugin files keep their mtime, an exported `CARGO_TARGET_DIR` ignored); the settle wait; removed and added plugin files; each locked state and an unreadable lock status (restart pending, caught up by the next deploy on an unlocked session); a restart notice while the restart is pending (a note); a failing restart, doctor, capture, service version, restart notice, host-side validation, build, a build without the marker, and no graphical session (named in the summary); an active `seldon-watch.service` restarted on the new binary, an inactive one left alone, a failed unit restart (exit 2); `--release` (install.sh with `--force`, the watcher restarted on the release binary, the clone at the tag, the dev copy moved aside), a clone that fails validation, a checksum mismatch and a missing release; the real `~/.local/bin/seldon`, plugin dir and `~/.local/state/seldon-dev` untouched; `shellcheck` when installed | yes |
 | Dev-host guard | `check-guard` | The PreToolUse guard hook `scripts/guard.sh` (WP-130; it runs `scripts/guard.py`, a bash parser that decides on the command position): `bash scripts/guard-test.sh`, the expectation table (one row per allowed or blocked case, a fixed fake `HOME` and working directory, nothing is executed), then `python3 scripts/guard-mutants.py`: each mutant drops one rule of `guard.py` and the table must fail for every one; `shellcheck` when installed | yes |
@@ -24,7 +24,8 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, `bash tests/plugin/check-tokens.test.sh` and `python3 tests/plugin/check-tokens.py --rules` on every plugin QML file (SPEC-PLUGIN §7's house rules, WP-177), then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | the node and bash parts yes (WP-190; the bench with `SELDON_BENCH_BUDGET_SCALE=3`); the Quickshell harnesses **no** (dev host; WP-191) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
-optimised build; not in `check`, not in CI, required before the handover
+optimised build; not in `check`; CI measures it after `just bench` without
+failing on it (WP-195); required before the handover
 of a WP that touches `engine/src/index/` or `engine/src/commands/watch.rs`;
 see "The `watch` feature"), `just check-perf` (SPEC-ENGINE §1's time
 budgets at the stated scale, WP-076; opt-in, not in `check`, not in CI:
@@ -323,7 +324,7 @@ file takes ~12 s; the timing assertions allow 4 s of slack for a loaded
 machine. `Watch::start` consumes the `watching` line and the rebuild at
 start, so each test sees only the rebuilds its own writes cause.
 
-**Memory bound (PLAN.md: RSS < 10 MB; 11 MB since 2026-10-07).** The test runs the watcher on the
+**Memory bound (PLAN.md: RSS < 10 MB; 11 MB since 2026-10-07; 12 MB proposed by WP-195, pending the operator).** The test runs the watcher on the
 ×10 fixture (`tests/common/scale.rs`) with the state lock held (so the
 rebuild at start waits), reads the idle size, releases the lock, lets the
 rebuild at start and one change-triggered rebuild run (500 events in the
@@ -335,13 +336,39 @@ growth of the heap (`RssAnon`) over the idle watcher is bounded (< 6 MB;
 information only: most of them are the debug binary's file-mapped pages,
 whose idle share moves by up to ~0.8 MB between builds of the same code
 (WP-091 round 3). `just check-rss` runs
-the test under `--profile bench`, where the peak must stay under 11 MB
-(operator decision 2026-10-07: the 10 MB peak was exceeded by 0.3–0.6 MB
-of the binary's own pages on the dev host before any 0.2.0 change; the
-heap-growth bound above stays the real limit).
-It is not part of `just check` and CI does not run it; run it before the
-handover of any WP that touches `engine/src/index/` or
-`engine/src/commands/watch.rs`. To measure another binary, e.g. the musl release build with the
+the test under `--profile bench` and prints the measurement; the peak must
+stay under 11 MB (11 264 kB; operator decision E8). The heap-growth bound above stays the real
+limit; the peak also counts the binary's own file-backed pages, which grow
+with the code (WP-175 traced +785 kB of `.text` and +368 kB of heap over
+about ten WPs on `next`, no leak).
+It is not part of `just check`; run it before the handover of any WP that
+touches `engine/src/index/` or `engine/src/commands/watch.rs`. CI runs it
+five times after `just bench` and writes the five lines to the run summary;
+a run over the limit is a warning there, not a failure.
+
+*How a limit is proposed (WP-195; the operator decides it).* A limit is the highest peak measured
+on the dev host, the test host and CI, plus a margin of at least twice
+the spread between runs, rounded up to a whole MB. Measure with
+`just check-rss` (one line `watch on ×10 (optimised): idle …, after
+rebuild …, peak … kB; heap (RssAnon) … → … kB` per run), at least five
+runs per place, on a quiet machine; record the numbers here. History: 10 MB
+(PLAN.md), 11 MB (operator decision 2026-10-07: the 10 MB peak was
+exceeded by 0.3–0.6 MB of the binary's own pages on the dev host; E8).
+**Proposed: 12 MB** (WP-195, pending the operator; the limit stays 11 MB
+until the operator says yes): 11 MB sits below `next`'s own peak on the
+dev host, 11.26–11.46 MB in WP-175 and WP-165, so `just check-rss` fails
+there today.
+
+| Where | When, build | Peak, runs | Heap after the rebuild |
+|---|---|---|---|
+| dev host (Omarchy, 16 threads, kernel 7.2.5, rustc 1.98.1) | 2026-10-10, `next` fdaca081, bench profile | 11 348 to 11 632 kB, 8 runs, median 11 460 kB | 3 184 to 3 340 kB |
+| test host | — | not run yet: measured after WP-195's merge (WP-195's brief allowed no network) | — |
+| CI (`ubuntu-latest`, Arch container) | — | not run yet: the first CI run after the merge records it (the run summary) | — |
+
+The proposed 12 MB = 11 632 kB + 656 kB: more than twice the 284 kB
+spread of the dev host's eight runs. The test host and CI rows are open:
+when they are measured, the proposal is redone by the rule above (lower,
+if all three places stay well under it) and goes to the operator. To measure another binary, e.g. the musl release build with the
 feature:
 
 ```
@@ -362,7 +389,13 @@ enabled or started by a test or an agent (AGENTS.md §6); `systemd-analyze
 
 CI (`.github/workflows/ci.yml`) runs `just check` in an `archlinux:base-devel`
 container with `SELDON_SKIP_HOST_CHECKS=1`, on every pull request and every
-push to `main`, then `just bench`.
+push to `main` or `next`, then `just bench` and `just check-rss` (measured,
+not gated; a run without any measurement line fails the step with an
+error). The container comes from GHCR, a copy of Docker Hub's image with
+the same digest that the `mirror` job makes once per digest, on a push to
+`main` or `next` only; pull requests only pull by digest (WP-195;
+packaging/README.md, "Pinned actions and image"): Docker Hub's anonymous
+pull limit stopped CI before any step ran.
 
 What CI runs for the plugin (WP-190):
 
@@ -401,6 +434,31 @@ tool is an error, not a skip. The dev host and the test host stay the gate
 for the plugin's behaviour; the pin mirrors the validator installed there
 and never replaces the installed tree as the reference (AGENTS.md §1).
 Never set `SELDON_SKIP_HOST_CHECKS` on the dev host.
+
+### Dependabot pull requests
+
+Dependabot (`.github/dependabot.yml`, WP-195) opens pull requests against
+`next` (until 0.2.0, then `main`; security updates against `main`) once a
+week: one with every action bump (the commit SHA and its `# vX.Y.Z`
+comment), one with the engine's minor and patch crate updates, and one per
+major crate update. CI runs on them like on any pull request; nothing
+merges by itself. Review one like this:
+
+- **Crates:** only crates AGENTS.md §7 allows, and what they pull in. A
+  new crate in `engine/Cargo.lock` needs the one-line justification and the
+  reviewer's approval like any other; `scripts/check-no-network.sh` (in
+  `just check-packaging`) turns CI red on a network, TLS, async-runtime or
+  DNS crate in the shipped graph, and `cargo tree -i <crate>` shows who
+  pulls it in. Read the changelog of a major update.
+- **Actions:** each action keeps one pin across the workflows
+  (`tests/release/workflow-pins.test.sh`); read the action's release notes
+  between the two versions, as for a pin refreshed by hand
+  (packaging/README.md, "Pinned actions and image").
+- **Not covered:** the build image's digest (Dependabot updates
+  GitHub-repository actions only, not `container:` images) and the
+  toolchain inside it; both stay manual (packaging/README.md).
+- A Dependabot pull request, like every pull request, only pulls the
+  image by digest; the copy to GHCR happens on a push to `main` or `next`.
 
 ## qmllint details
 

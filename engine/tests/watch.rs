@@ -482,7 +482,8 @@ mod with_feature {
     }
 
     /// The PLAN.md bound (RSS < 10 MB) is about the shipped, optimised
-    /// binary: the peak (VmHWM, never below VmRSS) must stay under it. The
+    /// binary: the peak (VmHWM, never below VmRSS) must stay under the
+    /// limit below, measured (docs/TESTING.md, "Memory bound"). The
     /// test profile's binary carries ~6 MB more unoptimised code, so there
     /// only the growth of the heap (`RssAnon`) over the idle watcher is
     /// bounded; `just check-rss` runs this test again under the `bench`
@@ -501,7 +502,10 @@ mod with_feature {
     /// (large blocks are unmapped at once) is not in it, which the bench
     /// run's peak bound covers.
     #[test]
-    fn rss_stays_under_11_mb_on_the_x10_fixture() {
+    fn rss_peak_stays_under_the_limit_on_the_x10_fixture() {
+        // 11 MB: operator decision E8 (2026-10-07). WP-195 proposes 12 MB
+        // from measured peaks (dev host 11 348 to 11 632 kB), pending the
+        // operator; docs/TESTING.md, "Memory bound"
         const LIMIT_KB: u64 = 11 * 1024;
         let env = Env::new(Snapper::Missing);
         let tmp = TempDir::new("watch-x10");
