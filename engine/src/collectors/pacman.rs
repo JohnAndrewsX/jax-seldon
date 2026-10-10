@@ -10,8 +10,12 @@
 //!   `note` whose subject is the file pacman left. Its transaction is in
 //!   `meta.transaction`, not in `txId`: `txId` is the drift group of the
 //!   transaction's packages (ADR-0013 §1), and a merge still to do is no
-//!   member of "I wanted that package". `/etc` is never read: whether the
-//!   file was merged later is not known.
+//!   member of "I wanted that package". The file itself is never read:
+//!   whether it was merged later is not known.
+//! - **The ignore list** (ADR-0052, WP-165). Every run also reads the
+//!   `IgnorePkg` and `IgnoreGroup` names of `/etc/pacman.conf` and its
+//!   includes ([`pacman_ignore`], names only, AGENTS.md §6) into the
+//!   cursor; a changed list is one `note` on `/etc/pacman.conf`.
 //! - **Lines.** The line grammar is a table ([`LINE_RULES`]): a new log edge
 //!   case is a new row or a fixture line, not a new code path. A line that
 //!   matches no row is ignored (malformed, unknown tag, scriptlet output).
@@ -84,6 +88,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::pacman_ignore::{self, Ignore};
 use super::{Collector, Ctx, Lost, Outcome, Tz, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, Source, TxStatus};
 
@@ -97,11 +102,24 @@ pub use crate::pkgcmd::{
 pub struct Pacman;
 
 /// `cursors.json` → `pacman.cursor`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PacmanCursor {
     pub inode: u64,
     /// Byte offset of the first line not yet emitted.
     pub offset: u64,
+    /// pacman's ignore list as the last run read it, shown in the index
+    /// as `system.pacmanIgnore` (ADR-0052 §2); absent in older cursors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignore: Option<Ignore>,
+    /// The last complete ignore list, which a change is measured against;
+    /// absent until the first complete read (a baseline, no event).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignore_known: Option<Ignore>,
+    /// When `ignoreKnown` was read (RFC 3339): only a change written since
+    /// then can be one this cursor does not know of yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignore_at: Option<String>,
 }
 
 impl Collector for Pacman {
@@ -130,7 +148,7 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
     let lock = lock_state(&ctx.sources.pacman_db_lock, &ctx.sources.proc_stat);
     let mut txs = Vec::new();
 
-    let start = match cursor {
+    let start = match &cursor {
         Some(c) if c.inode == meta.ino() && c.offset <= meta.len() => c.offset,
         Some(c) if c.inode != meta.ino() => {
             // rotated: finish the old file if it is still there
@@ -167,12 +185,47 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
         events.retain(|e| e.ts >= ctx.baseline);
     }
     let events = dedupe(ctx, events)?;
-    let events = attribute(ctx, events, &began)?;
+    let mut events = attribute(ctx, events, &began)?;
+    // ADR-0052: the ignore list, names only; its change is not attributed
+    let known_at = cursor
+        .as_ref()
+        .and_then(|c| c.ignore_at.as_deref())
+        .and_then(|t| DateTime::parse_from_rfc3339(t).ok());
+    let mut step = pacman_ignore::step(
+        cursor.as_ref().and_then(|c| c.ignore.as_ref()),
+        cursor.as_ref().and_then(|c| c.ignore_known.as_ref()),
+        pacman_ignore::read(&ctx.sources.etc_dir),
+        ctx.now,
+    );
+    // a change this collector wrote after the known list was read is in
+    // the ledger although the cursor is older (its save failed after the
+    // write, an older state directory was restored): not again. The
+    // ledger is read only when the list changed, and only since then.
+    if step.event.is_some()
+        && let (Some(since), Some(known)) = (known_at, &step.known)
+        && pacman_ignore::recorded_since(
+            &ctx.ledger.read_range(since, ctx.now)?,
+            since,
+            known,
+            ctx.ledger.redactor(),
+        )
+    {
+        step.event = None;
+    }
+    let ignore_at = if step.read_complete {
+        Some(crate::model::event::format_ts(&ctx.now))
+    } else {
+        cursor.as_ref().and_then(|c| c.ignore_at.clone())
+    };
+    events.extend(step.event);
     Ok((
         events,
         PacmanCursor {
             inode: meta.ino(),
             offset: parsed.resume,
+            ignore: step.shown,
+            ignore_known: step.known,
+            ignore_at,
         },
     ))
 }

@@ -62,7 +62,7 @@
   "summary": {
     "activeCases": 2,
     "queuedCases": 3,
-    "openDrift": 6,
+    "openDrift": 7,
     "crisis": 2,
     "eventsToday": 33,
     "events7d": 54
@@ -756,6 +756,20 @@
       }
     },
     {
+      "id": "01M3H7FNZ0YRX0ZM73QC24X96H",
+      "ts": "2026-09-27T12:45:00+02:00",
+      "source": "pacman",
+      "kind": "note",
+      "subject": "/etc/pacman.conf",
+      "detail": "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa.",
+      "actor": "system",
+      "zone": "red",
+      "meta": {
+        "ignoreGroup": "",
+        "ignorePkg": "zoom slack-desktop mesa vulkan-radeon lib32-mesa"
+      }
+    },
+    {
       "id": "01M3H6M818EPKV6HMJ0GN4PGFG",
       "ts": "2026-09-27T12:30:01+02:00",
       "source": "pacman",
@@ -1314,6 +1328,19 @@
       "rule": "config-remove"
     },
     {
+      "eventId": "01M3H7FNZ0YRX0ZM73QC24X96H",
+      "ts": "2026-09-27T12:45:00+02:00",
+      "source": "pacman",
+      "kind": "note",
+      "subject": "/etc/pacman.conf",
+      "detail": "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa.",
+      "actor": "system",
+      "zone": "red",
+      "crisis": false,
+      "proposedCase": null,
+      "rule": "ignore-list"
+    },
+    {
       "eventId": "01M3H6M720FC6BAG7ETNQTXW9K",
       "ts": "2026-09-27T12:30:00+02:00",
       "source": "pacman",
@@ -1712,7 +1739,10 @@
     "pacmanIgnore": {
       "packages": [
         "zoom",
-        "slack-desktop"
+        "slack-desktop",
+        "mesa",
+        "vulkan-radeon",
+        "lib32-mesa"
       ],
       "groups": []
     }

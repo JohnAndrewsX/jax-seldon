@@ -169,6 +169,22 @@ exists (ADR-0047). This file explains it; the schema decides.
      shown as plain text and passed only as the one argument after `--`
      of `seldon config watch --json`. Absent before the first scan and
      while `[redaction] patterns` do not compile.
+   - Optional, ADR-0052 (WP-165): `system.pacmanIgnore` `{packages,
+     groups, hidden?, partial?}`: the `IgnorePkg` and `IgnoreGroup` names
+     of `/etc/pacman.conf` and its includes as the pacman collector last
+     read them, in pacman's order, at most 256 each, each 1–128
+     characters of `[A-Za-z0-9@._+*?!^[]-]` (a name or an `fnmatch`
+     pattern); names only, nothing else of the files; `hidden` (an
+     integer, only when not 0) counts the names not shown (another shape,
+     or changed by the redaction); `partial: true` (only then present)
+     when the read was incomplete, and then no change is recorded. User
+     content (rule 6): plain text, never an argument. Absent
+     while the pacman collector is disabled, before its first read and
+     while `[redaction] patterns` do not compile. A change of the list is
+     a pacman `note` on `/etc/pacman.conf` with `meta.ignorePkg` and
+     `meta.ignoreGroup` (the new lists, space-separated; a name not shown
+     as `(hidden)`), attention
+     `ignore-list` in `drift[].rule`.
 10. Values the plugin keys on outside the schema (WP-119; no bump, E42).
     This list is closed: an entry is added only by an operator decision
     or an ADR.

@@ -7,12 +7,11 @@ import "../components/desk"
 import "../Model.js" as Model
 
 // Section 5, System (ADR-0034 §2, WP-123; the 0.1 System tab). The list:
-// six tiles — Omarchy, Packages, Snapshots, Deviations, Collectors,
-// Recently edited — each with its big value (Model.systemTiles; every
-// field of index.system is
-// optional, a tile without its data shows "—"). The detail: the big value
-// and its unit, the lead line, the key/value rows and where they come
-// from. The sticky bar: *Open in editor* opens the logbook's STATUS.md
+// seven tiles — Omarchy, Packages, Snapshots, Deviations, Collectors,
+// Recently edited, Ignored by pacman — each with its big value
+// (Model.systemTiles; every field of index.system is optional, a tile
+// without its data shows "—"). The detail: the big value and its unit,
+// the lead line, the key/value rows and where they come from. The sticky bar: *Open in editor* opens the logbook's STATUS.md
 // (`seldon open status --editor --json`), the full report.
 //
 // The sixth tile, Recently edited (WP-139, ADR-0046): files under
@@ -21,6 +20,10 @@ import "../Model.js" as Model
 // each with its age, "not watched" and *Watch*, which runs `seldon config
 // watch --json -- <path>` (Service.watchPath): the path joins watchPaths
 // and the row goes with the index the engine rebuilds.
+//
+// The seventh, Ignored by pacman (WP-165, ADR-0052): the IgnorePkg and
+// IgnoreGroup names of pacman.conf (index.system.pacmanIgnore), as plain
+// text; no action.
 //
 // Keys: ↑/↓ j/k move, Enter shows the detail (stacked layout), `e` opens
 // STATUS.md.
@@ -206,9 +209,8 @@ ReadingSection {
     Text {
       width: parent.width
       textFormat: Text.PlainText
-      text: root.current && root.current.id === "recent"
-        ? "From the last capture's scan of ~/.config: paths and times only, never content. Seldon keeps no record of these edits until a path is watched."
-        : "From the dossier; rebuilt on every capture."
+      // where the tile's data comes from (Model.systemTiles)
+      text: root.current ? root.current.source : ""
       color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family

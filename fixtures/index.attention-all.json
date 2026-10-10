@@ -1818,6 +1818,13 @@
           "mtime": "2026-09-27T19:02:11+02:00"
         }
       ]
+    },
+    "pacmanIgnore": {
+      "packages": [
+        "zoom",
+        "slack-desktop"
+      ],
+      "groups": []
     }
   },
   "memory": {

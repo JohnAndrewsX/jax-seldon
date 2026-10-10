@@ -101,7 +101,7 @@ of the next logbook `seldon init` creates.
 | Collector | Reads | Records |
 |---|---|---|
 | `snapper` | `snapper --jsonout list` | snapshots created and deleted |
-| `pacman` | `/var/log/pacman.log` | package installs, removals, upgrades, downgrades, grouped by transaction |
+| `pacman` | `/var/log/pacman.log`; the `IgnorePkg` and `IgnoreGroup` names of `/etc/pacman.conf` and the files it includes | package installs, removals, upgrades, downgrades, grouped by transaction; a change of the packages pacman ignores |
 | `omarchy` | `omarchy-version` | Omarchy version changes |
 | `plugins` | `omarchy plugin list --json` | shell plugins added, removed, enabled, disabled, updated |
 | `theme` | `~/.local/state/omarchy/current/theme.name` | theme switches |
@@ -109,6 +109,18 @@ of the next logbook `seldon init` creates.
 
 Each collector only reads. Turn one off with `false`;
 `seldon capture --source <name>` still runs it on demand.
+
+The `pacman` collector also reads `/etc/pacman.conf` and every file it
+includes (on Omarchy the mirrorlist, and drop-ins such as
+`/etc/pacman.d/*.conf`), as pacman reads them. It keeps only the names
+in `IgnorePkg` and `IgnoreGroup`, the packages pacman's full upgrade
+skips; nothing else of these files is kept or recorded. System shows the
+list. The first capture takes it as it is; after that, a change — your
+edit, or `omarchy refresh pacman` replacing the file — is one change to
+explain. A name that is not a plain package or group name, or that your
+redaction masks, is counted but not shown. When part of the
+configuration cannot be read, the list is marked incomplete and no
+change is recorded until it can.
 
 A shell plugin you added with `omarchy plugin add` is a git clone. Its
 update names the commits: how many a pull brought in or a rollback took
@@ -191,8 +203,9 @@ hibernation setup`, a migration, an `omarchy-settings` update that
 changed a file. Only hashes are recorded, never the content (a kernel
 command line names your disks). A symlink in one of these folders is
 followed to its file, and only that file's hash is recorded; a link to
-a file a package ships counts like any other change there. Nothing
-else under `/etc` is read. The
+a file a package ships counts like any other change there. Besides
+these, only `/etc/pacman.conf` and its includes are read, for the
+ignored names (above); nothing else under `/etc`. The
 `.pacnew` files pacman leaves there are not hashed: the pacman collector
 already lists each one, and when you merge it with `pacdiff`, the change
 of the file itself is recorded.

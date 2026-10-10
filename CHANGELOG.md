@@ -73,6 +73,18 @@ and the package does not exist yet. Update the plugin first:
 
 ### Engine
 
+- **pacman's ignore list (WP-165, ADR-0052).** Every capture that reads
+  `pacman.log` also reads the `IgnorePkg` and `IgnoreGroup` names of
+  `/etc/pacman.conf` and the files it includes, as pacman reads them —
+  the names only, nothing else of the files. The index lists them as
+  `system.pacmanIgnore` (optional within contract 2). The first read is
+  taken as it is; from then on a change of the list (an edit, or
+  `omarchy refresh pacman` replacing the file) is one pacman note on
+  `/etc/pacman.conf`, attention `ignore-list` until you explain it. A
+  name that is no plain package or group name, or that your redaction
+  masks, is counted but not shown. A read that could not see everything
+  (a file it cannot read, its budget) marks the list `partial` and
+  reports no change.
 - **`seldon init` asks only where, and looks back 90 days (WP-119,
   ADR-0033).** Plain `seldon init` asks one question, the logbook's
   location, and takes the defaults for the rest; `seldon init --defaults`
@@ -420,6 +432,10 @@ and the package does not exist yet. Update the plugin first:
 
 ### Plugin
 
+- **Ignored by pacman (WP-165, ADR-0052).** System has a seventh tile:
+  the packages and groups pacman's full upgrade skips — "pacman's full
+  upgrade skips them; `pacman -S` still updates them." A change of the
+  list in the Changelog says the same as its hint.
 - **Set up Seldon on one card (WP-119).** Until Seldon is set up,
   Today's overview shows one card instead of three banners: "Set up
   Seldon · N of 3 steps to go" — install the engine, create the logbook

@@ -79,6 +79,7 @@ mod collectors {
             to_cursor(&PacmanCursor {
                 inode,
                 offset: 6245,
+                ..Default::default()
             }),
         );
         b.baseline = support::ts("2100-01-01T00:00:00+00:00"); // ignored with a cursor
@@ -91,7 +92,8 @@ mod collectors {
             out.cursor,
             Some(to_cursor(&PacmanCursor {
                 inode,
-                offset: 13475
+                offset: 13475,
+                ..Default::default()
             }))
         );
     }

@@ -679,9 +679,12 @@ drift item's `truncated`, contract 2 — reads "(clipped in the index; the
 ledger has it in full)"; for a file pacman left — a pacman `note` whose
 subject ends in `.pacnew`, `.pacsave` or `.pacorig`, SPEC-ENGINE §4,
 WP-141 — a row **Hint** after What: "Merge with pacdiff (from
-pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot
+pacman-contrib) in a terminal. Seldon does not read that file, so it cannot
 tell whether that happened since." — text only, never a button or a
-command the plugin runs, AGENTS.md §8), **the transaction** (WP-137): for a
+command the plugin runs, AGENTS.md §8; for the change of pacman's ignore
+list — a pacman `note` with `meta.ignorePkg`, ADR-0052 — the Hint
+"pacman's full upgrade skips the packages in IgnorePkg and IgnoreGroup;
+`pacman -S` still updates them. The list is in System."), **the transaction** (WP-137): for a
 pacman event whose transaction did not complete (`meta.txStatus`,
 ADR-0043) an urgent callout above the key/values — *Transaction failed*,
 *Transaction interrupted* or *Transaction did not finish*, with what
@@ -929,17 +932,20 @@ and no action runs.
   or a click on a decision, leaves it with the title kept; `d` brings it
   back; once the index lists the new decision it is selected and the list
   head says "Created ADR-NNNN · title".
-- **System (5).** Six tiles from `Model.systemTiles`, each with a big
+- **System (5).** Seven tiles from `Model.systemTiles`, each with a big
   value: Omarchy (version; theme, last update, checkout, plugins),
   Packages (installed; explicit, AUR), Snapshots (the newest number; the
   index's list, at most 10), Deviations (the count; the list is in
   STATUS.md), Collectors ("ok/enabled"; each collector, then machine,
   engine, index time and the logbook's areas), Recently edited (WP-139,
-  ADR-0046: the count of `system.recentConfig.files`; Scanned). Every
+  ADR-0046: the count of `system.recentConfig.files`; Scanned), Ignored
+  by pacman (WP-165, ADR-0052: the count of the names in
+  `system.pacmanIgnore`, "ignored"; IgnorePkg and IgnoreGroup). Every
   field of `index.system` is optional: a tile without its data shows "—"
   and "Not in the index"; a failing collector stripes the Collectors tile
   and its lead says so. The detail: the big value and unit, the lead, the
-  key/value rows, "From the dossier; rebuilt on every capture." Sticky
+  key/value rows, where the data comes from (the tile's `source`; "From
+  the dossier; rebuilt on every capture." for the first five). Sticky
   bar: *Open in editor* (`seldon open status --editor --json`, the full
   report); `e` the same.
   Recently edited's detail lists the files as the engine wrote them,
@@ -961,6 +967,19 @@ and no action runs.
   then it reads "The scan stopped early; the list may be incomplete.",
   which a non-empty list's lead also ends with. An index without the
   field shows "—".
+  Ignored by pacman (`Model.pacmanIgnore`): the lead "pacman's
+  full upgrade skips them; `pacman -S` still updates them.", with no
+  name "pacman ignores nothing: no IgnorePkg or IgnoreGroup in
+  pacman.conf.", and for a partial list " Part of pacman's configuration
+  could not be read; the list may be incomplete." after it; the rows
+  IgnorePkg and IgnoreGroup with the names comma-separated as plain text
+  ("—" for none), and with hidden names (`hidden`, plus any name not of
+  the engine's shape) "Not shown" · "N names (not a plain package or
+  group name, or masked by your redaction)", which the big value counts
+  too; no stripe and no action. Its footer: "From pacman.conf
+  and the files it includes, read on every capture: the IgnorePkg and
+  IgnoreGroup names only, nothing else of the files." An index without
+  the field shows "—".
 - **Memory (6).** Rows from `Model.memoryRows`: the `## ` headings of
   memory/lessons.md, then the memory topics with path and `updated`
   (`summary` "3 lessons · 2 topics" above them). The detail: "Lesson" or

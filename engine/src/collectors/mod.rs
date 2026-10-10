@@ -30,6 +30,7 @@
 pub mod config;
 pub mod omarchy;
 pub mod pacman;
+pub mod pacman_ignore;
 pub mod plugins;
 pub mod recent;
 pub mod snapper;
@@ -226,9 +227,12 @@ pub struct Sources {
     pub omarchy_path: PathBuf,
     /// `SELDON_ETC_DIR`, default `/etc`: the system configuration, of
     /// which the config collector hashes the boot files
-    /// ([`config::boot_roots`]) and never reads anything else (AGENTS.md
-    /// §6, WP-164). Under `SELDON_TEST_GUARD` without the variable it is
-    /// `<guard>/etc`, so no test reads the host's.
+    /// ([`config::boot_roots`], WP-164) and the pacman collector reads the
+    /// ignore list of `pacman.conf` and its includes, names only
+    /// ([`pacman_ignore`]; an include outside `/etc` below this
+    /// directory's parent); nothing else (AGENTS.md §6). Under
+    /// `SELDON_TEST_GUARD` without the variable it is `<guard>/etc`, so no
+    /// test reads the host's.
     pub etc_dir: PathBuf,
 }
 

@@ -22,7 +22,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 |---|---|
 | `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `seldon-self`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` — the last two, sshd's default `AuthorizedKeysFile` entries, only once the user adds them to `watchPaths`, WP-113, ADR-0037 §3); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[agent] workdir` (`"inherit"`, default, not written: the launcher starts where `agent start` was called, by `omarchy-agent`'s rule; `"logbook"`: in the logbook, the folder before ADR-0030; §3 `agent start`; WP-116); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve besides the ones `agent start` launched, §8; WP-063, ADR-0030; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
-| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions + the HEADs of third-party clones (WP-136); config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
+| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode, and pacman's ignore list as last read (`ignore`, raw names, shown in the index), as last read completely (`ignoreKnown`, what a change is measured against) and when that was (`ignoreAt`; all absent in older cursors, §4, ADR-0052); snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions + the HEADs of third-party clones (WP-136); config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files and the boot files (§4 config; those under `/etc` by their absolute path, WP-164); written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/autocommit.json` | `{logbook, ok, at, message}`: the last autocommit the engine attempted (a commit or a git failure; a skip is no attempt), written by every writing command after its autocommit, bound to the canonical logbook path; `index.logbook.git.autocommit` (§6, ADR-0035 §2). Best effort: a record that cannot be written leaves the previous one. Read only when it is a regular file (no symbolic link, FIFO or device; checked before it is opened) of at most 4 MiB; anything else, an unreadable file or one that is not a record leaves the field out with a build warning (WP-120 round 3) |
@@ -1696,9 +1696,44 @@ git itself is killed, with the same bounded pipe wait. Rules:
   (so an agent's case that left it has it linked); dedupe and the cursor
   are the package lines' (`(ts, kind, subject, version)`, no version). A
   warning outside any transaction (old logs) is a note without
-  `meta.transaction`. Seldon never reads `/etc` (AGENTS.md §6): the event
-  records that pacman left the file, never whether it is still there or
-  was merged since — no later event says so.
+  `meta.transaction`. Seldon never reads the file (AGENTS.md §6): the
+  event records that pacman left the file, never whether it is still
+  there or was merged since — no later event says so.
+  **pacman's ignore list (WP-165, ADR-0052).** Every run that reads the
+  log also reads the `IgnorePkg` and `IgnoreGroup` names of
+  `/etc/pacman.conf` (`SELDON_ETC_DIR`, under the test guard
+  `<guard>/etc`) and the files it includes, as pacman does: CamelCase
+  keys, names separated by spaces only (`pacman.conf(5)`; a tab or a
+  comma is part of a name), `#` cutting the rest of a line, `[section]`
+  headers shared across includes, `Include = <path>` followed wherever it
+  stands (glob(7)-expanded, sorted, no hidden files unless named, at most
+  10 levels below `pacman.conf`; a path under `/etc` below the system
+  configuration directory, another absolute path below its parent, a
+  relative one not read), the two keys only in `[options]`, repeated
+  lines adding up, no repeats. Names only: no other line, key or value is
+  kept anywhere. Bounds, counted and never timed: regular files of at
+  most 1 MiB; per read 64 files, 64 `Include` lines and 16 384 directory
+  entries for all globs together; 256 names per list; a name over 512
+  bytes kept as `sha256:<hex>`. Only an incomplete read is `partial` (a
+  file that cannot be read, a relative include, the depth, the budget,
+  names past 256); a name Seldon does not show is not. The cursor keeps
+  the list as read (`ignore`), the last complete one (`ignoreKnown`) and
+  when that was read (`ignoreAt`); without `ignoreKnown` (a baseline, the
+  first run of this engine) the list is taken without an event; a partial
+  read never writes one and keeps `ignoreKnown`; an unreadable
+  `pacman.conf` keeps the last list, marked partial. A complete read
+  whose names differ from `ignoreKnown` (as sets) writes one event at the
+  capture time: `source: pacman`, `kind: note`, `subject:
+  /etc/pacman.conf`, `actor: system`, no `txId`, `detail` `IgnorePkg:
+  added a, b; removed c. IgnoreGroup: added g.`, `meta.ignorePkg` and
+  `meta.ignoreGroup` the new lists, space-separated (`""` when empty); a
+  name not of the shown shape (§6) is written `(hidden)`. A change that
+  the newest such note at or after `ignoreAt` already records, as the
+  ledger wrote it (redacted), is not written again (a cursor save that
+  failed after the write, an older state directory restored); a note
+  from before `ignoreAt` never counts, so a change after a state loss is
+  recorded. The ledger is read for that only when the list changed, from
+  `ignoreAt` on. `seldon event` refuses both keys (exit 1).
 - **snapper** — `snapper --jsonout list`. New snapshot numbers become
   `snapshot` events with description; a `pre`/`post` pair is linked via
   `meta.pairOf`. The cursor keeps each snapshot's number, type,
@@ -2293,7 +2328,12 @@ After every capture:
    `/etc/systemd/` (Omarchy uses drop-ins), `/etc/security/` (Omarchy
    overrides `pam`'s files there), `fstab`, `crypttab`, `sudoers` and a
    path under another root (`pacman -r /mnt`) are attention: the file in
-   use keeps working. Omarchy `update`: routine `omarchy-update`
+   use keeps working. Checked before the rows of a file pacman left, a
+   pacman `note` with
+   `meta.ignorePkg` (pacman's ignore list changed, §4, ADR-0052) is
+   attention `ignore-list`: the full upgrade now skips (or no longer
+   skips) those packages; no crisis (a held package keeps working).
+   Omarchy `update`: routine `omarchy-update`
    when both versions are package-shaped (`N…-N`) and a plain full
    upgrade moved `omarchy` or `omarchy-dev` (install or upgrade) to the
    new version at most 31 days before; else attention `omarchy-other`
@@ -2743,6 +2783,14 @@ longer a path the scan would keep (§4: the redaction, control and format
 characters, 512 characters), at most 80, in the file's order. No file,
 no field; a file that cannot be read or parsed is a build warning and no
 field; an invalid `[redaction] patterns` entry withholds it.
+
+`system.pacmanIgnore` (ADR-0052, optional within contract 2) is
+`{packages, groups, hidden?, partial?}`: the pacman collector's cursor's
+`ignore` (§2, §4) while the cursor is this logbook's and the collector
+enabled. Shown are the names of 1–128 characters of
+`[A-Za-z0-9@._+*?!^[]-]` that the logbook's redaction leaves unchanged;
+`hidden` counts the others (only when not 0); `partial` is the read's.
+No list, no field; an invalid `[redaction] patterns` entry withholds it.
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. `cargo bench --bench index` (`just bench`, CI) asserts the index

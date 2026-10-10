@@ -66,6 +66,10 @@ WATCH_PATHS = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.ba
 SKIP_PATHS = ["~/.config/omarchy/**/history.json", "~/.config/omarchy/**/history/",
               "~/.config/omarchy/**/state.json", "~/.config/omarchy/**/cache/", "~/.config/omarchy/**/*.log"]
 RECENT_DAYS, RECENT_MAX = 7, 80
+# ADR-0052: the pacman collector's cursor of the 17:05 capture (the engine's state dir), the source
+# of `system.pacmanIgnore`; engine: collectors::pacman_ignore (NAME, MAX_NAMES)
+PACMAN_CURSOR = os.path.join(FIX, "state", "pacman-cursor.json")
+IGNORE_NAME = re.compile(r"[A-Za-z0-9@._+*?!^\[\]-]{1,128}")
 EXT = {
     "snapper": ID + "external/snapper-list.schema.json",
     "plugin-list": ID + "external/omarchy-plugin-list.schema.json",
@@ -323,6 +327,9 @@ class Classifier:
         """(class, rule), or None for a dependency of a named transaction (it follows)."""
         src, kind, subject = e["source"], e["kind"], e["subject"]
         meta = e.get("meta", {})
+        if src == "pacman" and kind == "note" and isinstance(meta.get("ignorePkg"), str):
+            # ADR-0052 §4: pacman's ignore list changed
+            return ("attention", "ignore-list")
         if src == "pacman" and kind == "note":
             # a file pacman left (WP-141): its own item, never routine
             file = next((subject[:-len(x)] for x in PACNEW_SUFFIXES if subject.endswith(x)), subject)
@@ -1669,6 +1676,39 @@ def derive_recent_config(generated_at, problems):
     return out
 
 
+def derive_pacman_ignore(ledger, problems):
+    """engine: index::collector_state + collectors::pacman_ignore::shown — `system.pacmanIgnore`
+    from the pacman cursor's `ignore` (ADR-0052 §5): the names of NAME's shape (the sample has no
+    redaction pattern), the others counted in `hidden`, `partial` as the read was. The cursor's
+    `ignoreKnown` must be the lists of the ledger's last ignore-list note when there is one (the
+    capture that wrote it saved the cursor). None without the file."""
+    if not os.path.exists(PACMAN_CURSOR):
+        return None
+    with open(PACMAN_CURSOR, encoding="utf-8") as fh:
+        cursor = json.load(fh)
+    ignore = cursor.get("ignore")
+    if ignore is None:
+        return None
+    out, hidden = {}, 0
+    for k in ("packages", "groups"):
+        names = [n for n in ignore[k] if IGNORE_NAME.fullmatch(n)]
+        hidden += len(ignore[k]) - len(names)
+        out[k] = names
+    if hidden:
+        out["hidden"] = hidden
+    if ignore.get("partial") is True:
+        out["partial"] = True
+    notes = [e for e in ledger if e["source"] == "pacman" and e["kind"] == "note"
+             and isinstance(e.get("meta", {}).get("ignorePkg"), str)]
+    known = cursor.get("ignoreKnown")
+    written = lambda names: " ".join(n if IGNORE_NAME.fullmatch(n) else "(hidden)" for n in names)
+    if notes and known is not None:
+        last = notes[-1]["meta"]
+        if (last["ignorePkg"], last.get("ignoreGroup")) != (written(known["packages"]), written(known["groups"])):
+            problems.append(f"{rel(PACMAN_CURSOR)}: ignoreKnown is not the lists of {notes[-1]['id']}")
+    return out
+
+
 def check_proposals(sample):
     """Every fixture proposal proposes for open drift items of the sample: `eventId` an item's
     eventId, `crisis` its crisis, a link's case an open case, at least one item of each action
@@ -1838,6 +1878,21 @@ VARIANTS = {
         {"op": "add", "path": "/drift/7", "value": {"eventId": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "crisis": False, "proposedCase": None, "rule": "config"}},
         {"op": "test", "path": "/summary/openDrift", "value": 6},
         {"op": "replace", "path": "/summary/openDrift", "value": 8},
+    ],
+    # ADR-0052 (WP-165): after the 09-27 mesa downgrade the human pins the three packages beside the
+    # two the sample's list holds (`IgnorePkg = zoom slack-desktop mesa vulkan-radeon lib32-mesa`);
+    # the 12:45 capture records the change as a pacman note on /etc/pacman.conf, an open attention
+    # item (`ignore-list`), and the list in `system.pacmanIgnore`. Index only, like boot-config: in
+    # the logbook it would move every list the plugin harness walks.
+    "pacman-ignore-changed": [
+        {"op": "test", "path": "/events/48/id", "value": "01M3H6M818EPKV6HMJ0GN4PGFG"},
+        {"op": "add", "path": "/events/48", "value": {"id": "01M3H7FNZ0YRX0ZM73QC24X96H", "ts": "2026-09-27T12:45:00+02:00", "source": "pacman", "kind": "note", "subject": "/etc/pacman.conf", "detail": "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa.", "actor": "system", "zone": "red", "meta": {"ignoreGroup": "", "ignorePkg": "zoom slack-desktop mesa vulkan-radeon lib32-mesa"}}},
+        {"op": "test", "path": "/drift/5/ts", "value": "2026-09-27T12:30:00+02:00"},
+        {"op": "add", "path": "/drift/5", "value": {"eventId": "01M3H7FNZ0YRX0ZM73QC24X96H", "ts": "2026-09-27T12:45:00+02:00", "source": "pacman", "kind": "note", "subject": "/etc/pacman.conf", "detail": "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa.", "actor": "system", "zone": "red", "crisis": False, "proposedCase": None, "rule": "ignore-list"}},
+        {"op": "test", "path": "/summary/openDrift", "value": 6},
+        {"op": "replace", "path": "/summary/openDrift", "value": 7},
+        {"op": "test", "path": "/system/pacmanIgnore/packages", "value": ["zoom", "slack-desktop"]},
+        {"op": "replace", "path": "/system/pacmanIgnore/packages", "value": ["zoom", "slack-desktop", "mesa", "vulkan-radeon", "lib32-mesa"]},
     ],
     # ADR-0027 §5 (WP-101): the user reopened the agent-closed C-2026-002 (`seldon plan reopen`):
     # a new active case with the tag `reopens:C-2026-002`, its Intent copied. Index only, like
@@ -2303,13 +2358,23 @@ def self_checks(today):
                 "meta": {"command": "pacman -Syu", "transaction": "tx-20261001T165600"}}))
         return m
 
+    def add_ignore(subject):
+        # ADR-0052 §4: a caseless change of pacman's ignore list
+        def m(ledger):
+            ledger.append(("<self-check>:ignore", {
+                "id": "7" + "Z" * 23 + "IG", "ts": "2026-10-01T16:56:00+02:00", "source": "pacman", "kind": "note",
+                "subject": subject, "detail": "IgnorePkg: added linux.", "actor": "system", "zone": "red",
+                "meta": {"ignorePkg": "linux", "ignoreGroup": ""}}))
+        return m
+
     pacnew = [
-        ("a .pacnew beside a PAM file is a crisis", "/etc/pam.d/system-auth.pacnew", (True, "pacnew-red")),
-        ("a .pacnew in /etc/security is attention", "/etc/security/faillock.conf.pacnew", (False, "pacnew")),
+        ("a .pacnew beside a PAM file is a crisis", "/etc/pam.d/system-auth.pacnew", (True, "pacnew-red"), add_left),
+        ("a .pacnew in /etc/security is attention", "/etc/security/faillock.conf.pacnew", (False, "pacnew"), add_left),
+        ("a changed ignore list is attention", "/etc/pacman.conf", (False, "ignore-list"), add_ignore),
     ]
-    for label, subject, want in pacnew:
+    for label, subject, want, add in pacnew:
         problems = []
-        derived, _, _ = derive(LOGBOOK, today, problems, add_left(subject))
+        derived, _, _ = derive(LOGBOOK, today, problems, add(subject))
         got = [(d["crisis"], d.get("rule"), d.get("txId"), d.get("members")) for d in derived["drift"]
                if d["subject"] == subject]
         err = problems[:1] or ([] if got == [want + (None, None)] else [f"items {got}, want [{want + (None, None)}]"])
@@ -2381,6 +2446,10 @@ def collect_instances():
             sid, bad = PROPOSAL, False
         elif r == "preview.sample.json":
             sid, bad = PREVIEW, False
+        elif r == "state/pacman-cursor.json":
+            # engine state, not contract: its `ignore` is `system.pacmanIgnore`'s shape, checked
+            # through the derived sample (derive_pacman_ignore)
+            continue
         elif r == "state/recent-config.json":
             # engine state, not contract: its shape is `system.recentConfig`'s, checked through the
             # derived sample (derive_recent_config)
@@ -2440,6 +2509,7 @@ def main():
     derived_all, _, _ = derive(LOGBOOK, today, problems, legacy=True)
     triage = derive_triage(sample["logbook"]["path"], problems)
     recent = derive_recent_config(sample["generatedAt"], problems)
+    ignore = derive_pacman_ignore([e for _, e in ledger], problems)
 
     def as_sample(d):
         out = {"contractVersion": sample["contractVersion"], "contractReadableFrom": CONTRACT_READABLE_FROM}
@@ -2452,6 +2522,8 @@ def main():
             out[k] = d[k]
         if recent is not None:
             out["system"] = {**d["system"], "recentConfig": recent}
+        if ignore is not None:
+            out["system"] = {**out["system"], "pacmanIgnore": ignore}
         if triage is not None:
             out["triage"] = triage
         return out

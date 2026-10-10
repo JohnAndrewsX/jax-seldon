@@ -2522,10 +2522,11 @@ clean_log decisions-locked "seldon decide exit 4: the logbook is locked by anoth
 #      so, and the Collectors tile keeps machine, engine and index time; a
 #      failing collector stripes its tile. The sixth, Recently edited
 #      (WP-139), lists the files with their age, "not watched" and Watch;
-#      Watch is refused in dev mode.
-run system "$sample" 1920x1080 "summon;text:5;key:Down;key:Down;key:Down;key:Down;text:e;click:Open in editor;key:Down;click:Watch"
+#      Watch is refused in dev mode. The seventh, Ignored by pacman
+#      (WP-165), lists the IgnorePkg and IgnoreGroup names as text.
+run system "$sample" 1920x1080 "summon;text:5;key:Down;key:Down;key:Down;key:Down;text:e;click:Open in editor;key:Down;click:Watch;key:Down"
 expect system 2 .view.section system
-expect system 2 '.view.sectionView.tiles | join(",")' "omarchy 4.0.7-1,packages 2009 installed,snapshots 115 newest,deviations 5 files,collectors 6/6 ok,recent 4 files"
+expect system 2 '.view.sectionView.tiles | join(",")' "omarchy 4.0.7-1,packages 2009 installed,snapshots 115 newest,deviations 5 files,collectors 6/6 ok,recent 4 files,ignored 2 ignored"
 expect system 2 '[.view.sectionView.cursor, .view.sectionView.big, .view.sectionView.actionMeta] | join(",")' "omarchy,4.0.7-1,STATUS.md"
 for text in "SYSTEM" "Omarchy" "Packages" "Snapshots" "Deviations" "Collectors" "2009 installed" "6/6 ok" \
   "OMARCHY" "4.0.7-1" "theme tokyo-night · updated 7 h ago" "Theme" "tokyo-night" "Plugins" "33 of 40 enabled" \
@@ -2553,7 +2554,13 @@ for text in "Recently edited" "4 files" "~/.config/zed/settings.json" "6 h ago �
 done
 expect system 9 '[.texts[] | select(. == "Watch")] | length' 4
 expect system 10 .view.sectionView.watchResult ""
-for i in 2 3 4 5 6 9; do expect system $i '.overflow | join(" | ")' ""; done
+expect system 11 '[.view.sectionView.cursor, .view.sectionView.big, (.view.sectionView.detailRows | join(","))] | join("|")' "ignored|2|IgnorePkg,IgnoreGroup"
+expect system 11 '.view.sectionView.files | length' 0
+for text in "Ignored by pacman" "2 ignored" "zoom, slack-desktop" "pacman's full upgrade skips them; \`pacman -S\` still updates them." \
+  "From pacman.conf and the files it includes, read on every capture: the IgnorePkg and IgnoreGroup names only, nothing else of the files."; do
+  shows system 11 "$text"
+done
+for i in 2 3 4 5 6 9 11; do expect system $i '.overflow | join(" | ")' ""; done
 clean_log system
 
 # 10e'. Watch, live (WP-139, ADR-0046): each click runs `config watch --json
@@ -2602,13 +2609,13 @@ expect system-partial 3 '[.texts[] | select(startswith("Nothing under"))] | leng
 clean_log system-partial
 jq '.system = {} | del(.state.collectors)' "$sample" >"$work/system-empty.json"
 run system-empty "$work/system-empty.json" 1920x1080 "summon;text:5;key:Down*4"
-expect system-empty 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations —,collectors —,recent —"
+expect system-empty 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations —,collectors —,recent —,ignored —"
 shows system-empty 2 "Not in the index"
 expect system-empty 3 '.view.sectionView.detailRows | join(",")' "Machine,Engine,Index written"
 clean_log system-empty
 jq '.system = {packages: {aur: 3}, deviations: 1} | del(.state.collectors)' "$sample" >"$work/system-sparse.json"
 run system-sparse "$work/system-sparse.json" 1920x1080 "summon;text:5;key:Down"
-expect system-sparse 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations 1 file,collectors —,recent —"
+expect system-sparse 2 '.view.sectionView.tiles | join(",")' "omarchy —,packages —,snapshots —,deviations 1 file,collectors —,recent —,ignored —"
 expect system-sparse 3 '.view.sectionView.detailRows | join(",")' "AUR"
 shows system-sparse 3 "3 from the AUR"
 clean_log system-sparse
@@ -2649,7 +2656,7 @@ clean_log memory
 run search-sections "$sample" 1920x1080 \
   "summon;text:5;text:/;type:aur;key:Return;key:Escape;text:/;type:installed;key:Return;key:Escape;text:6;text:/;type:hyprland;key:Return;text:j;text:k;key:Escape;text:/;type:memory/hyp;key:Return"
 expect search-sections 5 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "packages|packages|true"
-expect search-sections 6 '[(.view.sectionView.rows | length), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "6|omarchy|false"
+expect search-sections 6 '[(.view.sectionView.rows | length), .view.sectionView.cursor, .view.sectionView.filtered] | map(tostring) | join("|")' "7|omarchy|false"
 expect search-sections 9 '.view.sectionView.rows | join(",")' "packages"
 expect search-sections 14 '[(.view.sectionView.rows | join(",")), .view.sectionView.cursor] | join("|")' "lesson:Hyprland reload nach bindings.conf,topic:hyprland|lesson:Hyprland reload nach bindings.conf"
 expect search-sections 14 .view.selected 'lesson:`omarchy pkg add` statt yay direkt'

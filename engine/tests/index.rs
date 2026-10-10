@@ -85,12 +85,17 @@ fn normalise(v: &mut Value) {
 }
 
 /// `cursors.json` of a capture at 17:05:00 with every collector ok (the
-/// sample's `state`), bound to `logbook`; one collector optionally
+/// sample's `state`; pacman's cursor `fixtures/state/pacman-cursor.json`),
+/// bound to `logbook`; one collector optionally
 /// degraded with the engine's message: `(name, message)`.
 fn write_cursors(env: &Env, logbook: &Path, degraded: Option<(&str, &str)>) {
     let mut collectors = serde_json::Map::new();
     for name in ["snapper", "pacman", "omarchy", "plugins", "theme", "config"] {
         let mut c = json!({ "ok": true, "lastRun": "2026-10-01T17:05:00+02:00", "events": 0 });
+        if name == "pacman" {
+            // the sample's `system.pacmanIgnore` (ADR-0052)
+            c["cursor"] = json_file(&repo("fixtures/state/pacman-cursor.json"));
+        }
         if let Some((which, message)) = degraded
             && which == name
         {

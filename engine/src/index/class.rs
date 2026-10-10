@@ -8,7 +8,8 @@
 //!   package, a write to a persistence path (`alwaysRedPaths`);
 //! - **attention** (reason test): a package installed, removed or
 //!   downgraded by name, a third-party plugin added, removed or updated,
-//!   an override under a watched path, and every event no row names;
+//!   an override under a watched path, a file pacman left, pacman's
+//!   ignore list changed (ADR-0052), and every event no row names;
 //! - **routine**: a plain full upgrade, an upgrade of what is installed,
 //!   the keyrings, Omarchy's own update, a plugin toggle, Seldon's own
 //!   plugin added or enabled, a theme switch,
@@ -29,6 +30,7 @@ use ulid::Ulid;
 
 use super::drift::AlwaysRed;
 use crate::attribution::OWN_PLUGIN;
+use crate::collectors::pacman_ignore;
 use crate::config::{AttentionMode, DriftConfig};
 use crate::model::event::{Event, Kind, Source};
 use crate::pkgcmd::{Op, PacmanCommand, parse_command, split_logged};
@@ -272,6 +274,10 @@ impl Rules {
 
     fn pacman(&self, e: &Event, cmd: Option<&PacmanCommand>) -> Option<Verdict> {
         if e.kind == Kind::Note {
+            // ADR-0052 §4: the ignore list changed (before ADR-0042's rows)
+            if pacman_ignore::is_change(e) {
+                return Verdict::attention("ignore-list");
+            }
             return Some(self.pacnew(&e.subject));
         }
         let red = self.always_red.matches(&e.subject);
@@ -1414,6 +1420,37 @@ mod tests {
                     "pacman -r /mnt -S mkinitcpio",
                 ),
                 (A, "pacnew"),
+            ),
+            // ADR-0052 §4: the ignore list changed
+            (
+                "pacman's ignore list changed",
+                pacman_ignore::event(
+                    &pacman_ignore::Ignore::default(),
+                    &pacman_ignore::Ignore {
+                        packages: vec!["mesa".into()],
+                        ..Default::default()
+                    },
+                    at(AT),
+                ),
+                (A, "ignore-list"),
+            ),
+            (
+                "pacman's ignore list emptied",
+                {
+                    let mut e = ev(Source::Pacman, Kind::Note, "/etc/pacman.conf");
+                    e.meta.extra.insert("ignorePkg".into(), "".into());
+                    e
+                },
+                (A, "ignore-list"),
+            ),
+            (
+                "a pacman note on a boot file without the list stays a file pacman left",
+                {
+                    let mut e = left("/etc/mkinitcpio.conf.pacnew", "pacman -Syu");
+                    e.meta.extra.insert("ignoreGroup".into(), "x".into());
+                    e
+                },
+                (C, "pacnew-red"),
             ),
             // the total row
             (

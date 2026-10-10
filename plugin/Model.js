@@ -2644,6 +2644,44 @@ function decisionDetail(row) {
 // and says so. Collectors carries how Seldon sees the machine: each
 // collector, then machine, engine, index time and the logbook's areas.
 // `stripe` "attention" marks a tile with a failing collector.
+// pacman's ignore list (ADR-0052): the System tile's lead, and the hint of
+// the event that records a change of it.
+var IGNORE_TEXT = "pacman's full upgrade skips them; `pacman -S` still updates them."
+var IGNORE_NONE_TEXT = "pacman ignores nothing: no IgnorePkg or IgnoreGroup in pacman.conf."
+var IGNORE_PARTIAL_TEXT = "Part of pacman's configuration could not be read; the list may be incomplete."
+var IGNORE_HIDDEN_TEXT = " (not a plain package or group name, or masked by your redaction)"
+var IGNORE_HINT = "pacman's full upgrade skips the packages in IgnorePkg and IgnoreGroup; `pacman -S` still updates them. The list is in System."
+// A name as the engine writes it (collectors::pacman_ignore::NAME): a
+// package or group name or an fnmatch pattern of one.
+var IGNORE_NAME = /^[A-Za-z0-9@._+*?!^[\]-]{1,128}$/
+
+// `system.pacmanIgnore` (ADR-0052, optional): { packages, groups, hidden,
+// partial } with the names of the engine's shape; a name of another shape
+// counts as hidden, as the names the engine does not show (`hidden`); null
+// without the field.
+function pacmanIgnore(index) {
+  var sys = index && isObject(index.system) ? index.system : null
+  var raw = sys && isObject(sys.pacmanIgnore) ? sys.pacmanIgnore : null
+  if (raw === null) return null
+  var hidden = isInt(raw.hidden) && raw.hidden > 0 ? raw.hidden : 0
+  var names = function(list) {
+    var all = Array.isArray(list) ? list : []
+    var kept = all.filter(function(n) { return typeof n === "string" && IGNORE_NAME.test(n) })
+    hidden += all.length - kept.length
+    return kept
+  }
+  var packages = names(raw.packages)
+  var groups = names(raw.groups)
+  return { packages: packages, groups: groups, hidden: hidden, partial: raw.partial === true }
+}
+
+// The event that records a change of pacman's ignore list (ADR-0052 §3): a
+// pacman `note` with `meta.ignorePkg`.
+function isIgnoreChange(row) {
+  var meta = row && isObject(row.meta) ? row.meta : null
+  return !!row && row.source === "pacman" && row.kind === "note" && meta !== null && typeof meta.ignorePkg === "string"
+}
+
 function systemTiles(index, nowMs) {
   var sections = {}
   var list = systemSections(index, nowMs)
@@ -2710,11 +2748,25 @@ function systemTiles(index, nowMs) {
         : "Nothing under ~/.config was edited outside the watched paths in the last 7 days")
       : partial ? listed + ". " + RECENT_PARTIAL_TEXT : listed,
     rows: isFinite(scanned) ? [["Scanned", relativeAge(scanned, nowMs)]] : [],
-    files: files === null ? [] : files })
+    files: files === null ? [] : files,
+    source: "From the last capture's scan of ~/.config: paths and times only, never content. Seldon keeps no record of these edits until a path is watched." })
+
+  // ADR-0052: the packages pacman's full upgrade skips (names only)
+  var ig = pacmanIgnore(index)
+  var igCount = ig === null ? 0 : ig.packages.length + ig.groups.length + ig.hidden
+  var igLead = ig === null ? "" : igCount === 0 ? IGNORE_NONE_TEXT : IGNORE_TEXT
+  if (ig !== null && ig.partial) igLead += " " + IGNORE_PARTIAL_TEXT
+  tiles.push({ id: "ignored", title: "Ignored by pacman", big: ig === null ? "—" : String(igCount),
+    unit: ig === null ? "" : "ignored", lead: igLead,
+    rows: ig === null ? [] : [["IgnorePkg", ig.packages.length > 0 ? ig.packages.join(", ") : "—"],
+      ["IgnoreGroup", ig.groups.length > 0 ? ig.groups.join(", ") : "—"]]
+      .concat(ig.hidden > 0 ? [["Not shown", plural(ig.hidden, "name", "names") + IGNORE_HIDDEN_TEXT]] : []),
+    source: "From pacman.conf and the files it includes, read on every capture: the IgnorePkg and IgnoreGroup names only, nothing else of the files." })
 
   for (var t = 0; t < tiles.length; t++) {
     if (tiles[t].stripe === undefined) tiles[t].stripe = ""
     if (tiles[t].files === undefined) tiles[t].files = []
+    if (tiles[t].source === undefined) tiles[t].source = "From the dossier; rebuilt on every capture."
     tiles[t].empty = tiles[t].big === "—"
     if (tiles[t].empty && tiles[t].lead === "") tiles[t].lead = "Not in the index"
     tiles[t].meta = (tiles[t].big + (tiles[t].unit !== "" ? " " + tiles[t].unit : ""))
@@ -4392,9 +4444,9 @@ function whyLoud(row, proposedCase, info) {
 // A file pacman left beside a configuration file (WP-141: a pacman
 // `note` whose subject ends in .pacnew, .pacsave or .pacorig): what to do,
 // as text. Never a button and never a command Seldon runs (AGENTS.md §8);
-// Seldon does not read /etc, so it cannot know whether it was merged.
+// Seldon does not read that file, so it cannot know whether it was merged.
 var PACNEW_SUFFIX = /\.(pacnew|pacsave|pacorig)$/
-var PACNEW_HINT = "Merge with pacdiff (from pacman-contrib) in a terminal. Seldon does not read /etc, so it cannot tell whether that happened since."
+var PACNEW_HINT = "Merge with pacdiff (from pacman-contrib) in a terminal. Seldon does not read that file, so it cannot tell whether that happened since."
 
 function pacnewHint(row) {
   return row && row.source === "pacman" && row.kind === "note" && PACNEW_SUFFIX.test(row.subject) ? PACNEW_HINT : ""
@@ -4435,6 +4487,7 @@ function eventDetail(index, prepared, id, info) {
     ["What", (row.detail !== "" ? row.detail : "—") + (clipped ? " (clipped in the index; the ledger has it in full)" : "")]
   ]
   var hint = pacnewHint(row)
+  if (hint === "" && isIgnoreChange(e)) hint = IGNORE_HINT
   if (hint !== "") kv.push(["Hint", hint])
   kv = kv.concat([
     ["Case", row.caseId !== "" ? row.caseId : proposed !== "" ? "proposed: " + proposed : "—"],
