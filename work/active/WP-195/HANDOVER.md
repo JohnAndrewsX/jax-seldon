@@ -1,5 +1,7 @@
 # WP-195 — Handover (part 1, the Docker Hub limit, check-rss)
 
+Round 2 (review 1: APPROVE, fold-ins) is at the end.
+
 Branch `wp/195-supply-chain` (from `next` at `fdaca081`), worktree
 `wt/WP-195`. Nothing pushed, no workflow triggered, no secret created.
 Part 2 (the AUR package in a container) is deferred by the WP and not
@@ -152,19 +154,23 @@ touched; no guard block occurred; nothing was written under `/tmp`.
    security updates* **Enable**. Do **not** press *Configure* under
    *Dependabot version updates*: the file comes with this merge. (The same
    as `jax-seldon-private/study-tcballard/BRANCH-PROTECTION.md`, Part C.)
-2. **Nothing for GHCR.** The `image` job creates the package
-   `jax-seldon/archlinux` with the workflow's token on its first run; a
-   package published that way is linked to the repository and inherits
-   its visibility and access. No secret and no token. Only if that first
-   run fails with `denied: permission_denied` (see Q2): Packages →
-   `jax-seldon/archlinux` → Package settings → *Manage Actions access* →
-   add `jax-seldon` with role **Write**.
+2. **GHCR: nothing beforehand, one check after the first push to
+   `next`.** The `mirror` job creates the package `jax-seldon/archlinux`
+   with the workflow's token on that push. A package published that way is
+   expected to be linked to the repository and to inherit its visibility,
+   but this is **untested** (round 2, F3). After that push: the
+   repository's *Packages* → `archlinux` → it is **public** and linked to
+   `jax-seldon`. If it is private: Package settings → *Change visibility* →
+   **Public**. If the first `mirror` run fails with `denied:
+   permission_denied`: Package settings → *Manage Actions access* → add
+   `jax-seldon` with role **Write**, then run the job again. No secret, no
+   token.
 3. After the merge, look once at Insights → **Dependency graph** →
    **Dependabot** tab: `.github/dependabot.yml` listed, no error.
 
 ## Open questions
 
-1. **Dependabot's target branch.** Its pull requests go to `main` (the
+1. **Dependabot's target branch** (answered in round 2: `next` until 0.2.0). Its pull requests go to `main` (the
    default branch); WPs merge into `next`. Keep it (security fixes land on
    `main` at once, and `next` takes them with the next merge from `main`),
    or set `target-branch: next` for version updates? (Security updates
@@ -181,3 +187,73 @@ touched; no guard block occurred; nothing was written under `/tmp`.
 5. Stage 2 (Fable) per the WP is for part 2; this part changes
    `release.yml` (the `image` job and the `build` job's permissions), so
    the reviewer may want Fable on that diff too.
+
+## Round 2 (review 1: APPROVE, fold-ins)
+
+Commits `2750bcb7` (workflows, pin test, script), `e7ab6063` (Dependabot),
+`f3078115` (docs), then this section.
+
+- **Q4: the copy runs on a push to `main` or `next` only.** The job is now
+  `mirror` (was `image`), in `ci.yml` and `audit.yml` only, with `if:
+  github.event_name == 'push'`; both workflows push-trigger on `[main,
+  next]` (`ci.yml` gained `next`, `audit.yml` too). The jobs that use the
+  image `needs: mirror` with `if: ${{ !cancelled() &&
+  (needs.mirror.result == 'success' || needs.mirror.result == 'skipped')
+  }}`: on a pull request, a schedule or a dispatch the mirror is skipped
+  and they pull by digest; after a failed mirror they do not run.
+  `release.yml` has no mirror job any more: tags and dry runs pull by
+  digest only (the tag's commit was pushed to `main` first), and `build`
+  no longer needs anything. The `packages: write` token therefore never
+  reaches a pull request's code (the reviewer's checkout-token remark is
+  moot). Consequence, documented in packaging/README.md: a digest refresh
+  must be pushed to `next` before its pull request can pull the image.
+- **workflow-pins.test.sh**, rules rewritten: `packages: write` only in a
+  job named `mirror`; that job has exactly `contents: read` and `packages:
+  write`, `if: github.event_name == 'push'` exactly, no container, and runs
+  the script; a workflow with a mirror job push-triggers on `branches:
+  [main, next]` only, with no `tags`, `tags-ignore` or `branches-ignore`;
+  `ci.yml` must have one; in a workflow with one, every container job
+  needs it and carries the exact `if:` above; every container job has
+  `packages: read` and logs in with the job's token. Mutants (16 for the
+  mirror rules): no needs, needs another job, no `if:` on check, `always()`
+  instead of the result check, no `packages: read`, no token, no mirror
+  job in `ci.yml`, the job without the script, with `id-token`, without
+  its `if:` (so also on pull requests), with `!= 'pull_request_target'`,
+  in a container, tags added to the push trigger, `branches: ['**']`,
+  and check and build writing packages. 76 checks, all green.
+- **F1:** the CI check-rss step collects the measurement lines with `||
+  true`; with none it writes `(no measurement line: …)` inside a closed
+  fence, prints `::error title=check-rss::…` and exits 1. Checked with a
+  stub `just` and the step body extracted from `ci.yml` under `bash
+  --noprofile --norc -eo pipefail`: a measurement → rc 0, the summary;
+  over the limit → rc 0, the summary, the warning; a compile error →
+  rc 1, the error, the fence closed.
+- **F2:** the copy's hint names Docker Hub's limit, GHCR being
+  unavailable, and the token (needs `packages: write`); the script's header
+  and packaging/README.md say there is no fallback to Docker Hub when GHCR
+  is down. `mirror-image.test.sh` checks the three causes in the hint.
+- **F3:** packaging/README.md states the package visibility as expected
+  and untested until the first push, with the check; operator click 2
+  above says the same.
+- **Q3:** `.github/dependabot.yml` has `target-branch: next` for both
+  ecosystems; packaging/README.md ("Dependabot"), the file's comment and
+  docs/TESTING.md say it moves to `main` after 0.2.0, and that security
+  updates always go to `main`. This replaces round 1's open question 1.
+- **Q1/F4: the 12 MB limit stays on the branch, and it replaces operator
+  decision E8 (11 MB) pending the operator's yes.** CHANGELOG and
+  docs/TESTING.md ("Memory bound", the history line) say so. The
+  orchestrator measures on the test host after the merge; TESTING.md's
+  test-host row says that.
+
+**Verified (round 2):**
+
+| Check | Where | Result |
+|---|---|---|
+| `just check-packaging` (all its tests, `check-no-network` on the real graph) | fixture (dev host, offline registry) | ok |
+| `workflow-pins.test.sh` | fixture | 76/76 |
+| `mirror-image.test.sh` | fixture | 11/11 |
+| the check-rss step with a stub `just`, three cases | fixture | as above |
+| `dependabot.yml` and the workflows parse as YAML | fixture | ok |
+| `SELDON_FULL_CHECK=1 just check` | not run in round 2 (no engine, plugin or schema change since `4788bea9`, where it was green on the desktop) | — |
+| shellcheck | not run, CI | — |
+| the first `mirror` run on a push to `next`, Dependabot against `next`, pull requests pulling from GHCR | not run, CI | — |
