@@ -162,11 +162,20 @@ test("parseIndex refuses a text of 1 MB or more before JSON.parse (E72)", () => 
   assert.strictEqual(M.deriveStatus({ engine: "present", file: "invalid", parse: at, nowMs: gen }), "indexMissing")
   const b = M.bannerFor("indexMissing", { parseError: "size", indexSize: 1234567 })
   assert.strictEqual(b.title, "Index unreadable")
-  assert.strictEqual(b.detail, "index.json is 1.3 MB, over the 1 MB the plugin reads; rebuild it from the logbook.")
+  assert.strictEqual(b.detail, "index.json is 1.3 MB, over the 1 MB the plugin reads; rebuild it from the logbook, and if it stays, seldon status in a terminal names the largest section.")
   same(b.actions, [{ id: "build", label: "Build index" }])
   assert.strictEqual(M.megabytes(1000000), "1.0 MB")
   assert.strictEqual(M.megabytes(1000001), "1.1 MB")
   assert.strictEqual(M.megabytes(2000000), "2.0 MB")
+  // one warning line per reason: the same oversized file gives the same
+  // line (Service.qml logs it once), another size another line
+  const w = M.indexWarning(at)
+  assert.strictEqual(w, "jax.seldon: index.json unreadable: 1000000 characters, the contract's budget is under 1 MB")
+  assert.strictEqual(M.indexWarning(M.parseIndex(pad(M.INDEX_MAX_CHARS))), w)
+  assert.notStrictEqual(M.indexWarning(M.parseIndex(pad(M.INDEX_MAX_CHARS + 1))), w)
+  assert.ok(M.indexWarning(M.parseIndex("{")).startsWith("jax.seldon: index.json unreadable: "))
+  for (const r of [below, M.parseIndex(""), M.parseIndex(v3), null, undefined])
+    assert.strictEqual(M.indexWarning(r), "")
   // the other unreadable texts are unchanged
   assert.strictEqual(M.bannerFor("indexMissing", { parseError: "parse" }).detail,
     "index.json could not be read. Rebuilding it from the logbook fixes this.")

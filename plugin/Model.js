@@ -581,6 +581,17 @@ function tooltipText(status, c, lastCaptureText, nowMs) {
 // indexExists: an index file is there, so the engine wrote one before and
 // is gone now (urgent); without one the user has not installed it yet, a
 // setup step (accent).
+// The warning line for an index the plugin cannot read ("" when it reads
+// it, or it is empty or of another contract, which have their banners):
+// the reason and its detail, so a file that stays the same gives the same
+// line and Service.qml logs it once (an oversized file's detail names its
+// size: a new size is a new line).
+function indexWarning(result) {
+  if (!isObject(result)) return ""
+  if (result.error !== "parse" && result.error !== "shape" && result.error !== "size") return ""
+  return "jax.seldon: index.json unreadable: " + result.detail
+}
+
 // A size in characters as megabytes with one decimal, never rounded down
 // to the limit: 1 000 000 reads "1.0 MB", 1 049 999 "1.1 MB".
 function megabytes(chars) {
@@ -628,7 +639,7 @@ function bannerFor(status, ctx) {
       tone: "accent",
       title: unreadable ? "Index unreadable" : "No index yet",
       detail: ctx.parseError === "size"
-        ? "index.json is " + megabytes(ctx.indexSize) + ", over the 1 MB the plugin reads; rebuild it from the logbook."
+        ? "index.json is " + megabytes(ctx.indexSize) + ", over the 1 MB the plugin reads; rebuild it from the logbook, and if it stays, seldon status in a terminal names the largest section."
         : unreadable
         ? "index.json could not be read. Rebuilding it from the logbook fixes this."
         : "The engine has not written index.json yet.",

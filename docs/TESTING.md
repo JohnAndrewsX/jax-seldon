@@ -802,7 +802,8 @@ Scenarios: every status (fixture index, `PATH` without `seldon`,
 `index-variants/not-initialised.json`, a missing path, broken JSON, an
 index of about 1.15 MB (the sample with a long string, valid JSON: refused before
 `JSON.parse` by CONTRACT.md rule 5's budget, E72, with the "Index
-unreadable" banner naming 1.2 MB and its *Build index*),
+unreadable" banner naming 1.2 MB and its *Build index*; over 12 s the
+service reads the file three times and logs its warning once),
 `SELDON_NOW` three hours after `generatedAt`, `invalid/index.contract-v3.json`
 and the sample as contract 1 — the banner names both versions and the side
 to update —, and the plugin of the `v0.1.3` tag (`git archive`; without the

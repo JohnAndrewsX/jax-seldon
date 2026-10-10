@@ -82,6 +82,8 @@ Item {
   // ---- Index file.
   property string fileState: "loading"     // loading | loaded | missing | invalid
   property var parsed: null
+  // The last index warning logged (Model.indexWarning), "" while readable.
+  property string indexWarned: ""
   readonly property var index: parsed && parsed.ok ? parsed.index : null
   readonly property int indexContractVersion: parsed ? parsed.contractVersion : 0
   readonly property bool ready: fileState !== "loading" && engineState !== "unknown"
@@ -389,8 +391,12 @@ Item {
       root.engineNotInitialised = false
     root.parsed = result
     root.fileState = result.ok || result.error === "contract" ? "loaded" : "invalid"
-    if (result.error === "parse" || result.error === "shape" || result.error === "size")
-      console.warn("jax.seldon: index.json unreadable: " + result.detail)
+    // The 5 s look-again below re-reads an unreadable file: one warning
+    // per distinct reason (an oversized file's size is in its detail), not
+    // one per read.
+    var warning = Model.indexWarning(result)
+    if (warning !== "" && warning !== root.indexWarned) console.warn(warning)
+    root.indexWarned = warning
   }
 
   function ingestFailure(error) {

@@ -166,12 +166,20 @@ expect index-unreadable .banner "Index unreadable"
 # JSON (the sample with a long string), so only the size can refuse it.
 head -c 1100000 /dev/zero | tr '\0' x >"$work/padding.txt"
 jq -c --rawfile pad "$work/padding.txt" '.padding = $pad' "$fx/index.sample.json" >"$work/oversized.json"
-run index-oversized 2500 PATH="$fake_path" SELDON_INDEX="$work/oversized.json"
+# The service reads an unreadable file again every 5 s: 12 s give two more
+# reads, and the warning is logged once.
+run index-oversized 12000 PATH="$fake_path" SELDON_INDEX="$work/oversized.json"
 expect index-oversized .status indexMissing
 expect index-oversized .banner "Index unreadable"
-expect index-oversized .bannerDetail "index.json is 1.2 MB, over the 1 MB the plugin reads; rebuild it from the logbook."
+expect index-oversized .bannerDetail "index.json is 1.2 MB, over the 1 MB the plugin reads; rebuild it from the logbook, and if it stays, seldon status in a terminal names the largest section."
 expect index-oversized .pill ""
 clean_log index-oversized "jax.seldon: index.json unreadable: [0-9]+ characters, the contract's budget is under 1 MB"
+warned=$(sed 's/\x1b\[[0-9;]*m//g' "$work/index-oversized.log" | grep -a -c "jax.seldon: index.json unreadable: " || true)
+if [[ $warned == 1 ]]; then
+  pass=$((pass + 1)); echo "ok   index-oversized: one warning for three reads"
+else
+  fail=$((fail + 1)); echo "FAIL index-oversized: $warned warnings (want 1, once per distinct reason)"
+fi
 
 # 6. Stale: the dev clock three hours after the fixture's generatedAt.
 run index-stale 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T20:05:12+02:00"

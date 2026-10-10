@@ -81,9 +81,15 @@ plugin/
   refused before `JSON.parse` (`Model.INDEX_MAX_CHARS`, E72): the plugin
   takes the parse error's path, the "Index unreadable" banner with its
   *Build index*, and the detail names the size ("index.json is 1.2 MB,
-  over the 1 MB the plugin reads; …"). No new state, no contract change; a
-  character is at least one byte, so an index within the engine's budget
-  is never refused.
+  over the 1 MB the plugin reads; rebuild it from the logbook, and if it
+  stays, seldon status in a terminal names the largest section."). No new
+  state, no contract change; a character is at least one byte, so an index
+  within the engine's budget is never refused. The engine only warns over
+  its budget and still writes the file (CONTRACT.md rule 5), so a rebuild
+  can stay oversized; `seldon status` prints which section is largest. An
+  unreadable file is read again every 5 s; its warning line
+  (`Model.indexWarning`, the reason and the detail with the size) is
+  logged once until it changes.
 - Every `Text` block declares `textFormat: Text.PlainText` (E72;
   `tests/plugin/plaintext.test.js`, exceptions only with a line and a
   reason in `tests/plugin/plaintext-allow.txt`): no logbook or index text
