@@ -206,4 +206,4 @@ this session; WP-126 scenario (a)); shellcheck (not installed; CI).
 | `terminal-scripts.sh` | headless (stubs) | 73 passed |
 | `check-tokens.py --rules`, qmllint | dev host | ok (52 files) |
 | `validate-fixtures.sh`, docs-check | fixture | ok |
-| `SELDON_FULL_CHECK=1 just check` | dev host (headless harnesses, private XDG_RUNTIME_DIR, disk TMPDIR/CARGO_TARGET_DIR) | see the last line |
+| `SELDON_FULL_CHECK=1 just check` on `e7ce6ce9` (private log `gates/check-wp119-r2.log`) | dev host (headless harnesses, private XDG_RUNTIME_DIR, disk TMPDIR/CARGO_TARGET_DIR) | `check: ok` — model 212, terminal-scripts 73, service-states 359, desk-view 2009, bar-view 196, ipc-restart 44, tokens and house rules ok, qmllint ok, docs-check ok |
