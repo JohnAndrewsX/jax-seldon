@@ -305,7 +305,8 @@ shows a node's card; a case's card has *Open case*.
 Until Seldon is set up, Today shows one **setup card** instead of the
 setup notices: *Set up Seldon · 2 of 3 steps to go* — install the
 engine, create the logbook, read snapshots (optional) — done steps
-ticked, the next one with its button, no question asked. After each
+ticked, the next one with its button; only the optional snapshot grant
+asks for your password. After each
 step's terminal the card moves on by itself; *Not now* on the snapshot
 step ends it for good (Settings › Capture offers it again). The header's
 chip shows the same headline and leads to the card. A machine without
@@ -319,7 +320,7 @@ below are the setup card's steps:
 | State | Banner | One-click fix |
 |---|---|---|
 | Engine missing | Install the engine (step 1 of the setup card); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the engine it downloads against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; the desk then finds it by itself; *Copy* puts the one-liner on the clipboard; *Check again* (on the urgent notice) looks for the engine again |
-| Logbook not initialised | Create your logbook (step 2 of the setup card, with what the machine remembers without Seldon) | *Create logbook* opens a terminal that says what happens, shows and runs `seldon init --defaults` (no question: `~/Seldon`, the last 90 days recorded as history "before Seldon"), then says whether the logbook was created; the desk then updates by itself; *Copy*; *Check again*; when the folder already holds other files, *Choose a folder* runs `seldon init`, which asks where |
+| Logbook not initialised | Create the logbook, step 2 of the setup card, with what the machine remembers without Seldon (the card stands in for the notice "Create your logbook") | *Create logbook* opens a terminal that says what happens, shows and runs `seldon init --defaults` (no question: `~/Seldon`, the last 90 days recorded as history "before Seldon"), then says whether the logbook was created; the desk then updates by itself; *Copy*; *Check again*; when the folder already holds other files, *Choose a folder* runs `seldon init`, which asks where |
 | Index missing | No index yet / Index unreadable (also an `index.json` of 1 MB or more, which the plugin does not parse: "index.json is 1.2 MB, over the 1 MB the plugin reads; …") | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
 | Index format mismatch | Index format mismatch, with both contract versions | *Update* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older (then restart the shell, see [Update](#update)), the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
@@ -356,13 +357,11 @@ omarchy bar move jax.seldon --section right
 ```
 
 **Suggested binding** (not installed by the plugin). Add it to your
-Hyprland bindings (`~/.config/hypr/bindings.lua`). Omarchy gives
-Super+Shift+S to its Google Maps web app, so the first line frees it;
-with a free key of your own, leave it out:
+Hyprland bindings (`~/.config/hypr/bindings.lua`); Omarchy leaves
+Super+Shift+L (L for logbook) free:
 
 ```
-hl.unbind("SUPER + SHIFT + S")
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
 **IPC targets:**

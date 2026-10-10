@@ -50,15 +50,13 @@ Die Pill sitzt rechts in der Bar.
 | Mitte | Desk beim Prime Radiant öffnen (Abschnitt 7) |
 | Rechts | jetzt erfassen |
 
-Für eine Taste, die den Desk öffnet, fügst du diese Zeilen zu deinen
+Für eine Taste, die den Desk öffnet, fügst du diese Zeile zu deinen
 Hyprland-Bindings hinzu (Seldon richtet sie nie für dich ein).
-`SUPER + SHIFT + S` ist ein Vorschlag; Omarchy belegt die Taste mit seiner
-Google-Maps-Web-App, deshalb gibt die erste Zeile sie frei. Mit einer
-eigenen freien Taste lässt du diese Zeile weg:
+`SUPER + SHIFT + L` (L wie Logbuch) ist ein Vorschlag, den Omarchy frei
+lässt; jede freie Taste geht:
 
 ```text
-hl.unbind("SUPER + SHIFT + S")
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
 Der Desk öffnet sich auf dem Monitor, der den Fokus hat, und merkt sich

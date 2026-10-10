@@ -45,14 +45,12 @@ The pill sits on the right of the bar.
 | Middle | open the desk at the Prime Radiant (section 7) |
 | Right | capture now |
 
-To open the desk with a key, add these lines to your Hyprland bindings
-(Seldon never installs them for you). `SUPER + SHIFT + S` is a
-suggestion; Omarchy gives it to its Google Maps web app, so the first
-line frees it. With any free key of your own, leave that line out:
+To open the desk with a key, add this line to your Hyprland bindings
+(Seldon never installs it for you). `SUPER + SHIFT + L` (L for logbook)
+is a suggestion that Omarchy leaves free; any free key works:
 
 ```text
-hl.unbind("SUPER + SHIFT + S")
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
 The desk opens on the monitor that has the focus and remembers its

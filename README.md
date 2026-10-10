@@ -152,7 +152,7 @@ offers the fix as one click:
 | State | The desk shows | One click |
 |---|---|---|
 | Engine missing | the setup card's step 1, "Install the engine" (or "Seldon engine missing" once it was there) | *Install*: `install.sh` from the release, in a terminal you see |
-| Logbook not initialised | the setup card's step 2, "Create your logbook" | *Create logbook*: `seldon init --defaults` in a terminal |
+| Logbook not initialised | the setup card's step 2, "Create the logbook" | *Create logbook*: `seldon init --defaults` in a terminal |
 | Index missing or unreadable | "No index yet" / "Index unreadable" | *Build index*: `seldon status` writes it |
 | Index stale (older than 2 h) | "Index is stale" | *Capture now* |
 

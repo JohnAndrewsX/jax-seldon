@@ -70,16 +70,15 @@ Tab and Shift-Tab do nothing: the desk is not a bar popup.
 | `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section (an event, a case, a decision id, …; the graph: keep that node's card) |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`); an unknown id changes nothing |
 | `omarchy-shell shell call jax.seldon hover "heatmap 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (fractions of its plot; `""` clears), while it is shown |
-| `omarchy-shell jax.seldon.panel open\|close\|toggle\|tab <name>\|resolve <eventId\|crisis>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until 0.3.0 |
+| `omarchy-shell jax.seldon.panel open\|close\|show\|hide\|toggle\|tab <name>\|resolve <eventId\|crisis>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until 0.3.0 |
 | `omarchy-shell jax.seldon.service status\|refresh\|capture` | the service |
 
 The suggested Hyprland binding is documented, never installed by the
 plugin (AGENTS.md §6: no edits under `~/.config` outside the plugin
-folder). Omarchy binds Super+Shift+S to its Google Maps web app, so the
-binding frees the key first (Omarchy's `bindings.lua` template: unbind,
-then bind again):
+folder). Super+Shift+L (L for logbook) is free in Omarchy's default and
+config bindings (operator decision E81; Super+Shift+S is Omarchy's
+Google Maps key):
 
 ```
-hl.unbind("SUPER + SHIFT + S")
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```

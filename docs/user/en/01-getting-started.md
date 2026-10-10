@@ -160,12 +160,11 @@ than 960 pixels, unless the screen is.
 
 To open the desk with a key, add a binding to
 `~/.config/hypr/bindings.lua`. Seldon never installs it for you. The
-suggested key is Super+Shift+S. Omarchy gives that key to its Google Maps
-web app, so these two lines free it first and then bind it:
+suggested key is Super+Shift+L (L for logbook), which Omarchy leaves
+free:
 
 ```lua
-hl.unbind("SUPER + SHIFT + S")
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
 Any other free key works as well; `omarchy menu keybindings --print`

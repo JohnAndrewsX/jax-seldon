@@ -34,7 +34,7 @@ and the package does not exist yet. Update the plugin first:
 - **Breaking:** update the engine and the plugin together; both read and write index contract 2.
 - **Breaking:** the old `jax.seldon.panel` command only forwards to the desk and goes away in 0.3.0; bind `omarchy-shell shell toggle jax.seldon`.
 - **Breaking:** a logbook folder or file that is a symbolic link refuses writes; `seldon doctor` names it.
-- A fresh install sets itself up from one card on Today: the engine, the logbook, snapshots, no question asked.
+- A fresh install sets itself up from one card on Today: the engine and the logbook in one click each, snapshots optional.
 - A new logbook looks back 90 days and records that as history, so your first day starts quiet.
 - Your agent can sort every open change into one proposal; you apply it in one click, each crisis on its own.
 - Hand a case to an agent from the desk: the desk steps aside, and the case says "agent working" while it runs.
@@ -53,7 +53,8 @@ and the package does not exist yet. Update the plugin first:
   detail. The pill keeps its look and counts: a left click opens the
   desk, a middle click opens it at the Prime Radiant (section 7), a
   right click captures. `omarchy-shell shell toggle jax.seldon` (and the
-  suggested `SUPER+SHIFT+S`) opens the desk, no longer the overlay.
+  suggested binding, now `SUPER+SHIFT+L`: Omarchy gives `SUPER+SHIFT+S`
+  to Google Maps) opens the desk, no longer the overlay.
 - **A new keyboard map.** `1`–`8` are the sections (Today, Changelog,
   Work, Decisions, System, Memory, Prime Radiant, Graph) and `,` is
   Settings; `Alt+↓`/`Alt+↑` cycle them, `/` searches the current list.
@@ -510,10 +511,13 @@ and the package does not exist yet. Update the plugin first:
 - **An oversized index is refused before it is parsed (WP-126).** The
   plugin parses `index.json` on the shell's thread; a text of 1 MB or
   more (the contract's budget, CONTRACT.md rule 5) now gets the "Index
-  unreadable" notice, naming the size ("index.json is 1.2 MB, over the
-  1 MB the plugin reads; rebuild it from the logbook."), with *Build
-  index*, instead of a long stall. An index the engine writes stays far
-  below it.
+  unreadable" notice with *Build index*, instead of a long stall. Its
+  detail names the size and the way out: "index.json is 1.2 MB, over the
+  1 MB the plugin reads; rebuild it from the logbook, and if it stays,
+  seldon status in a terminal names the largest section." The engine
+  only warns about an index over its budget and still writes it, so a
+  rebuild can write the same size again. The plugin logs the warning
+  once per size, not on each of its 5-second re-reads.
 - **Plain text everywhere (WP-126).** Every text block of the plugin is
   plain text, never rich text: a `<a href>` or an `<img>` in a logbook
   text shows as characters. A test over the whole plugin keeps it so.

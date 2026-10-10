@@ -127,7 +127,7 @@ overlay are gone):
   (hidden at 0; `driftInBar` shows all changes without a case or none).
   Colour by worst state: accent while cases are active, urgent on a
   crisis. Left click → the desk, middle click → the desk at the Prime
-  Radiant, right click → capture. `SUPER+SHIFT+S` toggles the desk
+  Radiant, right click → capture. `SUPER+SHIFT+L` toggles the desk
   (suggested, user-configurable).
 - **The desk** — one window over the desktop, on the focused monitor, 50
   to 100 % of the screen wide (`deskWidth`, default 100). A header with

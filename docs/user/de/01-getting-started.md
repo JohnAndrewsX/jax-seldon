@@ -170,13 +170,11 @@ Desk wird nie schmaler als 960 Pixel, außer der Bildschirm ist es.
 
 Um den Desk mit einer Taste zu öffnen, trag eine Tastenbelegung in
 `~/.config/hypr/bindings.lua` ein. Seldon richtet sie nie für dich ein.
-Vorgeschlagen ist Super+Shift+S. Omarchy belegt diese Taste mit seiner
-Web-App Google Maps, also geben diese zwei Zeilen sie zuerst frei und
-belegen sie dann neu:
+Vorgeschlagen ist Super+Shift+L (L wie Logbuch), die Omarchy frei
+lässt:
 
 ```lua
-hl.unbind("SUPER + SHIFT + S")
-o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 ```
 
 Jede andere freie Taste geht genauso; `omarchy menu keybindings --print`

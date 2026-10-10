@@ -1575,10 +1575,11 @@ and 23F0, lists no JetBrainsMono face) and fall back to another font;
 ## 8. Keybinding and IPC
 
 Suggested user binding (documented, not installed): `o.bind("SUPER + SHIFT
-+ S", "Seldon", "omarchy-shell shell toggle jax.seldon")`, after
-`hl.unbind("SUPER + SHIFT + S")`: Omarchy binds the key to its Google
-Maps web app (`default/hypr/bindings/applications.lua`), and its
-`bindings.lua` template frees a key before binding it again.
++ L", "Seldon", "omarchy-shell shell toggle jax.seldon")` (L for logbook;
+operator decision E81). Omarchy 4.0.4 binds Super+Shift+S, the key
+suggested until then, to its Google Maps web app
+(`default/hypr/bindings/applications.lua`); Super+Shift+L is free in its
+default and config bindings, stable and rc.
 
 How the shell routes (verified against `shell.qml`, Omarchy 4.0.x; see
 memory/omarchy-shell.md): because `kinds` includes `overlay`, the plugin is
