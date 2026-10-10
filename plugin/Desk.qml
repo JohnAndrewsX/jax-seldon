@@ -109,6 +109,10 @@ Item {
   // The setup card (WP-119): while it is up, the header's chip names it
   // and leads to it.
   readonly property var setup: root.service ? root.service.setup : null
+  // The chip: an urgent notice first, else the setup card, else the
+  // first notice; { text, count, tone }.
+  readonly property var chip: Model.deskChip(notices.items.map(function(n) { return { title: n.banner.title, tone: String(n.banner.tone || "") } }),
+    root.setup ? root.setup.headline : "")
 
   readonly property color foreground: Color.popups.text
   readonly property string fontFamily: Style.font.family
@@ -595,17 +599,15 @@ Item {
             subline: Model.deskSubline(root.indexData, root.service ? root.service.lastCapture : "",
               root.service ? root.service.nowMs : Date.now())
             kpis: Model.deskKpis(root.indexData)
-            chipText: root.setup ? root.setup.headline + (notices.items.length > 0 ? " +" + notices.items.length : "")
-              : notices.items.length === 0 ? ""
-              : notices.items[0].banner.title + (notices.items.length > 1 ? " +" + (notices.items.length - 1) : "")
-            chipCount: notices.items.length + (root.setup ? 1 : 0)
-            chipTone: root.setup ? "accent" : notices.items.length === 0 ? "" : String(notices.items[0].banner.tone || "")
+            chipText: root.chip.text
+            chipCount: root.chip.count
+            chipTone: root.chip.tone
             noticesFolded: root.noticesFolded
             foreground: root.foreground
             fontFamily: root.fontFamily
             onSettingsRequested: root.section("settings")
             onCloseRequested: root.dismiss()
-            onChipClicked: if (root.setup) root.showSetup()
+            onChipClicked: if (root.chip.setup) root.showSetup()
               else root.noticesFolded = !root.noticesFolded
             onKpiPicked: function(id) {
               root.section(id === "crises" || id === "attention" ? "changelog" : "work")

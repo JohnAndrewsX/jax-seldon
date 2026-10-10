@@ -218,10 +218,23 @@ has init-ok out "[plain] seldon init --defaults"
 has init-ok out "[2] Your logbook is ready. The panel updates by itself."
 log_is init-ok "seldon init --defaults"
 run init-failed INIT_SCRIPT STUB_SELDON_EXITS=1
-has init-failed out "[1] No logbook was created; the message above says why. Press Create logbook in the panel to try again."
+has init-failed out "[1] No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again."
 has init-failed out "DONE"
 run init-ctrl-c INIT_SCRIPT STUB_SELDON_SIGINT=die
 cancelled init-ctrl-c "Cancelled. Press Create logbook in the panel to start again."
+
+# plain seldon init, which asks where (the setup card's Choose a folder,
+# WP-119 round 2).
+run init-ask-ok INIT_ASK_SCRIPT
+has init-ask-ok out "[plain] Seldon: choose where your logbook goes"
+has init-ask-ok out "[plain] seldon init"
+has init-ask-ok out "[2] Your logbook is ready. The panel updates by itself."
+log_is init-ask-ok "seldon init"
+run init-ask-failed INIT_ASK_SCRIPT STUB_SELDON_EXITS=1
+has init-ask-failed out "[1] No logbook was created; the message above says why. Press Choose a folder in the panel to try again."
+has init-ask-failed out "DONE"
+run init-ask-ctrl-c INIT_ASK_SCRIPT STUB_SELDON_SIGINT=die
+cancelled init-ask-ctrl-c "Cancelled. Press Choose a folder in the panel to start again."
 
 # The real gum takes every flag the scripts use (it exits non-zero on an
 # unknown one, and the text would be missing).

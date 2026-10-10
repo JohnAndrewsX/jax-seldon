@@ -448,6 +448,8 @@ expect snapper 1 "$tv.setup.steps | join(\",\")" "engine:done,logbook:done,snaps
 expect snapper 1 "[$tv.setup.current, ($tv.setup.actions | join(\",\")), $tv.setup.ready] | map(tostring) | join(\"|\")" "snapshots|Grant,Copy,Not now|true"
 shows snapper 1 "$optional"
 shows snapper 1 "Seldon is recording. One optional step is left: snapshots in the timeline."
+# the sentence stays under the card while only the optional step is open (S2)
+expect snapper 1 "$tv.headline" "Seldon is recording. 2 changes need you."
 shows snapper 1 'sudo setfacl -m u:$USER:rx /.snapshots'
 shows snapper 1 "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it."
 shows snapper 1 "Install the engine · done"
@@ -500,7 +502,8 @@ expect uninit 1 '.view.kpis | length' 0
 expect uninit 1 '[.view.counts[] | .text] | join("")' ""
 expect uninit 1 "$tv.setup.steps | join(\",\")" "engine:done,logbook:current,snapshots:waiting"
 expect uninit 1 "[($tv.setup.actions | join(\",\")), $tv.setup.ready] | map(tostring) | join(\"|\")" "Create logbook,Copy|true"
-shows uninit 1 "Creates ~/Seldon and starts recording; the last 90 days become history “before Seldon”. No questions, no password."
+# the folder is the index's logbook path (the fixture's, outside this HOME)
+shows uninit 1 "Creates /home/user/Seldon and starts recording; the last 90 days become history “before Seldon”. No questions, no password."
 shows uninit 1 "seldon init --defaults"
 shows uninit 1 "No questions; only the optional snapshot step asks for your password. Seldon records nothing before the logbook exists."
 shows uninit 1 "Read snapshots (optional)"
@@ -602,9 +605,7 @@ for f in "$work"/bin/*; do
   [[ $n == seldon || $n == omarchy-launch-floating-terminal-with-presentation ]] && continue
   ln -s "$f" "$setup_bin/$n"
 done
-first_run="$work/first-run.json"
-jq '.cases = {queued: [], active: [], verification: [], completed: []} | .drift = [] | .triage = null | del(.triage)
-  | .summary += {activeCases: 0, queuedCases: 0, openDrift: 0, crisis: 0, eventsToday: 0}' "$sample" >"$first_run"
+first_run="$fx/index-variants/first-run.json"
 # setup_terminal <grant> — the stand-in terminal; <grant> is what the
 # grant's step does after the recorder: "capture" (the script's own
 # capture succeeds) or "partial" (it does not: only the next capture finds
@@ -640,7 +641,7 @@ expect setup-flow 5 "[($tv.setup.actions | join(\",\")), $tv.setup.ready] | map(
 expect setup-flow 8 "[.view.status, ($tv.setup.steps | join(\",\")), $tv.setup.current] | join(\"|\")" "ok|engine:done,logbook:done,snapshots:current|snapshots"
 expect setup-flow 11 "[.view.setup, .view.chip, (.view.notices | length), $tv.setup.shown, $tv.firstRun] | map(tostring) | join(\"|\")" "||0|false|true"
 shows setup-flow 11 "Seldon is recording. Nothing to do."
-expect setup-flow 11 "$tv.dimTiles | join(\",\")" "events today"
+expect setup-flow 11 "$tv.dimTiles | join(\",\")" "events today,7 days"
 expect setup-flow 11 "[.texts[] | select(. == \"Seldon is recording. Nothing needs you.\")] | length" 0
 scripts=$(node -e '
   const fs = require("fs"), vm = require("vm"), M = {}
@@ -677,7 +678,8 @@ clean_log setup-partial
 #     to press.
 run setup-old-engine "$fx/index-variants/not-initialised.json" 1920x1080 "summon" \
   HARNESS_MANIFEST="$(jq -c '.seldon.engineMin = "100.0.0"' "$root/plugin/manifest.json")"
-expect setup-old-engine 1 '[(.view.notices | join(",")), .view.chip] | join("|")' "Engine too old|Set up Seldon · 2 of 3 steps to go +1"
+# the urgent notice takes the chip (S3); the card stays in Today
+expect setup-old-engine 1 '[(.view.notices | join(",")), .view.chip, .view.chipTone, .view.setup] | join("|")' "Engine too old|Engine too old +1|urgent|Set up Seldon · 2 of 3 steps to go"
 expect setup-old-engine 1 "[$tv.setup.current, $tv.setup.ready, $tv.setup.waiting] | map(tostring) | join(\"|\")" "logbook|false|First: Engine too old (the notice above)."
 shows setup-old-engine 1 "First: Engine too old (the notice above)."
 clean_log setup-old-engine "engine 99\.0\.0-fake is older than engineMin 100\.0\.0"
@@ -685,17 +687,46 @@ clean_log setup-old-engine "engine 99\.0\.0-fake is older than engineMin 100\.0\
 # 7i. No snapper on this machine (the engine's "snapper is not installed")
 #     or its collector off: no snapshot step, so nothing is left — no card,
 #     no notice, no chip (A8: the denominator fits the machine).
+# (the engine's literal, CONTRACT.md rule 10: fixtures/index-variants/snapper-not-installed)
+cp "$fx/index-variants/snapper-not-installed.json" "$work/no-snapper-missing.json"
+jq '(.state.collectors[] | select(.name == "snapper")) |= {name: "snapper", enabled: false, ok: true}' "$sample" >"$work/no-snapper-off.json"
 for kind in missing off; do
-  if [[ $kind == missing ]]; then
-    filter='(.state.collectors[] | select(.name == "snapper")) |= {name: "snapper", enabled: true, ok: false, message: "snapper is not installed"}'
-  else
-    filter='(.state.collectors[] | select(.name == "snapper")) |= {name: "snapper", enabled: false, ok: true}'
-  fi
-  jq "$filter" "$sample" >"$work/no-snapper-$kind.json"
   run "no-snapper-$kind" "$work/no-snapper-$kind.json" 1920x1080 "summon"
   expect "no-snapper-$kind" 1 "[.view.setup, .view.chip, (.view.notices | length), $tv.setup.shown] | map(tostring) | join(\"|\")" "||0|false"
   clean_log "no-snapper-$kind"
 done
+
+# 7j. The first-run card from its fixture (dev mode): no case, nothing
+#     open, nothing today — "Seldon is recording. Nothing to do.", both
+#     tiles quiet, no sentence, no setup card.
+run first-run "$fx/index-variants/first-run.json" 1920x1080 "summon"
+expect first-run 1 "[$tv.firstRun, $tv.setup.shown, $tv.headline, ($tv.dimTiles | join(\",\")), .view.chip] | map(tostring) | join(\"|\")" "true|false||events today,7 days|"
+shows first-run 1 "Seldon is recording. Nothing to do."
+expect first-run 1 '.overflow | join(" | ")' ""
+clean_log first-run
+
+# 7k. The logbook's folder is in use (exit 3's reason, CONTRACT.md rule 10;
+#     WP-119 round 2, S5), live: step 2 says why and offers Choose a folder,
+#     which opens plain `seldon init` (it asks where) in the terminal.
+mkdir -p "$work/home-blocked"
+run setup-blocked "" 1920x1080 "summon;wait:sectionView.setup.actions.0=Choose a folder;clickName:setup-logbook-terminal" \
+  HOME="$work/home-blocked" FAKE_SELDON_MODE=uninit FAKE_SELDON_UNINIT_REASON=logbook-folder-not-empty \
+  HARNESS_RECORD="$work/setup-blocked.record"
+expect setup-blocked 2 "[$tv.setup.current, ($tv.setup.actions | join(\",\")), $tv.setup.ready] | map(tostring) | join(\"|\")" "logbook|Choose a folder,Copy|true"
+shows setup-blocked 2 "~/Seldon holds other files, so Seldon does not create its logbook there. Choose another folder: seldon init asks where."
+shows setup-blocked 2 "seldon init"
+expect setup-blocked 3 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+ask_script=$(node -e '
+  const fs = require("fs"), vm = require("vm"), M = {}
+  vm.createContext(M)
+  vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), M)
+  process.stdout.write(M.INIT_ASK_SCRIPT)' "$root/plugin/Model.js")
+deadline=$((SECONDS + 15))
+until [[ -s $work/setup-blocked.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
+check "setup-blocked: Choose a folder opened plain seldon init" \
+  "$(cat "$work/setup-blocked.record" 2>/dev/null || true)" \
+  "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$ask_script" --)"
+clean_log setup-blocked "seldon (capture|agent) exit 3: logbook not initialised"
 
 # ---------------------------------------------------------------------------
 # 8. Sections 1–3: Today, Changelog, Work (WP-122; ADR-0034 §2). The 0.1
@@ -2228,7 +2259,8 @@ clean_log radiant-uninit
 #     gets its final height a frame late and each chart paints once more.
 for variant in "$fx"/index-variants/*.json; do
   name=$(basename "$variant" .json)
-  [[ $name == not-initialised ]] && continue
+  # no case at all: the plan chart is empty by design (7j shows the variant)
+  [[ $name == not-initialised || $name == first-run ]] && continue
   run "radiant-variant-$name" "$variant" 1920x1080 "fresh:$radiant;view"
   expect "radiant-variant-$name" 2 '[.view.sectionView.slots[] | .chart.empty] | any' false
   if [[ $name == index-stale || $name == snapper-degraded ]]; then

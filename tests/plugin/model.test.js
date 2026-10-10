@@ -414,7 +414,7 @@ const SCRIPTS = {
     "gum style --padding '1 0 1 2' 'seldon init --defaults'; " +
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init --defaults); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Create logbook in the panel to start again.'; trap - INT TERM; (exit 130); " +
-    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Create logbook in the panel to try again.'; " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again.'; " +
     "trap - INT TERM; fi",
   SNAPPER_FIX_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: let your user read the snapshot list'; " +
@@ -424,6 +424,14 @@ const SCRIPTS = {
     "else gum style --padding '1 0 0 0' --foreground 2 'Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture.'; fi; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Nothing changed.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. Snapshots stay off; Seldon works without them.'; " +
+    "trap - INT TERM; fi",
+  INIT_ASK_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: choose where your logbook goes'; " +
+    "gum style --width 72 'Asks where the logbook should live, then creates it there and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No password.'; " +
+    "gum style --padding '1 0 1 2' 'seldon init'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Choose a folder in the panel to start again.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Choose a folder in the panel to try again.'; " +
     "trap - INT TERM; fi"
 }
 
@@ -432,7 +440,8 @@ test("terminal scripts: verbatim, fixed, each shows and runs its command (WP-117
   same(M.TERMINAL_SCRIPTS, Object.keys(SCRIPTS).map((n) => SCRIPTS[n]))
   const commandOf = {
     INSTALL_ENGINE_SCRIPT: M.INSTALL_ENGINE_COMMAND, UPDATE_ENGINE_SCRIPT: M.UPDATE_ENGINE_COMMAND,
-    UPDATE_PLUGIN_SCRIPT: M.UPDATE_PLUGIN_COMMAND, INIT_SCRIPT: M.INIT_COMMAND, SNAPPER_FIX_SCRIPT: M.SNAPPER_FIX_COMMAND
+    UPDATE_PLUGIN_SCRIPT: M.UPDATE_PLUGIN_COMMAND, INIT_SCRIPT: M.INIT_COMMAND, SNAPPER_FIX_SCRIPT: M.SNAPPER_FIX_COMMAND,
+    INIT_ASK_SCRIPT: M.INIT_ASK_COMMAND
   }
   // The grant's run line stops on an empty USER instead of granting
   // `u::rx` (round 2, N5); the shown command is the one Copy copies.
@@ -4115,7 +4124,10 @@ test("setupCard: Not now is final for the snapshot step; the rest still counts i
   assert.strictEqual(M.snapshotSetting(null, false), "not known yet (no index)")
   // the desk writes the key, and takes it out again (Offer again)
   same(M.deskSettingsWrite({ id: "jax.seldon", deskWidth: 67 }, "setupSnapshots", "not-now"), { deskWidth: 67, setupSnapshots: "not-now" })
-  same(M.deskSettingsWrite({ deskWidth: 67, setupSnapshots: "not-now" }, "setupSnapshots", undefined), { deskWidth: 67 })
+  const offered = M.deskSettingsWrite({ deskWidth: 67, setupSnapshots: "not-now" }, "setupSnapshots", undefined)
+  // the key is gone, not set to undefined (JSON would hide the difference)
+  same(Object.keys(offered), ["deskWidth"])
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(offered, "setupSnapshots"), false)
   assert.strictEqual(M.deskSettingsWrite({ deskWidth: 67 }, "setupSnapshots", undefined), null)
 })
 
@@ -4390,6 +4402,49 @@ test("WP-177: a weak theme is reported with the foreground as its tones, never b
   assert.strictEqual(reports.length, 1)
   assert.ok(/^weak: fg\/bg 1\.\d\d, limited dim accentText urgentText accentUi ui$/.test(reports[0]), reports[0])
   for (const k of ["dim", "accentText", "urgentText", "accentUi", "ui"]) assert.strictEqual(t[k], "#777777", k)
+})
+
+test("setupCard: a folder that cannot be used turns step 2 into Choose a folder (WP-119 round 2, S5)", () => {
+  const errors = (n) => fs.readFileSync(path.join(root, "fixtures/errors", n), "utf8")
+  // the engine's exit 3, as the fixtures pin it (CONTRACT.md rule 10)
+  same(M.notInitialisedInfo(errors("not-initialised-not-empty.json")), { reason: "logbook-folder-not-empty", path: "/home/user/Seldon" })
+  same(M.notInitialisedInfo(errors("not-initialised.json")), { reason: "", path: "/home/user/Seldon" })
+  for (const bad of ["", "not json", '{"error":{"code":3,"reason":"rm -rf"}}', '{"error":{"path":"/a\\nb"}}', null])
+    same(M.notInitialisedInfo(bad), { reason: "", path: "" })
+  same([M.displayPath("/home/user/Seldon", "/home/user"), M.displayPath("/home/user", "/home/user/"), M.displayPath("/srv/x", "/home/user"),
+    M.displayPath("/home/username/x", "/home/user"), M.displayPath("", "/home/user")], ["~/Seldon", "~", "/srv/x", "/home/username/x", ""])
+  const base = { status: "notInitialised", bannerStatus: "notInitialised", bannerTitle: "Create your logbook" }
+  // the folder the engine names, in the detail
+  const free = card(Object.assign({ logbookPath: "~/Notes/Seldon" }, base))
+  assert.strictEqual(free.steps[1].detail, "Creates ~/Notes/Seldon and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password.")
+  assert.strictEqual(free.steps[1].banner, "status")
+  assert.strictEqual(card(base).steps[1].detail, M.INIT_DETAIL)
+  for (const [reason, says] of [["logbook-folder-not-empty", " holds other files"], ["logbook-folder-not-a-folder", " is a file, not a folder"]]) {
+    const c = card(Object.assign({ logbookPath: "~/Seldon", logbookBlocked: reason }, base))
+    const st = c.steps[1]
+    assert.ok(st.detail.indexOf("~/Seldon" + says) === 0 && st.detail.endsWith("Choose another folder: seldon init asks where."), st.detail)
+    same(st.actions.map((a) => a.label), ["Choose a folder", "Copy"])
+    same([st.banner, st.command, st.ready, st.blocked, c.current], ["initAsk", "seldon init", true, reason, "logbook"])
+  }
+  // an unknown reason, or a done step, keeps Create logbook
+  assert.strictEqual(card(Object.assign({ logbookBlocked: "logbook-folder-locked" }, base)).steps[1].banner, "status")
+  same([M.INIT_ASK_FIX.status, M.INIT_ASK_FIX.command, M.INIT_ASK_FIX.script === M.INIT_ASK_SCRIPT, M.setupStepOf(M.INIT_ASK_FIX)],
+    ["notInitialised", "seldon init", true, "logbook"])
+  same(M.terminalArgv(M.INIT_ASK_FIX), ["omarchy-launch-floating-terminal-with-presentation", M.INIT_ASK_SCRIPT])
+})
+
+test("deskChip: an urgent notice wins, then the setup card, then the first notice (WP-119 round 2, S3)", () => {
+  const n = (title, tone) => ({ title, tone })
+  const two = "Set up Seldon · 2 of 3 steps to go"
+  same(M.deskChip([], ""), { text: "", count: 0, tone: "", setup: false })
+  same(M.deskChip([], two), { text: two, count: 1, tone: "accent", setup: true })
+  same(M.deskChip([n("Restart the shell to finish the update", "neutral")], two),
+    { text: two + " +1", count: 2, tone: "accent", setup: true })
+  same(M.deskChip([n("Restart the shell to finish the update", "neutral"), n("Engine too old", "urgent")], two),
+    { text: "Engine too old +2", count: 3, tone: "urgent", setup: false })
+  same(M.deskChip([n("Capture warned", "neutral"), n("Index is stale", "accent")], ""),
+    { text: "Capture warned +1", count: 2, tone: "neutral", setup: false })
+  same(M.deskChip(null, null), { text: "", count: 0, tone: "", setup: false })
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

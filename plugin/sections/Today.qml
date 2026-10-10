@@ -51,6 +51,9 @@ Section {
   // WP-119: the setup card, and the first-run card once it is done.
   readonly property var setup: root.service ? root.service.setup : null
   readonly property bool firstRun: !root.setup && !!root.today && root.today.firstRun === true
+  // Seldon records, only the optional snapshot step is left: the
+  // sentence stays under the card (WP-119 round 2, S2)
+  readonly property bool sentenceShown: (!root.setup || root.setup.optionalOnly === true) && !root.firstRun
   readonly property var rows: root.preview ? Model.previewRows(root.preview, root.searchText)
     : Model.todayRows(root.today, root.yesterdayOpen, root.searchText)
   readonly property int cursor: root.rowIndex(root.selectedId)
@@ -162,7 +165,7 @@ Section {
       shown: root.eventShown ? "event" : "overview",
       // the overview's sentence, also while an event is shown; "" while the
       // setup card or the first-run card takes its place
-      headline: !root.setup && !root.firstRun && root.today ? root.today.headline : "",
+      headline: root.sentenceShown && root.today ? root.today.headline : "",
       firstRun: firstRunCard.visible,
       dimTiles: root.today ? root.today.tiles.filter(function(t) { return t.dim }).map(function(t) { return t.label }) : [],
       cases: root.today ? root.today.cases.map(function(c) { return c.id }) : [],
@@ -450,7 +453,7 @@ Section {
     Text {
       id: headline
       width: parent.width
-      visible: !root.setup && !root.firstRun
+      visible: root.sentenceShown
       textFormat: Text.PlainText
       text: root.today ? root.today.headline : ""
       color: root.foreground

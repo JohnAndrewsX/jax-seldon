@@ -176,8 +176,20 @@ var INIT_SCRIPT = terminalScript({
   what: "Creates the logbook in ~/Seldon and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.",
   command: INIT_COMMAND,
   ok: "Your logbook is ready. The panel updates by itself.",
-  failed: "No logbook was created; the message above says why. Press Create logbook in the panel to try again.",
+  failed: "No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again.",
   cancelled: "Cancelled. Press Create logbook in the panel to start again."
+})
+// The logbook step when its folder cannot be used (exit 3's `reason`,
+// CONTRACT.md rule 10): plain `seldon init` asks only where the logbook
+// goes and takes the defaults for the rest (WP-119 round 2).
+var INIT_ASK_COMMAND = "seldon init"
+var INIT_ASK_SCRIPT = terminalScript({
+  title: "Seldon: choose where your logbook goes",
+  what: "Asks where the logbook should live, then creates it there and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No password.",
+  command: INIT_ASK_COMMAND,
+  ok: "Your logbook is ready. The panel updates by itself.",
+  failed: "No logbook was created; the message above says why. Press Choose a folder in the panel to try again.",
+  cancelled: "Cancelled. Press Choose a folder in the panel to start again."
 })
 // After the grant a capture records the snapshots and rewrites the index,
 // so the banner goes without a click. Exit 4 (the plugin's own timed
@@ -201,7 +213,8 @@ var SNAPPER_FIX_SCRIPT = terminalScript({
   cancelled: "Cancelled. Nothing changed."
 })
 
-var TERMINAL_SCRIPTS = [INSTALL_ENGINE_SCRIPT, UPDATE_ENGINE_SCRIPT, UPDATE_PLUGIN_SCRIPT, INIT_SCRIPT, SNAPPER_FIX_SCRIPT]
+var TERMINAL_SCRIPTS = [INSTALL_ENGINE_SCRIPT, UPDATE_ENGINE_SCRIPT, UPDATE_PLUGIN_SCRIPT, INIT_SCRIPT, SNAPPER_FIX_SCRIPT,
+  INIT_ASK_SCRIPT]
 
 function isTerminalScript(script) {
   return typeof script === "string" && TERMINAL_SCRIPTS.indexOf(script) !== -1
@@ -1032,6 +1045,9 @@ var SETUP_LATER_VALUE = "not-now"
 var SETUP_WATCH_MS = 10 * 60 * 1000
 var SETUP_PROBE_MS = 5000
 var SETUP_CAPTURE_MS = 30000
+// Step 1's engine probe every SETUP_PROBE_MS this many times (two minutes),
+// then every SETUP_CAPTURE_MS: a missing engine logs one line per probe.
+var SETUP_PROBES_FAST = 24
 var SETUP_LAUNCHED_TEXT = "A terminal opened. This card moves on by itself when the step is done."
 
 // Whether *Not now* is stored in this shell.json entry.
@@ -1054,7 +1070,7 @@ function snapperStep(index) {
 }
 
 // s: { status, indexExists, index, later, bannerStatus, bannerTitle,
-// snapperReady }. null when nothing is left to set up — and while the
+// snapperReady, logbookPath, logbookBlocked }. null when nothing is left to set up — and while the
 // engine that was there is gone (its urgent banner says so), or in a
 // status the notices handle (index missing, contract mismatch). Dev mode
 // shows it too, from the fixture (its buttons open the terminals; the
@@ -1064,7 +1080,11 @@ function snapperStep(index) {
 // `ready` while the banner behind it is up (the status banner of its
 // state, the snapshot banner): an engine older than the plugin's
 // engineMin takes the status banner's place, and the logbook step waits
-// for its update (`waiting` names the notice).
+// for its update (`waiting` names the notice). `logbookPath` (shown as is,
+// "~/…") names the folder step 2 creates; `logbookBlocked`, exit 3's
+// reason (notInitialisedInfo), turns step 2 into *Choose a folder*: plain
+// `seldon init`, which asks where (INIT_ASK_FIX), instead of a button that
+// would fail the same way.
 // → { headline, lead, open, total, optionalOnly, current, steps: [{ id,
 //   number, title, detail, hint, done, later, optional, current, ready,
 //   waiting, banner, command, actions: [{ id, label }] }] }
@@ -1080,9 +1100,7 @@ function setupCard(s) {
     { id: "engine", title: "Install the engine", detail: ENGINE_MISSING_DETAIL, done: engineDone,
       hint: "Opens a terminal that shows the installer and runs it", banner: "status", command: INSTALL_ENGINE_COMMAND,
       actions: [{ id: "terminal", label: "Install" }, { id: "copy", label: "Copy" }] },
-    { id: "logbook", title: "Create the logbook", detail: INIT_DETAIL, done: engineDone && !before,
-      hint: "Opens a terminal that creates your logbook and starts recording", banner: "status", command: INIT_COMMAND,
-      actions: [{ id: "terminal", label: "Create logbook" }, { id: "copy", label: "Copy" }] }
+    logbookStep(engineDone && !before, s.logbookPath, s.logbookBlocked)
   ]
   if (snap !== "none") {
     steps.push({ id: "snapshots", title: "Read snapshots (optional)", optional: true,
@@ -1126,6 +1144,56 @@ function setupCard(s) {
     current: current,
     steps: steps
   }
+}
+
+// What `--defaults` does with the folder, in one sentence (INIT_DETAIL
+// with the folder the engine names).
+function initDetail(path) {
+  var where = typeof path === "string" && path !== "" ? path : "~/Seldon"
+  return "Creates " + where + " and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password."
+}
+
+// Exit 3's reasons (CONTRACT.md rule 10) and what step 2 says about them.
+var LOGBOOK_BLOCKED = {
+  "logbook-folder-not-empty": " holds other files, so Seldon does not create its logbook there. Choose another folder: seldon init asks where.",
+  "logbook-folder-not-a-folder": " is a file, not a folder, so Seldon cannot create its logbook there. Choose another folder: seldon init asks where."
+}
+
+// Step 2 of the setup card: *Create logbook* (`init --defaults`), or,
+// when the engine said the folder cannot be used, *Choose a folder*.
+function logbookStep(done, path, blocked) {
+  var where = typeof path === "string" && path !== "" ? path : "~/Seldon"
+  if (!done && LOGBOOK_BLOCKED[blocked] !== undefined) {
+    return { id: "logbook", title: "Create the logbook", detail: where + LOGBOOK_BLOCKED[blocked], done: false,
+      blocked: blocked, hint: "Opens a terminal that asks where the logbook goes", banner: "initAsk",
+      command: INIT_ASK_COMMAND, actions: [{ id: "terminal", label: "Choose a folder" }, { id: "copy", label: "Copy" }] }
+  }
+  return { id: "logbook", title: "Create the logbook", detail: initDetail(path), done: done, blocked: "",
+    hint: "Opens a terminal that creates your logbook and starts recording", banner: "status", command: INIT_COMMAND,
+    actions: [{ id: "terminal", label: "Create logbook" }, { id: "copy", label: "Copy" }] }
+}
+
+// The fix *Choose a folder* runs (Service.fix's "initAsk"): a constant, as
+// every banner's.
+var INIT_ASK_FIX = { status: "notInitialised", command: INIT_ASK_COMMAND, script: INIT_ASK_SCRIPT }
+
+// Exit 3's `--json` error (CONTRACT.md rule 10): { reason, path }, each ""
+// when absent or not one the plugin knows. The path is user content (rule
+// 6): one line, at most 4096 characters, shown as plain text.
+function notInitialisedInfo(stdoutText) {
+  var d = parseJson(stdoutText)
+  var e = d && isObject(d.error) ? d.error : {}
+  var path = typeof e.path === "string" && e.path.length <= 4096 && !/[\u0000-\u001f\u007f]/.test(e.path) ? e.path : ""
+  return { reason: LOGBOOK_BLOCKED[e.reason] !== undefined ? e.reason : "", path: path }
+}
+
+// A path for the card: under the home folder as "~/…".
+function displayPath(path, home) {
+  var p = typeof path === "string" ? path : ""
+  var h = typeof home === "string" ? home.replace(/\/+$/, "") : ""
+  if (p === "" || h === "") return p
+  if (p === h) return "~"
+  return p.indexOf(h + "/") === 0 ? "~" + p.slice(h.length) : p
 }
 
 // The setup step a banner's terminal fix does ("engine", "logbook",
@@ -4043,6 +4111,23 @@ function deskSettingsWrite(entry, key, value) {
   if (value === undefined) delete next[key]
   else next[key] = value
   return next
+}
+
+// The desk header's chip (SPEC-PLUGIN §5.6; WP-119): `notices` are the
+// shown notices in order ({ title, tone }), `setupHeadline` the setup
+// card's ("" without one). An urgent notice wins (S3), then the setup
+// card, then the first notice; "+N" counts the rest. `setup`: a click
+// leads to the card instead of folding the notices.
+function deskChip(notices, setupHeadline) {
+  var list = Array.isArray(notices) ? notices : []
+  var setup = typeof setupHeadline === "string" && setupHeadline !== ""
+  var count = list.length + (setup ? 1 : 0)
+  var more = function(n) { return n > 0 ? " +" + n : "" }
+  for (var i = 0; i < list.length; i++)
+    if (list[i].tone === "urgent") return { text: list[i].title + more(count - 1), count: count, tone: "urgent", setup: false }
+  if (setup) return { text: setupHeadline + more(count - 1), count: count, tone: "accent", setup: true }
+  if (list.length === 0) return { text: "", count: 0, tone: "", setup: false }
+  return { text: list[0].title + more(count - 1), count: count, tone: list[0].tone, setup: false }
 }
 
 // The screen the desk opens on: the index in `names` of Hyprland's focused

@@ -58,6 +58,10 @@ Item {
   // next successful call or by an index written after it was set.
   property bool engineNotInitialised: false
   property double notInitialisedAtMs: 0
+  // What the last exit 3 said about the logbook's folder (CONTRACT.md rule
+  // 10, Model.notInitialisedInfo): { reason, path }; the setup card's step
+  // 2 offers another folder when `reason` says this one cannot be used.
+  property var notInitialisedInfo: ({ reason: "", path: "" })
   // The lowest engine this plugin works with (manifest `seldon.engineMin`,
   // docs/VERSIONING.md); "" until the shell has injected the manifest.
   readonly property string engineMin: Model.engineMinOf(root.manifest)
@@ -126,7 +130,13 @@ Item {
     later: root.setupLater,
     bannerStatus: root.banner ? root.banner.status : "",
     bannerTitle: root.banner ? root.banner.title : "",
-    snapperReady: !!root.snapperBanner
+    snapperReady: !!root.snapperBanner,
+    // the folder `init --defaults` creates: what exit 3 named, else the
+    // notInitialised index's own logbook path
+    logbookPath: Model.displayPath(root.notInitialisedInfo.path !== "" ? root.notInitialisedInfo.path
+      : root.status === "notInitialised" && root.index && root.index.logbook && typeof root.index.logbook.path === "string"
+        ? root.index.logbook.path : "", root.home),
+    logbookBlocked: root.status === "notInitialised" ? root.notInitialisedInfo.reason : ""
   })
   // After a step's terminal opened: { step, untilMs, captureAtMs }, while
   // the service looks again by itself (setupTick); null otherwise.
@@ -1007,6 +1017,7 @@ Item {
       // Nothing else can succeed until `seldon init` has run.
       root.notInitialisedAtMs = Date.now()
       root.engineNotInitialised = true
+      root.notInitialisedInfo = Model.notInitialisedInfo(out)
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
     } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "agent" && args[0] !== "drift" && args[0] !== "decide"
@@ -1133,6 +1144,8 @@ Item {
     }
     var source = bannerId === "snapper" ? root.snapperBanner
       : bannerId === "contract" ? root.contractNotice
+      // the setup card's Choose a folder (WP-119): only before init
+      : bannerId === "initAsk" ? (root.status === "notInitialised" ? Model.INIT_ASK_FIX : null)
       : root.banner
     var command = source ? source.command : ""
     var terminal = Model.terminalArgv(source)
@@ -1187,7 +1200,7 @@ Item {
   function watchSetup(stepId) {
     root.setupResult = ""
     root.setupWatch = { step: stepId, untilMs: Date.now() + Model.SETUP_WATCH_MS,
-      captureAtMs: Date.now() + root.setupCaptureMs }
+      captureAtMs: Date.now() + root.setupCaptureMs, probes: 0 }
   }
 
   // Not now (true) or Settings' Offer again (false): held here at once,
@@ -1223,14 +1236,25 @@ Item {
       root.setupWatch = null
       return
     }
+    // what runs slowly: the step-3 capture, step 2's status (it tells
+    // why a failed init failed, CONTRACT.md rule 10), and step 1's probe
+    // after its first Model.SETUP_PROBES_FAST (each failed probe is a line
+    // in the shell's log: at most about 40 per watch)
+    var slow = now >= w.captureAtMs
+    var next = slow ? now + root.setupCaptureMs : w.captureAtMs
+    var probes = w.probes || 0
     if (w.step === "engine") {
-      root.probeEngine()
+      if (probes < Model.SETUP_PROBES_FAST || slow) {
+        root.probeEngine()
+        probes++
+      }
     } else if (w.step === "logbook") {
       root.reloadIndex()
-    } else if (w.step === "snapshots" && now >= w.captureAtMs && !root.capturing) {
-      root.setupWatch = { step: w.step, untilMs: w.untilMs, captureAtMs: now + root.setupCaptureMs }
+      if (slow && root.engineState === "present" && !root.queued("status")) root.run(["status", "--json"])
+    } else if (w.step === "snapshots" && slow && !root.capturing) {
       root.captureNow()
     }
+    root.setupWatch = { step: w.step, untilMs: w.untilMs, captureAtMs: next, probes: probes }
   }
 
   function snapshot() {
