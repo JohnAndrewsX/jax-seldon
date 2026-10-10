@@ -42,7 +42,7 @@ A block nobody edited is brought up to the engine's by the next capture
 for byte). A block the user edited, or a file from before the block with
 lines of the user's, stays as it is; `seldon doctor` then shows
 `rules: outdated (v1)` with the fix `seldon rules update (archives your
-copy)`, which the user runs (or *Update rules* in the panel). A section
+copy)`, which the user runs (or *Update rules* on the desk). A section
 `## Your rules (kept)` below the block holds the lines of the user's
 earlier file that no Seldon release wrote; the whole earlier file is in
 `archive/AGENTS-<date>.md`. Like any rule of the user's, those lines can
@@ -95,7 +95,7 @@ Markdown file under `work/`). Work one case at a time; the engine allows
 more, and `.seldon/active-case` names the one started last.
 
 1. **A case the user started is your authorisation.** The user created
-   and started it (in the panel or with `seldon plan new` and
+   and started it (on the desk or with `seldon plan new` and
    `seldon plan start`) and handed it to you: act inside its *Intent*
    without a propose-and-wait step.
 2. **No case yet, and the user asked you for the work in this session?**
