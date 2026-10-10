@@ -520,6 +520,15 @@ and the package does not exist yet. Update the plugin first:
   default (crises) and where the other changes without a case are (the
   panel's Today tab, the tooltip, `driftInBar = all`), and that a case
   whose *Plan* names the file links the change by itself.
+- **Supply chain (WP-195).** Dependabot opens weekly pull requests for
+  the pinned actions (one grouped pull request) and the engine's crates
+  (minor and patch grouped); they are reviewed like any change.
+  `just check-packaging` fails on a network, TLS, async-runtime or DNS
+  crate in the engine's shipped crate graph or a `std::net` in its source
+  (AGENTS.md §7). CI pulls its Arch image from a GHCR copy with the same
+  digest instead of Docker Hub, whose anonymous pull limit had stopped
+  it. `just check-rss`'s limit is 12 MB, set from measurements recorded
+  in docs/TESTING.md; CI measures it.
 - **A recorded live test per release (WP-192).** From 0.2.0 every
   release has `packaging/acceptance/vX.Y.Z.json`: the commit deployed to
   the test host, the Omarchy version and channel, the installed engine
