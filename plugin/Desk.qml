@@ -481,6 +481,7 @@ Item {
       chip: header.chipText,
       chipTone: header.chipTone,
       chipShown: header.chipShown,
+      chipTruncated: header.chipTruncated,
       settings: {
         stored: root.storedWidth,
         sidebar: root.sidebarPref,

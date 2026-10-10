@@ -1185,7 +1185,13 @@ initialised). Offscreen the harness's `hyprctl` stub fails, so
 The rounding sweep of SPEC-PLUGIN §7 "Geometry" (Hyprland rounding 0, 6
 and 16: rows, tiles, notices and controls round with it, stripes, accent
 bars, progress bars and heatmap cells stay square) runs on the test host
-with the theme sweep, by eye on its shots.
+with the theme sweep, by eye on its shots. Headless, `rounding-16` (a
+`hyprctl` stub that answers 16 for `decoration:rounding`) and
+`rounding-0` check the bars at a row's edge, and `chip-50` and
+`chip-narrow` (a 920 px window, where "1 notice" no longer fits) that the
+header's chip shows the count alone rather than an elided word: every visible list-row
+selection bar, stripe and sidebar selection bar is a clipped slice of its
+row's own shape (the harness's `marks.bars`, `marks.barsOutside`).
 
 The graph (WP-125, section 11): on the sample it settles and sleeps
 (200 ticks, the Timer off, no tick and no paint after), each reported

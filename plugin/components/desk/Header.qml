@@ -32,6 +32,7 @@ Item {
   readonly property string markFile: headerMark.file
   readonly property bool markReady: headerMark.ready
   readonly property string chipShown: chip.visible ? chipLabel.text : ""
+  readonly property bool chipTruncated: chip.visible && chipLabel.truncated
   readonly property color chipColor: root.chipTone === "urgent" ? root.urgent
     : root.chipTone === "neutral" ? root.foreground : root.accent
   // The chip's label: the role as text, derived to read on its tint (WP-177).
@@ -102,12 +103,21 @@ Item {
     text: "▾ " + root.chipText
   }
 
+  TextMetrics {
+    id: chipShort
+    font: chipLabel.font
+    text: "▾ " + chip.shortText
+  }
+
   BorderSurface {
     id: chip
     readonly property real room: Math.max(0, kpiStrip.x - brand.x - brand.width - Style.spacing.huge * 2)
     readonly property bool fits: chipFull.advanceWidth + Style.spacing.xl * 2 <= room
+    readonly property string shortText: root.chipCount === 1 ? "1 notice" : root.chipCount + " notices"
+    // a narrow desk (50 % of 1920 px): the count alone, never an elided word
     readonly property string shown: fits ? root.chipText
-      : root.chipCount === 1 ? "1 notice" : root.chipCount + " notices"
+      : chipShort.advanceWidth + Style.spacing.xl * 2 <= room ? chip.shortText
+      : String(root.chipCount)
     objectName: "deskChip"
     visible: root.chipText !== ""
     anchors.left: brand.right
