@@ -148,6 +148,7 @@ Die Tasten des Desks gelten, solange der Desk offen ist.
 | `i` | das Feld *New case* in Today, das Feld für den einen Satz in Work |
 | `e` | im Editor öffnen: Today das Journal, Changelog das Ledger des Monats, Work den Case, Decisions die Entscheidung, System `STATUS.md`, Memory das Logbuch |
 | `f` / `F` | Changelog: der nächste / vorherige Chip |
+| ↑ / `k` in der ersten Zeile | Changelog: der Triage-Vorschlag des Agenten; ↓ / `j` zurück zur Liste |
 | `a` | Work: den Case einem Agenten übergeben (zweimal drücken); solange ein Agent daran arbeitet, *Focus* (einmal) |
 | `x` | Work: den Case aufgeben (zweimal drücken; endgültig) |
 | `r` | Work: einen abgeschlossenen Case wieder öffnen (einmal) |
@@ -264,10 +265,14 @@ Vorschlag ab: für jede Änderung eine Verknüpfung mit einem Case oder eine
 Erklärung, jede mit Belegen, die die Engine geprüft hat. Der Vorschlag
 erscheint als Zeile, „Proposal · N items proposed by …“, und sein Detail
 listet jeden Punkt mit seinen Belegen. Belege, die ein Agent geschrieben
-hat oder deren Autor unbekannt ist, sind mit „Read twice“ markiert.
+hat oder deren Autor unbekannt ist, sind mit „Read twice“ markiert. Du
+öffnest ihn mit einem Klick oder mit den Tasten: Der Vorschlag ist die
+Zeile über der Liste, also erreicht ↑ (oder `k`) in der ersten Zeile ihn,
+und ↓ (oder `j`) führt zurück.
 
-- *Apply proposals* wendet die Punkte mit einem Klick an, als du. Ein
-  zweites Apply ändert nichts.
+- *Apply proposals* wendet die Punkte mit einem Klick an, als du. Mit
+  der Tastatur schaltet Enter es scharf, ein zweites Enter wendet es an.
+  Ein zweites Apply ändert nichts.
 - Krisen sind nie Teil von Apply. Sie stehen unter **CRISES, EACH ON ITS
   OWN**, jede mit ihrem eigenen *Apply this crisis*.
 - *Discard* wirft den Vorschlag weg (zwei Klicks). Das Logbuch ändert

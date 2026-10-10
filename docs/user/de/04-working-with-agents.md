@@ -512,13 +512,13 @@ Vorschlags.
 Du wendest ihn an, als du selbst. Im Desk ist der Vorschlag eine Zeile
 oben im Changelog: „Proposal · 12 items proposed by agent:default at …,
 1 crisis held back — apply each below“ (deine Zahlen weichen ab). Wähl
-sie aus. Das Detail listet jeden Eintrag: die Änderung, die Verknüpfung
+sie aus: mit einem Klick oder mit ↑ in der ersten Zeile des Changelogs. Das Detail listet jeden Eintrag: die Änderung, die Verknüpfung
 oder die Erklärung und jeden Beleg mit dem, der ihn geschrieben hat. Ein
 Eintrag mit Belegen von einem Agenten oder von unbekannter Hand sagt
 „Read twice: some evidence names an agent or an unknown author.“
 
 - *Apply proposals (N)* wendet jeden Eintrag außer den Krisen mit einem
-  Klick an. Die Zeile unter der Leiste sagt, was geschehen ist: „Applied
+  Klick an (mit der Tastatur: Enter, dann noch einmal Enter). Die Zeile unter der Leiste sagt, was geschehen ist: „Applied
   N · skipped S · refused R“.
 - Unter CRISES — EACH ON ITS OWN hat jede Krise ihr eigenes *Apply this
   crisis*.

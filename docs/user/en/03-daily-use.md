@@ -135,6 +135,7 @@ The desk's keys work while the desk is open.
 | `i` | Today's *New case* field, Work's intent field |
 | `e` | open in your editor: Today the journal, Changelog this month's ledger, Work the case, Decisions the decision, System `STATUS.md`, Memory the logbook |
 | `f` / `F` | Changelog: the next / previous chip |
+| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` back to the list |
 | `a` | Work: hand the case to an agent (press twice); while an agent works on it, *Focus* (once) |
 | `x` | Work: drop the case (press twice; final) |
 | `r` | Work: reopen a completed case (once) |
@@ -245,10 +246,13 @@ The agent writes nothing into the logbook. It stores a proposal: for each
 change a link to a case or an explanation, each with evidence the engine
 checked. The proposal shows as a row, "Proposal · N items proposed by …",
 and its detail lists every item with its evidence. Evidence written by an
-agent or of unknown authorship is marked "Read twice".
+agent or of unknown authorship is marked "Read twice". Open it with a
+click, or with the keys: the proposal is the row above the list, so ↑
+(or `k`) on the first row reaches it and ↓ (or `j`) goes back.
 
-- *Apply proposals* applies the items in one click, as you. A second
-  Apply changes nothing.
+- *Apply proposals* applies the items in one click, as you. By key,
+  Enter arms it and a second Enter applies it. A second Apply changes
+  nothing.
 - Crises are never part of Apply. They are listed under **CRISES, EACH
   ON ITS OWN**, each with its own *Apply this crisis*.
 - *Discard* throws the proposal away (two clicks). The logbook does not
