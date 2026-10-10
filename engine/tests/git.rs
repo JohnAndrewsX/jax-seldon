@@ -423,7 +423,7 @@ fn git_runs_in_the_engines_process_group() {
     // remove the link first: writing to it would write the host's git
     std::fs::remove_file(bin.join("git")).unwrap();
     let wrapper = format!(
-        "#!/bin/sh\nread -r stat < /proc/$$/stat\nverb=$1; [ \"$verb\" = --no-lazy-fetch ] && verb=$2\necho \"git $verb $stat\" >> '{log}'\nexec '{git}' \"$@\"\n",
+        "#!/bin/sh\nread -r stat < /proc/$$/stat\nverb=-\nfor a in \"$@\"; do case $a in -*|*=*) ;; *) verb=$a; break ;; esac; done\necho \"git $verb $stat\" >> '{log}'\nexec '{git}' \"$@\"\n",
         log = log.display(),
         git = host_git.display()
     );
@@ -822,4 +822,70 @@ fn every_git_call_but_add_and_commit_is_a_query_without_network() {
             "no {query:?} in\n{log}"
         );
     }
+}
+
+/// The processes whose working directory is `dir` or below it, as
+/// `<pid> <comm>`; processes of other users (no `cwd` to read) and those
+/// that end while they are read are left out.
+fn processes_in(dir: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir("/proc").unwrap().flatten() {
+        let pid = entry.file_name();
+        if !pid.to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(cwd) = std::fs::read_link(entry.path().join("cwd")) else {
+            continue;
+        };
+        if cwd.starts_with(dir) {
+            let comm = std::fs::read_to_string(entry.path().join("comm")).unwrap_or_default();
+            found.push(format!("{} {}", pid.to_string_lossy(), comm.trim()));
+        }
+    }
+    found
+}
+
+/// WP-199: `init` (its first commit) starts no git that outlives it. git
+/// 2.55's `commit` runs `git maintenance run --auto --detach`, which
+/// leaves the commit at once and creates and removes
+/// `.git/objects/maintenance.lock` after `init` has returned (a test that
+/// removed `.git` right after `init` failed on it under load). git's own
+/// trace (`GIT_TRACE2`, every git process `seldon` starts and their
+/// children) shows no `maintenance` and no `gc` child, and no process has
+/// its working directory in the logbook when `init` returns. Three
+/// logbooks, three chances to see a straggler.
+#[test]
+fn init_leaves_no_git_running_in_the_logbook() {
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    let trace = env.tmp.path().join("git-trace2.log");
+    for n in 0..3 {
+        let root = env.tmp.path().join(format!("logbook-{n}"));
+        let out = env
+            .command(&[
+                "init",
+                "--non-interactive",
+                "--no-capture",
+                "--path",
+                root.to_str().unwrap(),
+            ])
+            .env("GIT_TRACE2", &trace)
+            .env("GIT_TRACE2_BRIEF", "1")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let left = processes_in(&root.canonicalize().unwrap());
+        assert!(left.is_empty(), "still running in the logbook: {left:?}");
+    }
+    let log = std::fs::read_to_string(&trace).unwrap();
+    // the trace saw the commits: the check below is not empty
+    assert!(log.contains("cmd_name commit "), "{log}");
+    let background: Vec<&str> = log
+        .lines()
+        .filter(|l| l.starts_with("child_start"))
+        .filter(|l| l.contains(" maintenance ") || l.contains(" gc "))
+        .collect();
+    assert!(background.is_empty(), "{background:?}\n{log}");
 }
