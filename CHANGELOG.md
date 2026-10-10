@@ -5,7 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+From 0.2.0 every version opens with `### Highlights`: one to ten
+bullets of one line each, what changes for you in your words, breaking
+changes included, no work package numbers. Only the standing paragraph
+for plugin 0.1.0 users comes before it. The GitHub release shows the
+Highlights and links to the whole section here
+([docs/VERSIONING.md](docs/VERSIONING.md), "CHANGELOG.md").
+
 ## [Unreleased]
+
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
+and the package does not exist yet. Update the plugin first:
+`omarchy plugin update jax.seldon` (Omarchy shows the changes and asks
+`Update jax.seldon?`; answer yes), then `omarchy-restart-shell`.
+
+### Highlights
 
 ### Breaking
 
@@ -491,6 +505,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checks it and refuses a release whose code changed after the tested
   commit (docs/VERSIONING.md, "Release acceptance record"); the test-host
   deploy prints the full commit for it.
+- **Release notes you can read (WP-193).** From 0.2.0 a release opens
+  with at most ten points on what changes for you, the Highlights at the
+  top of its section here; the GitHub release shows them and one link to
+  the whole section. `packaging/release-notes.sh` refuses a release
+  without them, with more than ten, or with a point over one line
+  (docs/VERSIONING.md, "CHANGELOG.md").
 
 ## [0.1.4] - 2026-10-08
 

@@ -95,24 +95,90 @@ field).
   the shell (WP-118). When a release is cut, it stays at the top of
   `## [Unreleased]` for the next one.
 
+### Highlights
+
+From 0.2.0 every version section opens with `### Highlights`: what
+changes for the user, in at most ten points (operator decision E68).
+The GitHub release shows these points and links to the rest, so the
+CHANGELOG stays the one source and a user still sees in a minute what
+the release means for them.
+
+- `### Highlights` is the first part of the section. Only the standing
+  paragraph for plugin 0.1.0 users comes before it, while that paragraph
+  applies; everything else follows it (`### Breaking`, `### Engine`, …).
+- One to ten bullets, `- ` each, one line each: no wrapped line, no
+  nested bullet, no other text in the part.
+- User words: what changes for the person at the desk, not how it was
+  built; no work package numbers (`WP-…`). A breaking change is a point
+  here too, besides its full entry under `### Breaking`.
+- `## [Unreleased]` always has the heading, empty until the release is
+  prepared. Pull requests add their lines to the other parts as before.
+- The release work package writes the points when it moves the
+  `[Unreleased]` lines under the version (WP-126 for 0.2.0, WP-188 for
+  0.3.0), and the operator reads them in the release body with the tag
+  question.
+
+A 0.2.0 section (an illustration, not the real points) and the release
+body `release-notes.sh` makes of it:
+
+```markdown
+## [0.2.0] - 2026-10-14
+
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0, …
+
+### Highlights
+
+- **Breaking:** the panel and the overlay are now one desk; update engine and plugin together.
+- Press a letter key to jump to any part of the desk.
+- …
+
+### Breaking
+
+- **Contract 2 (ADR-0035).** …
+```
+
+```markdown
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0, …
+
+### Highlights
+
+- **Breaking:** the panel and the overlay are now one desk; update engine and plugin together.
+- Press a letter key to jump to any part of the desk.
+- …
+
+Every change in 0.2.0: [CHANGELOG.md](https://github.com/JohnAndrewsX/jax-seldon/blob/v0.2.0/CHANGELOG.md#020---2026-10-14)
+```
+
+The link points at `CHANGELOG.md` as tagged, at GitHub's anchor of the
+heading; the repository comes from the `[0.2.0]: …/releases/tag/v0.2.0`
+link reference. Sections before 0.2.0 have no such part and are
+published whole, as they were.
+
 **Before a tag**, the CHANGELOG must contain:
 
 1. A heading `## [X.Y.Z] - YYYY-MM-DD` for exactly the tagged version,
-   with the `[Unreleased]` lines moved under it and a non-empty body.
-   The release workflow publishes this section, without its heading, as
-   the GitHub release notes (`packaging/release-notes.sh`). **Without it
-   the `build` job fails** — in the dry run and in the tag build — and
-   nothing is published: no GitHub release, no AUR push, no plugin push.
-   The `release` job checks again before it creates the release.
-2. An empty `## [Unreleased]` heading above it.
+   with the `[Unreleased]` lines moved under it and a non-empty body
+   that opens with `### Highlights` ("Highlights" above).
+   The release workflow publishes the release body made from this
+   section as the GitHub release notes (`packaging/release-notes.sh`):
+   the standing paragraph, the Highlights and the link to the section;
+   before 0.2.0 the whole section without its heading. **Without it, or
+   with Highlights that break the rules above, the `build` job fails** —
+   in the dry run and in the tag build — and nothing is published: no
+   GitHub release, no AUR push, no plugin push. The `release` job checks
+   again before it creates the release.
+2. A `## [Unreleased]` heading above it, holding only the standing
+   paragraph (while it applies) and an empty `### Highlights`.
 3. The link references at the end updated:
    `[Unreleased]: …/compare/vX.Y.Z...HEAD` and
-   `[X.Y.Z]: …/releases/tag/vX.Y.Z`.
+   `[X.Y.Z]: …/releases/tag/vX.Y.Z` (from 0.2.0 the release body's link
+   is built from it; without it `release-notes.sh` fails).
 
 Check it locally before you tag: `bash packaging/release-notes.sh X.Y.Z`
 prints exactly the release body, or fails with the reason.
 `tests/release/release-notes.test.sh` (part of `just check`) covers the
-extraction on the real `CHANGELOG.md` and on edge cases.
+extraction and the Highlights rules on the real `CHANGELOG.md` and on
+edge cases.
 
 ## Release acceptance record
 
@@ -209,8 +275,10 @@ All on `main`, after every work package of the release is merged:
    `just check-packaging`, so also in CI, which skips the host checks, and
    in the release workflow's plugin split, where both must also equal the
    tag's version.
-2. Move the `[Unreleased]` lines under `## [X.Y.Z] - YYYY-MM-DD`; update
-   the link references; run `bash packaging/release-notes.sh X.Y.Z`.
+2. Move the `[Unreleased]` lines under `## [X.Y.Z] - YYYY-MM-DD`; write
+   its `### Highlights`; leave the standing paragraph and an empty
+   `### Highlights` in `[Unreleased]`; update the link references; run
+   `bash packaging/release-notes.sh X.Y.Z`.
 3. `just check` green; commit (`release: X.Y.Z`); push. Then the live
    restart test on a host with the plugin in the bar on two monitors
    (WP-162; it restarts that host's shell, so on the dev host only with
