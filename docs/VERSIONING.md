@@ -114,6 +114,89 @@ prints exactly the release body, or fails with the reason.
 `tests/release/release-notes.test.sh` (part of `just check`) covers the
 extraction on the real `CHANGELOG.md` and on edge cases.
 
+## Release acceptance record
+
+Every release from 0.2.0 has one machine-readable record of its live
+test, bound to the commit that was tested (WP-192, operator decision
+E67): `packaging/acceptance/vX.Y.Z.json`, committed on `main` after the
+live test and before the tag. "The tag waits for the live test" is then
+a check, not a memory.
+
+```json
+{
+  "version": "0.2.0",
+  "status": "partial",
+  "commit": "<the 40 hex characters of the commit deployed to the test host>",
+  "date": "2026-10-12",
+  "omarchy": { "version": "4.0.4-1", "channel": "rc" },
+  "engine": "0.2.0+main.1a2b3c4",
+  "plugin": "0.2.0",
+  "scenarios": [
+    { "id": "a", "title": "clean home to the desk", "where": "test host",
+      "result": "passed", "counts": { "humanSteps": 2, "passwordPrompts": 0 },
+      "notes": "desk at 100 %, Today shows \"Seldon is recording\"" },
+    { "id": "gate", "title": "Omarchy assumptions, --gate", "where": "not run",
+      "result": "not run" }
+  ],
+  "limitations": ["gate: WP-194 has not landed"]
+}
+```
+
+| Field | What it holds |
+|---|---|
+| `version` | `X.Y.Z`, the version the record is for |
+| `status` | `passed`, `failed` or `partial`; follows the scenarios (rules below) |
+| `commit` | the full commit deployed to the test host: `just deploy-test-host` prints it as `commit   <sha>` in its summary |
+| `date` | the day of the live test, `YYYY-MM-DD` |
+| `omarchy` | `version`: `omarchy version`; `channel`: `omarchy version channel`, both as printed on the test host |
+| `engine` | `seldon --version` on the test host: `X.Y.Z`, or `X.Y.Z+main.<short sha>` (or `next`) of the same commit |
+| `plugin` | the installed plugin's manifest `version`: `X.Y.Z` |
+| `scenarios` | one entry per scenario of the live test, at least one |
+| `limitations` | what the test did not cover, one string each; `[]` when nothing |
+
+A scenario has `id` (letters, digits, `.`, `_`, `-`; unique), `title`,
+`where` — where it ran, one of AGENTS.md §5's evidence words: `fixture`,
+`headless`, `CI`, `test host`, `desktop` or `not run` — `result`
+(`passed`, `failed` or `not run`), `counts` and optional short `notes`.
+`counts` are ADR-0027 §1's: `humanSteps` and `passwordPrompts` (whole
+numbers, required), and when they apply `snapshotCoverage` and
+`r3GatesHonoured` (percent 0–100, `null` without an R2/R3 case) and
+`agentClosesReopened` (a whole number). A scenario not run has `where`
+and `result` both `not run` and no `counts`.
+
+Rules:
+
+- `status` is `failed` when a scenario failed, else `partial` when a
+  scenario was not run, else `passed`: `passed` only when every scenario
+  passed. "Not run" is never "passed" (AGENTS.md §5).
+- Each scenario not run has a `limitations` entry that starts with
+  `<id>: ` and says why.
+- No host names, user names, machine-ids or private paths (AGENTS.md
+  §8): write `~/…`, never `/home/…` or `/root/…`, and "the test host",
+  never its name.
+- No other fields, and no key twice; a typo is refused, not ignored.
+
+`bash packaging/acceptance-check.sh X.Y.Z [REF]` (bash and jq, no
+network; REF defaults to `HEAD`) reads the record as committed in REF and
+refuses (exit 1, every reason listed) unless the fields and rules hold,
+`status` is not `failed`, the record names neither this machine, its
+user, nor a host or machine-id from the git-ignored
+`scripts/guard-hosts.local` and `scripts/deploy-hosts.local` (a
+best-effort check), `commit` is REF or an ancestor of it, and
+between `commit` and REF nothing changed outside `docs/`, `work/`,
+`packaging/acceptance/` and `*.md` files that are not under `engine/`
+(the engine compiles its skills and templates in). It prints each
+offending path; a rename counts as both of its paths. Otherwise it
+prints a summary and exits 0: the commit, the later commits, Omarchy,
+the versions, each scenario with its counts and each limitation. A
+`partial` record passes and says what was not run; the operator decides
+on it. The version bump changes `engine/` and `plugin/`, so the live test
+runs on the bumped commit; a fix after the live test means a new deploy,
+a new live test and a new record. `tests/release/acceptance-check.test.sh`
+(in `just check-packaging`) covers the checker. From 0.3 the release
+workflow runs it on the tag and refuses a tag without a `passed` record
+(WP-188).
+
 ## Tag flow
 
 All on `main`, after every work package of the release is merged:
@@ -136,6 +219,12 @@ All on `main`, after every work package of the release is merged:
    quickshell`, run `omarchy restart shell` three times (wait for the
    bar after each), and compare: no new crash report and no new
    quickshell core.
+   Deploy that commit to the test host (`just deploy-test-host`), run the
+   release's live scenarios there, write
+   `packaging/acceptance/vX.Y.Z.json` ("Release acceptance record"
+   above), commit and push it (`release: X.Y.Z acceptance record`), and
+   run `bash packaging/acceptance-check.sh X.Y.Z`: the operator's go for
+   the tag quotes its output.
 4. Run the release workflow's dry run on `main` and read its summary
    (packaging/README.md, "Dry run"). It must be green. One gate, before
    anything is built, is `cargo audit` of `engine/Cargo.lock`: a
