@@ -123,12 +123,15 @@ them in the page language where it helps.
 
 - A picture that is planned but not shot yet is an HTML comment in its
   place, the same in every language:
-  `<!-- TODO(WP-126b) screenshot: docs/images/<file>.png; <what it shows> -->`.
-  It is no image, so the page checks do not count it; the shot replaces
-  it with the image line.
-- Reuse the renders in the repository (`docs/images/`, `plugin/preview.png`).
-  They show the sample index in the Tokyo Night theme. Do not take new
-  screenshots of a real desktop.
+  `<!-- TODO(WP-NNN) screenshot: docs/images/<file>.png; <what it shows> -->`,
+  naming the work package that shoots it. It is no image, so the page
+  checks do not count it; the shot replaces it with the image line.
+- Reuse the pictures in the repository (`docs/images/`, `plugin/preview.png`).
+  They show the sample logbook (`fixtures/logbook/`) in the Tokyo Night
+  theme, shot in a live shell on the test host (WP-126b; the triage
+  proposal, which only a click opens, rendered headless). Never a
+  screenshot of your own logbook or desktop: no real package lists, paths
+  or host names.
 - Link them by relative path. Never copy a picture into `en/` or `de/`.
 - Alt text is in the page language. It says what the picture shows and
   what the reader should notice, in one or two sentences.

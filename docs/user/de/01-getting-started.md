@@ -46,7 +46,7 @@ Set up Seldon · 3 of 3 steps to go
   3  Read snapshots (optional)
 ```
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-setup.png; the desk on Today with the setup card "Set up Seldon · 3 of 3 steps to go" -->
+![Die Einrichtungskarte unter Today: Set up Seldon · 2 of 3 steps to go; Install the engine erledigt, Create the logbook mit Create logbook und Copy, Read snapshots optional](../../images/desk-tokyo-night-setup.png)
 
 Der Status-Chip in der Kopfzeile zeigt dieselbe Zeile. Ein Klick darauf
 bringt dich von überall im Desk zur Karte zurück. Der Desk ist das eine
@@ -125,7 +125,7 @@ Bar.
 
 ## Im Desk zurechtfinden
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-today.png; the desk on Today with the sample logbook: header with KPI strip, sidebar with the nine sections, list and detail -->
+![Der Desk bei Today mit dem Beispiel-Logbuch, Tokyo Night: der Kopf mit 2 active, 1 verification, 3 queued, 2 crises und 4 attention; die Seitenleiste mit den neun Abschnitten; NEEDS YOU mit zwei Krisen und das heutige Journal; die Übersicht mit den aktiven Cases als Kacheln](../../images/desk-tokyo-night-today.png)
 
 Der Desk hat vier Teile:
 
@@ -166,7 +166,7 @@ Bar-Einstellungen zeigen dieselben zwei Einstellungen beim Seldon-Widget:
 `deskWidth` (50 bis 100) und `deskSidebar` (`open` oder `collapsed`). Der
 Desk wird nie schmaler als 960 Pixel, außer der Bildschirm ist es.
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-50.png; the desk at 50 % width on a 1920 px screen, centred under the bar -->
+![Der Desk bei 50 % Breite auf einem 1920 px breiten Bildschirm, mittig unter der Bar, links und rechts der Desktop: Today in drei Spalten, die Case-Kacheln untereinander](../../images/desk-tokyo-night-50.png)
 
 Um den Desk mit einer Taste zu öffnen, trag eine Tastenbelegung in
 `~/.config/hypr/bindings.lua` ein. Seldon richtet sie nie für dich ein.

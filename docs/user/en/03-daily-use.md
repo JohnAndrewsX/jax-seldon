@@ -59,7 +59,7 @@ left click on the pill or the key again closes it.
 
 ## The desk
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-today.png; the whole desk on Today: the header with mark, subline, status chip and KPI strip, the sidebar with its nine targets and counts, Today's list and the overview with the active cases -->
+![The desk on Today with the sample logbook, Tokyo Night: the header with 2 active, 1 verification, 3 queued, 2 crises and 4 attention; the sidebar with the nine sections; NEEDS YOU with two crises and today's journal; the overview with the active cases as tiles](../../images/desk-tokyo-night-today.png)
 
 *Sample data.*
 
@@ -99,7 +99,7 @@ Tokyo Night theme. Your desk uses your theme and shows your data.
 
 ### Width and sidebar
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-50.png; the desk at 50 % width, centred below the bar on a 1920 px screen, with the desktop visible on both sides -->
+![The desk at 50 % width on a 1920 px screen, centred below the bar with the desktop on both sides: Today in three columns, the case tiles one below the other](../../images/desk-tokyo-night-50.png)
 
 The desk fills the width of the screen by default. Two settings change
 that, both in Settings › Appearance on the desk and in Omarchy's bar
@@ -195,7 +195,7 @@ form. Resolved there, it leaves NEEDS YOU.
 
 ### Changelog (2)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-changelog.png; the Changelog with the chips open, crisis, attention, routine, in case and all, rows grouped by day with crisis and attention stripes, and a selected crisis with its Why loud? callout -->
+![The Changelog: Agent sorts 6 open changes and the agent's proposal at the top, the chips open, crisis, attention, routine, in case and all, the open changes by day with crisis and attention stripes, and the selected theme change in the detail with Ask agent, Link to C-2026-005…, Explain…, Dismiss… and Hide](../../images/desk-tokyo-night-changelog.png)
 
 *Sample data.*
 
@@ -237,7 +237,7 @@ is the recorded way.
 
 #### Let the agent sort the open changes
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-triage.png; a triage proposal in the Changelog: the Apply proposals and Discard bar, the CRISES block with Apply this crisis, and the items with their evidence -->
+![An agent's triage proposal in the Changelog: Apply proposals (2) and Discard at the top, the crisis held back under CRISES — EACH ON ITS OWN with Apply this crisis, and under WHAT APPLY TAKES each item with its evidence and who wrote it](../../images/desk-tokyo-night-triage.png)
 
 While changes are open, the Changelog's head offers **Agent sorts N open
 changes**. One click starts your agent with `seldon agent ask triage`.
@@ -261,7 +261,7 @@ explains what the agent does and what it may not.
 
 ### Work (3)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-work.png; Work with the intent field and Run, the WIP line, the cases grouped Active, Verification, Queued and Completed, and a selected case with its action bar -->
+![Work: the one-sentence field with Run, 2 / 3 active, the cases grouped Active, Verification, Queued and Completed; the selected case C-2026-003, on which an agent is working, with Focus, To verification, Drop, Open in editor and Ask agent, its details, plan, log and linked changes](../../images/desk-tokyo-night-work.png)
 
 *Sample data.*
 
@@ -314,7 +314,7 @@ working on it keeps recording there; the result line says so.
 
 ### Decisions (4)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-decisions.png; Decisions with four decisions newest first, a proposed one striped, and the detail of the proposed decision with Accept and Open in editor -->
+![Decisions: four decisions newest first, ADR-0004 proposed; the selected ADR-0003, accepted, with its first paragraph, its date and file and the two cases it names](../../images/desk-tokyo-night-decisions.png)
 
 *Sample data.*
 
@@ -329,7 +329,7 @@ decision as *proposed* and opens it in your editor.
 
 ### System (5)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-system.png; System with its seven tiles and the detail of the Recently edited tile, each file with Watch -->
+![System: the seven tiles Omarchy, Packages, Snapshots, Deviations, Collectors, Recently edited and Ignored by pacman; the selected Omarchy tile with version, theme, last update and plugins](../../images/desk-tokyo-night-system.png)
 
 *Sample data.*
 
@@ -348,7 +348,7 @@ them). *Open in editor* (`e`) opens `STATUS.md`.
 
 ### Memory (6)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-memory.png; Memory with three lesson headings and two memory topics, and a selected lesson in the detail -->
+![Memory: three lesson headings and two memory topics; the selected lesson in the detail, with Open in editor](../../images/desk-tokyo-night-memory.png)
 
 *Sample data.*
 
@@ -358,7 +358,7 @@ last update. *Open in editor* (`e`) opens the logbook folder.
 
 ### Prime Radiant (7)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-radiant.png; the Prime Radiant in the desk: the period selector at 90 d, the heatmap, package series, drift bars, risk donut, timeline and The Plan -->
+![The Prime Radiant, section 7, at 90 d: the period selector, the heatmap of events per day, the package series, the drift bars, the risk donut, the timeline with releases, snapshots, cases and crises, and the plan with the two active cases](../../images/desk-tokyo-night-radiant.png)
 
 *Sample data.*
 
@@ -386,7 +386,7 @@ period. The Prime Radiant only shows; it never runs the engine.
 
 ### Graph (8)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-graph.png; the Graph: areas, cases, decisions and changes as a network, a crisis in red, a dashed proposed link, the date slider and a node's card with Open case -->
+![The Graph, section 8: the sample's areas as rings, cases, decisions and changes as a network around them, the crises in the urgent colour, and Play growth with the day slider at the top](../../images/desk-tokyo-night-graph.png)
 
 The graph draws your machine's memory as a network: areas, cases,
 decisions and changes, linked the way the logbook links them. A change
@@ -414,7 +414,7 @@ on screen, and stops after a few seconds.
 
 ### Settings (,)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-settings.png; Settings › Appearance with the Desk width slider, the presets 50 %, 67 %, 75 % and Full, the px line with the small screen picture, and Sidebar Open or Collapsed -->
+![Settings › Appearance: the Desk width slider at 100 % with the presets 50 %, 67 %, 75 % and Full, the pixel line with the small screen picture, and Sidebar with Open and Collapsed](../../images/desk-tokyo-night-settings.png)
 
 Settings has four groups. **Appearance** changes the desk at once: "Desk
 width" is a slider from 50 to 100 % in steps of 10, with the presets

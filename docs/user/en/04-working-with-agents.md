@@ -329,7 +329,7 @@ nothing is created and the desk says: run
 `omarchy default agent <name>` (for example `claude`), or name a
 launcher in the config.
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-work.png; Work with an active case selected, the action bar with Hand to agent, To verification and Drop -->
+![Work: the one-sentence field with Run, 2 / 3 active, the cases grouped Active, Verification, Queued and Completed; the selected case C-2026-003, on which an agent is working, with Focus, To verification, Drop, Open in editor and Ask agent, its details, plan, log and linked changes](../../images/desk-tokyo-night-work.png)
 
 For a case you made yourself, *Hand to agent* on an active case in Work
 runs the command below. It arms on the first click or `a` and runs on
@@ -479,7 +479,7 @@ agent or an unknown author."
 - *Discard* throws the proposal away. It arms first (*Confirm discard*);
   the logbook does not change.
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-triage.png; the Changelog with an agent's proposal selected: Apply proposals, Discard, the crisis held back and the evidence with its authors -->
+![An agent's triage proposal in the Changelog: Apply proposals (2) and Discard at the top, the crisis held back under CRISES — EACH ON ITS OWN with Apply this crisis, and under WHAT APPLY TAKES each item with its evidence and who wrote it](../../images/desk-tokyo-night-triage.png)
 
 In a terminal:
 

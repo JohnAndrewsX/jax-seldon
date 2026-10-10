@@ -8,8 +8,7 @@ A flight recorder and planning desk for your Omarchy machine.
 [![Release](https://img.shields.io/github/v/release/JohnAndrewsX/jax-seldon)](https://github.com/JohnAndrewsX/jax-seldon/releases/latest)
 [![Licence: MIT](https://img.shields.io/github/license/JohnAndrewsX/jax-seldon)](LICENSE)
 
-<!-- TODO(WP-126b) plugin/preview.png: reshoot as the desk and rewrite this alt text; the current file shows the 0.1 panel and overlay -->
-![The Prime Radiant overlay on the left with heatmap, package series, drift bars, risk donut, timeline and the plan; the bar panel's Today tab on the right; Tokyo Night theme, sample data](plugin/preview.png)
+![The Seldon desk on Today at full width, Tokyo Night, sample data: the header with the counts of active, queued and crises, the sidebar with the nine sections, NEEDS YOU with two crises, today's journal, and the active cases as tiles](plugin/preview.png)
 
 Seldon keeps a plain-Markdown logbook of everything that changes on your
 Omarchy system: packages, config files, themes, plugins, snapshots and

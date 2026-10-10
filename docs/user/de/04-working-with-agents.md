@@ -362,7 +362,7 @@ Standard-Agenten, wird nichts angelegt, und der Desk sagt: Führ
 `omarchy default agent <name>` aus (zum Beispiel `claude`), oder nenne
 einen Launcher in der Konfiguration.
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-work.png; Work with an active case selected, the action bar with Hand to agent, To verification and Drop -->
+![Work: das Feld für den einen Satz mit Run, 2 / 3 active, die Cases in den Gruppen Active, Verification, Queued und Completed; der gewählte Case C-2026-003, an dem ein Agent arbeitet, mit Focus, To verification, Drop, Open in editor und Ask agent, seinen Angaben, Plan, Log und verknüpften Änderungen](../../images/desk-tokyo-night-work.png)
 
 Für einen Case, den du selbst angelegt hast, führt *Hand to agent* bei
 einem aktiven Case in Work den Befehl unten aus. Der erste Klick oder
@@ -525,7 +525,7 @@ Eintrag mit Belegen von einem Agenten oder von unbekannter Hand sagt
 - *Discard* verwirft den Vorschlag. Es schaltet zuerst scharf (*Confirm
   discard*); das Logbuch ändert sich nicht.
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-triage.png; the Changelog with an agent's proposal selected: Apply proposals, Discard, the crisis held back and the evidence with its authors -->
+![Ein Triage-Vorschlag eines Agenten im Changelog: oben Apply proposals (2) und Discard, die zurückgehaltene Krise unter CRISES — EACH ON ITS OWN mit Apply this crisis, und unter WHAT APPLY TAKES jeder Punkt mit seinen Belegen und wer sie geschrieben hat](../../images/desk-tokyo-night-triage.png)
 
 Im Terminal:
 

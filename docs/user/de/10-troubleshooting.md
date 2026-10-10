@@ -49,7 +49,7 @@ Karte. Nach dem Terminal eines Schritts sieht die Karte von selbst
 wieder nach und geht weiter. Die ersten drei Zeilen unten sind ihre
 Schritte.
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-setup.png; the desk's Today with the setup card, step 1 done and step 2 with Create logbook -->
+![Die Einrichtungskarte unter Today: Set up Seldon · 2 of 3 steps to go; Install the engine erledigt, Create the logbook mit Create logbook und Copy, Read snapshots optional](../../images/desk-tokyo-night-setup.png)
 
 Für alles andere zeigt der Desk unter dem Header einen Hinweis mit einem
 Knopf, der es behebt. Der Status-Chip im Header zeigt den Titel des

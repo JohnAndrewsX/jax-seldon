@@ -44,7 +44,7 @@ The header's status chip shows the card's headline, such as
 card. After each step's terminal the card looks again by itself and
 moves on. The first three rows below are its steps.
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-setup.png; the desk's Today with the setup card, step 1 done and step 2 with Create logbook -->
+![The setup card on Today: Set up Seldon · 2 of 3 steps to go; Install the engine done, Create the logbook with Create logbook and Copy, Read snapshots optional](../../images/desk-tokyo-night-setup.png)
 
 For everything else the desk shows a notice under the header, with a
 button that fixes it. The status chip in the header shows the first
