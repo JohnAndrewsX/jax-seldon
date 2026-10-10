@@ -530,7 +530,7 @@ To move the pill: `omarchy bar move jax.seldon --section right`.
 
 ## A key for the desk
 
-The plugin does not install a key binding. Add these lines to your
+The plugin does not install a key binding. Add this line to your
 Hyprland bindings (`~/.config/hypr/bindings.lua`) to open and close the
 desk with Super+Shift+L (L for logbook), a key Omarchy leaves free:
 

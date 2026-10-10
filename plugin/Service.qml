@@ -401,6 +401,8 @@ Item {
 
   function ingestFailure(error) {
     root.parsed = null
+    // a file that comes back is a new reason to warn, even unchanged
+    root.indexWarned = ""
     root.fileState = error === FileViewError.FileNotFound ? "missing" : "invalid"
   }
 

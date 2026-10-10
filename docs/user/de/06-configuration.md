@@ -570,7 +570,7 @@ Die Pill verschieben: `omarchy bar move jax.seldon --section right`.
 
 ## Eine Taste für den Desk
 
-Das Plugin richtet keine Tastenbelegung ein. Füg diese Zeilen zu deinen
+Das Plugin richtet keine Tastenbelegung ein. Füg diese Zeile zu deinen
 Hyprland-Bindings hinzu (`~/.config/hypr/bindings.lua`), um den Desk mit
 Super+Shift+L (L wie Logbuch) zu öffnen und zu schließen, eine Taste,
 die Omarchy frei lässt:

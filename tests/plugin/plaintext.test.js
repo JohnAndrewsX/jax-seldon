@@ -8,6 +8,12 @@
 // component built on Text (`component Line: Text`) cannot be switched back
 // at a use site either.
 //
+// Known limit (review 2, N1): a contrived double fault still passes, a
+// regex literal with a quote plus a "/*" … "*/" string pair around a bare
+// `Text { text: "x" }`. The scan loses the block to the quote, the plain
+// count loses it to the comment pair, so the counts agree. Either fault
+// alone fails.
+//
 // The mutants at the end prove the check: each real block with its
 // textFormat line removed must fail, and so must the hand-made shapes below
 // (fixture-style, no Qt). Run: node tests/plugin/plaintext.test.js

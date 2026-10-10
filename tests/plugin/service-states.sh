@@ -180,6 +180,21 @@ if [[ $warned == 1 ]]; then
 else
   fail=$((fail + 1)); echo "FAIL index-oversized: $warned warnings (want 1, once per distinct reason)"
 fi
+# The same file removed and put back unchanged is logged again (review 2,
+# N2): gone at 3 s, back at 9 s, read again by the 5 s look-again.
+cp "$work/oversized.json" "$work/oversized-back.json"
+( sleep 3; mv "$work/oversized-back.json" "$work/oversized-away.json"
+  sleep 6; mv "$work/oversized-away.json" "$work/oversized-back.json" ) &
+mover=$!
+run index-oversized-back 18000 PATH="$fake_path" SELDON_INDEX="$work/oversized-back.json"
+wait "$mover"
+expect index-oversized-back .banner "Index unreadable"
+warned=$(sed 's/\x1b\[[0-9;]*m//g' "$work/index-oversized-back.log" | grep -a -c "jax.seldon: index.json unreadable: " || true)
+if [[ $warned == 2 ]]; then
+  pass=$((pass + 1)); echo "ok   index-oversized-back: logged again after the file came back"
+else
+  fail=$((fail + 1)); echo "FAIL index-oversized-back: $warned warnings (want 2: before and after the file was gone)"
+fi
 
 # 6. Stale: the dev clock three hours after the fixture's generatedAt.
 run index-stale 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T20:05:12+02:00"
