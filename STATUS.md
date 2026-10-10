@@ -662,6 +662,13 @@ submission). (see `work/queued/`)
   `--baseline`, `--no-capture` keep the choice (WP-119).
 - O3 Desk rows: Omarchy's pointer-moved hover, any key clears it, one
   cursor highlight at a time (WP-177).
+- Pending operator decision: ADR-0052 (WP-165): pacman's IgnorePkg and
+  IgnoreGroup names from /etc/pacman.conf and every file it includes —
+  also under a home directory if root includes one — names only, as the
+  optional contract-2 field `system.pacmanIgnore`; a change is attention
+  `ignore-list`, no crisis; unshowable names only counted; raw names in
+  the private cursors.json. Fable: approve. Alternative: refuse includes
+  under home → list partial.
 - Pending operator decision: CONTRACT.md rule 10 (a closed list of values
   the plugin keys on outside the schema, e.g. the literal `snapper is not
   installed`, until contract 3) as an E-entry without an ADR (WP-119;
