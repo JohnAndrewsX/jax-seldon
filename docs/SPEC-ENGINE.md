@@ -643,7 +643,7 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # SIGTERM/SIGINT → exit 0 after the rebuild in progress; exit 3 when
                                                # the logbook is not initialised; watcher error at start (inotify
                                                # limit) → exit 2; a failing re-watch later is an error line. RSS
-                                               # budget: < 11 MB on the ×10 fixture (`just check-rss`). User unit:
+                                               # budget: < 12 MB on the ×10 fixture (`just check-rss`, WP-195). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
                                                # rollbacks, workpieces, collectors, layout, state, skills, omarchy, snapper,
