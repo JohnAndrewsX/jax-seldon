@@ -30,6 +30,19 @@
 //!   or directory ([`check_files`], WP-175): git opens `HEAD` for every
 //!   command, and a FIFO there holds each call until its timeout. The
 //!   call is refused at once ([`Run::Failed`]) and says what to do.
+//! - A call that writes (`init`, `add`, `commit`) starts no background
+//!   work in the logbook ([`NO_BACKGROUND`], WP-199): `git commit` runs
+//!   `git maintenance run --auto` (before 2.29, `git gc --auto`), which
+//!   may detach (git 2.55 detaches it after every commit, in a fresh
+//!   repository too) and then writes `.git` after the engine has waited
+//!   for the commit and returned. Every git the engine starts
+//!   is waited for ([`sys::run_command_in_engine_group`]); a detached one
+//!   is no child of the engine any more and cannot be, so it is not
+//!   started. A query starts no maintenance.
+//! - No call, query or write, starts git's file system monitor
+//!   ([`NO_FSMONITOR`], WP-199): with the user's `core.fsmonitor=true`,
+//!   any `status` or `add` starts `git fsmonitor--daemon`, which outlives
+//!   the command and keeps watching the logbook.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -69,6 +82,18 @@ const FALLBACK_IDENTITY: [&str; 4] = [
     "-c",
     "user.email=seldon@localhost",
 ];
+
+/// Options of every git call (module doc): no file system monitor daemon,
+/// whatever `core.fsmonitor` the user's or the logbook's configuration
+/// sets. After [`NO_LAZY_FETCH`] in a query, first in a write.
+pub const NO_FSMONITOR: [&str; 2] = ["-c", "core.fsmonitor=false"];
+
+/// Options first in the argv of every call that writes (module doc): no
+/// automatic `gc` (git before 2.29, and `maintenance`'s gc task) and no
+/// automatic `maintenance` after a commit. Options on the command line
+/// beat the user's and the logbook's configuration; they reach the
+/// user's hooks through `GIT_CONFIG_PARAMETERS`, as git passes them.
+pub const NO_BACKGROUND: [&str; 4] = ["-c", "gc.auto=0", "-c", "maintenance.auto=false"];
 
 /// Variables that point git at another repository, index or object store
 /// (`git rev-parse --local-env-vars`, plus `GIT_NAMESPACE`,
@@ -123,12 +148,22 @@ fn absolute(path: &Path) -> PathBuf {
 }
 
 /// `init`, `add` or `commit`: the user's git as it is, transport
-/// included.
+/// included, without background work ([`NO_BACKGROUND`]).
 fn run(root: Option<&Path>, args: &[&str]) -> Run {
     if let Some(refused) = refused(root) {
         return refused;
     }
-    sys::run_command_in_engine_group(command(root, args), TIMEOUT, sys::OUTPUT_MAX)
+    sys::run_command_in_engine_group(write_command(root, args), TIMEOUT, sys::OUTPUT_MAX)
+}
+
+/// [`command`] for a call that writes: [`NO_BACKGROUND`] first, then
+/// [`NO_FSMONITOR`].
+fn write_command(root: Option<&Path>, args: &[&str]) -> Command {
+    let mut argv = Vec::with_capacity(NO_BACKGROUND.len() + NO_FSMONITOR.len() + args.len());
+    argv.extend_from_slice(&NO_BACKGROUND);
+    argv.extend_from_slice(&NO_FSMONITOR);
+    argv.extend_from_slice(args);
+    command(root, &argv)
 }
 
 /// [`check_files`] of `root` as the answer of a git call that is not
@@ -198,12 +233,13 @@ pub fn say_refusal() -> bool {
 }
 
 /// [`command`] for a read-only query: [`NO_LAZY_FETCH`] first when
-/// `option`, and [`QUERY_ENV`].
+/// `option`, then [`NO_FSMONITOR`], and [`QUERY_ENV`].
 fn query_command(root: Option<&Path>, args: &[&str], option: bool) -> Command {
-    let mut argv = Vec::with_capacity(args.len() + 1);
+    let mut argv = Vec::with_capacity(args.len() + NO_FSMONITOR.len() + 1);
     if option {
         argv.push(NO_LAZY_FETCH);
     }
+    argv.extend_from_slice(&NO_FSMONITOR);
     argv.extend_from_slice(args);
     let mut cmd = command(root, &argv);
     cmd.envs(QUERY_ENV);
@@ -606,27 +642,57 @@ mod tests {
 
     /// WP-154: a query carries the no-network rules as literals; a call
     /// that writes (`init`, `add`, `commit`) carries none of them, so the
-    /// user's hooks, signing and transport stay in effect.
+    /// user's hooks, signing and transport stay in effect. WP-199: a call
+    /// that writes starts with [`NO_BACKGROUND`], a query does not; every
+    /// call carries [`NO_FSMONITOR`], a query's after `--no-lazy-fetch`.
     #[test]
     fn a_query_never_reaches_the_network_and_a_commit_is_the_users() {
         let root = Path::new("/logbook");
         let q = query_command(Some(root), &["status", "--porcelain"], true);
-        assert_eq!(argv(&q), ["--no-lazy-fetch", "status", "--porcelain"]);
+        assert_eq!(
+            argv(&q),
+            [
+                "--no-lazy-fetch",
+                "-c",
+                "core.fsmonitor=false",
+                "status",
+                "--porcelain"
+            ]
+        );
         assert_eq!(env_of(&q, "GIT_ALLOW_PROTOCOL").as_deref(), Some("none"));
         assert_eq!(env_of(&q, "GIT_NO_LAZY_FETCH").as_deref(), Some("1"));
         assert_eq!(env_of(&q, "GIT_CEILING_DIRECTORIES").as_deref(), Some("/"));
         assert!(env_of(&q, "GIT_DIR").is_none());
         // a git that refused the option: the same query without it
         let q = query_command(Some(root), &["status"], false);
-        assert_eq!(argv(&q), ["status"]);
+        assert_eq!(argv(&q), ["-c", "core.fsmonitor=false", "status"]);
         assert_eq!(env_of(&q, "GIT_ALLOW_PROTOCOL").as_deref(), Some("none"));
         // anywhere (git --version) too
         let q = query_command(None, &["--version"], true);
-        assert_eq!(argv(&q), ["--no-lazy-fetch", "--version"]);
+        assert_eq!(
+            argv(&q),
+            ["--no-lazy-fetch", "-c", "core.fsmonitor=false", "--version"]
+        );
         assert_eq!(env_of(&q, "GIT_NO_LAZY_FETCH").as_deref(), Some("1"));
-        // a commit: no protocol rule, no lazy-fetch rule, no option
-        let c = command(Some(root), &["commit", "-q", "-m", "seldon: x"]);
-        assert_eq!(argv(&c), ["commit", "-q", "-m", "seldon: x"]);
+        // a commit: no protocol rule, no lazy-fetch rule, no option; no
+        // background work
+        let c = write_command(Some(root), &["commit", "-q", "-m", "seldon: x"]);
+        assert_eq!(
+            argv(&c),
+            [
+                "-c",
+                "gc.auto=0",
+                "-c",
+                "maintenance.auto=false",
+                "-c",
+                "core.fsmonitor=false",
+                "commit",
+                "-q",
+                "-m",
+                "seldon: x"
+            ]
+        );
+        assert_eq!(env_of(&c, "GIT_CEILING_DIRECTORIES").as_deref(), Some("/"));
         for key in ["GIT_ALLOW_PROTOCOL", "GIT_NO_LAZY_FETCH"] {
             assert!(c.get_envs().all(|(k, _)| k != key), "{key} on a commit");
         }
