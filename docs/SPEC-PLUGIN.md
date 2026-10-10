@@ -642,7 +642,9 @@ own button.", and the second Enter applies it, WP-126c; on a replaced
 proposal Enter is *Review the new proposal*; an armed Apply or Discard
 holds only for the current proposal and is dropped when the index
 replaces it, so the bar never asks to confirm a write that would not
-happen; enabled also with nothing open, so a second run says what it
+happen; a row click, another selection (IPC `select` included) or, on a
+stacked desk, the detail's Back disarms too (`Changelog.disarmTriage`,
+the prefix rule of Work's and Decisions' arms); enabled also with nothing open, so a second run says what it
 skipped) and *Discard* (it removes the agent's
 unapplied work, so it arms: "Confirm discard", hint "Discard proposal
 <id>? Click Confirm discard. The logbook does not change.", then `drift
