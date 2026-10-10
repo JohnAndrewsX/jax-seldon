@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ 30f3d0b5 -->
+<!-- source: en/01-getting-started.md @ a5ae8924 -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem Rechner, den
 Seldon aufzeichnet. Du fügst das Seldon-Plugin zur Bar hinzu und klickst
@@ -82,13 +82,16 @@ paar Sekunden nach.
    zurück. Diese Vorgeschichte wird als „before Seldon“ aufgezeichnet:
    Sie bleibt in der Zeitleiste und verlangt nichts von dir. Ist Obsidian
    installiert, bekommt das Logbuch die Einstellungen von Obsidian, damit
-   du es als Vault öffnen kannst. Das Terminal endet so (deine Zahlen
-   weichen ab):
+   du es als Vault öffnen kannst. Liegen in dem Ordner schon andere
+   Dateien, sagt der Schritt das und bietet stattdessen *Choose a folder*
+   an: `seldon init` fragt, wohin das Logbuch soll. Das Terminal endet so
+   (deine Zahlen weichen ab):
 
    ```text
    Logbook     ~/Seldon (Deutsch, git repository)
    Config      ~/.config/seldon/config.toml; list noisy or secret files in its [redaction] skipPaths
    Recording   snapshots, packages, Omarchy updates, plugins, themes, config files
+   Agents      none; add one with seldon hook install claude-code (or skills)
    History     Looked back 90 days: 1692 changes recorded as history before Seldon
    Snapshots   not readable yet; optional, Seldon works without them
 
@@ -425,7 +428,9 @@ nichts mehr von dir. [Konzepte](02-concepts.md#baseline) erklärt es.
 
 `seldon init --non-interactive` fragt ebenfalls nichts, für Skripte. Es
 nimmt `~/Seldon`, die Sprache deiner Locale, alle Collectors und git und
-zeichnet ab jetzt auf, ohne Nacherfassung.
+schaut ebenfalls 90 Tage zurück; es erkennt nichts (`--obsidian` fügt
+die Einstellungen von Obsidian hinzu). `--since` setzt einen anderen
+Beginn, `--no-capture` zeichnet noch nichts auf.
 
 ### Die Einrichtung prüfen
 

@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 30f3d0b5 -->
+<!-- source: en/05-cli-reference.md @ a5ae8924 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -113,8 +113,8 @@ als „before Seldon“. `--defaults` fragt nichts (das führt die
 Einrichtungskarte des Plugins aus); `--ask` stellt jede Frage, und jede
 Option überspringt ihre eigene. Es lehnt einen Ordner ab, der nicht leer
 ist, und überschreibt nie eine Datei. `--non-interactive` nimmt die
-Optionen, dann eine vorhandene Konfiguration, dann die Vorgaben, und
-zeichnet ab jetzt auf. `--since` nimmt ein Datum (`2026-09-29`,
+Optionen, dann eine vorhandene Konfiguration, dann die Vorgaben, schaut
+ebenfalls 90 Tage zurück und erkennt nichts. `--since` nimmt ein Datum (`2026-09-29`,
 Mitternacht Ortszeit) oder eine Zeit nach RFC 3339; `--baseline` braucht
 `--since`; `--no-capture` geht nicht zusammen mit `--since`. Siehe
 [Erste Schritte](01-getting-started.md#dein-logbuch-anlegen).
@@ -135,7 +135,7 @@ Options:
       --path <DIR>           Logbook directory (default ~/Seldon)
       --defaults             Ask nothing: ~/Seldon (or the config's logbook), language from the locale, Obsidian settings when Obsidian is installed, and the last 90 days recorded as history before Seldon
       --ask                  The full wizard: every question, the defaults pre-selected
-      --non-interactive      Ask nothing; take flags, then the existing config, then the defaults: ~/Seldon, language from the locale, all collectors, git on, first capture from now on, no backfill, no theme hook
+      --non-interactive      Ask nothing, detect nothing; take flags, then the existing config, then the defaults: ~/Seldon, language from the locale, all collectors, git on, the last 90 days recorded as history before Seldon, no theme hook
       --language <LANGUAGE>  Language of the logbook prose [possible values: en, de]
       --obsidian             Add Obsidian settings (.obsidian/)
       --harness <NAME>       Agent harness to set up (repeatable) [possible values: claude-code, omarchy-agent, skills]

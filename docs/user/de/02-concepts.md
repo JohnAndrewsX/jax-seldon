@@ -1,6 +1,6 @@
 # Konzepte
 
-<!-- source: en/02-concepts.md @ 30f3d0b5 -->
+<!-- source: en/02-concepts.md @ a5ae8924 -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
 Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory. Lies sie
@@ -241,8 +241,8 @@ verwerfen jeden Eintrag, den die Nacherfassung öffnet, mit dem Grund
 „before Seldon“, ohne zu fragen. Die Ereignisse bleiben im Ledger und in
 den Diagrammen; sie verlangen nur keinen Grund mehr. Mit `seldon init
 --ask` wählst du das Datum selbst und wirst vor dem Verwerfen gefragt;
-`seldon init --non-interactive` zeichnet ab jetzt auf, dann gibt es
-keine Baseline.
+mit `--since` und ohne `--baseline` lässt `seldon init
+--non-interactive` die Nacherfassung als Drift offen.
 
 ## Entscheidungen
 

@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 30f3d0b5 -->
+<!-- source: en/10-troubleshooting.md @ a5ae8924 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -48,7 +48,7 @@ das Panel oben ein Banner mit einem Knopf, der es behebt.
 | Banner | Ursache | Abhilfe |
 |---|---|---|
 | Install the engine (Schritt 1 der Einrichtungskarte); Seldon engine missing, in Rot, wenn die Engine vorher da war | das Plugin kann `seldon` nicht starten | *Install* öffnet ein Terminal, das sagt, was es tut, und den GitHub-Installer startet; oder du installierst selbst ([Erste Schritte](01-getting-started.md#die-engine-installieren)); das Panel findet die Engine von selbst, oder du drückst *Check again* auf dem roten Banner |
-| Create your logbook (Schritt 2 der Einrichtungskarte) | es gibt noch kein Logbuch | *Create logbook* öffnet ein Terminal, das `seldon init --defaults` startet (ohne Frage); das Panel aktualisiert sich von selbst, sobald das Logbuch da ist |
+| Create your logbook (Schritt 2 der Einrichtungskarte) | es gibt noch kein Logbuch | *Create logbook* öffnet ein Terminal, das `seldon init --defaults` startet (ohne Frage); das Panel aktualisiert sich von selbst, sobald das Logbuch da ist. Liegen in dem Ordner schon andere Dateien, sagt der Schritt das, und *Choose a folder* startet `seldon init`, das fragt, wohin |
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` fehlt oder ist kaputt | *Build index* startet `seldon status` |
 | Index is stale | der Index ist älter als zwei Stunden | *Capture now* |
 | Index format mismatch | Plugin und Engine sprechen verschiedene Versionen des Index | das ältere aktualisieren. Plugin: `omarchy plugin update jax.seldon`, danach `omarchy-restart-shell`. Engine: *Update* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)) |
