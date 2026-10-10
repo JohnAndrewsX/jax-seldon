@@ -72,7 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The baseline's reason is "before Seldon" also for `--since --baseline`
   (it was "pre-Seldon baseline"). `--non-interactive` looks back 90 days
   too (ADR-0033), but detects nothing; with `--since` and without
-  `--baseline` its backfill stays open as before. Harnesses stay as the
+  `--baseline` its backfill stays open as before. Before 0.2.0 it
+  recorded from the logbook's creation on; a script that wants that
+  passes `--no-capture` and runs `seldon capture --all` afterwards. Harnesses stay as the
   config says (none on a fresh machine); the summary's Agents row then
   says "none; add one with seldon hook install claude-code (or skills)".
 - **Exit 3 says which folder, and why it cannot be used (WP-119).** With

@@ -170,6 +170,8 @@ exists (ADR-0047). This file explains it; the schema decides.
      of `seldon config watch --json`. Absent before the first scan and
      while `[redaction] patterns` do not compile.
 10. Values the plugin keys on outside the schema (WP-119; no bump, E42).
+    This list is closed: an entry is added only by an operator decision
+    or an ADR.
     Engine changes must keep them byte for byte, or move them into
     contract 3 (WP-184) first:
     - `state.collectors[].message` of `snapper` is exactly `snapper is not

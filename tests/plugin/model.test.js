@@ -360,7 +360,8 @@ test("bannerFor notInitialised: Create logbook runs seldon init --defaults in th
   const b = M.bannerFor("notInitialised", { indexExists: true })
   assert.strictEqual(b.tone, "accent")
   assert.strictEqual(b.title, "Create your logbook")
-  assert.strictEqual(b.detail, "Creates ~/Seldon and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password.")
+  assert.strictEqual(b.detail, "Creates your logbook and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password.")
+  assert.strictEqual(b.detail.indexOf("~/Seldon"), -1)
   assert.strictEqual(b.command, "seldon init --defaults")
   assert.strictEqual(b.script, M.INIT_SCRIPT)
   same(b.actions, [{ id: "terminal", label: "Create logbook" }, { id: "copy", label: "Copy" }, { id: "recheck", label: "Check again" }])
@@ -410,7 +411,7 @@ const SCRIPTS = {
     "trap - INT TERM; fi",
   INIT_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: create your logbook'; " +
-    "gum style --width 72 'Creates the logbook in ~/Seldon and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.'; " +
+    "gum style --width 72 'Creates your logbook (in ~/Seldon unless your config names another folder) and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.'; " +
     "gum style --padding '1 0 1 2' 'seldon init --defaults'; " +
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init --defaults); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Create logbook in the panel to start again.'; trap - INT TERM; (exit 130); " +

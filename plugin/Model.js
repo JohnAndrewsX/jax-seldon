@@ -173,7 +173,7 @@ var UPDATE_PLUGIN_SCRIPT = terminalScript({
 // (Service.ingest).
 var INIT_SCRIPT = terminalScript({
   title: "Seldon: create your logbook",
-  what: "Creates the logbook in ~/Seldon and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.",
+  what: "Creates your logbook (in ~/Seldon unless your config names another folder) and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.",
   command: INIT_COMMAND,
   ok: "Your logbook is ready. The panel updates by itself.",
   failed: "No logbook was created; the message above says why. When the folder is in use, the panel offers Choose a folder; else press Create logbook to try again.",
@@ -1029,7 +1029,7 @@ function snapperBanner(index) {
 var SETUP_TITLE = "Set up Seldon"
 // What `seldon init --defaults` does, in one sentence (the step's detail
 // and the notInitialised banner's).
-var INIT_DETAIL = "Creates ~/Seldon and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password."
+var INIT_DETAIL = "Creates your logbook and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password."
 // The engine's degraded message when the machine has no snapper
 // (engine/src/collectors/snapper.rs NOT_INSTALLED): no snapshot step.
 var SNAPPER_NOT_INSTALLED = "snapper is not installed"
@@ -1149,8 +1149,10 @@ function setupCard(s) {
 // What `--defaults` does with the folder, in one sentence (INIT_DETAIL
 // with the folder the engine names).
 function initDetail(path) {
-  var where = typeof path === "string" && path !== "" ? path : "~/Seldon"
-  return "Creates " + where + " and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password."
+  // without a folder from the engine: INIT_DETAIL, which names none (the
+  // config or SELDON_LOGBOOK may name another than ~/Seldon)
+  if (typeof path !== "string" || path === "") return INIT_DETAIL
+  return "Creates " + path + " and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password."
 }
 
 // Exit 3's reasons (CONTRACT.md rule 10) and what step 2 says about them.
@@ -1162,7 +1164,7 @@ var LOGBOOK_BLOCKED = {
 // Step 2 of the setup card: *Create logbook* (`init --defaults`), or,
 // when the engine said the folder cannot be used, *Choose a folder*.
 function logbookStep(done, path, blocked) {
-  var where = typeof path === "string" && path !== "" ? path : "~/Seldon"
+  var where = typeof path === "string" && path !== "" ? path : "The logbook's folder"
   if (!done && LOGBOOK_BLOCKED[blocked] !== undefined) {
     return { id: "logbook", title: "Create the logbook", detail: where + LOGBOOK_BLOCKED[blocked], done: false,
       blocked: blocked, hint: "Opens a terminal that asks where the logbook goes", banner: "initAsk",

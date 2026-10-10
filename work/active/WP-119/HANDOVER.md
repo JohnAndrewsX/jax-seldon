@@ -207,3 +207,17 @@ this session; WP-126 scenario (a)); shellcheck (not installed; CI).
 | `check-tokens.py --rules`, qmllint | dev host | ok (52 files) |
 | `validate-fixtures.sh`, docs-check | fixture | ok |
 | `SELDON_FULL_CHECK=1 just check` on `e7ce6ce9` (private log `gates/check-wp119-r2.log`) | dev host (headless harnesses, private XDG_RUNTIME_DIR, disk TMPDIR/CARGO_TARGET_DIR) | `check: ok` — model 212, terminal-scripts 73, service-states 359, desk-view 2009, bar-view 196, ipc-restart 44, tokens and house rules ok, qmllint ok, docs-check ok |
+
+## Round 3 (after Fable stage 2: APPROVE with two wording edits)
+
+- CONTRACT.md rule 10: "This list is closed: an entry is added only by an
+  operator decision or an ADR."
+- CHANGELOG (Engine, `--non-interactive`): how a script gets the
+  pre-0.2.0 behaviour (`--no-capture`, then `seldon capture --all`).
+- Nit: `INIT_DETAIL` no longer names `~/Seldon` ("Creates your logbook
+  and starts recording; …"); the card names the folder only when the
+  engine said which (`initDetail(path)`), and INIT_SCRIPT says "in
+  ~/Seldon unless your config names another folder".
+- Verified: `model.test.js` 212 passed, `terminal-scripts.sh` passed
+  (fixture, headless stubs). The full check was not rerun for these text
+  edits.
