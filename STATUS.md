@@ -669,6 +669,10 @@ submission). (see `work/queued/`)
   `ignore-list`, no crisis; unshowable names only counted; raw names in
   the private cursors.json. Fable: approve. Alternative: refuse includes
   under home → list partial.
+- Pending operator decision: the check-rss limit 11 MB (E8) → 12 MB
+  (WP-195): the engine's peak on this host is 11.34–11.48 MB with an
+  unchanged heap (toolchain/host, not a regression); 12 MB from measured
+  peaks plus margin; CI measures but does not gate yet.
 - Pending operator decision: CONTRACT.md rule 10 (a closed list of values
   the plugin keys on outside the schema, e.g. the literal `snapper is not
   installed`, until contract 3) as an E-entry without an ADR (WP-119;
