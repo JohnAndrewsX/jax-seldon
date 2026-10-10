@@ -1853,9 +1853,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/78/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/78/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/78/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/77/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/77/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/77/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".
@@ -1869,14 +1869,29 @@ VARIANTS = {
     # metadata, `meta.hashBasis: "stat"`). Both are open attention items. Index only, like
     # drift-explained-case: in the logbook they would move every list the plugin harness walks.
     "boot-config": [
-        {"op": "test", "path": "/events/56/ts", "value": "2026-09-22T20:10:00+02:00"},
-        {"op": "add", "path": "/events/56", "value": {"id": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "meta": {"hashFrom": "8276d859e9e973d922e3a2adf580b1c061fe8507ff28318ef761e1e355e7eb7d", "hashTo": "ebe226cdad440acc4006c3a4058dc87ff1db9158f7a46442003ef889ed1e6623"}}},
-        {"op": "add", "path": "/events/56", "value": {"id": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "meta": {"hashTo": "140b21ced41879c8ef31256c8b35302b27df920c7efa2a56e6426a7ca056d017", "hashBasis": "stat"}}},
+        {"op": "test", "path": "/events/55/ts", "value": "2026-09-22T20:10:00+02:00"},
+        {"op": "add", "path": "/events/55", "value": {"id": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "meta": {"hashFrom": "8276d859e9e973d922e3a2adf580b1c061fe8507ff28318ef761e1e355e7eb7d", "hashTo": "ebe226cdad440acc4006c3a4058dc87ff1db9158f7a46442003ef889ed1e6623"}}},
+        {"op": "add", "path": "/events/55", "value": {"id": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "meta": {"hashTo": "140b21ced41879c8ef31256c8b35302b27df920c7efa2a56e6426a7ca056d017", "hashBasis": "stat"}}},
         {"op": "test", "path": "/drift/5/ts", "value": "2026-09-27T12:30:00+02:00"},
         {"op": "add", "path": "/drift/6", "value": {"eventId": "01M37W15B0SE9V3YY29AA9TH87", "ts": "2026-09-23T21:31:40+02:00", "source": "config", "kind": "config-add", "subject": "/etc/mkinitcpio.conf.d/99-omarchy-provisioning-key.conf", "detail": "sha256 — → 140b21ce", "actor": "system", "zone": "yellow", "crisis": False, "proposedCase": None, "rule": "config"}},
         {"op": "add", "path": "/drift/7", "value": {"eventId": "01M37V1200QRW1WXR8PJF384Y5", "ts": "2026-09-23T21:14:08+02:00", "source": "config", "kind": "config-change", "subject": "/etc/mkinitcpio.conf.d/omarchy_hooks.conf", "detail": "sha256 8276d859 → ebe226cd", "actor": "system", "zone": "yellow", "crisis": False, "proposedCase": None, "rule": "config"}},
         {"op": "test", "path": "/summary/openDrift", "value": 6},
         {"op": "replace", "path": "/summary/openDrift", "value": 8},
+    ],
+    # ADR-0052 (WP-165): after the 09-27 mesa downgrade the human pins the three packages beside the
+    # two the sample's list holds (`IgnorePkg = zoom slack-desktop mesa vulkan-radeon lib32-mesa`);
+    # the 12:45 capture records the change as a pacman note on /etc/pacman.conf, an open attention
+    # item (`ignore-list`), and the list in `system.pacmanIgnore`. Index only, like boot-config: in
+    # the logbook it would move every list the plugin harness walks.
+    "pacman-ignore-changed": [
+        {"op": "test", "path": "/events/48/id", "value": "01M3H6M818EPKV6HMJ0GN4PGFG"},
+        {"op": "add", "path": "/events/48", "value": {"id": "01M3H7FNZ0YRX0ZM73QC24X96H", "ts": "2026-09-27T12:45:00+02:00", "source": "pacman", "kind": "note", "subject": "/etc/pacman.conf", "detail": "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa.", "actor": "system", "zone": "red", "meta": {"ignoreGroup": "", "ignorePkg": "zoom slack-desktop mesa vulkan-radeon lib32-mesa"}}},
+        {"op": "test", "path": "/drift/5/ts", "value": "2026-09-27T12:30:00+02:00"},
+        {"op": "add", "path": "/drift/5", "value": {"eventId": "01M3H7FNZ0YRX0ZM73QC24X96H", "ts": "2026-09-27T12:45:00+02:00", "source": "pacman", "kind": "note", "subject": "/etc/pacman.conf", "detail": "IgnorePkg: added mesa, vulkan-radeon, lib32-mesa.", "actor": "system", "zone": "red", "crisis": False, "proposedCase": None, "rule": "ignore-list"}},
+        {"op": "test", "path": "/summary/openDrift", "value": 6},
+        {"op": "replace", "path": "/summary/openDrift", "value": 7},
+        {"op": "test", "path": "/system/pacmanIgnore/packages", "value": ["zoom", "slack-desktop"]},
+        {"op": "replace", "path": "/system/pacmanIgnore/packages", "value": ["zoom", "slack-desktop", "mesa", "vulkan-radeon", "lib32-mesa"]},
     ],
     # ADR-0027 §5 (WP-101): the user reopened the agent-closed C-2026-002 (`seldon plan reopen`):
     # a new active case with the tag `reopens:C-2026-002`, its Intent copied. Index only, like
@@ -1898,9 +1913,9 @@ VARIANTS = {
     # the mesa downgrade group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [
         {"op": "test", "path": "/drift/5/members", "value": 3},
-        {"op": "test", "path": "/events/50/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
-        {"op": "test", "path": "/events/50/subject", "value": "lib32-mesa"},
-        {"op": "remove", "path": "/events/50"},
+        {"op": "test", "path": "/events/49/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
+        {"op": "test", "path": "/events/49/subject", "value": "lib32-mesa"},
+        {"op": "remove", "path": "/events/49"},
     ],
 }
 
@@ -1924,8 +1939,8 @@ FORWARD_OPS = [
     {"op": "replace", "path": "/summary/openDrift", "value": 7},
     {"op": "test", "path": "/summary/eventsToday", "value": 33},
     {"op": "replace", "path": "/summary/eventsToday", "value": 35},
-    {"op": "test", "path": "/summary/events7d", "value": 55},
-    {"op": "replace", "path": "/summary/events7d", "value": 57},
+    {"op": "test", "path": "/summary/events7d", "value": 54},
+    {"op": "replace", "path": "/summary/events7d", "value": 56},
     {"op": "test", "path": "/series/heatmap/365/date", "value": "2026-10-01"},
     {"op": "test", "path": "/series/heatmap/365/total", "value": 33},
     {"op": "replace", "path": "/series/heatmap/365/total", "value": 35},

@@ -308,30 +308,12 @@ pub fn story() -> Bench {
     assert!(out.ok, "{:?}", out.message);
     assert_eq!(subjects(&out.events), ["108", "109", "110"]);
 
-    // ADR-0052: pacman.conf before the human pinned the 09-27 mesa
-    // downgrade (the first read is a baseline), then after it
-    let conf = b.sources.etc_dir.join("pacman.conf");
-    std::fs::create_dir_all(&b.sources.etc_dir).unwrap();
-    std::fs::write(&conf, "[options]\nHoldPkg = pacman glibc\n").unwrap();
-    let out = b.run(&Pacman, "2026-09-27T12:40:00+02:00");
+    let out = b.run(&Pacman, "2026-10-01T17:05:00+02:00");
     assert!(out.ok, "{:?}", out.message);
     assert_eq!(
         out.events.len(),
         22,
         "fixtures/README.md: the ledger's pacman events, got {:?}",
-        subjects(&out.events)
-    );
-    std::fs::write(
-        &conf,
-        "[options]\nHoldPkg = pacman glibc\nIgnorePkg = mesa vulkan-radeon lib32-mesa\n",
-    )
-    .unwrap();
-    let out = b.run(&Pacman, "2026-09-27T12:45:00+02:00");
-    assert_eq!(subjects(&out.events), ["/etc/pacman.conf"]);
-    let out = b.run(&Pacman, "2026-10-01T17:05:00+02:00");
-    assert!(
-        out.ok && out.events.is_empty(),
-        "{:?}",
         subjects(&out.events)
     );
 

@@ -232,9 +232,8 @@
     },
     "pacmanIgnore": {
       "packages": [
-        "mesa",
-        "vulkan-radeon",
-        "lib32-mesa"
+        "zoom",
+        "slack-desktop"
       ],
       "groups": []
     }
@@ -1752,9 +1751,9 @@
       },
       {
         "date": "2026-09-27",
-        "total": 4,
+        "total": 3,
         "bySource": {
-          "pacman": 4
+          "pacman": 3
         }
       },
       {
@@ -1835,8 +1834,8 @@
       },
       {
         "week": "2026-W39",
-        "opened": 4,
-        "resolved": 3
+        "opened": 3,
+        "resolved": 2
       },
       {
         "week": "2026-W40",

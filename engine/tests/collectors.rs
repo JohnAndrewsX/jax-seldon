@@ -24,14 +24,6 @@ use support::{
     normalised_sorted, story, subjects,
 };
 
-/// The fixture ledger's pacman events that come from `logs/pacman.log`:
-/// all but the ignore-list note, which comes from pacman.conf (ADR-0052).
-fn pacman_log_events() -> Vec<Event> {
-    let mut events = fixture_events(Source::Pacman);
-    events.retain(|e| !seldon::collectors::pacman_ignore::is_change(e));
-    events
-}
-
 mod collectors {
     use super::*;
 
@@ -94,7 +86,7 @@ mod collectors {
         let out = b.run(&Pacman, "2026-10-01T17:05:00+02:00");
         assert_eq!(
             normalised_sorted(&out.events),
-            normalised_sorted(&pacman_log_events())
+            normalised_sorted(&fixture_events(Source::Pacman))
         );
         assert_eq!(
             out.cursor,
@@ -136,7 +128,7 @@ mod collectors {
         assert_eq!(second.events.len(), 20);
         assert_eq!(
             normalised_sorted(&b.ledger_events(Source::Pacman)),
-            normalised_sorted(&pacman_log_events())
+            normalised_sorted(&fixture_events(Source::Pacman))
         );
         assert_eq!(b.run(&Pacman, "2026-10-01T17:06:00+02:00").events.len(), 0);
     }
