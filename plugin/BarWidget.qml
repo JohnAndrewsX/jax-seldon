@@ -204,9 +204,11 @@ BarWidget {
       if (Model.PANEL_TABS.indexOf(name) === -1) return "unknown tab"
       return root.summonDesk({ section: name }) ? "ok" : "unknown tab"
     }
-    // The Changelog at an event (or its crisis filter); navigation only.
+    // The Changelog at an event (or its crisis filter, or the agent's
+    // triage proposal: `resolve proposal`, WP-126c); navigation only.
     function resolve(target: string): string {
       if (target === "crisis") return root.summonDesk({ section: "changelog", filter: "crisis" }) ? "ok" : "unknown target"
+      if (target === "proposal") return root.summonDesk({ section: "changelog", select: "proposal" }) ? "ok" : "unknown target"
       if (!Model.EVENT_ID.test(target)) return "unknown target"
       return root.summonDesk({ section: "changelog", select: target }) ? "ok" : "unknown target"
     }

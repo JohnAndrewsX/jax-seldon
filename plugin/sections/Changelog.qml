@@ -45,7 +45,8 @@ Section {
   readonly property var hidden: root.service ? root.service.deskHidden : ({})
   readonly property var rows: Model.changelogView(root.prepared, root.chip, root.hidden, root.searchText)
   readonly property var chips: Model.changelogChips(root.prepared, root.hidden)
-  readonly property int cursor: root.rowIndex(root.selectedId)
+  // While the proposal is shown it is the selection: no list row is.
+  readonly property int cursor: root.triageShown ? -1 : root.rowIndex(root.selectedId)
   readonly property int hiddenCount: Model.hiddenCount(root.prepared, root.hidden)
   readonly property string attentionText: Model.attentionText(root.index)
   readonly property string moreText: Model.moreDriftText(root.index)
@@ -88,10 +89,16 @@ Section {
     root.triageShown = false
   }
 
+  // ↑/↓: the proposal row in the list head is the row above the first
+  // one (Model.changelogMove, WP-126c).
   function move(dy) {
-    if (root.rows.length === 0) return true
-    var from = root.cursor >= 0 ? root.cursor : dy > 0 ? root.cursorRow - 1 : root.cursorRow
-    root.selectRow(from + dy)
+    var to = Model.changelogMove({ rows: root.rows.length, cursor: root.cursor, cursorRow: root.cursorRow,
+      proposal: root.proposalRowShown, triageShown: root.triageShown }, dy)
+    if (to.triage) {
+      if (!root.triageShown) root.showTriage()
+    } else if (to.row >= 0) {
+      root.selectRow(to.row)
+    }
     return true
   }
 
@@ -131,6 +138,11 @@ Section {
   // chip when it has it, else under "all".
   function select(id) {
     var target = String(id)
+    // "proposal" or its id: the proposal's detail (WP-126c)
+    if (Model.isProposalTarget(target, root.triageView)) {
+      root.showTriage()
+      return true
+    }
     if (!Model.changelogRow(root.prepared, target)) return false
     // A payload's chip and its selection arrive together: keep this one.
     if (root.chipPending) root.chipKeepsSelection = true
@@ -290,24 +302,43 @@ Section {
         objectName: "proposalRow"
         width: parent.width
         visible: root.proposalRowShown
-        implicitHeight: proposalText.implicitHeight + Style.spacing.md * 2
+        implicitHeight: proposalColumn.implicitHeight + Style.spacing.md * 2
         radius: Style.cornerRadius
         color: root.triageShown ? Style.selectedFillFor(Color.accent, Color.accent) : "transparent"
         border.width: Math.max(1, Style.space(1))
         // shown: the accent tint plus a border of at least 3:1 (WP-177)
         border.color: root.triageShown ? root.tone.accentUi : Style.normalBorderFor(Color.accent, Color.accent)
 
-        Text {
-          id: proposalText
+        Column {
+          id: proposalColumn
           x: Style.spacing.md
           y: Style.spacing.md
           width: parent.width - Style.spacing.md * 2
-          textFormat: Text.PlainText
-          text: root.triageView ? "Proposal · " + root.triageView.head : ""
-          color: root.foreground
-          wrapMode: Text.Wrap
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          spacing: Style.spacing.xxs
+
+          Text {
+            id: proposalText
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.triageView ? "Proposal · " + root.triageView.head : ""
+            color: root.foreground
+            wrapMode: Text.Wrap
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          // the keys that reach it (WP-126c)
+          Text {
+            id: proposalHint
+            objectName: "proposalHint"
+            width: parent.width
+            textFormat: Text.PlainText
+            text: Model.proposalHint(root.triageShown)
+            color: root.dim
+            wrapMode: Text.Wrap
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
         }
 
         MouseArea {
@@ -487,7 +518,7 @@ Section {
       aside: modelData.age
       stripe: modelData.stripe
       alert: modelData.alert
-      selected: modelData.id === root.selectedId
+      selected: !root.triageShown && modelData.id === root.selectedId
       cursor: list.hoverIndex === index
       onClicked: {
         root.selectedId = modelData.id

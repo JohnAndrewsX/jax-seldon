@@ -3158,6 +3158,36 @@ shows triage-dev 3 "Read twice: some evidence names an agent or an unknown autho
 shows triage-dev 3 "by agent:codex · the theme switch was mine, a test of the new palette, part of the Zed setup in C-2026-004 and nothing else"
 clean_log triage-dev
 
+# WP-126c: the proposal by keys alone. ↑ on the first row moves the
+# selection onto the proposal row (no list row selected, the hint says
+# what the keys do), ↓ goes back; Enter arms Apply proposals, a second
+# Enter applies it; the crisis stays for its own button. Also IPC: the
+# desk's `select proposal`, a payload's select and the shim's
+# `resolve proposal`.
+mkdir -p "$work/home-triage-keys"
+run triage-keys "" 1920x1080 \
+  "summon:$cl;key:Up;key:Down;text:k;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;text:1;call:select:proposal;text:2;key:Down;call:select:proposal;hide;summon:{\"section\":\"changelog\",\"select\":\"proposal\"};hide;shim:resolve:proposal" \
+  HOME="$work/home-triage-keys" FAKE_SELDON_FIXTURE="$sample"
+expect triage-keys 1 "[$tt.shown, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "false,0,$THEME"
+shows triage-keys 1 "↑ from the first row, or a click, opens it"
+expect triage-keys 2 "[$tt.shown, $tv.cursor, $ttd.head] | map(tostring) | join(\",\")" "true,-1,$head"
+expect triage-keys 2 '.marks.rows | join(",")' ""
+shows triage-keys 2 "Enter twice applies · ↓ back to the list"
+expect triage-keys 3 "[$tt.shown, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "false,0,$THEME"
+expect triage-keys 4 "$tt.shown" true
+expect triage-keys 5 "[$ttd.applyArmed, $ttd.hint] | map(tostring) | join(\",\")" \
+  "true,Apply 2 proposed changes as you? Press Enter again. Crises stay, each with its own button."
+expect triage-keys 7 "[$ttd.applyArmed, ([$ttd.regular[].outcome] | join(\"+\")), $ttd.crises[0].outcome] | map(tostring) | join(\",\")" \
+  "false,done+done,skipped: crisis: applied only one by one (\`--item\`), never with the rest"
+# IPC select from another section answers "not found"; in the Changelog "ok"
+expect triage-keys 9 ".call" "not found"
+expect triage-keys 11 "$tt.shown" false
+expect triage-keys 12 "[.call, $tt.shown] | map(tostring) | join(\",\")" "ok,true"
+expect triage-keys 14 "[.view.section, $tt.shown] | map(tostring) | join(\",\")" "changelog,true"
+expect triage-keys 16 "[.call, .view.section, $tt.shown] | map(tostring) | join(\",\")" "ok,changelog,true"
+argv_check triage-keys "$work/home-triage-keys" "$(printf '%s\n' "$startup" "$(q drift apply $PROPOSAL --json)")"
+clean_log triage-keys
+
 # B1 (WP-124b round 2): the proposal the user opened is the one Apply
 # names. A capture brings a newer proposal (agent:codex) while the detail
 # shows the first: the pane says so, Apply, the crises and Discard are off,
