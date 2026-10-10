@@ -189,7 +189,7 @@ Options:
           Machine-readable output
 
       --only <CHECK>
-          Run one check only; `rules`: the logbook's agent rules, without starting omarchy, snapper or git (what the panel asks)
+          Run one check only; `rules`: the logbook's agent rules, without starting omarchy, snapper or git (what the desk asks)
 
           Possible values:
           - rules: The rules block of the logbook's `AGENTS.md`
