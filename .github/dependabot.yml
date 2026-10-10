@@ -10,10 +10,14 @@
 #   GitHub-repository actions only); it is refreshed by hand.
 # cargo: engine/Cargo.toml and engine/Cargo.lock; minor and patch updates
 #   in one pull request, a major update in its own.
+# target-branch next: the integration branch until 0.2.0; it moves to
+#   main after 0.2.0 (packaging/README.md, "Dependabot"). Security updates
+#   always go to the default branch (main).
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    target-branch: next
     schedule:
       interval: weekly
     commit-message:
@@ -25,6 +29,7 @@ updates:
 
   - package-ecosystem: cargo
     directory: /engine
+    target-branch: next
     schedule:
       interval: weekly
     commit-message:
