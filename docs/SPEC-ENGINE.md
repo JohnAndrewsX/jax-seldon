@@ -1564,7 +1564,24 @@ git itself is killed, with the same bounded pipe wait. Rules:
 
 - **pacman** — parse `/var/log/pacman.log` from the saved byte offset; verify
   inode; on rotation restart from 0 and dedupe by `(ts, kind, subject,
-  version)`. Lines `[ALPM] installed|removed|upgraded|downgraded|reinstalled`.
+  version)`. **Reading** (WP-198): the log is read one complete line at a
+  time through a fixed buffer, never whole, so memory does not grow with
+  its size; a line longer than 1 MiB is passed like a line the table does
+  not know; the log (and `<log>.1`) must be a regular file, a FIFO or a
+  device is a degraded run naming it, never a read that blocks. Without a
+  cursor (a baseline: ADR-0033's look-back, or a lost cursor) the lines
+  older than the baseline are skipped, not parsed: of each only its time
+  is read, and the line table only for a `[PACMAN] Running` or `[ALPM]
+  transaction` line. The parse begins at the first line whose time is at
+  or after the baseline, or earlier at the block of the transaction open
+  there (its Running line, else `transaction started`) or at a Running
+  line no transaction has taken yet, and so keeps exactly the events (and
+  the cursor) a parse of the whole log keeps, whether or not the times are
+  in order. The log is not searched from its end: a clock set back makes
+  its times unordered, and a search could land after an event the
+  baseline keeps. Budget: a 96 MiB log nearly all older than the
+  look-back, `init --defaults` < 30 s and < 64 MiB peak in the debug
+  build (`engine/tests/pacman_stream.rs`). Lines `[ALPM] installed|removed|upgraded|downgraded|reinstalled`.
   Transaction grouping: lines between `transaction started` and
   `transaction completed` share a `txId`; the `[PACMAN] Running 'pacman -S
   zed'` line gives `meta.command`; packages in the command are `explicit`,
