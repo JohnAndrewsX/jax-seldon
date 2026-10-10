@@ -48,6 +48,16 @@
 //!   then the new log from 0. If the file shrank, it is read from 0. In
 //!   every case events already in the ledger are dropped by
 //!   `(ts, kind, subject, version)`, so a repeated block is not emitted twice.
+//! - **Reading** (WP-198). The log is read one complete line at a time
+//!   through a fixed buffer ([`Lines`]), never whole; a line longer than
+//!   [`MAX_LINE`] is passed like a line the table does not know. Without a
+//!   cursor (a baseline, ADR-0033's look-back) the lines before the
+//!   baseline are only skipped ([`look_back_start`]): of each, the time is
+//!   read, and the full grammar runs only on the Running and transaction
+//!   lines. The parse then begins at the first line whose time is at or
+//!   after the baseline, or earlier, at the start of the transaction (or
+//!   the Running line) still open there, so it emits exactly what a parse
+//!   of the whole log would.
 //! - **Attribution** (ADR-0014 §1, ADR-0017 §2 §3 §5). An event takes
 //!   `actor` and `case` from a hook `command` event in the ledger whose
 //!   `ts` (the command's start) lies at most 10 minutes before the
@@ -63,7 +73,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{Read as _, Seek as _, SeekFrom};
+use std::io::{BufRead as _, BufReader, Seek as _, SeekFrom};
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -115,8 +125,8 @@ impl Collector for Pacman {
 
 fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event>, PacmanCursor)> {
     let path = &ctx.sources.pacman_log;
-    let meta = std::fs::metadata(path)
-        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
+    let mut lines = Lines::open(path)?;
+    let meta = lines.metadata()?;
     let lock = lock_state(&ctx.sources.pacman_db_lock, &ctx.sources.proc_stat);
     let mut txs = Vec::new();
 
@@ -126,27 +136,33 @@ fn collect(ctx: &Ctx, cursor: Option<PacmanCursor>) -> anyhow::Result<(Vec<Event
             // rotated: finish the old file if it is still there
             let old = rotated(path);
             if std::fs::metadata(&old).is_ok_and(|m| m.ino() == c.inode) {
-                let bytes = read_from(&old, c.offset)?;
+                let mut old = Lines::open(&old)?;
+                old.seek(c.offset)?;
                 // the old file is closed for good: emit what it has. A
                 // transaction still open there is `unfinished` (ADR-0043):
                 // holding it back would lose it, since the cursor moves to
                 // the new file; a pacman still running at the rotation
                 // writes its end into the old file, which is not read again
-                txs.extend(parse(&bytes, c.offset, LockState::Absent, ctx.tz).txs);
+                txs.extend(read(&mut old, LockState::Absent, ctx.tz)?.txs);
             }
             0
         }
         _ => 0, // no cursor (baseline), or the file shrank (truncated)
     };
-    let bytes = read_from(path, start)?;
-    let parsed = parse(&bytes, start, lock, ctx.tz);
+    if cursor.is_none() {
+        let from = look_back_start(&mut lines, ctx.baseline, ctx.tz)?;
+        lines.seek(from)?;
+    } else {
+        lines.seek(start)?;
+    }
+    let parsed = read(&mut lines, lock, ctx.tz)?;
     txs.extend(parsed.txs);
 
     let began: HashMap<String, DateTime<FixedOffset>> = txs
         .iter()
         .filter_map(|t| Some((t.tx_id.clone()?, t.began)))
         .collect();
-    let mut events: Vec<Event> = txs.iter().flat_map(Tx::events).collect();
+    let mut events: Vec<Event> = txs.into_iter().flat_map(|t| t.events()).collect();
     if cursor.is_none() {
         events.retain(|e| e.ts >= ctx.baseline);
     }
@@ -246,13 +262,154 @@ fn rotated(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-fn read_from(path: &Path, offset: u64) -> anyhow::Result<Vec<u8>> {
-    let mut f =
-        File::open(path).map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
-    f.seek(SeekFrom::Start(offset))?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf)?;
-    Ok(buf)
+/// The longest line the collector reads (WP-198): of a longer line no more
+/// than this is held, and it is passed like a line the table does not
+/// know. pacman's own lines are far shorter: a Running line naming 2000
+/// packages is about 40 KiB.
+pub const MAX_LINE: usize = 1024 * 1024;
+
+/// The read buffer of [`Lines`].
+const READ_BUFFER: usize = 64 * 1024;
+
+/// The complete lines of a log, one at a time, through a fixed buffer
+/// (WP-198): what is held is the buffer and one line, whatever the size of
+/// the file.
+pub struct Lines {
+    reader: BufReader<File>,
+    /// Offset of the next line.
+    pos: u64,
+    line: Vec<u8>,
+}
+
+impl Lines {
+    /// Opens the log at `path` as a regular file ([`crate::sys::open_regular`]:
+    /// a FIFO or a device is an error, never a read that blocks or never
+    /// ends), at offset 0.
+    pub fn open(path: &Path) -> anyhow::Result<Self> {
+        let file = crate::sys::open_regular(path)
+            .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
+        Ok(Lines {
+            reader: BufReader::with_capacity(READ_BUFFER, file),
+            pos: 0,
+            line: Vec::new(),
+        })
+    }
+
+    /// The metadata of the open file (its inode is the one read).
+    pub fn metadata(&self) -> std::io::Result<std::fs::Metadata> {
+        self.reader.get_ref().metadata()
+    }
+
+    /// Continues at absolute offset `offset`.
+    pub fn seek(&mut self, offset: u64) -> std::io::Result<()> {
+        self.reader.seek(SeekFrom::Start(offset))?;
+        self.pos = offset;
+        Ok(())
+    }
+
+    /// Offset of the next line: after the last complete line read.
+    pub fn pos(&self) -> u64 {
+        self.pos
+    }
+
+    /// The next complete line, without its newline, and its offset; empty
+    /// for a line longer than [`MAX_LINE`]. `None` at the end of the file,
+    /// also before an unterminated last line (an interrupted write), which
+    /// [`Lines::pos`] then stays in front of.
+    pub fn next_line(&mut self) -> std::io::Result<Option<(u64, &[u8])>> {
+        let at = self.pos;
+        let mut len = 0u64;
+        let mut long = false;
+        self.line.clear();
+        loop {
+            let buf = self.reader.fill_buf()?;
+            if buf.is_empty() {
+                return Ok(None);
+            }
+            let (part, done) = match buf.iter().position(|&b| b == b'\n') {
+                Some(nl) => (&buf[..nl], true),
+                None => (buf, false),
+            };
+            long = long || self.line.len() + part.len() > MAX_LINE;
+            if long {
+                self.line.clear();
+            } else {
+                self.line.extend_from_slice(part);
+            }
+            let used = part.len() + usize::from(done);
+            self.reader.consume(used);
+            len += used as u64;
+            if done {
+                self.pos = at + len;
+                return Ok(Some((at, &self.line)));
+            }
+        }
+    }
+}
+
+/// Parses the lines from where `lines` stands to the end ([`Parser`]).
+fn read(lines: &mut Lines, lock: LockState, tz: Tz) -> std::io::Result<Parsed> {
+    let mut parser = Parser::new(lock, tz);
+    while let Some((at, line)) = lines.next_line()? {
+        parser.line(at, line);
+    }
+    Ok(parser.finish(lines.pos()))
+}
+
+/// The time at the start of a line, as [`parse_line`] reads it: `None` for
+/// a line that has none (it is no line of the table either).
+fn line_ts(line: &[u8], tz: Tz) -> Option<DateTime<FixedOffset>> {
+    let rest = line.strip_prefix(b"[")?;
+    let close = rest.iter().position(|&b| b == b']')?;
+    parse_ts(std::str::from_utf8(&rest[..close]).ok()?, tz)
+}
+
+/// Where a read that keeps only events at or after `baseline` begins
+/// (WP-198, ADR-0033), reading from where `lines` stands. Lines are
+/// skipped up to the first whose time is at or after `baseline`: of each,
+/// only the time is read, and the line table only for a `[PACMAN] Running`
+/// or `[ALPM] transaction` line. The start is that line, or, when a
+/// transaction is open there, the start of its block (its Running line,
+/// else `transaction started`, as [`parse`] rewinds), or else the latest
+/// Running line no transaction has taken yet. A parse from there emits the
+/// events at or after `baseline` that a parse of the whole log does: every
+/// line before the start is older than `baseline`, and what a line before
+/// it passes on to the lines after it (the open transaction, the Running
+/// line) begins at or after the start. Without such a line, the end of the
+/// complete lines, or the open block before it.
+pub fn look_back_start(
+    lines: &mut Lines,
+    baseline: DateTime<FixedOffset>,
+    tz: Tz,
+) -> std::io::Result<u64> {
+    // the parser's state as offsets: the open transaction's block, the
+    // Running line not yet taken
+    let mut open: Option<u64> = None;
+    let mut running: Option<u64> = None;
+    let stop = loop {
+        let Some((at, line)) = lines.next_line()? else {
+            break lines.pos();
+        };
+        let Some(ts) = line_ts(line, tz) else {
+            continue;
+        };
+        if ts >= baseline {
+            break at;
+        }
+        let rest = &line[line.iter().position(|&b| b == b']').unwrap_or(0)..];
+        if !(rest.starts_with(b"] [PACMAN] Running '")
+            || rest.starts_with(b"] [ALPM] transaction "))
+        {
+            continue;
+        }
+        match parse_line(&String::from_utf8_lossy(line), tz) {
+            Some((_, Line::Command(_))) => running = Some(at),
+            Some((_, Line::TxStart)) => open = Some(running.take().unwrap_or(at)),
+            Some((_, Line::TxEnd(_))) => open = None,
+            _ => {}
+        }
+    };
+    Ok(open.or(running).unwrap_or(stop))
 }
 
 // ---------------------------------------------------------------------------
@@ -531,50 +688,75 @@ pub struct Parsed {
 /// boot too; one that pacman wrote since (the clock was set forward after
 /// pacman took the lock) holds it back as if held. Absent: emitted.
 pub fn parse(bytes: &[u8], base: u64, lock: LockState, tz: Tz) -> Parsed {
-    struct Open {
-        tx: Tx,
-        rewind: u64,
-        /// The newest `[ALPM…]` line of the transaction (WP-160).
-        last: DateTime<FixedOffset>,
-    }
-    // whether a transaction (or a Running line) whose last line has time
-    // `last` is still pacman's at the end of the log
-    let held = |last: DateTime<FixedOffset>| match lock {
-        LockState::Absent => false,
-        LockState::Held { .. } => true,
-        LockState::Stale { boot, .. } => !before_boot(last, boot),
-    };
-    let mut txs = Vec::new();
-    let mut open: Option<Open> = None;
-    // latest Running line: (offset, ts, command)
-    let mut command: Option<(u64, DateTime<FixedOffset>, String)> = None;
+    let mut parser = Parser::new(lock, tz);
     let mut pos = 0usize;
     while let Some(nl) = bytes[pos..].iter().position(|&b| b == b'\n') {
-        let at = base + pos as u64;
-        let text = String::from_utf8_lossy(&bytes[pos..pos + nl]);
+        let line = &bytes[pos..pos + nl];
+        parser.line(
+            base + pos as u64,
+            if line.len() > MAX_LINE { &[] } else { line },
+        );
         pos += nl + 1;
+    }
+    parser.finish(base + pos as u64)
+}
+
+/// A transaction the parser has seen start and not end.
+struct Open {
+    tx: Tx,
+    rewind: u64,
+    /// The newest `[ALPM…]` line of the transaction (WP-160).
+    last: DateTime<FixedOffset>,
+}
+
+/// [`parse`] one complete line at a time (WP-198): [`Parser::line`] for
+/// each, in log order, then [`Parser::finish`].
+pub struct Parser {
+    lock: LockState,
+    tz: Tz,
+    txs: Vec<Tx>,
+    open: Option<Open>,
+    /// Latest Running line: (offset, ts, command).
+    command: Option<(u64, DateTime<FixedOffset>, String)>,
+}
+
+impl Parser {
+    pub fn new(lock: LockState, tz: Tz) -> Self {
+        Parser {
+            lock,
+            tz,
+            txs: Vec::new(),
+            open: None,
+            command: None,
+        }
+    }
+
+    /// One complete line, without its newline, at absolute offset `at`.
+    pub fn line(&mut self, at: u64, bytes: &[u8]) {
+        let (tz, txs, open) = (self.tz, &mut self.txs, &mut self.open);
+        let text = String::from_utf8_lossy(bytes);
         let Some((ts, line)) = parse_line(&text, tz) else {
             // scriptlet output and hook lines are the transaction's too
-            if let Some(o) = &mut open
+            if let Some(o) = open
                 && let Some(t) = alpm_ts(&text, tz)
             {
                 o.last = o.last.max(t);
             }
-            continue;
+            return;
         };
         match line {
-            Line::Command(c) => command = Some((at, ts, c)),
+            Line::Command(c) => self.command = Some((at, ts, c)),
             Line::TxStart => {
                 // a transaction without an end line did not complete
                 if let Some(mut o) = open.take() {
                     o.tx.status = Some(TxStatus::Unfinished);
                     txs.push(o.tx);
                 }
-                let (rewind, began, cmd) = match command.take() {
+                let (rewind, began, cmd) = match self.command.take() {
                     Some((off, t, c)) => (off, t, Some(c)),
                     None => (at, ts, None),
                 };
-                open = Some(Open {
+                *open = Some(Open {
                     tx: Tx {
                         tx_id: Some(format!("tx-{}", ts.format("%Y%m%dT%H%M%S"))),
                         command: cmd,
@@ -606,7 +788,7 @@ pub fn parse(bytes: &[u8], base: u64, lock: LockState, tz: Tz) -> Parsed {
                     from,
                     to,
                 };
-                match &mut open {
+                match open {
                     Some(o) => {
                         o.last = o.last.max(ts);
                         o.tx.lines.push(line);
@@ -623,7 +805,7 @@ pub fn parse(bytes: &[u8], base: u64, lock: LockState, tz: Tz) -> Parsed {
             }
             Line::Left { file, left } => {
                 let line = LeftLine { ts, file, left };
-                match &mut open {
+                match open {
                     Some(o) => {
                         o.last = o.last.max(ts);
                         o.tx.left.push(line);
@@ -640,19 +822,38 @@ pub fn parse(bytes: &[u8], base: u64, lock: LockState, tz: Tz) -> Parsed {
             }
         }
     }
-    let mut resume = base + pos as u64;
-    match open {
-        Some(o) if held(o.last) => resume = o.rewind,
-        // pacman is gone and never ended it (killed, a crash, power loss)
-        Some(mut o) => {
-            o.tx.status = Some(TxStatus::Unfinished);
-            txs.push(o.tx);
-            hold_running(&mut resume, command.as_ref(), lock);
+
+    /// The transactions read, and where the next read starts; `end` is the
+    /// offset after the last complete line.
+    pub fn finish(self, end: u64) -> Parsed {
+        let Parser {
+            lock,
+            mut txs,
+            open,
+            command,
+            ..
+        } = self;
+        // whether a transaction (or a Running line) whose last line has
+        // time `last` is still pacman's at the end of the log
+        let held = |last: DateTime<FixedOffset>| match lock {
+            LockState::Absent => false,
+            LockState::Held { .. } => true,
+            LockState::Stale { boot, .. } => !before_boot(last, boot),
+        };
+        let mut resume = end;
+        match open {
+            Some(o) if held(o.last) => resume = o.rewind,
+            // pacman is gone and never ended it (killed, a crash, power loss)
+            Some(mut o) => {
+                o.tx.status = Some(TxStatus::Unfinished);
+                txs.push(o.tx);
+                hold_running(&mut resume, command.as_ref(), lock);
+            }
+            None => hold_running(&mut resume, command.as_ref(), lock),
         }
-        None => hold_running(&mut resume, command.as_ref(), lock),
+        txs.retain(|t| !t.lines.is_empty() || !t.left.is_empty());
+        Parsed { txs, resume }
     }
-    txs.retain(|t| !t.lines.is_empty() || !t.left.is_empty());
-    Parsed { txs, resume }
 }
 
 // ---------------------------------------------------------------------------
@@ -1372,5 +1573,295 @@ mod tests {
         );
         assert_eq!(p.txs.len(), 1);
         assert_eq!(p.txs[0].status, None);
+    }
+
+    /// A file in a fresh folder of the temp dir, removed on drop.
+    struct TempLog(PathBuf);
+    impl TempLog {
+        fn new(tag: &str, bytes: &[u8]) -> Self {
+            static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let dir = std::env::temp_dir().join(format!(
+                "seldon-pacman-{tag}-{}-{}",
+                std::process::id(),
+                N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("pacman.log"), bytes).unwrap();
+            TempLog(dir)
+        }
+        fn open(&self) -> Lines {
+            Lines::open(&self.0.join("pacman.log")).unwrap()
+        }
+    }
+    impl Drop for TempLog {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Every line `Lines` gives, with its offset, and where it stops.
+    fn read_all(lines: &mut Lines) -> (Vec<(u64, Vec<u8>)>, u64) {
+        let mut got = Vec::new();
+        while let Some((at, line)) = lines.next_line().unwrap() {
+            got.push((at, line.to_vec()));
+        }
+        (got, lines.pos())
+    }
+
+    /// WP-198: the lines and offsets `split` gives, across the read
+    /// buffer's edges; an over-long line is empty, but passed; the
+    /// unterminated last line is not passed.
+    #[test]
+    fn lines_through_the_buffer() {
+        let mut log = Vec::new();
+        let mut want = Vec::new();
+        let mut push = |log: &mut Vec<u8>, line: Vec<u8>, seen: Vec<u8>| {
+            want.push((log.len() as u64, seen));
+            log.extend(&line);
+            log.push(b'\n');
+        };
+        // lines that end just before, on and after the buffer's edges
+        for n in [
+            0,
+            1,
+            READ_BUFFER - 2,
+            READ_BUFFER - 1,
+            READ_BUFFER,
+            3 * READ_BUFFER + 7,
+        ] {
+            let line = vec![b'a' + (n % 26) as u8; n];
+            push(&mut log, line.clone(), line);
+        }
+        push(&mut log, b"crlf\r".to_vec(), b"crlf\r".to_vec());
+        let max = vec![b'm'; MAX_LINE];
+        push(&mut log, max.clone(), max);
+        push(&mut log, vec![b'x'; MAX_LINE + 1], Vec::new());
+        push(&mut log, vec![b'y'; 3 * MAX_LINE], Vec::new());
+        push(&mut log, b"after".to_vec(), b"after".to_vec());
+        let complete = log.len() as u64;
+        log.extend(b"[2026-10-01T10:06:00+0200] [ALPM] installed half (1-");
+
+        let t = TempLog::new("lines", &log);
+        let mut lines = t.open();
+        let (got, end) = read_all(&mut lines);
+        assert_eq!(got.len(), want.len());
+        for (g, w) in got.iter().zip(&want) {
+            assert_eq!((g.0, g.1.len()), (w.0, w.1.len()));
+            assert!(g.1 == w.1, "line at {}", w.0);
+        }
+        assert_eq!(end, complete, "the unterminated line is not passed");
+        assert_eq!(lines.next_line().unwrap(), None);
+
+        // from an offset, as a cursor reads
+        let at = want[7].0;
+        lines.seek(at).unwrap();
+        let (got, end) = read_all(&mut lines);
+        assert_eq!(got.first().map(|g| g.0), Some(at));
+        assert_eq!((got.len(), end), (want.len() - 7, complete));
+
+        // `parse` passes an over-long line the same way
+        let long = format!(
+            "[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -S {}'\n",
+            "a".repeat(MAX_LINE)
+        );
+        assert!(
+            parse(long.as_bytes(), 0, LockState::Absent, tz())
+                .txs
+                .is_empty()
+        );
+        let p = parse(long.as_bytes(), 0, HELD, tz());
+        assert_eq!(p.resume, long.len() as u64, "no Running line to hold");
+    }
+
+    /// WP-198: `Lines` opens a regular file only; a missing one names the
+    /// path, as before.
+    #[test]
+    fn lines_open_regular_files_only() {
+        let t = TempLog::new("regular", b"");
+        let err = Lines::open(&t.0).err().unwrap().to_string();
+        assert!(err.contains("a directory, not a regular file"), "{err}");
+        let missing = t.0.join("nope.log");
+        let err = Lines::open(&missing).err().unwrap().to_string();
+        assert!(
+            err.starts_with(&format!("cannot read {}: ", missing.display())),
+            "{err}"
+        );
+    }
+
+    /// The events at or after `baseline`, and `resume`, of `parsed`.
+    fn kept(parsed: Parsed, baseline: DateTime<FixedOffset>) -> (Vec<Event>, u64) {
+        let mut events: Vec<Event> = parsed.txs.iter().flat_map(Tx::events).collect();
+        events.retain(|e| e.ts >= baseline);
+        for e in &mut events {
+            e.id = ulid::Ulid::nil();
+        }
+        (events, parsed.resume)
+    }
+
+    /// WP-198: for every baseline around every line of logs of every shape
+    /// (a transaction open across the baseline, a Running line without a
+    /// transaction, one without an end line, a newer start without an end,
+    /// scriptlet lines, package lines outside any transaction, the old
+    /// time format, a clock set back, a line without a time, CRLF), a parse
+    /// from [`look_back_start`] keeps exactly the events and the resume
+    /// offset of a parse of the whole log, under every lock state.
+    #[test]
+    fn the_look_back_start_keeps_what_the_whole_log_keeps() {
+        let log = "\
+garbage before anything
+[2026-01-01T10:00:00+0200] [ALPM] installed lone (1-1)
+[2026-01-01T10:00:00+0200] [PACMAN] Running 'pacman -S nothing'
+[2026-01-02T10:00:00+0200] [PACMAN] Running 'pacman -S zed'
+[2026-01-02T10:00:01+0200] [ALPM] transaction started
+[2026-01-02T10:00:02+0200] [ALPM] installed alsa-lib (1-1)
+[2026-01-02T10:00:03+0200] [ALPM-SCRIPTLET] ==> hello
+[2026-01-03T10:00:03+0200] [ALPM] installed zed (2-1)
+[2026-01-03T10:00:04+0200] [ALPM] transaction completed
+[2026-01-04T10:00:00+0200] [PACMAN] Running 'pacman -Syu'
+[2026-01-04T10:00:01+0200] [ALPM] transaction started
+[2026-01-04T10:00:02+0200] [ALPM] upgraded gtk4 (1-1 -> 2-1)
+[2026-01-05T10:00:00+0200] [ALPM] transaction started
+[2026-01-05T10:00:01+0200] [ALPM] removed x (1-1)\r
+[2026-01-05T10:00:02+0200] [ALPM] warning: /etc/a.conf installed as /etc/a.conf.pacnew
+[2026-01-05T10:00:03+0200] [ALPM] transaction failed
+[2026-01-05T10:00:04+0200] [PACMAN] Running 'pacman -S btop'
+[2026-01-06T10:00:00+0200] [ALPM] running '60-mkinitcpio-remove.hook'...
+no time here
+[2019-01-01 12:00] [ALPM] installed old (1-1)
+[2026-01-07T10:00:00+0200] [ALPM] transaction started
+[2026-01-07T10:00:01+0200] [ALPM] installed btop (1-1)
+[2026-01-06T09:00:00+0200] [ALPM] installed clockback (1-1)
+[2026-01-08T10:00:00+0200] [ALPM] transaction interrupted
+[2026-01-08T10:00:01+0200] [ALPM] transaction completed
+[2026-01-09T10:00:00+0200] [ALPM] reinstalled lone (1-1)
+[2026-01-10T10:00:00+0200] [PACMAN] Running 'pacman -S tail'
+[2026-01-10T10:00:01+0200] [ALPM] transaction started
+[2026-01-10T10:00:02+0200] [ALPM] installed tail (1-1)
+[2026-01-10T10:00:03+0200] [ALPM-SCRIPTLET] ==> still writing
+";
+        // the log, the log without its open end, and with a Running line at
+        // the end (pacman downloading)
+        let open_end = log.find("[2026-01-10T10:00:00").unwrap();
+        let logs = [
+            log.to_string(),
+            log[..open_end].to_string(),
+            format!(
+                "{}[2026-01-11T10:00:00+0200] [PACMAN] Running 'pacman -S dl'\n",
+                &log[..open_end]
+            ),
+        ];
+        // a boot between the two last transactions, and one before the log
+        let boot = |s: &str| SystemTime::from(DateTime::parse_from_rfc3339(s).unwrap());
+        let locks = [
+            LockState::Absent,
+            HELD,
+            LockState::Stale {
+                modified: boot("2025-12-01T00:00:00+02:00"),
+                boot: boot("2026-01-09T12:00:00+02:00"),
+            },
+            LockState::Stale {
+                modified: boot("2025-12-01T00:00:00+02:00"),
+                boot: boot("2026-01-30T00:00:00+02:00"),
+            },
+        ];
+        for text in &logs {
+            let t = TempLog::new("look-back", text.as_bytes());
+            // a baseline before, at and after the time of every line
+            let mut baselines: Vec<DateTime<FixedOffset>> = text
+                .lines()
+                .filter_map(|l| line_ts(l.as_bytes(), tz()))
+                .flat_map(|ts| {
+                    [
+                        ts - chrono::Duration::seconds(1),
+                        ts,
+                        ts + chrono::Duration::seconds(1),
+                    ]
+                })
+                .collect();
+            baselines.push(DateTime::parse_from_rfc3339("2030-01-01T00:00:00+00:00").unwrap());
+            let mut starts = HashSet::new();
+            for baseline in baselines {
+                let mut lines = t.open();
+                let from = look_back_start(&mut lines, baseline, tz()).unwrap();
+                assert!(from as usize <= text.len());
+                assert!(from == 0 || text.as_bytes()[from as usize - 1] == b'\n');
+                starts.insert(from);
+                for lock in locks {
+                    let whole = kept(parse(text.as_bytes(), 0, lock, tz()), baseline);
+                    lines.seek(from).unwrap();
+                    let part = kept(read(&mut lines, lock, tz()).unwrap(), baseline);
+                    assert_eq!(part, whole, "baseline {baseline}, start {from}, {lock:?}");
+                }
+            }
+            assert!(
+                starts.len() > 5,
+                "the start moves with the baseline: {starts:?}"
+            );
+        }
+    }
+
+    /// WP-198: the start rewinds to the block of the transaction open at
+    /// the baseline, to a Running line no transaction took, and skips a
+    /// whole log older than the baseline, except a block still open.
+    #[test]
+    fn the_look_back_start_rewinds_to_the_open_block() {
+        let log = "\
+[2026-01-01T10:00:00+0200] [PACMAN] Running 'pacman -S a'
+[2026-01-01T10:00:01+0200] [ALPM] transaction started
+[2026-01-01T10:00:02+0200] [ALPM] installed a (1-1)
+[2026-01-01T10:00:03+0200] [ALPM] transaction completed
+[2026-02-01T10:00:00+0200] [PACMAN] Running 'pacman -S b'
+[2026-02-01T10:00:01+0200] [ALPM] transaction started
+[2026-02-01T10:00:02+0200] [ALPM] installed b (1-1)
+[2026-03-01T10:00:00+0200] [ALPM] installed c (1-1)
+[2026-03-01T10:00:01+0200] [ALPM] transaction completed
+[2026-04-01T10:00:00+0200] [PACMAN] Running 'pacman -S d'
+[2026-05-01T10:00:00+0200] [ALPM] transaction started
+[2026-05-01T10:00:01+0200] [ALPM] installed d (1-1)
+[2026-05-01T10:00:02+0200] [ALPM] transaction completed
+[2026-06-01T10:00:00+0200] [ALPM] transaction started
+[2026-06-01T10:00:01+0200] [ALPM] installed e (1-1)
+";
+        let t = TempLog::new("rewind", log.as_bytes());
+        let at = |needle: &str| log.find(needle).unwrap() as u64;
+        let start = |baseline: &str| {
+            let b = DateTime::parse_from_rfc3339(baseline).unwrap();
+            look_back_start(&mut t.open(), b, tz()).unwrap()
+        };
+        assert_eq!(start("2025-01-01T00:00:00+00:00"), 0);
+        assert_eq!(
+            start("2026-01-15T00:00:00+02:00"),
+            at("[2026-02-01T10:00:00"),
+            "the first line at or after the baseline"
+        );
+        assert_eq!(
+            start("2026-02-15T00:00:00+02:00"),
+            at("[2026-02-01T10:00:00"),
+            "b's transaction is open at c: its Running line"
+        );
+        assert_eq!(
+            start("2026-04-15T00:00:00+02:00"),
+            at("[2026-04-01T10:00:00"),
+            "d's Running line, taken by the start after the baseline"
+        );
+        assert_eq!(
+            start("2026-06-01T10:00:01+02:00"),
+            at("[2026-06-01T10:00:00"),
+            "a transaction without a Running line: its start"
+        );
+        assert_eq!(
+            start("2030-01-01T00:00:00+00:00"),
+            at("[2026-06-01T10:00:00"),
+            "all older: the open block at the end is read"
+        );
+        let closed = &log[..at("[2026-06-01T10:00:00") as usize];
+        let t = TempLog::new("rewind-closed", closed.as_bytes());
+        let b = DateTime::parse_from_rfc3339("2030-01-01T00:00:00+00:00").unwrap();
+        assert_eq!(
+            look_back_start(&mut t.open(), b, tz()).unwrap(),
+            closed.len() as u64,
+            "all older and closed: the end"
+        );
     }
 }
