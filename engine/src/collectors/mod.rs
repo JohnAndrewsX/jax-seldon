@@ -30,6 +30,7 @@
 pub mod config;
 pub mod omarchy;
 pub mod pacman;
+pub mod pacman_ignore;
 pub mod plugins;
 pub mod recent;
 pub mod snapper;

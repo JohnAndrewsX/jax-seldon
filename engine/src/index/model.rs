@@ -319,6 +319,10 @@ pub struct System {
     /// (ADR-0046).
     #[serde(rename = "recentConfig", skip_serializing_if = "Option::is_none")]
     pub recent_config: Option<RecentConfig>,
+    /// pacman's `IgnorePkg` and `IgnoreGroup` names, from the pacman
+    /// collector's cursor (ADR-0052 §5).
+    #[serde(rename = "pacmanIgnore", skip_serializing_if = "Option::is_none")]
+    pub pacman_ignore: Option<crate::collectors::pacman_ignore::Ignore>,
 }
 
 /// `system.recentConfig` (ADR-0046): the last scan's time and its files,

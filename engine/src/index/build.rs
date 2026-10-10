@@ -204,6 +204,8 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         ),
         // the state file's, set by `derive_at` (ADR-0046)
         recent_config: None,
+        // the pacman cursor's, set by `derive_at` (ADR-0052)
+        pacman_ignore: None,
     };
 
     // other memory files by `updated` descending, then by topic

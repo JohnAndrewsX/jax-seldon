@@ -49,7 +49,7 @@ pub fn derive_at(
     now: DateTime<FixedOffset>,
 ) -> anyhow::Result<Built> {
     let mut loaded = load::load(logbook, now.date_naive())?;
-    let (state, cursors_error) = collector_state(dirs, config, &logbook.root);
+    let (state, pacman_ignore, cursors_error) = collector_state(dirs, config, &logbook.root);
     loaded.warnings.extend(cursors_error);
     let input = Input {
         now,
@@ -63,6 +63,10 @@ pub fn derive_at(
     };
     let mut built = build::build(loaded, &input);
     built.index.triage = triage::read(dirs, &logbook.root, &mut built.warnings);
+    // ADR-0052 §5: withheld while the redaction cannot run
+    built.index.system.pacman_ignore = pacman_ignore
+        .zip(input.redactor.as_ref())
+        .map(|(ignore, redactor)| collectors::pacman_ignore::shown(&ignore, redactor));
     built.index.system.recent_config = crate::collectors::recent::shown(
         dirs,
         config,
@@ -105,7 +109,11 @@ pub fn collector_state(
     dirs: &Dirs,
     config: &Config,
     root: &Path,
-) -> (model::State, Option<String>) {
+) -> (
+    model::State,
+    Option<collectors::pacman_ignore::Ignore>,
+    Option<String>,
+) {
     let file = collectors::cursors_file(dirs);
     let (cursors, cause) = match Cursors::load(&file) {
         Ok(c) => (c, None),
@@ -162,7 +170,15 @@ pub fn collector_state(
             dirs.display(&file)
         )
     });
-    (state, warning)
+    // ADR-0052 §5: pacman's ignore list from its cursor, while it runs
+    let ignore = (mine && config.collectors.get("pacman").unwrap_or(true))
+        .then(|| cursors.collectors.get("pacman"))
+        .flatten()
+        .and_then(|s| {
+            collectors::typed_cursor::<collectors::pacman::PacmanCursor>(s.cursor.as_ref())
+        })
+        .and_then(|c| c.ignore);
+    (state, ignore, warning)
 }
 
 /// `logbook.git`: the short HEAD and whether the work tree has changes;

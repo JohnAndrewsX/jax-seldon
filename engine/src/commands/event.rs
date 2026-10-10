@@ -411,6 +411,13 @@ fn parse_meta(pairs: &[String]) -> Result<Meta> {
                     "--meta txStatus is written by the pacman collector only",
                 ));
             }
+            // ADR-0052 §3: the record of a changed ignore list
+            crate::collectors::pacman_ignore::META_PKG
+            | crate::collectors::pacman_ignore::META_GROUP => {
+                return Err(Error::user(format!(
+                    "--meta {key} is written by the pacman collector only"
+                )));
+            }
             crate::model::event::TRUNCATED => {
                 return Err(Error::user(
                     "--meta truncated is index-only; the ledger keeps every text whole",
@@ -472,6 +479,8 @@ mod tests {
             "risk=R1",
             "truncated=true",
             "txStatus=interrupted",
+            "ignorePkg=mesa",
+            "ignoreGroup=",
             "=1",
             "a b=1",
         ] {
