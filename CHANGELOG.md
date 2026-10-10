@@ -121,6 +121,11 @@ and the package does not exist yet. Update the plugin first:
   folder and file where Seldon writes, so you see them before a write is
   refused (`error`; `degraded` for what is only skipped).
 
+Smaller changes for scripts are under Engine: `seldon init
+--non-interactive` looks back 90 days, `seldon decide accept` is a
+command (a decision titled "accept" needs `--`), and the package needs
+git 2.44 or later.
+
 ### Added
 
 - **The desk (ADR-0034).** Today, Changelog, Work, Decisions, System,
