@@ -70,7 +70,6 @@ RECENT_DAYS, RECENT_MAX = 7, 80
 # of `system.pacmanIgnore`; engine: collectors::pacman_ignore (NAME, MAX_NAMES)
 PACMAN_CURSOR = os.path.join(FIX, "state", "pacman-cursor.json")
 IGNORE_NAME = re.compile(r"[A-Za-z0-9@._+*?!^\[\]-]{1,128}")
-IGNORE_MAX = 256
 EXT = {
     "snapper": ID + "external/snapper-list.schema.json",
     "plugin-list": ID + "external/omarchy-plugin-list.schema.json",
@@ -1680,8 +1679,8 @@ def derive_recent_config(generated_at, problems):
 def derive_pacman_ignore(ledger, problems):
     """engine: index::collector_state + collectors::pacman_ignore::shown — `system.pacmanIgnore`
     from the pacman cursor's `ignore` (ADR-0052 §5): the names of NAME's shape (the sample has no
-    redaction pattern), at most 256 per list, `partial` when one was left out or the read was.
-    The cursor's `ignoreKnown` must be the lists of the ledger's last ignore-list note (the
+    redaction pattern), the others counted in `hidden`, `partial` as the read was. The cursor's
+    `ignoreKnown` must be the lists of the ledger's last ignore-list note when there is one (the
     capture that wrote it saved the cursor). None without the file."""
     if not os.path.exists(PACMAN_CURSOR):
         return None
@@ -1690,20 +1689,22 @@ def derive_pacman_ignore(ledger, problems):
     ignore = cursor.get("ignore")
     if ignore is None:
         return None
-    partial = ignore.get("partial") is True
-    out = {}
+    out, hidden = {}, 0
     for k in ("packages", "groups"):
         names = [n for n in ignore[k] if IGNORE_NAME.fullmatch(n)]
-        partial |= len(names) != len(ignore[k])
-        out[k] = names[:IGNORE_MAX]
-    if partial:
+        hidden += len(ignore[k]) - len(names)
+        out[k] = names
+    if hidden:
+        out["hidden"] = hidden
+    if ignore.get("partial") is True:
         out["partial"] = True
     notes = [e for e in ledger if e["source"] == "pacman" and e["kind"] == "note"
              and isinstance(e.get("meta", {}).get("ignorePkg"), str)]
     known = cursor.get("ignoreKnown")
+    written = lambda names: " ".join(n if IGNORE_NAME.fullmatch(n) else "(hidden)" for n in names)
     if notes and known is not None:
         last = notes[-1]["meta"]
-        if (last["ignorePkg"], last.get("ignoreGroup")) != (" ".join(known["packages"]), " ".join(known["groups"])):
+        if (last["ignorePkg"], last.get("ignoreGroup")) != (written(known["packages"]), written(known["groups"])):
             problems.append(f"{rel(PACMAN_CURSOR)}: ignoreKnown is not the lists of {notes[-1]['id']}")
     return out
 
