@@ -105,11 +105,21 @@ Item {
             : root.pointerId === navRow.modelData.id ? Style.hoverFill : "transparent"
         }
 
-        Rectangle {
+        // square: a slice of the row's own shape, so it follows the row's
+        // rounded corner instead of sticking out past it (review F9)
+        Item {
+          objectName: "navSelectionBar"
           visible: navRow.selected
           width: Math.max(2, Style.space(2))
           height: parent.height
-          color: root.tone.accentUi
+          clip: true
+
+          Rectangle {
+            width: navRow.width
+            height: parent.height
+            radius: Style.cornerRadius
+            color: root.tone.accentUi
+          }
         }
 
         NavIcon {

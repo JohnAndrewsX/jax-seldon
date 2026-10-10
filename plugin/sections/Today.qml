@@ -45,7 +45,7 @@ Section {
   property string sentIntent: ""
 
   readonly property var today: root.service ? root.service.deskToday : null
-  // The active cases' tiles, "· agent working" on a case an agent works on
+  // The active cases' tiles, "agent working" first on a case an agent works on
   // (FEEDBACK 11, WP-156's sessions).
   readonly property var caseTiles: Model.todayCaseTiles(root.today ? root.today.cases : [],
     root.service ? root.service.agentSessions : null)

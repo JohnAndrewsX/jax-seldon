@@ -291,7 +291,9 @@ Top to bottom (prototype `prototype-desk-v6`):
   (heading font, bold, letter-spaced) over "machine · Omarchy version ·
   captured N ago" (`Model.deskSubline`); the **status chip** when a notice
   is up — the first notice's title and "+N" for more, in the notice's
-  tone, "N notices" where the title does not fit; a click folds the
+  tone, "N notices" where the title does not fit, the count alone where
+  that does not fit either (a 50 % desk on a 1920 px screen, WP-126b; never
+  an elided word); a click folds the
   notices; the **KPI strip** (`Model.deskKpis`): active (accent while > 0)
   · verification · queued · crises (urgent while > 0) · attention
   (`openDrift − crisis`), each a click to its section (Work; Changelog
@@ -459,10 +461,11 @@ the logbook has no case and nothing is open, the **first-run card**
 "Seldon is recording. Nothing to do." with one line on what Seldon does
 from here (WP-119; a tile whose figure is 0 shows it in the muted tone),
 a lead on what stays quiet, the active cases as tiles (id · risk, title, the plan's
-progress, "2/4 steps · claude-code", and "· agent working" while an agent
-`seldon agent start` launched runs or starts on the case, from the
-service's sessions as Work's row says it, `Model.todayCaseTiles`,
-FEEDBACK 11; a click opens the case in Work) and
+progress, "2/4 steps · claude-code", and "agent working · " before that
+line while an agent `seldon agent start` launched runs or starts on the
+case, from the service's sessions, first as on Work's row so that the
+elide of a narrow tile cuts the agent's name and not the state,
+`Model.todayCaseTiles`, FEEDBACK 11; a click opens the case in Work) and
 **New case**: one sentence → `seldon agent start --new --json --
 <intent>` (`i` focuses it; the call and the result line Work's *Run*
 shares; the field keeps its text until the engine has made the case). A
@@ -1540,9 +1543,16 @@ plan cards (`components/desk/ListRow.qml`, `components/overlay/ThePlan.qml`),
 the selection's accent bars (rows, sidebar, the chosen Changelog chip),
 the progress bars (`components/desk/Progress.qml`; a progress bar counts
 as a bar) and the heatmap's cells; a rounded stripe at 16 would read as a
-pill. Round by design whatever the rounding: a dot or a ring (a setup
-step's number, a graph node) and the header's status chip, a capsule. The theme sweep checks the desk at Hyprland rounding
-0, 6 and 16. Spacing and sizes come from
+pill. A bar at the edge of a rounded row (the list row's selection bar
+and stripe, the sidebar's selection bar) is a slice of the row's own
+shape: an Item that clips a rectangle of the row's size and radius, so it
+runs square along the row's straight edge and follows the row's corner
+instead of sticking out past it (review F9; the inset Changelog chip bar
+needs none). Round by design whatever the rounding: a dot or a ring (a
+setup step's number, a graph node) and the header's status chip, a
+capsule. The theme sweep checks the desk at Hyprland rounding 0, 6 and 16
+on the test host; `desk-view.sh` (`rounding-16`, `rounding-0`) checks
+that every such bar is a slice of its row's shape. Spacing and sizes come from
 `Style.spacing.*` where a name exists (`controlHeight`, `rowPaddingX`,
 `panelPadding`, …) and from `Style.space(N)` otherwise, so they scale
 with the font; type sizes from `Style.font.*`, the family

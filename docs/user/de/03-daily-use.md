@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ a6cac4ed -->
+<!-- source: en/03-daily-use.md @ a2adcea2 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
@@ -65,7 +65,7 @@ ein Linksklick auf die Pill oder die Taste noch einmal schließt ihn.
 
 ## Der Desk
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-today.png; der ganze Desk bei Today: der Kopf mit Zeichen, Unterzeile, Status-Chip und KPI-Leiste, die Seitenleiste mit ihren neun Zielen und Zahlen, die Liste von Today und die Übersicht mit den aktiven Cases -->
+![Der Desk bei Today mit dem Beispiel-Logbuch, Tokyo Night: der Kopf mit 2 active, 1 verification, 3 queued, 2 crises und 4 attention; die Seitenleiste mit den neun Abschnitten; NEEDS YOU mit zwei Krisen und das heutige Journal; die Übersicht mit den aktiven Cases als Kacheln](../../images/desk-tokyo-night-today.png)
 
 *Beispieldaten.*
 
@@ -110,7 +110,7 @@ Theme Tokyo Night. Dein Desk nimmt dein Theme und zeigt deine Daten.
 
 ### Breite und Seitenleiste
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-50.png; der Desk bei 50 % Breite, mittig unter der Bar auf einem 1920 px breiten Bildschirm, links und rechts ist der Desktop zu sehen -->
+![Der Desk bei 50 % Breite auf einem 1920 px breiten Bildschirm, mittig unter der Bar, links und rechts der Desktop: Today in drei Spalten, die Case-Kacheln untereinander](../../images/desk-tokyo-night-50.png)
 
 Der Desk füllt in der Grundeinstellung die Breite des Bildschirms. Zwei
 Einstellungen ändern das, beide unter Settings › Appearance auf dem Desk
@@ -202,7 +202,7 @@ Ist nichts gewählt, ist das Detail die Übersicht: ein Satz („Seldon is
 recording. 2 changes need you.“), deine aktiven Cases als Kacheln und
 *New case*. Eine Kachel zeigt ID, Risiko, Titel und Fortschritt des
 Plans („2/4 steps · claude-code“); solange eine Agenten-Sitzung an dem
-Case läuft, endet die Zeile mit „· agent working“. Ein Klick auf eine
+Case läuft, beginnt die Zeile mit „agent working · “. Ein Klick auf eine
 Kachel öffnet den Case in Work. *New case* (`i`) startet einen Case mit
 einem Satz, wie *Run* in Work (siehe unten).
 
@@ -211,7 +211,7 @@ Enter öffnet ihr Formular. Löst du sie dort auf, verlässt sie NEEDS YOU.
 
 ### Changelog (2)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-changelog.png; der Changelog mit den Chips open, crisis, attention, routine, in case und all, Zeilen nach Tagen gruppiert mit Streifen für Krise und zur Kenntnis, und eine gewählte Krise mit dem Kasten Why loud? -->
+![Der Changelog: oben Agent sorts 6 open changes und der Vorschlag des Agenten, die Chips open, crisis, attention, routine, in case und all, die offenen Änderungen nach Tagen mit Streifen für Krise und zur Kenntnis, und rechts der gewählte Theme-Wechsel mit Ask agent, Link to C-2026-005…, Explain…, Dismiss… und Hide](../../images/desk-tokyo-night-changelog.png)
 
 *Beispieldaten.*
 
@@ -255,7 +255,7 @@ Blick und hält nichts fest; *Show* holt ihn zurück. Eine Krise hat kein
 
 #### Den Agenten die offenen Änderungen sortieren lassen
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-triage.png; ein Triage-Vorschlag im Changelog: die Leiste mit Apply proposals und Discard, der Block CRISES mit Apply this crisis und die Punkte mit ihren Belegen -->
+![Ein Triage-Vorschlag eines Agenten im Changelog: oben Apply proposals (2) und Discard, die zurückgehaltene Krise unter CRISES — EACH ON ITS OWN mit Apply this crisis, und unter WHAT APPLY TAKES jeder Punkt mit seinen Belegen und wer sie geschrieben hat](../../images/desk-tokyo-night-triage.png)
 
 Solange Änderungen offen sind, bietet der Kopf des Changelogs **Agent
 sorts N open changes** an. Ein Klick startet deinen Agenten mit `seldon
@@ -280,7 +280,7 @@ erklärt, was der Agent tut und was er nicht darf.
 
 ### Work (3)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-work.png; Work mit dem Feld für den einen Satz und Run, der WIP-Zeile, den Cases in den Gruppen Active, Verification, Queued und Completed und einem gewählten Case mit seiner Aktionsleiste -->
+![Work: das Feld für den einen Satz mit Run, 2 / 3 active, die Cases in den Gruppen Active, Verification, Queued und Completed; der gewählte Case C-2026-003, an dem ein Agent arbeitet, mit Focus, To verification, Drop, Open in editor und Ask agent, seinen Angaben, Plan, Log und verknüpften Änderungen](../../images/desk-tokyo-night-work.png)
 
 *Beispieldaten.*
 
@@ -336,7 +336,7 @@ aufgezeichnet wird; die Ergebniszeile sagt das.
 
 ### Decisions (4)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-decisions.png; Decisions mit vier Entscheidungen, die neueste zuerst, eine vorgeschlagene mit Streifen, und das Detail der vorgeschlagenen Entscheidung mit Accept und Open in editor -->
+![Decisions: vier Entscheidungen, die neueste zuerst, ADR-0004 vorgeschlagen; die gewählte ADR-0003, angenommen, mit ihrem ersten Absatz, Datum, Datei und den zwei Cases, die sie nennt](../../images/desk-tokyo-night-decisions.png)
 
 *Beispieldaten.*
 
@@ -353,7 +353,7 @@ deinem Editor.
 
 ### System (5)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-system.png; System mit seinen sieben Kacheln und dem Detail der Kachel Recently edited, jede Datei mit Watch -->
+![System: die sieben Kacheln Omarchy, Packages, Snapshots, Deviations, Collectors, Recently edited und Ignored by pacman; die gewählte Kachel Omarchy mit Version, Theme, letztem Update und Plugins](../../images/desk-tokyo-night-system.png)
 
 *Beispieldaten.*
 
@@ -373,7 +373,7 @@ aktualisiert sie trotzdem). *Open in editor* (`e`) öffnet `STATUS.md`.
 
 ### Memory (6)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-memory.png; Memory mit drei Überschriften von Lektionen und zwei Memory-Themen und eine gewählte Lektion im Detail -->
+![Memory: drei Überschriften von Lektionen und zwei Memory-Themen; die gewählte Lektion im Detail, mit Open in editor](../../images/desk-tokyo-night-memory.png)
 
 *Beispieldaten.*
 
@@ -384,7 +384,7 @@ Logbuchs.
 
 ### Prime Radiant (7)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-radiant.png; der Prime Radiant im Desk: die Zeitraum-Auswahl auf 90 d, die Heatmap, Paketreihen, Drift-Balken, Risiko-Donut, Zeitleiste und The Plan -->
+![Der Prime Radiant, Abschnitt 7, bei 90 d: die Zeitraum-Auswahl, die Heatmap der Ereignisse pro Tag, die Paketreihen, die Drift-Balken, der Risiko-Donut, die Zeitleiste mit Releases, Snapshots, Cases und Krisen, und der Plan mit den zwei aktiven Cases](../../images/desk-tokyo-night-radiant.png)
 
 *Beispieldaten.*
 
@@ -413,7 +413,7 @@ Zeitraum nicht. Der Prime Radiant zeigt nur; er startet nie die Engine.
 
 ### Graph (8)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-graph.png; der Graph: Bereiche, Cases, Entscheidungen und Änderungen als Netz, eine Krise in Rot, eine gestrichelte vorgeschlagene Verbindung, der Schieberegler für den Tag und die Karte eines Knotens mit Open case -->
+![Der Graph, Abschnitt 8: die Bereiche des Beispiels als Ringe, Cases, Entscheidungen und Änderungen als Netz darum, die Krisen in der Warnfarbe, und oben Play growth mit dem Tages-Schieberegler](../../images/desk-tokyo-night-graph.png)
 
 Der Graph zeichnet das Gedächtnis deiner Maschine als Netz: Bereiche,
 Cases, Entscheidungen und Änderungen, verbunden so, wie das Logbuch sie
@@ -444,7 +444,7 @@ hält nach wenigen Sekunden an.
 
 ### Settings (,)
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-settings.png; Settings › Appearance mit dem Schieberegler Desk width, den Vorgaben 50 %, 67 %, 75 % und Full, der Pixel-Zeile mit dem kleinen Bild des Bildschirms und Sidebar Open oder Collapsed -->
+![Settings › Appearance: der Schieberegler Desk width bei 100 % mit den Vorgaben 50 %, 67 %, 75 % und Full, die Pixel-Zeile mit dem kleinen Bild des Bildschirms, und Sidebar mit Open und Collapsed](../../images/desk-tokyo-night-settings.png)
 
 Settings hat vier Gruppen. **Appearance** ändert den Desk sofort: „Desk
 width“ ist ein Schieberegler von 50 bis 100 % in Zehnerschritten, mit

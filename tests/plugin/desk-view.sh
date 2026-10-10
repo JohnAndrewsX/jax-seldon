@@ -466,6 +466,7 @@ expect snapper 7 "[$tv.snapshots, $tv.offerAgain] | map(tostring) | join(\"|\")"
 expect snapper 9 '[(.writes | length), (.writes | last | .settings | has("setupSnapshots")), .view.setupLater, .view.setup] | map(tostring) | join("|")' "2|false|false|$optional"
 expect snapper 10 "[.view.section, $tv.setup.current] | join(\",\")" "today,snapshots"
 expect snapper 11 .view.chipShown "▾ 1 notice"
+expect snapper 11 .view.chipTruncated false
 expect snapper 11 '.overflow | join(" | ")' ""
 # the launcher's argv is the grant script, verbatim (model.test.js pins its text)
 script=$(node -e '
@@ -1968,7 +1969,7 @@ expect aside-index 2 "$tc.actions[0]" "Hand to agent"
 expect aside-index 5 "$tc.actions | join(\",\")" "Focus,To verification,Drop,Open in editor,Ask agent"
 clean_log aside-index
 
-# Today's case tile says "· agent working" while a session runs (FEEDBACK
+# Today's case tile says "agent working" first while a session runs (FEEDBACK
 # 11): asked when the desk opens, the tile of C-2026-003 only.
 mkdir -p "$work/home-aside-tile"
 echo C-2026-003 >"$work/home-aside-tile/sessions"
@@ -1976,8 +1977,8 @@ run aside-tile "" 1920x1080 "summon:{\"section\":\"today\"};settle;pause:800" \
   HOME="$work/home-aside-tile" FAKE_SELDON_FIXTURE="$sample"
 expect aside-tile 3 "$sv.sessions | join(\",\")" "C-2026-003"
 expect aside-tile 3 "$tv.cases | join(\",\")" "C-2026-003,C-2026-004"
-expect aside-tile 3 "$tv.caseTexts | join(\"|\")" "4/5 steps · claude-code · agent working|2/4 steps · claude-code"
-shows aside-tile 3 "4/5 steps · claude-code · agent working"
+expect aside-tile 3 "$tv.caseTexts | join(\"|\")" "agent working · 4/5 steps · claude-code|2/4 steps · claude-code"
+shows aside-tile 3 "agent working · 4/5 steps · claude-code"
 clean_log aside-tile
 
 # A failed open is no open: the same target again is sent at once (round 2,
@@ -3241,6 +3242,38 @@ expect one-cursor-keys 5 '.marks.rows | sort | join(",")' "selected:Ollama nur a
 expect one-cursor-keys 7 '.marks.rows | sort | join(",")' "cursor:Snapshots vor jedem Red-Zone-Eingriff,selected:Ollama nur als User-Service mit Case"
 expect one-cursor-keys 8 '.marks.rows | sort | join(",")' "selected:Ollama nur als User-Service mit Case"
 clean_log one-cursor-keys
+
+# The chip on a 50 % desk of a 1920 px screen (WP-126b, live): too narrow
+# for the title and, live, for "1 notice"; it shows what fits, the count
+# alone at the least, never an elided word.
+run chip-50 "$sample" 1920x1080 "summon;width:50;pause:300;view" SELDON_NOW="2026-10-01T20:05:12+02:00"
+expect chip-50 3 '[.view.chip, (.view.chipShown | startswith("▾ ")), .view.chipTruncated] | map(tostring) | join("|")' "Index is stale|true|false"
+clean_log chip-50
+# a 920 px screen: headless, "1 notice" no longer fits there (live it
+# stopped fitting at 50 % of 1920 px; the bar font is wider): the count
+run chip-narrow "$sample" 920x900 "summon;pause:300;view" SELDON_NOW="2026-10-01T20:05:12+02:00"
+expect chip-narrow 2 '[.view.chipShown, .view.chipTruncated] | map(tostring) | join("|")' "▾ 1|false"
+clean_log chip-narrow
+
+# Square bars on rounded rows (SPEC-PLUGIN §7 "Geometry", review F9): with
+# Hyprland's rounding at 16 (a hyprctl that answers it; Style reads it at
+# start) the selection bars and the stripes are slices of their row's own
+# rounded shape, never square past its corner; at 0 likewise, square.
+mkdir -p "$work/bin-r16"
+for f in "$work"/bin/*; do ln -s "$f" "$work/bin-r16/$(basename "$f")"; done
+rm "$work/bin-r16/hyprctl"
+printf '#!/bin/sh\ncase "$*" in *decoration:rounding*) echo "{\\"int\\": 16}" ;; *) exit 1 ;; esac\n' >"$work/bin-r16/hyprctl"
+chmod 755 "$work/bin-r16/hyprctl"
+run rounding-16 "$sample" 1920x1080 "summon:{\"section\":\"changelog\"};pause:300;view" PATH="$work/bin-r16"
+expect rounding-16 3 '[.marks.bars[] | select(startswith("rowStripe r16 "))] | length > 3' true
+expect rounding-16 3 '[.marks.bars[] | select(startswith("rowSelectionBar r16 "))] | length' 1
+expect rounding-16 3 '[.marks.bars[] | select(startswith("navSelectionBar r16 "))] | length' 1
+expect rounding-16 3 '.marks.barsOutside | join(",")' ""
+clean_log rounding-16
+run rounding-0 "$sample" 1920x1080 "summon:{\"section\":\"changelog\"};pause:300;view"
+expect rounding-0 3 '[.marks.bars[] | select(startswith("rowSelectionBar r0 x0 "))] | length' 1
+expect rounding-0 3 '.marks.barsOutside | join(",")' ""
+clean_log rounding-0
 
 # WP-177: the desk's tones in QML are Model.deskTones of the theme's roles
 # as the shell reads them (Color.popups.*, Style's fills at their alphas):

@@ -253,10 +253,24 @@ ShellRoot {
     return out
   }
 
-  // The visible list rows with a mark and the visible focus rings (WP-177).
+  // The visible list rows with a mark and the visible focus rings (WP-177);
+  // the square bars of a row (the selection bar, the stripe, the sidebar's
+  // bar) and those that are not a clipped slice of their row's own shape
+  // (a child of the row's size at the row's origin with Style.cornerRadius),
+  // which would stick out past a rounded row (review F9).
   function marks(item, out) {
     if (!item || item.visible === false) return out
     var name = String(item.objectName || "")
+    if (name === "rowSelectionBar" || name === "rowStripe" || name === "navSelectionBar") {
+      var r = Style.cornerRadius
+      var row = item.parent
+      var shape = item.children.length === 1 ? item.children[0] : null
+      out.bars.push(name + " r" + r + " x" + Math.round(item.x) + " h" + Math.round(item.height))
+      var slice = item.clip === true && shape !== null && row !== null
+        && shape.radius === r && Math.abs(shape.x + item.x) < 0.5 && Math.abs(shape.y + item.y) < 0.5
+        && Math.abs(shape.width - row.width) < 0.5 && Math.abs(shape.height - row.height) < 0.5
+      if (!slice) out.barsOutside.push(name)
+    }
     if (name === "deskRow") {
       var title = item.parent && item.parent.title !== undefined ? String(item.parent.title) : ""
       if (item.hasCursor) out.rows.push("cursor:" + title)
@@ -387,7 +401,7 @@ ShellRoot {
       } : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
       texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined),
-      marks: marks(win.contentItem, { rows: [], rings: [] }),
+      marks: marks(win.contentItem, { rows: [], rings: [], bars: [], barsOutside: [] }),
       tones: root.desk && root.desk.tone ? root.desk.tone.tones : null
     }))
   }

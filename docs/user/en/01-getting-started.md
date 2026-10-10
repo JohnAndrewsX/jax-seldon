@@ -41,7 +41,7 @@ Set up Seldon · 3 of 3 steps to go
   3  Read snapshots (optional)
 ```
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-setup.png; the desk on Today with the setup card "Set up Seldon · 3 of 3 steps to go" -->
+![The setup card on Today: Set up Seldon · 2 of 3 steps to go; Install the engine done, Create the logbook with Create logbook and Copy, Read snapshots optional](../../images/desk-tokyo-night-setup.png)
 
 The header's status chip shows the same line. Click it from anywhere in
 the desk to come back to the card. The desk is the plugin's one window:
@@ -116,7 +116,7 @@ can affect boot, login or the shell and has no case colours the bar.
 
 ## Find your way around the desk
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-today.png; the desk on Today with the sample logbook: header with KPI strip, sidebar with the nine sections, list and detail -->
+![The desk on Today with the sample logbook, Tokyo Night: the header with 2 active, 1 verification, 3 queued, 2 crises and 4 attention; the sidebar with the nine sections; NEEDS YOU with two crises and today's journal; the overview with the active cases as tiles](../../images/desk-tokyo-night-today.png)
 
 The desk has four parts:
 
@@ -156,7 +156,7 @@ show the same two settings for the Seldon widget: `deskWidth` (50 to 100)
 and `deskSidebar` (`open` or `collapsed`). The desk is never narrower
 than 960 pixels, unless the screen is.
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-50.png; the desk at 50 % width on a 1920 px screen, centred under the bar -->
+![The desk at 50 % width on a 1920 px screen, centred below the bar with the desktop on both sides: Today in three columns, the case tiles one below the other](../../images/desk-tokyo-night-50.png)
 
 To open the desk with a key, add a binding to
 `~/.config/hypr/bindings.lua`. Seldon never installs it for you. The

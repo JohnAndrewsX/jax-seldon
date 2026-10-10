@@ -1091,7 +1091,7 @@ to agent ("agent working" on its row and in the bar); a stale desk heals
 from the engine's "already working" and "no agent is working" refusals
 (`FAKE_SELDON_SESSIONS_LATE`, `FAKE_SELDON_FOCUS_GONE`); an index change
 while the desk is open asks for the sessions again (`aside-index`);
-Today's case tile says "· agent working" for the case with a session and
+Today's case tile starts with "agent working · " for the case with a session and
 only for it (FEEDBACK 11, `aside-tile`);
 without Hyprland the engine tracks nothing and a second hand-off launches
 (`FAKE_SELDON_NO_TRACKING`, `aside-nowindow`); `a` four times and `e`
@@ -1185,7 +1185,13 @@ initialised). Offscreen the harness's `hyprctl` stub fails, so
 The rounding sweep of SPEC-PLUGIN §7 "Geometry" (Hyprland rounding 0, 6
 and 16: rows, tiles, notices and controls round with it, stripes, accent
 bars, progress bars and heatmap cells stay square) runs on the test host
-with the theme sweep, by eye on its shots.
+with the theme sweep, by eye on its shots. Headless, `rounding-16` (a
+`hyprctl` stub that answers 16 for `decoration:rounding`) and
+`rounding-0` check the bars at a row's edge, and `chip-50` and
+`chip-narrow` (a 920 px window, where "1 notice" no longer fits) that the
+header's chip shows the count alone rather than an elided word: every visible list-row
+selection bar, stripe and sidebar selection bar is a clipped slice of its
+row's own shape (the harness's `marks.bars`, `marks.barsOutside`).
 
 The graph (WP-125, section 11): on the sample it settles and sleeps
 (200 ticks, the Timer off, no tick and no paint after), each reported
@@ -1271,29 +1277,45 @@ platform), which does not paint shader effects such as `MultiEffect`;
 that is one reason the plugin tints its masks through the SVG root colour
 (SPEC-PLUGIN §4).
 
-**`plugin/preview.png`** (the marketplace image, WP-041) is composed from
-two of these renders, kept in `docs/images/` (monorepo only, so the plugin
-repository stays small): `overlay-tokyo-night-1920x1080.png` (the
-`OVERLAY_SHOTS` render on 90 d) and `panel-tokyo-night-today.png` (the
-`PANEL_SHOTS` render). To refresh it after a visible change, render both,
-copy them over the files in `docs/images/`, and run (ImageMagick 7; the
-colours are Tokyo Night's `background` and `accent` from its
-`colors.toml`):
+**`plugin/preview.png`** (the marketplace image) and the guide's pictures
+`docs/images/desk-tokyo-night-*.png` are screenshots of the desk in a live
+Omarchy shell on the test host (WP-126b; 1920×1080, scale 1, Tokyo Night,
+rounding 0), on the sample logbook in place of the host's own:
 
-```sh
-magick docs/images/panel-tokyo-night-today.png -crop 460x538+0+0 +repage \
-  -bordercolor '#1a1b26' -border 18 -bordercolor '#7aa2f7' -border 2 /tmp/panel-framed.png
-magick -size 2480x1080 xc:'#1a1b26' \
-  docs/images/overlay-tokyo-night-1920x1080.png -geometry +0+0 -composite \
-  /tmp/panel-framed.png -geometry +1942+24 -composite \
-  -strip -define png:compression-level=9 plugin/preview.png
-```
+1. Back up the test host's `~/Seldon`, `~/.local/state/seldon`,
+   `~/.config/seldon` and `~/.config/omarchy/shell.json`, and prove the
+   copy (`diff -r`).
+2. Copy `fixtures/logbook/` to `~/Seldon`; put the golden test's state
+   beside the index (`engine/tests/index.rs`: `cursors.json` with
+   `fixtures/state/pacman-cursor.json`, the proposals bound to the
+   logbook, `fixtures/state/recent-config.json` with its times moved to
+   now); a `config.toml` with every collector off (the plugin's timed
+   capture then records nothing of the host) and no git autocommit; then
+   `seldon index`, `seldon rules update` and two `seldon log` notes, so
+   Today has a journal.
+3. For Work's "agent working": an `[agent] launcher` that only opens a
+   terminal (`["foot", "--app-id=org.omarchy.agent", "--hold", "-T",
+   "Seldon sample agent", "echo", "{prompt}"]`; the engine tracks windows
+   of class `org.omarchy.agent`), `seldon agent start C-2026-003`, the
+   window moved to another workspace.
+4. Each section by `omarchy-shell shell summon jax.seldon
+   '{"section":"…","select":"…"}'`, `grim`; the width through the bar
+   entry's `deskWidth` in `shell.json`; the setup card with `~/Seldon`
+   moved aside for a moment (cropped to the card: the preview beside it
+   lists the host's own packages).
+5. The triage proposal opens only on a click, and the test host has no
+   pointer tool: that one picture is the headless harness's `shot:` of the
+   real QML on `fixtures/index.sample.json` (`clickName:proposalRow`),
+   cropped above the dev-mode footer.
+6. Crop, `-strip`, a 256-colour palette (ImageMagick 7:
+   `magick in.png -crop WxH+X+Y +repage -strip -colors 256 PNG8:out.png`;
+   20–110 KB each), and restore the backup; prove it equals the copy.
 
-The crop is the panel's 460-unit width (the tab strip ends flush with it
-since WP-039) and the bottom of the journal's last entry at the default
-font. The framed panel is 500×578, placed 22 px right of the overlay with
-36 px to spare, so the canvas is 2480×1080. Re-check both if the panel's
-layout changes. The image must stay under 1 MB (it is about 150 KB).
+Theme sweeps (three themes × 100 % and 50 % × Hyprland rounding 0, 6,
+16) are shot the same way and kept out of the repository. `omarchy theme
+set` reloads Hyprland's config and so resets a rounding set with `hyprctl
+eval`, and the shell reads the rounding only at start: set the theme,
+then the rounding, then `omarchy-restart-shell`.
 
 ### 3d. The graph live on a session (WP-125)
 

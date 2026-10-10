@@ -530,9 +530,14 @@ git 2.44 or later.
   and the plan cards and the progress bars are square, the notices take
   the shell's corner radius: rows, tiles, notices and controls follow
   Hyprland's `decoration:rounding` as Omarchy's own panels do, and the
-  marks that carry a state stay square at any rounding.
-- **"· agent working" on Today's case tile (WP-126)** while an agent runs
-  on the case, as its Work row says.
+  marks that carry a state stay square at any rounding; a bar at a
+  rounded row's edge follows the row's corner instead of sticking out.
+- **"agent working" on Today's case tile (WP-126)** while an agent runs
+  on the case, first in its line as on its Work row, so a narrow desk
+  never cuts it off.
+- **The header's chip on a narrow desk (WP-126)** shows "N notices", then
+  the count alone, never an elided word (50 % of a 1920 px screen cut
+  "1 notice" to "1 not…").
 - The setup terminals and `install.sh` name the desk, not the panel.
 - **Ignored by pacman (WP-165, ADR-0052).** System has a seventh tile:
   the packages and groups pacman's full upgrade skips — "pacman's full

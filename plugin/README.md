@@ -9,10 +9,9 @@ for your Omarchy system.
 [![Release](https://img.shields.io/github/v/release/JohnAndrewsX/jax-seldon)](https://github.com/JohnAndrewsX/jax-seldon/releases/latest)
 [![Licence: MIT](https://img.shields.io/github/license/JohnAndrewsX/jax-seldon)](LICENSE)
 
-<!-- TODO(WP-126b) preview.png: reshoot as the desk (Today at 100 %, sample index, Tokyo Night) and rewrite this alt text; the current file shows the 0.1 panel and overlay -->
-![Preview, 2480×1080: the Prime Radiant at 1920×1080 on the left, the panel's Today tab framed on the right, Tokyo Night](preview.png)
+![Preview, 1920×1080: the desk on Today at full width, Tokyo Night, sample data: the header with its counts, the sidebar with the nine sections, NEEDS YOU, today's journal and the active cases](preview.png)
 
-*Offscreen renders of the real QML on the sample index, Tokyo Night theme.*
+*A screenshot of the plugin in a live Omarchy shell on the sample logbook, Tokyo Night theme.*
 
 The Seldon engine records what changes on your machine (packages, Omarchy
 updates, themes, plugins, snapshots, config) in a plain-Markdown logbook
@@ -170,11 +169,11 @@ sections and their counts and the search (`/`); then the section's list
 and the detail of the selected row, its actions in a bar at the top that
 stays while the detail scrolls.
 
-<!-- TODO(WP-126b) screenshot: docs/images/desk-tokyo-night-today.png; the desk at 100 % on Today, sample index, Tokyo Night -->
+The picture at the top of this page shows the desk on Today.
 
 | # | Section | Lists | Actions |
 |---|---|---|---|
-| 1 | Today | the day's state, events today and in 7 days, the note field (`n`), NEEDS YOU (the crises), today's journal and yesterday's behind one row; the overview: the setup card until Seldon is set up, then "Seldon is recording. …", the active cases as tiles ("· agent working" while an agent runs on one), *New case* from one sentence (`i`) | write a note; *Open in editor* (`e`, today's journal); resolve a crisis in place |
+| 1 | Today | the day's state, events today and in 7 days, the note field (`n`), NEEDS YOU (the crises), today's journal and yesterday's behind one row; the overview: the setup card until Seldon is set up, then "Seldon is recording. …", the active cases as tiles ("agent working" first in its line while an agent runs on one), *New case* from one sentence (`i`) | write a note; *Open in editor* (`e`, today's journal); resolve a crisis in place |
 | 2 | Changelog | *Agent sorts N open changes* and the agent's proposal; the chips open · crisis · attention · routine · in case · all (`f` / `F`); every event, newest first by day, a stripe on open changes (crisis urgent, attention accent) | resolve a change (*Link*, *Explain*, *Dismiss*); *Apply proposals*, *Discard*; *Ask agent*; *Ledger* (`e`); *Capture now* (`c`) |
 | 3 | Work | one sentence to a new case and *Run* (`i`); "2 / 3 active" against your limit; *By agent*; *Import tasks…*; *New case* (`+`); the cases grouped ACTIVE · VERIFICATION · QUEUED · COMPLETED | by status (below); *Open in editor* (`e`); *Ask agent* |
 | 4 | Decisions | your decisions (ADRs), newest first, proposed ones marked; the detail shows the decision's first paragraph | *Accept* (twice); *New decision* (`d`); *Open in editor* (`e`) |

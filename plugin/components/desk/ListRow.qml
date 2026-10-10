@@ -56,23 +56,42 @@ Item {
     color: hasCursor ? fill : (current ? currentFill : Style.normalFillFor(root.foreground, root.accent))
   }
 
-  Rectangle {
+  // The selection bar and the stripe are square (SPEC-PLUGIN §7
+  // "Geometry"): each is a slice of the row's own shape, a rectangle of the
+  // row's size and Style.cornerRadius clipped to the bar, so it runs the full
+  // height where the row is straight and follows the row's rounded corner
+  // instead of sticking out past it (review F9).
+  Item {
     objectName: "rowSelectionBar"
     visible: root.selected
     width: root.barWidth
     height: parent.height
-    color: root.tone.accentUi
+    clip: true
+
+    Rectangle {
+      x: -parent.x
+      width: root.width
+      height: parent.height
+      radius: Style.cornerRadius
+      color: root.tone.accentUi
+    }
   }
 
-  // The stripe is square (radius 0, SPEC-PLUGIN §7 "Geometry"); the row
-  // around it keeps Style.cornerRadius.
-  Rectangle {
+  Item {
     objectName: "rowStripe"
     visible: root.stripe !== ""
     x: root.barWidth + Style.spacing.xxs
     width: Math.max(2, Style.space(3))
     height: parent.height
-    color: root.stripe === "crisis" ? root.urgent : root.accent
+    clip: true
+
+    Rectangle {
+      x: -parent.x
+      width: root.width
+      height: parent.height
+      radius: Style.cornerRadius
+      color: root.stripe === "crisis" ? root.urgent : root.accent
+    }
   }
 
   Column {
