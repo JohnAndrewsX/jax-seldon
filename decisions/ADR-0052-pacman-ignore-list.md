@@ -166,14 +166,17 @@ plugin reads contract 2 yet, so no reader can misread it.
 - The first capture of this engine shows the list without an event; from
   then on, an edit of IgnorePkg — or `omarchy refresh pacman` wiping it —
   is one attention item until explained.
-- `fixtures/`: the story's 09-27 mesa downgrade is followed by the human
-  pinning the three packages (`IgnorePkg = mesa vulkan-radeon
-  lib32-mesa`); the next capture records the change, which the human
-  explains. `fixtures/state/pacman-cursor.json` is the pacman cursor the
-  golden test and the reference derive read for `system.pacmanIgnore`.
+- `fixtures/`: `fixtures/state/pacman-cursor.json` is the pacman cursor
+  of the sample's 17:05 capture (`IgnorePkg = zoom slack-desktop`,
+  pinned before the logbook began, so no ledger line); the golden test
+  and the reference derive read it for `system.pacmanIgnore`. The change
+  is the index variant `pacman-ignore-changed` (after the 09-27 mesa
+  downgrade the human pins the three packages: one open attention item
+  `ignore-list`), index only like `boot-config`: in the sample's ledger
+  it would move every list the plugin harness walks.
 - SPEC-ENGINE §2 (the cursor), §4 (the pacman collector), §5 (the row),
-  §6 (the field); SPEC-LOGBOOK (the meta keys); SPEC-PLUGIN (the tile,
-  the hint); CONTRACT.md rule 9; CHANGELOG.
+  §6 (the field); `event.schema.json` (the meta keys); SPEC-PLUGIN (the
+  tile, the hint); CONTRACT.md rule 9; CHANGELOG.
 
 ## Alternatives considered
 
