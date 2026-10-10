@@ -9,7 +9,7 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
   "schemaVersion": 1,
   "id": "jax.seldon",
   "name": "JAX Seldon",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "author": "JohnAndrewsX",
   "license": "MIT",
   "description": "The memory of your Omarchy machine, for you and your agents: ledger, journal, cases, drift and the Prime Radiant in one desk.",
@@ -20,7 +20,7 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
     "defaults": { "captureIntervalMin": 15, "wipLimit": 3, "driftInBar": "crisis", "deskWidth": 100, "deskSidebar": "open" },
     "schema": [ "… one entry per key of defaults (plugin/manifest.json)" ]
   },
-  "seldon": { "contractVersion": 2, "engineMin": "0.1.0" }
+  "seldon": { "contractVersion": 2, "engineMin": "0.2.0" }
 }
 ```
 
@@ -453,7 +453,10 @@ the logbook has no case and nothing is open, the **first-run card**
 "Seldon is recording. Nothing to do." with one line on what Seldon does
 from here (WP-119; a tile whose figure is 0 shows it in the muted tone),
 a lead on what stays quiet, the active cases as tiles (id · risk, title, the plan's
-progress, "2/4 steps · claude-code"; a click opens the case in Work) and
+progress, "2/4 steps · claude-code", and "· agent working" while an agent
+`seldon agent start` launched runs or starts on the case, from the
+service's sessions as Work's row says it, `Model.todayCaseTiles`,
+FEEDBACK 11; a click opens the case in Work) and
 **New case**: one sentence → `seldon agent start --new --json --
 <intent>` (`i` focuses it; the call and the result line Work's *Run*
 shares; the field keeps its text until the engine has made the case). A
@@ -1520,14 +1523,20 @@ fails on `Color.muted` as a Text colour and on a literal
 `Util.alpha(…, <number>)` outside its allow-list: named colour properties
 of the charts and the graph (data colours), each with its alpha.
 
-**Geometry.** Rows and `qs.Ui` controls take `Style.cornerRadius`
-(Hyprland's `decoration:rounding`, 0 by default), as Omarchy's own
-`Ui/CursorSurface.qml` does. Only stripes, accent bars and heatmap cells
-are square (radius 0); a progress bar counts as a bar. Three shapes
-differ until WP-126's sweep: the list row's stripe and the progress bars
-are capsules (`components/desk/ListRow.qml`, `components/desk/Progress.qml`,
-`radius: height / 2`), and the banner card takes `Style.spacing.labelGap`
-(`components/Banner.qml`) instead of `Style.cornerRadius`. Spacing and sizes come from
+**Geometry** (B10, Omarchy first). Rows, cards and `qs.Ui` controls take
+`Style.cornerRadius` (Hyprland's `decoration:rounding`, 0 by default), as
+Omarchy's own `Ui/CursorSurface.qml`, `Ui/Button.qml` and
+`Ui/TextField.qml` do: with rounding 0 the desk is square like the rest
+of the shell, with rounding 6 or 16 its rows, tiles, notices and controls
+round with it. Only marks that carry a state stay square whatever the
+rounding (radius 0): the stripe of a list row and of the Prime Radiant's
+plan cards (`components/desk/ListRow.qml`, `components/overlay/ThePlan.qml`),
+the selection's accent bars (rows, sidebar, the chosen Changelog chip),
+the progress bars (`components/desk/Progress.qml`; a progress bar counts
+as a bar) and the heatmap's cells; a rounded stripe at 16 would read as a
+pill. Round by design whatever the rounding: a dot or a ring (a setup
+step's number, a graph node) and the header's status chip, a capsule. The theme sweep checks the desk at Hyprland rounding
+0, 6 and 16. Spacing and sizes come from
 `Style.spacing.*` where a name exists (`controlHeight`, `rowPaddingX`,
 `panelPadding`, …) and from `Style.space(N)` otherwise, so they scale
 with the font; type sizes from `Style.font.*`, the family
@@ -1655,15 +1664,23 @@ writing engine command, and `SELDON_NOW` pins its clock. The headless
 harness under `tests/plugin/` (`just plugin-test`) runs Service.qml in an
 offscreen Quickshell against fake engines and checks the exact argv of
 every command the plugin issues; it is part of `just check`. After copying
-changed plugin code into a live shell, run `omarchy-restart-shell` —
-Quickshell 0.3.1 does not reload plugin code on file change.
+changed plugin code into a live shell, run `omarchy-restart-shell`: a
+file change makes the shell reload the plugin (`shell.reloadPlugins()`,
+also `omarchy plugin update`), but Quickshell 0.3.1 has no
+`Qt.clearComponentCache`, so the reload re-creates the plugin from the
+QML and JS it compiled first; new code runs only after a shell restart
+(measured, `memory/omarchy-shell.md`, WP-090).
 
 ## 10. Security posture (for the marketplace listing)
 
 No network. No bundled binaries, units or installers. Reads one JSON file,
 and its own images under `plugin/assets/` (SVG and PNG artwork, no
 scripts; WP-051).
-Runs the `seldon` engine with fixed arguments (the forms in CONTRACT.md).
+Runs the `seldon` engine with fixed arguments (the forms in CONTRACT.md),
+by name on the shell's `PATH` (`~/.local/bin` from `install.sh`,
+`/usr/bin` from the AUR package): the plugin ships no binary and pins no
+path, so the engine is the one the user installed and updates, and a
+missing one is the "Install the engine" state, not a guess.
 Besides the engine it starts only `wl-copy` with one constant command and
 Omarchy's floating-terminal launcher with one constant script (§5), only
 on a banner click, and
