@@ -133,9 +133,42 @@ function readAllow(text, report = fail) {
   return entries
 }
 
+// The source without comments, by a plain scan that knows no strings
+// (a `//` counts only at the line start or after a blank, so a URL in a
+// string stays): an independent second reading of the file.
+function withoutComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|\s)\/\/.*$/gm, "$1")
+}
+
+// `Text {` counted the plain way. blank() also skips strings; a quote it
+// misreads (a JS regex literal such as /"/) would hide every Text block
+// after it, so the two counts must agree.
+function naiveTextCount(src) {
+  return (withoutComments(src).match(/\bText\s*\{/g) || []).length
+}
+
+// Ways to set textFormat that the declarative check cannot follow: an
+// assignment (`t.textFormat = …`, `textFormat = …` in a handler), a
+// `Binding { property: "textFormat" }` and `property alias f:
+// t.textFormat`. None is supported; each fails with its line.
+var IMPERATIVE = [
+  { re: /(^|[^=!<>])\btextFormat\s*=(?!=)/, what: "an assignment to textFormat" },
+  { re: /["']textFormat["']/, what: "textFormat named as a string (a Binding's property)" },
+  { re: /\.textFormat\b/, what: "textFormat reached through an object (an alias or a script)" }
+]
+
 // The failures of one file's source against the allow-list.
 function check(file, src, allow) {
   const problems = []
+  const naive = naiveTextCount(src)
+  const scanned = textBlocks(src).length
+  if (naive !== scanned)
+    problems.push(file + ": " + naive + " `Text {` in the source but " + scanned
+      + " found by the scan; something (a quote in a regex literal?) hides blocks from it")
+  withoutComments(src).split("\n").forEach((line, i) => {
+    for (const imp of IMPERATIVE)
+      if (imp.re.test(line)) problems.push(file + ":" + (i + 1) + ": " + imp.what + " is not supported (E72)")
+  })
   for (const b of textBlocks(src)) {
     if (b.plain) continue
     const entry = b.id !== "" && allow.find((a) => a.file === file && a.id === b.id)
@@ -207,6 +240,24 @@ for (const f of files) {
 }
 if (mutants !== blocks - allow.filter((a) => a.used).length) fail("mutants: " + mutants + " of " + blocks + " blocks mutated")
 
+// The regex-quote mutant (review 1, F5): a function with /"/ before the
+// first Text block of every real file that has one, and a Text block
+// without textFormat after it. The scan misreads the quote and loses the
+// blocks after it; the count check must say so.
+let regexMutants = 0
+for (const f of files) {
+  const first = textBlocks(f.src)[0]
+  if (!first) continue
+  const lines = f.src.split("\n")
+  lines.splice(first.line - 1, 0, "  function seldonMutant(s) { return s.replace(/\"/g, \"\") }",
+    "  Text { text: \"mutant\" }")
+  const problems = check(f.file, lines.join("\n"), [])
+  if (!problems.some((p) => p.includes("found by the scan")))
+    fail(f.file + ": the regex-quote mutant survived: " + problems.join("; "))
+  regexMutants++
+}
+if (regexMutants === 0) fail("no file for the regex-quote mutant")
+
 // 3. Hand-made shapes: each `bad` must fail, each `good` must pass.
 const shapes = {
   bad: {
@@ -222,6 +273,12 @@ const shapes = {
     "a contentItem": "PanelToolTip {\n  contentItem: Text {\n    text: tooltip.text\n  }\n}\n",
     "a qualified type": "QQ.Text {\n  text: \"a\"\n}\n",
     "a one-liner": "Text { text: \"a\" }\n",
+    "after a regex with a quote": "Item {\n  function f(s) { return s.replace(/\"/g, \"\") }\n  Text { text: \"a\" }\n}\n",
+    "after a regex with a quote, declared": "Item {\n  function f(s) { return s.replace(/\"/g, \"\") }\n  Text { textFormat: Text.PlainText }\n}\n",
+    "an assignment": "Text {\n  id: t\n  textFormat: Text.PlainText\n  Component.onCompleted: t.textFormat = Text.RichText\n}\n",
+    "a bare assignment": "Text {\n  textFormat: Text.PlainText\n  onTextChanged: textFormat = Text.RichText\n}\n",
+    "a Binding": "Item {\n  Text { id: t; textFormat: Text.PlainText }\n  Binding { target: t; property: \"textFormat\"; value: Text.RichText }\n}\n",
+    "an alias": "Item {\n  property alias format: t.textFormat\n  Text { id: t; textFormat: Text.PlainText }\n}\n",
     "rich text at a use site": "Item {\n  component Line: Text { textFormat: Text.PlainText }\n  Line { textFormat: Text.StyledText }\n}\n",
     "an expression": "Text {\n  textFormat: Text.PlainText\n}\nLine { textFormat: root.format }\n",
     "the second of two": "Column {\n  Text { textFormat: Text.PlainText }\n  Text { text: \"b\" }\n}\n"
@@ -232,6 +289,8 @@ const shapes = {
     "after a child": "Text {\n  Item { width: 1 }\n  textFormat: Text.PlainText\n}\n",
     "a brace in a string": "Text {\n  text: \"{\"\n  textFormat: Text.PlainText\n}\n",
     "a brace in a comment": "Text {\n  // }\n  textFormat: Text.PlainText\n}\n",
+    "a comparison and a comment": "Text {\n  textFormat: Text.PlainText\n  // t.textFormat = Text.RichText\n  visible: textFormat == Text.PlainText\n}\n",
+    "a URL in a string": "Text { textFormat: Text.PlainText; text: \"https://x.org\" }\nText { textFormat: Text.PlainText }\n",
     "not a Text": "TextField {\n  text: \"a\"\n}\nTextMetrics { text: \"a\" }\nStyledLabel { }\n",
     "an inline component": "Item {\n  component Line: Text {\n    textFormat: Text.PlainText\n  }\n  Line { text: \"a\" }\n}\n"
   }
@@ -260,5 +319,5 @@ if (failures > 0) {
   process.exitCode = 1
 } else {
   console.log("plaintext.test.js: " + blocks + " Text blocks in " + files.length + " files, all PlainText; "
-    + mutants + " mutants caught; " + (Object.keys(shapes.bad).length + Object.keys(shapes.good).length) + " shapes")
+    + mutants + " mutants and " + regexMutants + " regex-quote mutants caught; " + (Object.keys(shapes.bad).length + Object.keys(shapes.good).length) + " shapes")
 }

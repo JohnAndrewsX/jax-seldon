@@ -784,10 +784,18 @@ own level — not in a child, a binding block, a comment or a string — and
 that no `textFormat:` anywhere in the plugin is anything else, so a use
 site cannot switch a Text-based component back to rich text. An exception
 is a line `<file>#<id> <reason>` in `tests/plugin/plaintext-allow.txt`
-(empty today); a line that matches no block that needs it fails. The test
-proves itself: for every real block (178 in 52 files at 0.2.0) it removes
-that block's declaration and requires the failure at that line, and it
-runs 15 hand-made shapes that must fail and 7 that must pass.
+(empty today); a line that matches no block that needs it fails. Two
+more rules close the gaps of that scan: the number of blocks it finds
+must equal a plain count of `Text {` on the source with only comments
+removed (a quote it misreads, as in a regex literal `/"/`, would hide
+every block after it), and an assignment to `textFormat`, a `Binding` on
+it (`"textFormat"`) and an alias or script access (`.textFormat`) are
+refused as unsupported. The test proves itself: for every real block
+(178 in 52 files at 0.2.0) it removes that block's declaration and
+requires the failure at that line; into every real file with a Text
+block it inserts a function with `/"/` and a bare Text block before the
+first one and requires the count failure; and it runs 21 hand-made
+shapes that must fail and 9 that must pass.
 
 ### 2. `Service.qml` in a private headless Quickshell
 
