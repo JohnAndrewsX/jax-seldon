@@ -171,14 +171,18 @@ Rules:
   passed. "Not run" is never "passed" (AGENTS.md §5).
 - Each scenario not run has a `limitations` entry that starts with
   `<id>: ` and says why.
-- No host names, user names or private paths (AGENTS.md §8): write
-  `~/…`, never `/home/…`, and "the test host", never its name.
-- No other fields; a typo is refused, not ignored.
+- No host names, user names, machine-ids or private paths (AGENTS.md
+  §8): write `~/…`, never `/home/…` or `/root/…`, and "the test host",
+  never its name.
+- No other fields, and no key twice; a typo is refused, not ignored.
 
 `bash packaging/acceptance-check.sh X.Y.Z [REF]` (bash and jq, no
 network; REF defaults to `HEAD`) reads the record as committed in REF and
 refuses (exit 1, every reason listed) unless the fields and rules hold,
-`status` is not `failed`, `commit` is REF or an ancestor of it, and
+`status` is not `failed`, the record names neither this machine, its
+user, nor a host or machine-id from the git-ignored
+`scripts/guard-hosts.local` and `scripts/deploy-hosts.local` (a
+best-effort check), `commit` is REF or an ancestor of it, and
 between `commit` and REF nothing changed outside `docs/`, `work/`,
 `packaging/acceptance/` and `*.md` files that are not under `engine/`
 (the engine compiles its skills and templates in). It prints each

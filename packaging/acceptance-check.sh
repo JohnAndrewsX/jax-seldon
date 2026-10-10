@@ -10,9 +10,11 @@
 #     `partial` when one was not run, else `passed`; each scenario not
 #     run has a `limitations` entry starting with "<id>: ";
 #   - `status` is not `failed`;
-#   - the record names no private path (/home/…, /Users/…), and none of
-#     this machine's host name, user name or the hosts listed in the
-#     git-ignored scripts/guard-hosts.local and scripts/deploy-hosts.local;
+#   - the record has no key twice (jq would read only the last one);
+#   - the record names no private path (/home/…, /Users/…, /root/…), and
+#     none of this machine's host name, user name, the hosts listed in the
+#     git-ignored scripts/guard-hosts.local and scripts/deploy-hosts.local
+#     or the machine-ids pinned in the latter;
 #   - `commit` is in the repository and an ancestor of REF (or REF);
 #   - between `commit` and REF only docs/, work/, packaging/acceptance/
 #     and *.md outside engine/ changed (the engine compiles its skills
@@ -58,6 +60,16 @@ jq -e 'type == "object"' >/dev/null 2>&1 <<<"$record" \
   || refuse "$path is not one JSON object"
 # one object, not several: `jq -s length` counts the documents
 [[ $(jq -s length <<<"$record") == 1 ]] || refuse "$path holds more than one JSON value"
+# A key given twice: jq keeps the last value, a reader may see the first.
+# The text's leaf events outnumber the parsed record's then; name them.
+leaf_name='map(if type == "number" then "[\(.)]" else ".\(.)" end) | join("")'
+raw_leaves=$(jq -r --stream "select(length == 2) | .[0] | $leaf_name" <<<"$record")
+parsed_leaves=$(jq -r "tostream | select(length == 2) | .[0] | $leaf_name" <<<"$record")
+if [[ $(wc -l <<<"$raw_leaves") != "$(wc -l <<<"$parsed_leaves")" ]]; then
+  twice=$({ sort <<<"$raw_leaves" | uniq -d; comm -23 <(sort -u <<<"$raw_leaves") <(sort -u <<<"$parsed_leaves"); } \
+    | sort -u | paste -sd ' ')
+  refuse "$path has a key twice (at ${twice:-?}); jq reads only the last one, a reader may see the first"
+fi
 
 # ---- fields and rules ---------------------------------------------------------------
 
@@ -166,8 +178,8 @@ done <<<"$fields"
 # ---- privacy (AGENTS.md §8) ---------------------------------------------------------
 
 text=$(jq -r '.. | strings' <<<"$record")
-if grep -Eq '/(home|Users)/' <<<"$text"; then
-  errors+=("a private path (/home/… or /Users/…) in the record; write ~/… or leave it out (AGENTS.md §8)")
+if grep -Eq '/(home|Users|root)/' <<<"$text"; then
+  errors+=("a private path (/home/…, /Users/… or /root/…) in the record; write ~/… or leave it out (AGENTS.md §8)")
 fi
 names=()
 host=$(uname -n 2>/dev/null || true)
@@ -176,13 +188,17 @@ user=$(id -un 2>/dev/null || true)
 [[ ${#user} -ge 3 && $user != root ]] && names+=("$user")
 for list in "$top/scripts/guard-hosts.local" "$top/scripts/deploy-hosts.local"; do
   [[ -f $list ]] || continue
-  while read -r name _; do
-    [[ -n $name && $name != \#* ]] && names+=("$name")
+  # the last line may lack its newline (deploy-test-host.sh reads it too);
+  # deploy-hosts.local's second column is the host's pinned machine-id
+  while read -r name id _ || [[ -n $name ]]; do
+    [[ -n $name && $name != \#* ]] || continue
+    names+=("$name")
+    [[ -z $id ]] || names+=("$id")
   done <"$list"
 done
 for name in ${names[@]+"${names[@]}"}; do
   if grep -Fqiw -- "$name" <<<"$text"; then
-    errors+=("the record names this machine, its user or a listed host; leave host and user names out (AGENTS.md §8)")
+    errors+=("the record names this machine, its user, a listed host or a pinned machine-id; leave them out (AGENTS.md §8)")
     break
   fi
 done

@@ -49,6 +49,7 @@ g_init() {
   put plugin/Panel.qml 'Item {}'
   put plugin/README.md '# plugin'
   put .github/workflows/release.yml 'name: release'
+  put packaging/PKGBUILD 'pkgver=1.2.3'
   put docs/VERSIONING.md '# versions'
   put README.md '# readme'
   put CHANGELOG.md '# changelog'
@@ -180,6 +181,17 @@ g checkout -q --detach "$after"
 printf '%s\n%s\n' "$good" "$good" >"$repo/$rec"
 expect_refused "two JSON objects" "holds more than one JSON value" 1.2.3 "$(commit_all two)"
 
+# a key twice: jq would read the last value; the reader may see the first
+g checkout -q --detach "$after"
+jq -r '"{\"status\": \"failed\", " + (tojson | .[1:])' <<<"$good" >"$repo/$rec"
+expect_refused "a top-level key twice" 'has a key twice (at .status)' 1.2.3 "$(commit_all twice)"
+g checkout -q --detach "$after"
+jq '.omarchy = {version: "4.0.4-1"}' <<<"$good" | jq -r 'tojson | sub("\"omarchy\":"; "\"omarchy\":{\"channel\":\"rc\"},\"omarchy\":")' >"$repo/$rec"
+expect_refused "an object key twice with other fields" 'has a key twice (at .omarchy.channel)' 1.2.3 "$(commit_all twice2)"
+g checkout -q --detach "$after"
+jq -r 'tojson | sub("\"id\":\"a\""; "\"id\":\"x\",\"id\":\"a\"")' <<<"$good" >"$repo/$rec"
+expect_refused "a scenario key twice" 'has a key twice (at .scenarios[0].id)' 1.2.3 "$(commit_all twice3)"
+
 # ---- each broken field ------------------------------------------------------------
 
 broken "unknown top-level field" 'unknown field "limitation"' '.limitation = []'
@@ -254,15 +266,24 @@ broken "a failed live test" 'the live test failed: a' \
 
 # ---- privacy -------------------------------------------------------------------------
 
-broken "a private path" 'a private path (/home/… or /Users/…)' '.scenarios[0].notes = "see /home/someone/log"'
+broken "a private path" 'a private path (/home/…, /Users/… or /root/…)' '.scenarios[0].notes = "see /home/someone/log"'
 broken "a macOS home path" 'a private path' '.limitations = ["/Users/someone/x"]'
+broken "root's home" 'a private path' '.scenarios[1].notes = "ran from /root/seldon"'
 put scripts/guard-hosts.local $'# test hosts\nseldon-scratch-host'
-broken "a host listed in guard-hosts.local" 'names this machine, its user or a listed host' \
+broken "a host listed in guard-hosts.local" 'names this machine, its user, a listed host or a pinned machine-id' \
   '.scenarios[0].notes = "ran on seldon-scratch-host"'
 rm "$repo/scripts/guard-hosts.local"
-put scripts/deploy-hosts.local 'seldon-pinned-host 0123456789abcdef'
-broken "a host listed in deploy-hosts.local" 'names this machine, its user or a listed host' \
+# the last line without its newline, as deploy-test-host.sh accepts it
+mkdir -p "$repo/scripts"
+printf '%s\n%s' 'seldon-first-host' 'seldon-last-host' >"$repo/scripts/guard-hosts.local"
+broken "the last host of a list without a final newline" 'a listed host' \
+  '.scenarios[0].notes = "ran on seldon-last-host"'
+rm "$repo/scripts/guard-hosts.local"
+put scripts/deploy-hosts.local 'seldon-pinned-host 0123456789abcdef0123456789abcdef'
+broken "a host listed in deploy-hosts.local" 'names this machine, its user, a listed host or a pinned machine-id' \
   '.limitations = ["Seldon-Pinned-Host was slow"]'
+broken "a pinned machine-id" 'a pinned machine-id' \
+  '.scenarios[0].notes = "machine-id 0123456789abcdef0123456789abcdef"'
 rm "$repo/scripts/deploy-hosts.local"
 host=$(uname -n)
 if [[ ${#host} -ge 3 && $host != localhost ]]; then
@@ -294,6 +315,11 @@ g checkout -q --detach "$after"
 g mv engine/src.rs docs/src.rs
 renamed=$(record "$(commit_all "rename")")
 expect_refused "code renamed into docs/ counts as the old path" "      engine/src.rs" 1.2.3 "$renamed"
+
+g checkout -q --detach "$after"
+put packaging/PKGBUILD 'pkgver=1.2.3 # changed'
+pkgbuild=$(record "$(commit_all "packaging")")
+expect_refused "packaging/ outside acceptance/ is code" "      packaging/PKGBUILD" 1.2.3 "$pkgbuild"
 
 g checkout -q --detach "$after"
 chmod +x "$repo/plugin/Panel.qml"
@@ -336,6 +362,8 @@ mutant "no ancestor check" 's/elif ! git merge-base --is-ancestor "$commit" "$re
 # shellcheck disable=SC2016
 mutant "Markdown under engine/ allowed" '/        engine\/\*) offending+=("$changed") ;;/d' 1.2.3 "$skill"
 mutant "renames detected" 's/ --no-renames / -M /' 1.2.3 "$renamed"
+mutant "all of packaging/ allowed" 's|docs/\* \| work/\* \| packaging/acceptance/\*) ;;|docs/* \| work/* \| packaging/*) ;;|' \
+  1.2.3 "$pkgbuild"
 # shellcheck disable=SC2016
 mutant "status not derived from the scenarios" 's/and .status != $derived then/and false then/' \
   1.2.3 "$(record "$after" "$not_run | .limitations = [\"check: not run\"]")"
