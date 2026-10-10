@@ -11,7 +11,7 @@ languages.
 | arm, disarm | scharf schalten, entschärfen | the first Enter of a writing action in the panel arms it, the second sends it; any other key disarms it |
 | attention | zur Kenntnis | drift that is listed quietly: a package installed by name, a third-party plugin, an override; nobody has to explain it |
 | backfill | Nacherfassung | recording changes from before the logbook, with `seldon init --since` |
-| baseline | Baseline | the dismissal of all drift a backfill found, with the reason "pre-Seldon baseline" |
+| baseline | Baseline | the dismissal of all drift a backfill found, with the reason "before Seldon" ("pre-Seldon baseline" before 0.2.0) |
 | capture | Erfassung | one run of the collectors; `seldon capture` |
 | case | Case | one planned change, `C-YYYY-NNN`, a file in `work/` |
 | collector | Collector | a part of the engine that reads one source: `snapper`, `pacman`, `omarchy`, `plugins`, `theme`, `config` |

@@ -7,7 +7,7 @@ of it touches your logbook, unless you delete it yourself.
 ## Update the engine
 
 Run the installer again, in either form from
-[Getting started](01-getting-started.md#step-1-install-the-engine). The
+[Getting started](01-getting-started.md#install-the-engine). The
 one-liner:
 
 ```sh

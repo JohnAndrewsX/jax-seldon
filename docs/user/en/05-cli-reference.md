@@ -102,12 +102,17 @@ Options:
 ### seldon init
 
 Creates the logbook, the config file, the first capture and the dossier.
-Without flags it asks questions; each flag skips its question. It refuses
-a directory that is not empty and never overwrites a file.
-`--non-interactive` takes the flags, then an existing config, then the
-defaults. `--since` takes a date (`2026-09-29`, local midnight) or an RFC
-3339 time; `--baseline` needs `--since`; `--no-capture` cannot go with
-`--since`. See [Getting started](01-getting-started.md#step-2-create-your-logbook).
+Without flags it asks one question, where the logbook goes, and takes
+the defaults for the rest: the language of your locale, git, Obsidian's
+settings when Obsidian is installed, and a first capture that looks back
+90 days and dismisses what that opens as "before Seldon". `--defaults`
+asks nothing (the plugin's setup card runs it); `--ask` asks every
+question, each flag skipping its own. It refuses a directory that is not
+empty and never overwrites a file. `--non-interactive` takes the flags,
+then an existing config, then the defaults, and records from now on.
+`--since` takes a date (`2026-09-29`, local midnight) or an RFC 3339
+time; `--baseline` needs `--since`; `--no-capture` cannot go with
+`--since`. See [Getting started](01-getting-started.md#create-your-logbook).
 `--harness skills` installs the Seldon agent skill, as
 [`seldon hook install skills`](#seldon-hook-install) does.
 `--remove-theme-hook` is the one flag that does not create a logbook: it

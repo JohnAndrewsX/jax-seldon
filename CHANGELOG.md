@@ -59,6 +59,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **`seldon init` asks only where, and looks back 90 days (WP-119,
+  ADR-0033).** Plain `seldon init` asks one question, the logbook's
+  location, and takes the defaults for the rest; `seldon init --defaults`
+  asks nothing and reads nothing from stdin (the plugin's setup card runs
+  it); `seldon init --ask` is the full wizard, its backfill question now
+  defaulting to 90 days back. All three record the last 90 days on the
+  first capture and dismiss every drift item that opens with the reason
+  "before Seldon" — the History row says "Looked back 90 days: N changes
+  recorded as history before Seldon" — and add Obsidian's settings when
+  Obsidian is installed (its desktop entry is found), instead of asking.
+  The baseline's reason is "before Seldon" also for `--since --baseline`
+  (it was "pre-Seldon baseline"). `--non-interactive` is unchanged: from
+  now on, no backfill, no detection. Harnesses stay as the config says
+  (none on a fresh machine).
 - **The index says which plugin can read it (WP-176, ADR-0051).** Every
   `index.json` carries `contractReadableFrom: 2`, the oldest plugin
   contract that reads it without misreading a field it keys on (optional
@@ -360,6 +374,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **Set up Seldon on one card (WP-119).** Until Seldon is set up,
+  Today's overview shows one card instead of three banners: "Set up
+  Seldon · N of 3 steps to go" — install the engine, create the logbook
+  (`seldon init --defaults`, no question), read snapshots (optional) —
+  done steps ticked, the next one with its button. After each step's
+  terminal the card looks again by itself (no *Check again*). *Not now*
+  on the snapshot step is stored once and never asks again; Settings ›
+  Capture offers it again. A machine without snapper has two steps and
+  no snapshot notice. The header's chip shows the same line and leads to
+  the card. Then a first-run card: "Seldon is recording. Nothing to do.",
+  with the tiles that read 0 in the muted tone. The grant's result line
+  reports instead of forecasting: "The snapshots were not recorded yet;
+  Seldon tries again at its next capture."
 - **A newer engine no longer dims the bar when its index is readable
   (WP-176, ADR-0051).** The plugin reads an index of a newer contract
   when the index says this plugin can (`contractReadableFrom` at most 2):
