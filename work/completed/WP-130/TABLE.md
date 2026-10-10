@@ -160,7 +160,7 @@ What the guard does not protect is listed under [Known limits](#known-limits) at
 |---|---|---|
 | <code>ssh test-host omarchy plugin update jax.seldon</code> [test-host listed] | allow | allowed |
 | <code>ssh test-host &#x27;omarchy plugin add https://x --enable &amp;&amp; omarchy-restart-shell&#x27;</code> [test-host listed] | allow | allowed |
-| <code>ssh test-host &quot;sudo setfacl -m u:eandres:rx /.snapshots&quot;</code> [test-host listed] | allow | allowed |
+| <code>ssh test-host &quot;sudo setfacl -m u:someone:rx /.snapshots&quot;</code> [test-host listed] | allow | allowed |
 | <code>ssh -o BatchMode=yes -o ConnectTimeout=10 test-host &quot;systemctl --user restart seldon-watch&quot;</code> [test-host listed] | allow | allowed |
 | <code>timeout 60 ssh test-host sudo pacman -Syu</code> [test-host listed] | allow | allowed |
 

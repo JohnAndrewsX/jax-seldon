@@ -17,7 +17,8 @@ from pathlib import Path
 
 # the checkout this script lives in: work/active/WP-139/mutants.py
 WT = str(Path(__file__).resolve().parents[3])
-GATES = "/home/eandres/Work/johnandrewsx/jax-seldon-private/gates"
+# the private gates folder beside the repository (no user path in the repo)
+GATES = os.environ.get("MUTANT_GATES", str(Path(WT).parent / "jax-seldon-private" / "gates"))
 ROOT = os.environ.get("MUTANT_ROOT", f"{GATES}/wp139-mutant-root")
 TARGET = os.environ.get("MUTANT_TARGET", f"{GATES}/target-wp139")
 RECENT = "engine/src/collectors/recent.rs"

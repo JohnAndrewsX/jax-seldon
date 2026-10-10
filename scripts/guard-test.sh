@@ -334,7 +334,7 @@ trap 'rm -f "$hosts"' EXIT
 checkh() { GUARD_HOSTS_FILE=$hosts check "$@"; }
 checkh A 'ssh test-host omarchy plugin update jax.seldon'
 checkh A "ssh test-host 'omarchy plugin add https://x --enable && omarchy-restart-shell'"
-checkh A 'ssh test-host "sudo setfacl -m u:eandres:rx /.snapshots"'
+checkh A 'ssh test-host "sudo setfacl -m u:someone:rx /.snapshots"'
 checkh A 'ssh -o BatchMode=yes -o ConnectTimeout=10 test-host "systemctl --user restart seldon-watch"'
 checkh A 'timeout 60 ssh test-host sudo pacman -Syu'
 checkh B 'ssh test-host "omarchy theme set x" && sudo pacman -Syu'
