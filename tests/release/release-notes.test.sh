@@ -271,6 +271,20 @@ expect_refusal "a '*' bullet" "is a \"- \" bullet" 0.2.0 "$tmp/star.md"
 mk "$tmp/blank.md" '### Highlights' '' "${ten[@]:0:9}" '- '
 expect_refusal "an empty bullet" "an empty highlight" 0.2.0 "$tmp/blank.md"
 
+# a list in the standing paragraph would be published beside the
+# Highlights and slip past the ten-point limit (WP-193 review)
+for item in '- point 11' '* point 11' '+ point 11' '1. point 11' '2) point 11' '  - point 11' '-'; do
+  mk "$tmp/early.md" 'A standing paragraph.' "$item" '' '### Highlights' '' "${ten[@]}"
+  expect_refusal "a bullet before ### Highlights: '$item'" "a bullet before ### Highlights" 0.2.0 "$tmp/early.md"
+done
+mk "$tmp/lead.md" 'A standing paragraph - with a dash,' '-1 is not a bullet, nor is 1.5 or *emphasis*.' \
+  '' '### Highlights' '' "${ten[@]}"
+printf '%s\n' 'A standing paragraph - with a dash,' '-1 is not a bullet, nor is 1.5 or *emphasis*.' '' \
+  '### Highlights' '' "${ten[@]}" '' \
+  'Every change in 0.2.0: [CHANGELOG.md](https://example.org/o/r/blob/v0.2.0/CHANGELOG.md#020---2026-11-01)' \
+  > "$tmp/want-lead"
+expect_ok "a standing paragraph without a list item passes" "$tmp/want-lead" 0.2.0 "$tmp/lead.md"
+
 grep -v '^\[0\.2\.0\]: ' "$tmp/base.md" > "$tmp/noref.md"
 expect_refusal "no link reference" "no link reference" 0.2.0 "$tmp/noref.md"
 
@@ -279,6 +293,23 @@ expect_refusal "a link reference that is not https" "no link reference" 0.2.0 "$
 
 sed 's|/releases/tag/v0\.2\.0$|/releases/tag/v0.2.1|' "$tmp/base.md" > "$tmp/otherref.md"
 expect_refusal "a link reference to another tag" "no link reference" 0.2.0 "$tmp/otherref.md"
+
+# --- release.yml prints the notes with workflow commands stopped ---
+# A CHANGELOG line that starts with `::` must never run as a workflow
+# command (WP-193 review): every line that prints notes.md sits between
+# `::stop-commands::<token>` and `::<token>::`, the token random per run.
+wf=$root/.github/workflows/release.yml
+if awk '
+  /echo "::stop-commands::\$stop"/ { if (stop) bad = 1; stop = 1; next }
+  /echo "::\$stop::"/ { if (!stop) bad = 1; stop = 0; next }
+  /^[[:space:]]*cat .*notes\.md/ { printed++; if (!stop) bad = 1 }
+  /stop=\$\(od -An -N16 -tx1 \/dev\/urandom/ { token = 1 }
+  END { exit (bad || stop || printed != 1 || !token) }
+' "$wf"; then
+  pass "release.yml prints notes.md only between ::stop-commands:: and its random token"
+else
+  fail "release.yml: notes.md is printed outside ::stop-commands::<random token> … ::<token>::"
+fi
 
 if [[ $fails -gt 0 ]]; then
   echo "release-notes: $fails failure(s)" >&2
