@@ -265,3 +265,31 @@ plaintext.test.js ok, terminal-scripts 73/0, service-states 367/0,
 desk-view 2040/0 (with `rounding-16`, `rounding-0`, `chip-50`,
 `chip-narrow`), bar-view 196/0, ipc-restart 44/0. Where: headless (dev
 host, private runtime dirs on disk), shellcheck on the test host.
+
+## 126c (the triage proposal by key)
+
+Finding (Fable, 126b part 2 Q3.3): the proposal's detail opened only on a
+mouse click on its row; no key and no IPC reached it.
+
+| Change | Verified |
+|---|---|
+| The proposal row is the row above the Changelog's list (`Model.changelogMove`): ↑/`k` on the first row selects it, as a click does, and no list row stays selected (one highlight); ↓/`j` goes back to the row the list was at; a page up stops at the first row | fixture (model.test.js); headless (desk-view `triage-keys`) |
+| Enter on the proposal arms *Apply proposals* (hint "Apply N proposed changes as you? Press Enter again. Crises stay, each with its own button."), the second Enter applies it (`drift apply <id> --json`, once); a click still applies at once; on a replaced proposal Enter is *Review the new proposal*. Each crisis keeps its own button, by click only; by key a crisis is resolved from its own row (Link, Explain, Dismiss work by key), as before | headless (`triage-keys`: armed, then done+done, the crisis skipped; exact argv) |
+| A dim line under the proposal row names the keys: "↑ from the first row, or a click, opens it"; while shown "Enter twice applies · ↓ back to the list" (`Model.proposalHint`) | fixture; headless |
+| IPC: `shell call jax.seldon select proposal` (or the proposal's id, `Model.isProposalTarget`; "not found" in another section), a payload's `"select":"proposal"`, the shim's `resolve proposal` | headless (`triage-keys` steps 9–16) |
+| The case against the plugin of 6e4672e0: fails at every step (no proposal by ↑, the row stays selected, no hint, `select proposal` "not found", `resolve proposal` "unknown target") | headless |
+| Docs: KEYBINDINGS.md (key row, `select`, shim), SPEC-PLUGIN §5.4 Changelog and §8, plugin README (keys, triage, IPC), guide 03 (key table, triage) and 04 en/de, CHANGELOG | fixture (docs-check, store-readme) |
+
+For the live scenario c: `omarchy-shell jax.seldon.panel resolve
+proposal` (or `omarchy-shell shell call jax.seldon select proposal` with
+the Changelog shown) opens the proposal, then `wtype` Return twice applies
+it; the crisis needs its own button (a click), which `wtype` cannot give.
+
+**Gate:** `SELDON_FULL_CHECK=1 just check` exited 0 on 7dbcd949 (only
+this handover follows, under `work/`); log `gates/check-dev-126c.log`:
+check-packaging ok (shellcheck on the test host through the kit
+wrapper, 8 calls), docs-check ok, qmllint ok (52 files), model.test.js
+217, service-states 367/0, desk-view 2056/0 (with `triage-keys`),
+bar-view 196/0, ipc-restart 44/0. Where: headless (dev host, private
+runtime dirs on disk), shellcheck on the test host. Nothing ran on the
+test host's desktop in this stage.
