@@ -13,7 +13,7 @@
 //!   add up. Only absolute includes under `/etc` are followed, read under
 //!   `Sources::etc_dir`.
 //! - **Bounds.** Regular files of at most [`FILE_MAX`], at most
-//!   [`MAX_FILES`] per read, names of [`NAME`]'s shape, at most
+//!   [`MAX_FILES`] per read, names of [`is_name`]'s shape, at most
 //!   [`MAX_NAMES`] per list. Anything past them makes the list
 //!   [`Ignore::partial`]: what was read is kept.
 //! - **Change.** The cursor keeps the list as read ([`Ignore`], shown in
@@ -23,7 +23,6 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use chrono::{DateTime, FixedOffset};
 use regex::Regex;
@@ -57,10 +56,18 @@ pub const MAX_NAMES: usize = 256;
 /// Directory entries looked at per expanded glob component.
 const MAX_ENTRIES: usize = 4096;
 
-/// A name as pacman allows it in both lists: a package or group name, or
-/// an `fnmatch` pattern of one.
-pub static NAME: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9@._+*?!^\[\]-]{1,128}$").expect("valid regex"));
+/// The longest name kept.
+pub const NAME_MAX: usize = 128;
+
+/// Whether `name` is a name as pacman allows it in both lists: a package
+/// or group name, or an `fnmatch` pattern of one — 1 to [`NAME_MAX`]
+/// characters of `[A-Za-z0-9@._+*?!^[]-]`.
+pub fn is_name(name: &str) -> bool {
+    (1..=NAME_MAX).contains(&name.len())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"@._+*?!^[]-".contains(&b))
+}
 
 /// The two lists. As the cursor's `ignore` (what the last run read) it may
 /// be partial; as its `ignoreKnown` (the last complete read) never.
@@ -140,7 +147,7 @@ impl Parser<'_> {
                         &mut self.out.groups
                     };
                     for name in names.split_whitespace() {
-                        if !NAME.is_match(name)
+                        if !is_name(name)
                             || (list.len() >= MAX_NAMES && !list.iter().any(|n| n == name))
                         {
                             self.out.partial = true;
@@ -375,7 +382,7 @@ pub fn shown(ignore: &Ignore, redactor: &Redactor) -> Ignore {
         names
             .iter()
             .filter(|n| {
-                let ok = NAME.is_match(n) && redactor.redact(n) == **n;
+                let ok = is_name(n) && redactor.redact(n) == **n;
                 partial |= !ok;
                 ok
             })
@@ -563,6 +570,33 @@ mod tests {
         let got = read(&etc).unwrap();
         assert_eq!(got.packages, names(&["a"]));
         assert!(got.partial);
+    }
+
+    #[test]
+    fn name_shapes() {
+        for ok in [
+            "mesa",
+            "lib32-mesa",
+            "linux-*",
+            "python3.12",
+            "gtk+",
+            "a@b",
+            "[!x]?",
+            "x".repeat(128).as_str(),
+        ] {
+            assert!(is_name(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "b\u{e4}d",
+            "$(x)",
+            "a b",
+            "a/b",
+            "a\u{202e}b",
+            "x".repeat(129).as_str(),
+        ] {
+            assert!(!is_name(bad), "{bad:?}");
+        }
     }
 
     #[test]
