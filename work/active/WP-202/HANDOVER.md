@@ -145,3 +145,68 @@ green on every harness (service-states reports the real
 known "not a leak" case). Where: headless (dev host, private runtime dirs
 on disk), shellcheck on the test host. CI, the test host's desktop and
 the dev host's desktop: not run. Not merged.
+
+## Round 3 (stage 2, Fable: APPROVE WITH FIXES; stage 1 round 2: APPROVE)
+
+| Finding | Fix | Verified |
+|---|---|---|
+| F1 Enter twice on *Agent sorts* started an agent, against the operator's decision "Enter never starts an agent" (WP-122) | way A: the cursor path stays (↑ reaches the button, ring, hint); `a` arms it and the second `a` starts the agent, the Work pattern (`Changelog.textKey("a")`, hint "Agent sorts 6 open changes? Press a again."); Enter and Space on it do nothing; the line reads "a twice starts it · ↓ back to the list". SPEC §5.3 (Enter row, house rule), §5.4, KEYBINDINGS (Enter row, the Changelog row, the arm paragraph), plugin/README, guide 03 en/de, CHANGELOG `[Unreleased]` | headless: `keys-ask` (two Enters on the focused button: not armed, the desk still open; `a` arms; ↓, a row click drop it; `select ask` places; `a a` asks once; the argv has only that one `agent ask triage --json`), `keys-ask-stacked` (Enter does nothing, no detail; `a a` asks once). On 96464eeb `keys-ask` #3–#12 and `keys-ask-stacked` #4, #5 and its argv fail: there the two Enters started the agent |
+| F2 a held ↑ crossed into the notices | `Desk.key` crosses only on a fresh press (`!event.isAutoRepeat`); SPEC §5.3 "The notices by key", KEYBINDINGS, README, guide 03 en/de and the CHANGELOG say a held ↑ stops at the top | headless: `keys-notice-held` (row 0, three auto-repeated ↑: no notice, the cursor on row 0; a fresh ↑: the nearest notice); #3–#6 fail on 96464eeb |
+| F3 the notice arm did not name what the fix runs | `Model.noticeTargets`: `notice:<id>:<title>:<script or command>:<action>` | fixture: model.test.js (the mismatch banner's plugin and engine update keep title and action id but get two keys, each naming its script); fails on 96464eeb |
+| F4 the Changelog kept *Agent sorts*' key place across a section change | `onActiveChanged` calls `leaveKeys()` (with the field's `back()` as before) | qmllint; read |
+
+The WP-202 cases (trimmed runner): 189 passed, 0 failed on the final
+tree; against 96464eeb 24 failed (F1, F2, and `keys-notice`'s arm id,
+F3); model.test.js 218 passed, 1 failed on 96464eeb. Where: headless
+(dev host, private runtime dirs on disk), fixture.
+
+Process note: stage 1 round 2 hit a guard fail-closed on a mutant runner
+started by a computed script name and re-ran the same scripts by their
+literal names; it was reported to the operator (stage 2 asks for it to be
+recorded in the WP log).
+
+### v0.2.1 acceptance limitations (stage 2's list)
+
+- Pointer only: the Changelog's *Show* (changes hidden this session),
+  the sidebar's fold button (Settings › Sidebar writes the same key), the
+  header chip, the KPI figures, each crisis's *Apply this crisis* inside
+  a triage proposal (WP-201).
+- Behaviour: `c` captures on one press while *Check again* takes two;
+  the width wheel writes after 600 ms without an arm (0.2.0 behaviour); a
+  dim key-hint line stays under the notices whenever one has a button.
+  (A held ↑ landing on a notice is fixed, F2.)
+- Verification: the overlay `MouseArea`'s cursor, hover, wheel and drag
+  pass-through is verified on a desktop only by the live run (headless
+  proves clicks only); *Agent sorts* by key is `a` twice (F1, way A).
+
+### Live checks for the test host (stage 2, question a)
+
+With a mouse, on the test host's desktop:
+
+1. The hand cursor over a notice button, a list row, the sidebar and the
+   KPI figures; the arrow elsewhere.
+2. The hover fill on buttons and rows; a banner's `full` tooltip on
+   hover.
+3. The wheel on the width slider writes after 600 ms as in 0.2.0; the
+   wheel scrolls the lists.
+4. A slider drag end to end, then a click on a preset.
+5. Two fast clicks on *Capture now* make two captures.
+6. A right click anywhere drops a key arm and does nothing else.
+7. The Graph: dragging a node and panning still work.
+
+Then scenarios a–d by `wtype`: `omarchy-shell shell call jax.seldon
+select notices|setup|ask|width` to place the cursor, then Return twice
+(`a` twice for *Agent sorts*).
+
+**Gate:** `SELDON_FULL_CHECK=1 just check` exited 0 on 5c393aa8 (only
+this handover follows, under `work/`); log `check-dev-202-r3.log` in the
+private gates folder: check-packaging ok (shellcheck on the test host
+through the kit wrapper, 8 calls), runtime-dir 45/0, docs-check ok (514
+links), plugin-validate ok, qmllint ok (52 files), model.test.js 218,
+terminal-scripts 73/0, service-states 367/0, desk-view 2243/0, bar-view
+196/0, ipc-restart 44/0, engine tests green; the real-home guard green
+(desk-view reports the real `~/.local/state/seldon` changed by the
+operator's own running engine, its known "not a leak" case). Where:
+headless (dev host, private runtime dirs on disk), shellcheck on the test
+host. CI, the test host's desktop (the seven checks above) and the dev
+host's desktop: not run. Not merged.
