@@ -3498,10 +3498,11 @@ clean_log keys-notices-click
 
 # The setup card's Create logbook (dev mode, not initialised): ↑ selects
 # the setup row (the card's first button under the cursor), ←/→ walk the
-# buttons, Enter arms; a click drops the arm; ↑ (nothing selected) and
-# Enter twice open the init terminal, as the click does.
+# buttons, Enter arms; a click drops the arm, and so does IPC `select
+# setup` on the armed place; ↑ (nothing selected) and Enter twice open
+# the init terminal, as the click does.
 run keys-setup "$fx/index-variants/not-initialised.json" 1920x1080 \
-  "summon;key:Up;key:Right;key:Left;key:Return;click:NEW CASE;key:Up;key:Return;key:Return" \
+  "summon;key:Up;key:Right;key:Left;key:Return;click:NEW CASE;key:Up;key:Return;call:select:setup;key:Return;key:Return" \
   HARNESS_RECORD="$work/keys-setup.record"
 sr="[$tv.setupRow.focused, $tv.setupRow.pick, .view.arm.armed] | map(tostring) | join(\",\")"
 expect keys-setup 1 "[$tv.setupRow.shown, $tv.setupRow.focused] | map(tostring) | join(\",\")" "true,false"
@@ -3516,7 +3517,10 @@ shows keys-setup 5 "Create logbook? Press Enter again."
 expect keys-setup 6 "$sr" "false,,"
 expect keys-setup 7 "$sr" "true,Create logbook,"
 expect keys-setup 8 "$sr" "true,Create logbook,setup:logbook:status:terminal"
-expect keys-setup 9 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+# IPC select of the same place drops the arm (review F5: the arm id stays)
+expect keys-setup 9 "[.call, ($sr)] | join(\"|\")" "ok|true,Create logbook,"
+expect keys-setup 10 "$sr" "true,Create logbook,setup:logbook:status:terminal"
+expect keys-setup 11 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
 wait_record "$work/keys-setup.record"
 run keys-setup-click "$fx/index-variants/not-initialised.json" 1920x1080 "summon;clickName:setup-logbook-terminal" \
   HARNESS_RECORD="$work/keys-setup-click.record"
@@ -3553,9 +3557,10 @@ clean_log keys-setup-copy
 
 # The snapshot step: Grant by key opens the grant script (case snapper's
 # record); Not now by key writes `setupSnapshots` once; Settings › Capture
-# *Offer again* by key takes it out again (Enter reaches it, Enter twice).
+# *Offer again* by key takes it out again (Enter reaches it, Enter twice;
+# IPC `select offer` on the armed button drops the arm).
 run keys-setup-snap "$fx/index-variants/snapper-degraded.json" 1920x1080 \
-  "summon;key:Up;key:Return;key:Return;summon;key:Up;key:Right;key:Right;key:Return;key:Return;text:,;key:Down;key:Return;key:Return;key:Return" \
+  "summon;key:Up;key:Return;key:Return;summon;key:Up;key:Right;key:Right;key:Return;key:Return;text:,;key:Down;key:Return;key:Return;call:select:offer;key:Return;key:Return" \
   HARNESS_RECORD="$work/keys-setup-snap.record"
 expect keys-setup-snap 3 "$sr" "true,Grant,setup:snapshots:snapper:terminal"
 expect keys-setup-snap 4 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
@@ -3564,7 +3569,9 @@ expect keys-setup-snap 9 '[(.writes | length), .view.arm.armed] | map(tostring) 
 expect keys-setup-snap 10 '[(.writes | length), (.writes | last | .settings.setupSnapshots), .view.setup] | map(tostring) | join("|")' "1|not-now|"
 expect keys-setup-snap 13 "[$tv.control, $tv.hint] | join(\",\")" "offer,←/→ changes it · Enter twice sets it · ↑/↓ another control · Esc back to the list"
 expect keys-setup-snap 14 "[(.writes | length), .view.arm.armed] | map(tostring) | join(\",\")" "1,settings:offer:again"
-expect keys-setup-snap 15 '[(.writes | length), (.writes | last | .settings | has("setupSnapshots")), .view.setup] | map(tostring) | join("|")' "2|false|$optional"
+expect keys-setup-snap 15 "[.call, $tv.control, .view.arm.armed, (.writes | length)] | map(tostring) | join(\",\")" "ok,offer,,1"
+expect keys-setup-snap 16 "[(.writes | length), .view.arm.armed] | map(tostring) | join(\",\")" "1,settings:offer:again"
+expect keys-setup-snap 17 '[(.writes | length), (.writes | last | .settings | has("setupSnapshots")), .view.setup] | map(tostring) | join("|")' "2|false|$optional"
 wait_record "$work/keys-setup-snap.record"
 check "keys-setup-snap: Grant by key opens what the click opens, once" \
   "$(cat "$work/keys-setup-snap.record" 2>/dev/null || true)" "$(cat "$work/snapper.record" 2>/dev/null || echo none)"
