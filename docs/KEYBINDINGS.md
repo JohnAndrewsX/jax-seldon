@@ -16,7 +16,7 @@ checks in `tests/plugin/desk-view.sh` together.
 | `,` | Settings |
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search: filters the current list; Enter leaves the field and keeps the filter, Esc clears it and leaves |
-| `↑`/`↓`, `k`/`j` | move in the list; `↑` at the top of the list goes on to the notices' buttons |
+| `↑`/`↓`, `k`/`j` | move in the list; `↑` at the top of the list goes on to the notices' buttons on a fresh press (a held `↑` stops at the top) |
 | `Enter`, `Space` | on a narrow desk: show the selected row's detail; otherwise the detail's first action that launches nothing (Work: arm, then run — on an active case *To verification*; open drift: its form; Today's yesterday row: open or close; a button the keys reached: arm, then run). Enter never starts an agent: on *Agent sorts* it does nothing, `a` twice starts it |
 | `Esc` | leave a section's form, then clear the search filter, then go back to the list (narrow desk), then close |
 | `c` | capture now |
