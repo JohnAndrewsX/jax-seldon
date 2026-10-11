@@ -6,8 +6,10 @@
 //! the counts of the whole index, so the bar counts every crisis and every
 //! open change; a cut row is still in the logbook. The event a listed
 //! drift row names is cut only with its row, so a 0.2.0 desk lists every
-//! drift row it is given. [`super::write`]
-//! refuses a file that is still over the budget.
+//! drift row it is given; a drift row an unapplied triage proposal names
+//! goes only after `system`'s optional parts, right before the crisis
+//! rows (WP-203). [`super::write`] refuses a file that is still over the
+//! budget.
 
 use std::collections::HashSet;
 
@@ -50,8 +52,8 @@ enum Rows {
     Events,
     /// `cases.queued`, the earliest `created` first.
     Queued,
-    /// `drift` items that are no crisis, the oldest first, each with its
-    /// event.
+    /// `drift` items that are no crisis and that no unapplied triage
+    /// proposal names, the oldest first, each with its event.
     Attention,
     /// `decisions` that are not `proposed`, the lowest id first.
     Decisions,
@@ -80,6 +82,10 @@ enum Rows {
     /// The optional parts of `system`: snapshots, recent config files,
     /// the ignore list, the Omarchy and package summaries.
     System,
+    /// `drift` items that are no crisis and that an unapplied triage
+    /// proposal names (`index.triage`), the oldest first, each with its
+    /// event: the sheet shows an item without its row as "No longer open".
+    Triaged,
     /// `drift` items that are a crisis, the oldest first, each with its
     /// event and its timeline mark.
     Crises,
@@ -89,8 +95,8 @@ enum Rows {
 /// number given (rows it does not take do not count; the events' floor
 /// counts the whole list), the oldest first,
 /// and only while the file is over the budget. The first seven keep a
-/// screenful of each list; the rest leave history before the present and
-/// crises last.
+/// screenful of each list; the rest leave history before the present, the
+/// rows of an unapplied triage proposal and crises last.
 const LADDER: &[(Rows, usize)] = &[
     (Rows::Completed, 10),
     (Rows::Events, 100),
@@ -115,6 +121,7 @@ const LADDER: &[(Rows, usize)] = &[
     (Rows::Active, 0),
     (Rows::Proposed, 0),
     (Rows::System, 0),
+    (Rows::Triaged, 0),
     (Rows::Crises, 0),
 ];
 
@@ -126,6 +133,7 @@ impl Rows {
             Rows::Events => ("event", "events"),
             Rows::Queued => ("queued case", "queued cases"),
             Rows::Attention => ("open change", "open changes"),
+            Rows::Triaged => ("proposed open change", "proposed open changes"),
             Rows::Decisions | Rows::Proposed => ("decision", "decisions"),
             Rows::Topics => ("memory topic", "memory topics"),
             Rows::Yesterday | Rows::Entries => ("journal entry", "journal entries"),
@@ -251,11 +259,23 @@ fn trim(index: &mut Index, rows: Rows, floor: usize, excess: usize) -> usize {
             }
             gone.len()
         }
-        Rows::Attention | Rows::Crises => {
+        Rows::Attention | Rows::Triaged | Rows::Crises => {
             let crisis = rows == Rows::Crises;
+            // the rows an unapplied proposal names wait for their own
+            // rung; a crisis is held anyway (WP-203)
+            let held: HashSet<&str> = index
+                .triage
+                .iter()
+                .filter(|t| t.applied.is_none())
+                .flat_map(|t| t.event_ids.iter().map(String::as_str))
+                .collect();
             let order = newest_first(index.drift.len())
                 .into_iter()
-                .filter(|&i| index.drift[i].crisis == crisis)
+                .filter(|&i| {
+                    let d = &index.drift[i];
+                    d.crisis == crisis
+                        && (crisis || held.contains(d.event_id.as_str()) == (rows == Rows::Triaged))
+                })
                 .collect();
             let timeline = index.series.timeline.as_ref();
             let events = &index.events;

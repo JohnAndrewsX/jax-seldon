@@ -19,7 +19,9 @@ use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, TRUNCATED, format_t
 use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
 use crate::redact::{Redactor, is_invisible};
 
-/// Most events the index lists (CONTRACT.md rule 4).
+/// Most events the index lists (CONTRACT.md rule 4, the schema's
+/// `maxItems`): the event of every listed drift item and the newest of the
+/// rest ([`listed_events`]).
 pub const MAX_EVENTS: usize = 500;
 /// Most completed/dropped cases the index lists.
 pub const MAX_COMPLETED: usize = 50;
@@ -65,7 +67,8 @@ pub struct Built {
     /// Every ledger event as read (resolutions included), file order.
     pub ledger: Vec<Event>,
     /// Every non-resolution event, folded, newest first (`index.events`
-    /// is the first [`MAX_EVENTS`] of these).
+    /// holds [`MAX_EVENTS`] of these: the event of every listed drift item
+    /// and the newest of the rest).
     pub folded: Vec<IndexEvent>,
     /// Ids of open drift events: every member of an item `index.drift`
     /// lists or would list past the cap (ADR-0028: not routine, or named
@@ -270,7 +273,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         state: input.state.clone(),
         summary,
         today: today_obj,
-        events: folded.iter().take(MAX_EVENTS).map(clipped).collect(),
+        events: listed_events(&folded, &drift),
         drift,
         cases: groups,
         decisions: decision_rows,
@@ -289,6 +292,35 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         reresolvable,
         warnings,
     }
+}
+
+/// `index.events` (CONTRACT.md rule 4, WP-203): [`MAX_EVENTS`] of
+/// `folded`, newest first: the event every listed drift item names
+/// (`eventId`, a group's leader), however old, and the newest of the rest.
+/// The 0.2.0 plugin finds a drift row only through its event: without it
+/// a crisis the bar counts has no Changelog row. [`MAX_DRIFT`] items leave
+/// room for the newest 300 others.
+fn listed_events(folded: &[IndexEvent], drift: &[DriftItem]) -> Vec<IndexEvent> {
+    let named: HashSet<Ulid> = drift
+        .iter()
+        .filter_map(|d| d.event_id.parse().ok())
+        .collect();
+    let pinned = folded
+        .iter()
+        .filter(|f| named.contains(&f.event.id))
+        .count();
+    let mut others = MAX_EVENTS.saturating_sub(pinned);
+    folded
+        .iter()
+        .filter(|f| {
+            named.contains(&f.event.id) || {
+                let take = others > 0;
+                others = others.saturating_sub(1);
+                take
+            }
+        })
+        .map(clipped)
+        .collect()
 }
 
 /// The advisory after the fact (ADR-0027 §2c, WP-101): a red change whose

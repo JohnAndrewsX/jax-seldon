@@ -1624,6 +1624,15 @@ fn long_texts_keep_the_index_under_its_size_budget() {
     let ix = &built.index;
     assert_eq!(ix.events.len(), 500);
     assert_eq!(ix.drift.len(), build::MAX_DRIFT);
+    // the fixture's crisis rows come first; their events are older than
+    // every test event, and the index lists them (WP-203)
+    let old: Vec<_> = ix
+        .drift
+        .iter()
+        .filter(|d| !d.detail.as_deref().is_some_and(|t| t.starts_with("drift ")))
+        .collect();
+    assert!(!old.is_empty() && old.iter().all(|d| d.crisis));
+    assert!(old.iter().all(|d| ix.events.iter().any(|e| names(d, e))));
 
     let size = index::to_text(ix).len();
     eprintln!("index with 500 long events and 200 long drift items: {size} bytes");
@@ -1648,16 +1657,18 @@ fn long_texts_keep_the_index_under_its_size_budget() {
             clipped += 1;
         }
     }
-    // the drift items of the test (the fixture's crises come first); the
-    // newest 500 events: 300 drift events (detail) and 200 notes (detail,
-    // command, tags, resolution detail)
+    // the drift items of the test (the fixture's crises come first); 500
+    // events: the fixture crises' (not clipped), the 300 drift events
+    // (detail) and the newest of the notes (detail, command, tags,
+    // resolution detail)
     let items = ix
         .drift
         .iter()
         .filter(|d| d.detail.as_deref().is_some_and(|t| t.starts_with("drift ")))
         .count();
     assert!(items > 190, "{items}");
-    assert_eq!(clipped, items + 300 + 4 * 200, "texts clipped");
+    let notes = 500 - 300 - old.len();
+    assert_eq!(clipped, items + 300 + 4 * notes, "texts clipped");
 
     // the ledger and the folded events (the Markdown views) keep it all
     let whole = |text: &str| text.chars().count() == 4096 && marked(text).is_none();
@@ -2055,6 +2066,221 @@ fn a_rung_takes_only_the_rows_the_file_needs() {
     );
 }
 
+// --------------------------------------------------------------------------
+// WP-203: every listed drift row keeps its event in the index (CONTRACT.md
+// rule 4: the newest 500 events, plus the event of every listed drift
+// item), and the cut keeps the rows an unapplied triage proposal names
+// until right before the crisis rows.
+// --------------------------------------------------------------------------
+
+/// `n` notes in a case, newer than every fixture event (the newest is at
+/// 17:00 on the fixture's today), the newest first by id.
+fn newer_notes(l: &mut load::Loaded, n: u32) {
+    for i in 0..n {
+        let e: Event = serde_json::from_value(json!({
+            "id": ulid::Ulid::from_parts(5, u128::from(i) + 1),
+            "ts": format!("2026-10-01T17:{:02}:{:02}+02:00", 1 + i / 60 % 4, i % 60),
+            "source": "manual", "kind": "note", "subject": format!("step {i}"),
+            "actor": "human", "case": "C-2026-003",
+        }))
+        .unwrap();
+        l.events.push(e);
+    }
+}
+
+/// A crisis row whose event is older than the 500 newest: the index lists
+/// 500 events, newest first, the event of every listed drift row and the
+/// newest of the rest. Before WP-203 the 0.2.0 desk had no Changelog row
+/// for those crises while the bar counted them.
+#[test]
+fn a_drift_row_older_than_the_newest_500_events_keeps_its_event() {
+    let base = derive(|_| {});
+    let built = {
+        let mut loaded = fixture_loaded();
+        newer_notes(&mut loaded, 600);
+        build::build(loaded, &input())
+    };
+    let ix = &built.index;
+    assert_eq!(ix.drift, base.drift, "the notes are in a case: no drift");
+    assert!(ix.drift.iter().any(|d| d.crisis));
+    let newest: Vec<_> = built.folded[..build::MAX_EVENTS]
+        .iter()
+        .map(clipped_id)
+        .collect();
+    // every fixture event is older than the 600 notes: none of the drift
+    // rows' events is among the newest 500
+    assert!(
+        ix.drift.iter().all(|d| !newest.contains(&d.event_id)),
+        "the drift events are past the newest 500"
+    );
+    assert_eq!(ix.events.len(), build::MAX_EVENTS, "the schema's maxItems");
+    let ids: Vec<String> = ix.events.iter().map(clipped_id).collect();
+    let rest = build::MAX_EVENTS - ix.drift.len();
+    assert_eq!(ids[..rest], newest[..rest], "the newest of the rest");
+    for d in &ix.drift {
+        let e = ix.events.iter().find(|e| names(d, e));
+        let e = e.unwrap_or_else(|| panic!("row {} has its event", d.event_id));
+        let folded = built
+            .folded
+            .iter()
+            .find(|f| f.event.id == e.event.id)
+            .unwrap();
+        assert_eq!(e.event, folded.event);
+    }
+    // still newest first, as the plugin reads it
+    let order: Vec<_> = ix.events.iter().map(|e| (e.event.ts, e.event.id)).collect();
+    assert!(order.windows(2).all(|w| w[0] >= w[1]), "newest first");
+    // the 0.2.0 crisis chip and NEEDS YOU equal the pill
+    assert_eq!(crisis_rows_shown(ix), ix.summary.crisis);
+    assert_eq!(budget::fit(&mut ix.clone()), None, "far under the budget");
+    common::assert_valid_index(&serde_json::to_value(ix).unwrap());
+}
+
+fn clipped_id(e: &model::IndexEvent) -> String {
+    e.event.id.to_string()
+}
+
+/// A triage proposal of `ix`'s logbook naming `event_ids`.
+fn proposal(event_ids: &[&str], applied: Option<&str>) -> model::Triage {
+    model::Triage {
+        id: "01M3M0000000000000000000T1".into(),
+        at: "2026-10-01T16:00:00+02:00".into(),
+        actor: "agent:claude".into(),
+        counts: model::TriageCounts {
+            items: event_ids.len(),
+            crises: 0,
+        },
+        path: "proposals/01M3M0000000000000000000T1.json".into(),
+        applied: applied.map(String::from),
+        event_ids: event_ids.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+/// The cut keeps the open changes an unapplied triage proposal names
+/// while every other open change goes (rungs 4 and 17), so the sheet does
+/// not read "No longer open" for an item `drift apply` still decides; an
+/// applied proposal holds nothing.
+#[test]
+fn the_cut_keeps_the_rows_an_unapplied_proposal_names() {
+    let mut loaded = fixture_loaded();
+    let open = loaded
+        .cases
+        .iter()
+        .find(|c| c.case.status == seldon::model::CaseStatus::Active)
+        .unwrap()
+        .clone();
+    for i in 0..3000 {
+        let mut c = open.clone();
+        c.case.id = format!("C-2025-{i:04}");
+        c.case.title = format!("{i} {}", "long title ".repeat(20));
+        loaded.cases.push(c);
+    }
+    let mut ix = build::build(loaded, &input()).index;
+    let others: Vec<model::DriftItem> = ix.drift.iter().filter(|d| !d.crisis).cloned().collect();
+    assert!(others.len() >= 3, "{}", others.len());
+    let named = [others[0].event_id.as_str(), others[2].event_id.as_str()];
+
+    ix.triage = Some(proposal(&named, None));
+    let (cut, warning, size) = fitted(&ix);
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let warning = warning.unwrap();
+    assert!(warning.contains(" open changes"), "{warning}");
+    assert!(!warning.contains("proposed open change"), "{warning}");
+    let kept: Vec<&str> = cut
+        .drift
+        .iter()
+        .filter(|d| !d.crisis)
+        .map(|d| d.event_id.as_str())
+        .collect();
+    assert_eq!(kept, named, "only the named open changes stay");
+    assert!(cut.drift.iter().filter(|d| d.crisis).count() == ix.summary.crisis);
+    assert_eq!(cut.summary, ix.summary);
+    assert_eq!(cut.triage, ix.triage, "the triage is never cut");
+    assert_drift_keeps_its_events(&ix, &cut);
+    assert_eq!(budget::fit(&mut cut.clone()), None, "a cut index fits");
+    common::assert_valid_index(&serde_json::to_value(&cut).unwrap());
+
+    // applied: the run is over, its rows are open changes like any other
+    ix.triage = Some(proposal(&named, Some("2026-10-01T16:30:00+02:00")));
+    let (cut, _, _) = fitted(&ix);
+    assert!(cut.drift.iter().all(|d| d.crisis), "no open change left");
+}
+
+/// Over the budget with only crisis rows, the rows a proposal names go
+/// after `system`'s optional parts and before the first crisis row: crisis
+/// rows last (ADR-0053 §2).
+#[test]
+fn the_rows_a_proposal_names_go_right_before_the_crisis_rows() {
+    let subject = "\u{1}".repeat(seldon::model::event::SUBJECT_MAX - 11);
+    // 190 crises leave room in the 200 rows for the fixture's open changes
+    let mut ix = derive(|l| {
+        for i in 0..190u32 {
+            let e: Event = serde_json::from_value(json!({
+                "id": ulid::Ulid::from_parts(1, u128::from(i) + 1),
+                "ts": format!("2026-08-{:02}T10:{:02}:00+02:00", 1 + i / 60, i % 60),
+                "source": "pacman", "kind": "install", "subject": format!("limine-{i:03}-{subject}"),
+                "actor": "system", "zone": "red", "explicit": true,
+            }))
+            .unwrap();
+            l.events.push(e);
+        }
+    });
+    let named: Vec<String> = ix
+        .drift
+        .iter()
+        .filter(|d| !d.crisis)
+        .map(|d| d.event_id.clone())
+        .collect();
+    assert!(!named.is_empty());
+    let named: Vec<&str> = named.iter().map(String::as_str).collect();
+    ix.triage = Some(proposal(&named, None));
+    let (cut, warning, size) = fitted(&ix);
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let warning = warning.unwrap();
+    let at = |w: &str| warning.find(w).unwrap_or_else(|| panic!("{w}: {warning}"));
+    assert!(
+        at(" system details") < at(" proposed open change"),
+        "{warning}"
+    );
+    assert!(
+        at(" proposed open change") < at(" crisis rows"),
+        "{warning}"
+    );
+    assert!(cut.drift.iter().all(|d| d.crisis));
+    assert_eq!(cut.summary, ix.summary);
+    assert_drift_keeps_its_events(&ix, &cut);
+    common::assert_valid_index(&serde_json::to_value(&cut).unwrap());
+}
+
+/// `triage::read` names the drift rows of the proposal (its items'
+/// `eventId`) for the cut, and the index never writes them: no new field.
+#[test]
+fn the_triage_names_its_rows_for_the_cut_only() {
+    let env = Env::new(Snapper::Missing);
+    let lb = env.tmp.path().join("logbook");
+    copy_dir(&fixture_logbook(), &lb);
+    write_proposals(&env, &lb);
+    let logbook = Logbook::open(&lb).unwrap();
+    let dirs = Dirs {
+        home: env.home.clone(),
+        xdg_config_home: env.home.join(".config"),
+        state_dir: env.home.join(".local/state/seldon"),
+    };
+    let built = index::derive_at(&dirs, &Config::default(), &logbook, now()).unwrap();
+    let triage = built.index.triage.as_ref().unwrap();
+    let file = json_file(&repo("fixtures/proposals").join(format!("{}.json", triage.id)));
+    let want: Vec<&str> = file["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["eventId"].as_str().unwrap())
+        .collect();
+    assert_eq!(triage.event_ids, want);
+    let written = serde_json::to_value(&built.index).unwrap();
+    let keys: Vec<&String> = written["triage"].as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["actor", "applied", "at", "counts", "id", "path"]);
+}
+
 /// An index that no cut brings under the budget (a dossier fence of 1.2 MB)
 /// is not written: the old file stays (ADR-0053 §4).
 #[test]
@@ -2125,7 +2351,7 @@ fn status_writes_a_large_logbook_under_its_budget() {
         .unwrap_or_else(|| panic!("{warnings:?}"));
     assert!(
         w.ends_with(
-            " completed cases, 216 events; the summary still counts every case, change and crisis, \
+            " completed cases, 286 events; the summary still counts every case, change and crisis, \
              the logbook keeps every row"
         ),
         "{w}"
@@ -2150,9 +2376,27 @@ fn status_writes_a_large_logbook_under_its_budget() {
         "{}",
         events.len()
     );
+    // the oldest of the rest went; the event of every drift row stays,
+    // however old (WP-203: the 400 crisis rows' events are past the
+    // newest 500)
+    let named: std::collections::HashSet<&Value> = whole["drift"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| &d["eventId"])
+        .collect();
+    let rest = |list: &[Value]| -> Vec<Value> {
+        list.iter()
+            .filter(|e| !named.contains(&e["id"]))
+            .cloned()
+            .collect()
+    };
+    let (kept, all) = (rest(events), rest(whole["events"].as_array().unwrap()));
+    assert_eq!(kept[..], all[..kept.len()]);
     assert_eq!(
-        events[..],
-        whole["events"].as_array().unwrap()[..events.len()]
+        events.len() - kept.len(),
+        named.len(),
+        "every drift row's event"
     );
     // `index --check` validates the cut index before it writes it
     let out = env.at(

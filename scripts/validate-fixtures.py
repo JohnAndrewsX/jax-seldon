@@ -1368,12 +1368,17 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
     korder = {"release": 0, "snapshot": 1, "case": 2, "crisis": 3}
     timeline.sort(key=lambda t: (t["ts"], korder[t["kind"]], t["ref"]))
 
+    # rule 4 (WP-203): at most 500 events, newest first: the event of every listed drift item, however
+    # old, and the newest of the rest
+    named = {d["eventId"] for d in drift}
+    rest = [e["id"] for e in folded if e["id"] not in named][:500 - sum(e["id"] in named for e in folded)]
+    listed = named | set(rest)
     pfm, _ = frontmatter(os.path.join(lb, "PROJECT.md"))
     return {
         "logbook": {"language": pfm["language"], "machine": pfm["machineId"]},
         "summary": summary,
         "today": today_obj,
-        "events": [clipped(e) for e in folded[:500]],
+        "events": [clipped(e) for e in folded if e["id"] in listed],
         "drift": drift,
         "cases": groups,
         "decisions": decisions,

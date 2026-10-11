@@ -28,6 +28,8 @@ struct Proposal {
 
 #[derive(Deserialize)]
 struct Item {
+    #[serde(rename = "eventId")]
+    event_id: String,
     crisis: bool,
 }
 
@@ -117,6 +119,7 @@ pub fn read(dirs: &Dirs, root: &Path, warnings: &mut Vec<String>) -> Option<Tria
                 crises: p.items.iter().filter(|i| i.crisis).count(),
             },
             path: format!("{DIR}/{id}.json"),
+            event_ids: p.items.into_iter().map(|i| i.event_id).collect(),
             id: p.id,
             at: p.at,
             actor: p.actor,
