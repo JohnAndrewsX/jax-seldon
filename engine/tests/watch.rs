@@ -481,6 +481,40 @@ mod with_feature {
         (status_kb(pid, "VmRSS:"), status_kb(pid, "VmHWM:"))
     }
 
+    /// WP-200 (ADR-0053, review 1 F3): `watch` cuts the index it writes
+    /// to under its budget and says so in its `rebuilt` line, as `index`
+    /// does in its warnings.
+    #[test]
+    fn watch_writes_a_large_logbook_under_its_budget() {
+        let env = Env::new(Snapper::Missing);
+        let tmp = TempDir::new("watch-x200");
+        let root = tmp.path().join("logbook");
+        common::scale::scaled_logbook(&fixture_logbook(), &root, 200);
+        let w = Watch::spawn(env.command(&watch_args(&["--logbook", root.to_str().unwrap()])));
+        // the ×200 build takes longer than the others' (an unoptimised test
+        // binary, the suites in parallel)
+        let line = w.rebuilt(3 * SLACK);
+        assert_eq!(line["trigger"], json!("start"), "{line}");
+        drop(w);
+        let path = env.home.join(".local/state/seldon/index.json");
+        let size = std::fs::metadata(&path).unwrap().len();
+        assert!(size < 1_000_000, "{size} bytes");
+        let ix = index(&env);
+        common::assert_valid_index(&ix);
+        assert_eq!(line["summary"], ix["summary"]);
+        assert_eq!(
+            line["events"],
+            json!(ix["events"].as_array().unwrap().len())
+        );
+        let warnings = line["warnings"].as_array().unwrap();
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.as_str().unwrap().starts_with("index.json would be ")),
+            "{line}"
+        );
+    }
+
     /// The PLAN.md bound (RSS < 10 MB) is about the shipped, optimised
     /// binary: the peak (VmHWM, never below VmRSS) must stay under the
     /// limit below, measured (docs/TESTING.md, "Memory bound"). The

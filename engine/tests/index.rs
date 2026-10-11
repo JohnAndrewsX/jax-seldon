@@ -2084,6 +2084,104 @@ fn status_writes_a_large_logbook_under_its_budget() {
     assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
 }
 
+/// The fixture logbook scaled ×200 (its whole index about 1.08 MB) in
+/// `env`'s temp dir.
+fn scaled_200(env: &Env) -> std::path::PathBuf {
+    let root = env.tmp.path().join("logbook");
+    common::scale::scaled_logbook(&fixture_logbook(), &root, 200);
+    root
+}
+
+/// The whole index of the logbook at `root` as `env` would build it now.
+fn whole_index(env: &Env, root: &std::path::Path) -> serde_json::Value {
+    let logbook = Logbook::open(root).unwrap();
+    let dirs = Dirs {
+        home: env.home.clone(),
+        xdg_config_home: env.home.join(".config"),
+        state_dir: env.home.join(".local/state/seldon"),
+    };
+    let whole = index::derive_at(&dirs, &Config::default(), &logbook, now()).unwrap();
+    serde_json::to_value(&whole.index).unwrap()
+}
+
+/// `seldon args…` at [`GENERATED_AT`], the collectors pointed at missing
+/// files in the temp dir (never the host's), with `stdin`.
+fn writer(env: &Env, args: &[&str], stdin: &str) -> std::process::Output {
+    use std::io::Write as _;
+    let tmp = env.tmp.path();
+    let mut child = env
+        .command(args)
+        .env("SELDON_NOW", GENERATED_AT)
+        .env("SELDON_PACMAN_LOG", tmp.join("pacman.log"))
+        .env("SELDON_PACMAN_DB_LOCK", tmp.join("no-db.lck"))
+        .env("SELDON_OMARCHY", tmp.join("no-omarchy"))
+        .env("SELDON_OMARCHY_PLUGINS_DIR", tmp.join("plugins"))
+        .env("SELDON_THEME_FILE", tmp.join("theme.name"))
+        .env("TZ", "Europe/Berlin")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+/// The written `index.json` of `env` is under the budget, validates and
+/// counts what the whole index of `root` counts; `out` warned on stderr.
+fn assert_written_under_budget(env: &Env, root: &std::path::Path, out: &std::process::Output) {
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let path = env.home.join(".local/state/seldon/index.json");
+    let size = std::fs::metadata(&path).unwrap().len() as usize;
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let ix = json_file(&path);
+    common::assert_valid_index(&ix);
+    let whole = whole_index(env, root);
+    assert!(serde_json::to_string(&whole).unwrap().len() + 1 >= build::SIZE_BUDGET);
+    assert_eq!(ix["summary"], whole["summary"], "every count, every crisis");
+    let err = common::stderr(&out);
+    assert!(
+        err.contains("seldon: warning: index.json would be "),
+        "{err}"
+    );
+    // every write of the index went through: none fell back on the
+    // backstop (ADR-0053 §4) and left an earlier file
+    assert!(!err.contains("not written"), "{err}");
+}
+
+/// Review 1 F3: the rebuild after a writing command cuts the index too.
+#[test]
+fn a_writing_command_writes_a_large_logbook_under_its_budget() {
+    let env = Env::new(Snapper::Missing);
+    let root = scaled_200(&env);
+    let args = [
+        "--logbook",
+        root.to_str().unwrap(),
+        "plan",
+        "new",
+        "--",
+        "One more case",
+    ];
+    let out = writer(&env, &args, "");
+    assert_written_under_budget(&env, &root, &out);
+}
+
+/// Review 1 F3: the session hook cuts the index it writes.
+#[test]
+fn the_session_hook_writes_a_large_logbook_under_its_budget() {
+    let env = Env::new(Snapper::Missing);
+    let root = scaled_200(&env);
+    let args = ["--logbook", root.to_str().unwrap(), "hook", "session-stop"];
+    let out = writer(&env, &args, "");
+    assert_eq!(common::stdout(&out), "", "hooks print nothing");
+    assert_written_under_budget(&env, &root, &out);
+}
+
 #[test]
 fn a_long_command_line_is_whole_in_the_ledger_and_clipped_in_the_index() {
     const AT: &str = "2026-10-03T09:00:00+02:00";
