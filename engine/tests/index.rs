@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 
 use common::{Env, Snapper, TempDir, copy_dir, fixture_logbook, read};
 use seldon::config::{Config, Dirs};
-use seldon::index::{self, Input, build, check, load, model};
+use seldon::index::{self, Input, budget, build, check, load, model};
 use seldon::logbook::Logbook;
 use seldon::model::event::{Event, Kind, Resolution};
 
@@ -1628,11 +1628,7 @@ fn long_texts_keep_the_index_under_its_size_budget() {
     let size = index::to_text(ix).len();
     eprintln!("index with 500 long events and 200 long drift items: {size} bytes");
     assert!(size < build::SIZE_BUDGET, "{size} bytes");
-    assert!(
-        built.warnings.iter().all(|w| !w.contains("budget")),
-        "{:?}",
-        built.warnings
-    );
+    assert_eq!(budget::fit(&mut ix.clone()), None, "nothing to cut");
     common::assert_valid_index(&serde_json::to_value(ix).unwrap());
 
     let v = serde_json::to_value(ix).unwrap();
@@ -1672,8 +1668,97 @@ fn long_texts_keep_the_index_under_its_size_budget() {
     assert!(whole(folded.resolution_detail.as_deref().unwrap()));
 }
 
+// --------------------------------------------------------------------------
+// ADR-0053 (WP-200): the written index stays under its budget. Over it,
+// the lists lose their oldest rows in the ladder's order; `summary` keeps
+// the counts of the whole index, crisis rows go last.
+// --------------------------------------------------------------------------
+
+/// `ix` cut by [`budget::fit`], its warning, and its file size.
+fn fitted(ix: &model::Index) -> (model::Index, Option<String>, usize) {
+    let mut cut = ix.clone();
+    let warning = budget::fit(&mut cut);
+    let size = index::to_text(&cut).len();
+    (cut, warning, size)
+}
+
+/// The timeline spans and crisis marks name listed rows only.
+fn assert_timeline_matches(ix: &model::Index) {
+    let cases: std::collections::HashSet<&str> = ix.cases.all().map(|c| c.id.as_str()).collect();
+    let crises: std::collections::HashSet<&str> = ix
+        .drift
+        .iter()
+        .filter(|d| d.crisis)
+        .map(|d| d.event_id.as_str())
+        .collect();
+    let timeline = ix.series.timeline.as_ref().unwrap();
+    for t in timeline {
+        match t.kind {
+            "case" => assert!(cases.contains(t.reference.as_str()), "{t:?}"),
+            "crisis" => assert!(crises.contains(t.reference.as_str()), "{t:?}"),
+            _ => {}
+        }
+    }
+    let spans = timeline.iter().filter(|t| t.kind == "case").count();
+    let dropped = ix.cases.all().filter(|c| c.status == "dropped").count();
+    assert_eq!(spans + dropped, cases.len(), "a span for every listed case");
+    let marks = timeline.iter().filter(|t| t.kind == "crisis").count();
+    assert_eq!(marks, crises.len(), "a mark for every crisis row");
+}
+
+/// The crisis rows a 0.2.0 desk lists (the Changelog's crisis chip and
+/// Today's NEEDS YOU, `changelogChips` and `deskToday` of plugin/Model.js):
+/// one per event that is a crisis row's own event.
+fn crisis_rows_shown(ix: &model::Index) -> usize {
+    ix.events
+        .iter()
+        .filter(|e| {
+            ix.drift
+                .iter()
+                .any(|d| d.crisis && d.event_id == e.event.id.to_string())
+        })
+        .count()
+}
+
+/// Whether `e` is the event of drift row `d` (`driftLookup` of the 0.2.0
+/// plugin/Model.js finds a row through it).
+fn names(d: &model::DriftItem, e: &model::IndexEvent) -> bool {
+    d.event_id == e.event.id.to_string()
+}
+
+/// The cut keeps a drift row and its event together (ADR-0053 §2): a
+/// listed row has its event whenever the whole index had it, and an event
+/// a row of the whole index named is left only with its row.
+fn assert_drift_keeps_its_events(whole: &model::Index, cut: &model::Index) {
+    for d in &cut.drift {
+        if let Some(e) = whole.events.iter().find(|e| names(d, e)) {
+            assert!(cut.events.contains(e), "row {} lost its event", d.event_id);
+        }
+    }
+    for e in &cut.events {
+        if let Some(d) = whole.drift.iter().find(|d| names(d, e)) {
+            assert!(
+                cut.drift.contains(d),
+                "event {} without its row",
+                d.event_id
+            );
+        }
+    }
+}
+
 #[test]
-fn an_index_over_its_budget_warns() {
+fn under_its_budget_the_index_is_not_cut() {
+    let ix = derive(|_| {});
+    let (cut, warning, _) = fitted(&ix);
+    assert_eq!(warning, None);
+    assert_eq!(cut, ix);
+}
+
+/// 3000 active cases with long titles: every rung before the active cases
+/// runs dry, then the oldest active cases go; crisis rows and the counts
+/// stay.
+#[test]
+fn an_index_over_its_budget_is_cut_oldest_first_and_keeps_its_counts() {
     let mut loaded = fixture_loaded();
     let open = loaded
         .cases
@@ -1688,16 +1773,533 @@ fn an_index_over_its_budget_warns() {
         loaded.cases.push(c);
     }
     let built = build::build(loaded, &input());
-    let size = index::to_text(&built.index).len();
-    assert!(size >= build::SIZE_BUDGET, "{size} bytes");
-    let want = format!(
-        "index.json is {size} bytes, over its budget of 1000000 (CONTRACT.md rule 5); the largest section is `cases`"
-    );
+    let ix = built.index;
+    let before = index::to_text(&ix).len();
+    assert!(before >= build::SIZE_BUDGET, "{before} bytes");
     assert!(
-        built.warnings.iter().any(|w| w.starts_with(&want)),
-        "{:?}",
+        built.warnings.iter().all(|w| !w.contains("budget")),
+        "the build itself does not warn: {:?}",
         built.warnings
     );
+
+    let (cut, warning, size) = fitted(&ix);
+    eprintln!("3000 long active cases: {before} bytes, written {size}");
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let warning = warning.unwrap();
+    let want = format!(
+        "index.json would be {before} bytes, over its budget of 1000000 (CONTRACT.md rule 5); \
+         the largest section is `cases` ("
+    );
+    assert!(warning.starts_with(&want), "{warning}");
+    assert!(
+        warning.contains(&format!("; written at {size} bytes without ")),
+        "{warning}"
+    );
+    assert!(warning.contains(" events, "), "{warning}");
+    assert!(warning.contains(" active cases"), "{warning}");
+    assert!(!warning.contains("crisis row"), "{warning}");
+
+    assert_eq!(cut.summary, ix.summary, "the counts of the whole index");
+    assert_eq!(cut.series.risk, ix.series.risk);
+    let areas = cut.system.areas.as_ref().unwrap();
+    assert!(
+        areas
+            .iter()
+            .all(|a| ix.system.areas.as_ref().unwrap().contains(a))
+    );
+    let crises = |i: &model::Index| -> Vec<model::DriftItem> {
+        i.drift.iter().filter(|d| d.crisis).cloned().collect()
+    };
+    assert_eq!(crises(&cut), crises(&ix), "every crisis row stays");
+    assert!(!crises(&ix).is_empty());
+    // the rungs before the active cases ran dry: only the events of the
+    // crisis rows are left
+    assert_eq!(cut.events.len(), crisis_rows_shown(&ix));
+    assert_eq!(crisis_rows_shown(&cut), crisis_rows_shown(&ix));
+    assert_drift_keeps_its_events(&ix, &cut);
+    assert_eq!(budget::fit(&mut cut.clone()), None, "a cut index fits");
+    assert!(cut.cases.completed.is_empty() && cut.cases.queued.is_empty());
+    assert!(cut.cases.verification.is_empty());
+    assert!(cut.drift.iter().all(|d| d.crisis), "no open change left");
+    assert!(cut.today.entries.is_empty());
+    // the newest active cases stay, the oldest went
+    assert!(!cut.cases.active.is_empty());
+    let key = |c: &model::IndexCase| (c.created.clone(), c.id.clone());
+    let oldest_kept = cut.cases.active.iter().map(key).min().unwrap();
+    let gone: Vec<_> = ix
+        .cases
+        .active
+        .iter()
+        .filter(|c| !cut.cases.active.contains(c))
+        .collect();
+    assert!(!gone.is_empty());
+    assert!(gone.iter().all(|c| key(c) < oldest_kept));
+    assert_timeline_matches(&cut);
+    common::assert_valid_index(&serde_json::to_value(&cut).unwrap());
+}
+
+/// The synthetic worst case of the crisis rows: 250 crises whose subjects
+/// take the most JSON the schema allows (512 characters, each escaped to 6
+/// bytes), shown twice (the row and its timeline mark). Everything else
+/// goes first; then the oldest crisis rows. `summary.crisis` counts all.
+#[test]
+fn crisis_rows_go_last_and_stay_counted() {
+    let base = derive(|_| {});
+    // `limine*` is in the default `[drift] alwaysRed`
+    let subject = "\u{1}".repeat(seldon::model::event::SUBJECT_MAX - 11);
+    let ix = derive(|l| {
+        for i in 0..250u32 {
+            let e: Event = serde_json::from_value(json!({
+                "id": ulid::Ulid::from_parts(1, u128::from(i) + 1),
+                "ts": format!("2026-08-{:02}T10:{:02}:00+02:00", 1 + i / 60, i % 60),
+                "source": "pacman", "kind": "install", "subject": format!("limine-{i:03}-{subject}"),
+                "actor": "system", "zone": "red", "explicit": true,
+            }))
+            .unwrap();
+            l.events.push(e);
+        }
+    });
+    assert_eq!(ix.summary.crisis, base.summary.crisis + 250);
+    let before = index::to_text(&ix).len();
+    assert!(before >= build::SIZE_BUDGET, "{before} bytes");
+
+    let (cut, warning, size) = fitted(&ix);
+    eprintln!("250 crises with the longest subjects: {before} bytes, written {size}");
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let warning = warning.unwrap();
+    // the events carry the long subjects too
+    assert!(
+        warning.contains("the largest section is `events`"),
+        "{warning}"
+    );
+    assert!(
+        warning.contains(" crisis rows (still counted)"),
+        "{warning}"
+    );
+    assert_eq!(cut.summary, ix.summary, "every crisis counted");
+    // only crisis rows are left, the newest of them
+    assert!(cut.drift.iter().all(|d| d.crisis));
+    assert!(!cut.drift.is_empty() && cut.drift.len() < ix.drift.len());
+    assert_eq!(
+        cut.drift[..],
+        ix.drift[..cut.drift.len()],
+        "the newest stay"
+    );
+    assert!(cut.cases.all().next().is_none() && cut.decisions.is_empty());
+    // the optional parts of `system` went before any crisis row
+    let s = &cut.system;
+    assert!(s.snapshots.is_none() && s.recent_config.is_none() && s.pacman_ignore.is_none());
+    assert!(s.omarchy.is_none() && s.packages.is_none());
+    let system = warning.find(" system details").unwrap();
+    assert!(system < warning.find(" crisis rows").unwrap(), "{warning}");
+    // a cut crisis row took its event, a kept one keeps it
+    assert_eq!(cut.events.len(), cut.drift.len());
+    assert_drift_keeps_its_events(&ix, &cut);
+    assert_eq!(crisis_rows_shown(&cut), cut.drift.len());
+    assert_timeline_matches(&cut);
+    common::assert_valid_index(&serde_json::to_value(&cut).unwrap());
+}
+
+/// Review 1 F1: the events rung never takes the event of a listed drift
+/// row. The fixture with its pacman group made a crisis, 20 recent
+/// crises, 300 newer notes in a case and 2 000 imported queued cases: the
+/// cut takes old events and queued cases, and a 0.2.0 desk still lists
+/// every crisis row the bar counts.
+#[test]
+fn the_cut_keeps_the_events_of_listed_drift_rows() {
+    let mut loaded = fixture_loaded();
+    // the mesa downgrade group, made a crisis (`limine*` is always red)
+    let leader = loaded
+        .events
+        .iter_mut()
+        .find(|e| e.tx_id.as_deref() == Some("tx-20260927T123000"))
+        .unwrap();
+    leader.subject = "limine".into();
+    for i in 0..20u32 {
+        let e: Event = serde_json::from_value(json!({
+            "id": ulid::Ulid::from_parts(2, u128::from(i) + 1),
+            "ts": format!("2026-09-30T08:{i:02}:00+02:00"),
+            "source": "pacman", "kind": "install", "subject": format!("limine-{i:03}"),
+            "actor": "system", "zone": "red", "explicit": true,
+        }))
+        .unwrap();
+        loaded.events.push(e);
+    }
+    for i in 0..300u32 {
+        let e: Event = serde_json::from_value(json!({
+            "id": ulid::Ulid::from_parts(3, u128::from(i) + 1),
+            "ts": format!("2026-10-01T10:{:02}:{:02}+02:00", i / 60, i % 60),
+            "source": "manual", "kind": "note", "subject": format!("step {i}"),
+            "actor": "human", "case": "C-2026-003",
+        }))
+        .unwrap();
+        loaded.events.push(e);
+    }
+    let queued = loaded
+        .cases
+        .iter()
+        .find(|c| c.case.status == seldon::model::CaseStatus::Queued)
+        .unwrap()
+        .clone();
+    for i in 0..2000 {
+        let mut c = queued.clone();
+        c.case.id = format!("C-2025-{i:04}");
+        c.case.title = format!("imported task {i}: {}", "words ".repeat(10));
+        loaded.cases.push(c);
+    }
+    let ix = build::build(loaded, &input()).index;
+    let before = index::to_text(&ix).len();
+    assert!(before >= build::SIZE_BUDGET, "{before} bytes");
+    let crises = ix.drift.iter().filter(|d| d.crisis).count();
+    assert!(crises >= 21, "{crises}");
+    assert_eq!(ix.summary.crisis, crises);
+    assert_eq!(
+        crisis_rows_shown(&ix),
+        crises,
+        "the whole index lists them all"
+    );
+    let group = ix.drift.iter().find(|d| d.members == Some(3)).unwrap();
+    assert!(group.crisis, "the mesa group, its leader an old event");
+
+    let (cut, warning, size) = fitted(&ix);
+    eprintln!("recent crises and 2000 queued cases: {before} bytes, written {size}");
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let warning = warning.unwrap();
+    assert!(warning.contains(" events, "), "{warning}");
+    assert!(warning.contains(" queued cases"), "{warning}");
+    // the events rungs' floor counts the whole list, the pinned events
+    // included: 403 events go down to 100, 26 of them pinned
+    assert_eq!(cut.events.len(), 100);
+    assert_eq!(cut.summary, ix.summary);
+    assert_eq!(cut.drift, ix.drift, "every drift row stays");
+    assert_drift_keeps_its_events(&ix, &cut);
+    // the 0.2.0 crisis chip and NEEDS YOU equal the pill
+    assert_eq!(crisis_rows_shown(&cut), ix.summary.crisis);
+    assert_timeline_matches(&cut);
+    common::assert_valid_index(&serde_json::to_value(&cut).unwrap());
+}
+
+/// Review 2 N2: a rung takes only as many rows as the file needs, a drift
+/// row's event counted with it. 150 open changes, 2 000 queued cases and
+/// 800 active cases with long titles: the cut ends on rung 4, and putting
+/// back the newest open change it took (with its event) is over the
+/// budget again.
+#[test]
+fn a_rung_takes_only_the_rows_the_file_needs() {
+    let mut loaded = fixture_loaded();
+    for i in 0..150u32 {
+        let e: Event = serde_json::from_value(json!({
+            "id": ulid::Ulid::from_parts(4, u128::from(i) + 1),
+            "ts": format!("2026-09-30T09:{:02}:{:02}+02:00", i / 60, i % 60),
+            "source": "config", "kind": "config-remove",
+            "subject": format!("~/.config/hypr/extra-{i:04}-{}.conf", "x".repeat(40)),
+            "actor": "system", "zone": "yellow",
+        }))
+        .unwrap();
+        loaded.events.push(e);
+    }
+    let queued = loaded
+        .cases
+        .iter()
+        .find(|c| c.case.status == seldon::model::CaseStatus::Queued)
+        .unwrap()
+        .clone();
+    for i in 0..2000 {
+        let mut c = queued.clone();
+        c.case.id = format!("C-2025-{i:04}");
+        c.case.title = format!("{i} {}", "imported task ".repeat(12));
+        loaded.cases.push(c);
+    }
+    let active = loaded
+        .cases
+        .iter()
+        .find(|c| c.case.status == seldon::model::CaseStatus::Active)
+        .unwrap()
+        .clone();
+    for i in 0..800 {
+        let mut c = active.clone();
+        c.case.id = format!("C-2024-{i:04}");
+        c.case.title = format!("{i} {}", "long active title ".repeat(12));
+        loaded.cases.push(c);
+    }
+    let ix = build::build(loaded, &input()).index;
+    let (cut, warning, size) = fitted(&ix);
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let warning = warning.unwrap();
+    assert!(
+        warning.contains(" queued cases, ") && warning.contains(" open changes; "),
+        "the cut ends on rung 4: {warning}"
+    );
+    let open = |i: &model::Index| i.drift.iter().filter(|d| !d.crisis).count();
+    assert!(open(&cut) > 50, "rung 4 stopped before its floor");
+    assert_drift_keeps_its_events(&ix, &cut);
+    // the drift list is newest first: the first row that went went last
+    let last = ix
+        .drift
+        .iter()
+        .find(|d| !d.crisis && !cut.drift.contains(d))
+        .unwrap();
+    let mut back = cut.clone();
+    back.drift.push(last.clone());
+    back.events
+        .extend(ix.events.iter().filter(|e| names(last, e)).cloned());
+    assert_eq!(
+        back.events.len(),
+        cut.events.len() + 1,
+        "its event went too"
+    );
+    assert!(
+        budget::file_size(&back) >= build::SIZE_BUDGET,
+        "one row fewer would not have fitted: {} bytes",
+        budget::file_size(&back)
+    );
+}
+
+/// An index that no cut brings under the budget (a dossier fence of 1.2 MB)
+/// is not written: the old file stays (ADR-0053 §4).
+#[test]
+fn an_index_still_over_its_budget_is_not_written() {
+    let mut ix = derive(|_| {});
+    let huge = "x".repeat(1_200_000);
+    ix.logbook.machine = huge.clone();
+    let (cut, warning, size) = fitted(&ix);
+    assert!(size >= build::SIZE_BUDGET);
+    let warning = warning.unwrap();
+    assert!(
+        warning.ends_with(&format!(
+            "; still {size} bytes with every list cut; not written"
+        )),
+        "{warning}"
+    );
+    assert!(cut.events.is_empty() && cut.system.snapshots.is_none());
+    let tmp = TempDir::new("budget-write");
+    let path = tmp.path().join("index.json");
+    std::fs::write(&path, "old").unwrap();
+    let e = index::write(&path, &cut).unwrap_err();
+    assert_eq!(
+        e.to_string(),
+        format!(
+            "index.json would be {size} bytes, over its budget of 1000000 (CONTRACT.md rule 5); not written"
+        )
+    );
+    assert_eq!(read(&path), "old");
+}
+
+/// WP-200's acceptance: `seldon status` on the fixture scaled ×200 (its
+/// whole index about 1.08 MB) writes an index under the budget, says what
+/// it cut, and keeps every count, crisis row and open case: only history
+/// goes (the oldest completed cases and events).
+#[test]
+fn status_writes_a_large_logbook_under_its_budget() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.tmp.path().join("logbook");
+    common::scale::scaled_logbook(&fixture_logbook(), &root, 200);
+    let logbook = Logbook::open(&root).unwrap();
+    let dirs = Dirs {
+        home: env.home.clone(),
+        xdg_config_home: env.home.join(".config"),
+        state_dir: env.home.join(".local/state/seldon"),
+    };
+    let whole = index::derive_at(&dirs, &Config::default(), &logbook, now()).unwrap();
+    let whole = serde_json::to_value(&whole.index).unwrap();
+    let before = serde_json::to_string(&whole).unwrap().len() + 1;
+    assert!(before >= build::SIZE_BUDGET, "{before} bytes");
+
+    let args = ["--logbook", root.to_str().unwrap(), "status", "--json"];
+    let out = env.at(GENERATED_AT, &args);
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let path = env.home.join(".local/state/seldon/index.json");
+    let size = std::fs::metadata(&path).unwrap().len() as usize;
+    eprintln!("×200: whole index {before} bytes, written {size}");
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let v = common::json(&out);
+    let warning = format!(
+        "index.json would be {before} bytes, over its budget of 1000000 (CONTRACT.md rule 5); \
+         the largest section is `cases` ("
+    );
+    let warnings = v["warnings"].as_array().unwrap();
+    let w = warnings
+        .iter()
+        .filter_map(|w| w.as_str())
+        .find(|w| w.starts_with(&warning))
+        .unwrap_or_else(|| panic!("{warnings:?}"));
+    assert!(
+        w.ends_with(
+            " completed cases, 216 events; the summary still counts every case, change and crisis, \
+             the logbook keeps every row"
+        ),
+        "{w}"
+    );
+
+    let ix = json_file(&path);
+    common::assert_valid_index(&ix);
+    assert_eq!(ix["summary"], whole["summary"], "every count, every crisis");
+    assert_eq!(ix["summary"]["crisis"], json!(400));
+    for kept in [
+        "/drift",
+        "/cases/queued",
+        "/cases/active",
+        "/cases/verification",
+    ] {
+        assert_eq!(ix.pointer(kept), whole.pointer(kept), "{kept}");
+    }
+    assert_eq!(ix["cases"]["completed"].as_array().unwrap().len(), 10);
+    let events = ix["events"].as_array().unwrap();
+    assert!(
+        events.len() < 500 && events.len() >= 100,
+        "{}",
+        events.len()
+    );
+    assert_eq!(
+        events[..],
+        whole["events"].as_array().unwrap()[..events.len()]
+    );
+    // `index --check` validates the cut index before it writes it
+    let out = env.at(
+        GENERATED_AT,
+        &["--logbook", root.to_str().unwrap(), "index", "--check"],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+}
+
+/// The fixture logbook scaled ×200 (its whole index about 1.08 MB) in
+/// `env`'s temp dir.
+fn scaled_200(env: &Env) -> std::path::PathBuf {
+    let root = env.tmp.path().join("logbook");
+    common::scale::scaled_logbook(&fixture_logbook(), &root, 200);
+    root
+}
+
+/// The whole index of the logbook at `root` as `env` would build it now.
+fn whole_index(env: &Env, root: &std::path::Path) -> serde_json::Value {
+    let logbook = Logbook::open(root).unwrap();
+    let dirs = Dirs {
+        home: env.home.clone(),
+        xdg_config_home: env.home.join(".config"),
+        state_dir: env.home.join(".local/state/seldon"),
+    };
+    let whole = index::derive_at(&dirs, &Config::default(), &logbook, now()).unwrap();
+    serde_json::to_value(&whole.index).unwrap()
+}
+
+/// `seldon args…` at [`GENERATED_AT`], the collectors pointed at missing
+/// files in the temp dir (never the host's), with `stdin`.
+fn writer(env: &Env, args: &[&str], stdin: &str) -> std::process::Output {
+    use std::io::Write as _;
+    let tmp = env.tmp.path();
+    let mut child = env
+        .command(args)
+        .env("SELDON_NOW", GENERATED_AT)
+        .env("SELDON_PACMAN_LOG", tmp.join("pacman.log"))
+        .env("SELDON_PACMAN_DB_LOCK", tmp.join("no-db.lck"))
+        .env("SELDON_OMARCHY", tmp.join("no-omarchy"))
+        .env("SELDON_OMARCHY_PLUGINS_DIR", tmp.join("plugins"))
+        .env("SELDON_THEME_FILE", tmp.join("theme.name"))
+        .env("TZ", "Europe/Berlin")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+/// The written `index.json` of `env` is under the budget, validates and
+/// counts what the whole index of `root` counts; `out` warned on stderr.
+fn assert_written_under_budget(env: &Env, root: &std::path::Path, out: &std::process::Output) {
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(out));
+    let path = env.home.join(".local/state/seldon/index.json");
+    let size = std::fs::metadata(&path).unwrap().len() as usize;
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let ix = json_file(&path);
+    common::assert_valid_index(&ix);
+    let whole = whole_index(env, root);
+    assert!(serde_json::to_string(&whole).unwrap().len() + 1 >= build::SIZE_BUDGET);
+    assert_eq!(ix["summary"], whole["summary"], "every count, every crisis");
+    let err = common::stderr(out);
+    assert!(
+        err.contains("seldon: warning: index.json would be "),
+        "{err}"
+    );
+    // every write of the index went through: none fell back on the
+    // backstop (ADR-0053 §4) and left an earlier file
+    assert!(!err.contains("not written"), "{err}");
+}
+
+/// Review 1 F3: the rebuild after a writing command cuts the index too.
+#[test]
+fn a_writing_command_writes_a_large_logbook_under_its_budget() {
+    let env = Env::new(Snapper::Missing);
+    let root = scaled_200(&env);
+    let args = [
+        "--logbook",
+        root.to_str().unwrap(),
+        "plan",
+        "new",
+        "--",
+        "One more case",
+    ];
+    let out = writer(&env, &args, "");
+    assert_written_under_budget(&env, &root, &out);
+}
+
+/// Review 1 F3: the session hook cuts the index it writes.
+#[test]
+fn the_session_hook_writes_a_large_logbook_under_its_budget() {
+    let env = Env::new(Snapper::Missing);
+    let root = scaled_200(&env);
+    let args = ["--logbook", root.to_str().unwrap(), "hook", "session-stop"];
+    let out = writer(&env, &args, "");
+    assert_eq!(common::stdout(&out), "", "hooks print nothing");
+    assert_written_under_budget(&env, &root, &out);
+}
+
+/// Review 1 F4: `status` prints the counts of the whole index, also the
+/// cases in verification, whose list the cut takes on rung 20: the ×200
+/// fixture and 2 500 active cases with long titles.
+#[test]
+fn status_counts_from_the_whole_index() {
+    let env = Env::new(Snapper::Missing);
+    let root = scaled_200(&env);
+    let case = read(&fixture_logbook().join("work/active/C-2026-004-zed.md"));
+    let events = regex::Regex::new(r"(?m)^events: \[.*\]$").unwrap();
+    for i in 0..2500 {
+        let text = case
+            .replace("C-2026-004", &format!("C-2025-{i:04}"))
+            .replace(
+                "Zed als zweiten Editor installieren",
+                &format!("{i} {}", "long title ".repeat(20)),
+            );
+        let text = events.replace(&text, "events: []").into_owned();
+        let path = root.join(format!("work/active/C-2025-{i:04}-long.md"));
+        std::fs::write(path, text).unwrap();
+    }
+    let whole = whole_index(&env, &root);
+    let verification = whole["cases"]["verification"].as_array().unwrap().len();
+    assert!(verification > 0);
+
+    let out = env.at(
+        GENERATED_AT,
+        &["--logbook", root.to_str().unwrap(), "status"],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let ix = json_file(&env.home.join(".local/state/seldon/index.json"));
+    let written = ix["cases"]["verification"].as_array().unwrap().len();
+    assert!(written < verification, "the cut took cases in verification");
+    let text = common::stdout(&out);
+    let s = &whole["summary"];
+    let line = format!(
+        "  cases   {} active · {verification} in verification · {} queued\n",
+        s["activeCases"], s["queuedCases"]
+    );
+    assert!(text.contains(&line), "{text}");
+    assert!(text.contains("warning: index.json would be "), "{text}");
 }
 
 #[test]

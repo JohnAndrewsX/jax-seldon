@@ -397,6 +397,7 @@ mod imp {
             &config,
             &logbook.root,
         ));
+        index::fit(&mut built);
         index::write(&ctx.dirs.index_file(), &built.index)?;
         Ok(built)
     }

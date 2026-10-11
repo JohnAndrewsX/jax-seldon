@@ -22,6 +22,25 @@ and the package does not exist yet. Update the plugin first:
 ### Highlights
 
 - Every button on the desk works by key now: the notices, the setup card, *Agent sorts* and the width and sidebar settings.
+- A very large logbook no longer locks the desk out: the engine keeps `index.json` under 1 MB, leaves out the oldest rows first and still counts every case, change and crisis.
+
+### Engine
+
+- **`index.json` stays under its budget (WP-200, ADR-0053).** The plugin
+  refuses an index of 1 MB or more, and until now the engine only warned
+  and wrote it anyway, so *Build index* wrote the same file again. Now,
+  right before it writes the file, the engine cuts the lists that would
+  take it over 1 MB: their oldest rows first, history before the
+  present (completed cases, events, queued cases, open changes,
+  decisions, memory topics, the journal, the charts, then open cases)
+  and crisis rows last, only as many as the file needs. An open change
+  keeps its event, so the desk's Changelog still lists every change it
+  is given. `summary` keeps
+  the counts of the whole logbook, so the bar counts every crisis; the
+  logbook, the views and every command keep every row. `seldon status`
+  names the largest section and what it cut. An index that still would
+  not fit is not written. Below 1 MB nothing changes; the fixture scaled
+  ×150 (1 200 cases) stays at 881 KB, uncut.
 
 ### Plugin
 

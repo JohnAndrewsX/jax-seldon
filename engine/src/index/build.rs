@@ -30,7 +30,8 @@ pub const MAX_SNAPSHOTS: usize = 10;
 /// Most open drift items the index lists (ADR-0020): crises first, then
 /// the newest; `summary` still counts all of them.
 pub const MAX_DRIFT: usize = 200;
-/// The size budget of `index.json` in bytes (CONTRACT.md rule 5: < 1 MB).
+/// The size budget of `index.json` in bytes (CONTRACT.md rule 5: < 1 MB);
+/// [`super::budget::fit`] keeps the written file under it (ADR-0053).
 pub const SIZE_BUDGET: usize = 1_000_000;
 /// Most bytes one free text of an index event or drift item takes in
 /// `index.json` (JSON-escaped, marker included): `detail`,
@@ -278,7 +279,6 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         series,
         triage: None,
     };
-    warnings.extend(over_budget(&index));
     Built {
         index,
         ledger: events,
@@ -525,49 +525,6 @@ fn clipped(f: &IndexEvent) -> IndexEvent {
             .insert(TRUNCATED.to_string(), serde_json::Value::Bool(true));
     }
     f
-}
-
-/// A warning when the serialised index is not under [`SIZE_BUDGET`]
-/// (CONTRACT.md rule 5), naming its largest section. Events and drift are
-/// clipped and capped; open cases, decisions and memory topics are not.
-fn over_budget(index: &Index) -> Option<String> {
-    /// Counts the bytes serde_json writes, keeping none of them.
-    struct Count(usize);
-    impl std::io::Write for Count {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0 += buf.len();
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    fn size(value: &impl serde::Serialize) -> usize {
-        let mut count = Count(0);
-        serde_json::to_writer(&mut count, value).expect("the index always serialises");
-        count.0
-    }
-    let total = size(index) + 1; // the newline of `index::to_text`
-    if total < SIZE_BUDGET {
-        return None;
-    }
-    let (name, bytes) = [
-        ("events", size(&index.events)),
-        ("drift", size(&index.drift)),
-        ("cases", size(&index.cases)),
-        ("decisions", size(&index.decisions)),
-        ("memory", size(&index.memory)),
-        ("series", size(&index.series)),
-        ("system", size(&index.system)),
-        ("today", size(&index.today)),
-    ]
-    .into_iter()
-    .max_by_key(|s| s.1)
-    .expect("sections");
-    Some(format!(
-        "index.json is {total} bytes, over its budget of {SIZE_BUDGET} (CONTRACT.md rule 5); \
-         the largest section is `{name}` ({bytes} bytes); the plugin reads the whole file"
-    ))
 }
 
 /// Whether a folded event can still be resolved (ADR-0012 §6, ADR-0028
