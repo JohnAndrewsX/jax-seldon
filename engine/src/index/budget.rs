@@ -4,7 +4,9 @@
 //! [`LADDER`] lose their oldest rows, one rung after the other, until the
 //! file fits. `summary` (and `series.risk`, `system.areas[].cases`) keep
 //! the counts of the whole index, so the bar counts every crisis and every
-//! open change; a cut row is still in the logbook. [`super::write`]
+//! open change; a cut row is still in the logbook. The event a listed
+//! drift row names is cut only with its row, so a 0.2.0 desk lists every
+//! drift row it is given. [`super::write`]
 //! refuses a file that is still over the budget.
 
 use std::collections::HashSet;
@@ -42,11 +44,14 @@ pub fn file_size(index: &Index) -> usize {
 enum Rows {
     /// `cases.completed`, the earliest `closed` first.
     Completed,
-    /// `events`, the oldest first.
+    /// `events`, the oldest first, never the event a listed drift row
+    /// names (`eventId`): it goes with its row. The floor counts the
+    /// list's length, those pinned rows included.
     Events,
     /// `cases.queued`, the earliest `created` first.
     Queued,
-    /// `drift` items that are no crisis, the oldest first.
+    /// `drift` items that are no crisis, the oldest first, each with its
+    /// event.
     Attention,
     /// `decisions` that are not `proposed`, the lowest id first.
     Decisions,
@@ -72,15 +77,17 @@ enum Rows {
     Active,
     /// `decisions` that are `proposed`, the lowest id first.
     Proposed,
-    /// `drift` items that are a crisis, the oldest first.
-    Crises,
     /// The optional parts of `system`: snapshots, recent config files,
     /// the ignore list, the Omarchy and package summaries.
     System,
+    /// `drift` items that are a crisis, the oldest first, each with its
+    /// event and its timeline mark.
+    Crises,
 }
 
 /// The order of the cut (ADR-0053 §2): each rung cuts its rows down to the
-/// number given (rows it does not take do not count), the oldest first,
+/// number given (rows it does not take do not count; the events' floor
+/// counts the whole list), the oldest first,
 /// and only while the file is over the budget. The first seven keep a
 /// screenful of each list; the rest leave history before the present and
 /// crises last.
@@ -107,8 +114,8 @@ const LADDER: &[(Rows, usize)] = &[
     (Rows::Verification, 0),
     (Rows::Active, 0),
     (Rows::Proposed, 0),
-    (Rows::Crises, 0),
     (Rows::System, 0),
+    (Rows::Crises, 0),
 ];
 
 impl Rows {
@@ -169,7 +176,7 @@ pub fn fit(index: &mut Index) -> Option<String> {
         .join(", ");
     let end = if after < SIZE_BUDGET {
         format!(
-            "written at {after} bytes without the oldest {what}; the summary still counts every case, change and crisis, the logbook keeps every row"
+            "written at {after} bytes without {what}; the summary still counts every case, change and crisis, the logbook keeps every row"
         )
     } else {
         format!("still {after} bytes with every list cut; not written")
@@ -204,7 +211,20 @@ fn trim(index: &mut Index, rows: Rows, floor: usize, excess: usize) -> usize {
     let oldest_first = |n: usize| (0..n).collect::<Vec<_>>();
     match rows {
         Rows::Events => {
-            let order = newest_first(index.events.len());
+            // the event a listed drift row names stays while its row is
+            // listed: the 0.2.0 plugin finds a drift row only through its
+            // event (ADR-0053 §2); the floor counts the whole list
+            let pinned: HashSet<&str> = index.drift.iter().map(|d| d.event_id.as_str()).collect();
+            let named: Vec<bool> = index
+                .events
+                .iter()
+                .map(|e| pinned.contains(e.event.id.to_string().as_str()))
+                .collect();
+            let floor = floor.saturating_sub(named.iter().filter(|&&n| n).count());
+            let order = newest_first(index.events.len())
+                .into_iter()
+                .filter(|&i| !named[i])
+                .collect();
             cut(&mut index.events, order, floor, excess).len()
         }
         Rows::Completed | Rows::Queued | Rows::Verification | Rows::Active => {
@@ -238,16 +258,28 @@ fn trim(index: &mut Index, rows: Rows, floor: usize, excess: usize) -> usize {
                 .filter(|&i| index.drift[i].crisis == crisis)
                 .collect();
             let timeline = index.series.timeline.as_ref();
-            let mark = |d: &DriftItem| {
-                if crisis {
-                    marks(timeline, "crisis", &d.event_id)
-                } else {
-                    0
-                }
+            let events = &index.events;
+            // a drift row goes with its event and, for a crisis, its
+            // timeline mark
+            let also = |d: &DriftItem| {
+                let event: usize = events
+                    .iter()
+                    .filter(|e| e.event.id.to_string() == d.event_id)
+                    .map(|e| size(e) + 1)
+                    .sum();
+                event
+                    + if crisis {
+                        marks(timeline, "crisis", &d.event_id)
+                    } else {
+                        0
+                    }
             };
-            let gone = cut_with(&mut index.drift, order, floor, excess, mark);
+            let gone = cut_with(&mut index.drift, order, floor, excess, also);
+            let ids: HashSet<&str> = gone.iter().map(|d| d.event_id.as_str()).collect();
+            index
+                .events
+                .retain(|e| !ids.contains(e.event.id.to_string().as_str()));
             if crisis && let Some(timeline) = &mut index.series.timeline {
-                let ids: HashSet<&str> = gone.iter().map(|d| d.event_id.as_str()).collect();
                 timeline.retain(|t| !(t.kind == "crisis" && ids.contains(t.reference.as_str())));
             }
             gone.len()

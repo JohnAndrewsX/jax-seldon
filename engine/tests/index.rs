@@ -1706,6 +1706,46 @@ fn assert_timeline_matches(ix: &model::Index) {
     assert_eq!(marks, crises.len(), "a mark for every crisis row");
 }
 
+/// The crisis rows a 0.2.0 desk lists (the Changelog's crisis chip and
+/// Today's NEEDS YOU, `changelogChips` and `deskToday` of plugin/Model.js):
+/// one per event that is a crisis row's own event.
+fn crisis_rows_shown(ix: &model::Index) -> usize {
+    ix.events
+        .iter()
+        .filter(|e| {
+            ix.drift
+                .iter()
+                .any(|d| d.crisis && d.event_id == e.event.id.to_string())
+        })
+        .count()
+}
+
+/// Whether `e` is the event of drift row `d` (`driftLookup` of the 0.2.0
+/// plugin/Model.js finds a row through it).
+fn names(d: &model::DriftItem, e: &model::IndexEvent) -> bool {
+    d.event_id == e.event.id.to_string()
+}
+
+/// The cut keeps a drift row and its event together (ADR-0053 §2): a
+/// listed row has its event whenever the whole index had it, and an event
+/// a row of the whole index named is left only with its row.
+fn assert_drift_keeps_its_events(whole: &model::Index, cut: &model::Index) {
+    for d in &cut.drift {
+        if let Some(e) = whole.events.iter().find(|e| names(d, e)) {
+            assert!(cut.events.contains(e), "row {} lost its event", d.event_id);
+        }
+    }
+    for e in &cut.events {
+        if let Some(d) = whole.drift.iter().find(|d| names(d, e)) {
+            assert!(
+                cut.drift.contains(d),
+                "event {} without its row",
+                d.event_id
+            );
+        }
+    }
+}
+
 #[test]
 fn under_its_budget_the_index_is_not_cut() {
     let ix = derive(|_| {});
@@ -1752,7 +1792,7 @@ fn an_index_over_its_budget_is_cut_oldest_first_and_keeps_its_counts() {
     );
     assert!(warning.starts_with(&want), "{warning}");
     assert!(
-        warning.contains(&format!("; written at {size} bytes without the oldest ")),
+        warning.contains(&format!("; written at {size} bytes without ")),
         "{warning}"
     );
     assert!(warning.contains(" events, "), "{warning}");
@@ -1772,8 +1812,12 @@ fn an_index_over_its_budget_is_cut_oldest_first_and_keeps_its_counts() {
     };
     assert_eq!(crises(&cut), crises(&ix), "every crisis row stays");
     assert!(!crises(&ix).is_empty());
-    // the rungs before the active cases ran dry
-    assert!(cut.events.is_empty());
+    // the rungs before the active cases ran dry: only the events of the
+    // crisis rows are left
+    assert_eq!(cut.events.len(), crisis_rows_shown(&ix));
+    assert_eq!(crisis_rows_shown(&cut), crisis_rows_shown(&ix));
+    assert_drift_keeps_its_events(&ix, &cut);
+    assert_eq!(budget::fit(&mut cut.clone()), None, "a cut index fits");
     assert!(cut.cases.completed.is_empty() && cut.cases.queued.is_empty());
     assert!(cut.cases.verification.is_empty());
     assert!(cut.drift.iter().all(|d| d.crisis), "no open change left");
@@ -1841,8 +1885,94 @@ fn crisis_rows_go_last_and_stay_counted() {
         ix.drift[..cut.drift.len()],
         "the newest stay"
     );
-    assert!(cut.events.is_empty() && cut.cases.all().next().is_none());
-    assert!(cut.decisions.is_empty());
+    assert!(cut.cases.all().next().is_none() && cut.decisions.is_empty());
+    // the optional parts of `system` went before any crisis row
+    let s = &cut.system;
+    assert!(s.snapshots.is_none() && s.recent_config.is_none() && s.pacman_ignore.is_none());
+    assert!(s.omarchy.is_none() && s.packages.is_none());
+    let system = warning.find(" system details").unwrap();
+    assert!(system < warning.find(" crisis rows").unwrap(), "{warning}");
+    // a cut crisis row took its event, a kept one keeps it
+    assert_eq!(cut.events.len(), cut.drift.len());
+    assert_drift_keeps_its_events(&ix, &cut);
+    assert_eq!(crisis_rows_shown(&cut), cut.drift.len());
+    assert_timeline_matches(&cut);
+    common::assert_valid_index(&serde_json::to_value(&cut).unwrap());
+}
+
+/// Review 1 F1: the events rung never takes the event of a listed drift
+/// row. The fixture with its pacman group made a crisis, 20 recent
+/// crises, 300 newer notes in a case and 2 000 imported queued cases: the
+/// cut takes old events and queued cases, and a 0.2.0 desk still lists
+/// every crisis row the bar counts.
+#[test]
+fn the_cut_keeps_the_events_of_listed_drift_rows() {
+    let mut loaded = fixture_loaded();
+    // the mesa downgrade group, made a crisis (`limine*` is always red)
+    let leader = loaded
+        .events
+        .iter_mut()
+        .find(|e| e.tx_id.as_deref() == Some("tx-20260927T123000"))
+        .unwrap();
+    leader.subject = "limine".into();
+    for i in 0..20u32 {
+        let e: Event = serde_json::from_value(json!({
+            "id": ulid::Ulid::from_parts(2, u128::from(i) + 1),
+            "ts": format!("2026-09-30T08:{i:02}:00+02:00"),
+            "source": "pacman", "kind": "install", "subject": format!("limine-{i:03}"),
+            "actor": "system", "zone": "red", "explicit": true,
+        }))
+        .unwrap();
+        loaded.events.push(e);
+    }
+    for i in 0..300u32 {
+        let e: Event = serde_json::from_value(json!({
+            "id": ulid::Ulid::from_parts(3, u128::from(i) + 1),
+            "ts": format!("2026-10-01T10:{:02}:{:02}+02:00", i / 60, i % 60),
+            "source": "manual", "kind": "note", "subject": format!("step {i}"),
+            "actor": "human", "case": "C-2026-003",
+        }))
+        .unwrap();
+        loaded.events.push(e);
+    }
+    let queued = loaded
+        .cases
+        .iter()
+        .find(|c| c.case.status == seldon::model::CaseStatus::Queued)
+        .unwrap()
+        .clone();
+    for i in 0..2000 {
+        let mut c = queued.clone();
+        c.case.id = format!("C-2025-{i:04}");
+        c.case.title = format!("imported task {i}: {}", "words ".repeat(10));
+        loaded.cases.push(c);
+    }
+    let ix = build::build(loaded, &input()).index;
+    let before = index::to_text(&ix).len();
+    assert!(before >= build::SIZE_BUDGET, "{before} bytes");
+    let crises = ix.drift.iter().filter(|d| d.crisis).count();
+    assert!(crises >= 21, "{crises}");
+    assert_eq!(ix.summary.crisis, crises);
+    assert_eq!(
+        crisis_rows_shown(&ix),
+        crises,
+        "the whole index lists them all"
+    );
+    let group = ix.drift.iter().find(|d| d.members == Some(3)).unwrap();
+    assert!(group.crisis, "the mesa group, its leader an old event");
+
+    let (cut, warning, size) = fitted(&ix);
+    eprintln!("recent crises and 2000 queued cases: {before} bytes, written {size}");
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let warning = warning.unwrap();
+    assert!(warning.contains(" events, "), "{warning}");
+    assert!(warning.contains(" queued cases"), "{warning}");
+    assert!(cut.events.len() < ix.events.len());
+    assert_eq!(cut.summary, ix.summary);
+    assert_eq!(cut.drift, ix.drift, "every drift row stays");
+    assert_drift_keeps_its_events(&ix, &cut);
+    // the 0.2.0 crisis chip and NEEDS YOU equal the pill
+    assert_eq!(crisis_rows_shown(&cut), ix.summary.crisis);
     assert_timeline_matches(&cut);
     common::assert_valid_index(&serde_json::to_value(&cut).unwrap());
 }
