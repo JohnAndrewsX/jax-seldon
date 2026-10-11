@@ -1602,6 +1602,9 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
         ) {
             eprintln!("seldon: warning: {w}");
         }
+        if let Some(w) = crate::index::budget::fit(&mut built.index) {
+            eprintln!("seldon: warning: {w}");
+        }
         if let Err(e) = crate::index::write(&ctx.dirs.index_file(), &built.index) {
             report("index", &e);
         }

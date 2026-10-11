@@ -3,14 +3,16 @@
 //! generated Markdown views built from the same data.
 //!
 //! - [`load`] reads the logbook, [`build`] derives the index (ADR-0012,
-//!   ADR-0013, ADR-0015), [`write`] replaces the file atomically (temp
-//!   file + rename, CONTRACT.md rule 2), [`views`] renders
+//!   ADR-0013, ADR-0015), [`fit`] keeps it under its size budget
+//!   (ADR-0053), [`write`] replaces the file atomically (temp file +
+//!   rename, CONTRACT.md rule 2), [`views`] renders
 //!   `ledger/YYYY-MM.md` and `STATUS.md`, [`check`] validates against the
 //!   schema.
 //! - Every command that changes the logbook calls
 //!   [`rebuild_if_initialised`] once, after its own writes.
 
 pub mod autocommit;
+pub mod budget;
 pub mod build;
 pub mod check;
 pub mod class;
@@ -84,10 +86,26 @@ pub fn to_text(index: &Index) -> String {
     text
 }
 
+/// Cuts `built.index` to under its size budget right before it is written
+/// (ADR-0053); the warning that says what went joins `built.warnings`.
+/// The views and every command that reads `built` keep the whole index.
+pub fn fit(built: &mut Built) {
+    built.warnings.extend(budget::fit(&mut built.index));
+}
+
 /// Replaces `path` with the index atomically: a reader sees the old file
-/// or the new one, never a partial one (CONTRACT.md rule 2).
+/// or the new one, never a partial one (CONTRACT.md rule 2). An index of
+/// [`build::SIZE_BUDGET`] bytes or more is never written (CONTRACT.md rule
+/// 5, ADR-0053 §4): the plugin would refuse it; [`fit`] cuts it first.
 pub fn write(path: &Path, index: &Index) -> anyhow::Result<()> {
-    sys::write_atomic(path, to_text(index).as_bytes())
+    let text = to_text(index);
+    anyhow::ensure!(
+        text.len() < build::SIZE_BUDGET,
+        "index.json would be {} bytes, over its budget of {} (CONTRACT.md rule 5); not written",
+        text.len(),
+        build::SIZE_BUDGET
+    );
+    sys::write_atomic(path, text.as_bytes())
 }
 
 /// `state` from `cursors.json`: one row per collector in the schema's
@@ -434,6 +452,7 @@ fn try_rebuild(ctx: &Context, probe: GitProbe) -> Result<Vec<String>> {
         &config,
         &logbook.root,
     ));
+    fit(&mut built);
     write(&ctx.dirs.index_file(), &built.index)?;
     Ok(built.warnings)
 }

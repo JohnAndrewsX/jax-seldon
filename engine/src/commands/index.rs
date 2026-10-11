@@ -110,6 +110,7 @@ pub(crate) fn rebuild_with<T>(
         &config,
         &logbook.root,
     ));
+    index::fit(&mut built);
 
     let valid = if validate {
         let instance = serde_json::to_value(&built.index).map_err(anyhow::Error::from)?;
