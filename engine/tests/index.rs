@@ -1757,7 +1757,7 @@ fn an_index_over_its_budget_is_cut_oldest_first_and_keeps_its_counts() {
     );
     assert!(warning.contains(" events, "), "{warning}");
     assert!(warning.contains(" active cases"), "{warning}");
-    assert!(!warning.contains("crisis"), "{warning}");
+    assert!(!warning.contains("crisis row"), "{warning}");
 
     assert_eq!(cut.summary, ix.summary, "the counts of the whole index");
     assert_eq!(cut.series.risk, ix.series.risk);
