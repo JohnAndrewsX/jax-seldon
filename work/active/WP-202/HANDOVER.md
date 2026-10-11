@@ -151,7 +151,7 @@ the dev host's desktop: not run. Not merged.
 | Finding | Fix | Verified |
 |---|---|---|
 | F1 Enter twice on *Agent sorts* started an agent, against the operator's decision "Enter never starts an agent" (WP-122) | way A: the cursor path stays (↑ reaches the button, ring, hint); `a` arms it and the second `a` starts the agent, the Work pattern (`Changelog.textKey("a")`, hint "Agent sorts 6 open changes? Press a again."); Enter and Space on it do nothing; the line reads "a twice starts it · ↓ back to the list". SPEC §5.3 (Enter row, house rule), §5.4, KEYBINDINGS (Enter row, the Changelog row, the arm paragraph), plugin/README, guide 03 en/de, CHANGELOG `[Unreleased]` | headless: `keys-ask` (two Enters on the focused button: not armed, the desk still open; `a` arms; ↓, a row click drop it; `select ask` places; `a a` asks once; the argv has only that one `agent ask triage --json`), `keys-ask-stacked` (Enter does nothing, no detail; `a a` asks once). On 96464eeb `keys-ask` #3–#12 and `keys-ask-stacked` #4, #5 and its argv fail: there the two Enters started the agent |
-| F2 a held ↑ crossed into the notices | `Desk.key` crosses only on a fresh press (`!event.isAutoRepeat`); SPEC §5.3 "The notices by key", KEYBINDINGS, README, guide 03 en/de and the CHANGELOG say a held ↑ stops at the top | headless: `keys-notice-held` (row 0, three auto-repeated ↑: no notice, the cursor on row 0; a fresh ↑: the nearest notice); #3–#6 fail on 96464eeb |
+| F2 a held ↑ crossed into the notices | `Desk.key` crosses only on a fresh press (`!event.isAutoRepeat`); SPEC §5.3 "The notices by key", KEYBINDINGS, README, guide 03 en/de and the CHANGELOG say a held ↑ stops at the top | headless: `keys-notice-held` (row 0, three auto-repeated ↑: no notice, the cursor on row 0; a fresh ↑: the nearest notice); #4–#6 fail on 96464eeb (#3, row 1 to row 0, passes on both) |
 | F3 the notice arm did not name what the fix runs | `Model.noticeTargets`: `notice:<id>:<title>:<script or command>:<action>` | fixture: model.test.js (the mismatch banner's plugin and engine update keep title and action id but get two keys, each naming its script); fails on 96464eeb |
 | F4 the Changelog kept *Agent sorts*' key place across a section change | `onActiveChanged` calls `leaveKeys()` (with the field's `back()` as before) | qmllint; read |
 
@@ -210,3 +210,14 @@ operator's own running engine, its known "not a leak" case). Where:
 headless (dev host, private runtime dirs on disk), shellcheck on the test
 host. CI, the test host's desktop (the seven checks above) and the dev
 host's desktop: not run. Not merged.
+
+## Round 3 nits (stage 2 round 3: APPROVE)
+
+| Nit | Fix | Verified |
+|---|---|---|
+| SPEC-PLUGIN §5.3 and KEYBINDINGS ↑/↓ rows did not say "on a fresh press" | both rows say a fresh ↑ goes on to the notices and a held ↑ stops at the top, as the dedicated rows do | fixture (docs-check ok, 514 links) |
+| `keys-ask` had no Space step | a `key:Space` on the focused *Agent sorts* after the two Enters: not armed, the desk still open; the argv still has the one `agent ask triage --json` of the final `a a` | headless: the WP-202 cases (trimmed runner) 190 passed, 0 failed; `keys-ask` 19 checks |
+| The handover named `keys-notice-held #3–#6` as failing on 96464eeb | corrected to #4–#6 (#3 is row 1 to row 0) | read |
+
+Only docs, one test step and this handover changed; the full gate was not
+re-run for these (last full run: exit 0 on 5c393aa8, above). Not merged.
