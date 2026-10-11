@@ -273,6 +273,8 @@ Item {
     var t = list.length === 0 ? null : at === "last" ? list[list.length - 1] : at === "first" ? list[0] : root.findNotice(at)
     if (!t) return false
     if (root.currentSection) root.currentSection.leaveKeys()
+    // a new place, also the same one again (IPC select): never armed
+    root.disarmPrefix("notice:")
     root.noticesFolded = false
     root.noticeId = t.id
     root.noticeAction = t.actions[0].id

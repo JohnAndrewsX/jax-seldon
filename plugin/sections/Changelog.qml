@@ -164,7 +164,7 @@ Section {
   function activate() {
     if (root.askFocused) {
       // Enter arms, the second Enter starts the agent (the click's call)
-      if (root.askKeyShown && root.arm && root.arm.press(root.askKey, Model.keyArmHint(triageAsk.text)))
+      if (root.askKeyShown && root.arm && root.arm.press(root.askKey, Model.keyArmHint(triageAsk.text)) && root.service)
         root.service.askAgent("triage", "")
       return true
     }

@@ -780,7 +780,9 @@ function settingsHint(inside) {
 function keyWidth(control, pct, dx) {
   var at = clampDeskWidth(pct)
   if (control === "width") {
-    var notch = Math.round((at - DESK_WIDTH_MIN) / 10) + (dx > 0 ? 1 : -1)
+    // the next notch of the slider's grid, also from a preset off it
+    // (67 → 70, 75 → 70)
+    var notch = dx > 0 ? Math.floor((at - DESK_WIDTH_MIN) / 10) + 1 : Math.ceil((at - DESK_WIDTH_MIN) / 10) - 1
     return Math.max(DESK_WIDTH_MIN, Math.min(DESK_WIDTH_MAX, DESK_WIDTH_MIN + 10 * notch))
   }
   // the next preset on in that direction (also from between two), else

@@ -95,6 +95,9 @@ Section {
   function moveAcross(dx) {
     if (root.control === "" || !root.desk) return false
     if (root.control === "width" || root.control === "presets") {
+      // a wheel's pending write goes first, so the timer never writes
+      // the keys' preview (review F2)
+      root.desk.flushWheel()
       root.keyPreview = true
       root.desk.previewWidth = Model.keyWidth(root.control, root.desk.widthPct, dx)
     } else if (root.control === "sidebar") {
@@ -315,6 +318,8 @@ Section {
 
           onMoved: function(v) {
             if (!root.desk) return
+            // the pointer's preview now: leaving the keys does not drop it
+            root.keyPreview = false
             var pct = Model.DESK_WIDTH_MIN + 10 * Math.round(v)
             slider.fromWheel = !slider.dragging
             if (slider.fromWheel) root.desk.previewWheel(pct)
@@ -339,14 +344,26 @@ Section {
         }
       }
 
-      ButtonGroup {
-        options: Model.DESK_WIDTH_PRESETS.map(function(p) { return { value: String(p), label: Model.deskPresetLabel(p) } })
-        value: root.desk ? String(root.desk.widthPct) : ""
-        // the keys' cursor (WP-202): Omarchy's own panel-cursor look
-        cursorIndex: root.control === "presets" && root.desk ? Model.DESK_WIDTH_PRESETS.indexOf(root.desk.widthPct) : -1
-        focusable: false
-        fontSize: Style.font.bodySmall
-        onChanged: function(v) { if (root.desk) root.desk.writeSetting("deskWidth", Number(v)) }
+      Item {
+        implicitWidth: presetGroup.implicitWidth
+        implicitHeight: presetGroup.implicitHeight
+
+        ButtonGroup {
+          id: presetGroup
+          options: Model.DESK_WIDTH_PRESETS.map(function(p) { return { value: String(p), label: Model.deskPresetLabel(p) } })
+          value: root.desk ? String(root.desk.widthPct) : ""
+          // the keys' cursor (WP-202): Omarchy's own panel-cursor look
+          cursorIndex: root.control === "presets" && root.desk ? Model.DESK_WIDTH_PRESETS.indexOf(root.desk.widthPct) : -1
+          focusable: false
+          fontSize: Style.font.bodySmall
+          onChanged: function(v) { if (root.desk) root.desk.writeSetting("deskWidth", Number(v)) }
+        }
+
+        // at a width that is no preset no chip has the cursor: the ring
+        // on the group shows where the keys are (review F4)
+        FocusRing {
+          shown: root.control === "presets" && presetGroup.cursorIndex === -1
+        }
       }
 
       Column {
