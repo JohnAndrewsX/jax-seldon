@@ -5,6 +5,46 @@ v0.2.0 release candidate). Nothing merged; the orchestrator merges after
 the v0.2.0 tag. ADR-0053 stays **proposed**: the operator accepts it
 after this round.
 
+## Round 3 (review 2 APPROVE with N1 and N2)
+
+- **N1** (ADR-0053 §5, wording only): the chips row and the closing
+  sentence now use the review's wording. The crisis chip is unchanged.
+  The open and attention chips count the listed rows, so they show fewer
+  from rung 4 on, the same shortfall rule 4's 200 drift cap already has
+  in 0.2.0. `summary.openDrift` counts all. CONTRACT.md, SPEC-ENGINE,
+  SPEC-PLUGIN and the CHANGELOG do not repeat the old claim, so they are
+  unchanged. Open question 2 below is corrected.
+- **N2** (the two surviving mutants each get a test, in
+  `engine/tests/index.rs`):
+  - `the_cut_keeps_the_events_of_listed_drift_rows` now asserts that
+    `cut.events.len()` is 100: 403 events go down to 100, 26 of them
+    pinned, because the floor counts the whole list.
+  - `a_rung_takes_only_the_rows_the_file_needs` (new) uses the review's
+    "attention" scenario: 150 open changes, 2 000 queued cases and 800
+    long active cases. The cut ends on rung 4. When the newest open
+    change it took is put back with its event, the file is over the
+    budget again.
+
+  On the fixture, run by hand with the source restored afterwards:
+  - M8 (`also` without the event's bytes) fails
+    `a_rung_takes_only_the_rows_the_file_needs`.
+  - M9 (the events floor not reduced by the pinned rows) fails both
+    tests.
+- **Accepted (review 2 Q3):** when 100 or more listed drift rows name an
+  event, rung 2 leaves only those events. The Changelog's "screenful" is
+  then the drift rows, as "the floor counts the whole list" intends.
+- **Verified in round 3:**
+  - fixture: `cargo test --release --test index` 48 passed, 0 failed, 2
+    ignored;
+  - fixture: `cargo test --release --features watch --test watch` 10
+    passed, 0 failed;
+  - clippy (`--features watch`, `-D warnings`) and `cargo fmt --check`
+    clean;
+  - `just docs-check` ok (514 links).
+
+  The full `just check` was not rerun in round 3. Its last green run was
+  at 25343eab. Since then only tests and docs have changed.
+
 ## Round 2 (review 1 SEND BACK, Fable stage 2)
 
 | item | what changed | commit |
@@ -198,8 +238,9 @@ says so.
    - the Yesterday toggle (rung 7);
    - `anyCase`/`firstRun` (only once rung 21 ran dry).
 
-   The crisis, open and attention chips count listed drift rows, and they
-   keep their whole-index values.
+   The crisis chip keeps its whole-index value. The open and attention
+   chips count listed rows, so they drop from rung 4 on, as they already
+   do past rule 4's 200 drift cap (review 2 N1; ADR-0053 §5 says so).
 3. **Crisis rows before refusing** (rung 24): agreed by stage 1 and
    Fable. Each crisis row takes its event and mark with it, and `system`
    goes first.

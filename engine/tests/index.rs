@@ -1967,7 +1967,9 @@ fn the_cut_keeps_the_events_of_listed_drift_rows() {
     let warning = warning.unwrap();
     assert!(warning.contains(" events, "), "{warning}");
     assert!(warning.contains(" queued cases"), "{warning}");
-    assert!(cut.events.len() < ix.events.len());
+    // the events rungs' floor counts the whole list, the pinned events
+    // included: 403 events go down to 100, 26 of them pinned
+    assert_eq!(cut.events.len(), 100);
     assert_eq!(cut.summary, ix.summary);
     assert_eq!(cut.drift, ix.drift, "every drift row stays");
     assert_drift_keeps_its_events(&ix, &cut);
@@ -1975,6 +1977,82 @@ fn the_cut_keeps_the_events_of_listed_drift_rows() {
     assert_eq!(crisis_rows_shown(&cut), ix.summary.crisis);
     assert_timeline_matches(&cut);
     common::assert_valid_index(&serde_json::to_value(&cut).unwrap());
+}
+
+/// Review 2 N2: a rung takes only as many rows as the file needs, a drift
+/// row's event counted with it. 150 open changes, 2 000 queued cases and
+/// 800 active cases with long titles: the cut ends on rung 4, and putting
+/// back the newest open change it took (with its event) is over the
+/// budget again.
+#[test]
+fn a_rung_takes_only_the_rows_the_file_needs() {
+    let mut loaded = fixture_loaded();
+    for i in 0..150u32 {
+        let e: Event = serde_json::from_value(json!({
+            "id": ulid::Ulid::from_parts(4, u128::from(i) + 1),
+            "ts": format!("2026-09-30T09:{:02}:{:02}+02:00", i / 60, i % 60),
+            "source": "config", "kind": "config-remove",
+            "subject": format!("~/.config/hypr/extra-{i:04}-{}.conf", "x".repeat(40)),
+            "actor": "system", "zone": "yellow",
+        }))
+        .unwrap();
+        loaded.events.push(e);
+    }
+    let queued = loaded
+        .cases
+        .iter()
+        .find(|c| c.case.status == seldon::model::CaseStatus::Queued)
+        .unwrap()
+        .clone();
+    for i in 0..2000 {
+        let mut c = queued.clone();
+        c.case.id = format!("C-2025-{i:04}");
+        c.case.title = format!("{i} {}", "imported task ".repeat(12));
+        loaded.cases.push(c);
+    }
+    let active = loaded
+        .cases
+        .iter()
+        .find(|c| c.case.status == seldon::model::CaseStatus::Active)
+        .unwrap()
+        .clone();
+    for i in 0..800 {
+        let mut c = active.clone();
+        c.case.id = format!("C-2024-{i:04}");
+        c.case.title = format!("{i} {}", "long active title ".repeat(12));
+        loaded.cases.push(c);
+    }
+    let ix = build::build(loaded, &input()).index;
+    let (cut, warning, size) = fitted(&ix);
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    let warning = warning.unwrap();
+    assert!(
+        warning.contains(" queued cases, ") && warning.contains(" open changes; "),
+        "the cut ends on rung 4: {warning}"
+    );
+    let open = |i: &model::Index| i.drift.iter().filter(|d| !d.crisis).count();
+    assert!(open(&cut) > 50, "rung 4 stopped before its floor");
+    assert_drift_keeps_its_events(&ix, &cut);
+    // the drift list is newest first: the first row that went went last
+    let last = ix
+        .drift
+        .iter()
+        .find(|d| !d.crisis && !cut.drift.contains(d))
+        .unwrap();
+    let mut back = cut.clone();
+    back.drift.push(last.clone());
+    back.events
+        .extend(ix.events.iter().filter(|e| names(last, e)).cloned());
+    assert_eq!(
+        back.events.len(),
+        cut.events.len() + 1,
+        "its event went too"
+    );
+    assert!(
+        budget::file_size(&back) >= build::SIZE_BUDGET,
+        "one row fewer would not have fitted: {} bytes",
+        budget::file_size(&back)
+    );
 }
 
 /// An index that no cut brings under the budget (a dossier fence of 1.2 MB)

@@ -178,7 +178,7 @@ reads:
 | `drift[]` crisis items | cut only on rung 24, each with its event and mark | the Changelog's crisis rows and chips, Today's NEEDS YOU, the crisis strip, the graph's crisis nodes | every crisis row stays, with its event, unless crisis rows alone are over the budget; the bar still counts and colours every crisis |
 | `drift[]` other items | cut from rung 4, each with its event | the Changelog | fewer open-change rows; the count stays (`summary.openDrift`) |
 | `events[]` | cut from rung 2 | the Changelog, the graph | fewer old rows, as past rule 4's 500; never one a listed drift row names |
-| the Changelog's chips (open, crisis, attention: rows of listed drift; one per source) | from the lists | the Changelog header | crisis and open chips count every listed drift row whose event the whole index had (no change); the source chips count the events written |
+| the Changelog's chips (open, crisis, attention: rows of listed drift; one per source) | from the lists | the Changelog header | crisis chip: no change (every crisis row whose event the whole index had); open and attention chips: the listed rows, fewer from rung 4, as past rule 4's 200 drift cap; the source chips count the events written |
 | `cases.completed` | cut from rung 1 | Work, the timeline, the graph | fewer closed cases, as past rule 4's 50 |
 | `cases.queued`, `cases.active` | cut from rungs 3 and 21 | Work, Today's plan, the agent picker | fewer rows; the counts stay (`summary.queuedCases`, `activeCases`) |
 | Work's column headers | the lists' lengths | Work | "QUEUED 50" while the header's KPI says 450: the column counts its rows (a plugin-only follow-up can show "50 / 450" from `summary`) |
@@ -193,9 +193,11 @@ reads:
 | `drift[].proposedCase`, `decisions[].cases`, `events[].case` | may name a case that is not listed | the link proposal, the graph | as today for a case past the 50 completed: the graph draws no edge, *Link to …* still runs `seldon drift link` with the id |
 | `triage` | none (never cut) | the triage sheet | items stay; an item whose drift row went (from rung 4) shows "No longer open" and is not in the Apply count; *Apply proposals* still runs and the engine decides (ADR-0035 §6) |
 
-No count the plugin keys a crisis or open drift on gets smaller, and
-nothing that is not a crisis is written where it counts crises
-(ADR-0051 §1's misreads). The counts that do get smaller (Work's
+No count the plugin keys a crisis on gets smaller; open-drift chips
+count listed rows from rung 4 on, `summary.openDrift` counts all (the
+same shortfall rule 4's 200 drift cap already has in 0.2.0). Nothing
+that is not a crisis is written where it counts crises (ADR-0051 §1's
+misreads). The counts that do get smaller (Work's
 headers, `wipStatus`, verification, proposed decisions,
 `decisionSummary`, Memory, Yesterday, the source chips, `firstRun`) are
 counts of the rows the file lists, as rule 4 already has them.
