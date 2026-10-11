@@ -59,17 +59,17 @@ by key), §5.5 (Settings by key), §5.6, §8 (`select` routes); KEYBINDINGS
 | Check | Where | Result |
 |---|---|---|
 | model.test.js: `keyArmHint`, `noticeTargets` (only wired notices, title in the key), `noticeSelectTarget`, `setupTargets`/`pickAction`/`stepAction`, `todayMove`, `changelogAtTop`, `settingsControls`, `keyWidth`, the hints | fixture | 218 passed |
-| desk-view, new cases `keys-notice`, `keys-notices` (+`-click`), `keys-setup` (+`-click`), `keys-setup-stacked` (+`keys-setup-copy`), `keys-setup-snap`, `keys-ask`, `keys-ask-stacked`, `keys-settings` (+`-click`): each button reached and activated by real key events; Enter, then a detour (↓, a click, a summon, a row click, another control, the stacked Back), then the next Enter only arms; the second Enter runs once; the launcher/wl-copy record, the engine argv and the facade writes compared with the click's own run | headless | 160 passed, 0 failed (trimmed runner, log `gates/dk-202.log`) |
-| The same cases against the plugin of 4a7a2376 (archive, same test files) | headless | 100 failed, every case, including each record/argv/write comparison (`gates/dk-202-old.log`) |
+| desk-view, new cases `keys-notice`, `keys-notices` (+`-click`), `keys-setup` (+`-click`), `keys-setup-stacked` (+`keys-setup-copy`), `keys-setup-snap`, `keys-ask`, `keys-ask-stacked`, `keys-settings` (+`-click`): each button reached and activated by real key events; Enter, then a detour (↓, a click, a summon, a row click, another control, the stacked Back), then the next Enter only arms; the second Enter runs once; the launcher/wl-copy record, the engine argv and the facade writes compared with the click's own run | headless | 160 passed, 0 failed (trimmed runner; log `dk-202.log` in the private gates folder) |
+| The same cases against the plugin of 4a7a2376 (archive, same test files) | headless | 100 failed, every case, including each record/argv/write comparison (`dk-202-old.log`, same folder) |
 | Mutations: `pointerPressed` emptied → 7 failures (keys-notice #8–10, keys-setup #6, keys-setup-stacked #6, keys-settings #21, #26); the summon's `leaveKeys` removed → keys-notice #11, #13 | headless | caught |
 | An earlier whole desk-view run (before the last plugin fix): every expectation that existed before passed; the only failure was `keys-ask #3` (a list row kept its highlight while *Agent sorts* had the keys), fixed before 9c1a88f8 | headless | superseded by the gate below |
-| `SELDON_FULL_CHECK=1 just check` on 36cceeb8 (only this handover follows, under `work/`), log `gates/check-dev-202.log` | headless (dev host, private runtime dirs on disk), shellcheck on the test host (kit wrapper, 8 calls) | exit 0: check-packaging ok, runtime-dir 45/0, docs-check ok (514 links), plugin-validate ok, qmllint ok (52 files), model.test.js 218, terminal-scripts 73/0, service-states 367/0, desk-view 2214/0 (the new cases included), bar-view 196/0, ipc-restart 44/0, engine tests green |
+| `SELDON_FULL_CHECK=1 just check` on 36cceeb8 (only this handover follows, under `work/`), log `check-dev-202.log` in the private gates folder | headless (dev host, private runtime dirs on disk), shellcheck on the test host (kit wrapper, 8 calls) | exit 0: check-packaging ok, runtime-dir 45/0, docs-check ok (514 links), plugin-validate ok, qmllint ok (52 files), model.test.js 218, terminal-scripts 73/0, service-states 367/0, desk-view 2214/0 (the new cases included), bar-view 196/0, ipc-restart 44/0, engine tests green |
 | CI | CI | not run |
 | Live scenarios on the test host (a, b, c, d without a pointer tool) | test host | not run |
 | The desk on the dev host | desktop | not run |
 
 Environment: `CARGO_TARGET_DIR`, `TMPDIR`, `JUST_TEMPDIR` and a private
-0700 `XDG_RUNTIME_DIR` under `jax-seldon-private/gates/` (on disk),
+0700 `XDG_RUNTIME_DIR` in the private gates folder (on disk),
 `CARGO_BUILD_JOBS=4`; shellcheck through the kit wrapper (the only
 network). Two exceptions to "never /tmp", both not mine to change in
 this WP: the Quickshell harnesses (desk-view, bar-view, service-states,
@@ -77,7 +77,7 @@ ipc-restart) make their own short runtime dir with `mktemp -d
 /tmp/seldon-rt.XXXXXX` (the IPC socket path must stay under 107 bytes;
 removed by their EXIT trap, `check-runtime-dir` enforces that), and one
 10 KB staging file of the new test block sat in the session scratchpad
-under `/tmp/claude-1000/…`. Nothing touched `~/Seldon`,
+(tmpfs). Nothing touched `~/Seldon`,
 `~/.local/state/seldon` or `~/.config`; no guard blocked.
 
 ## Not done, and open questions
@@ -102,3 +102,46 @@ under `/tmp/claude-1000/…`. Nothing touched `~/Seldon`,
 5. The live scenarios of the next release can now run with `wtype` only;
    the routes for them: `select notices|setup|ask|width` to place the
    cursor, then Return twice.
+
+For the v0.2.1 acceptance limitations (review 1, Q4: accepted for
+0.2.1), still pointer only: the Changelog's *Show* (changes hidden this
+session), the sidebar's fold button (Settings › Appearance › Sidebar
+writes the same `deskSidebar` by key), the header's status chip (fold
+the notices / lead to the setup card; `1` and ↑ reach the card, ↑ unfolds
+the notices) and the KPI figures (navigation the digits cover), and each
+crisis's *Apply this crisis* inside a triage proposal (WP-201).
+
+## Round 2 (review 1: SEND BACK)
+
+Review 1's open questions 1–4: kept as they are (orchestrator).
+
+| Finding | Fix | Verified |
+|---|---|---|
+| F1 IPC `select notice:<id>` / `select notices` on the notice already under the cursor kept the arm; the next Enter ran *Restart shell* | `Desk.enterNotices` drops any `notice:` arm, so every entry (↑ from a list, IPC) places the cursor unarmed | headless: `keys-notice` steps 10–13 (Enter arms, `select notice:restart`, `select notices`: not armed; the next Enter only arms); they fail on e6d7d64d (#11, #12, #13: still armed, and that Enter ran the restart there) |
+| F2 a wheel notch's pending write could carry the keys' preview into shell.json; a key leave could drop the wheel's notch | `Settings.moveAcross` calls `Desk.flushWheel()` before a key preview (the wheel's own value is written first); the slider's `onMoved` sets `keyPreview = false` (the wheel's or drag's preview is not the keys' to drop) | headless: `keys-settings-wheel` (wheel 90, ← → 90 written, 80 previewed, 1.5 s later still only 90 written; ← 70 by key, a wheel notch to 70 after it, ↓ leaves: the wheel's timer writes 70); fails on e6d7d64d (#5, #6, #9, #10, #12) |
+| F3 the slider by key jumped 20 % from 67 / 75 | `Model.keyWidth("width")` steps to the next notch of the grid: floor + 1 on →, ceil − 1 on ← (67 → 70, 75 → 70 / 80, 63 → 60) | fixture: model.test.js (the old 80 corrected to 70, five more cases); fails on e6d7d64d |
+| F4 no visible cursor on the presets at a width that is no preset | the presets' `ButtonGroup` in an `Item` with a `FocusRing`, shown while the keys are on the presets and no chip has the cursor | headless: `keys-settings` #13 (presets at 80 %: one ring); fails on e6d7d64d |
+| F5 detours without a test | `keys-settings` #4 (Enter on the stored width arms nothing: catches m4) and #7 (`select width` while armed); `keys-setup` #9–10 and `keys-setup-snap` #15–16 (`select setup` / `select offer` on the armed place, whose arm id does not change: catches m5). m3 (`Today.onSetupKeyChanged`) and m6 (`onNoticeKeyChanged`) have no step: they need an index change under the cursor in a live run, and the arm ids already carry step, banner, title and action, so without them only a stale hint would remain | headless: m4 → `keys-settings` #4 FAIL; m5 → `keys-setup` #9, #10, `keys-setup-snap` #15, #16 FAIL (with m5, *Offer again* wrote on one press); `select width` alone did not catch m5 (entering the control again drops the preview, which changes the id) |
+| F6 | `Changelog.activate` guards `root.service` as the click does | qmllint |
+| F7 | no private paths in this handover: "the private gates folder", "the session scratchpad" | read |
+
+SPEC-PLUGIN §5.5 names the wheel rule, the slider's grid and the presets'
+ring.
+
+The WP-202 cases (trimmed runner, 15 runs): 180 passed, 0 failed on the
+final tree; the round-2 steps against e6d7d64d: 9 failed (F1, F2, F4),
+model.test.js 1 failed (F3). Where: headless (dev host, private runtime
+dirs on disk), fixture.
+
+**Gate:** `SELDON_FULL_CHECK=1 just check` exited 0 on cae706bf (only
+this handover follows, under `work/`); log `check-dev-202-r2.log` in the
+private gates folder: check-packaging ok (shellcheck on the test host
+through the kit wrapper, 8 calls), runtime-dir 45/0, docs-check ok (514
+links), plugin-validate ok, qmllint ok (52 files), model.test.js 218,
+terminal-scripts 73/0, service-states 367/0, desk-view 2234/0, bar-view
+196/0, ipc-restart 44/0, engine tests green. The real-home guard was
+green on every harness (service-states reports the real
+`~/.local/state/seldon` changed by the operator's own running engine, its
+known "not a leak" case). Where: headless (dev host, private runtime dirs
+on disk), shellcheck on the test host. CI, the test host's desktop and
+the dev host's desktop: not run. Not merged.
