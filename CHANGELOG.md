@@ -31,8 +31,10 @@ and the package does not exist yet. Update the plugin first:
   proposal *Agent sorts N open changes*, Enter on Settings › Appearance
   the width slider, the presets and the sidebar (and Capture's *Offer
   again*). ←/→ pick a button or a value (the width as a preview), Enter
-  arms and the second Enter runs exactly what the click runs; any other
-  key, a click on the desk, a summon or another selection cancels. A dim
+  arms and the second Enter runs exactly what the click runs; *Agent
+  sorts* takes `a` twice, since Enter never starts an agent. Any other
+  key, a click on the desk, a summon or another selection cancels; a
+  held ↑ stops at the top of a list. A dim
   line beside each names the keys. `shell call jax.seldon select
   notices|setup|ask|width|…` places the cursor for scripts, never
   pressing. This closes the 0.2.0 note that these buttons still needed a

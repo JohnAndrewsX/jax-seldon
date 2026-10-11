@@ -236,7 +236,7 @@ you in one click, crises never with the rest: each has its own button.
 *Discard* throws the proposal away. The agent only proposes; you apply
 (ADR-0036). By key: ↑ on the Changelog's first row opens the proposal,
 Enter arms *Apply proposals* and a second Enter applies it; ↑ once more
-reaches *Agent sorts*, and Enter twice starts the agent.
+reaches *Agent sorts*, and `a` twice starts the agent (Enter never does).
 
 ### Keys
 
@@ -249,7 +249,7 @@ The desk's keys (the full table with every section's keys:
 | `,` | Settings |
 | `Alt+↓` / `Alt+↑` | the next / previous section, wrapping |
 | `/` | the sidebar search: filters the current list; Enter keeps the filter, Esc clears it |
-| ↑ / ↓, `k` / `j` | move in the list; the detail follows. ↑ at the top of the list: the notices' buttons (↑/↓ a notice, ←/→ a button, Enter twice runs it, ↓ back) |
+| ↑ / ↓, `k` / `j` | move in the list; the detail follows. a fresh ↑ at the top of the list (a held one stops there): the notices' buttons (↑/↓ a notice, ←/→ a button, Enter twice runs it, ↓ back) |
 | Enter, Space | the detail's first action that launches nothing (arm, then run); on an open change, its form; on a narrow desk, the detail |
 | Esc | leave a form, then clear the search, then back to the list (narrow desk), then close |
 | `c` | capture now |
@@ -258,7 +258,7 @@ The desk's keys (the full table with every section's keys:
 | `i` | the one-sentence new case (Today, Work) |
 | `e` | open in the editor: the journal, this month's ledger, the case, the decision, `STATUS.md`, the logbook |
 | `f` / `F` | Changelog: the next / previous chip |
-| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` back. On it, Enter twice applies it; ↑ again: *Agent sorts*, Enter twice starts it. Today, while Seldon is not set up: the setup card's row; ←/→ a button, Enter twice runs it |
+| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` back. On it, Enter twice applies it; ↑ again: *Agent sorts*, `a` twice starts it. Today, while Seldon is not set up: the setup card's row; ←/→ a button, Enter twice runs it |
 | Enter on Appearance | Settings: the width slider, the presets, the sidebar; ↑/↓ a control, ←/→ its value, Enter twice saves it, Esc back |
 | `a` | Work: hand the case to the agent (twice), or *Focus* while one works on it |
 | `x` | Work: drop the case (twice) |

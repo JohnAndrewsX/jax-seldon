@@ -17,7 +17,7 @@ checks in `tests/plugin/desk-view.sh` together.
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search: filters the current list; Enter leaves the field and keeps the filter, Esc clears it and leaves |
 | `↑`/`↓`, `k`/`j` | move in the list; `↑` at the top of the list goes on to the notices' buttons |
-| `Enter`, `Space` | on a narrow desk: show the selected row's detail; otherwise the detail's first action that launches nothing (Work: arm, then run — on an active case *To verification*; open drift: its form; Today's yesterday row: open or close). Enter never starts an agent |
+| `Enter`, `Space` | on a narrow desk: show the selected row's detail; otherwise the detail's first action that launches nothing (Work: arm, then run — on an active case *To verification*; open drift: its form; Today's yesterday row: open or close; a button the keys reached: arm, then run). Enter never starts an agent: on *Agent sorts* it does nothing, `a` twice starts it |
 | `Esc` | leave a section's form, then clear the search filter, then go back to the list (narrow desk), then close |
 | `c` | capture now |
 | `n` | Today's note field |
@@ -25,9 +25,9 @@ checks in `tests/plugin/desk-view.sh` together.
 | `i` | Today's New case field, Work's intent field |
 | `e` | open in the editor: Today the journal, Changelog this month's ledger, Work the case, Decisions the decision, System STATUS.md, Memory the logbook |
 | `f` / `F` | Changelog: the next / previous chip (open, crisis, attention, routine, in case, all) |
-| `↑` / `k` on the first row | Changelog: the agent's triage proposal (the row above the list); `↓` / `j` back to the list. On the proposal, Enter arms *Apply proposals*, a second Enter applies it (on a narrow desk the first Enter shows its detail); each crisis keeps its own button. `↑` on the proposal (or on the first row without one): *Agent sorts N open changes*, Enter twice starts the agent |
+| `↑` / `k` on the first row | Changelog: the agent's triage proposal (the row above the list); `↓` / `j` back to the list. On the proposal, Enter arms *Apply proposals*, a second Enter applies it (on a narrow desk the first Enter shows its detail); each crisis keeps its own button. `↑` on the proposal (or on the first row without one): *Agent sorts N open changes*, `a` twice starts the agent (Enter does nothing there) |
 | `↑` / `k` on the first row | Today, while Seldon is not set up: the setup card's row; `←`/`→` pick a button of the current step, Enter twice runs it (on a narrow desk the first Enter shows the card) |
-| `↑` / `k` at the top of a list | the notices' buttons: `↑`/`↓` the notices, `←`/`→` (`h`/`l`) a notice's buttons, Enter twice runs one (*Restart shell*, *Install*, *Update rules*, …); `↓` on the last notice or Esc back to the list |
+| `↑` / `k` at the top of a list | on a fresh press (a held `↑` stops at the top) the notices' buttons: `↑`/`↓` the notices, `←`/`→` (`h`/`l`) a notice's buttons, Enter twice runs one (*Restart shell*, *Install*, *Update rules*, …); `↓` on the last notice or Esc back to the list |
 | `Enter` on Appearance | Settings: the controls; `↑`/`↓` width slider, presets, sidebar, `←`/`→` the value (the width as a preview), Enter twice saves it, Esc back to the groups. On Capture the same reaches *Offer again* |
 | `a` | Work: hand the case to the agent (twice; the only key that starts one); while an agent works on the case, *Focus*: bring its window to the front (once) |
 | `x` | Work: drop the case (twice; final) |
@@ -50,8 +50,8 @@ replay, then lets a kept card go, then closes.
 while it has the focus; Esc in it gives the keys back and keeps the text.
 Writing actions need a second press (the action bar shows the hint); any
 other key cancels. Every button the keys reach above (a notice's, the
-setup card's, *Agent sorts*, a Settings control) takes Enter twice and
-runs what its click runs; any other key, a click on the desk, a summon
+setup card's, a Settings control) takes Enter twice and runs what its
+click runs (*Agent sorts* takes `a` twice); any other key, a click on the desk, a summon
 or another selection cancels. A held key counts as one press: its repeats never
 confirm, write or start anything; only the keys that move (arrows, page
 keys, `j`/`k`, `h`/`l`, `-`/`=`) repeat.

@@ -334,7 +334,7 @@ icons only; the search is then reached by widening it).
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search (filters the current section's list); Enter leaves it and keeps the filter, Esc clears it and leaves |
 | `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c) and *Agent sorts N open changes* the row above it, in Today the setup card's row (WP-202); `↑` at the top of a list and its head goes on to the notices' buttons, `↓` on the last notice comes back (WP-202, below) |
-| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c); on a button the keys reached (a notice's, the setup card's, *Agent sorts*, a Settings control) it arms, then runs what the click runs (WP-202); on a Settings group with controls the cursor goes to its first control; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
+| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c); on a button the keys reached (a notice's, the setup card's, a Settings control) it arms, then runs what the click runs (WP-202), on *Agent sorts* it does nothing (`a` twice starts that agent); on a Settings group with controls the cursor goes to its first control; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
@@ -409,8 +409,10 @@ House rules for every key, now and later (WP-183; the checklist
   ring (Omarchy's panel cursor on a `ButtonGroup` chip), and a dim line
   names the keys. Enter arms, the second Enter runs exactly what the
   click runs (the same function, the same argv); every such button arms,
-  also *Copy* and *Check again*, so one rule holds for all. The arm's id
-  names what it would run (`notice:<id>:<title>:<action>`,
+  also *Copy* and *Check again*, so one rule holds for all. *Agent sorts*
+  is pressed with `a`, twice, as *Hand to agent* on a case: Enter never
+  starts an agent (operator decision, WP-122). The arm's id names what it
+  would run (`notice:<id>:<title>:<script or command>:<action>`,
   `setup:<step>:<banner>:<action>`, `ask:triage`,
   `settings:<control>:<value>`): a notice, step or value that changed
   under the cursor only arms again. Besides every key that does not
@@ -424,7 +426,9 @@ House rules for every key, now and later (WP-183; the checklist
 
 The notices by key (WP-202, `Desk.qml`): `↑` at the top of a section's
 list and head (`Section.move` answers false there) reaches the nearest
-notice with a button (the restart notice, the status notice, the
+notice with a button — on a fresh press: a held `↑` stops at the top of
+the list, so holding `↑` and pressing Enter never lands on a notice's
+button (stage 2 F2) — (the restart notice, the status notice, the
 engine-newer notice, snapshots, the agent rules: the ones whose click is
 wired, `Model.NOTICE_KEY_IDS`); `↑`/`↓` walk the notices, `←`/`→` (`h`/`l`)
 a notice's buttons, Enter arms the button under the cursor ("Restart
@@ -646,13 +650,15 @@ payload's `"select":"proposal"` and the shim's `resolve proposal` open it
 too. *Agent sorts* is the row above the proposal (WP-202): `↑` on the
 proposal, or on the first row without one (`Model.changelogAtTop`),
 reaches the button while it can be pressed (no list row, no proposal
-selected; on a stacked desk showing a detail the list comes back); Enter
-arms it ("Agent sorts 6 open changes? Press Enter again." in the dim line
-under it) and the second Enter starts the agent, the click's `agent ask
-triage --json`; `↓` goes to the proposal (else back to the list), `↑` on
+selected; on a stacked desk showing a detail the list comes back); `a`
+arms it ("Agent sorts 6 open changes? Press a again." in the dim line
+under it) and the second `a` starts the agent, the click's `agent ask
+triage --json`, the Work pattern (Enter and Space do nothing there: Enter
+never starts an agent, WP-122); `↓` goes to the proposal (else back to the list), `↑` on
 to the notices; a click, another selection or the button going away
 drops the arm. The line says "↑ from the top of the list reaches it",
-while it has the keys "Enter twice starts it · ↓ back to the list". IPC
+while it has the keys "a twice starts it · ↓ back to the list". Another
+section drops the cursor's place on it. IPC
 `select ask` puts the cursor there. Then the chips **open · crisis · attention · routine · in
 case · all** with their counts (`f` / `F` the next / previous; default
 open). A row's class: open drift with `crisis` → crisis; other open drift,

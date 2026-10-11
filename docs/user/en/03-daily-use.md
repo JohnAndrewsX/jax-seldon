@@ -174,9 +174,12 @@ the setup card, *Agent sorts N open changes*) and the controls in
 Settings › Appearance are reached with the arrows; the one under the
 cursor has a frame, and a dim line next to it names the keys. There,
 Enter arms the button and the second Enter runs it, whatever it does
-(also *Copy*): "Restart shell? Press Enter again." Any other key, a
-click on the desk or another selection cancels it. ← / → pick another
-button or value.
+(also *Copy*): "Restart shell? Press Enter again." *Agent sorts* is the
+exception: Enter never starts an agent, so `a` arms it and a second `a`
+starts the agent, as on a case. Any other key, a click on the desk or
+another selection cancels it. ← / → pick another button or value. A
+held ↑ stops at the top of the list; press it once more for the
+notices.
 
 A held key acts once. Its repeats never arm, confirm, write or start
 anything; an armed action stays armed until you release the key and
@@ -261,7 +264,7 @@ and its detail lists every item with its evidence. Evidence written by an
 agent or of unknown authorship is marked "Read twice". Open it with a
 click, or with the keys: the proposal is the row above the list, so ↑
 (or `k`) on the first row reaches it and ↓ (or `j`) goes back. One more
-↑ reaches *Agent sorts N open changes*: Enter twice starts the agent.
+↑ reaches *Agent sorts N open changes*: `a` twice starts the agent.
 
 - *Apply proposals* applies the items in one click, as you. By key,
   Enter arms it and a second Enter applies it. A second Apply changes
