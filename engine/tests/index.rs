@@ -2135,7 +2135,7 @@ fn writer(env: &Env, args: &[&str], stdin: &str) -> std::process::Output {
 /// The written `index.json` of `env` is under the budget, validates and
 /// counts what the whole index of `root` counts; `out` warned on stderr.
 fn assert_written_under_budget(env: &Env, root: &std::path::Path, out: &std::process::Output) {
-    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(out));
     let path = env.home.join(".local/state/seldon/index.json");
     let size = std::fs::metadata(&path).unwrap().len() as usize;
     assert!(size < build::SIZE_BUDGET, "{size} bytes");
@@ -2144,7 +2144,7 @@ fn assert_written_under_budget(env: &Env, root: &std::path::Path, out: &std::pro
     let whole = whole_index(env, root);
     assert!(serde_json::to_string(&whole).unwrap().len() + 1 >= build::SIZE_BUDGET);
     assert_eq!(ix["summary"], whole["summary"], "every count, every crisis");
-    let err = common::stderr(&out);
+    let err = common::stderr(out);
     assert!(
         err.contains("seldon: warning: index.json would be "),
         "{err}"
@@ -2190,6 +2190,7 @@ fn status_counts_from_the_whole_index() {
     let env = Env::new(Snapper::Missing);
     let root = scaled_200(&env);
     let case = read(&fixture_logbook().join("work/active/C-2026-004-zed.md"));
+    let events = regex::Regex::new(r"(?m)^events: \[.*\]$").unwrap();
     for i in 0..2500 {
         let text = case
             .replace("C-2026-004", &format!("C-2025-{i:04}"))
@@ -2197,10 +2198,7 @@ fn status_counts_from_the_whole_index() {
                 "Zed als zweiten Editor installieren",
                 &format!("{i} {}", "long title ".repeat(20)),
             );
-        let text = regex::Regex::new(r"(?m)^events: \[.*\]$")
-            .unwrap()
-            .replace(&text, "events: []")
-            .into_owned();
+        let text = events.replace(&text, "events: []").into_owned();
         let path = root.join(format!("work/active/C-2025-{i:04}-long.md"));
         std::fs::write(path, text).unwrap();
     }
