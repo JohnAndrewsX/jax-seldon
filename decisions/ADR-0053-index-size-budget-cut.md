@@ -1,6 +1,6 @@
 # ADR-0053 — The engine keeps index.json under its budget: the oldest rows go, in a fixed order; the counts stay whole
 
-**Status:** proposed
+**Status:** accepted (operator decision 2026-10-12, E83)
 **Date:** 2026-10-11
 
 > Amends CONTRACT.md rule 5 ("an index of 1 000 000 bytes or more makes
@@ -219,10 +219,10 @@ counts of the rows the file lists, as rule 4 already has them.
   budget, say what they cut and keep every count; `status`'s terminal
   counts.
 - Follow-up WPs (pre-existing gaps, not this ADR): (a) the build lists
-  the event of every listed drift row, past the 500 newest (context 4);
-  (b) `fit` keeps the drift rows an unapplied triage proposal names;
-  (c) plugin only: Work's column headers read "N / total" from
-  `summary`. Numbers once the orchestrator assigns them.
+  the event of every listed drift row, past the 500 newest (context 4),
+  and (b) `fit` keeps the drift rows an unapplied triage proposal names,
+  both WP-203; (c) plugin only: Work's column headers read "N / total"
+  from `summary`, WP-204.
 - The reference derive (`scripts/validate-fixtures.py`) does not cut:
   the fixtures are far below the budget, and the golden test holds the
   engine to them.

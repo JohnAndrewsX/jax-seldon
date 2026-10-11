@@ -653,6 +653,15 @@ submission). (see `work/queued/`)
 - The test host is the orchestrator's until the operator announces the
   reinstall.
 
+## Decided 2026-10-12 (operator)
+- E82 tag `v0.2.0` on `4a7a2376` (`main` fast-forwarded to exactly that
+  commit, not to `next`'s head).
+- E83 ADR-0053 accepted: the engine cuts `index.json` under 1 MB, oldest
+  rows first, crisis rows last, every count whole, no `contractVersion`
+  bump → WP-200 merged; follow-ups WP-203 (the build lists every listed
+  drift row's event; `fit` keeps proposal rows) and WP-204 (Work headers
+  "N / total").
+
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:
   Seldon never writes into foreign agent files without asking (S7); the

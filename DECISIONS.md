@@ -54,6 +54,6 @@
 | ADR-0050 | ADR-0028 amended: adding or enabling Seldon's own plugin `jax.seldon` is routine `seldon-self` (no resolution; rule 8 unchanged); records the no-provenance residual | accepted |
 | ADR-0051 | Contract forward compatibility: the optional index field `contractReadableFrom`; a plugin reads a newer index that says it can (quiet update notice), a later bump lists per field why an older reader does not misread | accepted |
 | ADR-0052 | pacman's ignore list in the index: the `IgnorePkg` and `IgnoreGroup` names (names only, S9) as the optional `system.pacmanIgnore` (contract 2), read by the pacman collector through pacman.conf's include chain; a change is a pacman `note`, attention `ignore-list` (amends ADR-0028 §2) | accepted |
-| ADR-0053 | The engine keeps `index.json` under its 1 MB budget: over it, the lists lose their oldest rows in a fixed order (history first, crisis rows last), `summary` keeps the counts of the whole index, an oversized index is never written; no schema change (amends CONTRACT.md rule 5) | proposed |
+| ADR-0053 | The engine keeps `index.json` under its 1 MB budget: over it, the lists lose their oldest rows in a fixed order (history first, crisis rows last), `summary` keeps the counts of the whole index, an oversized index is never written; no schema change (amends CONTRACT.md rule 5) | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
