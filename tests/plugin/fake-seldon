@@ -21,6 +21,10 @@
 #   FAKE_SELDON_FIXTURE_AFTER  if set, `status` writes this index instead
 #                        once `capture` has run twice (the user's
 #                        "Capture now" after the start-up capture)
+#   FAKE_SELDON_FIXTURE_BACK  if set, `status` writes this index instead
+#                        once `capture` has run three times (a newer
+#                        proposal discarded elsewhere: the index names the
+#                        older one again; WP-201)
 #   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
 #   FAKE_SELDON_LOCKED   if set, every `plan`, resolving `drift`, `decide`,
 #                        `agent` and `config` call exits 4 (lock held)
@@ -883,6 +887,7 @@ case "$cmd" in
     captures=0
     [[ -f $HOME/captures ]] && captures=$(<"$HOME/captures")
     [[ -n ${FAKE_SELDON_FIXTURE_AFTER:-} && $captures -ge 2 ]] && fixture=$FAKE_SELDON_FIXTURE_AFTER
+    [[ -n ${FAKE_SELDON_FIXTURE_BACK:-} && $captures -ge 3 ]] && fixture=$FAKE_SELDON_FIXTURE_BACK
     now=$(date --iso-8601=seconds)
     sed "s/\"generatedAt\": \"[^\"]*\"/\"generatedAt\": \"$now\"/" "$fixture" >"$dir/index.json.tmp"
     mv "$dir/index.json.tmp" "$dir/index.json"

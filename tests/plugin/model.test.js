@@ -3967,6 +3967,79 @@ test("parseProposal follows proposal.schema.json (WP-124b round 2, R1)", () => {
   assert.strictEqual(M.parseProposal(proposalFile + " ".repeat(4 * 1024 * 1024), ix.triage), null)
 })
 
+test("WP-201: a crisis inside the proposal by key, one per run", () => {
+  // the walk: the bar (-1), the crises, then the list (null); ↑ from the bar leaves too
+  const cm = (at, dy, o) => M.crisisMove(Object.assign({ at, count: 2, rows: 6 }, o), dy)
+  assert.strictEqual(cm(-1, 1), 0)
+  assert.strictEqual(cm(0, 1), 1)
+  assert.strictEqual(cm(1, 1), null)
+  assert.strictEqual(cm(1, -1), 0)
+  assert.strictEqual(cm(0, -1), -1)
+  assert.strictEqual(cm(-1, -1), null)
+  // an empty list keeps the last crisis; no crises (or not built yet): the list's keys
+  assert.strictEqual(cm(1, 1, { rows: 0 }), 1)
+  assert.strictEqual(cm(-1, 1, { count: 0 }), null)
+  assert.strictEqual(cm(-1, -1, { count: 0 }), null)
+  // a cursor past the crises (the file shrank) counts as the bar
+  assert.strictEqual(cm(5, 1), 0)
+  assert.strictEqual(M.crisisKey(PID, UNIT), "triage:crisis:" + PID + ":" + UNIT)
+  assert.ok(M.crisisKey(PID, UNIT).startsWith("triage:"), "the Changelog's detours drop it")
+  assert.strictEqual(M.crisisArmHint("ollama.service"),
+    "Apply the crisis ollama.service as you? Press Enter again. Only this item; the other crises stay.")
+  assert.strictEqual(M.crisisHint(false), "↓ from the proposal reaches each crisis · Enter twice applies the one under the cursor")
+  assert.strictEqual(M.crisisHint(true), "Enter twice applies this crisis alone · ↑/↓ the other crises")
+  // the hint line under the proposal row names the keys
+  assert.strictEqual(M.proposalHint(true, false, 2, false), "Enter twice applies · ↓ its crises, then the list")
+  assert.strictEqual(M.proposalHint(true, false, 2, true), "Enter twice applies the crisis under the cursor · ↑/↓ the crises")
+  assert.strictEqual(M.proposalHint(true, false, 0, false), "Enter twice applies · ↓ back to the list")
+  assert.strictEqual(M.proposalHint(true, true, 2, false), "Enter shows it · ↓ back to the list")
+
+  // TriageDetail's keys over the model: two crises (the theme flagged one
+  // too); ↓ ↓ Enter Enter applies the second alone, with one --item
+  const ix = M.parseIndex(sample).index
+  const prepared = M.deskChangelog(ix)
+  const two = M.parseProposal(proposalFile, ix.triage)
+  two.items[0].crisis = true
+  const desk = (index) => {
+    const calls = []
+    const k = { at: -1, armed: "", index, calls }
+    k.view = () => M.triageView(k.index, two, prepared, null)
+    k.current = () => M.triageSeen(k.index, PID).state === "current"
+    k.move = (dy) => {
+      k.armed = "" // every key that does not press disarms (Desk.keyPressed)
+      const v = k.current() ? k.view() : null
+      const to = M.crisisMove({ at: k.at, count: v ? v.crises.length : 0, rows: 6 }, dy)
+      k.at = to === null ? -1 : to
+    }
+    k.enter = () => {
+      const c = k.current() && k.at >= 0 ? k.view().crises[k.at] : null
+      if (!c || !c.open) { k.armed = ""; return }
+      const key = M.crisisKey(PID, c.eventId)
+      if (k.armed === key) { k.armed = ""; calls.push(M.applyArgs(PID, c.eventId).args) } else k.armed = key
+    }
+    return k
+  }
+  const k = desk(ix)
+  same(k.view().crises.map((i) => i.eventId), [THEME, UNIT])
+  k.move(1); k.move(1)
+  k.enter()
+  same(k.calls, [])
+  assert.strictEqual(k.armed, M.crisisKey(PID, UNIT))
+  k.enter()
+  same(k.calls, [["drift", "apply", PID, "--item", UNIT, "--json"]])
+  assert.strictEqual(k.armed, "")
+  // a move between the two presses: nothing runs, the next Enter only arms
+  const m = desk(ix)
+  m.move(1); m.enter(); m.move(1); m.move(-1); m.enter()
+  same(m.calls, [])
+  // a replaced proposal never applies: armed, then the index names another
+  const r = desk(ix)
+  r.move(1); r.enter()
+  r.index = Object.assign({}, ix, { triage: Object.assign({}, ix.triage, { id: "01M3W10000000000000000000S" }) })
+  r.enter(); r.enter()
+  same(r.calls, [])
+})
+
 test("triageSeen: the proposal the user opened against the index's (B1)", () => {
   const ix = M.parseIndex(sample).index
   same(M.triageSeen(ix, ""), { state: "none", text: "" })
