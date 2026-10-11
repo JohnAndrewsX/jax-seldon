@@ -864,7 +864,10 @@ cases: C-… · M tasks skipped"). Then the cases by group — ACTIVE ·
 VERIFICATION · QUEUED · COMPLETED (completed and dropped, the index's last
 50) — with "id · imported · risk · area · closed by agent · reopens … · N
 proposed" (`imported` from the tag, CONTRACT.md rule 8) and the plan's
-steps.
+steps. Where the index lists fewer queued or active cases than
+`summary.queuedCases` / `summary.activeCases` count (CONTRACT.md rule 4,
+ADR-0053 §5), the group header shows the whole count: "QUEUED · 50 / 450"
+(WP-204).
 
 The detail: the sticky bar by status (`Model.caseDeskActions`) — queued:
 *Start*, *Drop*; active: *Hand to agent* (`agent start <id> --json`), *To

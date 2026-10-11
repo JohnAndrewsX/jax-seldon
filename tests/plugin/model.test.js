@@ -2999,6 +2999,31 @@ test("deskWork and workView: groups in order, labels, the By agent filter, searc
   same(M.workView(M.deskWork(null), "", "").rows, [])
 })
 
+test("WP-204: Work's headers show the summary's whole count when the index lists fewer", () => {
+  const idx = M.parseIndex(sample).index
+  // the sample lists every case: the plain count
+  same(M.workColumns(idx).map(c => M.columnHeader(c)), ["QUEUED 3", "ACTIVE 3", "COMPLETED 2"])
+  // a cut index (ADR-0053 rung 3, rule 4's caps): 50 of 450 queued, 2 of 40 active
+  const cut = JSON.parse(sample)
+  const one = cut.cases.queued[0]
+  cut.cases.queued = Array.from({ length: 50 }, (_, i) => Object.assign({}, one, { id: "C-2026-" + String(100 + i) }))
+  cut.summary.queuedCases = 450
+  cut.summary.activeCases = 40
+  same(M.workColumns(cut).map(c => M.columnHeader(c)), ["QUEUED 50 / 450", "ACTIVE 3 / 41", "COMPLETED 2"])
+  same(M.workColumns(cut, M.COMPLETED_FILTER_AGENT).map(c => M.columnHeader(c)), ["QUEUED 50 / 450", "ACTIVE 3 / 41", "COMPLETED 1 / 2"])
+  const v = M.workView(M.deskWork(cut), "", "")
+  same(v.labels, { active: "ACTIVE · 2 / 40", verification: "VERIFICATION · 1", queued: "QUEUED · 50 / 450", completed: "COMPLETED · 2" })
+  same(v.rows.length, 55)
+  // the search counts against the whole
+  same(M.workView(M.deskWork(cut), "", "C-2026-149").labels.queued, "QUEUED · 1 / 450")
+  // a summary below the list (an older or odd index) never lowers the count
+  cut.summary.queuedCases = 7
+  same(M.workColumns(cut)[0].total, 50)
+  same(M.workView(M.deskWork(cut), "", "").labels.queued, "QUEUED · 50")
+  // no summary: the lists' lengths
+  same(M.workView({ rows: M.deskWork(idx).rows }, "", "").labels.queued, "QUEUED · 3")
+})
+
 test("caseDeskActions by status; Enter never launches; hints and verbs", () => {
   const ids = st => M.caseDeskActions({ status: st, actionable: true }).map(a => a.id + (a.arm ? "!" : "") + (a.primary ? "*" : "") + (a.enter ? "^" : ""))
   same(ids("queued"), ["start!*^", "drop!", "open"])
