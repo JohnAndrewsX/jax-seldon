@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 9ba0160f -->
+<!-- source: en/05-cli-reference.md @ f3a9ff8b -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -438,9 +438,9 @@ ohne Commit. `--check` weigert sich, einen Index zu schreiben, der nicht
 zum Format passt (Exit 2).
 
 Der Graph des Desks (Abschnitt 8) entsteht aus diesem Index. Er zeigt
-deshalb 500 Ereignisse (die Änderung hinter jedem offenen Punkt und die
-neuesten der übrigen) und 50 abgeschlossene Cases, nicht das ganze
-Logbuch. Einen Befehl, der das ganze Logbuch als Graph
+deshalb 500 Ereignisse (die Änderung hinter jedem offenen Punkt, den der
+Index nennt, und die neuesten der übrigen) und 50 abgeschlossene Cases,
+nicht das ganze Logbuch. Einen Befehl, der das ganze Logbuch als Graph
 zeichnet, gibt es noch nicht.
 
 <!-- help: seldon index -->
