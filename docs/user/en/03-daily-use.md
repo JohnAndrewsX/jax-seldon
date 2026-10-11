@@ -427,8 +427,8 @@ the slider picks the day it is cut at.
 | Esc | pause the replay, let a kept card go, then close |
 
 The graph is drawn from the index, so it holds what the index holds: 500
-events (the change behind every open item, however old, and the newest
-of the rest) and 50 completed cases. The footer says how many there
+events (the change behind every open item the index lists, however old,
+and the newest of the rest) and 50 completed cases. The footer says how many there
 are. Beyond 400 nodes, the changes of one day and source become one node
 ("+12"); its card lists them. The layout moves only while the section is
 on screen, and stops after a few seconds.

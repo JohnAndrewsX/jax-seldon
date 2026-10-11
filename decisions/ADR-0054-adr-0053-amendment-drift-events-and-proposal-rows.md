@@ -5,8 +5,10 @@
 
 > Amends [ADR-0053](ADR-0053-index-size-budget-cut.md) §2 (one rung
 > added before the crisis rows), §5 (the rows below) and its consequences
-> (a) and (b), and CONTRACT.md rule 4's event count (ADR-0020). ADR-0053
-> stays accepted and unedited; everything else in it stands. No schema
+> (a) and (b), and [ADR-0020](ADR-0020-index-drift-cap.md)'s event count
+> (CONTRACT.md rule 4: the newest 500 events become at most 500, below).
+> ADR-0053 and ADR-0020 stay accepted and unedited; everything else in
+> them stands. No schema
 > change, no new field: `contractVersion` and `contractReadableFrom` stay
 > 2. Work package: WP-203, from the WP-200 stage-2 review (Fable,
 > 2026-10-11, follow-ups a and b).
@@ -94,7 +96,7 @@ Per field, as ADR-0051 §3 asks:
 |---|---|---|---|
 | `events[]` | the same ≤ 500 rows, newest first; up to 200 of them older than the newest of the rest | the Changelog, the graph | a row for every listed drift item; up to 200 fewer recent history rows, only while listed items are older than the 500 newest |
 | the Changelog's chips | from the lists | the Changelog header | crisis, open and attention chips count every listed drift row; the source chips count the events written |
-| `transactionDetail` (`partial`) | an old leader's transaction lists only its listed packages | an event's detail | 0.2.0 marks a transaction partial only when it holds the list's last event; an old leader's transaction reads "1 package" without the note, and so may the transaction cut at the boundary of the newest when an older event follows it. The drift form compares the packages with the item's `members` and asks `drift show` for the rest, so the group's own count stays whole. ADR-0053's cut had the same case (a pinned leader whose members went). Not a count a crisis or open drift is keyed on. |
+| `transactionDetail` (`partial`) | pinned older leaders follow the rest | an event's detail | Base 0.2.0 marked the boundary transaction partial because the newest 500 were contiguous; with pinned older leaders after the rest it reads complete, and a pinned leader's transaction reads "1 package" without the note (the oldest pinned one excepted). Below 1 MB too. Not an index field and not a crisis or open-drift count (ADR-0051 §1); the plugin fixes it in WP-208. The drift form compares the packages with the item's `members` and asks `drift show` for the rest, so the group's own count stays whole. |
 | graph | none | Prime Radiant | it added every drift item as a node already (ADR-0053 §5, join 10); the same nodes |
 | `triage` | items named by an unapplied proposal stay listed until rung 24 | the triage sheet | "No longer open" only after every rung before 24 ran dry; the Apply count stays whole until then |
 | `summary.*` | none | the pill, the header, Today | the same counts |
@@ -108,8 +110,8 @@ is not a crisis is written where crises are counted.
 - `engine/src/index/build.rs` (`listed_events`), `engine/src/index/budget.rs`
   (`Rows::Triaged`, the ladder), `engine/src/index/triage.rs` and
   `model::Triage::event_ids` (`#[serde(skip)]`).
-- CONTRACT.md rule 4 ("500 events: the event of every listed drift item,
-  however old, and the newest of the rest") and rule 5 (the proposal's
+- CONTRACT.md rule 4 ("at most 500 events: the event of every listed
+  drift item, however old, and the newest of the rest") and rule 5 (the proposal's
   rung); SPEC-ENGINE §6; the reference derive
   (`scripts/validate-fixtures.py`). The golden fixtures do not change:
   the fixture logbook has 83 events.
@@ -119,10 +121,13 @@ is not a crisis is written where crises are counted.
   `system` and before the crisis rows; `triage::read` names the ids and
   the index does not write them. WP-200's ×200 test now expects 286
   events cut and every drift row's event kept.
-- Follow-ups, plugin only: the transaction detail could mark a group's
-  transaction partial when it lists fewer packages than the item's
-  `members`; the text "The index lists the newest 500 events" reads "500
-  events" (SPEC-PLUGIN §3). Neither is a contract change.
+- Follow-up, plugin only (WP-208): the transaction detail marks a
+  transaction partial by its own rows (the rest's boundary, a leader
+  older than it, fewer listed packages than the item's `members`), and
+  the texts "the newest 500 events" read "500 events" (SPEC-PLUGIN §3).
+  No contract change.
+- Known limit: proposal rows past rule 4's 200 drift cap are not listed;
+  `fit` keeps only listed rows.
 
 ## Alternatives considered
 

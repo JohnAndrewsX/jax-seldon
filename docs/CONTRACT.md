@@ -42,10 +42,9 @@ exists (ADR-0047). This file explains it; the schema decides.
    (ADR-0051 §3) — including that `summary.crisis` and
    `summary.openDrift` stay complete. The output of `seldon preview --json` keeps its own
    strict check.
-4. The index is a **view**, not a database: 500 events (the event of
-   every listed drift item, however old, and the newest of the rest;
-   WP-203, ADR-0054), last 50
-   completed cases, 366 heatmap days, 10 snapshots, and the newest 200 open
+4. The index is a **view**, not a database: at most 500 events (the
+   event of every listed drift item, however old, and the newest of the
+   rest; WP-203, ADR-0054), last 50 completed cases, 366 heatmap days, 10 snapshots, and the newest 200 open
    drift items with crises first (ADR-0020; `summary.openDrift` and
    `summary.crisis` always count all). Anything older is in the logbook,
    which the panel can open in the editor. Over the size budget (rule 5)

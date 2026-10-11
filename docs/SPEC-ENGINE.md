@@ -2707,13 +2707,13 @@ ends in `… (N more characters in the ledger)`, N the characters left out
 (ADR-0025). The ledger line, the `ledger/*.md` views and the member events
 of `drift show` keep the full text; `drift list` and the `item` of `drift
 show` come from `index.drift` and are clipped. `subject` (at most 512
-characters) is never cut. `index.events` holds 500 events, newest first:
-the event every listed drift item names (`eventId`, a group's leader),
-however old, and the newest of the rest (`build::listed_events`, WP-203,
-ADR-0054), so a 0.2.0 plugin has a Changelog row for every crisis the bar
-counts; with 200 listed items the newest 300 others stay. With the counts
-of rule 4 this bounds both sections: 500 events and 200 drift items with 4096-character texts come
-to about 520 KB. Beside a cut the index says so (contract 2, ADR-0035 §3):
+characters) is never cut. `index.events` holds at most 500 events, newest
+first: the event every listed drift item names (`eventId`, a group's
+leader), however old, and the newest of the rest (`build::listed_events`,
+WP-203, ADR-0054), so a 0.2.0 plugin has a Changelog row for every listed
+crisis; with 200 listed items the newest 300 others stay. With the counts
+of rule 4 this bounds both sections: 500 events and 200 drift items with
+4096-character texts come to about 520 KB. Beside a cut the index says so (contract 2, ADR-0035 §3):
 an event with any clipped text has `meta.truncated: true`, a drift item
 with a clipped `detail` has `truncated: true`; an uncut one has neither.
 `truncated` is index-only: the ledger refuses it on write, and one a
