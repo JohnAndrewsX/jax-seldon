@@ -2068,9 +2068,9 @@ fn a_rung_takes_only_the_rows_the_file_needs() {
 
 // --------------------------------------------------------------------------
 // WP-203: every listed drift row keeps its event in the index (CONTRACT.md
-// rule 4: the newest 500 events, plus the event of every listed drift
-// item), and the cut keeps the rows an unapplied triage proposal names
-// until right before the crisis rows.
+// rule 4: 500 events, the event of every listed drift item and the newest
+// of the rest), and the cut keeps the rows an unapplied triage proposal
+// names until right before the crisis rows.
 // --------------------------------------------------------------------------
 
 /// `n` notes in a case, newer than every fixture event (the newest is at
