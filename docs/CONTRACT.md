@@ -56,10 +56,12 @@ exists (ADR-0047). This file explains it; the schema decides.
    case's `intent` and `result` and a decision's `lead` (below). An index
    that would be 1 000 000 bytes or more is cut before it is written
    (ADR-0053): its lists lose their oldest rows in a fixed order, history
-   first and crisis rows last, only as many as the file needs; `summary`,
-   `series.risk` and `system.areas[].cases` keep the counts of the whole
-   index; the engine warns, names the largest section and what it cut. It
-   never writes an index of 1 000 000 bytes or more. Since contract 2 the cut is marked beside the text (ADR-0035
+   first, then `system`'s optional parts, crisis rows last, only as many
+   as the file needs. An event a listed drift item names (`eventId`) is
+   cut only with its item. `summary`, `series.risk` and
+   `system.areas[].cases` keep the counts of the whole index; the engine
+   warns, names the largest section and what it cut. It never writes an
+   index of 1 000 000 bytes or more. Since contract 2 the cut is marked beside the text (ADR-0035
    §3): an event with a clipped text has `meta.truncated: true`, a drift
    item with a clipped `detail` has `truncated: true`; the suffix stays
    for humans. `truncated` is index-only, never in a ledger line. The

@@ -2726,14 +2726,19 @@ proposed to 20, memory topics to 20, yesterday's journal; then the
 timeline's releases and snapshots, `series.packages`, `series.drift`,
 lessons, topics and areas; then completed cases, events, queued cases,
 open changes and decisions to none, today's journal, cases in
-verification, active cases, proposed decisions, crisis rows, and last the
-optional parts of `system`. A cut case takes its timeline span, a cut
-crisis row its mark. `summary`, `series.risk` and `system.areas[].cases`
-keep the counts of the whole index. The warning names the size, the
-largest section and what went (`index` and `status`: `warnings`; the
-rebuild after a writing command and the session hook: stderr).
-`index::write` refuses an index of 1 000 000 bytes or more (exit 2, the
-old file stays). The R3 advisory (WP-101, §5) is a build warning too, in the same
+verification, active cases, proposed decisions, the optional parts of
+`system`, and last crisis rows. The events rungs never take an event a
+listed drift item names (`eventId`; their floor counts the whole list):
+a 0.2.0 plugin finds a drift item only through its event. A cut drift
+item takes its event, a cut case its timeline span, a cut crisis row
+also its mark; a pacman group's other members fall under the events
+rungs, as under CONTRACT.md rule 4's cap. `summary`, `series.risk` and
+`system.areas[].cases` keep the counts of the whole index, and so does
+`status`'s terminal summary. The warning names the size, the largest
+section and what went (`index` and `status`: `warnings`; `watch`: the
+`warnings` of its `rebuilt` line and its text log; the rebuild after a
+writing command and the session hook: stderr). `index::write` refuses an
+index of 1 000 000 bytes or more (exit 2, the old file stays). The R3 advisory (WP-101, §5) is a build warning too, in the same
 channel: every command that rebuilds the index prints it (`seldon:
 warning: …` on stderr; `index`, `status` and `dossier` also in their
 `warnings`), once per open case below R3 and red `alwaysRed` subject, no

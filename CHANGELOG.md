@@ -32,7 +32,9 @@ and the package does not exist yet. Update the plugin first:
   take it over 1 MB: their oldest rows first, history before the
   present (completed cases, events, queued cases, open changes,
   decisions, memory topics, the journal, the charts, then open cases)
-  and crisis rows last, only as many as the file needs. `summary` keeps
+  and crisis rows last, only as many as the file needs. An open change
+  keeps its event, so the desk's Changelog still lists every change it
+  is given. `summary` keeps
   the counts of the whole logbook, so the bar counts every crisis; the
   logbook, the views and every command keep every row. `seldon status`
   names the largest section and what it cut. An index that still would
