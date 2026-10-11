@@ -31,6 +31,16 @@ import "../Model.js" as Model
 // journal field, `i` the New case field, `e` today's journal in the
 // editor, Esc a shown form.
 //
+// While the setup card is up, its row in the list head ("Set up Seldon ·
+// 2 of 3 steps to go") is the row above the first one (WP-202, the
+// pattern of the Changelog's proposal row): ↑ on the first row, or the
+// first ↑ while nothing is selected, selects it; ←/→ pick a button of the
+// card's current step, Enter arms it and the second Enter runs it as its
+// click does (Service.setupAction); on a stacked desk the first Enter
+// shows the card. ↓ goes back to the first row, ↑ on to the notices. A
+// click, another selection, the stacked Back or a changed step drops the
+// arm.
+//
 // Before the logbook exists (status notInitialised, WP-138) the list shows
 // what the machine remembers on its own (Service.preview, `seldon preview
 // --json`): PACKAGES, one row per pacman transaction, and EDITED CONFIG
@@ -71,6 +81,16 @@ Section {
   readonly property bool pending: !!root.service && !!root.service.planResult && root.service.planResult.pending
   readonly property bool canWrite: !!root.service && root.service.canWrite
   readonly property color foreground: Color.popups.text
+  // WP-202: the setup row as the selection, the button the keys are on,
+  // and the arm id it presses (it names the step, its banner and the
+  // action, so an arm never runs a button that took its place).
+  property bool setupFocused: false
+  property string setupPick: ""
+  readonly property bool setupRowShown: !!root.setup
+  readonly property var setupKeys: Model.setupTargets(root.setup)
+  readonly property var setupButton: root.setupFocused ? Model.pickAction(root.setupKeys, root.setupPick) : null
+  readonly property string setupKey: root.setupButton ? root.setupButton.key : ""
+  readonly property bool setupArmed: root.setupKey !== "" && !!root.arm && root.arm.armedId === root.setupKey
 
   editing: journal.editing || intentField.activeFocus || eventDetail.editing
 
@@ -82,14 +102,62 @@ Section {
   }
 
   function move(dy) {
-    if (root.rows.length === 0) return true
-    var from = root.cursor >= 0 ? root.cursor : dy > 0 ? -1 : root.rows.length
-    var i = Math.max(0, Math.min(root.rows.length - 1, from + dy))
-    root.selectedId = root.rows[i].id
+    var to = Model.todayMove({ rows: root.rows.length, cursor: root.cursor, setup: root.setupRowShown,
+      setupFocused: root.setupFocused }, dy)
+    if (to.out) return false
+    if (to.setup) {
+      // a key selects, as on a row: on a stacked desk Enter shows the card
+      if (!root.setupFocused) root.focusSetup(false)
+    } else if (to.row >= 0) {
+      root.setupFocused = false
+      root.selectedId = root.rows[to.row].id
+    }
     return true
   }
 
+  function moveAcross(dx) {
+    if (!root.setupFocused) return false
+    if (!root.stacked || root.detailShown) root.setupPick = Model.stepAction(root.setupKeys, root.setupPick, dx)
+    return true
+  }
+
+  // The setup row as the selection: the overview with the card, the
+  // cursor on the current step's first button; `openDetail` (a click,
+  // IPC; not a key) also shows the card on a stacked desk.
+  function focusSetup(openDetail) {
+    if (!root.setupRowShown) return false
+    root.selectedId = ""
+    root.setupFocused = true
+    var first = Model.pickAction(root.setupKeys, "")
+    root.setupPick = first ? first.id : ""
+    if (openDetail === true && root.desk) root.desk.showDetail()
+    return true
+  }
+
+  function disarmSetup() {
+    if (root.arm && root.arm.armedId.indexOf("setup:") === 0) root.arm.disarm()
+  }
+
+  function leaveKeys() {
+    root.setupFocused = false
+  }
+
+  function enterFromTop() {
+    if (root.setupRowShown) root.focusSetup(false)
+    else if (root.rows.length > 0) root.selectedId = root.rows[0].id
+  }
+
   function activate() {
+    if (root.setupFocused) {
+      if (root.stacked && !root.detailShown) {
+        if (root.desk) root.desk.showDetail()
+        return true
+      }
+      var b = root.setupButton
+      if (!b || !b.ready || !root.arm) return true
+      if (root.arm.press(b.key, Model.keyArmHint(b.label))) root.setupAction(root.setupKeys.step, b.id)
+      return true
+    }
     var row = root.current
     if (!row) return false
     if (row.type === "toggle") {
@@ -130,8 +198,10 @@ Section {
     return false
   }
 
-  // A crisis by its event id (IPC `select`).
+  // A crisis by its event id (IPC `select`); `setup`: the setup row
+  // (navigation only, WP-202).
   function select(id) {
+    if (String(id) === "setup") return root.focusSetup(true)
     var i = root.rowIndex(String(id))
     if (i === -1) return false
     root.selectedId = String(id)
@@ -176,6 +246,14 @@ Section {
       caseTexts: root.caseTiles.map(function(c) { return c.text }),
       setupSlot: setupSlot.visible,
       setup: setupCard.view(),
+      // WP-202: the setup row in the list head and the keys on the card
+      setupRow: {
+        shown: setupRow.visible,
+        focused: root.setupFocused,
+        pick: root.setupButton ? root.setupButton.label : "",
+        armed: root.setupArmed,
+        hint: root.setupRowShown ? setupHint.text : ""
+      },
       preview: {
         shown: !!root.preview && setupCard.visible,
         summary: root.preview ? Model.previewSummary(root.preview) : "",
@@ -200,6 +278,14 @@ Section {
   }
 
   onRowsChanged: if (root.selectedId !== "" && root.rowIndex(root.selectedId) === -1 && !root.eventShown) root.selectedId = ""
+  // The setup row stops being the selection on another one (a click, IPC)
+  // or when the card goes; its arm goes with it, with a changed step or
+  // button, and with the stacked card hidden by its Back (WP-202).
+  onSelectedIdChanged: if (root.selectedId !== "") root.setupFocused = false
+  onSetupKeysChanged: if (!root.setupKeys) root.setupFocused = false
+  onSetupFocusedChanged: if (!root.setupFocused) root.disarmSetup()
+  onSetupKeyChanged: root.disarmSetup()
+  onDetailShownChanged: if (root.stacked && !root.detailShown) root.disarmSetup()
   // A Run made the case: the field empties.
   onResultChanged: {
     var r = root.result
@@ -208,8 +294,11 @@ Section {
     root.sentIntent = ""
   }
   // Another section shown: a field gives the keys back (a hidden field
-  // keeps Qt's focus otherwise); drafts stay.
-  onActiveChanged: if (!root.active && root.editing) {
+  // keeps Qt's focus otherwise); drafts stay. The setup row's keys go.
+  onActiveChanged: {
+    if (root.active) return
+    root.leaveKeys()
+    if (!root.editing) return
     journal.leave()
     eventDetail.back()
     if (intentField.activeFocus && root.desk) root.desk.takeKeys()
@@ -343,6 +432,57 @@ Section {
       onLeaveRequested: if (root.desk) root.desk.takeKeys()
     }
 
+    // The setup card's row (WP-202): the row above the first one, the
+    // keys' way to the card's buttons; a click selects it too.
+    Rectangle {
+      id: setupRow
+      objectName: "setupRow"
+      width: parent.width
+      visible: root.setupRowShown
+      implicitHeight: setupRowColumn.implicitHeight + Style.spacing.md * 2
+      radius: Style.cornerRadius
+      color: root.setupFocused ? Style.selectedFillFor(Color.accent, Color.accent) : "transparent"
+      border.width: Math.max(1, Style.space(1))
+      // selected: the accent tint plus a border of at least 3:1 (WP-177)
+      border.color: root.setupFocused ? root.tone.accentUi : Style.normalBorderFor(Color.accent, Color.accent)
+
+      Column {
+        id: setupRowColumn
+        x: Style.spacing.md
+        y: Style.spacing.md
+        width: parent.width - Style.spacing.md * 2
+        spacing: Style.spacing.xxs
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: root.setup ? root.setup.headline : ""
+          color: root.foreground
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        Text {
+          id: setupHint
+          objectName: "setupHint"
+          width: parent.width
+          textFormat: Text.PlainText
+          text: Model.setupHint(root.setupFocused, root.stacked && !root.detailShown)
+          color: root.tone.dim
+          wrapMode: Text.Wrap
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.focusSetup(true)
+      }
+    }
+
     delegate: GroupedRow {
       required property var modelData
       required property int index
@@ -407,6 +547,8 @@ Section {
         previewText: root.preview ? Model.previewSummary(root.preview) + " " + Model.PREVIEW_LEAD : ""
         launched: root.service && root.service.setupWatch ? root.service.setupWatch.step : ""
         resultText: root.service ? root.service.setupResult : ""
+        cursorAction: root.setupButton ? root.setupButton.id : ""
+        armText: root.setupArmed ? root.arm.hint : ""
         foreground: root.foreground
         onActionRequested: function(stepId, actionId) { root.setupAction(stepId, actionId) }
       }

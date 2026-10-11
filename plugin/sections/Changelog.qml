@@ -31,6 +31,10 @@ import "../Model.js" as Model
 // and applies on the second press (on a stacked desk Enter first shows the
 // detail, as for every row), `f` / `F` the next / previous chip, `e` this
 // month's ledger in the editor, Esc hides a shown form (its draft kept).
+// Above the proposal (or the first row without one) ↑ reaches *Agent sorts
+// N open changes* (WP-202): Enter arms it, the second Enter starts the
+// agent as its click does; ↓ goes back, ↑ on to the notices; a click,
+// another selection or the button going away drops the arm.
 Section {
   id: root
 
@@ -48,8 +52,9 @@ Section {
   readonly property var hidden: root.service ? root.service.deskHidden : ({})
   readonly property var rows: Model.changelogView(root.prepared, root.chip, root.hidden, root.searchText)
   readonly property var chips: Model.changelogChips(root.prepared, root.hidden)
-  // While the proposal is shown it is the selection: no list row is.
-  readonly property int cursor: root.triageShown ? -1 : root.rowIndex(root.selectedId)
+  // While the proposal or *Agent sorts* has the keys no list row is the
+  // selection.
+  readonly property int cursor: root.triageShown || root.askFocused ? -1 : root.rowIndex(root.selectedId)
   readonly property int hiddenCount: Model.hiddenCount(root.prepared, root.hidden)
   readonly property string attentionText: Model.attentionText(root.index)
   readonly property string moreText: Model.moreDriftText(root.index)
@@ -74,6 +79,13 @@ Section {
   readonly property bool triageAskShown: !!root.triageButton && root.triageButton.visible
   readonly property bool askLineShown: !!root.askResult && !root.askResult.pending
   readonly property bool proposalRowShown: !!root.triageView
+  // WP-202: the keys on *Agent sorts* (reachable while it can be pressed).
+  property bool askFocused: false
+  readonly property bool askKeyShown: root.triageAskShown && !(root.askResult && root.askResult.pending)
+  readonly property string askKey: "ask:triage"
+  readonly property bool askArmed: root.askFocused && !!root.arm && root.arm.armedId === root.askKey
+  onAskKeyShownChanged: if (!root.askKeyShown) root.askFocused = false
+  onAskFocusedChanged: if (!root.askFocused && root.arm && root.arm.armedId === root.askKey) root.arm.disarm()
 
   editing: !root.triageShown && detail.editing
 
@@ -101,13 +113,44 @@ Section {
     root.cursorRow = at
     root.selectedId = rows[at].id
     root.triageShown = false
+    root.askFocused = false
+  }
+
+  // *Agent sorts* has the keys: no row, no proposal is the selection; on a
+  // stacked desk showing a detail the list comes back, where the button is.
+  function focusAsk() {
+    if (!root.askKeyShown) return false
+    root.triageShown = false
+    root.askFocused = true
+    if (root.stacked && root.detailShown && root.desk) root.desk.back()
+    return true
+  }
+
+  function leaveKeys() {
+    root.askFocused = false
+  }
+
+  function enterFromTop() {
+    if (root.focusAsk()) return
+    if (root.proposalRowShown) root.showTriage(false)
+    else root.selectRow(root.cursorRow)
   }
 
   // ↑/↓: the proposal row in the list head is the row above the first
   // one (Model.changelogMove, WP-126c).
   function move(dy) {
-    var to = Model.changelogMove({ rows: root.rows.length, cursor: root.cursor, cursorRow: root.cursorRow,
-      proposal: root.proposalRowShown, triageShown: root.triageShown }, dy)
+    if (root.askFocused) {
+      // ↑ on to the notices; ↓ to the proposal, else the list
+      if (dy < 0) return false
+      root.askFocused = false
+      if (root.proposalRowShown) root.showTriage(false)
+      else root.selectRow(root.cursorRow)
+      return true
+    }
+    var s = { rows: root.rows.length, cursor: root.cursor, cursorRow: root.cursorRow,
+      proposal: root.proposalRowShown, triageShown: root.triageShown }
+    if (dy < 0 && Model.changelogAtTop(s)) return root.focusAsk()
+    var to = Model.changelogMove(s, dy)
     if (to.triage) {
       // a key selects, as on an event row: on a stacked desk Enter shows
       // the detail (review F1)
@@ -119,6 +162,12 @@ Section {
   }
 
   function activate() {
+    if (root.askFocused) {
+      // Enter arms, the second Enter starts the agent (the click's call)
+      if (root.askKeyShown && root.arm && root.arm.press(root.askKey, Model.keyArmHint(triageAsk.text)))
+        root.service.askAgent("triage", "")
+      return true
+    }
     if (root.stacked && !root.detailShown) {
       if (root.desk) root.desk.showDetail()
       return true
@@ -131,6 +180,7 @@ Section {
   function showTriage(openDetail) {
     if (!root.triageView) return
     root.seenProposalId = root.triageView.id
+    root.askFocused = false
     root.triageShown = true
     if (openDetail !== false && root.desk) root.desk.showDetail()
   }
@@ -156,6 +206,9 @@ Section {
   // chip when it has it, else under "all".
   function select(id) {
     var target = String(id)
+    // "ask": *Agent sorts* gets the keys (navigation only, WP-202)
+    if (target === "ask") return root.focusAsk()
+    root.askFocused = false
     // "proposal" or its id: the proposal's detail (WP-126c)
     if (Model.isProposalTarget(target, root.triageView)) {
       root.showTriage()
@@ -214,6 +267,9 @@ Section {
       triageSlot: triageSlot.visible,
       triage: {
         button: root.triageAskShown ? triageAsk.text + (triageAsk.enabled ? "" : " (off)") : "",
+        askFocused: root.askFocused,
+        askArmed: root.askArmed,
+        askHint: root.triageAskShown ? askHint.text : "",
         ask: root.askLineShown ? askLine.text : "",
         askOk: root.askResult ? root.askResult.ok : true,
         row: root.proposalRowShown ? proposalText.text : "",
@@ -299,7 +355,27 @@ Section {
         fontSize: Style.font.caption
         horizontalPadding: Style.spacing.md
         verticalPadding: Style.spacing.xs
+        hasCursor: root.askFocused
         onClicked: if (root.service) root.service.askAgent("triage", "")
+
+        FocusRing {
+          shown: root.askFocused
+        }
+      }
+
+      // the keys that reach it (WP-202); while armed, the second Enter's
+      // question
+      Text {
+        id: askHint
+        objectName: "triageAskHint"
+        width: parent.width
+        visible: root.triageAskShown
+        textFormat: Text.PlainText
+        text: root.askArmed ? root.arm.hint : Model.askHint(root.askFocused)
+        color: root.askArmed ? root.foreground : root.dim
+        wrapMode: Text.Wrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
       }
 
       Text {
@@ -536,12 +612,13 @@ Section {
       aside: modelData.age
       stripe: modelData.stripe
       alert: modelData.alert
-      selected: !root.triageShown && modelData.id === root.selectedId
+      selected: !root.triageShown && !root.askFocused && modelData.id === root.selectedId
       cursor: list.hoverIndex === index
       onClicked: {
         root.selectedId = modelData.id
         root.cursorRow = index
         root.triageShown = false
+        root.askFocused = false
         if (root.desk) root.desk.showDetail()
       }
     }

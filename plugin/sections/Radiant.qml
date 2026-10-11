@@ -73,6 +73,8 @@ Section {
 
   // ↑/↓ scroll a grid that does not fit.
   function move(dy) {
+    // ↑ at the top: on to the notices (WP-202)
+    if (dy < 0 && gridArea.contentY <= 0) return false
     if (gridArea.contentHeight > gridArea.height)
       gridArea.contentY = Math.max(0, Math.min(gridArea.contentHeight - gridArea.height, gridArea.contentY + dy * Style.space(120)))
     return true

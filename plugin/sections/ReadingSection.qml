@@ -55,6 +55,8 @@ Section {
   }
 
   function move(dy) {
+    // ↑ at the top: on to the notices (WP-202)
+    if (dy < 0 && (root.rows.length === 0 || root.cursor === 0)) return false
     if (root.rows.length === 0) return true
     // From the row the detail shows: the first when the selection is gone
     // or filtered out (`current`), so the first ↓ moves on from it.

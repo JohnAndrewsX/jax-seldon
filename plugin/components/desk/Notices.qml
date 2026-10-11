@@ -14,6 +14,9 @@ import "../../Model.js" as Model
 // (engine not installed yet, logbook not created, snapshots not readable)
 // are not notices while the setup card in Today shows them (WP-119,
 // Model.isSetupNotice), and the snapshot one not after its Not now.
+// The keys reach the buttons (WP-202, Desk.qml): the one under the
+// cursor wears the focus ring, and a dim line under the notices names
+// the keys (or, while armed, asks for the second Enter).
 Column {
   id: root
 
@@ -22,6 +25,13 @@ Column {
   property color foreground: Color.popups.text
   property color urgent: Color.urgent
   property string fontFamily: Style.font.family
+  // The keys' cursor (Desk.noticeId / noticeAction): "" none.
+  property string cursorId: ""
+  property string cursorAction: ""
+  property string keyHint: ""
+  property bool keyHintShown: false
+
+  readonly property Tone tone: Tone {}
 
   // The notices shown, in order: { id, banner }.
   readonly property var items: {
@@ -65,6 +75,7 @@ Column {
     foreground: root.foreground
     urgent: root.urgent
     fontFamily: root.fontFamily
+    cursorAction: root.cursorId === "restart" ? root.cursorAction : ""
     onActionRequested: function(actionId) { root.fix("restart", actionId) }
   }
 
@@ -75,6 +86,7 @@ Column {
     foreground: root.foreground
     urgent: root.urgent
     fontFamily: root.fontFamily
+    cursorAction: root.cursorId === "status" ? root.cursorAction : ""
     onActionRequested: function(actionId) { root.fix("status", actionId) }
   }
 
@@ -84,6 +96,7 @@ Column {
     foreground: root.foreground
     urgent: root.urgent
     fontFamily: root.fontFamily
+    cursorAction: root.cursorId === "contract" ? root.cursorAction : ""
     onActionRequested: function(actionId) { root.fix("contract", actionId) }
   }
 
@@ -94,6 +107,7 @@ Column {
     foreground: root.foreground
     urgent: root.urgent
     fontFamily: root.fontFamily
+    cursorAction: root.cursorId === "snapper" ? root.cursorAction : ""
     onActionRequested: function(actionId) { root.fix("snapper", actionId) }
   }
 
@@ -103,6 +117,7 @@ Column {
     foreground: root.foreground
     urgent: root.urgent
     fontFamily: root.fontFamily
+    cursorAction: root.cursorId === "rules" ? root.cursorAction : ""
     onActionRequested: function(actionId) { root.fix("rules", actionId) }
   }
 
@@ -121,5 +136,17 @@ Column {
     foreground: root.foreground
     urgent: root.urgent
     fontFamily: root.fontFamily
+  }
+
+  Text {
+    objectName: "noticeKeyHint"
+    width: root.width - root.leftPadding - root.rightPadding
+    visible: root.keyHintShown
+    textFormat: Text.PlainText
+    text: root.keyHint
+    color: root.tone.dim
+    wrapMode: Text.Wrap
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
   }
 }

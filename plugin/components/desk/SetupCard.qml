@@ -18,6 +18,9 @@ import "../../Model.js" as Model
 // plain text. Its surface is the normal fill with an accent border, as a
 // notice's frame, never the selected fill (that is the cursor's, SPEC-PLUGIN
 // §5.3); text takes the theme's tones (components/Tone.qml, WP-177).
+// The keys (WP-202, Today.qml): `cursorAction` is the button they are on
+// (Omarchy's cursor look and the desk's focus ring), `armText` the line
+// that asks for the second Enter.
 BorderSurface {
   id: root
 
@@ -28,6 +31,8 @@ BorderSurface {
   property string launched: ""
   // The line under the current step after an action (Not now, a refusal).
   property string resultText: ""
+  property string cursorAction: ""
+  property string armText: ""
   property color foreground: Color.popups.text
   property color accent: Color.accent
   property string fontFamily: Style.font.family
@@ -50,6 +55,8 @@ BorderSurface {
       }),
       actions: current ? current.actions.map(function(a) { return a.label }) : [],
       ready: !!current && current.ready === true,
+      cursor: root.cursorAction,
+      arm: root.armText,
       waiting: current ? current.waiting : "",
       launched: root.launched,
       result: root.resultText
@@ -196,6 +203,8 @@ BorderSurface {
                 model: step.current ? step.modelData.actions : []
 
                 Button {
+                  id: setupButton
+
                   required property var modelData
                   required property int index
 
@@ -210,9 +219,27 @@ BorderSurface {
                   verticalPadding: Style.spacing.xs
                   bordered: true
                   selected: index === 0
+                  hasCursor: root.cursorAction === modelData.id
                   onClicked: root.actionRequested(step.modelData.id, modelData.id)
+
+                  FocusRing {
+                    shown: setupButton.hasCursor
+                  }
                 }
               }
+            }
+
+            // the second Enter's question (WP-202)
+            Text {
+              objectName: "setupArm"
+              width: parent.width
+              visible: step.current && root.armText !== ""
+              textFormat: Text.PlainText
+              text: root.armText
+              color: root.foreground
+              wrapMode: Text.Wrap
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
             }
 
             Text {

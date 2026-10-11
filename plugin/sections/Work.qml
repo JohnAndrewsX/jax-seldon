@@ -115,6 +115,8 @@ Section {
   }
 
   function move(dy) {
+    // ↑ at the top: on to the notices (WP-202)
+    if (dy < 0 && (root.rows.length === 0 || root.cursor === 0)) return false
     if (root.rows.length === 0) return true
     var from = root.cursor >= 0 ? root.cursor : dy > 0 ? -1 : root.rows.length
     root.selectedId = root.rows[Math.max(0, Math.min(root.rows.length - 1, from + dy))].id
