@@ -36,6 +36,9 @@ pub(crate) struct Rebuilt {
     pub files: Vec<String>,
     /// `None` without `--check`.
     pub valid: Option<bool>,
+    /// The cases in verification in the whole index; the written list may
+    /// be cut (ADR-0053), the count in the terminal never is.
+    pub verification: usize,
 }
 
 pub fn run(ctx: &Context, args: IndexArgs) -> Result<Output> {
@@ -110,6 +113,7 @@ pub(crate) fn rebuild_with<T>(
         &config,
         &logbook.root,
     ));
+    let verification = built.index.cases.verification.len();
     index::fit(&mut built);
 
     let valid = if validate {
@@ -144,6 +148,7 @@ pub(crate) fn rebuild_with<T>(
             index_path,
             files,
             valid,
+            verification,
         },
         extra,
     ))

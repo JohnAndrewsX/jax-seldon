@@ -31,7 +31,7 @@ pub fn run(ctx: &Context, _args: StatusArgs) -> Result<Output> {
         ix.logbook.machine,
         ix.today.date,
         s.active_cases,
-        ix.cases.verification.len(),
+        r.verification,
         s.queued_cases,
         s.open_drift,
         s.crisis,

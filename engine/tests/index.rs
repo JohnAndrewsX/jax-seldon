@@ -2182,6 +2182,50 @@ fn the_session_hook_writes_a_large_logbook_under_its_budget() {
     assert_written_under_budget(&env, &root, &out);
 }
 
+/// Review 1 F4: `status` prints the counts of the whole index, also the
+/// cases in verification, whose list the cut takes on rung 20: the ×200
+/// fixture and 2 500 active cases with long titles.
+#[test]
+fn status_counts_from_the_whole_index() {
+    let env = Env::new(Snapper::Missing);
+    let root = scaled_200(&env);
+    let case = read(&fixture_logbook().join("work/active/C-2026-004-zed.md"));
+    for i in 0..2500 {
+        let text = case
+            .replace("C-2026-004", &format!("C-2025-{i:04}"))
+            .replace(
+                "Zed als zweiten Editor installieren",
+                &format!("{i} {}", "long title ".repeat(20)),
+            );
+        let text = regex::Regex::new(r"(?m)^events: \[.*\]$")
+            .unwrap()
+            .replace(&text, "events: []")
+            .into_owned();
+        let path = root.join(format!("work/active/C-2025-{i:04}-long.md"));
+        std::fs::write(path, text).unwrap();
+    }
+    let whole = whole_index(&env, &root);
+    let verification = whole["cases"]["verification"].as_array().unwrap().len();
+    assert!(verification > 0);
+
+    let out = env.at(
+        GENERATED_AT,
+        &["--logbook", root.to_str().unwrap(), "status"],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let ix = json_file(&env.home.join(".local/state/seldon/index.json"));
+    let written = ix["cases"]["verification"].as_array().unwrap().len();
+    assert!(written < verification, "the cut took cases in verification");
+    let text = common::stdout(&out);
+    let s = &whole["summary"];
+    let line = format!(
+        "  cases   {} active · {verification} in verification · {} queued\n",
+        s["activeCases"], s["queuedCases"]
+    );
+    assert!(text.contains(&line), "{text}");
+    assert!(text.contains("warning: index.json would be "), "{text}");
+}
+
 #[test]
 fn a_long_command_line_is_whole_in_the_ledger_and_clipped_in_the_index() {
     const AT: &str = "2026-10-03T09:00:00+02:00";
