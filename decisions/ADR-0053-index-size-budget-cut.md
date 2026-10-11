@@ -111,7 +111,8 @@ What is never cut: `summary`, `state`, `logbook`, `contractVersion`,
 the cut and not touched by it. Texts are not cut further than ADR-0025
 and ADR-0038 already do.
 
-Measured with this order (the tests of WP-200 hold each):
+Measured with this order (release profile; the tests of WP-200 hold
+the ×200 row and the three synthetic ones):
 
 | logbook | written | cut |
 |---|---|---|
