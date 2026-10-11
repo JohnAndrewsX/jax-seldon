@@ -3328,6 +3328,23 @@ expect triage-crisis-keys 19 "[.call, $ck, .view.arm.armed] | join(\",\")" "ok,t
 argv_check triage-crisis-keys "$work/home-triage-crisis-keys" "$(printf '%s\n' "$startup" "$(q drift apply $PROPOSAL --item $UNIT --json)")"
 clean_log triage-crisis-keys
 
+# The same on a stacked desk: ↑ only selects the proposal (↓ there goes
+# back to the list, triage-keys-stacked); once Enter shows the detail, ↓
+# reaches its crisis, Enter twice applies it alone; the Back drops the
+# cursor's place.
+mkdir -p "$work/home-triage-crisis-stacked"
+run triage-crisis-stacked "" 700x900 \
+  "summon:$cl;key:Up;key:Return;key:Down;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:‹ Back to the list;view" \
+  HOME="$work/home-triage-crisis-stacked" FAKE_SELDON_FIXTURE="$sample"
+expect triage-crisis-stacked 2 "[.view.detailShown, $tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "false,true,-1"
+expect triage-crisis-stacked 4 "[.view.detailShown, $ck] | map(tostring) | join(\",\")" "true,true,0,false,false"
+shows triage-crisis-stacked 4 "Enter twice applies this crisis alone · ↑/↓ the other crises"
+expect triage-crisis-stacked 5 "$ck" "true,0,true,false"
+expect triage-crisis-stacked 7 "[$ck, $ttd.crises[0].outcome] | join(\",\")" "true,0,false,false,done"
+expect triage-crisis-stacked 9 "[.view.detailShown, $tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "false,true,-1"
+argv_check triage-crisis-stacked "$work/home-triage-crisis-stacked" "$(printf '%s\n' "$startup" "$(q drift apply $PROPOSAL --item $UNIT --json)")"
+clean_log triage-crisis-stacked
+
 # A → B → A (WP-126c review round 2, M1): A armed (Apply by key, or a
 # crisis), B replaces it, B is discarded elsewhere before any key, A is
 # current again: the arm does not come back, the cursor is on the bar, and

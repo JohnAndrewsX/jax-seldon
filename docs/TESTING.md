@@ -1077,7 +1077,8 @@ service refuses the old id asked directly (`service:` step), nothing
 reaches the engine, Review opens the new one; WP-201: a crisis by key —
 ↓ walks two crises, Enter twice applies the one under the cursor alone
 (`--item`), the other stays open, a press on the desk, ↑ or IPC `select`
-drops the arm; A armed, replaced by B, A current again (the fake engine's
+drops the arm, the same on a stacked desk once Enter shows the detail;
+A armed, replaced by B, A current again (the fake engine's
 `FAKE_SELDON_FIXTURE_BACK`): no arm comes back; a 200 × 10 proposal of
 256-character texts — items built only when shown and in the background,
 the click under 200 ms, nothing outside its box at 1920, 960 and 700 px); Work on the sample (groups, the case
