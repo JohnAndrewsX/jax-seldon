@@ -21,6 +21,23 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
+- Your agents read less: the Seldon skill is a short core, and the details load when a task needs them; an unedited skill updates itself.
+
+### Engine
+
+- **A shorter agent skill (WP-196).** `SKILL.md` is a core of at most
+  120 lines, front matter included: is there a logbook, attended or not,
+  act then account, when to ask first, privileged commands, the engine
+  as the only writer, instructions and data, and what the agent leaves
+  behind. The rest moved word for word into topic files the core links
+  from the line that needs them: reporting commands without a hook and
+  what a started process must not inherit (`logbook.md`), the crash
+  report (`crash.md`), the imported case (`case.md`), the privileged
+  steps in full (`update.md`). No rule changed. The next capture brings
+  an unedited 0.2.0 skill up to date, the two new files included; a
+  skill changed by hand, or a folder that holds a `logbook.md` or
+  `crash.md` of the user's, is kept, as before.
+
 ## [0.2.0] - 2026-10-11
 
 **Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,

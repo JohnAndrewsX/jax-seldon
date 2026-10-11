@@ -1,7 +1,7 @@
 # Installing and Updating Software
 
 Read this before any package transaction: an install, a removal, an
-upgrade, a PKGBUILD build.
+upgrade, a PKGBUILD build; and before a command that elevates itself.
 
 ## Resolve First, Read-Only
 
@@ -42,6 +42,24 @@ list.
 
 No hit: the step is inside the *Intent* and needs no go. Print the preview
 line, take the snapshot an R2 case needs, run it.
+
+## Privileged Steps
+
+Follow Omarchy's rule (its skill, *Privilege Escalation*): `pkexec` for "a
+command launched by an agent", `sudo` where the password prompt reaches the
+user in a terminal. A command you run through your tool has no terminal the
+user sees, so it is `pkexec`: Omarchy's password prompt opens on the
+desktop. `sudo` only where your command runs in the user's own terminal.
+Run the command yourself; the user types the password when asked. Never ask
+for, store or pass a password.
+
+Each privileged command may ask for the password again (`pkexec` asks every
+time). Take privileged steps in as few commands as the documented route
+allows — one `pkexec pacman -S` for all packages, not one per package. One
+program per `pkexec`; never bundle privileged commands in `pkexec sh -c`.
+Never wrap a command that elevates itself (`omarchy pkg add`, `omarchy snapshot`,
+an AUR helper, `makepkg -si`) in `pkexec` or `sudo`: it asks with `sudo` on
+its own, so it needs the user's terminal.
 
 ## The Install Route
 

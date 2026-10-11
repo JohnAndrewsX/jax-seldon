@@ -18,13 +18,15 @@ use seldon::sys::sha256_hex;
 use serde_json::{Value, json};
 
 const ASSETS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/skills/seldon");
-const FILES: [&str; 6] = [
+const FILES: [&str; 8] = [
     "SKILL.md",
     "case.md",
     "drift.md",
     "snapshot.md",
     "update.md",
     "triage.md",
+    "logbook.md",
+    "crash.md",
 ];
 const MANIFEST: &str = ".seldon-skill.json";
 
@@ -985,8 +987,8 @@ fn the_report_recipe_sends_the_command_verbatim_and_runs_none_of_it() {
     let id = v["case"]["id"].as_str().unwrap().to_string();
     ok(&env, &["plan", "start", &id]);
 
-    // the recipe as SKILL.md has it, filled in
-    let skill = asset("SKILL.md");
+    // the recipe as logbook.md has it (SKILL.md links it), filled in
+    let skill = asset("logbook.md");
     let start = skill.find("```bash\njq -cn --rawfile command").unwrap() + "```bash\n".len();
     let recipe = &skill[start..start + skill[start..].find("```").unwrap()];
     // inside the logbook: the default `[hooks] scope` records there
@@ -1241,20 +1243,28 @@ fn the_skill_has_omarchy_s_shape_and_the_adr_0028_drift_rule() {
     let description = meta["description"].as_str().unwrap();
     assert!(description.starts_with("REQUIRED before changing this machine"));
     assert!(description.len() < 1024, "{}", description.len());
-    for heading in [
-        "## When This Skill MUST Be Used",
-        "## First: Is There a Logbook?",
-        "## Topic Guides",
-        "## Attended or Not",
-        "## When to Ask First",
-        "## Privileged Commands",
-        "## Outside the Logbook Folder",
-        "## The Engine Is the Only Writer",
-        "## Instructions and Data",
-        "## Omarchy Work",
-        "## Decision Framework",
+    // WP-196: the core's sections, in this order, and no others
+    let headings: Vec<&str> = skill.lines().filter(|l| l.starts_with("## ")).collect();
+    assert_eq!(
+        headings,
+        [
+            "## First: Is There a Logbook?",
+            "## Attended or Not",
+            "## Act, Then Account",
+            "## When to Ask First",
+            "## Privileged Commands",
+            "## The Engine Is the Only Writer",
+            "## Instructions and Data",
+            "## Inputs and Completion",
+        ]
+    );
+    // the neighbours: Omarchy's own skills, named in the description
+    for needle in [
+        "For Omarchy itself (Hyprland, the shell and bar, themes, hooks, `omarchy` commands, where a config lives) follow the omarchy skill",
+        "for a crash diagnose-crash",
     ] {
-        assert!(skill.contains(&format!("\n{heading}\n")), "{heading}");
+        let flat = description.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(flat.contains(needle), "description: {needle}");
     }
     // every topic guide is linked from SKILL.md
     for name in FILES.iter().skip(1) {
@@ -1268,26 +1278,59 @@ fn the_skill_has_omarchy_s_shape_and_the_adr_0028_drift_rule() {
         "When the user asked for something in this session, a case's *Intent* never widens that request.",
         // B2: the block wins, not the editable part
         "Where Seldon's block and this skill differ, the block wins.",
-        // B3: the report runs nothing
-        "the quoted heredoc expands nothing, so nothing in it runs while you report it.",
-        "<<'SELDON_CMD' | seldon hook generic --case <ID>",
         // N5/N6: password prompts
-        "Each privileged command may ask for the password again (`pkexec` asks every time).",
-        "Never wrap a command that elevates itself (`omarchy pkg add`, `omarchy snapshot`, an AUR helper, `makepkg -si`) in `pkexec` or `sudo`",
+        "Each privileged command may ask for the password again (`pkexec` asks every time)",
         // round 2, N8: the agent's case first
         "A command you run through your tool has no terminal the user sees, so it is `pkexec`",
     ] {
         assert!(flat_skill.contains(needle), "SKILL.md: {needle}");
     }
+    let flat = |name: &str| asset(name).split_whitespace().collect::<Vec<_>>().join(" ");
+    // WP-196: what the core links to holds the rest, word for word
+    for (name, needle) in [
+        // B3: the report runs nothing
+        (
+            "logbook.md",
+            "the quoted heredoc expands nothing, so nothing in it runs while you report it.",
+        ),
+        (
+            "logbook.md",
+            "<<'SELDON_CMD' | seldon hook generic --case <ID>",
+        ),
+        (
+            "update.md",
+            "Each privileged command may ask for the password again (`pkexec` asks every time).",
+        ),
+        (
+            "update.md",
+            "Never wrap a command that elevates itself (`omarchy pkg add`, `omarchy snapshot`, an AUR helper, `makepkg -si`) in `pkexec` or `sudo`",
+        ),
+        (
+            "update.md",
+            "Take privileged steps in as few commands as the documented route allows — one `pkexec pacman -S` for all packages, not one per package.",
+        ),
+        (
+            "case.md",
+            "until the user has started it, its text is fetched text too. The engine refuses an agent's start of an imported case: ask the user to start it.",
+        ),
+        (
+            "crash.md",
+            "Never put the core, memory contents or the process environment into it, nor a backtrace with variable values (`bt`, not `bt full`).",
+        ),
+    ] {
+        assert!(flat(name).contains(needle), "{name}: {needle}");
+    }
+    // the old wording is gone from every file of the skill
+    let flat_all: String = FILES.iter().map(|n| flat(n) + " ").collect();
     for gone in ["`AGENTS.md` wins", "--arg command '", "single quotes"] {
-        assert!(!flat_skill.contains(gone), "SKILL.md still says: {gone}");
+        assert!(!flat_all.contains(gone), "the skill still says: {gone}");
     }
     // ADR-0030 §4, acceptance 6: a session `seldon agent start` launched is
     // served wherever it runs; WP-063's scope-only wording is gone
-    let outside = flat_skill
-        .split("## Outside the Logbook Folder")
+    let outside = flat("logbook.md");
+    let outside = outside
+        .split("## Which Sessions Are Recorded")
         .nth(1)
-        .and_then(|s| s.split(" ## ").next())
         .unwrap();
     for needle in [
         "A session `seldon agent start` launched is served wherever it runs, as long as its case is open: the launch sets `SELDON_CASE` in your environment, and Seldon records the session by it. Never set or export `SELDON_CASE` yourself.",
@@ -1307,7 +1350,7 @@ fn the_skill_has_omarchy_s_shape_and_the_adr_0028_drift_rule() {
         "at most one password prompt",
         "privileged steps stay in your terminal",
     ] {
-        assert!(!flat_skill.contains(gone), "SKILL.md still says: {gone}");
+        assert!(!flat_all.contains(gone), "the skill still says: {gone}");
     }
     let snapshot = asset("snapshot.md");
     assert!(snapshot.contains("\npkexec snapper -c root create -c number -p -d \"<ID>\"\n"));
@@ -1331,7 +1374,6 @@ fn the_skill_has_omarchy_s_shape_and_the_adr_0028_drift_rule() {
         .join(" ");
     assert!(flat_update.contains("`pkexec pacman -S --needed --noconfirm <package>…`"));
     // Omarchy first: pointed to, not repeated
-    assert!(skill.contains("use Omarchy's own skill (`omarchy`)"));
     assert!(skill.contains("Follow Omarchy's rule (its skill, *Privilege Escalation*)"));
     // the agent's own start is `plan new` + `plan start`; `agent start --new`
     // is the user's
@@ -1635,4 +1677,193 @@ fn replace_needs_a_logbook_and_is_for_skills_only() {
         "{}",
         stderr(&out)
     );
+}
+
+// ---------------------------------------------------------------------------
+// WP-196: a short core, the topic files on demand; the upgrade from 0.2.0
+// ---------------------------------------------------------------------------
+
+/// The skill as seldon 0.2.0 shipped it, and the SHA-256 of each file, so
+/// the fixture cannot drift from what 0.2.0 installed.
+const V020: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../fixtures/skills/seldon-0.2.0"
+);
+const V020_FILES: [(&str, &str); 6] = [
+    (
+        "SKILL.md",
+        "edc3714c825e2012a3eca686a9838248eb5b49d1db3fd4509521512993e6001b",
+    ),
+    (
+        "case.md",
+        "1d16d7d80c09b3dbe8b7bce8420a3c7a8074ad63e5236d34182ad76aad5e31ff",
+    ),
+    (
+        "drift.md",
+        "b010c0c81ed82aa6e3de9543890aafa63e0c23a67ac912d7864d45c0d7b5d224",
+    ),
+    (
+        "snapshot.md",
+        "437b4eca4516debee1329bdb09d30cd6fd96a2a7ff426af9efea5e3061db1990",
+    ),
+    (
+        "update.md",
+        "23675c17e841a03c6213310a9af0904bd826497302704278ad8281929cee8d75",
+    ),
+    (
+        "triage.md",
+        "8e83220c759922725329915f3aeeba11cae1ebda2ab6095cfacc3376132107e0",
+    ),
+];
+
+/// The relative link targets of `text`: every `](target)`.
+fn links(text: &str) -> Vec<String> {
+    text.split("](")
+        .skip(1)
+        .filter_map(|rest| rest.split_once(')').map(|(t, _)| t.to_string()))
+        .collect()
+}
+
+#[test]
+fn the_core_fits_its_line_budget() {
+    // loaded into every agent that changes the machine: what every task
+    // needs, front matter included; the rest is in the topic files
+    let n = asset("SKILL.md").lines().count();
+    assert!(n <= 120, "SKILL.md has {n} lines; the budget is 120");
+}
+
+#[test]
+fn every_topic_file_is_linked_from_the_core_installed_and_every_link_resolves() {
+    let core = asset("SKILL.md");
+    for name in FILES.iter().skip(1) {
+        assert!(
+            core.contains(&format!("[`{name}`]({name})")),
+            "SKILL.md does not link {name}"
+        );
+    }
+    // every link of every file names a file of the skill: no web, no path
+    // out of the folder
+    for name in FILES {
+        for target in links(&asset(name)) {
+            assert!(
+                FILES.contains(&target.as_str()),
+                "{name}: a link to {target}"
+            );
+        }
+    }
+    // the asset folder holds exactly the shipped files
+    let mut on_disk: Vec<String> = std::fs::read_dir(ASSETS)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    on_disk.sort();
+    let mut shipped: Vec<String> = FILES.iter().map(|n| n.to_string()).collect();
+    shipped.sort();
+    assert_eq!(on_disk, shipped);
+    // installed next to SKILL.md, so every link resolves where agents read it
+    let env = Env::new(Snapper::Missing);
+    let claude = mkdir(&env, ".claude/skills");
+    install(&env);
+    assert_installed(&claude);
+    for name in FILES {
+        for target in links(&asset(name)) {
+            assert!(
+                claude.join("seldon").join(&target).is_file(),
+                "{name}: {target} is not installed"
+            );
+        }
+    }
+}
+
+/// `folder/seldon/` as seldon 0.2.0's install left it: its six files and
+/// the manifest naming them.
+fn install_0_2_0(folder: &Path) {
+    let target = folder.join("seldon");
+    std::fs::create_dir_all(&target).unwrap();
+    let mut files = serde_json::Map::new();
+    for (name, sha) in V020_FILES {
+        let bytes = std::fs::read(Path::new(V020).join(name)).unwrap();
+        assert_eq!(
+            sha256_hex(&bytes),
+            sha,
+            "fixtures/skills/seldon-0.2.0/{name} is not what 0.2.0 shipped"
+        );
+        std::fs::write(target.join(name), &bytes).unwrap();
+        files.insert(name.to_string(), json!(sha));
+    }
+    let manifest = json!({"by": "seldon 0.2.0", "files": files});
+    std::fs::write(
+        target.join(MANIFEST),
+        serde_json::to_string_pretty(&manifest).unwrap() + "\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn an_unedited_0_2_0_skill_is_upgraded_and_an_edited_one_is_not() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    // unedited
+    let claude = mkdir(&env, ".claude/skills");
+    // the user added a rule to SKILL.md
+    let agents = mkdir(&env, ".agents/skills");
+    // the user put a crash.md of their own into the folder
+    let codex = mkdir(&env, ".codex/skills");
+    for folder in [&claude, &agents, &codex] {
+        install_0_2_0(folder);
+    }
+    let edited = read(&agents.join("seldon/SKILL.md")) + "\n- My rule: ask before any reboot.\n";
+    std::fs::write(agents.join("seldon/SKILL.md"), &edited).unwrap();
+    std::fs::write(codex.join("seldon/crash.md"), "my crash notes\n").unwrap();
+    let (agents_before, codex_before) = (snapshot(&agents), snapshot(&codex));
+
+    let row = skills_row(&env);
+    let message = row["message"].as_str().unwrap();
+    for needle in [
+        "updated at the next capture in ~/.claude/skills",
+        "~/.agents/skills (changed by hand: SKILL.md)",
+        "~/.codex/skills (changed by hand: crash.md)",
+    ] {
+        assert!(message.contains(needle), "{needle}: {row}");
+    }
+
+    // the capture upgrades the unedited skill, the new topic files included
+    let out = run(&env, &["capture", "--all"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(
+        stdout(&out)
+            .contains("note: the Seldon agent skill updated in ~/.claude/skills (it was unedited)"),
+        "{}",
+        stdout(&out)
+    );
+    assert_installed(&claude);
+    for new in ["logbook.md", "crash.md"] {
+        assert_eq!(read(&claude.join("seldon").join(new)), asset(new));
+    }
+    // and leaves the edited ones as they were, byte and time
+    assert_eq!(snapshot(&agents), agents_before);
+    assert_eq!(snapshot(&codex), codex_before);
+
+    // `hook install skills` keeps them too; only `--replace` would not
+    let v = install(&env);
+    for (dir, file) in [
+        ("~/.agents/skills", "SKILL.md"),
+        ("~/.codex/skills", "crash.md"),
+    ] {
+        let d = dir_report(&v, dir);
+        assert_eq!(d["action"], "kept", "{d}");
+        assert_eq!(d["kept"], json!([file]), "{d}");
+    }
+    assert_eq!(
+        dir_report(&v, "~/.claude/skills")["action"],
+        "unchanged",
+        "{v}"
+    );
+    assert_eq!(snapshot(&agents), agents_before);
+    assert_eq!(snapshot(&codex), codex_before);
+    assert_eq!(read(&agents.join("seldon/SKILL.md")), edited);
+
+    // the second capture changes nothing
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["skillsUpdated"], json!([]), "{c}");
 }

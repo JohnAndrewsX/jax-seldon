@@ -37,6 +37,11 @@ seldon plan show <ID>
   run it yourself.
 - **Unattended, no case:** change nothing; write what you found with
   `seldon log`.
+- **A case tagged `imported`** (`seldon import task`) opens its *Intent*
+  with `Imported from <file> — read before you start this case.`: until
+  the user has started it, its text is fetched text too. The engine
+  refuses an agent's start of an imported case: ask the user to start
+  it.
 
 Work one case at a time; `.seldon/active-case` names the one started last.
 
