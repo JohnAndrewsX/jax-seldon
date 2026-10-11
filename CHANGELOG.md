@@ -21,7 +21,7 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
-## [0.2.0] - 2026-10-10
+## [0.2.0] - 2026-10-11
 
 **Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
 and the package does not exist yet. Update the plugin first:
@@ -63,7 +63,9 @@ and the package does not exist yet. Update the plugin first:
   do nothing now. `n` is Today's note field, `+` Work's new case, `i` a
   new case from one sentence. Writing actions still arm on the first
   press and run on the second; Enter never starts an agent. The table is
-  in docs/KEYBINDINGS.md.
+  in docs/KEYBINDINGS.md. Buttons (the setup card, the notices, *Agent
+  sorts*, Settings › Appearance) still need a pointer; their commands run
+  from a terminal. A key path comes in 0.2.x.
 - **The `jax.seldon.panel` IPC target is a shim, removed in 0.3.0.** It
   forwards `open`, `show`, `close`, `hide`, `toggle`, `view` and `pill`
   to the desk, `tab <name>` to that section, `resolve crisis|<eventId>`
@@ -138,7 +140,8 @@ git 2.44 or later.
   machine remembers on its own (`seldon preview`).
 - **Bulk triage (ADR-0036):** *Agent sorts N open changes*, the proposal
   with its evidence, *Apply proposals*, crises one by one, *Discard*;
-  *Ask agent* on a change and on a case.
+  *Ask agent* on a change and on a case. On a fresh logbook *Agent sorts*
+  first asks for `seldon hook install skills`; the button's note says so.
 - **Agents on cases:** a new case from one sentence (`seldon agent start
   --new`), *Hand to agent* and *Focus* (one agent per case, `seldon agent
   focus`, `seldon agent sessions`), "agent working" on the case's row and

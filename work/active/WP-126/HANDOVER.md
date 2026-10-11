@@ -334,3 +334,69 @@ check-packaging ok (shellcheck on the test host through the kit wrapper,
 367/0, desk-view 2092/0, bar-view 196/0, ipc-restart 44/0. Where:
 headless (dev host, private runtime dirs on disk), shellcheck on the test
 host.
+
+## 126b part 2 (the live scenarios)
+
+Commit under test: next 72a04faa4f3d35e438392507fd22cf3f2fc2ebee, deployed
+by the orchestrator (0.2.0+next.72a04faa); test host Omarchy 4.0.4-1, rc
+channel, one 1920×1080 monitor. Nothing under plugin/, engine/ or scripts/
+changed in this part. Everything below ran on the **test host**;
+screenshots in the private `refs/live-126b/part2/`.
+
+Preparation: the plugin subtree split of 72a04faa (3ed5b924; its tree
+equals `72a04faa:plugin`) pushed to a bare repo on the test host
+(`~/plugin-split.git`, its HEAD set to `main`: git's default `master` made
+the first `plugin add` clone nothing; a setup slip, not a product fault);
+the deployed engine copied to `~/seldon-0.2.0-bin`. The published v0.1.4
+plugin commit (ecb21663) is an ancestor of the split, so `omarchy plugin
+update` fast-forwards and so would the release's push without force (not
+checked against the published repository's current main: no network
+from the dev host in this part).
+
+| Scenario | What ran | Counts | Result |
+|---|---|---|---|
+| **d** width 50 % | `omarchy bar set jax.seldon deskWidth 50`, the desk by the binding's command, `1`–`8` and `,` by `wtype`, a shot each; rounding 16 (after a shell restart) on the Changelog; the chip with a briefly stale index | 11 steps, 0 passwords | passed: 960 px (the minimum) with the sidebar open (210 px); every target by its key; at rounding 16 the stripes and the selection bars follow the rows' corners (F9 live); the chip reads "▾ 1", not cut |
+| **restart** | three `omarchy restart shell` | 3 steps | passed: service ok each time; no Quickshell crash entry and "No coredumps found" before and after |
+| **a** clean home | `omarchy plugin remove jax.seldon --yes`; `~/Seldon`, state, config removed (engine kept); `omarchy plugin add file://…/plugin-split.git --enable --yes`; the desk; `seldon init --defaults` | 4 steps (add and its confirmation, open, Create logbook), 0 passwords | passed: pill mark dimmed "logbook not initialised"; desk 1910 px with "Set up Seldon · 2 of 3 steps to go" (engine step done, not exercised); after init the desk by itself "Seldon is recording. Nothing to do.", status ok |
+| **c** triage with a crisis | no active case; four changes: `~/.bashrc` (an alias), a hypr notes file, `hooks/seldon-126b-test.sample`, an applications `.desktop` (attention), and a `Hidden=true` autostart entry (crisis); three `seldon log` notes naming three of them, a queued case whose Plan names the autostart file; the applications entry left unevidenced; `seldon hook install skills` (the engine's refusal: a fresh logbook has no skill), `seldon agent ask triage` (claude-code, auto mode, no approval asked); the desk, `2`, ↑, Enter, Enter; ↓, Enter (Link form, C-2026-001 preselected), Enter, Enter | 11 steps from the skill install to the link, 0 passwords | passed: proposed 4 (1 crisis); Apply by Enter twice: applied 3, skipped 1 (the crisis, "applied only one by one"), refused 0, resolutions by `human`; the crisis linked alone by key; the unevidenced change still open (1 open, 0 crises) |
+| **b** upgrade | `deploy-test-host --release v0.1.3` (state moved aside first, as it says); fresh 0.1.3 logbook (`init --non-interactive`, capture); `--release v0.1.4`; `omarchy bar set jax.seldon driftInBar all`; the engine copy `install`ed; origin of the 0.1.4 clone set to the split; `omarchy plugin update jax.seldon --yes`; `omarchy-restart-shell` | 5 steps (engine, update and its confirmation, restart, open), 0 passwords | passed: 0.1.4 showed "Index format mismatch" after the engine; after the update "Restart the shell to finish the update" once; after the restart status ok, plugin 0.2.0, `driftInBar` all kept, `deskWidth` 100 and `deskSidebar` open by default (nothing written), the 0.1.3 logbook opened without a question, doctor all ok |
+| **gate** | not run | — | WP-194 has not landed |
+
+`packaging/acceptance/v0.2.0.json` filled (status partial: 5 passed, 1
+not run); `bash packaging/acceptance-check.sh 0.2.0` passes on this
+branch (one later commit, docs and records only).
+
+### Findings (for follow-ups; none blocks the record)
+
+1. **No key path to several buttons.** The setup card's buttons (*Create
+   logbook*, *Install*, *Grant*, *Choose a folder*, *Not now*), the
+   Changelog's *Agent sorts N open changes*, Settings › Appearance's width
+   slider, presets and sidebar switch, and the notices' buttons need a
+   pointer; the test host has only `wtype`, so a, b, c and d ran each such
+   step as the command the button runs (named in the limitations). The
+   same class as WP-126c's proposal row; a keyboard user cannot set up
+   Seldon or change the width from the desk.
+2. **Triage on a fresh logbook needs `seldon hook install skills` first**
+   (`init --defaults` installs no harness, O1). The engine's refusal names
+   the fix, and the desk shows it under the button; a user meets it on the
+   first *Agent sorts*. Worth one line in the guide (04) or the first-run
+   card.
+3. **A `*.sample` in Omarchy's hook folder is not a crisis** (the engine's
+   inert-hook rule): correct, noted because the scenario first used one.
+
+### Test host state at the end
+
+Restored from `~/seldon-backup-126b/` and proven identical (`diff -r`,
+`cmp`: `~/Seldon` 540, state 7, config 2, `shell.json`, the bar entry
+`{"id":"jax.seldon"}`); the test files and the `.bashrc` line removed,
+the skill `~/.agents/skills/seldon` installed during c removed (it was
+not there before); theme Tokyo Night, rounding 0, `seldon-watch`
+inactive; engine 0.2.0+next.72a04faa (the copy), plugin 0.2.0 as a git
+clone at the split 3ed5b924 with its origin set back to the published
+repository; status ok on the host's own logbook. Left for you: the
+backup `~/seldon-backup-126b/`, `~/plugin-split.git`,
+`~/seldon-0.2.0-bin`, the deploys' moved-aside plugins under
+`~/.local/state/seldon-dev/`, Omarchy's remove backup
+`~/.config/omarchy/plugins/.jax.seldon.bak.20261010234455`, and
+`~/.local/bin/seldon.prev` (0.1.4). The plugin dir is a clone, not a dev
+copy: the next `deploy-test-host` moves it aside once.

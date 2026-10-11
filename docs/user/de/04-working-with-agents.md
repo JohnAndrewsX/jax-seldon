@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ b054739f -->
+<!-- source: en/04-working-with-agents.md @ 3f26fb5a -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -623,7 +623,10 @@ Er kommt in jeden Skill-Ordner eines Agenten, den es gibt —
 als `<Ordner>/seldon/`. Seldon legt keinen dieser Ordner an; ein Agent,
 den du später installierst, bekommt den Skill, wenn du den Befehl noch
 einmal ausführst. `seldon init` bietet ihn neben den Claude-Code-Hooks an
-(`--harness skills`).
+(`--harness skills`). Ein Logbuch, das die Einrichtungskarte angelegt hat
+(`seldon init --defaults`), hat noch keinen Skill: Das erste *Agent sorts
+N open changes* verlangt diesen Befehl, und die Zeile unter dem Button
+sagt das.
 
 Der Skill sagt dem Agenten kurz, was die `AGENTS.md` des Logbuchs
 ausführlich sagt:
