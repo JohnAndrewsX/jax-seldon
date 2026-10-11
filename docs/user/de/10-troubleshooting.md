@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ a2adcea2 -->
+<!-- source: en/10-troubleshooting.md @ 85570258 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Hinweise des Desks, die Exit-Codes
@@ -47,7 +47,8 @@ Der Status-Chip im Header zeigt die Überschrift der Karte, etwa
 „Set up Seldon · 2 of 3 steps to go“, und ein Klick darauf führt zur
 Karte. Nach dem Terminal eines Schritts sieht die Karte von selbst
 wieder nach und geht weiter. Die ersten drei Zeilen unten sind ihre
-Schritte.
+Schritte. Mit den Tasten: ↑ in der ersten Zeile von Today wählt die
+Zeile der Karte, ← / → einen Knopf, zweimal Enter führt ihn aus.
 
 ![Die Einrichtungskarte unter Today: Set up Seldon · 2 of 3 steps to go; Install the engine erledigt, Create the logbook mit Create logbook und Copy, Read snapshots optional](../../images/desk-tokyo-night-setup.png)
 
@@ -58,7 +59,11 @@ klappt die Hinweise ein. Ein dringender Hinweis bekommt den Chip immer,
 auch vor der Einrichtungskarte. Die Hinweise stehen in dieser
 Reihenfolge: der Neustart-Hinweis, der Status-Hinweis (eine der Zeilen
 zu Index und Engine unten), die Engine neuer als das Plugin, Snapshots,
-die Agentenregeln, die Warnungen einer Erfassung.
+die Agentenregeln, die Warnungen einer Erfassung. Mit den Tasten: ↑ oben
+in einer Liste erreicht die Knöpfe der Hinweise, ↑ / ↓ die Hinweise,
+← / → die Knöpfe eines Hinweises, zweimal Enter führt den mit dem Rahmen
+aus (*Restart shell*, *Install*, …), ↓ auf dem letzten Hinweis führt
+zurück.
 
 | Hinweis | Ursache | Abhilfe |
 |---|---|---|
