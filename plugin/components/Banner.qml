@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "desk"
 import "../Model.js" as Model
 
 // The banner for a non-ok service status (SPEC-PLUGIN §5, AGENTS.md §7).
@@ -17,7 +18,9 @@ import "../Model.js" as Model
 // Prime Radiant; none for a status without one (contract mismatch).
 // Tones: "urgent", "neutral" (the foreground: the capture-warning notice,
 // WP-085), else the accent. A banner with `full` shows it in a tooltip
-// while the pointer is over the banner.
+// while the pointer is over the banner. `cursorAction`: the button the
+// desk's keys are on (WP-202), drawn with Omarchy's cursor look and the
+// desk's focus ring.
 BorderSurface {
   id: root
 
@@ -29,6 +32,7 @@ BorderSurface {
   property color urgent: Color.urgent
   property string fontFamily: Style.font.family
   property real pictogramSize: Style.space(48)
+  property string cursorAction: ""
 
   signal actionRequested(string actionId)
 
@@ -147,6 +151,8 @@ BorderSurface {
         model: root.banner ? root.banner.actions : []
 
         Button {
+          id: actionButton
+
           required property var modelData
           required property int index
 
@@ -156,7 +162,12 @@ BorderSurface {
           fontFamily: root.fontFamily
           bordered: true
           selected: index === 0
+          hasCursor: root.cursorAction === modelData.id
           onClicked: root.actionRequested(modelData.id)
+
+          FocusRing {
+            shown: actionButton.hasCursor
+          }
         }
       }
     }

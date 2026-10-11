@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ b054739f -->
+<!-- source: en/03-daily-use.md @ 899b1f74 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
@@ -83,7 +83,8 @@ Nichts dahinter wird abgedunkelt. Von oben nach unten:
   offenen Änderungen. Rechts Settings (`,`) und *Esc*.
 - **Hinweise.** Unter dem Kopf, über die ganze Breite: etwas muss
   repariert werden, jeweils mit der Reparatur per Klick (siehe
-  [Fehlersuche](10-troubleshooting.md#hinweise-auf-dem-desk)). Solange Seldon
+  [Fehlersuche](10-troubleshooting.md#hinweise-auf-dem-desk)). Auch die
+  Tasten erreichen die Knöpfe: ↑ oben in der Liste. Solange Seldon
   nicht eingerichtet ist, zeigt Today stattdessen die Setup-Karte (siehe
   [Erste Schritte](01-getting-started.md)).
 - **Seitenleiste.** „SECTIONS“: die neun Ziele mit Symbol, Name und
@@ -139,7 +140,7 @@ Die Tasten des Desks gelten, solange der Desk offen ist.
 | `,` | Settings |
 | Alt+↓ / Alt+↑ | das nächste / vorherige der neun Ziele, im Kreis |
 | `/` | die Suche der Seitenleiste: filtert die aktuelle Liste; Enter verlässt das Feld und behält den Filter, Esc leert ihn |
-| ↑ / ↓, `k` / `j` | in der Liste bewegen |
+| ↑ / ↓, `k` / `j` | in der Liste bewegen; ↑ oben in der Liste erreicht die Knöpfe der Hinweise |
 | Enter, Leertaste | die erste Aktion des Details, die nichts startet (Work: scharf schalten, dann ausführen; offene Drift: ihr Formular; die Zeile von gestern in Today: auf- oder zuklappen); auf einem schmalen Desk das Detail zeigen. Enter startet nie einen Agenten |
 | Esc | ein Formular verlassen, dann die Suche leeren, dann zurück zur Liste (schmaler Desk), dann schließen |
 | `c` | jetzt erfassen |
@@ -148,7 +149,9 @@ Die Tasten des Desks gelten, solange der Desk offen ist.
 | `i` | das Feld *New case* in Today, das Feld für den einen Satz in Work |
 | `e` | im Editor öffnen: Today das Journal, Changelog das Ledger des Monats, Work den Case, Decisions die Entscheidung, System `STATUS.md`, Memory das Logbuch |
 | `f` / `F` | Changelog: der nächste / vorherige Chip |
-| ↑ / `k` in der ersten Zeile | Changelog: der Triage-Vorschlag des Agenten; ↓ / `j` zurück zur Liste |
+| ↑ / `k` in der ersten Zeile | Changelog: der Triage-Vorschlag des Agenten, dann *Agent sorts N open changes*; ↓ / `j` zurück zur Liste. Today, solange Seldon nicht eingerichtet ist: die Zeile der Setup-Karte |
+| ← / →, `h` / `l` auf einem Hinweis | die Knöpfe des Hinweises; ↑ / ↓ die Hinweise, ↓ auf dem letzten oder Esc zurück zur Liste |
+| Enter auf Appearance | Settings: der Schieberegler für die Breite, die Vorgaben, die Seitenleiste; ↑ / ↓ ein Element, ← / → sein Wert, Esc zurück |
 | `a` | Work: den Case einem Agenten übergeben (zweimal drücken); solange ein Agent daran arbeitet, *Focus* (einmal) |
 | `x` | Work: den Case aufgeben (zweimal drücken; endgültig) |
 | `r` | Work: einen abgeschlossenen Case wieder öffnen (einmal) |
@@ -179,6 +182,19 @@ Ein Druck genügt, wo nichts verloren geht: eine Notiz, ein Satz für *New
 case* oder *Run*, der Dialog für einen neuen Case, *Reopen* (es fügt nur
 einen Case hinzu), *Focus*, *Apply proposals*, *Capture now* und *Open in
 editor*.
+
+Jeder Knopf hat einen Weg über die Tasten. Die Knöpfe über der Liste (die
+Hinweise, die Setup-Karte, *Agent sorts N open changes*) und die
+Elemente in Settings › Appearance erreichst du mit den Pfeilen; der Knopf
+unter dem Cursor hat einen Rahmen, und eine blasse Zeile daneben nennt
+die Tasten. Dort schaltet Enter den Knopf scharf, und das zweite Enter
+führt ihn aus, was immer er tut (auch *Copy*): „Restart shell? Press
+Enter again.“ *Agent sorts* ist die Ausnahme: Enter startet nie einen
+Agenten, also schaltet `a` ihn scharf und ein zweites `a` startet den
+Agenten, wie bei einem Case. Jede andere Taste, ein Klick auf den Desk
+oder eine andere Auswahl bricht ab. ← / → wählen einen anderen Knopf
+oder Wert. Ein gehaltenes ↑ hält oben in der Liste an; ein weiterer
+Druck führt zu den Hinweisen.
 
 Eine gehaltene Taste wirkt einmal. Ihre Wiederholungen schalten nie
 scharf, bestätigen nie, schreiben nie und starten nichts; eine scharfe
@@ -268,7 +284,8 @@ listet jeden Punkt mit seinen Belegen. Belege, die ein Agent geschrieben
 hat oder deren Autor unbekannt ist, sind mit „Read twice“ markiert. Du
 öffnest ihn mit einem Klick oder mit den Tasten: Der Vorschlag ist die
 Zeile über der Liste, also erreicht ↑ (oder `k`) in der ersten Zeile ihn,
-und ↓ (oder `j`) führt zurück.
+und ↓ (oder `j`) führt zurück. Ein weiteres ↑ erreicht *Agent sorts N
+open changes*: Zweimal `a` startet den Agenten.
 
 - *Apply proposals* wendet die Punkte mit einem Klick an, als du. Mit
   der Tastatur schaltet Enter es scharf, ein zweites Enter wendet es an.
@@ -459,7 +476,10 @@ Probe; das Loslassen oder eine Vorgabe speichert sie. „Sidebar“ ist
 *Open* oder *Collapsed*. Seldon speichert beides in seinem Eintrag in
 Omarchys `shell.json`, und nur, wenn du einen Wert änderst. Nimmt die
 Shell die Änderung nicht an, sagt die Seite das; dann änderst du es in
-Omarchys Bar-Einstellungen.
+Omarchys Bar-Einstellungen. Mit den Tasten: Enter auf Appearance
+erreicht den Schieberegler, ↑ / ↓ die Vorgaben und die Seitenleiste,
+← / → ändern den Wert (die Breite zeigt sich sofort, wie beim Ziehen),
+zweimal Enter speichert ihn, Esc führt zurück.
 
 **Capture**, **Agents** und **Quiet** zeigen nur die geltenden Werte und
 wo jeder eingestellt wird: das Erfassungsintervall, das Limit aktiver

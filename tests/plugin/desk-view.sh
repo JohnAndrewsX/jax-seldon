@@ -3410,6 +3410,285 @@ done
 clean_log tones-tokyo
 
 # ---------------------------------------------------------------------------
+# WP-202: every desk button has a key path (the pattern of WP-126c's
+# proposal row). The cursor reaches the button — ↑ at the top of a list on
+# to the notices, Today's setup row above its first row, *Agent sorts*
+# above the Changelog's proposal, Settings' controls by Enter — Enter arms
+# it and the second Enter runs exactly what its click runs (the records
+# and argv below are compared with the click's); any other key, a click,
+# a summon, another selection or IPC select drops the arm, so a detour
+# never leaves a one-press write. The hint lines name the keys.
+nk='[.view.noticeKeys.id, .view.noticeKeys.action, .view.arm.armed] | join(",")'
+updated_manifest=$(jq -c '.version = "99.0.0"' <<<"$manifest")
+# wait_record <file> — until a detached launch has written its record
+wait_record() {
+  local deadline=$((SECONDS + 15))
+  until [[ -s $1 ]] || ((SECONDS >= deadline)); do sleep 0.2; done
+  sleep 1
+}
+# A PATH whose wl-copy records its argv, as the launchers do.
+mkdir -p "$work/bin-keys"
+for f in "$work"/bin/*; do ln -s "$f" "$work/bin-keys/$(basename "$f")"; done
+install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-keys/wl-copy"
+
+# The restart notice (dev mode, not initialised, so the setup card is up):
+# ↑ selects the setup row, ↑ again the notice; Enter arms, ↓ (back to the
+# setup row), a click on the desk and a summon each drop the arm, IPC
+# `select notice:restart` only places the cursor and drops an arm also on
+# the notice already under it (review F1); the last two Enters run
+# omarchy-restart-shell once, as the click does (case restart-updated).
+run keys-notice "$fx/index-variants/not-initialised.json" 1920x1080 \
+  "summon;key:Up;key:Up;key:Return;key:Down;key:Up;key:Return;click:NEW CASE;call:select:notice:restart;key:Return;call:select:notice:restart;call:select:notices;key:Return;summon;call:select:notice:restart;key:Return;key:Return" \
+  HARNESS_MANIFEST="$updated_manifest" HARNESS_RECORD="$work/keys-notice.record"
+rkey="notice:restart:Restart the shell to finish the update:omarchy-restart-shell:restart"
+expect keys-notice 1 "$nk" ",,"
+shows keys-notice 1 "↑ at the top of a list reaches these buttons"
+expect keys-notice 2 "[$tv.setupRow.focused, .view.noticeKeys.id] | map(tostring) | join(\",\")" "true,"
+expect keys-notice 3 "$nk" "restart,restart,"
+expect keys-notice 3 "$tv.setupRow.focused" false
+expect keys-notice 3 '.marks.rings | length' 1
+shows keys-notice 3 "←/→ a button · Enter twice runs it · ↓ back to the list"
+expect keys-notice 4 "$nk" "restart,restart,$rkey"
+shows keys-notice 4 "Restart shell? Press Enter again."
+expect keys-notice 5 "[$tv.setupRow.focused, .view.noticeKeys.id, .view.arm.armed] | map(tostring) | join(\",\")" "true,,"
+expect keys-notice 6 "$nk" "restart,restart,"
+expect keys-notice 7 "$nk" "restart,restart,$rkey"
+expect keys-notice 8 "$nk" ",,"
+expect keys-notice 9 "[.call, ($nk)] | join(\"|\")" "ok|restart,restart,"
+expect keys-notice 10 "$nk" "restart,restart,$rkey"
+expect keys-notice 11 "[.call, ($nk)] | join(\"|\")" "ok|restart,restart,"
+expect keys-notice 12 "[.call, ($nk)] | join(\"|\")" "ok|restart,restart,"
+expect keys-notice 13 "$nk" "restart,restart,$rkey"
+expect keys-notice 14 "$nk" ",,"
+expect keys-notice 15 "[.call, ($nk)] | join(\"|\")" "ok|restart,restart,"
+expect keys-notice 16 "$nk" "restart,restart,$rkey"
+wait_record "$work/keys-notice.record"
+check "keys-notice: the second Enter runs omarchy-restart-shell once, as the click" \
+  "$(cat "$work/keys-notice.record" 2>/dev/null || true)" "$(cat "$work/restart-updated.record" 2>/dev/null || echo none)"
+clean_log keys-notice
+
+# Two notices, one with two buttons (an engine newer than the plugin:
+# Update, Copy): ↑ on Today's first row reaches the nearest notice, ↑/↓
+# walk the notices, ↓ on the last goes back to the first row; ←/→ walk the
+# buttons; Copy by key copies what its click copies.
+jq '.contractVersion = 99' "$sample" >"$work/index.contract99.json"
+run keys-notices "$work/index.contract99.json" 1920x1080 \
+  "summon;key:Down;key:Up;key:Up;key:Up;key:Down;key:Right;key:Right;key:Left;key:Down;key:Up;key:Right;key:Return;key:Return" \
+  HARNESS_MANIFEST="$updated_manifest" HARNESS_RECORD="$work/keys-notices.record" PATH="$work/bin-keys"
+expect keys-notices 1 '.view.notices | length' 2
+expect keys-notices 3 "$nk" "contract,terminal,"
+expect keys-notices 4 "$nk" "restart,restart,"
+expect keys-notices 5 "$nk" "restart,restart,"
+expect keys-notices 6 "$nk" "contract,terminal,"
+expect keys-notices 7 "$nk" "contract,copy,"
+expect keys-notices 8 "$nk" "contract,copy,"
+expect keys-notices 9 "$nk" "contract,terminal,"
+expect keys-notices 10 "[($nk), ($tv.cursor | tostring)] | join(\"|\")" ",,|0"
+expect keys-notices 12 "$nk" "contract,copy,"
+expect keys-notices 13 '.view.arm.armed | (startswith("notice:contract:The engine is newer than the plugin:") and endswith(":copy"))' true
+wait_record "$work/keys-notices.record"
+run keys-notices-click "$work/index.contract99.json" 1920x1080 "summon;click:Copy" \
+  HARNESS_MANIFEST="$updated_manifest" HARNESS_RECORD="$work/keys-notices-click.record" PATH="$work/bin-keys"
+wait_record "$work/keys-notices-click.record"
+check "keys-notices: Copy by key copies what the click copies" \
+  "$(cat "$work/keys-notices.record" 2>/dev/null || true)" "$(cat "$work/keys-notices-click.record" 2>/dev/null || echo none)"
+check "keys-notices: the click copies something" "$(head -n 1 "$work/keys-notices-click.record" 2>/dev/null)" wl-copy
+clean_log keys-notices
+clean_log keys-notices-click
+# A held ↑ stops at the top of the list; only a fresh ↑ goes on to the
+# notices (stage 2 F2): the habit "hold ↑, Enter Enter" never lands on a
+# notice's button.
+run keys-notice-held "$work/index.contract99.json" 1920x1080 "summon;key:Down;keyRepeat:Up;keyRepeat:Up;keyRepeat:Up;key:Up" \
+  HARNESS_MANIFEST="$updated_manifest"
+for i in 3 4 5; do expect keys-notice-held $i "[($nk), ($tv.cursor | tostring)] | join(\"|\")" ",,|0"; done
+expect keys-notice-held 6 "$nk" "contract,terminal,"
+clean_log keys-notice-held
+
+# The setup card's Create logbook (dev mode, not initialised): ↑ selects
+# the setup row (the card's first button under the cursor), ←/→ walk the
+# buttons, Enter arms; a click drops the arm, and so does IPC `select
+# setup` on the armed place; ↑ (nothing selected) and Enter twice open
+# the init terminal, as the click does.
+run keys-setup "$fx/index-variants/not-initialised.json" 1920x1080 \
+  "summon;key:Up;key:Right;key:Left;key:Return;click:NEW CASE;key:Up;key:Return;call:select:setup;key:Return;key:Return" \
+  HARNESS_RECORD="$work/keys-setup.record"
+sr="[$tv.setupRow.focused, $tv.setupRow.pick, .view.arm.armed] | map(tostring) | join(\",\")"
+expect keys-setup 1 "[$tv.setupRow.shown, $tv.setupRow.focused] | map(tostring) | join(\",\")" "true,false"
+shows keys-setup 1 "↑ from the first row, or a click, reaches its buttons"
+expect keys-setup 2 "$sr" "true,Create logbook,"
+expect keys-setup 2 '.marks.rings | length' 1
+shows keys-setup 2 "←/→ a button · Enter twice runs it · ↓ back to the list"
+expect keys-setup 3 "$sr" "true,Copy,"
+expect keys-setup 4 "$sr" "true,Create logbook,"
+expect keys-setup 5 "$sr" "true,Create logbook,setup:logbook:status:terminal"
+shows keys-setup 5 "Create logbook? Press Enter again."
+expect keys-setup 6 "$sr" "false,,"
+expect keys-setup 7 "$sr" "true,Create logbook,"
+expect keys-setup 8 "$sr" "true,Create logbook,setup:logbook:status:terminal"
+# IPC select of the same place drops the arm (review F5: the arm id stays)
+expect keys-setup 9 "[.call, ($sr)] | join(\"|\")" "ok|true,Create logbook,"
+expect keys-setup 10 "$sr" "true,Create logbook,setup:logbook:status:terminal"
+expect keys-setup 11 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+wait_record "$work/keys-setup.record"
+run keys-setup-click "$fx/index-variants/not-initialised.json" 1920x1080 "summon;clickName:setup-logbook-terminal" \
+  HARNESS_RECORD="$work/keys-setup-click.record"
+wait_record "$work/keys-setup-click.record"
+check "keys-setup: Create logbook by key opens what the click opens, once" \
+  "$(cat "$work/keys-setup.record" 2>/dev/null || true)" "$(cat "$work/keys-setup-click.record" 2>/dev/null || echo none)"
+clean_log keys-setup
+clean_log keys-setup-click
+
+# Copy by key, on a stacked desk (700 px): ↑ only selects the row (the
+# list stays, "Enter shows it"), Enter shows the card, → picks Copy,
+# Enter arms; a click on the card's Back drops the arm and the row; ↑,
+# Enter, →, and Enter twice copy what the click copies.
+run keys-setup-stacked "$fx/index-variants/not-initialised.json" 700x900 \
+  "summon;key:Up;key:Return;key:Right;key:Return;click:‹ Back to the list;key:Up;key:Return;key:Right;key:Return;key:Return" \
+  HARNESS_RECORD="$work/keys-setup-stacked.record" PATH="$work/bin-keys"
+expect keys-setup-stacked 2 "[.view.detailShown, $tv.setupRow.focused] | map(tostring) | join(\",\")" "false,true"
+shows keys-setup-stacked 2 "Enter shows it · ↓ back to the list"
+expect keys-setup-stacked 3 "[.view.detailShown, .view.arm.armed] | map(tostring) | join(\",\")" "true,"
+expect keys-setup-stacked 4 "$sr" "true,Copy,"
+expect keys-setup-stacked 5 "$sr" "true,Copy,setup:logbook:status:copy"
+expect keys-setup-stacked 6 "[.view.detailShown, .view.arm.armed, $tv.setupRow.focused] | map(tostring) | join(\",\")" "false,,false"
+expect keys-setup-stacked 7 "[.view.detailShown, $tv.setupRow.focused] | map(tostring) | join(\",\")" "false,true"
+expect keys-setup-stacked 8 "[.view.detailShown, .view.arm.armed] | map(tostring) | join(\",\")" "true,"
+expect keys-setup-stacked 10 "$sr" "true,Copy,setup:logbook:status:copy"
+wait_record "$work/keys-setup-stacked.record"
+run keys-setup-copy "$fx/index-variants/not-initialised.json" 1920x1080 "summon;clickName:setup-logbook-copy" \
+  HARNESS_RECORD="$work/keys-setup-copy.record" PATH="$work/bin-keys"
+wait_record "$work/keys-setup-copy.record"
+check "keys-setup-stacked: Copy by key copies what the click copies, once" \
+  "$(cat "$work/keys-setup-stacked.record" 2>/dev/null || true)" "$(cat "$work/keys-setup-copy.record" 2>/dev/null || echo none)"
+clean_log keys-setup-stacked
+clean_log keys-setup-copy
+
+# The snapshot step: Grant by key opens the grant script (case snapper's
+# record); Not now by key writes `setupSnapshots` once; Settings › Capture
+# *Offer again* by key takes it out again (Enter reaches it, Enter twice;
+# IPC `select offer` on the armed button drops the arm).
+run keys-setup-snap "$fx/index-variants/snapper-degraded.json" 1920x1080 \
+  "summon;key:Up;key:Return;key:Return;summon;key:Up;key:Right;key:Right;key:Return;key:Return;text:,;key:Down;key:Return;key:Return;call:select:offer;key:Return;key:Return" \
+  HARNESS_RECORD="$work/keys-setup-snap.record"
+expect keys-setup-snap 3 "$sr" "true,Grant,setup:snapshots:snapper:terminal"
+expect keys-setup-snap 4 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+expect keys-setup-snap 8 "$sr" "true,Not now,"
+expect keys-setup-snap 9 '[(.writes | length), .view.arm.armed] | map(tostring) | join(",")' "0,setup:snapshots:snapper:later"
+expect keys-setup-snap 10 '[(.writes | length), (.writes | last | .settings.setupSnapshots), .view.setup] | map(tostring) | join("|")' "1|not-now|"
+expect keys-setup-snap 13 "[$tv.control, $tv.hint] | join(\",\")" "offer,←/→ changes it · Enter twice sets it · ↑/↓ another control · Esc back to the list"
+expect keys-setup-snap 14 "[(.writes | length), .view.arm.armed] | map(tostring) | join(\",\")" "1,settings:offer:again"
+expect keys-setup-snap 15 "[.call, $tv.control, .view.arm.armed, (.writes | length)] | map(tostring) | join(\",\")" "ok,offer,,1"
+expect keys-setup-snap 16 "[(.writes | length), .view.arm.armed] | map(tostring) | join(\",\")" "1,settings:offer:again"
+expect keys-setup-snap 17 '[(.writes | length), (.writes | last | .settings | has("setupSnapshots")), .view.setup] | map(tostring) | join("|")' "2|false|$optional"
+wait_record "$work/keys-setup-snap.record"
+check "keys-setup-snap: Grant by key opens what the click opens, once" \
+  "$(cat "$work/keys-setup-snap.record" 2>/dev/null || true)" "$(cat "$work/snapper.record" 2>/dev/null || echo none)"
+clean_log keys-setup-snap
+
+# *Agent sorts* (live): ↑ from the first row reaches the proposal, ↑ again
+# the button (no row, no proposal selected); Enter and Space do nothing
+# there (Enter never starts an agent, WP-122), `a` arms; ↓ (to the proposal), a
+# row click each drop the arm; IPC `select ask` only places the cursor;
+# `a` twice asks once, the click's argv, and Enter and Space asked nothing.
+mkdir -p "$work/home-keys-ask"
+run keys-ask "" 1920x1080 \
+  "summon:$cl;key:Up;key:Up;key:Return;key:Return;key:Space;text:a;key:Down;key:Up;text:a;click:ollama.service;call:select:ask;text:a;text:a;settle;view" \
+  HOME="$work/home-keys-ask" FAKE_SELDON_FIXTURE="$sample"
+ak="[$tt.askFocused, $tt.askArmed, $tt.shown, $tv.cursor] | map(tostring) | join(\",\")"
+expect keys-ask 1 "$ak" "false,false,false,0"
+shows keys-ask 1 "↑ from the top of the list reaches it"
+expect keys-ask 2 "$ak" "false,false,true,-1"
+expect keys-ask 3 "$ak" "true,false,false,-1"
+expect keys-ask 3 '.marks.rings | length' 1
+expect keys-ask 3 '.marks.rows | join(",")' ""
+shows keys-ask 3 "a twice starts it · ↓ back to the list"
+for i in 4 5 6; do expect keys-ask $i "[($ak), .view.arm.armed, .view.opened] | map(tostring) | join(\"|\")" "true,false,false,-1||true"; done
+expect keys-ask 7 "[($ak), .view.arm.armed] | join(\"|\")" "true,true,false,-1|ask:triage"
+shows keys-ask 7 "Agent sorts 6 open changes? Press a again."
+expect keys-ask 8 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,true,-1|"
+expect keys-ask 9 "$ak" "true,false,false,-1"
+expect keys-ask 10 "$tt.askArmed" true
+expect keys-ask 11 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,false,1|"
+expect keys-ask 12 "[.call, ($ak)] | join(\"|\")" "ok|true,false,false,-1"
+expect keys-ask 13 "$tt.askArmed" true
+expect keys-ask 16 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+argv_check keys-ask "$work/home-keys-ask" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)")"
+clean_log keys-ask
+# … on a stacked desk the button is in the list: ↑ ↑, Enter (nothing, no
+# detail either) and `a` twice ask, no detail opens on the way.
+mkdir -p "$work/home-keys-ask-stacked"
+run keys-ask-stacked "" 700x900 "summon:$cl;key:Up;key:Up;key:Return;text:a;text:a;settle" \
+  HOME="$work/home-keys-ask-stacked" FAKE_SELDON_FIXTURE="$sample"
+for i in 2 3 4 5; do expect keys-ask-stacked $i .view.detailShown false; done
+expect keys-ask-stacked 3 "$ak" "true,false,false,-1"
+expect keys-ask-stacked 4 "$ak" "true,false,false,-1"
+expect keys-ask-stacked 5 "$tt.askArmed" true
+argv_check keys-ask-stacked "$work/home-keys-ask-stacked" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)")"
+clean_log keys-ask-stacked
+
+# Settings › Appearance: Enter reaches the slider; Enter on the stored
+# width arms nothing; ← previews 90 %, Enter arms, IPC `select width`
+# drops arm and preview (review F5); ← ← previews 80 % (nothing written),
+# Enter Enter writes it; ↓ the presets (80 % is none: the ring on the
+# group, review F4), ← previews 75, Enter arms, ↓ (another control) drops
+# arm and preview, ↑ ← Enter Enter writes 75; ↓ the sidebar, → Collapsed,
+# Enter arms, a click drops it; Enter ↓ ↓ → Enter Enter writes it; Esc
+# leaves the controls. Each write is the one the slider's release, the
+# preset and the sidebar click make (case keys-settings-click).
+run keys-settings "$sample" 1920x1080 \
+  "summon;text:,;key:Return;key:Return;key:Left;key:Return;call:select:width;key:Left;key:Left;key:Return;key:Return;wait:settings.pending=false;key:Down;key:Left;key:Return;key:Down;key:Up;key:Left;key:Return;key:Return;wait:settings.pending=false;key:Down;key:Right;key:Return;click:Sidebar;key:Return;key:Down;key:Down;key:Right;key:Return;key:Return;key:Escape" \
+  HARNESS_SETTINGS="$entry"
+sk="[$tv.control, .view.widthPct, .view.settings.preview, (.writes | length), .view.arm.armed] | map(tostring) | join(\",\")"
+expect keys-settings 2 "$tv.hint" "Enter reaches the controls: ↑/↓ a control, ←/→ its value, Enter twice sets it"
+shows keys-settings 2 "Enter reaches the controls: ↑/↓ a control, ←/→ its value, Enter twice sets it"
+expect keys-settings 3 "$sk" "width,100,-1,0,"
+expect keys-settings 3 '.marks.rings | length' 1
+expect keys-settings 4 "$sk" "width,100,-1,0,"
+expect keys-settings 5 "$sk" "width,90,90,0,"
+expect keys-settings 6 "$sk" "width,90,90,0,settings:width:90"
+expect keys-settings 7 "[.call, ($sk)] | join(\"|\")" "ok|width,100,-1,0,"
+expect keys-settings 9 "$sk" "width,80,80,0,"
+expect keys-settings 10 "$sk" "width,80,80,0,settings:width:80"
+shows keys-settings 10 "Set the desk width to 80 %? Press Enter again."
+expect keys-settings 11 "$sk" "width,80,-1,1,"
+expect keys-settings 13 "$sk" "presets,80,-1,1,"
+expect keys-settings 13 '.marks.rings | length' 1
+expect keys-settings 14 "$sk" "presets,75,75,1,"
+expect keys-settings 15 "$sk" "presets,75,75,1,settings:presets:75"
+expect keys-settings 16 "$sk" "sidebar,80,-1,1,"
+expect keys-settings 17 "$sk" "presets,80,-1,1,"
+expect keys-settings 20 "$sk" "presets,75,-1,2,"
+expect keys-settings 23 "[$tv.control, $tv.sidebarPick, .view.arm.armed] | join(\",\")" "sidebar,collapsed,"
+expect keys-settings 24 "[$tv.control, $tv.sidebarPick, .view.arm.armed] | join(\",\")" "sidebar,collapsed,settings:sidebar:collapsed"
+shows keys-settings 24 "Set the sidebar to Collapsed? Press Enter again."
+expect keys-settings 25 "[$tv.control, .view.arm.armed, (.writes | length)] | map(tostring) | join(\",\")" ",,2"
+expect keys-settings 30 "[$tv.control, .view.arm.armed, (.writes | length)] | map(tostring) | join(\",\")" "sidebar,settings:sidebar:collapsed,2"
+expect keys-settings 31 "[(.writes | length), .view.layout.sidebar] | map(tostring) | join(\",\")" "3,icons"
+expect keys-settings 32 "[$tv.control, .view.section] | join(\",\")" ",settings"
+writes_of() { sed -n "\$p" "$work/$1.steps" | jq -c '[.writes[] | .settings]'; }
+run keys-settings-click "$sample" 1920x1080 \
+  "summon;text:,;drag:deskWidthSlider:0.98,0.62;release;wait:settings.pending=false;click:75 %;wait:settings.pending=false;click:Collapsed" \
+  HARNESS_SETTINGS="$entry"
+check "keys-settings: the keys write what the release and the clicks write" "$(writes_of keys-settings)" "$(writes_of keys-settings-click)"
+check "keys-settings-click: three writes" "$(writes_of keys-settings-click | jq length)" 3
+clean_log keys-settings
+clean_log keys-settings-click
+# The wheel and the keys on the slider (review F2): a wheel notch's
+# pending write goes first when ← previews, and the keys' preview is
+# never written by the wheel's timer; a wheel notch after a key preview
+# is the wheel's own, and leaving the control keeps it: its timer writes it.
+run keys-settings-wheel "$sample" 1920x1080 \
+  "summon;text:,;key:Return;wheel:deskWidthSlider:-120;key:Left;pause:1500;key:Escape;key:Return;key:Left;wheel:deskWidthSlider:-120;key:Down;pause:1500" \
+  HARNESS_SETTINGS="$entry"
+expect keys-settings-wheel 4 "$sk" "width,90,90,0,"
+expect keys-settings-wheel 5 "[($sk), (.writes | map(.settings.deskWidth) | join(\"+\"))] | join(\"|\")" "width,80,80,1,|90"
+expect keys-settings-wheel 6 "[($sk), (.writes | map(.settings.deskWidth) | join(\"+\"))] | join(\"|\")" "width,80,80,1,|90"
+expect keys-settings-wheel 9 "$sk" "width,80,80,1,"
+expect keys-settings-wheel 10 "$sk" "width,70,70,1,"
+expect keys-settings-wheel 12 "[($sk), (.writes | map(.settings.deskWidth) | join(\"+\"))] | join(\"|\")" "presets,70,-1,2,|90+70"
+clean_log keys-settings-wheel
+
+# ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live
 # screenshots): Today at 100 % and 50 %, Settings, the Changelog, Work,
 # Decisions, System, Memory, the Prime Radiant at 100 % and 50 % (and a

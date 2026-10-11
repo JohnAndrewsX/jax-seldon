@@ -37,7 +37,12 @@ import "Model.js" as Model
 // goes to Today and `+` to Work with the key. A focused field keeps every
 // key (Esc in it is the field's). Tab does nothing: the desk is not a bar
 // popup. Writing actions arm on the first press (Arm.qml): any other key
-// disarms. A held key repeats only where it moves (keyPressed).
+// disarms. A held key repeats only where it moves (keyPressed). Every
+// button has a key path (WP-202): ↑ at the top of a section's list goes
+// on to the notices' buttons (below), the sections reach their own
+// (Today's setup card, the Changelog's Agent sorts, Settings' controls);
+// Enter arms, the second Enter runs what the click runs, and a click on
+// the desk, a summon or a selection is a detour that drops the arm.
 //
 // Settings writes (§1): Settings › Appearance and the sidebar's fold button
 // call writeSetting(), which sends the whole shell.json entry with the one
@@ -69,6 +74,10 @@ Item {
   property bool detailShown: false
   property string searchText: ""
   property bool noticesFolded: false
+  // The keys' cursor on a notice's button (WP-202): the notice's id and
+  // the button's action id, "" while the cursor is in the section.
+  property string noticeId: ""
+  property string noticeAction: ""
 
   // ---- Settings: the live preview while the slider is dragged or
   // scrolled (-1 none), and what was written until the shell's reload
@@ -113,6 +122,15 @@ Item {
   // first notice; { text, count, tone }.
   readonly property var chip: Model.deskChip(notices.items.map(function(n) { return { title: n.banner.title, tone: String(n.banner.tone || "") } }),
     root.setup ? root.setup.headline : "")
+  // The notices' buttons the keys reach, the one under the cursor and the
+  // arm id it presses: it names the notice's title too, so an arm made on
+  // one notice never runs the button of the notice that replaced it.
+  readonly property var noticeTargets: Model.noticeTargets(notices.items)
+  readonly property var noticeTarget: root.findNotice(root.noticeId)
+  readonly property var noticeButton: root.noticeTarget ? Model.pickAction(root.noticeTarget, root.noticeAction) : null
+  readonly property string noticeKey: root.noticeButton ? root.noticeButton.key : ""
+  onNoticeKeyChanged: root.disarmPrefix("notice:")
+  onNoticeTargetChanged: if (root.noticeId !== "" && !root.noticeTarget) root.leaveNotices()
 
   readonly property color foreground: Color.popups.text
   readonly property string fontFamily: Style.font.family
@@ -121,6 +139,9 @@ Item {
 
   function open(payloadJson) {
     var p = Model.deskPayload(payloadJson)
+    // a summon is a detour: the keys' place on a button goes (WP-202)
+    root.leaveNotices()
+    if (root.currentSection) root.currentSection.leaveKeys()
     // Every open, also of an open desk (a summon, the pill of another
     // monitor): to the monitor Hyprland has focused.
     window.retarget()
@@ -139,6 +160,7 @@ Item {
   }
 
   function close() {
+    root.leaveNotices()
     root.arm.disarm()
     root.flushWheel()
     root.previewWidth = -1
@@ -194,6 +216,7 @@ Item {
   function section(id) {
     var target = String(id)
     if (!Model.deskSection(target)) return "unknown section"
+    root.leaveNotices()
     if (target !== root.sectionId) {
       root.remember()
       root.sectionId = target
@@ -212,9 +235,90 @@ Item {
 
   // Select an item of the current section ("ok"), else "not found".
   function select(id) {
+    // `notices` or `notice:<id>`: the cursor on that notice's first button
+    // (navigation only, WP-202)
+    var notice = Model.noticeSelectTarget(id)
+    if (notice !== null) return root.enterNotices(notice === "" ? "first" : notice) ? "ok" : "not found"
+    root.leaveNotices()
     var s = root.currentSection
+    // a selection by IPC is a detour too: it places, it never keeps an arm
+    if (s) s.leaveKeys()
     if (!s || !s.select(String(id))) return "not found"
     return "ok"
+  }
+
+  // ---- The notices by key (WP-202): ↑ at the top of a section's list
+  // (Section.move answers false) reaches the nearest notice with a
+  // button; ↑/↓ the notices, ←/→ a notice's buttons, Enter arms the one
+  // under the cursor and the second Enter runs it as its click does
+  // (Notices.fix → Service.fix); ↓ on the last notice or Esc goes back to
+  // the section, any other key leaves first. Any key that does not press
+  // drops the arm (keyPressed), and so do a click on the desk, a summon,
+  // a section or selection change, a changed or gone notice (noticeKey).
+
+  function disarmPrefix(prefix) {
+    if (root.arm.armedId.indexOf(prefix) === 0) root.arm.disarm()
+  }
+
+  function findNotice(id) {
+    if (id === "") return null
+    var list = root.noticeTargets
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]
+    return null
+  }
+
+  // at: "first", "last" or a notice id.
+  function enterNotices(at) {
+    var list = root.noticeTargets
+    var t = list.length === 0 ? null : at === "last" ? list[list.length - 1] : at === "first" ? list[0] : root.findNotice(at)
+    if (!t) return false
+    if (root.currentSection) root.currentSection.leaveKeys()
+    // a new place, also the same one again (IPC select): never armed
+    root.disarmPrefix("notice:")
+    root.noticesFolded = false
+    root.noticeId = t.id
+    root.noticeAction = t.actions[0].id
+    return true
+  }
+
+  function leaveNotices() {
+    root.noticeId = ""
+    root.noticeAction = ""
+    root.disarmPrefix("notice:")
+  }
+
+  // Back to the section, the cursor on the top of its list.
+  function noticesBack() {
+    root.leaveNotices()
+    if (root.currentSection) root.currentSection.enterFromTop()
+  }
+
+  function noticeStep(dy) {
+    var list = root.noticeTargets
+    var at = -1
+    for (var i = 0; i < list.length; i++) if (list[i].id === root.noticeId) at = i
+    var next = at + dy
+    if (next < 0) return
+    if (next >= list.length) {
+      root.noticesBack()
+      return
+    }
+    root.noticeId = list[next].id
+    root.noticeAction = list[next].actions[0].id
+  }
+
+  function pressNotice() {
+    var b = root.noticeButton
+    if (!b) return
+    if (root.arm.press(b.key, Model.keyArmHint(b.label))) notices.fix(root.noticeId, b.id)
+  }
+
+  // Any press of a mouse button on the desk (WP-202): a click is a
+  // detour for the keys' place on a button and drops its arm; the click
+  // itself then does what it does.
+  function pointerPressed() {
+    root.leaveNotices()
+    if (root.currentSection) root.currentSection.leaveKeys()
   }
 
   // The header chip while setup steps are open: Today's overview, where
@@ -320,13 +424,35 @@ Item {
       root.section(Model.deskCycle(root.sectionId, k === Qt.Key_Down ? 1 : -1))
       return true
     }
+    if (root.noticeId !== "") {
+      if (k === Qt.Key_Up || t === "k" || k === Qt.Key_Down || t === "j") {
+        root.noticeStep(k === Qt.Key_Up || t === "k" ? -1 : 1)
+        return true
+      }
+      if (k === Qt.Key_Left || k === Qt.Key_Right || t === "h" || t === "l") {
+        root.noticeAction = Model.stepAction(root.noticeTarget, root.noticeAction, k === Qt.Key_Left || t === "h" ? -1 : 1)
+        return true
+      }
+      if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space) {
+        root.pressNotice()
+        return true
+      }
+      if (k === Qt.Key_Escape) {
+        root.noticesBack()
+        return true
+      }
+      if (k === Qt.Key_Tab || k === Qt.Key_Backtab) return true
+      root.leaveNotices()
+    }
     if (k === Qt.Key_Escape) {
       root.escapeKey()
       return true
     }
     if (k === Qt.Key_Tab || k === Qt.Key_Backtab) return true
     if (k === Qt.Key_Up || t === "k") {
-      if (root.currentSection) root.currentSection.move(-1)
+      // at the top of the list: on to the notices on a fresh press; a held
+      // ↑ stops at the top (WP-202 stage 2 F2)
+      if (root.currentSection && !root.currentSection.move(-1) && !event.isAutoRepeat) root.enterNotices("last")
       return true
     }
     if (k === Qt.Key_Down || t === "j") {
@@ -474,6 +600,8 @@ Item {
         fits: notices.snapperBanner.tooltipFits
       },
       noticesFolded: root.noticesFolded,
+      // the keys' cursor on a notice's button (WP-202)
+      noticeKeys: { id: root.noticeId, action: root.noticeAction, key: root.noticeKey },
       // the setup card's state, whichever section is shown (WP-119)
       setup: root.setup ? root.setup.headline : "",
       setupLater: !!root.service && root.service.setupLater,
@@ -623,6 +751,11 @@ Item {
             width: parent.width
             service: root.service
             folded: root.noticesFolded
+            cursorId: root.noticeId
+            cursorAction: root.noticeAction
+            keyHint: root.noticeKey !== "" && root.arm.armedId === root.noticeKey ? root.arm.hint
+              : Model.noticeHint(root.noticeId !== "")
+            keyHintShown: root.noticeTargets.length > 0
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
@@ -728,6 +861,17 @@ Item {
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
+          }
+        }
+
+        // Over everything on the desk: sees each press of a mouse button
+        // and lets it through (WP-202, pointerPressed).
+        MouseArea {
+          anchors.fill: parent
+          acceptedButtons: Qt.AllButtons
+          onPressed: function(mouse) {
+            root.pointerPressed()
+            mouse.accepted = false
           }
         }
       }

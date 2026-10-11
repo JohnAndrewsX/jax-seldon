@@ -3685,6 +3685,108 @@ test("WP-126c: ↑ from the first Changelog row reaches the proposal, ↓ goes b
   assert.strictEqual(M.proposalHint(false, true), "↑ from the first row, or a click, opens it")
 })
 
+test("WP-202: the keys' path to the desk's buttons", () => {
+  // the arm's hint and the key line
+  assert.strictEqual(M.keyArmHint("Restart shell"), "Restart shell? Press Enter again.")
+  assert.strictEqual(M.keyArmHint("Agent sorts 6 open changes", "a"), "Agent sorts 6 open changes? Press a again.")
+  assert.strictEqual(M.noticeHint(false), "↑ at the top of a list reaches these buttons")
+  assert.strictEqual(M.noticeHint(true), "←/→ a button · Enter twice runs it · ↓ back to the list")
+  // notices: only the ones a click is wired to, only with buttons; the key
+  // names the notice's title, so a replaced notice never shares an arm
+  const items = [
+    { id: "restart", banner: { title: "Restart the shell to finish the update", command: "omarchy-restart-shell", actions: [{ id: "restart", label: "Restart shell" }] } },
+    { id: "status", banner: { title: "Index is stale", actions: [{ id: "capture", label: "Capture now" }] } },
+    { id: "rulesNotice", banner: { title: "Rules updated", actions: [{ id: "x", label: "X" }] } },
+    { id: "capture", banner: { title: "Capture warned", actions: [] } },
+  ]
+  const t = M.noticeTargets(items)
+  same(t.map((n) => n.id), ["restart", "status"])
+  assert.strictEqual(t[0].actions[0].key, "notice:restart:Restart the shell to finish the update:omarchy-restart-shell:restart")
+  // what the fix runs is in the key too: the mismatch banner keeps its
+  // title and action but runs the plugin's or the engine's update by state
+  // (stage 2 F3); the script wins over the command
+  const mismatch = (pluginOlder) => M.noticeTargets([{ id: "status", banner: M.bannerFor("contractMismatch",
+    { indexContractVersion: pluginOlder ? M.CONTRACT_VERSION + 1 : M.CONTRACT_VERSION - 1 }) }])[0].actions[0]
+  assert.strictEqual(mismatch(true).id, "terminal")
+  assert.strictEqual(mismatch(true).id, mismatch(false).id)
+  assert.notStrictEqual(mismatch(true).key, mismatch(false).key)
+  assert.ok(mismatch(true).key.includes(M.UPDATE_PLUGIN_SCRIPT))
+  assert.ok(mismatch(false).key.includes(M.UPDATE_ENGINE_SCRIPT))
+  const other = M.noticeTargets([{ id: "status", banner: { title: "Create your logbook", actions: [{ id: "capture", label: "Capture now" }] } }])
+  assert.notStrictEqual(other[0].actions[0].key, t[1].actions[0].key)
+  same(M.noticeTargets(null), [])
+  assert.strictEqual(M.noticeSelectTarget("notices"), "")
+  assert.strictEqual(M.noticeSelectTarget("notice:restart"), "restart")
+  assert.strictEqual(M.noticeSelectTarget("notice:"), null)
+  assert.strictEqual(M.noticeSelectTarget("restart"), null)
+  // the setup card: the current step's buttons, the key names step, banner and action
+  const setup = { steps: [
+    { id: "engine", done: true, current: false, actions: [{ id: "terminal", label: "Install" }] },
+    { id: "logbook", current: true, ready: true, banner: "status", actions: [{ id: "terminal", label: "Create logbook" }, { id: "copy", label: "Copy" }] },
+  ] }
+  const st = M.setupTargets(setup)
+  same([st.step, st.banner, st.actions.map((a) => a.key)], ["logbook", "status", ["setup:logbook:status:terminal", "setup:logbook:status:copy"]])
+  assert.strictEqual(M.setupTargets({ steps: [Object.assign({}, setup.steps[1], { banner: "initAsk" })] }).actions[0].key,
+    "setup:logbook:initAsk:terminal")
+  assert.strictEqual(M.setupTargets(null), null)
+  assert.strictEqual(M.pickAction(st, "copy").label, "Copy")
+  assert.strictEqual(M.pickAction(st, "gone").label, "Create logbook")
+  assert.strictEqual(M.stepAction(st, "terminal", 1), "copy")
+  assert.strictEqual(M.stepAction(st, "copy", 1), "copy")
+  assert.strictEqual(M.stepAction(st, "terminal", -1), "terminal")
+  assert.strictEqual(M.setupHint(false), "↑ from the first row, or a click, reaches its buttons")
+  assert.strictEqual(M.setupHint(true, false), "←/→ a button · Enter twice runs it · ↓ back to the list")
+  assert.strictEqual(M.setupHint(true, true), "Enter shows it · ↓ back to the list")
+  // Today: the setup row above the first row; ↑ there goes out to the notices
+  const tm = (o, dy) => M.todayMove(Object.assign({ rows: 4, cursor: 0, setup: true, setupFocused: false }, o), dy)
+  same(tm({}, -1), { setup: true, row: -1, out: false })
+  same(tm({ cursor: -1 }, -1), { setup: true, row: -1, out: false })
+  same(tm({ setup: false }, -1), { setup: false, row: 0, out: true })
+  same(tm({ setup: false, cursor: -1 }, -1), { setup: false, row: 3, out: false })
+  same(tm({ cursor: 2 }, -1), { setup: false, row: 1, out: false })
+  same(tm({ cursor: -1 }, 1), { setup: false, row: 0, out: false })
+  same(tm({ setupFocused: true, cursor: -1 }, 1), { setup: false, row: 0, out: false })
+  same(tm({ setupFocused: true, cursor: -1 }, -1), { setup: true, row: -1, out: true })
+  same(tm({ rows: 0, cursor: -1 }, -1), { setup: true, row: -1, out: false })
+  same(tm({ rows: 0, cursor: -1, setup: false }, -1), { setup: false, row: -1, out: true })
+  same(tm({ rows: 0, cursor: -1, setupFocused: true }, 1), { setup: true, row: -1, out: false })
+  // the Changelog's top: the proposal, the first row without one, an empty list without one
+  const top = (o) => M.changelogAtTop(Object.assign({ rows: 6, cursor: 0, cursorRow: 0, proposal: false, triageShown: false }, o))
+  assert.strictEqual(top({}), true)
+  assert.strictEqual(top({ proposal: true }), false)
+  assert.strictEqual(top({ proposal: true, triageShown: true, cursor: -1 }), true)
+  assert.strictEqual(top({ cursor: 2, cursorRow: 2 }), false)
+  assert.strictEqual(top({ cursor: -1, cursorRow: 0 }), true)
+  assert.strictEqual(top({ cursor: -1, cursorRow: 3 }), false)
+  assert.strictEqual(top({ rows: 0, cursor: -1 }), true)
+  assert.strictEqual(M.askHint(false), "↑ from the top of the list reaches it")
+  // `a` twice, as on a case: Enter never starts an agent (WP-122)
+  assert.strictEqual(M.askHint(true), "a twice starts it · ↓ back to the list")
+  // Settings: the controls the keys walk, the width ←/→ picks
+  same(M.settingsControls("appearance", false), ["width", "presets", "sidebar"])
+  same(M.settingsControls("capture", true), ["offer"])
+  same(M.settingsControls("capture", false), [])
+  same(M.settingsControls("quiet", true), [])
+  assert.strictEqual(M.keyWidth("width", 100, 1), 100)
+  assert.strictEqual(M.keyWidth("width", 100, -1), 90)
+  assert.strictEqual(M.keyWidth("width", 50, -1), 50)
+  // a notch of the grid, also from a preset off it (review F3)
+  assert.strictEqual(M.keyWidth("width", 67, 1), 70)
+  assert.strictEqual(M.keyWidth("width", 67, -1), 60)
+  assert.strictEqual(M.keyWidth("width", 75, 1), 80)
+  assert.strictEqual(M.keyWidth("width", 75, -1), 70)
+  assert.strictEqual(M.keyWidth("width", 63, -1), 60)
+  assert.strictEqual(M.keyWidth("width", 90, 1), 100)
+  assert.strictEqual(M.keyWidth("presets", 100, -1), 75)
+  assert.strictEqual(M.keyWidth("presets", 50, -1), 50)
+  assert.strictEqual(M.keyWidth("presets", 50, 1), 67)
+  assert.strictEqual(M.keyWidth("presets", 70, 1), 75)
+  assert.strictEqual(M.keyWidth("presets", 70, -1), 67)
+  assert.strictEqual(M.keyWidth("presets", 100, 1), 100)
+  assert.match(M.settingsHint(false), /^Enter reaches the controls/)
+  assert.match(M.settingsHint(true), /Enter twice sets it/)
+})
+
 test("triage argv: ids only, one --item, never propose (ADR-0036)", () => {
   const good = [
     ["agent", "ask", "triage", "--json"],

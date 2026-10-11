@@ -21,6 +21,25 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
+- Every button on the desk works by key now: the notices, the setup card, *Agent sorts* and the width and sidebar settings.
+
+### Plugin
+
+- **Every desk button has a key path.** ↑ at the top of a list reaches
+  the notices' buttons (*Restart shell*, *Install*, *Update rules*, …),
+  ↑ on Today's first row the setup card's row, ↑ on the Changelog's
+  proposal *Agent sorts N open changes*, Enter on Settings › Appearance
+  the width slider, the presets and the sidebar (and Capture's *Offer
+  again*). ←/→ pick a button or a value (the width as a preview), Enter
+  arms and the second Enter runs exactly what the click runs; *Agent
+  sorts* takes `a` twice, since Enter never starts an agent. Any other
+  key, a click on the desk, a summon or another selection cancels; a
+  held ↑ stops at the top of a list. A dim
+  line beside each names the keys. `shell call jax.seldon select
+  notices|setup|ask|width|…` places the cursor for scripts, never
+  pressing. This closes the 0.2.0 note that these buttons still needed a
+  pointer.
+
 ## [0.2.0] - 2026-10-11
 
 **Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,

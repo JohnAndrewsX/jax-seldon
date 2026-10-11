@@ -631,6 +631,173 @@ function isProposalTarget(id, triageView) {
   return id === "proposal" || (typeof triageView.id === "string" && triageView.id !== "" && id === triageView.id)
 }
 
+// ---- The keys' path to the desk's buttons (WP-202, SPEC-PLUGIN §5.3).
+// The cursor reaches a button above the list (the notices, Today's setup
+// row, the Changelog's *Agent sorts*) or in the detail (Settings'
+// controls); Enter arms it, a second Enter runs it, as the click does; any
+// other key, a click or another selection drops the arm. An arm's id
+// names what it runs (`key` below), so an arm made for one button never
+// runs another that took its place.
+
+// The arm's hint: "<label>? Press Enter again." (or the key that presses
+// it: `a` on *Agent sorts*, since Enter never starts an agent)
+function keyArmHint(label, key) {
+  return String(label) + "? Press " + (key || "Enter") + " again."
+}
+
+var KEY_BUTTONS_HINT = "←/→ a button · Enter twice runs it · ↓ back to the list"
+
+// The notices that take the keys, in the desk's order (Notices.qml wires
+// a click to exactly these).
+var NOTICE_KEY_IDS = ["restart", "status", "contract", "snapper", "rules"]
+
+// The notices' buttons as key targets: [{ id, actions: [{ id, label,
+// key }] }] for each notice with a button; `items` is Notices.items. The
+// key names the notice, its title, what its fix runs (the banner's script,
+// else its command: the mismatch banner picks the plugin's or the
+// engine's update by state) and the action.
+function noticeTargets(items) {
+  var out = []
+  var list = Array.isArray(items) ? items : []
+  for (var i = 0; i < list.length; i++) {
+    var n = list[i]
+    if (!isObject(n) || NOTICE_KEY_IDS.indexOf(n.id) === -1 || !isObject(n.banner)) continue
+    var actions = Array.isArray(n.banner.actions) ? n.banner.actions : []
+    if (actions.length === 0) continue
+    var title = String(n.banner.title || "")
+    var payload = String(n.banner.script || n.banner.command || "")
+    out.push({ id: n.id, actions: actions.map(function(a) {
+      return { id: String(a.id), label: String(a.label), key: "notice:" + n.id + ":" + title + ":" + payload + ":" + a.id }
+    }) })
+  }
+  return out
+}
+
+// The line under the notices: how the keys reach them, and there what
+// they do.
+function noticeHint(inside) {
+  return inside ? KEY_BUTTONS_HINT : "↑ at the top of a list reaches these buttons"
+}
+
+// IPC `select notices` (the first notice with a button) or `select
+// notice:<id>`: the id, "" for the first, null when it names no notice.
+function noticeSelectTarget(id) {
+  var s = String(id)
+  if (s === "notices") return ""
+  return s.indexOf("notice:") === 0 && s.length > 7 ? s.slice(7) : null
+}
+
+// The setup card's current step as key targets: { step, banner, actions:
+// [{ id, label, key, ready }] }, null without a card or a current step.
+function setupTargets(setup) {
+  var steps = isObject(setup) && Array.isArray(setup.steps) ? setup.steps : []
+  for (var i = 0; i < steps.length; i++) {
+    var s = steps[i]
+    if (!isObject(s) || s.current !== true) continue
+    var actions = Array.isArray(s.actions) ? s.actions : []
+    if (actions.length === 0) return null
+    return { step: String(s.id), banner: String(s.banner || ""), actions: actions.map(function(a) {
+      return { id: String(a.id), label: String(a.label), ready: s.ready === true,
+        key: "setup:" + s.id + ":" + (s.banner || "") + ":" + a.id }
+    }) }
+  }
+  return null
+}
+
+// The action with id `pick` of targets (setupTargets, one notice), else
+// the first; null without one.
+function pickAction(targets, pick) {
+  var actions = isObject(targets) && Array.isArray(targets.actions) ? targets.actions : []
+  for (var i = 0; i < actions.length; i++) if (actions[i].id === pick) return actions[i]
+  return actions.length > 0 ? actions[0] : null
+}
+
+// ←/→ among the actions: the id `dx` buttons on from `pick`, clamped.
+function stepAction(targets, pick, dx) {
+  var actions = isObject(targets) && Array.isArray(targets.actions) ? targets.actions : []
+  if (actions.length === 0) return ""
+  var at = 0
+  for (var i = 0; i < actions.length; i++) if (actions[i].id === pick) at = i
+  return actions[Math.max(0, Math.min(actions.length - 1, at + dx))].id
+}
+
+// The line under Today's setup row: how the keys reach it and, while it
+// is the selection, what they do; `listOnly`: a stacked desk shows the
+// list, so Enter first shows the card.
+function setupHint(focused, listOnly) {
+  if (!focused) return "↑ from the first row, or a click, reaches its buttons"
+  return listOnly ? "Enter shows it · ↓ back to the list" : KEY_BUTTONS_HINT
+}
+
+// Today's ↑/↓ with the setup row above the list: { setup, row, out };
+// `out`: ↑ at the top, the desk's notices are next. The setup row is
+// reached from the first row and, while nothing is selected, by the
+// first ↑; without it that ↑ goes to the last row, as before.
+function todayMove(s, dy) {
+  var rows = Math.max(0, Number(s && s.rows) || 0)
+  var setup = !!(s && s.setup)
+  var cursor = s && typeof s.cursor === "number" ? s.cursor : -1
+  if (s && s.setupFocused) {
+    if (dy < 0) return { setup: true, row: -1, out: true }
+    return rows > 0 ? { setup: false, row: 0, out: false } : { setup: true, row: -1, out: false }
+  }
+  if (rows === 0) return dy < 0 ? { setup: setup, row: -1, out: !setup } : { setup: false, row: -1, out: false }
+  if (dy < 0 && (cursor === 0 || (cursor < 0 && setup)))
+    return setup ? { setup: true, row: -1, out: false } : { setup: false, row: 0, out: true }
+  var from = cursor >= 0 ? cursor : dy > 0 ? -1 : rows
+  return { setup: false, row: Math.max(0, Math.min(rows - 1, from + dy)), out: false }
+}
+
+// The Changelog's ↑ at the top of its head (the state changelogMove
+// takes): on the proposal, or on the first row without a proposal, or in
+// an empty list without one. *Agent sorts* is next, then the notices.
+function changelogAtTop(s) {
+  if (s && s.triageShown) return true
+  var proposal = !!(s && s.proposal)
+  var rows = Math.max(0, Number(s && s.rows) || 0)
+  if (proposal) return false
+  if (rows === 0) return true
+  var cursor = Number(s.cursor)
+  return (cursor >= 0 ? cursor : Number(s.cursorRow) || 0) === 0
+}
+
+// The line under *Agent sorts N open changes*: `a` twice starts it, as on
+// a case; Enter never starts an agent (operator decision, WP-122).
+function askHint(focused) {
+  return focused ? "a twice starts it · ↓ back to the list" : "↑ from the top of the list reaches it"
+}
+
+// Settings: the controls of a group the keys walk (↑/↓), in order.
+function settingsControls(group, offerAgain) {
+  if (group === "appearance") return ["width", "presets", "sidebar"]
+  if (group === "capture" && offerAgain === true) return ["offer"]
+  return []
+}
+
+// The line on a Settings group with controls: how the keys reach them
+// and, inside, what they do.
+function settingsHint(inside) {
+  return inside ? "←/→ changes it · Enter twice sets it · ↑/↓ another control · Esc back to the list"
+    : "Enter reaches the controls: ↑/↓ a control, ←/→ its value, Enter twice sets it"
+}
+
+// The width the keys pick: ←/→ on the slider, 10 % a notch, or the next
+// preset (50, 67, 75, Full) from the width shown.
+function keyWidth(control, pct, dx) {
+  var at = clampDeskWidth(pct)
+  if (control === "width") {
+    // the next notch of the slider's grid, also from a preset off it
+    // (67 → 70, 75 → 70)
+    var notch = dx > 0 ? Math.floor((at - DESK_WIDTH_MIN) / 10) + 1 : Math.ceil((at - DESK_WIDTH_MIN) / 10) - 1
+    return Math.max(DESK_WIDTH_MIN, Math.min(DESK_WIDTH_MAX, DESK_WIDTH_MIN + 10 * notch))
+  }
+  // the next preset on in that direction (also from between two), else
+  // the last one that way
+  var on = DESK_WIDTH_PRESETS.filter(function(p) { return dx > 0 ? p > at : p < at })
+  if (on.length === 0) return dx > 0 ? DESK_WIDTH_PRESETS[DESK_WIDTH_PRESETS.length - 1] : DESK_WIDTH_PRESETS[0]
+  return dx > 0 ? on[0] : on[on.length - 1]
+}
+
 // A size in characters as megabytes with one decimal, never rounded down
 // to the limit: 1 000 000 reads "1.0 MB", 1 049 999 "1.1 MB".
 function megabytes(chars) {

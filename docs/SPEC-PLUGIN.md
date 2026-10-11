@@ -333,12 +333,12 @@ icons only; the search is then reached by widening it).
 | `,` | Settings |
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search (filters the current section's list); Enter leaves it and keeps the filter, Esc clears it and leaves |
-| `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c) |
-| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c); Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
+| `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c) and *Agent sorts N open changes* the row above it, in Today the setup card's row (WP-202); `↑` at the top of a list and its head goes on to the notices' buttons on a fresh press (a held `↑` stops at the top), `↓` on the last notice comes back (WP-202, below) |
+| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c); on a button the keys reached (a notice's, the setup card's, a Settings control) it arms, then runs what the click runs (WP-202), on *Agent sorts* it does nothing (`a` twice starts that agent); on a Settings group with controls the cursor goes to its first control; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
-| `←`/`→` | the current section's (the Prime Radiant's periods, the graph's day) |
+| `←`/`→` | the current section's (the Prime Radiant's periods, the graph's day); on the notices, the setup card and a Settings control: the next button or value (WP-202; `h`/`l` too on the notices) |
 | other letters | the current section's (`i`, `e`, `a`, `r`, `f`/`F`, `x`, `d` as ADR-0034 §2 lists them; sections 1–3 and 4–6 in §5.4; `h`/`l` the Prime Radiant's periods, §6; the graph's `p`, `0`, `-`, `=`, §5.4) |
 
 Every character goes to the current section first (`Section.textKey`);
@@ -402,6 +402,45 @@ House rules for every key, now and later (WP-183; the checklist
   its id, never logbook text, as ADR-0036 §1 does for agent prompts.
 - **Every hinted key is a click too**, and a primary action is always a
   visible button, never only a key.
+- **Every button has a key path** (WP-202), in the pattern of the
+  Changelog's proposal row (WP-126c): the cursor reaches the button — a
+  row above the list (the notices, Today's setup row, *Agent sorts*) or a
+  control in the detail (Settings) —, the button under it wears the focus
+  ring (Omarchy's panel cursor on a `ButtonGroup` chip), and a dim line
+  names the keys. Enter arms, the second Enter runs exactly what the
+  click runs (the same function, the same argv); every such button arms,
+  also *Copy* and *Check again*, so one rule holds for all. *Agent sorts*
+  is pressed with `a`, twice, as *Hand to agent* on a case: Enter never
+  starts an agent (operator decision, WP-122). The arm's id names what it
+  would run (`notice:<id>:<title>:<script or command>:<action>`,
+  `setup:<step>:<banner>:<action>`, `ask:triage`,
+  `settings:<control>:<value>`): a notice, step or value that changed
+  under the cursor only arms again. Besides every key that does not
+  press, a **detour** drops the arm and the cursor's place on the
+  button: any mouse press on the desk (`Desk.pointerPressed`, a
+  transparent `MouseArea` over the desk that lets every press through),
+  a summon, a section change, another selection (IPC `select` included),
+  the stacked Back. A key on a stacked desk only selects (the list
+  stays); Enter shows the detail first. IPC reaches these places for
+  smoke tests, never their actions (§8).
+
+The notices by key (WP-202, `Desk.qml`): `↑` at the top of a section's
+list and head (`Section.move` answers false there) reaches the nearest
+notice with a button — on a fresh press: a held `↑` stops at the top of
+the list, so holding `↑` and pressing Enter never lands on a notice's
+button (stage 2 F2) — (the restart notice, the status notice, the
+engine-newer notice, snapshots, the agent rules: the ones whose click is
+wired, `Model.NOTICE_KEY_IDS`); `↑`/`↓` walk the notices, `←`/`→` (`h`/`l`)
+a notice's buttons, Enter arms the button under the cursor ("Restart
+shell? Press Enter again.") and the second Enter runs it through
+`Notices.fix` → `Service.fix`, as the click. `↓` on the last notice or Esc
+goes back to the section, onto the top of its list head
+(`Section.enterFromTop`: Today's setup row, the Changelog's *Agent sorts*,
+else the first row); any other key leaves the notices first and then does
+what it does. Entering folds the notices out. A dim line under the
+notices says "↑ at the top of a list reaches these buttons", while there
+"←/→ a button · Enter twice runs it · ↓ back to the list", while armed
+the arm's question. The cursor's place shows in `view`'s `noticeKeys`.
 
 ### 5.4 Sections
 
@@ -561,6 +600,22 @@ model behind it (`bannerFor`, `snapperBanner`): a step's buttons go to
   the terminals, its own captures are refused as every engine call is.
 - No mode logic: EASY (ADR-0045 §6) shows this same card. Its open steps
   are what WP-179's `Model.needs` counts.
+- **By key** (WP-202): while the card is up, Today's list head has its
+  row ("Set up Seldon · 2 of 3 steps to go", `setupRow`) as the row
+  above the first one, the pattern of the Changelog's proposal row: `↑`
+  on the first row, or the first `↑` while nothing is selected, selects
+  it (no list row stays selected, the overview shows the card); a click
+  selects it too. `←`/`→` pick a button of the current step (the focus
+  ring on it), Enter arms it ("Create logbook? Press Enter again.", the
+  line under the step's buttons) and the second Enter runs it through
+  `Service.setupAction`, as the click; a step that is not ready arms
+  nothing. On a stacked desk `↑` only selects the row ("Enter shows it ·
+  ↓ back to the list") and the first Enter shows the card. `↓` goes back
+  to the first row, `↑` on to the notices. A click, another selection,
+  the stacked Back and a changed step drop the arm. The line under the
+  row: "↑ from the first row, or a click, reaches its buttons", while
+  selected "←/→ a button · Enter twice runs it · ↓ back to the list". IPC
+  `select setup` (in Today) selects it and shows the card.
 
 When the card is done the first-run card (above) follows. The header's
 chip (`Model.deskChip`) shows the card's headline (accent) while it is
@@ -592,7 +647,19 @@ twice applies · ↓ back to the list", on a stacked desk showing its list
 "Enter shows it · ↓ back to the list", `Model.proposalHint`). IPC
 `select proposal` (or the proposal's id; `Model.isProposalTarget`), a
 payload's `"select":"proposal"` and the shim's `resolve proposal` open it
-too. Then the chips **open · crisis · attention · routine · in
+too. *Agent sorts* is the row above the proposal (WP-202): `↑` on the
+proposal, or on the first row without one (`Model.changelogAtTop`),
+reaches the button while it can be pressed (no list row, no proposal
+selected; on a stacked desk showing a detail the list comes back); `a`
+arms it ("Agent sorts 6 open changes? Press a again." in the dim line
+under it) and the second `a` starts the agent, the click's `agent ask
+triage --json`, the Work pattern (Enter and Space do nothing there: Enter
+never starts an agent, WP-122); `↓` goes to the proposal (else back to the list), `↑` on
+to the notices; a click, another selection or the button going away
+drops the arm. The line says "↑ from the top of the list reaches it",
+while it has the keys "a twice starts it · ↓ back to the list". Another
+section drops the cursor's place on it. IPC
+`select ask` puts the cursor there. Then the chips **open · crisis · attention · routine · in
 case · all** with their counts (`f` / `F` the next / previous; default
 open). A row's class: open drift with `crisis` → crisis; other open drift,
 group members included → attention; else with a case → in case; else
@@ -1180,6 +1247,26 @@ Four groups in the list; Appearance is selected first.
   and still open, its one button **Offer again**, which takes
   `setupSnapshots` out of the entry through the same write (§1) and
   brings the step back to the card (WP-119).
+- **By key** (WP-202): Enter on a group with controls (Appearance:
+  width slider, presets, sidebar; Capture while it shows *Offer again*)
+  puts the cursor on its first control; on a stacked desk the first Enter
+  shows the group. `↑`/`↓` walk the controls, `←`/`→` change the value
+  under the cursor — the width as a preview on the desk, 10 % a notch on
+  the slider's grid (from 67 % → is 70 %) or the next preset
+  (`Model.keyWidth`), written nowhere (a wheel notch still waiting for its
+  write is written first, so the wheel's timer never writes the keys'
+  preview; a wheel notch after a key preview is the wheel's own and is
+  written as the wheel writes); the sidebar's option, drawn with
+  Omarchy's panel cursor on the chip, and at a width that is no preset
+  the focus ring on the presets —, Enter
+  arms the write ("Set the desk width to 80 %? Press Enter again.") and
+  the second Enter makes it, the same `Desk.writeSetting` call as the
+  release or the click; a value already stored arms nothing. Esc, a
+  click, another group or section and the stacked Back leave the
+  controls and drop the preview and the arm. A dim line on the group
+  names the keys ("Enter reaches the controls: ↑/↓ a control, ←/→ its
+  value, Enter twice sets it"). IPC `select width|presets|sidebar|offer`
+  (in Settings) puts the cursor on that control.
 
 ### 5.6 Notices, header mark, pictograms
 
@@ -1192,8 +1279,9 @@ restart notice after a plugin update,
 the status banner, the engine newer than the plugin, snapshots not
 readable, the outdated agent rules,
 what their update did, the capture warnings. Each is `Banner.qml` on the
-service's object; a fix goes to `Service.fix(action, banner)`. Their
-texts and fixes:
+service's object; a fix goes to `Service.fix(action, banner)`. The keys
+reach every button (WP-202, §5.3 "The notices by key"). Their texts and
+fixes:
 
 Banner states (under the header), each detail one sentence (WP-117):
 engine missing → the GitHub one-liner while the AUR package does not
@@ -1630,7 +1718,11 @@ loaded. Routes the plugin honours:
   keys, search, status, KPIs, counts, notices, chip, settings writes, arm,
   the section's own `view()`), `section <id>` shows a section ("ok" /
   "unknown section"), `select <id>` selects in the current section ("ok"
-  / "not found"). The Prime Radiant keeps the 0.1 overlay's names:
+  / "not found"); for smoke tests it also places the keys' cursor on a
+  button, never pressing it (WP-202): `select notices` or `select
+  notice:<id>` (the first, or that notice's first button; any section),
+  in Today `select setup`, in the Changelog `select ask` (*Agent sorts*),
+  in Settings `select width|presets|sidebar|offer`. The Prime Radiant keeps the 0.1 overlay's names:
   `setPeriod <30|90|365|all>` shows section 7 with that period and
   returns the period now selected; an unknown id changes nothing — not
   the section either — and returns section 7's period ("" before its

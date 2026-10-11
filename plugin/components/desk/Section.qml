@@ -44,8 +44,16 @@ Item {
   // The selected item ("" none); the desk remembers it between opens.
   property string selectedId: ""
 
-  // ↑/↓ (j/k) in the list.
+  // ↑/↓ (j/k) in the list; false for an ↑ at the top of the list and its
+  // head, so the desk takes the cursor on to the notices (WP-202).
   function move(dy) { return false }
+  // ↓ out of the notices: the cursor back on the topmost place of the list
+  // head or the list (WP-202).
+  function enterFromTop() {}
+  // A click on the desk, a summon or the cursor going to the notices: the
+  // keys' place on a button of this section (a head row, a control) goes,
+  // and its arm with it (WP-202).
+  function leaveKeys() {}
   // ←/→ (the Prime Radiant's periods).
   function moveAcross(dx) { return false }
   // Enter / Space on the cursor's row.
