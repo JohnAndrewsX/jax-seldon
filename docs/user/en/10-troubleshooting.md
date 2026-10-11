@@ -42,7 +42,9 @@ with its button ([Getting started](01-getting-started.md#step-2-set-up-seldon-on
 The header's status chip shows the card's headline, such as
 "Set up Seldon · 2 of 3 steps to go", and a click on it leads to the
 card. After each step's terminal the card looks again by itself and
-moves on. The first three rows below are its steps.
+moves on. The first three rows below are its steps. With the keys: ↑ on
+Today's first row selects the card's row, ← / → pick a button, Enter
+twice runs it.
 
 ![The setup card on Today: Set up Seldon · 2 of 3 steps to go; Install the engine done, Create the logbook with Create logbook and Copy, Read snapshots optional](../../images/desk-tokyo-night-setup.png)
 
@@ -52,7 +54,10 @@ notice's title, and "+N" when there are more; a click on the chip folds
 the notices. An urgent notice always takes the chip, also from the setup
 card. The notices come in this order: the restart notice, the status
 notice (one of the index and engine rows below), the engine newer than
-the plugin, snapshots, the agent rules, the capture warnings.
+the plugin, snapshots, the agent rules, the capture warnings. With the
+keys: ↑ at the top of any list reaches the notices' buttons, ↑ / ↓ the
+notices, ← / → a notice's buttons, Enter twice runs the one with the
+frame (*Restart shell*, *Install*, …), ↓ on the last notice goes back.
 
 | Notice | Cause | Fix |
 |---|---|---|

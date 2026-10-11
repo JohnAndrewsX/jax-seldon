@@ -76,7 +76,8 @@ behind it is dimmed. From top to bottom:
   the open changes. At the right, Settings (`,`) and *Esc*.
 - **Notices.** Under the header, full width: something needs fixing,
   each with its one-click fix (see
-  [Troubleshooting](10-troubleshooting.md#notices-on-the-desk)). While
+  [Troubleshooting](10-troubleshooting.md#notices-on-the-desk)). The
+  keys reach the buttons too: ↑ at the top of the list. While
   Seldon is not set up, Today shows the setup card instead (see
   [Getting started](01-getting-started.md)).
 - **Sidebar.** "SECTIONS": the nine targets with icon, label and count,
@@ -126,7 +127,7 @@ The desk's keys work while the desk is open.
 | `,` | Settings |
 | Alt+↓ / Alt+↑ | the next / previous of the nine, wrapping |
 | `/` | the sidebar search: filters the current list; Enter leaves the field and keeps the filter, Esc clears it |
-| ↑ / ↓, `k` / `j` | move in the list |
+| ↑ / ↓, `k` / `j` | move in the list; ↑ at the top of the list reaches the notices' buttons |
 | Enter, Space | the detail's first action that launches nothing (Work: arm, then run; open drift: its form; Today's yesterday row: open or close); on a narrow desk, show the detail. Enter never starts an agent |
 | Esc | leave a form, then clear the search, then go back to the list (narrow desk), then close |
 | `c` | capture now |
@@ -135,7 +136,9 @@ The desk's keys work while the desk is open.
 | `i` | Today's *New case* field, Work's intent field |
 | `e` | open in your editor: Today the journal, Changelog this month's ledger, Work the case, Decisions the decision, System `STATUS.md`, Memory the logbook |
 | `f` / `F` | Changelog: the next / previous chip |
-| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` back to the list |
+| ↑ / `k` on the first row | Changelog: the agent's triage proposal, then *Agent sorts N open changes*; ↓ / `j` back to the list. Today, while Seldon is not set up: the setup card's row |
+| ← / →, `h` / `l` on a notice | the notice's buttons; ↑ / ↓ the notices, ↓ on the last one or Esc back to the list |
+| Enter on Appearance | Settings: the width slider, the presets, the sidebar; ↑ / ↓ a control, ← / → its value, Esc back |
 | `a` | Work: hand the case to an agent (press twice); while an agent works on it, *Focus* (once) |
 | `x` | Work: drop the case (press twice; final) |
 | `r` | Work: reopen a completed case (once) |
@@ -165,6 +168,15 @@ at once.
 One press is enough where nothing is lost: a note, a *New case* or *Run*
 sentence, the new-case sheet, *Reopen* (it only adds a case), *Focus*,
 *Apply proposals*, *Capture now* and *Open in editor*.
+
+Every button has a key path. The buttons above the list (the notices,
+the setup card, *Agent sorts N open changes*) and the controls in
+Settings › Appearance are reached with the arrows; the one under the
+cursor has a frame, and a dim line next to it names the keys. There,
+Enter arms the button and the second Enter runs it, whatever it does
+(also *Copy*): "Restart shell? Press Enter again." Any other key, a
+click on the desk or another selection cancels it. ← / → pick another
+button or value.
 
 A held key acts once. Its repeats never arm, confirm, write or start
 anything; an armed action stays armed until you release the key and
@@ -248,7 +260,8 @@ checked. The proposal shows as a row, "Proposal · N items proposed by …",
 and its detail lists every item with its evidence. Evidence written by an
 agent or of unknown authorship is marked "Read twice". Open it with a
 click, or with the keys: the proposal is the row above the list, so ↑
-(or `k`) on the first row reaches it and ↓ (or `j`) goes back.
+(or `k`) on the first row reaches it and ↓ (or `j`) goes back. One more
+↑ reaches *Agent sorts N open changes*: Enter twice starts the agent.
 
 - *Apply proposals* applies the items in one click, as you. By key,
   Enter arms it and a second Enter applies it. A second Apply changes
@@ -427,7 +440,9 @@ this screen. Dragging previews the width; the release or a preset saves
 it. "Sidebar" is *Open* or *Collapsed*. Seldon saves both in its entry in
 Omarchy's `shell.json`, and only when you change a value. If the shell
 does not take the change, the page says so; change it in Omarchy's bar
-settings then.
+settings then. With the keys: Enter on Appearance reaches the slider,
+↑ / ↓ the presets and the sidebar, ← / → change the value (the width
+shows at once, as when dragging), Enter twice saves it, Esc goes back.
 
 **Capture**, **Agents** and **Quiet** only show the values in force and
 where each is set: the capture interval, the active cases limit and the
