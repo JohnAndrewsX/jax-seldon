@@ -20,7 +20,11 @@ engine, schema, fixture or contract change.
     each group's total to max(listed, whole), giving "QUEUED · 50 / 450"
     and "ACTIVE · 2 / 40". The headers are unchanged when the list is
     whole. A summary that is lower than the list never lowers the count.
-- `docs/SPEC-PLUGIN.md` (Work): one sentence on the whole-count header.
+    During a search the whole count is not used (review 1, F1): the
+    search covers the listed rows only, so it reads "QUEUED · 1 / 50".
+- `docs/SPEC-PLUGIN.md` (Work): one sentence on the whole-count header
+  (ADR-0053 §5, rungs 3 and 21), and one sentence saying that the search
+  covers the listed rows only.
 - `tests/plugin/model.test.js`: test "WP-204: …". It builds a cut index
   from the sample (50 queued listed, `queuedCases` 450, `activeCases`
   40) and checks the following:
@@ -28,13 +32,31 @@ engine, schema, fixture or contract change.
     "COMPLETED 2". With *By agent*: "COMPLETED 1 / 2".
   - `workView` labels: "ACTIVE · 2 / 40", "VERIFICATION · 1",
     "QUEUED · 50 / 450", "COMPLETED · 2".
-  - Search against the whole: "QUEUED · 1 / 450".
+  - During a search every label counts against the listed rows:
+    "ACTIVE · 0 / 2", "VERIFICATION · 0 / 1", "QUEUED · 1 / 50",
+    "COMPLETED · 0 / 2". A search that matches every listed queued row
+    reads "QUEUED · 50". The *By agent* filter alone keeps the whole
+    counts.
   - A summary below the list keeps "QUEUED · 50".
   - No summary falls back to the list length.
   - The whole sample keeps its plain counts.
 
   The shipped fixture lists every case, so the short-list case lives
-  only in this test, as the WP allows.
+  only in this test, as the WP allows. CONTRACT.md rule 4 caps no queued
+  or active list. Only the size budget shortens them (ADR-0053 rungs 3
+  and 21); the test comment says so (review 1, F3).
+
+## Review 1
+
+APPROVE with two fixes, both done:
+
+- **F1**: during a search the second number is the listed count.
+  Done in `workView`, the SPEC-PLUGIN sentence and the test.
+- **F3**: the test comment and this handover say "ADR-0053 rungs 3 and
+  21", not "rule 4's caps".
+
+Not in this round: F2 (an empty listed group has no header) goes to a
+follow-up. F4 (`workColumns`/`columnHeader` are test-only) stays.
 
 ## Note for the reviewer
 
@@ -53,6 +75,20 @@ No QML calls `workColumns` or `columnHeader` any more; only
   Not part of this WP.
 
 ## How it was verified
+
+Round 2 (review 1 fixes), dev host, TMPDIR and JUST_TEMPDIR under the
+private gates folder:
+
+- **fixture**: `node tests/plugin/model.test.js`, 219 passed. The old
+  behaviour (the whole count during a search) was put back for a moment
+  and fails the WP-204 test with "QUEUED · 1 / 450". The file was then
+  restored and checked with `cmp`.
+- **headless**: `just qmllint` ok (52 files); `just docs-check` ok (514
+  links).
+- **not run** in round 2: the full `just check` (the orchestrator gates
+  it); CI; desktop.
+
+Round 1:
 
 - **fixture**: `node tests/plugin/model.test.js`, 219 passed, including
   the new WP-204 test against the sample fixture and the cut index

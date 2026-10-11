@@ -5222,7 +5222,8 @@ function deskWork(index) {
 // The rows the Work list shows: the By agent filter on Completed
 // (ADR-0027 §5), the sidebar search, and each group's header ("ACTIVE ·
 // 2", "COMPLETED · 1 / 2" while the filter hides some, "QUEUED · 50 / 450"
-// while the index lists fewer than the summary counts, WP-204).
+// while the index lists fewer than the summary counts, WP-204). A search
+// covers the listed rows only, so it counts against them: "QUEUED · 1 / 50".
 function workView(prepared, filter, search) {
   var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
   var whole = prepared && isObject(prepared.whole) ? prepared.whole : {}
@@ -5245,7 +5246,7 @@ function workView(prepared, filter, search) {
   var labels = {}
   for (var k = 0; k < WORK_GROUPS.length; k++) {
     var id = WORK_GROUPS[k].id
-    totals[id] = Math.max(totals[id], count(whole[id]))
+    if (q === "") totals[id] = Math.max(totals[id], count(whole[id]))
     labels[id] = WORK_GROUPS[k].label.toUpperCase() + " · " + counts0[id]
       + (counts0[id] !== totals[id] ? " / " + totals[id] : "")
   }

@@ -3003,7 +3003,7 @@ test("WP-204: Work's headers show the summary's whole count when the index lists
   const idx = M.parseIndex(sample).index
   // the sample lists every case: the plain count
   same(M.workColumns(idx).map(c => M.columnHeader(c)), ["QUEUED 3", "ACTIVE 3", "COMPLETED 2"])
-  // a cut index (ADR-0053 rung 3, rule 4's caps): 50 of 450 queued, 2 of 40 active
+  // a cut index (ADR-0053 rungs 3 and 21; rule 4 caps no queued or active list): 50 of 450 queued, 2 of 40 active
   const cut = JSON.parse(sample)
   const one = cut.cases.queued[0]
   cut.cases.queued = Array.from({ length: 50 }, (_, i) => Object.assign({}, one, { id: "C-2026-" + String(100 + i) }))
@@ -3014,8 +3014,12 @@ test("WP-204: Work's headers show the summary's whole count when the index lists
   const v = M.workView(M.deskWork(cut), "", "")
   same(v.labels, { active: "ACTIVE · 2 / 40", verification: "VERIFICATION · 1", queued: "QUEUED · 50 / 450", completed: "COMPLETED · 2" })
   same(v.rows.length, 55)
-  // the search counts against the whole
-  same(M.workView(M.deskWork(cut), "", "C-2026-149").labels.queued, "QUEUED · 1 / 450")
+  // a search covers the listed rows only: it counts against them, not the whole (review 1)
+  same(M.workView(M.deskWork(cut), "", "C-2026-149").labels,
+    { active: "ACTIVE · 0 / 2", verification: "VERIFICATION · 0 / 1", queued: "QUEUED · 1 / 50", completed: "COMPLETED · 0 / 2" })
+  same(M.workView(M.deskWork(cut), "", "C-2026-1").labels.queued, "QUEUED · 50")
+  same(M.workView(M.deskWork(cut), "agent", "").labels, { active: "ACTIVE · 2 / 40", verification: "VERIFICATION · 1",
+    queued: "QUEUED · 50 / 450", completed: "COMPLETED · 1 / 2" })
   // a summary below the list (an older or odd index) never lowers the count
   cut.summary.queuedCases = 7
   same(M.workColumns(cut)[0].total, 50)
