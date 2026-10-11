@@ -2669,6 +2669,108 @@ for name, rx in (("format", vf.DIRECTION_OR_FORMAT), ("path", vf.BAD_PATH)):
     }
 }
 
+/// WP-203 round 2 (review F1): past 500 events and past 200 open items
+/// the reference `derive()` lists the events and the drift rows the
+/// engine does. 600 notes in a case push every drift event past the
+/// newest 500; 520 caseless theme switches make 526 open items, 200 of
+/// them listed (`build::cap_drift`), each with its event among the 500.
+#[test]
+fn the_reference_derive_lists_the_events_the_engine_does() {
+    let python = ["python3", "python"].into_iter().find(|p| {
+        std::process::Command::new(p)
+            .arg("--version")
+            .output()
+            .is_ok()
+    });
+    let Some(python) = python else {
+        eprintln!("skipped: no python3 on PATH (scripts/validate-fixtures.py needs it)");
+        return;
+    };
+    for (n, in_case, open) in [(600u32, true, 6usize), (520, false, 526)] {
+        let env = Env::new(Snapper::Missing);
+        let (lb, _, index) = golden_run(&env, None, |lb| {
+            let mut lines = String::new();
+            for i in 0..n {
+                let id =
+                    ulid::Ulid::from_parts(1_759_330_900_000 + u64::from(i), u128::from(i) + 1);
+                // after the fixture's newest event (17:00), before the sample's clock
+                let ts = format!("2026-10-01T17:{:02}:{:02}+02:00", 1 + i / 60 % 4, i % 60);
+                let e = if in_case {
+                    json!({"id": id.to_string(), "ts": ts, "source": "manual", "kind": "note",
+                        "subject": format!("step {i}"), "actor": "human", "case": "C-2026-003"})
+                } else {
+                    json!({"id": id.to_string(), "ts": ts, "source": "omarchy", "kind": "theme-set",
+                        "subject": format!("theme-{i}"), "actor": "human"})
+                };
+                lines.push_str(&format!("{e}\n"));
+            }
+            let month = lb.join("ledger/2026-10.jsonl");
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&month)
+                .unwrap();
+            std::io::Write::write_all(&mut file, lines.as_bytes()).unwrap();
+            if in_case {
+                // the case names its events, in ledger time order, as the
+                // engine's writes keep it (the derive checks it)
+                let mut named: Vec<(String, String)> = lines
+                    .lines()
+                    .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                    .map(|e| {
+                        (
+                            e["ts"].as_str().unwrap().into(),
+                            e["id"].as_str().unwrap().into(),
+                        )
+                    })
+                    .collect();
+                named.sort();
+                let ids: Vec<String> = named.into_iter().map(|(_, id)| id).collect();
+                let path = lb.join("work/active/C-2026-003-omarchy-407.md");
+                let last = "01M3V5D0V0YT5KRGAHD1VQDF2Q]";
+                let text = read(&path).replacen(
+                    last,
+                    &format!("01M3V5D0V0YT5KRGAHD1VQDF2Q, {}]", ids.join(", ")),
+                    1,
+                );
+                std::fs::write(&path, text).unwrap();
+            }
+        });
+        assert_eq!(index["summary"]["openDrift"], json!(open), "n = {n}");
+        let events = index["events"].as_array().unwrap();
+        let drift = index["drift"].as_array().unwrap();
+        assert_eq!(events.len(), 500, "n = {n}");
+        assert_eq!(drift.len(), open.min(build::MAX_DRIFT), "n = {n}");
+        assert!(
+            drift
+                .iter()
+                .all(|d| events.iter().any(|e| e["id"] == d["eventId"])),
+            "n = {n}: every listed drift row has its event"
+        );
+
+        let out = std::process::Command::new(python)
+            .arg(repo("scripts/validate-fixtures.py"))
+            .args([
+                "--derive",
+                lb.to_str().unwrap(),
+                "--today",
+                &GENERATED_AT[..10],
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "validate-fixtures.py --derive: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let derived: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let mut d = Vec::new();
+        diff(&derived["events"], &index["events"], "/events", &mut d);
+        diff(&derived["drift"], &index["drift"], "/drift", &mut d);
+        diff(&derived["summary"], &index["summary"], "/summary", &mut d);
+        assert!(d.is_empty(), "n = {n}:\n{}", d.join("\n"));
+    }
+}
+
 /// ADR-0025 (WP-077): the reference `derive()` of
 /// `scripts/validate-fixtures.py` clips as the engine does. A copy of the
 /// fixture logbook gets caseless config events whose `detail` and `meta`
