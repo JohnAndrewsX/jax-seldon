@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ 85570258 -->
+<!-- source: en/03-daily-use.md @ 899b1f74 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
@@ -189,8 +189,12 @@ Elemente in Settings › Appearance erreichst du mit den Pfeilen; der Knopf
 unter dem Cursor hat einen Rahmen, und eine blasse Zeile daneben nennt
 die Tasten. Dort schaltet Enter den Knopf scharf, und das zweite Enter
 führt ihn aus, was immer er tut (auch *Copy*): „Restart shell? Press
-Enter again.“ Jede andere Taste, ein Klick auf den Desk oder eine andere
-Auswahl bricht ab. ← / → wählen einen anderen Knopf oder Wert.
+Enter again.“ *Agent sorts* ist die Ausnahme: Enter startet nie einen
+Agenten, also schaltet `a` ihn scharf und ein zweites `a` startet den
+Agenten, wie bei einem Case. Jede andere Taste, ein Klick auf den Desk
+oder eine andere Auswahl bricht ab. ← / → wählen einen anderen Knopf
+oder Wert. Ein gehaltenes ↑ hält oben in der Liste an; ein weiterer
+Druck führt zu den Hinweisen.
 
 Eine gehaltene Taste wirkt einmal. Ihre Wiederholungen schalten nie
 scharf, bestätigen nie, schreiben nie und starten nichts; eine scharfe
@@ -281,7 +285,7 @@ hat oder deren Autor unbekannt ist, sind mit „Read twice“ markiert. Du
 öffnest ihn mit einem Klick oder mit den Tasten: Der Vorschlag ist die
 Zeile über der Liste, also erreicht ↑ (oder `k`) in der ersten Zeile ihn,
 und ↓ (oder `j`) führt zurück. Ein weiteres ↑ erreicht *Agent sorts N
-open changes*: Zweimal Enter startet den Agenten.
+open changes*: Zweimal `a` startet den Agenten.
 
 - *Apply proposals* wendet die Punkte mit einem Klick an, als du. Mit
   der Tastatur schaltet Enter es scharf, ein zweites Enter wendet es an.
