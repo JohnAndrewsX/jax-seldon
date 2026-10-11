@@ -23,6 +23,7 @@ and the package does not exist yet. Update the plugin first:
 
 - Every button on the desk works by key now: the notices, the setup card, *Agent sorts* and the width and sidebar settings.
 - A very large logbook no longer locks the desk out: the engine keeps `index.json` under 1 MB, leaves out the oldest rows first and still counts every case, change and crisis.
+- Your agents read less: the Seldon skill is a short core, and the details load when a task needs them; an unedited skill updates itself.
 
 ### Engine
 
@@ -41,6 +42,21 @@ and the package does not exist yet. Update the plugin first:
   names the largest section and what it cut. An index that still would
   not fit is not written. Below 1 MB nothing changes; the fixture scaled
   ×150 (1 200 cases) stays at 881 KB, uncut.
+- **A shorter agent skill (WP-196).** `SKILL.md` is a core of at most
+  120 lines, front matter included: is there a logbook, attended or not,
+  act then account, when to ask first, privileged commands, the engine
+  as the only writer, instructions and data, and what the agent leaves
+  behind. The rest moved word for word into topic files the core links
+  from the line that needs them: reporting commands without a hook and
+  what a started process must not inherit (`logbook.md`), the crash
+  report (`crash.md`), the imported case (`case.md`), the privileged
+  steps in full (`update.md`). The HTML comment under the title (how to
+  remove the skill) is gone; `seldon hook uninstall skills` still does.
+  The next capture brings an unedited 0.2.0 skill up to date, the two
+  new files included; a skill changed by hand, or a folder that holds a
+  `logbook.md` or `crash.md` of the user's, is kept, as before. An
+  install or update writes `SKILL.md` after the topic files, so one that
+  stops half way never leaves a core that links a missing file.
 
 ### Plugin
 

@@ -543,7 +543,8 @@ fn the_skill_s_recipe_files_the_report_verbatim_and_runs_none_of_it() {
     };
     let env = Env::new(Snapper::Missing);
     let root = env.init_logbook();
-    let skill = read(&Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/skills/seldon/SKILL.md"));
+    // the skill's crash guide (WP-196: crash.md, linked from SKILL.md)
+    let skill = read(&Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/skills/seldon/crash.md"));
     let start = skill.find("```bash\nseldon inbox add").expect("the recipe") + "```bash\n".len();
     let recipe = &skill[start..start + skill[start..].find("```").unwrap()];
     let report = "## What crashed\n\n`$(touch MARK1)` and $(touch MARK2) and `touch MARK3`\n$HOME stays as written\n";

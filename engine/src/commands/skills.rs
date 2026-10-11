@@ -1,10 +1,11 @@
 //! The Seldon agent skill (WP-094; ADR-0027 §8): `seldon hook install
 //! skills` and `hook uninstall skills`, and the `skills` row of `doctor`.
 //!
-//! - **The skill.** Six Markdown files under `engine/assets/skills/seldon/`,
-//!   compiled in ([`FILES`]). Shaped like Omarchy's own agent skills
-//!   (`$OMARCHY_PATH/default/agents/skills/`), which point at it for the
-//!   record and which it points at for Omarchy work.
+//! - **The skill.** Eight Markdown files under `engine/assets/skills/seldon/`,
+//!   compiled in ([`FILES`]): a short `SKILL.md` and the topic files it
+//!   links, read when a task needs them (WP-196). Shaped like Omarchy's
+//!   own agent skills (`$OMARCHY_PATH/default/agents/skills/`), which
+//!   point at it for the record and which it points at for Omarchy work.
 //! - **Where.** Omarchy's agent skill folders, the ones its migrations link
 //!   its skills into ([`SKILL_DIRS`], plus `~/.hermes/profiles/*/skills`).
 //!   Only a folder that exists is used: Seldon never creates one, nor an
@@ -49,7 +50,7 @@ pub const SKILL_NAME: &str = "seldon";
 pub const MANIFEST: &str = ".seldon-skill.json";
 
 /// The skill's files: name, content.
-pub const FILES: [(&str, &str); 6] = [
+pub const FILES: [(&str, &str); 8] = [
     (
         "SKILL.md",
         include_str!("../../assets/skills/seldon/SKILL.md"),
@@ -73,6 +74,14 @@ pub const FILES: [(&str, &str); 6] = [
     (
         "triage.md",
         include_str!("../../assets/skills/seldon/triage.md"),
+    ),
+    (
+        "logbook.md",
+        include_str!("../../assets/skills/seldon/logbook.md"),
+    ),
+    (
+        "crash.md",
+        include_str!("../../assets/skills/seldon/crash.md"),
     ),
 ];
 
@@ -598,13 +607,22 @@ fn install_steps(
     if fresh {
         write_manifest(written)?;
     }
-    for (name, text) in FILES {
+    // `SKILL.md` (`FILES[0]`) comes after the topic files it links (WP-196):
+    // an update stopped half way leaves the old core, whose links all
+    // resolve, next to newer topic files; a fresh install stopped half way
+    // leaves no core, so no harness loads a skill with missing files.
+    let (core, topics) = FILES.split_at(1);
+    for (name, text) in topics.iter().chain(core) {
         let path = target.join(name);
-        if file_state(&path, Some(text), old.files.get(name)) == FileState::Shipped {
+        if file_state(&path, Some(text), old.files.get(*name)) == FileState::Shipped {
             continue;
         }
         write_step(&path, text.as_bytes(), written)?;
         report.written.push(name.to_string());
+        // reported in the files' order, as before the core came last
+        report
+            .written
+            .sort_by_key(|n| FILES.iter().position(|(f, _)| f == n));
     }
     // files an older skill had and this one does not, if still as written
     // (or archived just now), before the new manifest forgets them
@@ -1138,7 +1156,9 @@ mod tests {
                 "drift.md",
                 "snapshot.md",
                 "update.md",
-                "triage.md"
+                "triage.md",
+                "logbook.md",
+                "crash.md"
             ]
         );
         let skill = FILES[0].1;
