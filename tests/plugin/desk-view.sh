@@ -3434,10 +3434,11 @@ install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-keys/wl-copy"
 # The restart notice (dev mode, not initialised, so the setup card is up):
 # ↑ selects the setup row, ↑ again the notice; Enter arms, ↓ (back to the
 # setup row), a click on the desk and a summon each drop the arm, IPC
-# `select notice:restart` only places the cursor; the last two Enters run
+# `select notice:restart` only places the cursor and drops an arm also on
+# the notice already under it (review F1); the last two Enters run
 # omarchy-restart-shell once, as the click does (case restart-updated).
 run keys-notice "$fx/index-variants/not-initialised.json" 1920x1080 \
-  "summon;key:Up;key:Up;key:Return;key:Down;key:Up;key:Return;click:NEW CASE;call:select:notice:restart;key:Return;summon;call:select:notice:restart;key:Return;key:Return" \
+  "summon;key:Up;key:Up;key:Return;key:Down;key:Up;key:Return;click:NEW CASE;call:select:notice:restart;key:Return;call:select:notice:restart;call:select:notices;key:Return;summon;call:select:notice:restart;key:Return;key:Return" \
   HARNESS_MANIFEST="$updated_manifest" HARNESS_RECORD="$work/keys-notice.record"
 rkey="notice:restart:Restart the shell to finish the update:restart"
 expect keys-notice 1 "$nk" ",,"
@@ -3455,8 +3456,12 @@ expect keys-notice 7 "$nk" "restart,restart,$rkey"
 expect keys-notice 8 "$nk" ",,"
 expect keys-notice 9 "[.call, ($nk)] | join(\"|\")" "ok|restart,restart,"
 expect keys-notice 10 "$nk" "restart,restart,$rkey"
-expect keys-notice 11 "$nk" ",,"
+expect keys-notice 11 "[.call, ($nk)] | join(\"|\")" "ok|restart,restart,"
+expect keys-notice 12 "[.call, ($nk)] | join(\"|\")" "ok|restart,restart,"
 expect keys-notice 13 "$nk" "restart,restart,$rkey"
+expect keys-notice 14 "$nk" ",,"
+expect keys-notice 15 "[.call, ($nk)] | join(\"|\")" "ok|restart,restart,"
+expect keys-notice 16 "$nk" "restart,restart,$rkey"
 wait_record "$work/keys-notice.record"
 check "keys-notice: the second Enter runs omarchy-restart-shell once, as the click" \
   "$(cat "$work/keys-notice.record" 2>/dev/null || true)" "$(cat "$work/restart-updated.record" 2>/dev/null || echo none)"
@@ -3603,38 +3608,45 @@ expect keys-ask-stacked 4 "$tt.askArmed" true
 argv_check keys-ask-stacked "$work/home-keys-ask-stacked" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)")"
 clean_log keys-ask-stacked
 
-# Settings › Appearance: Enter reaches the slider, ← ← previews 80 %
-# (nothing written), Enter Enter writes it; ↓ the presets, ← previews 75,
-# Enter arms, ↓ (another control) drops arm and preview, ↑ ← Enter Enter
-# writes 75; ↓ the sidebar, → Collapsed, Enter arms, a click drops it;
-# Enter ↓ ↓ → Enter Enter writes it; Esc leaves the controls. Each write
-# is the one the slider's release, the preset and the sidebar click make
-# (case keys-settings-click).
+# Settings › Appearance: Enter reaches the slider; Enter on the stored
+# width arms nothing; ← previews 90 %, Enter arms, IPC `select width`
+# drops arm and preview (review F5); ← ← previews 80 % (nothing written),
+# Enter Enter writes it; ↓ the presets (80 % is none: the ring on the
+# group, review F4), ← previews 75, Enter arms, ↓ (another control) drops
+# arm and preview, ↑ ← Enter Enter writes 75; ↓ the sidebar, → Collapsed,
+# Enter arms, a click drops it; Enter ↓ ↓ → Enter Enter writes it; Esc
+# leaves the controls. Each write is the one the slider's release, the
+# preset and the sidebar click make (case keys-settings-click).
 run keys-settings "$sample" 1920x1080 \
-  "summon;text:,;key:Return;key:Left;key:Left;key:Return;key:Return;wait:settings.pending=false;key:Down;key:Left;key:Return;key:Down;key:Up;key:Left;key:Return;key:Return;wait:settings.pending=false;key:Down;key:Right;key:Return;click:Sidebar;key:Return;key:Down;key:Down;key:Right;key:Return;key:Return;key:Escape" \
+  "summon;text:,;key:Return;key:Return;key:Left;key:Return;call:select:width;key:Left;key:Left;key:Return;key:Return;wait:settings.pending=false;key:Down;key:Left;key:Return;key:Down;key:Up;key:Left;key:Return;key:Return;wait:settings.pending=false;key:Down;key:Right;key:Return;click:Sidebar;key:Return;key:Down;key:Down;key:Right;key:Return;key:Return;key:Escape" \
   HARNESS_SETTINGS="$entry"
 sk="[$tv.control, .view.widthPct, .view.settings.preview, (.writes | length), .view.arm.armed] | map(tostring) | join(\",\")"
 expect keys-settings 2 "$tv.hint" "Enter reaches the controls: ↑/↓ a control, ←/→ its value, Enter twice sets it"
 shows keys-settings 2 "Enter reaches the controls: ↑/↓ a control, ←/→ its value, Enter twice sets it"
 expect keys-settings 3 "$sk" "width,100,-1,0,"
 expect keys-settings 3 '.marks.rings | length' 1
-expect keys-settings 5 "$sk" "width,80,80,0,"
-expect keys-settings 6 "$sk" "width,80,80,0,settings:width:80"
-shows keys-settings 6 "Set the desk width to 80 %? Press Enter again."
-expect keys-settings 7 "$sk" "width,80,-1,1,"
-expect keys-settings 9 "$sk" "presets,80,-1,1,"
-expect keys-settings 10 "$sk" "presets,75,75,1,"
-expect keys-settings 11 "$sk" "presets,75,75,1,settings:presets:75"
-expect keys-settings 12 "$sk" "sidebar,80,-1,1,"
+expect keys-settings 4 "$sk" "width,100,-1,0,"
+expect keys-settings 5 "$sk" "width,90,90,0,"
+expect keys-settings 6 "$sk" "width,90,90,0,settings:width:90"
+expect keys-settings 7 "[.call, ($sk)] | join(\"|\")" "ok|width,100,-1,0,"
+expect keys-settings 9 "$sk" "width,80,80,0,"
+expect keys-settings 10 "$sk" "width,80,80,0,settings:width:80"
+shows keys-settings 10 "Set the desk width to 80 %? Press Enter again."
+expect keys-settings 11 "$sk" "width,80,-1,1,"
 expect keys-settings 13 "$sk" "presets,80,-1,1,"
-expect keys-settings 16 "$sk" "presets,75,-1,2,"
-expect keys-settings 19 "[$tv.control, $tv.sidebarPick, .view.arm.armed] | join(\",\")" "sidebar,collapsed,"
-expect keys-settings 20 "[$tv.control, $tv.sidebarPick, .view.arm.armed] | join(\",\")" "sidebar,collapsed,settings:sidebar:collapsed"
-shows keys-settings 20 "Set the sidebar to Collapsed? Press Enter again."
-expect keys-settings 21 "[$tv.control, .view.arm.armed, (.writes | length)] | map(tostring) | join(\",\")" ",,2"
-expect keys-settings 26 "[$tv.control, .view.arm.armed, (.writes | length)] | map(tostring) | join(\",\")" "sidebar,settings:sidebar:collapsed,2"
-expect keys-settings 27 "[(.writes | length), .view.layout.sidebar] | map(tostring) | join(\",\")" "3,icons"
-expect keys-settings 28 "[$tv.control, .view.section] | join(\",\")" ",settings"
+expect keys-settings 13 '.marks.rings | length' 1
+expect keys-settings 14 "$sk" "presets,75,75,1,"
+expect keys-settings 15 "$sk" "presets,75,75,1,settings:presets:75"
+expect keys-settings 16 "$sk" "sidebar,80,-1,1,"
+expect keys-settings 17 "$sk" "presets,80,-1,1,"
+expect keys-settings 20 "$sk" "presets,75,-1,2,"
+expect keys-settings 23 "[$tv.control, $tv.sidebarPick, .view.arm.armed] | join(\",\")" "sidebar,collapsed,"
+expect keys-settings 24 "[$tv.control, $tv.sidebarPick, .view.arm.armed] | join(\",\")" "sidebar,collapsed,settings:sidebar:collapsed"
+shows keys-settings 24 "Set the sidebar to Collapsed? Press Enter again."
+expect keys-settings 25 "[$tv.control, .view.arm.armed, (.writes | length)] | map(tostring) | join(\",\")" ",,2"
+expect keys-settings 30 "[$tv.control, .view.arm.armed, (.writes | length)] | map(tostring) | join(\",\")" "sidebar,settings:sidebar:collapsed,2"
+expect keys-settings 31 "[(.writes | length), .view.layout.sidebar] | map(tostring) | join(\",\")" "3,icons"
+expect keys-settings 32 "[$tv.control, .view.section] | join(\",\")" ",settings"
 writes_of() { sed -n "\$p" "$work/$1.steps" | jq -c '[.writes[] | .settings]'; }
 run keys-settings-click "$sample" 1920x1080 \
   "summon;text:,;drag:deskWidthSlider:0.98,0.62;release;wait:settings.pending=false;click:75 %;wait:settings.pending=false;click:Collapsed" \
@@ -3643,6 +3655,20 @@ check "keys-settings: the keys write what the release and the clicks write" "$(w
 check "keys-settings-click: three writes" "$(writes_of keys-settings-click | jq length)" 3
 clean_log keys-settings
 clean_log keys-settings-click
+# The wheel and the keys on the slider (review F2): a wheel notch's
+# pending write goes first when ← previews, and the keys' preview is
+# never written by the wheel's timer; a wheel notch after a key preview
+# is the wheel's own, and leaving the control keeps it: its timer writes it.
+run keys-settings-wheel "$sample" 1920x1080 \
+  "summon;text:,;key:Return;wheel:deskWidthSlider:-120;key:Left;pause:1500;key:Escape;key:Return;key:Left;wheel:deskWidthSlider:-120;key:Down;pause:1500" \
+  HARNESS_SETTINGS="$entry"
+expect keys-settings-wheel 4 "$sk" "width,90,90,0,"
+expect keys-settings-wheel 5 "[($sk), (.writes | map(.settings.deskWidth) | join(\"+\"))] | join(\"|\")" "width,80,80,1,|90"
+expect keys-settings-wheel 6 "[($sk), (.writes | map(.settings.deskWidth) | join(\"+\"))] | join(\"|\")" "width,80,80,1,|90"
+expect keys-settings-wheel 9 "$sk" "width,80,80,1,"
+expect keys-settings-wheel 10 "$sk" "width,70,70,1,"
+expect keys-settings-wheel 12 "[($sk), (.writes | map(.settings.deskWidth) | join(\"+\"))] | join(\"|\")" "presets,70,-1,2,|90+70"
+clean_log keys-settings-wheel
 
 # ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live
