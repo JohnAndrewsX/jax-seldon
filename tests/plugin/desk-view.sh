@@ -3586,13 +3586,13 @@ check "keys-setup-snap: Grant by key opens what the click opens, once" \
 clean_log keys-setup-snap
 
 # *Agent sorts* (live): ↑ from the first row reaches the proposal, ↑ again
-# the button (no row, no proposal selected); Enter does nothing there
-# (Enter never starts an agent, WP-122), `a` arms; ↓ (to the proposal), a
+# the button (no row, no proposal selected); Enter and Space do nothing
+# there (Enter never starts an agent, WP-122), `a` arms; ↓ (to the proposal), a
 # row click each drop the arm; IPC `select ask` only places the cursor;
-# `a` twice asks once, the click's argv, and the Enters asked nothing.
+# `a` twice asks once, the click's argv, and Enter and Space asked nothing.
 mkdir -p "$work/home-keys-ask"
 run keys-ask "" 1920x1080 \
-  "summon:$cl;key:Up;key:Up;key:Return;key:Return;text:a;key:Down;key:Up;text:a;click:ollama.service;call:select:ask;text:a;text:a;settle;view" \
+  "summon:$cl;key:Up;key:Up;key:Return;key:Return;key:Space;text:a;key:Down;key:Up;text:a;click:ollama.service;call:select:ask;text:a;text:a;settle;view" \
   HOME="$work/home-keys-ask" FAKE_SELDON_FIXTURE="$sample"
 ak="[$tt.askFocused, $tt.askArmed, $tt.shown, $tv.cursor] | map(tostring) | join(\",\")"
 expect keys-ask 1 "$ak" "false,false,false,0"
@@ -3602,16 +3602,16 @@ expect keys-ask 3 "$ak" "true,false,false,-1"
 expect keys-ask 3 '.marks.rings | length' 1
 expect keys-ask 3 '.marks.rows | join(",")' ""
 shows keys-ask 3 "a twice starts it · ↓ back to the list"
-for i in 4 5; do expect keys-ask $i "[($ak), .view.arm.armed, .view.opened] | map(tostring) | join(\"|\")" "true,false,false,-1||true"; done
-expect keys-ask 6 "[($ak), .view.arm.armed] | join(\"|\")" "true,true,false,-1|ask:triage"
-shows keys-ask 6 "Agent sorts 6 open changes? Press a again."
-expect keys-ask 7 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,true,-1|"
-expect keys-ask 8 "$ak" "true,false,false,-1"
-expect keys-ask 9 "$tt.askArmed" true
-expect keys-ask 10 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,false,1|"
-expect keys-ask 11 "[.call, ($ak)] | join(\"|\")" "ok|true,false,false,-1"
-expect keys-ask 12 "$tt.askArmed" true
-expect keys-ask 15 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+for i in 4 5 6; do expect keys-ask $i "[($ak), .view.arm.armed, .view.opened] | map(tostring) | join(\"|\")" "true,false,false,-1||true"; done
+expect keys-ask 7 "[($ak), .view.arm.armed] | join(\"|\")" "true,true,false,-1|ask:triage"
+shows keys-ask 7 "Agent sorts 6 open changes? Press a again."
+expect keys-ask 8 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,true,-1|"
+expect keys-ask 9 "$ak" "true,false,false,-1"
+expect keys-ask 10 "$tt.askArmed" true
+expect keys-ask 11 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,false,1|"
+expect keys-ask 12 "[.call, ($ak)] | join(\"|\")" "ok|true,false,false,-1"
+expect keys-ask 13 "$tt.askArmed" true
+expect keys-ask 16 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
 argv_check keys-ask "$work/home-keys-ask" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)")"
 clean_log keys-ask
 # … on a stacked desk the button is in the list: ↑ ↑, Enter (nothing, no
