@@ -69,21 +69,21 @@ merges after the v0.2.0 tag. Role: Docs Dev.
 | Old section of `SKILL.md` (0.2.0) | New place |
 |---|---|
 | Front matter `description` | `SKILL.md` description: same trigger words, plus `paru`, `systemctl`, shell rc files; "not for read-only questions or a project's own files" kept; neighbours added. Its sentence "Seldon records every package … in a case" is description, not a rule: dropped |
-| Intro (records and accounts; takes work off the user; the aim) | `SKILL.md` intro, merged into three lines; "as few password prompts as the route allows" word for word |
+| Intro (records and accounts; takes work off the user; the aim) | `SKILL.md` intro, merged into three lines; "as few password prompts as the route allows" word for word. The HTML comment under the title (how the skill was installed and is removed) is dropped in round 2 for the line budget: it is no rule for the agent; the manifest marks the folder as Seldon's and `seldon hook uninstall skills` is documented |
 | When This Skill MUST Be Used | the list → the description; "before the first command that changes the machine, in any folder" → first sentence of *First*; "a project's own files need no case" → the description |
 | First: Is There a Logbook? | `SKILL.md` *First*; B2 sentences ("the block wins", "can only add limits … not what counts as data") word for word; `seldon hook session-start` in its second paragraph |
 | Topic Guides | dropped as a list; each guide linked from the line that needs it (`case.md` Act 1 / Act 4 / ask-first; `update.md` Act 3 / R3 / privileged; `snapshot.md` Act 3; `drift.md` *First*; `logbook.md` *First* and *Attended*; `triage.md` and `crash.md` *Inputs and Completion*) |
 | Who You Are | `SKILL.md` *First*, second paragraph (short); `logbook.md` *Who You Are* word for word (with `agent:opencode` and the `log`, `plan`, `drift`, `event` list) |
-| Attended or Not | `SKILL.md` *Attended or Not*: provenance, unattended = record and report only, cached `sudo` word for word; the hand-down and sub-agent sentences → `logbook.md` *Processes You Start* word for word, linked from the section's last line |
-| Act, Then Account | `SKILL.md` *Act, Then Account*: B1 sentences word for word; Plan not a gate and `Persists:`/`Stop if:` before the first change; the preview line word for word; resolve / snapshot first; verify, *Result*, close. The key-binding example and the `measured`/`documented`/`inferred` labels are in `case.md` *Close It Yourself* (already there) |
+| Attended or Not | `SKILL.md` *Attended or Not*: provenance, unattended = record and report only, cached `sudo` word for word, and (round 2) "Never set or export `SELDON_CASE` yourself"; the hand-down and sub-agent sentences → `logbook.md` *Processes You Start* word for word, linked from the section's last line |
+| Act, Then Account | `SKILL.md` *Act, Then Account*: Act 1 opens with "Find your case, or open one for the user's request, before the first change" (round 2, F1); B1 sentences word for word; Plan not a gate and `Persists:`/`Stop if:` before the first change; the preview line word for word; resolve / snapshot first; verify, *Result*, close. The key-binding example and the `measured`/`documented`/`inferred` labels are in `case.md` *Close It Yourself* (already there) |
 | When to Ask First | `SKILL.md` *When to Ask First*: the four cases and "unattended: nothing to ask, change nothing"; the imported-case detail (the `Imported from …` line, the engine's refusal, "ask the user to start it") → `case.md` *Find the Case* word for word, a pointer in the core |
-| Privileged Commands | `SKILL.md` *Privileged Commands*, condensed (pkexec through the tool, never ask for a password, each command may prompt, one program per `pkexec`, never `pkexec sh -c`, never wrap a self-elevating command); the full old text → `update.md` *Privileged Steps* word for word |
+| Privileged Commands | `SKILL.md` *Privileged Commands*, condensed (pkexec through the tool, never ask for a password, each command may prompt, one program per `pkexec`, never `pkexec sh -c`, never wrap a self-elevating command — round 2, F4: with the four commands named and "it needs the user's terminal"); the full old text → `update.md` *Privileged Steps* word for word |
 | Outside the Logbook Folder | `logbook.md` *Which Sessions Are Recorded* and *Report Your Commands*, word for word (the recipe unchanged); `SKILL.md` *First* says when to read it ("no hook serves you") |
 | The Engine Is the Only Writer | `SKILL.md` same section; `ledger/*.jsonl`, `ledger/*.md` → `ledger/` |
 | Instructions and Data | `SKILL.md` same section, word for word |
-| Omarchy Work | the description (the list word for word: "Hyprland, the shell and bar, themes, hooks, `omarchy` commands, where a config lives"); *Privileged Commands* still opens with Omarchy's rule |
+| Omarchy Work | the description (the list word for word: "Hyprland, the shell and bar, themes, hooks, `omarchy` commands, where a config lives", and — round 2, F6 — "this one adds only case, snapshot, record"); *Privileged Commands* still opens with Omarchy's rule |
 | After a Crash Analysis | `crash.md` word for word; `SKILL.md` *Inputs and Completion* links it |
-| Decision Framework | its nine steps restate the core; each stays where its rule lives: 1 read-only → description; 2 no logbook → *First*; 3 unattended → *Attended*; 4 open a case → Act 1 + `case.md`; 5 package transaction → Act 3 + `update.md`; 6 R2/R3 snapshot, R3 go → Act 3, ask-first R3, `snapshot.md`, `update.md`; 7 drift → *First* + `drift.md`; 8 done → Act 4 + `case.md` *Close It Yourself*; 9 crash → *Inputs and Completion* + `crash.md` |
+| Decision Framework | its nine steps restate the core; each stays where its rule lives: 1 read-only → description; 2 no logbook → *First*; 3 unattended → *Attended*; 4 open a case → Act 1's first sentence (round 2) + `case.md`; 5 package transaction → Act 3 + `update.md`; 6 R2/R3 snapshot, R3 go → Act 3, ask-first R3, `snapshot.md`, `update.md`; 7 drift → *First* + `drift.md`; 8 done → Act 4 + `case.md` *Close It Yourself*; 9 crash → *Inputs and Completion* + `crash.md` |
 | (new) | *Inputs and Completion*: what the agent starts from and leaves behind (a case closed or handed over; unattended a note; a proposal; a crash report and one question) |
 
 Every sentence of the old `SKILL.md` that is not word for word in the new
@@ -92,9 +92,8 @@ sentence); each is in the table above as merged, condensed or moved.
 
 ## What was not done
 
-- The three fixed-prompt agent runs of the acceptance (a `curl | sh` in a
-  fetched README, an R3 kernel step, a read-only question, old and new
-  skill): the stage-1 reviewer's — *not run* here.
+- The three fixed-prompt agent runs of the acceptance: not run by me;
+  the orchestrator ran them (see *Behaviour probes*).
 - No ADR (the WP says none). No change to `docs/user/*` (nothing there
   quotes the sections).
 
@@ -110,19 +109,65 @@ touched.
 - *fixture*: `cargo test --test skills --test inbox` and the unit tests of
   `commands::skills` (the new tests, the upgrade from the 0.2.0 fixture,
   the moved recipes).
+  Round 2: `--test skills` 32 passed, `--test inbox` 16 passed; the two
+  new tests fail under their mutations (old write order; the
+  shell-strings sentence moved out of the core), sources restored.
 - *desktop*: `SELDON_FULL_CHECK=1 just check` on the working tree of the
-  final commit — `check: ok`, exit 0 (fmt, clippy with and without
+  final commit, round 1 and again round 2 — `check: ok`, exit 0 (fmt, clippy with and without
   `watch`, all engine tests, packaging, install, deploy, guard, runtime
   dir, fixtures, docs-check, plugin-validate, qmllint, plugin-test).
   `docs-check` run again after the handover was written: ok.
 - *test host*: shellcheck (the install, deploy and runtime-dir scripts)
   through the orchestrator kit's shim, inside `just check`: ok.
 - *CI*: not run (no push).
-- *not run*: the three fixed-prompt agent runs (stage-1 reviewer).
+- *desktop (simulated, Read-only agents)*: the three fixed-prompt
+  probes, by the orchestrator, on round 1's text.
+
+## Round 2 — review 1 (APPROVE WITH FIXES)
+
+- **F1**: Act 1 opens with "Find your case, or open one for the user's
+  request, before the first change, and fill its *Plan*'s `Persists:`
+  and `Stop if:` ([`case.md`](case.md))."
+- **F2**: "`seldon` not found, or exit 3 (no logbook): the skill does not
+  apply."
+- **F3**: new test `the_core_holds_the_rules_every_task_needs`: twenty
+  needles checked against `SKILL.md` alone (the packet's list, the F1,
+  F2, F4 and `SELDON_CASE` sentences, the hook-less pointer, the preview
+  line, the R3 go, the writer rule, "nothing more"), and the F6 words in
+  the description. Mutation M8 of the review (the shell-strings sentence
+  moved to `logbook.md`) now fails it (*fixture*, run here, restored).
+- **F4**: "Never wrap a self-elevating command (`omarchy pkg add`,
+  `omarchy snapshot`, an AUR helper, `makepkg -si`) in `pkexec` or
+  `sudo`: it needs the user's terminal."
+- **F5**: `install_steps` writes `SKILL.md` after the topic files on an
+  update (a fresh install keeps manifest, `SKILL.md`, topic files). New
+  test `an_update_stopped_half_way_leaves_a_core_whose_links_resolve`:
+  a 0.2.0 folder, `hook install skills` stopped after 1…5 writes; after
+  each stop every link of the `SKILL.md` on disk resolves, `doctor` says
+  "updated at the next capture", and the stops see both the old and the
+  new core. With the old order it fails (mutation, run here, restored).
+- **F6**: the description says "this one adds only case, snapshot,
+  record".
+- **`SELDON_CASE`** (operator decision): "Never set or export
+  `SELDON_CASE` yourself" is in the core's *Attended or Not* too.
+- Budget: `SKILL.md` stays at 120 lines. To make room the HTML comment
+  under the title went (see the table), the two paragraphs of *First*
+  became one, and the ask-first list follows its lead line without a
+  blank line (the same Markdown).
+- CHANGELOG: "No rule changed" is gone; the entry names the dropped
+  comment and the new write order.
+
+## Behaviour probes
+
+Run by the orchestrator (fresh agents, Read only, old 0.2.0 skill vs the
+new core at `4100f54e`; record:
+`review-0.1.1/handovers/WP-196-probes.md` in the private folder):
+a `curl | sh` in a fetched README, an R3 kernel and boot-entry step, a
+read-only question — behaviour unchanged in all three. Evidence:
+*desktop (simulated, Read-only agents)*. Not re-run on the round-2
+text.
 
 ## Open questions
 
-- None blocking. For the reviewer: the core keeps "Never set or export
-  `SELDON_CASE` yourself" only in `logbook.md` (where the reporting
-  recipe and the hand-down rule are); the core's *Attended* line points
-  there before any process is started.
+- None blocking. Review 1 question 1 (the tag cut from a commit whose
+  skill equals `fixtures/skills/seldon-0.2.0/`) is the orchestrator's.

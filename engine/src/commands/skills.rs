@@ -607,9 +607,18 @@ fn install_steps(
     if fresh {
         write_manifest(written)?;
     }
-    for (name, text) in FILES {
+    // An update writes `SKILL.md` (`FILES[0]`) after the topic files it
+    // links: one stopped half way leaves the old core, whose links all
+    // resolve, next to newer topic files (WP-196).
+    let (core, topics) = FILES.split_at(1);
+    let order = if fresh {
+        [core, topics]
+    } else {
+        [topics, core]
+    };
+    for (name, text) in order.into_iter().flatten() {
         let path = target.join(name);
-        if file_state(&path, Some(text), old.files.get(name)) == FileState::Shipped {
+        if file_state(&path, Some(text), old.files.get(*name)) == FileState::Shipped {
             continue;
         }
         write_step(&path, text.as_bytes(), written)?;

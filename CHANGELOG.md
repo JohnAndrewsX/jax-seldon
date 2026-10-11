@@ -33,10 +33,13 @@ and the package does not exist yet. Update the plugin first:
   from the line that needs them: reporting commands without a hook and
   what a started process must not inherit (`logbook.md`), the crash
   report (`crash.md`), the imported case (`case.md`), the privileged
-  steps in full (`update.md`). No rule changed. The next capture brings
-  an unedited 0.2.0 skill up to date, the two new files included; a
-  skill changed by hand, or a folder that holds a `logbook.md` or
-  `crash.md` of the user's, is kept, as before.
+  steps in full (`update.md`). The HTML comment under the title (how to
+  remove the skill) is gone; `seldon hook uninstall skills` still does.
+  The next capture brings an unedited 0.2.0 skill up to date, the two
+  new files included; a skill changed by hand, or a folder that holds a
+  `logbook.md` or `crash.md` of the user's, is kept, as before. An
+  update writes `SKILL.md` after the topic files, so one that stops
+  half way never leaves a core that links a missing file.
 
 ## [0.2.0] - 2026-10-11
 
