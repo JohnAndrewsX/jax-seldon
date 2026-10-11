@@ -36,6 +36,7 @@
     "c: Agent sorts N open changes needs a click, so its command seldon agent ask triage ran; a fresh logbook has no agent skill, so seldon hook install skills ran first, as the engine's refusal says; the crisis was resolved by the user from its own row, not accepted from the proposal (WP-201)",
     "d: the width was set with omarchy bar set jax.seldon deskWidth 50, since the slider and presets of Settings › Appearance need a pointer; 50 % of 1920 px is the 960 px minimum",
     "restart: one monitor; the two-monitor restart test runs on the dev host after the tag with the release",
-    "gate: WP-194 has not landed"
+    "gate: WP-194 has not landed",
+    "a-d: four buttons ran as the command they run; the click → command mapping is pinned headless in tests/plugin/desk-view.sh (setup-flow, restart-updated, triage, settings)"
   ]
 }

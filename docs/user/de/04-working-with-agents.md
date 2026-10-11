@@ -623,7 +623,10 @@ Er kommt in jeden Skill-Ordner eines Agenten, den es gibt —
 als `<Ordner>/seldon/`. Seldon legt keinen dieser Ordner an; ein Agent,
 den du später installierst, bekommt den Skill, wenn du den Befehl noch
 einmal ausführst. `seldon init` bietet ihn neben den Claude-Code-Hooks an
-(`--harness skills`).
+(`--harness skills`). Ein Logbuch, das die Einrichtungskarte angelegt hat
+(`seldon init --defaults`), hat noch keinen Skill: Das erste *Agent sorts
+N open changes* verlangt diesen Befehl, und die Zeile unter dem Button
+sagt das.
 
 Der Skill sagt dem Agenten kurz, was die `AGENTS.md` des Logbuchs
 ausführlich sagt:

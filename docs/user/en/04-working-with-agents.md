@@ -572,7 +572,10 @@ It goes into every agent skill folder that exists — `~/.agents/skills`,
 `~/.hermes/skills`, `~/.hermes/profiles/*/skills` — as
 `<folder>/seldon/`. Seldon creates none of these folders; an agent you
 install later gets the skill when you run the command again. `seldon
-init` offers it next to the Claude Code hooks (`--harness skills`).
+init` offers it next to the Claude Code hooks (`--harness skills`). A
+logbook the setup card created (`seldon init --defaults`) has no skill
+yet: the first *Agent sorts N open changes* asks for this command, and
+the note under the button says so.
 
 The skill tells the agent, in short, what the logbook's `AGENTS.md` says
 at length:
