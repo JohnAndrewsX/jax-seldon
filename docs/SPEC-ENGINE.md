@@ -2715,9 +2715,25 @@ with a clipped `detail` has `truncated: true`; an uncut one has neither.
 `truncated` is index-only: the ledger refuses it on write, and one a
 hand-edited line carries is dropped. A case's `intent` and `result` and a
 decision's `lead` are clipped the same way, with `in the file` (below).
-Open cases, decisions and memory topics are not capped: an index of 1 000 000 bytes or more makes
-`index` and `status` warn (`warnings`, stderr) and name the largest
-section. The R3 advisory (WP-101, §5) is a build warning too, in the same
+Open cases, decisions and memory topics are not capped. An index that
+would be 1 000 000 bytes or more is cut right before it is written
+(`index::fit`, ADR-0053): the views, `drift`, the dossier and every other
+reader of the build keep the whole index. Rung by rung, each list loses
+rows from its oldest end, measured again after each cut, until the file
+is under the budget: `cases.completed` to 10, `events` to 100,
+`cases.queued` to 50, drift items that are no crisis to 50, decisions not
+proposed to 20, memory topics to 20, yesterday's journal; then the
+timeline's releases and snapshots, `series.packages`, `series.drift`,
+lessons, topics and areas; then completed cases, events, queued cases,
+open changes and decisions to none, today's journal, cases in
+verification, active cases, proposed decisions, crisis rows, and last the
+optional parts of `system`. A cut case takes its timeline span, a cut
+crisis row its mark. `summary`, `series.risk` and `system.areas[].cases`
+keep the counts of the whole index. The warning names the size, the
+largest section and what went (`index` and `status`: `warnings`; the
+rebuild after a writing command and the session hook: stderr).
+`index::write` refuses an index of 1 000 000 bytes or more (exit 2, the
+old file stays). The R3 advisory (WP-101, §5) is a build warning too, in the same
 channel: every command that rebuilds the index prints it (`seldon:
 warning: …` on stderr; `index`, `status` and `dossier` also in their
 `warnings`), once per open case below R3 and red `alwaysRed` subject, no

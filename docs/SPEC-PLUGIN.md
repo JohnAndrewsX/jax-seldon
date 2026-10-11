@@ -84,9 +84,11 @@ plugin/
   over the 1 MB the plugin reads; rebuild it from the logbook, and if it
   stays, seldon status in a terminal names the largest section."). No new
   state, no contract change; a character is at least one byte, so an index
-  within the engine's budget is never refused. The engine only warns over
-  its budget and still writes the file (CONTRACT.md rule 5), so a rebuild
-  can stay oversized; `seldon status` prints which section is largest. An
+  within the engine's budget is never refused. Since ADR-0053 the engine
+  cuts the oldest rows and never writes a file over its budget
+  (CONTRACT.md rule 5); an older engine only warned and wrote it, so a
+  rebuild could stay oversized, and `seldon status` prints which section
+  is largest. An
   unreadable file is read again every 5 s; its warning line
   (`Model.indexWarning`, the reason and the detail with the size) is
   logged once until it changes.
