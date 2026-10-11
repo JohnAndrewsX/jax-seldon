@@ -1246,8 +1246,13 @@ Four groups in the list; Appearance is selected first.
   puts the cursor on its first control; on a stacked desk the first Enter
   shows the group. `↑`/`↓` walk the controls, `←`/`→` change the value
   under the cursor — the width as a preview on the desk, 10 % a notch on
-  the slider or the next preset (`Model.keyWidth`), written nowhere; the
-  sidebar's option, drawn with Omarchy's panel cursor on the chip —, Enter
+  the slider's grid (from 67 % → is 70 %) or the next preset
+  (`Model.keyWidth`), written nowhere (a wheel notch still waiting for its
+  write is written first, so the wheel's timer never writes the keys'
+  preview; a wheel notch after a key preview is the wheel's own and is
+  written as the wheel writes); the sidebar's option, drawn with
+  Omarchy's panel cursor on the chip, and at a width that is no preset
+  the focus ring on the presets —, Enter
   arms the write ("Set the desk width to 80 %? Press Enter again.") and
   the second Enter makes it, the same `Desk.writeSetting` call as the
   release or the click; a value already stored arms nothing. Esc, a
