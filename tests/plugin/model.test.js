@@ -3688,19 +3688,30 @@ test("WP-126c: ↑ from the first Changelog row reaches the proposal, ↓ goes b
 test("WP-202: the keys' path to the desk's buttons", () => {
   // the arm's hint and the key line
   assert.strictEqual(M.keyArmHint("Restart shell"), "Restart shell? Press Enter again.")
+  assert.strictEqual(M.keyArmHint("Agent sorts 6 open changes", "a"), "Agent sorts 6 open changes? Press a again.")
   assert.strictEqual(M.noticeHint(false), "↑ at the top of a list reaches these buttons")
   assert.strictEqual(M.noticeHint(true), "←/→ a button · Enter twice runs it · ↓ back to the list")
   // notices: only the ones a click is wired to, only with buttons; the key
   // names the notice's title, so a replaced notice never shares an arm
   const items = [
-    { id: "restart", banner: { title: "Restart the shell to finish the update", actions: [{ id: "restart", label: "Restart shell" }] } },
+    { id: "restart", banner: { title: "Restart the shell to finish the update", command: "omarchy-restart-shell", actions: [{ id: "restart", label: "Restart shell" }] } },
     { id: "status", banner: { title: "Index is stale", actions: [{ id: "capture", label: "Capture now" }] } },
     { id: "rulesNotice", banner: { title: "Rules updated", actions: [{ id: "x", label: "X" }] } },
     { id: "capture", banner: { title: "Capture warned", actions: [] } },
   ]
   const t = M.noticeTargets(items)
   same(t.map((n) => n.id), ["restart", "status"])
-  assert.strictEqual(t[0].actions[0].key, "notice:restart:Restart the shell to finish the update:restart")
+  assert.strictEqual(t[0].actions[0].key, "notice:restart:Restart the shell to finish the update:omarchy-restart-shell:restart")
+  // what the fix runs is in the key too: the mismatch banner keeps its
+  // title and action but runs the plugin's or the engine's update by state
+  // (stage 2 F3); the script wins over the command
+  const mismatch = (pluginOlder) => M.noticeTargets([{ id: "status", banner: M.bannerFor("contractMismatch",
+    { indexContractVersion: pluginOlder ? M.CONTRACT_VERSION + 1 : M.CONTRACT_VERSION - 1 }) }])[0].actions[0]
+  assert.strictEqual(mismatch(true).id, "terminal")
+  assert.strictEqual(mismatch(true).id, mismatch(false).id)
+  assert.notStrictEqual(mismatch(true).key, mismatch(false).key)
+  assert.ok(mismatch(true).key.includes(M.UPDATE_PLUGIN_SCRIPT))
+  assert.ok(mismatch(false).key.includes(M.UPDATE_ENGINE_SCRIPT))
   const other = M.noticeTargets([{ id: "status", banner: { title: "Create your logbook", actions: [{ id: "capture", label: "Capture now" }] } }])
   assert.notStrictEqual(other[0].actions[0].key, t[1].actions[0].key)
   same(M.noticeTargets(null), [])
@@ -3749,7 +3760,8 @@ test("WP-202: the keys' path to the desk's buttons", () => {
   assert.strictEqual(top({ cursor: -1, cursorRow: 3 }), false)
   assert.strictEqual(top({ rows: 0, cursor: -1 }), true)
   assert.strictEqual(M.askHint(false), "↑ from the top of the list reaches it")
-  assert.strictEqual(M.askHint(true), "Enter twice starts it · ↓ back to the list")
+  // `a` twice, as on a case: Enter never starts an agent (WP-122)
+  assert.strictEqual(M.askHint(true), "a twice starts it · ↓ back to the list")
   // Settings: the controls the keys walk, the width ←/→ picks
   same(M.settingsControls("appearance", false), ["width", "presets", "sidebar"])
   same(M.settingsControls("capture", true), ["offer"])

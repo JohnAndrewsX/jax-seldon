@@ -32,9 +32,10 @@ import "../Model.js" as Model
 // detail, as for every row), `f` / `F` the next / previous chip, `e` this
 // month's ledger in the editor, Esc hides a shown form (its draft kept).
 // Above the proposal (or the first row without one) ↑ reaches *Agent sorts
-// N open changes* (WP-202): Enter arms it, the second Enter starts the
-// agent as its click does; ↓ goes back, ↑ on to the notices; a click,
-// another selection or the button going away drops the arm.
+// N open changes* (WP-202): `a` arms it, the second `a` starts the agent as
+// its click does (Enter never starts an agent, WP-122: Enter and Space do
+// nothing there); ↓ goes back, ↑ on to the notices; a click, another
+// selection, another section or the button going away drops the arm.
 Section {
   id: root
 
@@ -162,12 +163,9 @@ Section {
   }
 
   function activate() {
-    if (root.askFocused) {
-      // Enter arms, the second Enter starts the agent (the click's call)
-      if (root.askKeyShown && root.arm && root.arm.press(root.askKey, Model.keyArmHint(triageAsk.text)) && root.service)
-        root.service.askAgent("triage", "")
-      return true
-    }
+    // Enter never starts an agent (WP-122): on *Agent sorts* it does
+    // nothing, `a` presses it (textKey)
+    if (root.askFocused) return true
     if (root.stacked && !root.detailShown) {
       if (root.desk) root.desk.showDetail()
       return true
@@ -191,6 +189,13 @@ Section {
   }
 
   function textKey(t) {
+    // `a` arms *Agent sorts* under the keys, the second `a` starts the
+    // agent, the click's call (the Work pattern, WP-202)
+    if (t === "a" && root.askFocused) {
+      if (root.askKeyShown && root.arm && root.arm.press(root.askKey, Model.keyArmHint(triageAsk.text, "a")) && root.service)
+        root.service.askAgent("triage", "")
+      return true
+    }
     if (t === "f" || t === "F") {
       root.setChip(Model.cycleChip(root.chip, t === "F" ? -1 : 1))
       return true
@@ -310,7 +315,12 @@ Section {
   }
   // Another section shown: a shown form gives the keys back (a hidden
   // field keeps Qt's focus otherwise); its draft stays.
-  onActiveChanged: if (!root.active && detail.editing) detail.back()
+  // The keys' place on *Agent sorts* goes too (WP-202).
+  onActiveChanged: {
+    if (root.active) return
+    root.leaveKeys()
+    if (detail.editing) detail.back()
+  }
 
   ListColumn {
     id: list

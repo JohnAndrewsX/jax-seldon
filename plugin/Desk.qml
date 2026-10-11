@@ -450,8 +450,9 @@ Item {
     }
     if (k === Qt.Key_Tab || k === Qt.Key_Backtab) return true
     if (k === Qt.Key_Up || t === "k") {
-      // at the top of the list: on to the notices (WP-202)
-      if (root.currentSection && !root.currentSection.move(-1)) root.enterNotices("last")
+      // at the top of the list: on to the notices on a fresh press; a held
+      // ↑ stops at the top (WP-202 stage 2 F2)
+      if (root.currentSection && !root.currentSection.move(-1) && !event.isAutoRepeat) root.enterNotices("last")
       return true
     }
     if (k === Qt.Key_Down || t === "j") {

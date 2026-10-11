@@ -639,9 +639,10 @@ function isProposalTarget(id, triageView) {
 // names what it runs (`key` below), so an arm made for one button never
 // runs another that took its place.
 
-// The arm's hint: "<label>? Press Enter again."
-function keyArmHint(label) {
-  return String(label) + "? Press Enter again."
+// The arm's hint: "<label>? Press Enter again." (or the key that presses
+// it: `a` on *Agent sorts*, since Enter never starts an agent)
+function keyArmHint(label, key) {
+  return String(label) + "? Press " + (key || "Enter") + " again."
 }
 
 var KEY_BUTTONS_HINT = "←/→ a button · Enter twice runs it · ↓ back to the list"
@@ -651,7 +652,10 @@ var KEY_BUTTONS_HINT = "←/→ a button · Enter twice runs it · ↓ back to t
 var NOTICE_KEY_IDS = ["restart", "status", "contract", "snapper", "rules"]
 
 // The notices' buttons as key targets: [{ id, actions: [{ id, label,
-// key }] }] for each notice with a button; `items` is Notices.items.
+// key }] }] for each notice with a button; `items` is Notices.items. The
+// key names the notice, its title, what its fix runs (the banner's script,
+// else its command: the mismatch banner picks the plugin's or the
+// engine's update by state) and the action.
 function noticeTargets(items) {
   var out = []
   var list = Array.isArray(items) ? items : []
@@ -661,8 +665,9 @@ function noticeTargets(items) {
     var actions = Array.isArray(n.banner.actions) ? n.banner.actions : []
     if (actions.length === 0) continue
     var title = String(n.banner.title || "")
+    var payload = String(n.banner.script || n.banner.command || "")
     out.push({ id: n.id, actions: actions.map(function(a) {
-      return { id: String(a.id), label: String(a.label), key: "notice:" + n.id + ":" + title + ":" + a.id }
+      return { id: String(a.id), label: String(a.label), key: "notice:" + n.id + ":" + title + ":" + payload + ":" + a.id }
     }) })
   }
   return out
@@ -756,9 +761,10 @@ function changelogAtTop(s) {
   return (cursor >= 0 ? cursor : Number(s.cursorRow) || 0) === 0
 }
 
-// The line under *Agent sorts N open changes*.
+// The line under *Agent sorts N open changes*: `a` twice starts it, as on
+// a case; Enter never starts an agent (operator decision, WP-122).
 function askHint(focused) {
-  return focused ? "Enter twice starts it · ↓ back to the list" : "↑ from the top of the list reaches it"
+  return focused ? "a twice starts it · ↓ back to the list" : "↑ from the top of the list reaches it"
 }
 
 // Settings: the controls of a group the keys walk (↑/↓), in order.
