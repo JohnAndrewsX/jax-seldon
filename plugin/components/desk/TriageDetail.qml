@@ -9,8 +9,9 @@ import "../../Model.js" as Model
 // ADR-0036, WP-124b): the sticky bar *Apply proposals* / *Discard* with the
 // line "N items proposed by <actor> at <at>, C crises held back — apply
 // each below" under its buttons; then the crises, each with its own button
-// (`drift apply <id> --item <eventId>`, one per run), and the items Apply
-// takes, each with the change's subject, the action, and every evidence
+// (`drift apply <id> --item <eventId>`, one per run; by key ↓ walks them
+// and Enter twice applies the one under the cursor, WP-201), and the items
+// Apply takes, each with the change's subject, the action, and every evidence
 // text with the engine's "by <authors> ·" first (wrapped, never clipped).
 // An item whose evidence names an agent or an unknown author is marked.
 // After a run the items say done, skipped or refused (the engine's words);
@@ -55,19 +56,39 @@ DetailPane {
   readonly property string applyKey: "triage:apply:" + root.seenId
   readonly property bool applyArmed: root.current && !!root.arm && root.arm.armedId === root.applyKey
   readonly property bool applyEnabled: !!root.proposal && root.canWrite && !root.pending && root.proposal.readable
+  // A crisis by key (WP-201): the crisis under the cursor (-1: none, the
+  // bar has the keys), walked by ↓/↑ from the bar while the pane is shown
+  // (Changelog.move); Enter arms it, the second Enter runs the
+  // click's applyCrisis. Any move, a detour (a press, another selection,
+  // leaving the proposal) or a replaced proposal drops the cursor's place
+  // and the arm.
+  property int crisisAt: -1
+  readonly property int crisisCount: root.shown && root.proposal ? root.proposal.crises.length : 0
+  readonly property var keyedCrisis: root.crisisAt >= 0 && root.crisisAt < root.crisisCount ? root.proposal.crises[root.crisisAt] : null
+  readonly property bool crisisArmed: root.current && !!root.keyedCrisis && !!root.arm
+    && root.arm.armedId === Model.crisisKey(root.seenId, root.keyedCrisis.eventId)
   readonly property color foregroundColor: Color.popups.text
 
   title: "Proposal"
   meta: root.seenId
-  hint: root.discardArmed || root.applyArmed ? root.arm.hint : root.proposal ? root.proposal.head : root.seen.text
+  hint: root.discardArmed || root.applyArmed || root.crisisArmed ? root.arm.hint : root.proposal ? root.proposal.head : root.seen.text
 
   // The bar's actions, rebuilt only when what they show changes (not on
   // every index reload).
   readonly property string actionsKey: [root.seen.state, root.seenId, root.proposal ? root.proposal.applyCount : -1,
     root.proposal ? root.proposal.readable : false, root.canWrite, root.pending, root.discardArmed, root.applyArmed].join("|")
   onActionsKeyChanged: root.actions = root.buildActions()
-  onCurrentChanged: if (!root.current && root.arm
-      && (root.arm.armedId === root.applyKey || root.arm.armedId === root.discardKey)) root.arm.disarm()
+  // Every triage arm, a crisis's too: when this proposal comes back as the
+  // current one (A armed, B replaces it, B goes) the arm stays gone.
+  onCurrentChanged: {
+    if (root.current) return
+    root.crisisAt = -1
+    if (root.arm && root.arm.armedId.indexOf("triage:") === 0) root.arm.disarm()
+  }
+  onSeenIdChanged: root.crisisAt = -1
+  onShownChanged: if (!root.shown) root.crisisAt = -1
+  onCrisisCountChanged: if (root.crisisAt >= root.crisisCount) root.crisisAt = -1
+  onCrisisAtChanged: if (root.arm && root.arm.armedId.indexOf("triage:crisis:") === 0) root.arm.disarm()
   Component.onCompleted: root.actions = root.buildActions()
 
   function buildActions() {
@@ -87,14 +108,16 @@ DetailPane {
     ]
   }
 
-  // Enter (WP-126c): on a replaced proposal, Review the new one; else arm
-  // Apply proposals, and the second Enter applies it. The crises keep
-  // their own buttons (never with the rest, ADR-0036).
+  // Enter (WP-126c): on a replaced proposal, Review the new one; on a
+  // crisis (WP-201) arm it, the second Enter applies that item alone; else
+  // arm Apply proposals, and the second Enter applies it. The crises are
+  // never with the rest (ADR-0036).
   function activate() {
     if (root.seen.state === "replaced") {
       if (root.section) root.section.showTriage()
       return true
     }
+    if (root.crisisAt >= 0) return root.pressCrisis()
     if (!root.applyEnabled || !root.arm) return false
     var n = root.proposal.applyCount
     if (root.arm.press(root.applyKey, "Apply " + (n > 0 ? n + " " : "") + "proposed " + (n === 1 ? "change" : "changes")
@@ -103,6 +126,37 @@ DetailPane {
     return true
   }
   function back() { return false }
+
+  // ↓/↑ inside the shown proposal (Model.crisisMove): true when the key
+  // stayed among the crises (or went back to the bar), false when it
+  // leaves them for the list or *Agent sorts*.
+  function crisisMove(dy, rows) {
+    var to = Model.crisisMove({ at: root.crisisAt, count: root.crisisCount, rows: rows }, dy)
+    root.crisisAt = to === null ? -1 : to
+    return to !== null
+  }
+
+  function pressCrisis() {
+    var c = root.keyedCrisis
+    if (!c || !c.open || !root.current || !root.canWrite || root.pending || !root.arm) return false
+    if (root.arm.press(Model.crisisKey(root.seenId, c.eventId), Model.crisisArmHint(c.subject)))
+      root.applyCrisis(c.eventId)
+    return true
+  }
+
+  // One crisis, one run: the click's and the second Enter's call.
+  function applyCrisis(eventId) {
+    if (root.service && root.current) root.service.applyProposal(root.seenId, eventId)
+  }
+
+  // The crisis under the cursor inside the scrolling content.
+  function reveal(item) {
+    var f = root.flickable
+    var y = item.mapToItem(f.contentItem, 0, 0).y
+    if (y < f.contentY) f.contentY = Math.max(0, y)
+    else if (y + item.height > f.contentY + f.height)
+      f.contentY = Math.max(0, Math.min(y + item.height - f.height, f.contentHeight - f.height))
+  }
 
   onActionTriggered: function(id) {
     if (!root.service) return
@@ -147,6 +201,9 @@ DetailPane {
       actions: root.actions.map(function(a) { return a.label + (a.enabled === false ? " (off)" : "") }),
       applyArmed: root.applyArmed,
       discardArmed: root.discardArmed,
+      crisisAt: root.crisisAt,
+      crisisArmed: root.crisisArmed,
+      crisisHint: root.crisisCount > 0 ? Model.crisisHint(root.crisisAt >= 0) : "",
       result: root.result && !root.result.pending ? resultText.text : "",
       resultOk: root.result ? root.result.ok : true,
       built: items.status === Loader.Ready,
@@ -304,13 +361,23 @@ DetailPane {
         width: items.width
         spacing: Style.spacing.lg
 
-        // Crises: never inside Apply (ADR-0028 §3); one click each, one per run.
+        // Crises: never inside Apply (ADR-0028 §3); one click or Enter
+        // twice each, one per run (WP-201).
         Line {
           visible: !!root.proposal && root.proposal.crises.length > 0
           text: "CRISES — EACH ON ITS OWN"
           color: root.tone.urgentText
           font.pixelSize: Style.font.caption
           font.bold: true
+        }
+
+        // the keys that reach them (WP-201)
+        Line {
+          objectName: "crisisHint"
+          visible: !!root.proposal && root.proposal.crises.length > 0
+          text: Model.crisisHint(root.crisisAt >= 0)
+          color: root.tone.dim
+          font.pixelSize: Style.font.caption
         }
 
         Repeater {
@@ -320,9 +387,12 @@ DetailPane {
             id: crisis
 
             required property var modelData
+            required property int index
+            readonly property bool keyed: root.crisisAt === crisis.index
 
             width: parent.width
             spacing: Style.spacing.sm
+            onKeyedChanged: if (crisis.keyed) root.reveal(crisis)
 
             Proposed {
               modelData: crisis.modelData
@@ -337,7 +407,12 @@ DetailPane {
               fontFamily: root.fontFamily
               fontSize: Style.font.caption
               verticalPadding: Style.spacing.xs
-              onClicked: if (root.service && root.current) root.service.applyProposal(root.seenId, crisis.modelData.eventId)
+              hasCursor: crisis.keyed
+              onClicked: root.applyCrisis(crisis.modelData.eventId)
+
+              FocusRing {
+                shown: crisis.keyed
+              }
             }
           }
         }

@@ -618,9 +618,48 @@ function changelogMove(s, dy) {
 // how the keys reach it, and, while it is the selection, what they do
 // there; `listOnly`: a stacked desk shows the list, not the detail, so
 // Enter first shows the detail (review F1).
-function proposalHint(shown, listOnly) {
+// `crises`: the shown proposal's crises the keys walk (WP-201), `onCrisis`:
+// the cursor is on one of them.
+function proposalHint(shown, listOnly, crises, onCrisis) {
   if (!shown) return "↑ from the first row, or a click, opens it"
-  return listOnly ? "Enter shows it · ↓ back to the list" : "Enter twice applies · ↓ back to the list"
+  if (listOnly) return "Enter shows it · ↓ back to the list"
+  if (onCrisis) return "Enter twice applies the crisis under the cursor · ↑/↓ the crises"
+  return crises > 0 ? "Enter twice applies · ↓ its crises, then the list" : "Enter twice applies · ↓ back to the list"
+}
+
+// A crisis inside the shown proposal by key (WP-201; ADR-0028 §3,
+// ADR-0036: one crisis, one deliberate act, one per run). The crises are
+// the stops between the proposal's bar and the list's first row. s: { at
+// (the crisis under the cursor, -1: the bar), count (the crises shown),
+// rows (the list's) }. Returns the new `at` (-1: back on the bar), or null
+// when the key leaves the crises (↑ from the bar, ↓ from the last crisis
+// to the list); an empty list keeps the last crisis.
+function crisisMove(s, dy) {
+  var count = Math.max(0, Number(s && s.count) || 0)
+  var at = Number(s && s.at)
+  if (!(at >= 0 && at < count)) at = -1
+  if (count === 0) return null
+  if (at < 0) return dy > 0 ? 0 : null
+  var to = at + (dy > 0 ? 1 : -1)
+  if (to < count) return Math.max(-1, to)
+  return (Number(s.rows) || 0) > 0 ? null : at
+}
+
+// The arm of one crisis names the proposal and the item, so a crisis that
+// changed under the cursor, or a replaced proposal, only arms again. Its
+// prefix is the Changelog's `triage:` (every detour drops it).
+function crisisKey(proposalId, eventId) {
+  return "triage:crisis:" + String(proposalId) + ":" + String(eventId)
+}
+
+function crisisArmHint(subject) {
+  return "Apply the crisis " + String(subject) + " as you? Press Enter again. Only this item; the other crises stay."
+}
+
+// The dim line under CRISES — EACH ON ITS OWN.
+function crisisHint(onCrisis) {
+  return onCrisis ? "Enter twice applies this crisis alone · ↑/↓ the other crises"
+    : "↓ from the proposal reaches each crisis · Enter twice applies the one under the cursor"
 }
 
 // Whether `id` (IPC `select`, a desk payload's `select`, the shim's
