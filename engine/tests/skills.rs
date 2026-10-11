@@ -748,9 +748,12 @@ fn what_a_stopped_install_wrote_is_still_recorded() {
         own,
         [
             "~/.claude/skills/seldon/.seldon-skill.json",
-            "~/.claude/skills/seldon/SKILL.md"
+            "~/.claude/skills/seldon/case.md"
         ]
     );
+    // stage 2 F-C: the core comes last, so a stopped fresh install leaves
+    // no SKILL.md whose links could dangle
+    assert!(!env.home.join(".claude/skills/seldon/SKILL.md").exists());
 }
 
 #[test]
@@ -1888,6 +1891,10 @@ fn the_core_holds_the_rules_every_task_needs() {
         "**R3**: it can break boot, login or the shell",
         "One explicit go per such step.",
         "Never ask for, store or pass a password.",
+        // stage 2 F-A: the snapshot, the package check, the pkexec routing
+        "R2 or R3: snapshot first ([`snapshot.md`](snapshot.md)).",
+        "3. Resolve package transactions first ([`update.md`](update.md));",
+        "A command you run through your tool has no terminal the user sees, so it is `pkexec`; `sudo` only in the user's own terminal.",
         "One program per `pkexec`; never bundle privileged commands in `pkexec sh -c`.",
         "Never wrap a self-elevating command (`omarchy pkg add`, `omarchy snapshot`, an AUR helper, `makepkg -si`) in `pkexec` or `sudo`: it needs the user's terminal.",
         "Write through the `seldon` CLI, never by hand",

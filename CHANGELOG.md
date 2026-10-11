@@ -38,8 +38,8 @@ and the package does not exist yet. Update the plugin first:
   The next capture brings an unedited 0.2.0 skill up to date, the two
   new files included; a skill changed by hand, or a folder that holds a
   `logbook.md` or `crash.md` of the user's, is kept, as before. An
-  update writes `SKILL.md` after the topic files, so one that stops
-  half way never leaves a core that links a missing file.
+  install or update writes `SKILL.md` after the topic files, so one that
+  stops half way never leaves a core that links a missing file.
 
 ## [0.2.0] - 2026-10-11
 

@@ -607,22 +607,22 @@ fn install_steps(
     if fresh {
         write_manifest(written)?;
     }
-    // An update writes `SKILL.md` (`FILES[0]`) after the topic files it
-    // links: one stopped half way leaves the old core, whose links all
-    // resolve, next to newer topic files (WP-196).
+    // `SKILL.md` (`FILES[0]`) comes after the topic files it links (WP-196):
+    // an update stopped half way leaves the old core, whose links all
+    // resolve, next to newer topic files; a fresh install stopped half way
+    // leaves no core, so no harness loads a skill with missing files.
     let (core, topics) = FILES.split_at(1);
-    let order = if fresh {
-        [core, topics]
-    } else {
-        [topics, core]
-    };
-    for (name, text) in order.into_iter().flatten() {
+    for (name, text) in topics.iter().chain(core) {
         let path = target.join(name);
         if file_state(&path, Some(text), old.files.get(*name)) == FileState::Shipped {
             continue;
         }
         write_step(&path, text.as_bytes(), written)?;
         report.written.push(name.to_string());
+        // reported in the files' order, as before the core came last
+        report
+            .written
+            .sort_by_key(|n| FILES.iter().position(|(f, _)| f == n));
     }
     // files an older skill had and this one does not, if still as written
     // (or archived just now), before the new manifest forgets them
