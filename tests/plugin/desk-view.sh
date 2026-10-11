@@ -3440,7 +3440,7 @@ install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-keys/wl-copy"
 run keys-notice "$fx/index-variants/not-initialised.json" 1920x1080 \
   "summon;key:Up;key:Up;key:Return;key:Down;key:Up;key:Return;click:NEW CASE;call:select:notice:restart;key:Return;call:select:notice:restart;call:select:notices;key:Return;summon;call:select:notice:restart;key:Return;key:Return" \
   HARNESS_MANIFEST="$updated_manifest" HARNESS_RECORD="$work/keys-notice.record"
-rkey="notice:restart:Restart the shell to finish the update:restart"
+rkey="notice:restart:Restart the shell to finish the update:omarchy-restart-shell:restart"
 expect keys-notice 1 "$nk" ",,"
 shows keys-notice 1 "↑ at the top of a list reaches these buttons"
 expect keys-notice 2 "[$tv.setupRow.focused, .view.noticeKeys.id] | map(tostring) | join(\",\")" "true,"
@@ -3485,7 +3485,7 @@ expect keys-notices 8 "$nk" "contract,copy,"
 expect keys-notices 9 "$nk" "contract,terminal,"
 expect keys-notices 10 "[($nk), ($tv.cursor | tostring)] | join(\"|\")" ",,|0"
 expect keys-notices 12 "$nk" "contract,copy,"
-expect keys-notices 13 '.view.arm.armed | startswith("notice:contract:The engine is newer than the plugin:copy")' true
+expect keys-notices 13 '.view.arm.armed | (startswith("notice:contract:The engine is newer than the plugin:") and endswith(":copy"))' true
 wait_record "$work/keys-notices.record"
 run keys-notices-click "$work/index.contract99.json" 1920x1080 "summon;click:Copy" \
   HARNESS_MANIFEST="$updated_manifest" HARNESS_RECORD="$work/keys-notices-click.record" PATH="$work/bin-keys"
@@ -3495,6 +3495,14 @@ check "keys-notices: Copy by key copies what the click copies" \
 check "keys-notices: the click copies something" "$(head -n 1 "$work/keys-notices-click.record" 2>/dev/null)" wl-copy
 clean_log keys-notices
 clean_log keys-notices-click
+# A held ↑ stops at the top of the list; only a fresh ↑ goes on to the
+# notices (stage 2 F2): the habit "hold ↑, Enter Enter" never lands on a
+# notice's button.
+run keys-notice-held "$work/index.contract99.json" 1920x1080 "summon;key:Down;keyRepeat:Up;keyRepeat:Up;keyRepeat:Up;key:Up" \
+  HARNESS_MANIFEST="$updated_manifest"
+for i in 3 4 5; do expect keys-notice-held $i "[($nk), ($tv.cursor | tostring)] | join(\"|\")" ",,|0"; done
+expect keys-notice-held 6 "$nk" "contract,terminal,"
+clean_log keys-notice-held
 
 # The setup card's Create logbook (dev mode, not initialised): ↑ selects
 # the setup row (the card's first button under the cursor), ←/→ walk the
@@ -3578,12 +3586,13 @@ check "keys-setup-snap: Grant by key opens what the click opens, once" \
 clean_log keys-setup-snap
 
 # *Agent sorts* (live): ↑ from the first row reaches the proposal, ↑ again
-# the button (no row, no proposal selected); Enter arms; ↓ (to the
-# proposal), a row click each drop the arm; IPC `select ask` only places
-# the cursor; Enter twice asks once, the click's argv.
+# the button (no row, no proposal selected); Enter does nothing there
+# (Enter never starts an agent, WP-122), `a` arms; ↓ (to the proposal), a
+# row click each drop the arm; IPC `select ask` only places the cursor;
+# `a` twice asks once, the click's argv, and the Enters asked nothing.
 mkdir -p "$work/home-keys-ask"
 run keys-ask "" 1920x1080 \
-  "summon:$cl;key:Up;key:Up;key:Return;key:Down;key:Up;key:Return;click:ollama.service;call:select:ask;key:Return;key:Return;settle;view" \
+  "summon:$cl;key:Up;key:Up;key:Return;key:Return;text:a;key:Down;key:Up;text:a;click:ollama.service;call:select:ask;text:a;text:a;settle;view" \
   HOME="$work/home-keys-ask" FAKE_SELDON_FIXTURE="$sample"
 ak="[$tt.askFocused, $tt.askArmed, $tt.shown, $tv.cursor] | map(tostring) | join(\",\")"
 expect keys-ask 1 "$ak" "false,false,false,0"
@@ -3592,26 +3601,28 @@ expect keys-ask 2 "$ak" "false,false,true,-1"
 expect keys-ask 3 "$ak" "true,false,false,-1"
 expect keys-ask 3 '.marks.rings | length' 1
 expect keys-ask 3 '.marks.rows | join(",")' ""
-shows keys-ask 3 "Enter twice starts it · ↓ back to the list"
-expect keys-ask 4 "[($ak), .view.arm.armed] | join(\"|\")" "true,true,false,-1|ask:triage"
-shows keys-ask 4 "Agent sorts 6 open changes? Press Enter again."
-expect keys-ask 5 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,true,-1|"
-expect keys-ask 6 "$ak" "true,false,false,-1"
-expect keys-ask 7 "$tt.askArmed" true
-expect keys-ask 8 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,false,1|"
-expect keys-ask 9 "[.call, ($ak)] | join(\"|\")" "ok|true,false,false,-1"
-expect keys-ask 10 "$tt.askArmed" true
-expect keys-ask 13 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
+shows keys-ask 3 "a twice starts it · ↓ back to the list"
+for i in 4 5; do expect keys-ask $i "[($ak), .view.arm.armed, .view.opened] | map(tostring) | join(\"|\")" "true,false,false,-1||true"; done
+expect keys-ask 6 "[($ak), .view.arm.armed] | join(\"|\")" "true,true,false,-1|ask:triage"
+shows keys-ask 6 "Agent sorts 6 open changes? Press a again."
+expect keys-ask 7 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,true,-1|"
+expect keys-ask 8 "$ak" "true,false,false,-1"
+expect keys-ask 9 "$tt.askArmed" true
+expect keys-ask 10 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,false,1|"
+expect keys-ask 11 "[.call, ($ak)] | join(\"|\")" "ok|true,false,false,-1"
+expect keys-ask 12 "$tt.askArmed" true
+expect keys-ask 15 '[.view.opened, .service.stepAsides] | map(tostring) | join(",")' "false,1"
 argv_check keys-ask "$work/home-keys-ask" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)")"
 clean_log keys-ask
-# … on a stacked desk the button is in the list: ↑ ↑ and Enter twice ask,
-# no detail opens on the way.
+# … on a stacked desk the button is in the list: ↑ ↑, Enter (nothing, no
+# detail either) and `a` twice ask, no detail opens on the way.
 mkdir -p "$work/home-keys-ask-stacked"
-run keys-ask-stacked "" 700x900 "summon:$cl;key:Up;key:Up;key:Return;key:Return;settle" \
+run keys-ask-stacked "" 700x900 "summon:$cl;key:Up;key:Up;key:Return;text:a;text:a;settle" \
   HOME="$work/home-keys-ask-stacked" FAKE_SELDON_FIXTURE="$sample"
-for i in 2 3 4; do expect keys-ask-stacked $i .view.detailShown false; done
+for i in 2 3 4 5; do expect keys-ask-stacked $i .view.detailShown false; done
 expect keys-ask-stacked 3 "$ak" "true,false,false,-1"
-expect keys-ask-stacked 4 "$tt.askArmed" true
+expect keys-ask-stacked 4 "$ak" "true,false,false,-1"
+expect keys-ask-stacked 5 "$tt.askArmed" true
 argv_check keys-ask-stacked "$work/home-keys-ask-stacked" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)")"
 clean_log keys-ask-stacked
 
