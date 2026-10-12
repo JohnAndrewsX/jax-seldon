@@ -20,9 +20,19 @@ struct SecretArgs {
     /// Its short options that take a value: the rest of the cluster, else
     /// the next word, is that value, so the scan of the word stops there.
     short_value: &'static str,
+    /// Its short options whose value is the secret (`ssh-keygen -N PW`):
+    /// they do when that value is not empty (`-N ''` sets none).
+    short_secret: &'static str,
     /// Its long options that do (`passwd --stdin`), also with `=…` and
     /// as a prefix, which getopt takes when it is unique (`--std`).
     long: &'static [&'static str],
+    /// Its long options that take the next word as their value unless
+    /// written `--opt=value`, also as a prefix (`mkpasswd --method
+    /// sha-512`): that word is no operand.
+    long_value: &'static [&'static str],
+    /// An operand, a word that is no option or option value, is the secret
+    /// (`mkpasswd PW`; without one it asks).
+    positional: bool,
     /// When it does whatever its options: always (`chpasswd` reads
     /// `user:password` lines from stdin), or when the line can feed it
     /// stdin or a key file itself (`cryptsetup`, `passwd`), see [`Feed`].
@@ -47,14 +57,17 @@ enum Feed {
     OptionsOrFed,
 }
 
-/// The programs (WP-129 Fable stage 2, WP-140).
-const SECRET_ARGS: [SecretArgs; 12] = [
+/// The programs (WP-129 Fable stage 2, WP-140, WP-157).
+const SECRET_ARGS: [SecretArgs; 14] = [
     SecretArgs {
         name: "chpasswd",
         subcommand: "",
         short: "",
         short_value: "",
+        short_secret: "",
         long: &[],
+        long_value: &[],
+        positional: false,
         feed: Feed::Always,
     },
     SecretArgs {
@@ -62,7 +75,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "",
         short_value: "",
+        short_secret: "",
         long: &[],
+        long_value: &[],
+        positional: false,
         feed: Feed::Always,
     },
     // `-b`: the password is the last argument; `-i`: read from stdin
@@ -71,7 +87,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "bi",
         short_value: "Cr",
+        short_secret: "",
         long: &[],
+        long_value: &[],
+        positional: false,
         feed: Feed::Options,
     },
     // `-s`: the password from stdin; `-w PW`: the LDAP admin password
@@ -80,7 +99,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "sw",
         short_value: "cDrRU",
+        short_secret: "",
         long: &[],
+        long_value: &[],
+        positional: false,
         feed: Feed::Options,
     },
     // shadow's `-s`/`--stdin` (not `-S`, the status)
@@ -89,7 +111,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "s",
         short_value: "inrwxRP",
+        short_secret: "",
         long: &["--stdin"],
+        long_value: &[],
+        positional: false,
         feed: Feed::OptionsOrFed,
     },
     // `-p HASH`, `--password HASH`: an encrypted password, still a secret
@@ -101,7 +126,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "p",
         short_value: "bcdefgGkKsuRPZ",
+        short_secret: "",
         long: &["--password"],
+        long_value: &[],
+        positional: false,
         feed: Feed::Options,
     },
     SecretArgs {
@@ -109,7 +137,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "p",
         short_value: "cdefgGlsuRPZvVwW",
+        short_secret: "",
         long: &["--password"],
+        long_value: &[],
+        positional: false,
         feed: Feed::Options,
     },
     SecretArgs {
@@ -117,7 +148,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "p",
         short_value: "gKRP",
+        short_secret: "",
         long: &["--password"],
+        long_value: &[],
+        positional: false,
         feed: Feed::Options,
     },
     SecretArgs {
@@ -125,7 +159,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "p",
         short_value: "gnRP",
+        short_secret: "",
         long: &["--password"],
+        long_value: &[],
+        positional: false,
         feed: Feed::Options,
     },
     SecretArgs {
@@ -133,7 +170,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "",
         short_value: "",
+        short_secret: "",
         long: &[],
+        long_value: &[],
+        positional: false,
         feed: Feed::Fed,
     },
     // `openssl passwd PW` hashes the password given as an argument (or
@@ -143,7 +183,10 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "passwd",
         short: "",
         short_value: "",
+        short_secret: "",
         long: &[],
+        long_value: &[],
+        positional: false,
         feed: Feed::Always,
     },
     // `wpa_passphrase SSID PW` (without PW it asks on stdin)
@@ -152,14 +195,44 @@ const SECRET_ARGS: [SecretArgs; 12] = [
         subcommand: "",
         short: "",
         short_value: "",
+        short_secret: "",
         long: &[],
+        long_value: &[],
+        positional: false,
         feed: Feed::Always,
+    },
+    // `-N new_passphrase`, `-P passphrase` (WP-157); the options with a
+    // value of OpenSSH's getopt string
+    SecretArgs {
+        name: "ssh-keygen",
+        subcommand: "",
+        short: "",
+        short_value: "CDEFIMORVYZabfmnrstwz",
+        short_secret: "NP",
+        long: &[],
+        long_value: &[],
+        positional: false,
+        feed: Feed::Options,
+    },
+    // `mkpasswd PW [SALT]` (whois): the password is its first operand;
+    // `-s`/`--stdin` reads it from stdin, as it does without a terminal
+    // (WP-157)
+    SecretArgs {
+        name: "mkpasswd",
+        subcommand: "",
+        short: "s",
+        short_value: "mSRP",
+        short_secret: "",
+        long: &["--stdin"],
+        long_value: &["--method", "--salt", "--rounds", "--password-fd"],
+        positional: true,
+        feed: Feed::OptionsOrFed,
     },
 ];
 
 impl SecretArgs {
     /// Whether `args` (the words after the program) put the secret on a
-    /// line that `fed` says feeds it ([`fed`]).
+    /// line, `fed` when the line feeds the command ([`fed`]).
     fn on_the_line(&self, args: &[String], fed: bool) -> bool {
         if !self.subcommand.is_empty() && args.first().is_none_or(|a| a != self.subcommand) {
             return false;
@@ -170,29 +243,50 @@ impl SecretArgs {
             Feed::OptionsOrFed if fed => return true,
             Feed::Options | Feed::OptionsOrFed => {}
         }
+        // a long option written whole or as a prefix getopt takes
+        let names = |longs: &[&str], name: &str| {
+            !name.is_empty() && longs.iter().any(|l| l[2..].starts_with(name))
+        };
         let mut words = args.iter();
         while let Some(word) = words.next() {
             if word == "--" {
-                return false;
+                // every word after it is an operand
+                return self.positional && words.next().is_some();
             }
             if let Some(long) = word.strip_prefix("--") {
-                let name = long.split_once('=').map_or(long, |(name, _)| name);
-                if !name.is_empty() && self.long.iter().any(|l| l[2..].starts_with(name)) {
+                let (name, inline) = match long.split_once('=') {
+                    Some((name, value)) => (name, Some(value)),
+                    None => (long, None),
+                };
+                if names(self.long, name) {
                     return true;
+                }
+                if inline.is_none() && names(self.long_value, name) {
+                    words.next();
                 }
                 continue;
             }
             let Some(cluster) = word.strip_prefix('-') else {
+                if self.positional {
+                    return true;
+                }
                 continue;
             };
             for (k, letter) in cluster.char_indices() {
                 if self.short.contains(letter) {
                     return true;
                 }
-                if self.short_value.contains(letter) {
+                let secret = self.short_secret.contains(letter);
+                if secret || self.short_value.contains(letter) {
                     // the value: the rest of the cluster, else the next word
-                    if cluster[k + letter.len_utf8()..].is_empty() {
-                        words.next();
+                    let rest = &cluster[k + letter.len_utf8()..];
+                    let value = if rest.is_empty() {
+                        words.next().map(String::as_str)
+                    } else {
+                        Some(rest)
+                    };
+                    if secret && value.is_some_and(|v| !v.is_empty()) {
+                        return true;
                     }
                     break;
                 }
@@ -203,35 +297,65 @@ impl SecretArgs {
 }
 
 /// Whether a command of `line` (`sh -c` scripts opened, after its
-/// wrappers) is one of [`SECRET_ARGS`] that puts its secret on the line.
+/// wrappers) is one of [`SECRET_ARGS`] that puts its secret on the line,
+/// or the line gives a process substitution as a secret
+/// ([`secret_substitution`]).
 pub(super) fn secret_on_the_line(line: &ShellLine) -> bool {
     let segments = simple_commands(line);
-    let fed = fed(line, &segments);
-    segments.iter().any(|segment| {
-        let Some((program, args)) = segment.argv().split_first() else {
-            return false;
-        };
-        let name = program.rsplit('/').next().unwrap_or(program);
-        SECRET_ARGS
-            .iter()
-            .filter(|p| p.name == name)
-            .any(|p| p.on_the_line(args, fed))
-    })
+    let writes = writes_a_file(&segments);
+    secret_substitution(&line.text)
+        || segments.iter().any(|segment| {
+            let Some((program, args)) = segment.argv().split_first() else {
+                return false;
+            };
+            let name = program.rsplit('/').next().unwrap_or(program);
+            SECRET_ARGS
+                .iter()
+                .filter(|p| p.name == name)
+                .any(|p| p.on_the_line(args, fed(segment, writes)))
+        })
 }
 
-/// Whether `line` can feed a command its secret from the line itself: a
-/// pipe, a here-string or a process substitution in its text, or a file
-/// one of its commands writes (`printf PW > k; cryptsetup … -d k`; not
-/// `/dev/null`, `/dev/stdout`, `/dev/stderr`). A heredoc's body is cut
+/// Whether the line feeds `segment` its secret itself: a pipe into it, a
+/// here-string or a process substitution among its words
+/// ([`Segment::fed`]: `passwd -S alice | grep x` feeds `grep`, not
+/// `passwd`; WP-157), or a file one of the line's commands writes
+/// (`writes`: `printf PW > k; cryptsetup … -d k`). A heredoc's body is cut
 /// from the line before it is recorded (SPEC-ENGINE §7), so a heredoc
 /// alone needs no mask.
-fn fed(line: &ShellLine, segments: &[Segment]) -> bool {
+fn fed(segment: &Segment, writes: bool) -> bool {
+    segment.fed || writes
+}
+
+/// Whether a command of the line writes a file (not `/dev/null`,
+/// `/dev/stdout`, `/dev/stderr`), which another can read as its key.
+fn writes_a_file(segments: &[Segment]) -> bool {
     const NO_FILE: [&str; 3] = ["/dev/null", "/dev/stdout", "/dev/stderr"];
-    ["|", "<<<", "<("].iter().any(|op| line.text.contains(op))
-        || segments
-            .iter()
-            .flat_map(|s| &s.writes)
-            .any(|w| !NO_FILE.contains(&w.as_str()))
+    segments
+        .iter()
+        .flat_map(|s| &s.writes)
+        .any(|w| !NO_FILE.contains(&w.as_str()))
+}
+
+/// The parts of an option or keyword that names a secret
+/// (`--password-file`, `--passphrase-file`, `--key-file`, `--token-file`,
+/// `--authfile`, wg's `private-key`).
+const SECRET_WORDS: [&str; 7] = ["pass", "pw", "secret", "token", "key", "cred", "auth"];
+
+/// Whether `text` gives a process substitution to an option or keyword
+/// that names a secret, of any program (`restic --password-file <(echo
+/// PW)`, `--passphrase-file=<(…)`; WP-157): the command inside it prints
+/// the secret, from the line itself. One pass over the text, no regex.
+fn secret_substitution(text: &str) -> bool {
+    text.match_indices("<(").any(|(at, _)| {
+        let before = text[..at]
+            .trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '=' | '\\' | '\'' | '"'));
+        let word = before
+            .rsplit(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+            .next()
+            .unwrap_or_default();
+        SECRET_WORDS.iter().any(|w| word.contains(w))
+    })
 }
 
 #[cfg(test)]
@@ -289,6 +413,34 @@ mod tests {
             "openssl passwd -6 pw",
             "sudo openssl passwd -1 -salt s pw",
             "wpa_passphrase Home pw | sudo tee /etc/wpa_supplicant/w.conf",
+            // WP-157: ssh-keygen's pass phrases, also in a cluster
+            "sudo ssh-keygen -t ed25519 -N pw -f /root/k",
+            "ssh-keygen -p -P old -N '' -f k",
+            "ssh-keygen -qNpw -f k",
+            "ssh-keygen -f k -N \"two words\"",
+            // mkpasswd's operand, its stdin option, a line that feeds it
+            "mkpasswd -m sha-512 pw",
+            "mkpasswd --method=sha-512 pw salt",
+            "mkpasswd --meth sha-512 -R 5000 pw",
+            "mkpasswd -- pw",
+            "mkpasswd -s < pw.txt",
+            "mkpasswd --stdin < pw.txt",
+            "printf pw | mkpasswd -m sha-512",
+            // a program run by xargs
+            "echo pw | sudo xargs -n1 htpasswd -b f alice",
+            "printf 'pw\\npw' | sudo xargs -0 passwd alice",
+            "echo pw | xargs mkpasswd -m sha-512",
+            // what xargs reads becomes arguments, a secret or not: masked
+            // too much, by design
+            "printf 'a\\nb' | sudo xargs -n1 passwd -S",
+            // a process substitution as a secret, any program
+            "sudo restic -r /srv/r --password-file <(echo pw) backup /etc",
+            "tool --passphrase-file=<(printf pw)",
+            "sudo wg set wg0 private-key <(echo key)",
+            "tool --token-file \\\n  <(echo tok)",
+            "tool \"--password-file\" <(echo pw)",
+            // a fed `sh -c`
+            "sudo sh -c 'passwd alice' <<< pw",
         ] {
             assert!(secret_on_the_line(&parse_shell(line)), "{line}");
         }
@@ -321,6 +473,25 @@ mod tests {
             "sudo usermod --login bob alice",
             "openssl rand -hex 16",
             "openssl req -new -key k.pem -passin env:PW",
+            // WP-157: a pipe out of the program feeds it nothing
+            "sudo passwd -S alice | grep alice",
+            "sudo passwd -S alice |& grep -q L && echo locked",
+            "sudo cryptsetup status vault | grep -i cipher",
+            "sudo passwd -S alice || echo none | cat",
+            "diff <(sort a) <(sort b); sudo passwd -S alice",
+            "sudo tee /etc/x < <(echo hi)",
+            // no pass phrase, a value that only looks like the option
+            "ssh-keygen -t ed25519 -N '' -f k",
+            "ssh-keygen -t ed25519 -C '-N x' -f k",
+            "ssh-keygen -lf k.pub",
+            "ssh-keygen -N",
+            // mkpasswd that asks, or only lists
+            "mkpasswd -m help",
+            "mkpasswd --method sha-512",
+            "mkpasswd -m sha-512 -R 5000 -S salt12345",
+            "mkpasswd -P 3 3< pw.txt",
+            // xargs running a program that takes no secret
+            "find . -name '*.key' | sudo xargs rm",
         ] {
             assert!(!secret_on_the_line(&parse_shell(line)), "{line}");
         }

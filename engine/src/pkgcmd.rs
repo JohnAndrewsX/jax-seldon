@@ -422,6 +422,12 @@ pub struct Segment {
     /// opened from (`pkexec sh -c 'lpadmin …'`), if any
     /// ([`simple_commands`]).
     pub privileged_by: Option<&'static str>,
+    /// The line itself feeds the command (WP-157): a pipe into it (`echo
+    /// PW | passwd alice`, not `passwd -S alice | grep x`), a here-string
+    /// (`<<< PW`) or a process substitution among its words (`--key-file
+    /// <(echo PW)`); also every command of a `sh -c` or `eval` that is
+    /// fed itself. A heredoc is cut from the record and feeds nothing.
+    pub fed: bool,
 }
 
 impl Segment {
@@ -603,6 +609,8 @@ impl Reader<'_> {
                         _ => {}
                     }
                     lexer.end_segment();
+                    // `|` and `|&` pipe into the next command, `||` does not
+                    lexer.piped |= c == '|' && self.at(i + 1) != Some('|');
                     i += 1;
                     if matches!(
                         (c, self.at(i)),
@@ -635,7 +643,9 @@ impl Reader<'_> {
                             Pending::Write
                         });
                     } else if self.at(i) == Some('<') && self.at(i + 1) == Some('<') {
+                        // a here-string
                         lexer.pending = Some(Pending::Read);
+                        lexer.current.fed = true;
                         i += 2;
                     } else if self.at(i) == Some('<') {
                         i += 1;
@@ -646,6 +656,7 @@ impl Reader<'_> {
                         lexer.pending = Some(Pending::Heredoc { strip_tabs });
                     } else if self.at(i) == Some('(') {
                         // `<(…)`: read for its heredocs, not kept
+                        lexer.current.fed = true;
                         i = self.read(i + 1, Stop::Paren, &mut Lexer::default());
                     } else {
                         // `< file`, `<&3`: read
@@ -772,6 +783,8 @@ struct Lexer {
     pending: Option<Pending>,
     /// Heredocs whose bodies start after the next newline.
     heredocs: Vec<(String, bool)>,
+    /// A `|` ended the last command: the next one is [`Segment::fed`].
+    piped: bool,
 }
 
 impl Lexer {
@@ -804,8 +817,10 @@ impl Lexer {
     fn end_segment(&mut self) {
         self.end_word();
         self.pending = None;
-        let segment = std::mem::take(&mut self.current);
+        let mut segment = std::mem::take(&mut self.current);
         if !segment.words.is_empty() || !segment.writes.is_empty() {
+            // `a | (b)`: the pipe goes past the empty command before `(`
+            segment.fed |= std::mem::take(&mut self.piped);
             self.segments.push(segment);
         }
     }
@@ -819,6 +834,9 @@ struct Wrapper {
     /// the end of a cluster as in `-Eu root`) or the rest of the cluster
     /// (`-uroot`).
     short_value: &'static str,
+    /// Short options whose value is optional: only the rest of the
+    /// cluster (`xargs -i{}`, `-l1`, `-eEND`), never the next word.
+    short_attached: &'static str,
     /// Long options that take the next word as their value, unless written
     /// `--opt=value`.
     long_value: &'static [&'static str],
@@ -831,6 +849,9 @@ struct Wrapper {
     chdir: Option<(char, &'static str)>,
     /// Words between the options and the command (`timeout DURATION`).
     operands: usize,
+    /// It runs a command of its own when given none (`xargs` runs
+    /// `echo`): it is then the command.
+    alone: bool,
 }
 
 /// `--help` and `--version`: print and exit.
@@ -838,10 +859,11 @@ const PRINTS: &[&str] = &["--help", "--version"];
 
 /// The wrappers [`command_argv`] reads past. `sudo -k` drops the cached
 /// credentials and still runs the command; `-l`, `-v`, `-K`, `-V` do not.
-const WRAPPERS: [Wrapper; 11] = [
+const WRAPPERS: [Wrapper; 12] = [
     Wrapper {
         name: "sudo",
         short_value: "ughpCDrtUTR",
+        short_attached: "",
         long_value: &[
             "--user",
             "--group",
@@ -865,29 +887,35 @@ const WRAPPERS: [Wrapper; 11] = [
         ],
         chdir: Some(('D', "--chdir")),
         operands: 0,
+        alone: false,
     },
     Wrapper {
         name: "doas",
         short_value: "u",
+        short_attached: "",
         long_value: &[],
         // `-C config`: only checks the rule; `-L`: forgets the login
         probe_short: "CL",
         probe_long: &[],
         chdir: None,
         operands: 0,
+        alone: false,
     },
     Wrapper {
         name: "pkexec",
         short_value: "u",
+        short_attached: "",
         long_value: &["--user"],
         probe_short: "",
         probe_long: PRINTS,
         chdir: None,
         operands: 0,
+        alone: false,
     },
     Wrapper {
         name: "run0",
         short_value: "ugD",
+        short_attached: "",
         long_value: &[
             "--user",
             "--group",
@@ -908,69 +936,104 @@ const WRAPPERS: [Wrapper; 11] = [
         probe_long: PRINTS,
         chdir: Some(('D', "--chdir")),
         operands: 0,
+        alone: false,
     },
     Wrapper {
         name: "env",
         short_value: "uCS",
+        short_attached: "",
         long_value: &["--unset", "--chdir", "--split-string"],
         probe_short: "",
         probe_long: PRINTS,
         chdir: Some(('C', "--chdir")),
         operands: 0,
+        alone: false,
     },
     Wrapper {
         name: "nice",
         short_value: "n",
+        short_attached: "",
         long_value: &["--adjustment"],
         probe_short: "",
         probe_long: PRINTS,
         chdir: None,
         operands: 0,
+        alone: false,
     },
     Wrapper {
         name: "timeout",
         short_value: "sk",
+        short_attached: "",
         long_value: &["--signal", "--kill-after"],
         probe_short: "",
         probe_long: PRINTS,
         chdir: None,
         operands: 1,
+        alone: false,
     },
     Wrapper {
         name: "exec",
         short_value: "a",
+        short_attached: "",
         long_value: &[],
         probe_short: "",
         probe_long: &[],
         chdir: None,
         operands: 0,
+        alone: false,
     },
     Wrapper {
         name: "command",
         short_value: "",
+        short_attached: "",
         long_value: &[],
         probe_short: "vV",
         probe_long: &[],
         chdir: None,
         operands: 0,
+        alone: false,
     },
     Wrapper {
         name: "nohup",
         short_value: "",
+        short_attached: "",
         long_value: &[],
         probe_short: "",
         probe_long: PRINTS,
         chdir: None,
         operands: 0,
+        alone: false,
+    },
+    // GNU xargs (WP-157): the program it runs gets the words from stdin as
+    // further arguments (`… | sudo xargs chpasswd`)
+    Wrapper {
+        name: "xargs",
+        short_value: "adEILnPs",
+        short_attached: "eil",
+        long_value: &[
+            "--arg-file",
+            "--delimiter",
+            "--max-args",
+            "--max-procs",
+            "--max-chars",
+            "--process-slot-var",
+        ],
+        probe_short: "",
+        probe_long: PRINTS,
+        chdir: None,
+        operands: 0,
+        alone: true,
     },
     Wrapper {
         name: "time",
         short_value: "fo",
+        short_attached: "",
         long_value: &["--format", "--output"],
         probe_short: "",
         probe_long: PRINTS,
         chdir: None,
         operands: 0,
+        alone: false,
     },
 ];
 
@@ -1026,6 +1089,7 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
         if PRIVILEGE_WRAPPERS.contains(&wrapper.name) {
             privilege = privilege.or(Some(wrapper.name));
         }
+        let at = i;
         i += 1;
         // a probe runs nothing; its other options are still read, for a
         // password on stdin (`sudo -vS`)
@@ -1065,6 +1129,10 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
                     probing = true;
                     continue;
                 }
+                if wrapper.short_attached.contains(letter) {
+                    // the rest of the cluster is its value
+                    break;
+                }
                 if wrapper.short_value.contains(letter) {
                     let rest = &o[k + letter.len_utf8()..];
                     let value = if rest.is_empty() {
@@ -1086,6 +1154,11 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
             };
         }
         i += wrapper.operands;
+        if wrapper.alone && i >= words.len() {
+            // `… | sudo xargs`: xargs runs `echo` itself
+            i = at;
+            break;
+        }
     }
     Unwrapped {
         argv: &words[i.min(words.len())..],
@@ -1097,7 +1170,7 @@ pub fn unwrap_command(words: &[String]) -> Unwrapped<'_> {
 
 /// `words` after leading `VAR=value` assignments and the wrappers that run
 /// their arguments as a command (`sudo`, `doas`, `pkexec`, `run0`, `env`,
-/// `command`, `exec`, `nohup`, `time`, `nice`, `timeout`), with the
+/// `command`, `exec`, `nohup`, `time`, `nice`, `timeout`, `xargs`), with the
 /// wrappers' options and option clusters (`sudo -Eu root`). Empty when a
 /// wrapper only probes (`command -v yay`, `sudo -l …`, `pkexec --version`).
 pub fn command_argv(words: &[String]) -> &[String] {
@@ -1136,6 +1209,7 @@ fn opened_commands(line: &ShellLine) -> Vec<Segment> {
                 for inner in parse_shell(&script).segments {
                     let inner = Segment {
                         privileged_by: privilege,
+                        fed: inner.fed || segment.fed,
                         ..inner
                     };
                     open(&inner, depth + 1, out);
@@ -1144,7 +1218,7 @@ fn opened_commands(line: &ShellLine) -> Vec<Segment> {
                     out.push(Segment {
                         words: Vec::new(),
                         writes: segment.writes.clone(),
-                        privileged_by: None,
+                        ..Segment::default()
                     });
                 }
             }
@@ -2132,6 +2206,57 @@ mod tests {
         assert_eq!(argv("timeout -s KILL 10 yay"), ["yay"]);
         assert_eq!(argv("command yay -Syu"), ["yay", "-Syu"]);
         assert!(argv("FOO=1").is_empty());
+    }
+
+    /// `xargs` runs its command with the words from stdin (WP-157): its
+    /// options with a value, the optional ones only in their cluster, and
+    /// `xargs` alone runs `echo` itself.
+    #[test]
+    fn xargs_is_a_wrapper() {
+        let argv = |line: &str| parse_shell(line).segments[0].argv().to_vec();
+        let line = "sudo xargs -0 -n 1 -P4 -I {} -a list -d , -E END -s 99 cp {} /etc/x";
+        assert_eq!(argv(line), ["cp", "{}", "/etc/x"]);
+        assert_eq!(argv("xargs -i{} -l1 -eEND rm {}"), ["rm", "{}"]);
+        // optional values never take the next word
+        assert_eq!(argv("xargs -i rm"), ["rm"]);
+        assert_eq!(argv("xargs -l -e rm"), ["rm"]);
+        // `P` inside `-e`'s value is no option
+        assert_eq!(argv("xargs -eSTOP rm"), ["rm"]);
+        assert_eq!(
+            argv(
+                "xargs --max-args 1 --arg-file=l --delimiter , --max-procs 2 --max-chars 9 --process-slot-var V chpasswd"
+            ),
+            ["chpasswd"]
+        );
+        assert_eq!(argv("xargs --max-lines=1 --replace --null -r rm"), ["rm"]);
+        assert_eq!(argv("sudo xargs"), ["xargs"]);
+        assert_eq!(argv("xargs -0 -n1"), ["xargs", "-0", "-n1"]);
+        assert!(argv("xargs --help").is_empty());
+        let s = &parse_shell("printf 'a:b' | sudo xargs chpasswd").segments[1];
+        assert_eq!(s.privilege(), Some("sudo"));
+    }
+
+    /// A command the line feeds: the one after `|` or `|&` (not `||`), past
+    /// a `(`; one with a here-string or a process substitution; the
+    /// commands of a fed `sh -c` (WP-157).
+    #[test]
+    fn fed_commands() {
+        let fed = |line: &str| -> Vec<bool> {
+            simple_commands(&parse_shell(line))
+                .iter()
+                .map(|s| s.fed)
+                .collect()
+        };
+        assert_eq!(fed("a | b || c |& d"), [false, true, false, true]);
+        assert_eq!(fed("a | (b; c) && d"), [false, true, false, false]);
+        assert_eq!(
+            fed("a <<< x; b < f; c <(d) e; f << EOF\nx\nEOF"),
+            [true, false, true, false]
+        );
+        assert_eq!(fed("a |\n b"), [false, true]);
+        assert_eq!(fed("a | sudo sh -c 'b; c | d'"), [false, true, true, true]);
+        assert_eq!(fed("sudo sh -c 'b; c' <<< x; e"), [true, true, false]);
+        assert_eq!(fed("x | y > out; z"), [false, true, false]);
     }
 
     #[test]

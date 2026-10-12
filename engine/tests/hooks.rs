@@ -3247,6 +3247,80 @@ mod privileged {
         assert!(!index.contains("hunter2"), "{index}");
     }
 
+    /// WP-157: more programs that put a secret on a privileged line
+    /// (`ssh-keygen -N`, `mkpasswd PW`, a process substitution after an
+    /// option that names a secret, a program run by `xargs`) are recorded
+    /// as `<program> ‹redacted›`; a mount password, a PEM block in base64
+    /// and a Python dict's key are masked by their SPEC-ENGINE §7 rules and
+    /// the rest of the line stays; a pipe out of `passwd -S`, an empty
+    /// pass phrase and nmcli's fields to show keep the line whole.
+    #[test]
+    fn more_secrets_on_a_privileged_line() {
+        let h = Hooks::new();
+        let lines = [
+            (
+                "sudo ssh-keygen -t ed25519 -N hunter2 -f /root/k",
+                "ssh-keygen ‹redacted›",
+            ),
+            (
+                "sudo ssh-keygen -t ed25519 -N '' -f /root/k",
+                "sudo ssh-keygen -t ed25519 -N '' -f /root/k",
+            ),
+            ("sudo mkpasswd -m sha-512 hunter2", "mkpasswd ‹redacted›"),
+            (
+                "sudo restic -r /srv/r --password-file <(echo hunter2) backup /etc",
+                "restic ‹redacted›",
+            ),
+            (
+                "echo hunter2 | sudo xargs -n1 htpasswd -b f alice",
+                "htpasswd ‹redacted›",
+            ),
+            (
+                "ls /etc/cups | sudo xargs -n1 lpadmin -x",
+                "ls /etc/cups | sudo xargs -n1 lpadmin -x",
+            ),
+            (
+                "sudo passwd -S alice | grep alice",
+                "sudo passwd -S alice | grep alice",
+            ),
+            (
+                "sudo mount -t cifs //srv/s /mnt -o user=bob,pass=hunter2",
+                "sudo mount -t cifs //srv/s /mnt -o ‹redacted›",
+            ),
+            (
+                "sudo nmcli -s -g wifi-sec.psk con show Home",
+                "sudo nmcli -s -g wifi-sec.psk con show Home",
+            ),
+            (
+                "echo LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2ZmFrZUI2NGtleUJvZHlGQUtFZmFrZUZBS0UwMQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg== | sudo tee /etc/x/tls.key",
+                "echo ‹redacted› | sudo tee /etc/x/tls.key",
+            ),
+            (
+                "sudo python3 -c \"requests.get(u, headers={'x-api-key': 'hunter2'})\"",
+                "sudo python3 -c \"requests.get(u, headers={'x-api-key': ‹redacted›})\"",
+            ),
+        ];
+        for (n, (line, _)) in lines.iter().enumerate() {
+            bash(&h, line, &format!("toolu_more_{n}"));
+        }
+        let events = h.commands();
+        let got: Vec<&str> = events
+            .iter()
+            .map(|e| e["meta"]["command"].as_str().unwrap())
+            .collect();
+        let want: Vec<&str> = lines.iter().map(|(_, c)| *c).collect();
+        assert_eq!(got, want);
+        // `xargs` is read past: the program it runs is the subject
+        let subjects: Vec<&str> = events
+            .iter()
+            .map(|e| e["subject"].as_str().unwrap())
+            .collect();
+        assert_eq!(subjects[4..6], ["htpasswd", "lpadmin"]);
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(!ledger.contains("hunter2"), "{ledger}");
+        assert!(!ledger.contains("ZmFrZUI2NGtleUJvZHlG"), "{ledger}");
+    }
+
     /// WP-140 round 3: a command line's direction and format characters
     /// are dropped before it is read and recorded, so a zero-width space
     /// inside `token=` or `Authorization:` hides no secret; a note keeps a

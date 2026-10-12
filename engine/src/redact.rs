@@ -4,7 +4,7 @@
 //! `meta` of every event, and by the commands that write free text into
 //! the logbook (`log`, `plan`, `decide`, `drift explain|dismiss`) before
 //! anything is written, through [`Redactor::for_config`]. Built-in rules:
-//! the body of a PEM private key, URLs with userinfo, `--password` (also wget's `--http-password`),
+//! the body of a PEM private key, a PEM block in base64, URLs with userinfo, `--password` (also wget's `--http-password`),
 //! `--token`/`--api-key`/`--secret`/`--pass`/`--oauth2-bearer`-style
 //! options, the `pass:…` value of openssl's `-pass`/`-passin`/`-passout`-style
 //! options, `token=` and `…KEY=`/`…TOKEN=`/`…SECRET=`/`…PASSWORD=`-style
@@ -18,7 +18,8 @@
 //! `"…token"`-style keys, `Cookie:`/`Set-Cookie:` header values and the
 //! cookies after `curl -b`/`--cookie`, a client certificate with its
 //! password after `curl -E`/`--cert`, the value after `http|xh -a`/`--auth`,
-//! nmcli's secret properties (`wifi-sec.psk X`, `password X`), the local part of an e-mail address (the domain stays); plus the
+//! nmcli's secret properties (`wifi-sec.psk X`, `password X`), a mount
+//! option list with `pass=`, the local part of an e-mail address (the domain stays); plus the
 //! user's regexes from `config.toml [redaction] patterns`, each of which
 //! replaces its whole match. The replacement is always [`REDACTED`].
 //!
@@ -176,6 +177,23 @@ const HEADER_GLUED: &str =
 /// `EC`, `DSA`, `OPENSSH`, `ENCRYPTED`, …), and PGP's `PRIVATE KEY
 /// BLOCK`; not `PUBLIC KEY` or `CERTIFICATE`.
 const PEM_LABEL: &str = r"(?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?";
+
+/// A PEM block in base64, as Kubernetes secrets and other YAML or JSON
+/// files hold a key (`"tls.key": "LS0tLS1CRUdJTi…"`, WP-157): one token
+/// of base64 characters that holds `-----BEGIN` encoded at any of its
+/// three alignments to the token's start (`LS0tLS1CRUdJTi`, `LS0tQkVHSU4`,
+/// `LS0tLUJFR0lO`; a file with a line before the key, such as openssl's
+/// `Bag Attributes`, starts elsewhere) and at least 40 more characters,
+/// masked whole; then each following line that holds base64 characters
+/// only after its indentation, up to its line end (`base64` wraps at 76
+/// characters, a YAML block scalar indents), and each part after a
+/// literal `\n` inside a shell string. Any PEM label, so a certificate is
+/// masked too.
+const PEM_BASE64: &str = r"[A-Za-z0-9+/]*(?:LS0tLS1CRUdJTi|LS0tQkVHSU4|LS0tLUJFR0lO)[A-Za-z0-9+/=]{40,}(?:\r?\n[ \t]*[A-Za-z0-9+/]+={0,2}(?mR:$)|\\n[A-Za-z0-9+/]+={0,2})*";
+
+/// The key words of `json-secret`: a quoted key that ends in one names a
+/// secret.
+const SECRET_KEY: &str = r"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key)";
 
 /// The shortest value that counts as a credential when it mixes at least
 /// two character classes (lower case, upper case, digits, other).
@@ -617,14 +635,29 @@ pub fn has_value(value: &str) -> bool {
 }
 
 /// Whether a JSON string value (`"…"`, or `\"…\"` inside a shell string)
-/// is not empty.
+/// or a Python one (`'…'`, after a string prefix such as `f`, `rb`) is not
+/// empty.
 fn has_json_value(value: &str) -> bool {
+    let value = value.trim_start_matches(['r', 'R', 'b', 'B', 'u', 'U', 'f', 'F']);
     let inner = value
         .strip_prefix("\\\"")
         .and_then(|v| v.strip_suffix("\\\""))
         .or_else(|| value.strip_prefix('"').and_then(|v| v.strip_suffix('"')))
+        .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
         .unwrap_or(value);
     !inner.is_empty()
+}
+
+/// Whether a `mount` option list (`user=bob,pass=PW,vers=3.0`, quoted or
+/// not) gives a password as `pass=` or `pwd=` (WP-157; `password=` is
+/// `secret-assignment`'s).
+fn mount_password(value: &str) -> bool {
+    value.split(',').any(|option| {
+        let option = option.trim_start_matches(['\'', '"']).as_bytes();
+        [&b"pass="[..], b"pwd="].iter().any(|name| {
+            option.len() >= name.len() && option[..name.len()].eq_ignore_ascii_case(name)
+        })
+    })
 }
 
 /// `text` as the triggers see it: ASCII letters in lower case, plus the
@@ -675,8 +708,9 @@ pub struct Redactor {
 }
 
 /// Names of the built-in rules, in the order they run (for tests and docs).
-pub const BUILTIN: [&str; 29] = [
+pub const BUILTIN: [&str; 31] = [
     "private-key",
+    "private-key-base64",
     "url-userinfo",
     "password-option",
     "secret-option",
@@ -704,6 +738,7 @@ pub const BUILTIN: [&str; 29] = [
     "sshpass-password",
     "registry-login-password",
     "nmcli-secret",
+    "mount-password",
     "email",
 ];
 
@@ -750,6 +785,8 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
         // both ends of a block hold the label's last words
         "private-key" => &["private key"],
+        // `-----BEGIN` in base64 at each alignment, as written
+        "private-key-base64" => &["LS0tLS1CRUdJTi", "LS0tQkVHSU4", "LS0tLUJFR0lO"],
         // the `@` after the scheme: a URL without userinfo holds none
         "url-userinfo" => &["://>@"],
         "password-option" => &["--password", "--http-password", "--ftp-password"],
@@ -784,6 +821,15 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
             "api-key\\\"",
             "apikey\"",
             "apikey\\\"",
+            // a Python dict's single-quoted key (WP-157)
+            "password'",
+            "passwd'",
+            "passphrase'",
+            "secret'",
+            "token'",
+            "api_key'",
+            "api-key'",
+            "apikey'",
         ],
         // the name, then `:` or a quote and `:` (`"Authorization":`)
         "authorization-header" => &[
@@ -844,6 +890,7 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
             "nmcli+key",
             "nmcli+pin",
         ],
+        "mount-password" => &["mount+pass=", "mount+pwd="],
         "email" => &["@"],
         _ => &[],
     }
@@ -925,6 +972,8 @@ fn again(name: &str) -> &'static [&'static str] {
         "registry-login-password" => &["-p"],
         // every secret property or keyword holds one
         "nmcli-secret" => &["pass", "psk", "secret", "key", "pin"],
+        // `--options` holds `-o`
+        "mount-password" => &["-o"],
         _ => &[],
     }
 }
@@ -955,6 +1004,11 @@ fn builtin_rules() -> Vec<Rule> {
             ),
             "${begin}‹redacted›${end}${tail}",
         ),
+        // a PEM block in base64 (`tls.key: LS0tLS1CRUdJTi…`), the whole
+        // token and the base64 lines after it; second, so no later rule
+        // (`aws-access-key`, `key-assignment`) cuts it into pieces first
+        // (WP-157)
+        rule("private-key-base64", PEM_BASE64, WHOLE),
         // scheme://user:pass@host → scheme://‹redacted›@host. With a
         // `:` in the userinfo, everything from `://` up to the last
         // `@` before white space or a quote, so a password may hold
@@ -1026,10 +1080,15 @@ fn builtin_rules() -> Vec<Rule> {
         // `"api_key"`, `"apiKey"`, `"x-api-key"`, also with the quotes escaped inside a
         // shell string (`\"password\":\"…\"`) and with white space,
         // newlines included, around the `:`: a non-empty string value;
-        // not `"password_hint"` or `"token_type"`
+        // not `"password_hint"` or `"token_type"`. Also a Python dict's
+        // single quotes, on the key, the value or both (`{'x-api-key':
+        // 'k'}`), and a Python string prefix before the value (`f'…'`,
+        // WP-157)
         checked_rule(
             "json-secret",
-            r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key)\\?"\s*:\s*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
+            &format!(
+                r#"(?i)((?:\\?"{SECRET_KEY}\\?"|'{SECRET_KEY}')\s*:\s*)(?P<v>(?:[rbuf]{{1,2}})?(?:"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|\\"[^"\n]*?\\")"#
+            ),
             has_json_value,
         ),
         // the header value ([`header`]): a quoted string, or up to a
@@ -1177,17 +1236,38 @@ fn builtin_rules() -> Vec<Rule> {
         // `802-1x.private-key-password`, `vpn.secrets`,
         // `wifi-sec.wep-key0`, `wireguard.private-key`, `gsm.pin`; also
         // with `+`/`-` before it): the value, within one command, every
-        // time; not `wifi-sec.key-mgmt wpa-psk` or `…-flags` (WP-140)
-        option_rule(
-            "nmcli-secret",
-            &command(r"(?-u:\b)nmcli(?-u:\b)"),
-            &format!(
-                r"\s[+-]?(?:password|(?:[a-z0-9-]+\.)+[a-z0-9-]*(?:password|password-raw|psk|secrets|wep-key[0-3]|private-key|preshared-key|pin)){GAP}+"
-            ),
-            "",
-            &format!("(?:{WORD})"),
-            KEEP_PREFIX,
-        ),
+        // time; not `wifi-sec.key-mgmt wpa-psk` or `…-flags` (WP-140),
+        // and not a property named as a field to show (`-g wifi-sec.psk
+        // con show`, `--fields`, `--get-values`: group `field`; after `=`
+        // no property is read as one to set; WP-157)
+        Rule {
+            unless: &["field"],
+            ..option_rule(
+                "nmcli-secret",
+                &command(r"(?-u:\b)nmcli(?-u:\b)"),
+                &format!(
+                    r"\s(?P<field>-{{1,2}}[fg][a-z-]*{GAP}+)?[+-]?(?:password|(?:[a-z0-9-]+\.)+[a-z0-9-]*(?:password|password-raw|psk|secrets|wep-key[0-3]|private-key|preshared-key|pin)){GAP}+"
+                ),
+                "",
+                &format!("(?:{WORD})"),
+                KEEP_PREFIX,
+            )
+        },
+        // `mount -o user=bob,pass=PW`, `pwd=`, also `mount.cifs` and
+        // `mount.smb3` (a `.` ends the word `mount`): the whole option
+        // list, within one command, every time; `password=` is
+        // `secret-assignment`'s (WP-157)
+        Rule {
+            check: Some(mount_password),
+            ..option_rule(
+                "mount-password",
+                &command(r"(?-u:\b)mount(?-u:\b)"),
+                &format!(r"\s(?:-o{GAP}*|--options(?:=|{GAP}+))"),
+                "",
+                &format!("(?P<v>{WORD})"),
+                KEEP_PREFIX,
+            )
+        },
         // `me@example.com` → `‹redacted›@example.com`: the domain stays,
         // so a file named after an account can still be found. Not an
         // address: `user@host` without a dot, a version (`pkg@1.2.3`),
