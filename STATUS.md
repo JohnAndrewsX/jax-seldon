@@ -661,6 +661,15 @@ submission). (see `work/queued/`)
   bump → WP-200 merged; follow-ups WP-203 (the build lists every listed
   drift row's event; `fit` keeps proposal rows) and WP-204 (Work headers
   "N / total").
+- E84 ADR-0054 accepted (amends ADR-0053: `index.events` holds every
+  listed drift item's event plus the newest of the rest, at most 500; the
+  cut keeps an unapplied proposal's rows; a 0.2.0 plugin may drop the
+  "partial" note on an old transaction until WP-208) → WP-203 merged.
+- E85 the operator's go to tag and release the next version when `next`
+  is ready (the orchestrator reports at the tag).
+- E86 the next release is **0.3.0** by VERSIONING as it stands (a
+  compatible addition before 1.0 is a minor release); the contract-3
+  release becomes 0.4 (WP-213 renumbers the plans).
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:

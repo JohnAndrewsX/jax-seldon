@@ -1,6 +1,6 @@
 # ADR-0054 — ADR-0053 amended: every listed drift item's event is in the index; a proposal's open changes go right before the crisis rows
 
-**Status:** proposed
+**Status:** accepted (operator decision 2026-10-12, E84)
 **Date:** 2026-10-12
 
 > Amends [ADR-0053](ADR-0053-index-size-budget-cut.md) §2 (one rung
