@@ -421,11 +421,13 @@ ShellRoot {
     return { x: p.x, y: p.y, w: k.width, h: k.height }
   }
 
-  // What a text draws: an elided one its width, one that cannot elide or
-  // has no width left (it then draws whole) what it holds.
+  // What a text draws: an elided one its width, one that cannot elide
+  // what it holds; one with no width left draws whole, while its
+  // contentWidth reads 0, so its natural width (implicitWidth).
   function textBox(k) {
     var p = k.mapToItem(win.contentItem, 0, 0)
-    var w = k.elide === Text.ElideNone || k.width <= 0 ? Math.max(k.width, k.contentWidth) : k.width
+    var w = k.width <= 0 ? Math.max(k.contentWidth, k.implicitWidth)
+      : k.elide === Text.ElideNone ? Math.max(k.width, k.contentWidth) : k.width
     return { x: p.x, y: p.y, w: w, h: Math.max(k.height, k.contentHeight) }
   }
 
