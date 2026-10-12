@@ -867,15 +867,15 @@ packages, a status, files left or a partial note (one whole completed
 package says no more than the rows). The partial note (WP-208,
 ADR-0054 §3) sits under the list, also under a list of one package: "The
 index lists at most 500 events; the rest of this transaction is in the
-ledger." when the index shows that lines are missing (with the list at
-its 500-event cap, CONTRACT.md rule 4, the transaction holds the oldest
-event that is no listed drift item's `eventId`; or, at any size, also
+ledger." when the index shows that lines are missing (at any size, also
 under rule 5's cut, it lists fewer open members than its drift group's
 `members`); "The index lists at most 500 events; the ledger may hold
-more of this transaction." when neither holds but, at the cap, one of
-its lines is older than that event (a pinned drift event, such as a
-single item's: its other lines, if it had any, were cut, and the index
-cannot tell). Without `meta.txStatus` nothing is marked and nothing
+more of this transaction." when that does not hold but, with the list
+at its 500-event cap (CONTRACT.md rule 4), one of its lines is the
+oldest event that is no listed drift item's `eventId`, or older than it
+(a pinned drift event, such as a single item's): its lines older than
+that event, if it had any, were cut, and the index cannot tell whether
+it had any (that event may be its oldest line). Without `meta.txStatus` nothing is marked and nothing
 claims the transaction completed (an index of an earlier build, or a
 line written before ADR-0043). The Changelog row (and Today's NEEDS YOU row)
 of such an event shows the status as one word in the urgent colour

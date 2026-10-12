@@ -2833,7 +2833,7 @@ test("transactionDetail: a downgrade group, a cut index, a clipped command (WP-1
   const last = full.events[full.events.length - 1]
   last.source = "pacman"; last.kind = "upgrade"; last.txId = "tx-old"; last.meta = { from: "1", to: "2", command: "pacman -Syu" }
   const fp = M.deskChangelog(full)
-  same(M.eventDetail(full, fp, last.id).transaction.partial, "cut")
+  same(M.eventDetail(full, fp, last.id).transaction.partial, "maybe")
   same(M.eventDetail(full, fp, MESA).transaction.partial, "")
   // under the cap a transaction at the oldest end is whole
   const under = JSON.parse(sample)
@@ -2893,8 +2893,9 @@ test("transactionDetail: a transaction is partial by its own rows (WP-208)", () 
   const CUT = "The index lists at most 500 events; the rest of this transaction is in the ledger."
   const MAYBE = "The index lists at most 500 events; the ledger may hold more of this transaction."
   const BOUND = rows.find(e => e.subject === "bound-0").id
-  // (a) the transaction holding the oldest event that is no listed item's event
-  same(shown(tx(BOUND)), ["24 packages: 24 upgraded", "cut", true, CUT])
+  // (a) the transaction holding the oldest event that is no listed item's
+  // event: its older lines, if any, are cut; that event may be its oldest
+  same(shown(tx(BOUND)), ["24 packages: 24 upgraded", "maybe", true, MAYBE])
   // (b) a pinned leader of 3 past that event, its one listed line: (c) knows
   // the others are cut; the list shows for one package, so the note does
   same(shown(tx(leader("T-PIN").id)), ["1 package: 1 upgraded", "cut", true, CUT])
@@ -2903,10 +2904,19 @@ test("transactionDetail: a transaction is partial by its own rows (WP-208)", () 
   // listed; the index cannot tell whether the transaction had more lines
   same(shown(tx(leader("T-OLD").id)), ["1 package: 1 upgraded", "maybe", true, MAYBE])
   same(shown(tx(leader("T-EXPL").id)), ["2 packages: 2 upgraded", "maybe", true, MAYBE])
-  // the boundary and a pinned older line in one transaction: certain
-  const both = JSON.parse(JSON.stringify(v))
-  both.events.find(e => e.subject === "old-single").txId = "T-BOUND"
-  same(M.eventDetail(both, M.deskChangelog(both), BOUND).transaction.partial, "cut")
+  // review F4 (gates/rv-208/probe/boundary-solo.json): the boundary event
+  // is a whole one-package transaction; the index cannot tell it from a cut
+  // one, so the note hedges
+  const solo = JSON.parse(JSON.stringify(v))
+  const SOLO = rows.find(e => e.subject === "bound-23").id
+  Object.assign(solo.events.find(e => e.id === SOLO), { kind: "install", subject: "solo", detail: "1-1", txId: "T-SOLO",
+    meta: { version: "1-1", command: "pacman -S solo" } })
+  same(shown(M.eventDetail(solo, M.deskChangelog(solo), SOLO).transaction), ["1 package: 1 installed", "maybe", true, MAYBE])
+  // the boundary in an open group that lacks members: (c) is certain
+  const open = JSON.parse(JSON.stringify(v))
+  open.events.filter(e => e.txId === "T-BOUND").forEach(e => { delete e.case })
+  open.drift.push(group("T-BOUND", 40))
+  same(shown(M.eventDetail(open, M.deskChangelog(open), BOUND).transaction), ["24 packages: 24 upgraded", "cut", true, CUT])
   // (c) fewer open members listed than the group's `members`, far from the boundary
   same(shown(tx(leader("T-FEW").id)), ["3 packages: 3 upgraded", "cut", true, CUT])
   // an untouched whole transaction

@@ -33,14 +33,13 @@ and the package does not exist yet. Update the plugin first:
   read whole ("24 packages: 24 upgraded" of 40), and an old open
   change's transaction read "1 package". Now the detail says "The index
   lists at most 500 events; the rest of this transaction is in the
-  ledger." when, with the list at its 500 events, the transaction holds
-  the oldest event that is no listed open change's, or when a group
-  lists fewer open lines than its `members`, at any size. It says "The
-  index lists at most 500 events; the ledger may hold more of this
-  transaction." when only the transaction's age says lines may be
-  missing: at the cap, a line older than that event (an old open
-  change's) and neither of the above. The note shows under the package
-  list, which now appears for one package too. The graph's footer says
+  ledger." when a group lists fewer open lines than its `members`, at
+  any size. It says "The index lists at most 500 events; the ledger may
+  hold more of this transaction." when only the transaction's place in
+  the list says lines may be missing: with the list at its 500 events,
+  one of its lines is the oldest event that is no listed open change's,
+  or older than it (an old open change's). The note shows under the
+  package list, which now appears for one package too. The graph's footer says
   "N events" instead of "Newest N events", and "the others are only in
   the logbook" instead of "older ones". No contract change.
 

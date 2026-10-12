@@ -6530,7 +6530,7 @@ var TX_VERBS = { upgrade: "upgraded", downgrade: "downgraded", install: "install
 var INDEX_EVENTS_MAX = 500
 // The note under a transaction the index may list only in part (WP-208):
 // `cut` when the index shows that lines are missing, `maybe` when only
-// the transaction's age says some may be.
+// the transaction's place in the list says some may be.
 var TX_PARTIAL_TEXTS = {
   cut: "The index lists at most " + INDEX_EVENTS_MAX + " events; the rest of this transaction is in the ledger.",
   maybe: "The index lists at most " + INDEX_EVENTS_MAX + " events; the ledger may hold more of this transaction."
@@ -6570,12 +6570,12 @@ function eventsBoundary(index) {
 
 // The transactions of an index: { <txId>: { packages: [event], files: n,
 // status, partial, open } }, built once per index. `partial` (WP-208):
-// "cut" when the index lists part of it: it holds the list's boundary
-// event (eventsBoundary), or it lists fewer open members than its drift
-// group's `members`; else "maybe" when one of its events is past the
-// boundary (a pinned drift event: its transaction's other lines, if it
-// had any, are older than the boundary, and the index cannot tell); else
-// "".
+// "cut" when the index lists part of it: it lists fewer open members than
+// its drift group's `members`; else "maybe" when one of its events is the
+// list's boundary event (eventsBoundary) or past it (a pinned drift
+// event): its lines older than the boundary, if it had any, are cut, and
+// the index cannot tell whether it had any (the boundary event may be its
+// oldest line); else "".
 function transactionIndex(index) {
   var all = events(index)
   var boundary = eventsBoundary(index)
@@ -6591,8 +6591,7 @@ function transactionIndex(index) {
     var id = eventTx(e)
     if (id === "") continue
     var t = at(id)
-    if (boundary !== -1 && i === boundary) t.partial = "cut"
-    else if (boundary !== -1 && i > boundary && t.partial === "") t.partial = "maybe"
+    if (boundary !== -1 && i >= boundary) t.partial = "maybe"
     if (e.kind === "note") {
       t.files++
       continue
