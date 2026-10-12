@@ -3453,8 +3453,8 @@ echo "     triage-big: desk created in $(sed -n 2p "$work/triage-big.steps" | jq
 
 # WP-201 round 2 (I1, I2): the crises of a big proposal (200 items × 10
 # refs of 256 characters, live) are stops only once its items are built:
-# ↑ ↓ Enter Enter before that reaches no crisis and applies nothing; after
-# the build ↓ walks its three crises (the first open, two no longer
+# ↑ ↓ Enter Enter before that reaches no crisis and applies nothing; once
+# built (a run of its own) ↓ walks its three crises (the first open, two no longer
 # open), each one's button in view, to the last and ↑ back. A short
 # window (600 px): each crisis is taller than the pane, so its button's
 # end is brought into view, not its top.
@@ -3464,20 +3464,28 @@ jq '.items |= (to_entries | map(if .key == 1 or .key == 199 then .value.crisis =
   "$fx_work/big/proposals/$PROPOSAL.json" >"$fx_work/bigc/proposals/$PROPOSAL.json"
 mkdir -p "$work/home-triage-crisis-big"
 run triage-crisis-big "" 1920x600 \
-  "summon:$cl;key:Up;key:Down;key:Return;key:Return;view;key:Escape;key:Up;$built;key:Down;key:Down;key:Down;key:Up;key:Up;view" \
+  "summon:$cl;key:Up;key:Down;key:Return;key:Return;view" \
   HOME="$work/home-triage-crisis-big" FAKE_SELDON_FIXTURE="$fx_work/bigc/index.json"
 expect triage-crisis-big 3 "[$ttd.built, $tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "false,false,-1"
 expect triage-crisis-big 6 "[$ttd.crisisAt, $ttd.crisisArmed, $ttd.applyArmed, .view.arm.armed] | map(tostring) | join(\",\")" \
   "-1,false,false,"
-expect triage-crisis-big 9 "[$tt.shown, $ttd.built, ($ttd.crises | length)] | map(tostring) | join(\",\")" "true,true,3"
-for i in 10 11 12 13 14; do
-  at=$((i <= 12 ? i - 10 : 14 - i))
-  expect triage-crisis-big $i "[$ttd.crisisAt, $ttd.crisisVisible] | map(tostring) | join(\",\")" "$at,true"
-done
-expect triage-crisis-big 10 "$ttd.crisisHint" "Enter twice applies this crisis alone · ↑/↓ the other crises"
-expect triage-crisis-big 12 "$ttd.crisisHint" "Resolved — nothing to apply · ↑/↓ the other crises"
 argv_check triage-crisis-big "$work/home-triage-crisis-big" "$startup"
 clean_log triage-crisis-big
+# (a run of its own: coming back to a proposal left mid-build rebuilds it,
+# which takes seconds offscreen and more on a loaded host, as before WP-201)
+mkdir -p "$work/home-triage-crisis-big-walk"
+run triage-crisis-big-walk "" 1920x600 \
+  "summon:$cl;key:Up;$built;key:Down;key:Down;key:Down;key:Up;key:Up;view" \
+  HOME="$work/home-triage-crisis-big-walk" FAKE_SELDON_FIXTURE="$fx_work/bigc/index.json"
+expect triage-crisis-big-walk 3 "[$tt.shown, $ttd.built, ($ttd.crises | length), $ttd.crisisAt] | map(tostring) | join(\",\")" "true,true,3,-1"
+for i in 4 5 6 7 8; do
+  at=$((i <= 6 ? i - 4 : 8 - i))
+  expect triage-crisis-big-walk $i "[$ttd.crisisAt, $ttd.crisisVisible] | map(tostring) | join(\",\")" "$at,true"
+done
+expect triage-crisis-big-walk 4 "$ttd.crisisHint" "Enter twice applies this crisis alone · ↑/↓ the other crises"
+expect triage-crisis-big-walk 6 "$ttd.crisisHint" "Resolved — nothing to apply · ↑/↓ the other crises"
+argv_check triage-crisis-big-walk "$work/home-triage-crisis-big-walk" "$startup"
+clean_log triage-crisis-big-walk
 
 # WP-177, one cursor: the pointer's row is drawn (Omarchy's hover cursor)
 # only once the pointer really moved — the first sample primes Omarchy's
