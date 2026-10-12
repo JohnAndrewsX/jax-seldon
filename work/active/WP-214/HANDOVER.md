@@ -200,3 +200,79 @@ command lines)". No full check this round (orchestrator); no file under
 from a checkout of `next` equal to `origin/next`; scenario `wip` with
 the test host's 1920x1080 output set to scale 0.9375 (2048x1152
 logical) and restored, both commands recorded here then.
+
+## Live stage (after the merge into next; Fable stage 2, instructions 3–7)
+
+Commit under test: `next` d8d57fce3b43731957b5a5e97d997b44ee0b7b53
+(origin/next), deployed from the read-only checkout `wt/next` with
+`SELDON_TEST_HOST=<test host> just deploy-test-host --branch next
+<gates>/gate-n030b.log` (next's gate on d8d57fce, `exit 0`); the summary
+printed `commit d8d57fce3b43731957b5a5e97d997b44ee0b7b53`, smoke ok, the
+host running `0.3.0+next.d8d57fce`. Test host: Omarchy 4.0.4-1, rc
+channel, one 1920x1080@60 output. Everything below ran on the **test
+host**; the shot is in the private `refs/live-214/`.
+
+| Scenario | What ran | Counts | Result |
+|---|---|---|---|
+| **gate** | the host had no clone of the repository, so a git bundle of `next` went there and was cloned (`~/seldon-gate-d8d57fce`, HEAD d8d57fce, clean); in it `OMARCHY_PATH=/usr/share/omarchy bash scripts/check-omarchy-assumptions.sh --gate` | 1 step, 0 passwords | passed: "check-upstream: ok (every assumption's file matches the ledger)", 17 files, exit 0 |
+| **b** | prepared: the 0.3.0 binary copied aside, the host put back to its pre-next state by the deploy's RESTORE.txt, `deploy-test-host --release v0.2.0` (smoke ok; plugin = the published commit 3ed5b924), the plugin split of d8d57fce made in a scratch clone (10b25ab2; tree = `d8d57fce:plugin`; 3ed5b924 an ancestor, so a fast-forward) and put on the host as a bare repo. The next step, `omarchy plugin update jax.seldon --yes`, was **guard-blocked** (nothing ran); orchestrator: option 3 | — | not run (guard) |
+| **wip** | `hyprctl keyword monitor <output>,1920x1080@60,0x0,0.9375` → Hyprland: "keyword can't work with non-legacy parsers. Use eval." (Lua config; not the guard). With Omarchy's own form (`omarchy-hyprland-monitor-scaling`): `hyprctl eval "hl.monitor({ output = \"<output>\", mode = \"1920x1080@60\", position = \"0x0\", scale = 0.9375 })"` → `ok`, `hyprctl monitors -j` scale 0.9375, a `grim` shot 2048x1152 (2048x1152 logical). `omarchy bar set jax.seldon deskWidth 50`; `omarchy-shell shell summon jax.seldon '{"section":"work"}'`; shot. Restore: `omarchy-shell shell hide jax.seldon`, the saved `shell.json` copied back, `hyprctl reload` → scale 1, 1920x1080@60 at 0x0; service `deskWidth` 100, `deskSidebar` open | 2 steps (width, open at Work), 0 passwords | passed: the desk about 1014 px wide; "0 / 3 active" on its own line above *By agent* and *Import tasks…*, *New case* wrapped below; nothing drawn over anything |
+| **c** | the test changes (two `Hidden=true` autostart entries as crises, an applications entry, a `.bashrc` alias) were **guard-blocked** (write under `~/.config`; nothing ran); orchestrator: option 2 | — | not run (guard); headless evidence: WP-201's `triage-crisis-keys`, `triage-press-apply`, `triage-crisis-rewrite`, `triage-crisis-stacked`, `triage-crisis-big`, `triage-crisis-big-walk`, `triage-back-apply`, `triage-back-crisis` |
+| **restart** | `ls ~/.cache/quickshell/crashes \| wc -l` and `coredumpctl list quickshell` before; three `omarchy restart shell`, each waited for `omarchy-shell shell ping`, then `jax.seldon.service status`; the same counts after | 3 steps, 0 passwords | passed: a new quickshell pid each time (394767 → 395620 → 396468), status ok, engine 0.3.0+next.d8d57fce, plugin 0.3.0 each time; crashes 0 before and after, "No coredumps found." before and after |
+| a | not run (optional; the host is not clean) | — | — |
+
+The skeleton's `keys` scenario is not in Fable's list and was dropped
+from the record; WP-202's key paths are pinned headless.
+
+The branch was fast-forwarded to `next` d8d57fce (my branch was its
+ancestor), then the record was filled and committed (a4cfdca6).
+
+### `bash packaging/acceptance-check.sh 0.3.0` (exit 0)
+
+```text
+acceptance-check: v0.3.0 at HEAD (a4cfdca681b0)
+  record   packaging/acceptance/v0.3.0.json, 2026-10-12
+  status   partial: 3 passed, 2 not run
+  commit   d8d57fce3b43731957b5a5e97d997b44ee0b7b53, 1 later commit(s), none outside docs and records
+  omarchy  4.0.4-1, channel rc
+  engine   0.3.0+next.d8d57fce; plugin 0.3.0
+  scenario gate: passed (test host); 1 human step(s), 0 password prompt(s) — Omarchy assumptions, check-upstream --gate (WP-194), before the live checks
+  scenario b: not run — 0.2.0 to 0.3.0: engine and plugin updated in either order, restart notice once, settings kept, the skill updated at the next capture
+  scenario c: not run — triage: a crisis inside a proposal by key, applied alone (WP-201 scenario c)
+  scenario wip: passed (test host); 2 human step(s), 0 password prompt(s) — Work's WIP line at 2048x1152 logical, desk at 50 %: above the buttons, nothing drawn over anything (WP-211)
+  scenario restart: passed (test host); 3 human step(s), 0 password prompt(s) — three shell restarts (WP-162)
+  limit    b: not run; guard: omarchy plugin update is a red-zone command for agents; the operator runs it. The mixed install is covered by engineMin 0.2.0 (no new argv or index field) and contract 2 unchanged
+  limit    c: not run on the test host (guard: creating a red-zone change under ~/.config is not allowed for agents); evidence is WP-201's headless cases in tests/plugin/desk-view.sh: triage-crisis-keys, triage-press-apply, triage-crisis-rewrite, triage-crisis-stacked, triage-crisis-big, triage-crisis-big-walk, triage-back-apply, triage-back-crisis
+  limit    restart: one monitor; the two-monitor restart test runs on the dev host after the tag with the release
+acceptance-check: ok
+```
+
+### Test host at the end
+
+Engine and plugin 0.3.0 from `next` d8d57fce (the last deploy; the plugin
+dir a dev copy), the monitor at scale 1 and `shell.json` as before,
+`seldon-watch` inactive, status ok on the host's own logbook. Left for
+the orchestrator, not cleaned:
+
+- `~/seldon-0.3.0-bin` (copy of the deployed engine)
+- `~/seldon-next-d8d57fce.bundle`, `~/seldon-gate-d8d57fce/` (the gate's clone)
+- `~/plugin-split-030.bundle`, `~/plugin-split-030.git/` (the split for b)
+- `~/shell.json.before-wip-214`, `~/wip-214-work-50.png`
+- `~/seldon-backup-214/` (logbook, state, config, `.bashrc`, autostart,
+  applications before c; nothing in it was changed)
+- from the RESTORE step for b: `~/.local/bin/seldon.next`, `~/Seldon.next`,
+  `~/.config/seldon.next`, `~/.local/state/seldon.next`,
+  `~/.config/omarchy/shell.json.next` (a capture recorded the last as an
+  open `attention` change in the host's logbook)
+- by the three deploys under `~/.local/state/seldon-dev/`:
+  `backup-before-next-20261012T145440Z`, `backup-before-next-20261012T152438Z`,
+  `plugin-git-20261012T145612Z`, `plugin-dev-20261012T145744Z`,
+  `plugin-git-20261012T152438Z`, three lines in `deploy.jsonl`; and
+  `~/.local/bin/seldon.prev`
+
+On the dev host: the scratch clones, bundles and deploy logs under the
+private `gates/dev-214/`; the deploy's build in `wt/next/engine/target`
+(git-ignored, written by the script itself).
+
+**Guard blocks:** two, both reported and not routed around:
+`omarchy plugin update` (b) and a write under `~/.config` (c).
