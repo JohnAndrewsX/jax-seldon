@@ -331,6 +331,8 @@ plugin-test: check-runtime-space
     shopt -s nullglob
     qml=(plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml plugin/components/desk/*.qml plugin/components/graph/*.qml plugin/sections/*.qml)
     python3 tests/plugin/check-tokens.py --rules "${qml[@]}"
+    # Every live desk case waits for its index or says why not (WP-205).
+    python3 tests/plugin/live-index-wait.py
     if [[ -n "{{ skip_host }}" ]]; then
       echo "plugin-test: Quickshell harnesses skipped (SELDON_SKIP_HOST_CHECKS set; they need quickshell and the installed shell)"
       echo "plugin-test: ok (node and bash parts)"

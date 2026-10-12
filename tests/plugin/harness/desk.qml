@@ -40,6 +40,11 @@ import qs.Ui
 //   HARNESS_REFUSE      if set, updateEntryInline returns false
 //   HARNESS_NO_PILL     if set, no pill: the plugin is enabled but not in
 //                       the bar, so nothing pushes an entry to the service
+//   HARNESS_WAIT_INDEX  if set, the first step also waits (in the same up
+//                       to 15 s) until the service shows an index
+//                       (`indexShown`, what the desk reads): a live run
+//                       whose fake engine writes it at start-up asserts
+//                       the loaded state, not a race (WP-205)
 //   HARNESS_STEPS       ";"-separated steps, each optionally "*N" repeated:
 //                       summon[:<json>]  `shell summon jax.seldon <json>`
 //                       fresh[:<json>]   drop the desk and summon a new one
@@ -130,6 +135,8 @@ ShellRoot {
   readonly property var steps: (Quickshell.env("HARNESS_STEPS") || "view").split(";").filter(function(s) { return s !== "" })
   readonly property bool refuse: (Quickshell.env("HARNESS_REFUSE") || "") !== ""
   readonly property bool noPill: (Quickshell.env("HARNESS_NO_PILL") || "") !== ""
+  readonly property bool waitIndex: (Quickshell.env("HARNESS_WAIT_INDEX") || "") !== ""
+  property bool indexTimedOut: false
   property int step: 0
   property string lastCall: ""
   // The last creation of the desk saw no service (as the shell's loader).
@@ -735,9 +742,14 @@ ShellRoot {
     onTriggered: {
       var s = root.service
       var waited = Date.now() - root.startMs
-      if (root.step === 0 && waited < 15000 && (waited < 1000 || !s || !s.ready || s.probing || (!root.noPill && (!root.widget || !root.widget.service)))) {
+      if (root.step === 0 && waited < 15000 && (waited < 1000 || !s || !s.ready || s.probing || (!root.noPill && (!root.widget || !root.widget.service))
+          || (root.waitIndex && !s.indexShown))) {
         stepper.restart()
         return
+      }
+      if (root.step === 0 && root.waitFor === "" && root.waitIndex && !(s && s.indexShown) && !root.indexTimedOut) {
+        root.indexTimedOut = true
+        console.log("HARNESS wait timed out: index")
       }
       if (root.waitFor !== "") {
         var timedOut = Date.now() - root.waitSince > 15000
