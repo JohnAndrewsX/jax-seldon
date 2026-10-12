@@ -5,7 +5,57 @@ merged. ADR-0054 (an amendment of the accepted ADR-0053) is **proposed**;
 the reviewer and the operator decide it. No `contractVersion` bump, no
 schema change.
 
-## Deviation from the WP's wording (please decide)
+## Round 2 (stage 1 and stage 2: APPROVE WITH FIXES)
+
+Fable's instructions 1–6 (`WP-203-stage2-fable.md`), each with its
+acceptance:
+
+1. **The reference derive caps drift like `build::cap_drift`** (F1,
+   blocking). `scripts/validate-fixtures.py`: the summary counts every
+   open item first; then `drift` keeps every crisis in list order up to
+   200 and the others in list order into `200 - crises`, newest first.
+   The derive's `drift` output is the capped list, and so is `named`.
+   `rest` takes `max(0, 500 - pinned)`. New test
+   `the_reference_derive_lists_the_events_the_engine_does`: fixture + 600
+   in-case notes (500 events, 6 open items) and fixture + 520 caseless
+   `theme-set` events (526 open items, 200 drift rows, 500 events, every
+   row's event listed); 0 diffs on `events`, `drift` and `summary`
+   against `seldon index`. The in-case notes are also added to
+   C-2026-003's frontmatter `events`, because the derive checks that list
+   against the ledger (stage 1's probe ignored the derive's exit code).
+   Mutants, each alone, source restored:
+   - M6 (derive back to `folded[:500]`) fails the new test;
+   - the derive without the drift cap fails the new test;
+   - the derive without the clamp at 0 passes. It is an equivalent
+     mutant: with the cap at most 200 events are pinned, so
+     `500 - pinned` never goes negative. The clamp stays as a guard.
+
+   `scripts/validate-fixtures.sh` ok, the `drift-capped` variant included
+   (it only patches `summary`, which the cap leaves whole).
+2. **The 0.2.0 limitation as ADR-0054's own fact** (F2). ADR-0054 §3, row
+   `transactionDetail`, has Fable's wording. "ADR-0053's cut had the same
+   case" is gone. The CHANGELOG sentence is Fable's, with WP-208.
+   Consequences name WP-208 (the plugin follow-up the orchestrator
+   queued). They also add the known limit: proposal rows past rule 4's
+   200 drift cap are not listed; `fit` keeps only listed rows. The three
+   texts (CHANGELOG, ADR-0054 §3, open question 4 below) say the same.
+3. **The plugin follow-up** is drafted in open question 4 (WP-208 points
+   there). Nothing under `plugin/` changed.
+4. **Wording.** CONTRACT.md rule 4 and SPEC-ENGINE §6: "at most 500
+   events". User docs en and de: "the change behind every open item the
+   index lists". `en/05-cli-reference.md` is wrapped, and SPEC-ENGINE §6's
+   long line too. The de files name the English commit f3a9ff8b.
+5. **ADR-0054 form.** The status stays `proposed` and the title form "ADR-0053
+   amended: …". The header now names ADR-0020's event count as amended,
+   with a link. `git diff 1e872c28 --
+   decisions/ADR-0053-index-size-budget-cut.md` is empty.
+6. **This handover.** The derive's > 500 branch moved from *not run* to
+   *fixture*. The deviation below is decided.
+
+## Deviation from the WP's wording (decided)
+
+Stage 1 and stage 2 accepted 500 with pins: no bump question for the
+operator.
 
 The WP asks for "the newest 500, plus the event of every listed drift
 item" (up to 700 events). `schema/index.schema.json` caps `events` at
@@ -40,7 +90,8 @@ reference derive. I did not take it.
    takes them after `system`'s optional parts and before the crisis rows,
    each with its event. An applied proposal holds nothing. The proposal
    holds at most 200 items (schema), so the extra rung is bounded.
-3. **Reference derive** (`scripts/validate-fixtures.py`): the same rule.
+3. **Reference derive** (`scripts/validate-fixtures.py`): the same rule;
+   since round 2 with `drift` capped as the engine caps it.
 4. **Docs.** CONTRACT.md rules 4 and 5, SPEC-ENGINE §6, user docs en and de
    (the graph's 500 events; source lines updated), CHANGELOG
    `[Unreleased]` (also: ×150 now 897 KB, not 881 KB), DECISIONS.md row,
@@ -106,8 +157,31 @@ run separately.
 
 ## How it was verified
 
-- **fixture**: `cargo test --test index` 52 passed, 0 failed, 2 ignored; clippy `-D warnings` and fmt clean;
+- **fixture** (round 1): `cargo test --test index` 52 passed, 0 failed,
+  2 ignored; clippy `-D warnings` and fmt clean;
   `scripts/validate-fixtures.sh` ok; `scripts/docs-check.sh` ok.
+- **fixture** (round 2): `the_reference_derive_lists_the_events_the_engine_does`
+  (the derive's > 500 and > 200 branches against the engine) and its
+  three mutants (round 2, item 1); `scripts/validate-fixtures.sh` ok;
+  `scripts/docs-check.sh` ok.
+- **headless** and **fixture** (round 2; dev host, private gates folder,
+  at f2732e0b): `SELDON_FULL_CHECK=1 just check` → `check: ok`, exit 0
+  (log `gates/check-dev-203-r2.log`). In it:
+  - cargo 2 903 passed, 0 failed, 20 ignored over 112 test binaries;
+    fmt and clippy clean;
+  - validate-fixtures ok (154 instances, 14 variants); docs-check ok;
+    qmllint ok (52 files); model.test.js 218;
+  - in a private headless Quickshell: service-states 366/0, desk-view
+    2242/0 (round 1: 2243/0; no failure, I did not trace the one check
+    fewer), bar-view 195/0, ipc-restart 43/0, and their mutant runs
+    clean;
+  - 328 by-id entries before and after each suite.
+
+  desk-view's guard printed `ok   desk-view: the real
+  ~/.local/state/seldon changed by the operator's live engine (not a
+  leak)`: the released engine of the live session wrote its own index
+  while the suite ran, and the harness judged it not a leak. The other
+  suites report the real state and config untouched.
 - **fixture**: two mutants, each run alone, with the source restored
   afterwards:
   - holding no proposal rows fails
@@ -119,8 +193,8 @@ run separately.
     `status_writes_a_large_logbook_under_its_budget`.
 - **fixture** (release, dev host, private gates folder): the measurement
   and the 0.2.0 `Model.js` probe above.
-- **headless** and **fixture** (dev host, private gates folder, at
-  93a9c8a9): `SELDON_FULL_CHECK=1 just check` → `check: ok`, exit 0
+- **headless** and **fixture** (round 1; dev host, private gates folder,
+  at 93a9c8a9): `SELDON_FULL_CHECK=1 just check` → `check: ok`, exit 0
   (log `gates/check-dev-203.log`). In it: cargo 2 901 passed, 0
   failed, 20 ignored over 112 test binaries; fmt and clippy `-D
   warnings` (with and without `watch`) clean; validate-fixtures ok (154
@@ -132,25 +206,37 @@ run separately.
   TMPDIR, JUST_TEMPDIR and the cargo target were all under the private
   gates folder.
 - **test host**: shellcheck through the orchestrator kit's wrapper and
-  the deploy's plugin validation, inside the same `just check` run.
-  Only the handover commit came after this run.
-- **not run**: CI; a live desktop; the reference derive's > 500 branch
-  (the fixture logbook has 83 events, so the golden test exercises only
-  the unchanged case; the Rust tests cover the rule).
+  the deploy's plugin validation, inside the same `just check` run, in
+  both rounds.
+- **not run**: CI; a live desktop.
 
 ## Open questions
 
-1. The deviation above: 500 with pinned events (done) or 700 with a
-   schema change and a bump question (not done).
-2. ADR-0054 §2 puts the proposal's rows after `system`'s optional parts.
-   A reviewer may weigh them before (rung 23): both keep "crisis rows
-   last".
-3. Plugin-only follow-ups (no contract change, ADR-0054 consequences):
-   the transaction detail of an old group leader reads "1 package"
-   without the `partial` note (0.2.0 marks only the list's last event; the
-   drift form's member list stays whole via `members` and `drift show`);
-   the texts "The index lists the newest 500 events" / "it keeps the
-   newest 500 events" could read "500 events".
-4. Proposal rows past rule 4's 200-row drift cap are not listed by the
-   build (the cap is crises first, then newest); WP-203 only keeps listed
-   rows through the cut. Not asked; noted.
+1. Answered (stage 2): 500 with pinned events. No bump question.
+2. Answered (stage 2): the proposal's rows stay on rung 24, after
+   `system`'s optional parts.
+3. Known limit (ADR-0054 consequences): proposal rows past rule 4's
+   200-row drift cap are not listed by the build (the cap is crises
+   first, then newest); `fit` keeps only listed rows.
+4. **Plugin follow-up, WP-208 (draft; no contract change).** Base 0.2.0
+   marked the boundary transaction partial because the newest 500 were
+   contiguous. With pinned older leaders after the rest, it reads
+   complete, and a pinned leader's transaction reads "1 package" without
+   the note (the oldest pinned one excepted). This happens below 1 MB too.
+   It is not an index field and not a crisis or open-drift count
+   (ADR-0051 §1).
+
+   Rule for the new plugin's `transactionIndex`: a transaction is
+   `partial` when any of these holds (they replace the
+   `all.length >= 500` test):
+   - (a) it holds the oldest event that is not a listed drift item's
+     `eventId` (the rest's boundary);
+   - (b) its leader is older than that event (the pinned tail);
+   - (c) it lists fewer package rows than its drift item's `members`.
+
+   `transactionRows`' text "it keeps the newest 500 events" reads "it
+   lists 500 events". EventDetail's "The index lists the newest 500
+   events" and SPEC-PLUGIN §3 change the same way. Tests: the three cases
+   and an untouched whole transaction; stage 1's counter-example
+   (`gates/rv-203/probe-tx.js`, "24 packages: 24 upgraded" of 40) reads
+   partial.
