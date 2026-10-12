@@ -183,3 +183,142 @@ end of ADR-0039 (as WP-140 did); CHANGELOG [Unreleased]; guide 06 en/de
 - mount passwords in `/etc/fstab` content or a credentials file are not a
   command line and stay as the WP-140 notes say.
 - Not on `main`; merge with `next` only.
+
+## Round 2
+
+Brief: the orchestrator's round 2 from the Opus stage 1
+(`WP-157-review-1.md`, SEND BACK on F1) and the Fable stage 2
+(`WP-157-stage2-fable.md`, SEND BACK for one short round), instructions
+1 to 4 as written. `next` had not moved (3ba46b8f); nothing merged. One
+code commit, 53578746.
+
+### 1. F1 — the feed is sticky (blocking)
+
+`pkgcmd::Lexer` keeps a sticky `fed` flag, set at `|` and `|&` (not
+`||`), `<<<` and `<(`; `end_segment` does `segment.fed |= self.fed`
+without `take`, so every command after the operator on the line is fed,
+across line ends, `(`, loops, `if` and `>(…)`. `current.fed = true` for
+`<<<` and `<(` stays (the operator among a command's own words feeds that
+command); nested scripts keep `inner.fed || segment.fed`. Not scope
+tracking. A pipe after a command still feeds it nothing.
+- `pkgcmd::tests::fed_commands`: `a | (b; c) && d` → `[false, true, true,
+  true]`; `a | while read p; do b; done` and `a | if c; then b; fi` → all
+  after `a` true; `a | sudo tee >(b)` → `[false, true, true]`; `exec 3<
+  <(a); b` and `exec 3<<< a; b` → `[true, true]`; `a; b | c` → `[false,
+  false, true]`; `a || b` → `[false, false]`; the round-1 rows updated to
+  the sticky reading.
+- End to end (`hooks`, `privileged::more_secrets_on_a_privileged_line`):
+  `echo hunter2 | (cd / && sudo cryptsetup open /dev/x vault)` →
+  `cryptsetup ‹redacted›`; `printf 'hunter2\nhunter2\n' | (sleep 1; sudo
+  passwd alice)` → `passwd ‹redacted›`; the `while` and `>(…)` forms
+  masked; negatives kept whole: `sudo passwd -S alice | grep alice`, `sudo
+  cryptsetup status vault | grep cipher`, `sudo passwd -S alice || echo
+  none | cat`. Unit rows add the `if`, `exec 3< <(…)` and `exec 3<<<`
+  forms.
+- `diff <(sort a) <(sort b); sudo passwd -S alice` moved to the masked
+  side as the documented over-mask, with `a | b; sudo passwd -S alice`.
+- Mutant `segment.fed |= std::mem::take(&mut self.fed)`: killed (lib
+  `fed_commands` on the `(b; c)` row, and `hooks`).
+- SPEC §8 and the ADR-0039 note: the sentence replaced by the rule; the
+  "masked too much, by design" sentence added.
+
+### 2. F2 — fixed, the residual measured
+
+`redact::pem_base64()` builds the pattern: the marker (each of the three)
+may be cut by a line end and indentation between any two of its
+characters (one `format!` joining its characters with
+`(?:\r?\n[ \t]*)?`); after it, 40 or more characters on its line, or
+fewer and a next line of 40 or more (the second alternative); in front of
+it, the unindented lines of 40 or more base64 characters right before the
+marker's line (the wrapped text before the key), so the match starts at
+the token's first character. Triggers: each marker's first and second
+half (a wrap leaves one half whole).
+- Rows: 40 bytes before `-----BEGIN` wrapped at 76 (marker with fewer
+  than 40 characters after it on its line) and 100 bytes (marker on the
+  second line): masked whole from the first line, body lines masked; the
+  marker cut by the wrap (49 bytes before it, YAML-indented): masked
+  (the residual is not a negative row any more).
+- Measured (*fixture*, a probe not committed; log
+  `gates/f2-probe-dev-157.log`): offsets 1 to 399 bytes before
+  `-----BEGIN`, `base64`'s 76-column wrap, plain LF, YAML-indented and
+  CRLF: every line from the marker's on masked at 1197/1197 (stage 1:
+  259/399 not masked at all before). Residual in SPEC §7: a marker with
+  fewer than 40 base64 characters after it on its line and the next
+  together (a wrap narrower than 40 columns); "a wrap narrower than any
+  tool's" is gone. Over-mask added to SPEC: an unindented 40+ base64 line
+  alone right before a key (a hash).
+- Scaling (bench profile, log `gates/scale-dev-157-r2.log`, load 0.5 to
+  6), 64/128/256/512 KB, µs per KB: base64 lines and no marker
+  9.6/9.8/9.8/10.2; split-marker near misses 9.5/9.7/9.7/9.7; wrapped
+  keys after text 12.5/12.2/12.9/13.5; short first lines
+  10.2/10.2/10.1/10.1 — flat. Three of them are now bench rows.
+- Mutants: no second alternative (killed by the 40- and 100-byte rows),
+  a marker never cut, no lines before, whole markers as triggers: all
+  killed.
+
+### 3. F3, F4, F5, F7 in this WP; F6 documented
+
+- F3: `\s-[A-Za-z]*o{GAP}*`; its scan-on literal is `-`. Rows `sudo mount
+  -vo user=bob,pass=… → -vo ‹redacted›`, `-no pass=…`; negative `mount -vo
+  rw /dev/sdb1 /m`. Mutant `[A-Za-z]*` removed: killed.
+- F4: the word is lower-cased; `:` is trimmed with `=`, and after a pass
+  phrase source (`file:<(`) the option before it counts. Rows
+  `RESTIC_PASSWORD_FILE=<(echo pw) sudo -E restic backup /etc`, `tool
+  --PASSWORD-FILE <(echo pw)`, `openssl rsa -in k.pem -passin
+  file:<(echo pw)` positive; `diff --label a: <(sort a) b` negative. SPEC
+  §8: a short option before a process substitution (`restic -p <(…)`)
+  is not masked. Mutants: case, `:`, the source prefix: killed.
+- F5: `a_base64_key_is_masked_before_a_later_rule_cuts_it` (a token with
+  an `AKIA` + 16 shape inside, masked whole); rows `--pwfile`,
+  `--secret-file`, `--credentials`, `--authfile <(…)`. Stage 1's two
+  surviving mutants (the rule moved before `email`; each of `pw`,
+  `secret`, `cred`, `auth` replaced) are in `mutants.py` and killed.
+- F7: `user=` or `username=` with a `%` in its value counts (triggers add
+  `mount+user=`, `mount+username=`). Rows `-o username=bob%…,vers=3.0 →
+  -o ‹redacted›`, `-o 'user=dom/bob%…'`, `-o pwd=…` alone (for the `pwd=`
+  trigger mutant); negative `-o username=bob,vers=3.0`. Mutants: `%`
+  test removed, `user=` dropped, triggers dropped: killed.
+- F6: SPEC §7 "not masked": a Python value in triple quotes (`"""…"""`,
+  `'''…'''`), a follow-up WP. For the orchestrator's queued WP
+  "redaction paths after WP-157": F6, `secret_key` end-anchoring,
+  `stdbuf`/`setsid` as wrappers, nmcli `field` after the object word,
+  commands inside `$( )` and backticks not opened.
+
+### How it was verified (round 2)
+
+- **`SELDON_FULL_CHECK=1 flock /tmp/seldon-check.lock just check` on
+  53578746: exit 0, `check: ok`** (log `gates/check-dev-157-round2.log`;
+  private target, temp, just temp, `HOME` and 0700 runtime dir): 112 test
+  binaries, 2903 passed, 0 failed, 22 ignored (timing); install 229/0,
+  bar-view 196/0, deploy-test-host 326/0, qmllint ok, docs-check ok, the
+  Quickshell harnesses ran *headless*. Engine tests: *fixture*.
+- **Mutants: 68/68 killed**, none by "does not compile" (*fixture*, a
+  copy of the tree, log `gates/mutants-dev-157-round2.log`).
+- **`just check-perf`: not green**, as on the base. Paired run after
+  round 2, each command under `flock /tmp/seldon-check.lock`, base next
+  3ba46b8f then head 53578746, disk TMPDIR, load 0.7 to 6 (logs
+  `gates/perf-dev-157-base-r2.log`, `perf-dev-157-head-r2.log`):
+  - green on head, every row this WP adds or touches: every redaction
+    row (64 KB without a match 0.64–1.54 ms, budget 2 ms; 128 KB with
+    many 1.63–5.95 ms, budget 20 ms; the three round-2 rows: base64 lines
+    without a marker 0.65 ms, split marker near misses 0.64 ms, wrapped
+    keys after text 1.64 ms at 128 KB); `a_long_privileged_line_is_read_
+    in_linear_time` 16/64/128 KB 12.3/15.5/20.5 ms (budget 60 ms); `hook,
+    not recorded` 0.83 ms (10 000 lines) and 0.80 ms (900); index ×10
+    13.3 ms, ×150 84.0 ms (base 16.4 / 84.6); status 61.8 ms (base 63.3);
+    unrelated session claude-code 0.77 ms, session-start 0.97 ms, generic
+    0.98 ms (base: session-start failed at 1.05/1.01 ms).
+  - failing on head and on base alike (the three non-index rows known to
+    fail on a disk TMPDIR): `recent-config scan and save` head
+    13.7/11.0 ms, base 10.6/10.8 ms (budget 10 ms; code this WP does not
+    touch); `hook, recorded (tmpfs), 900 lines` head 20.1/20.1 ms, base
+    20.7/21.0 ms; `hook, recorded (tmpfs), 10 000 lines` head 18.9/19.7
+    ms against base 11.8/12.2 ms in that pairing — re-run alternately
+    under the lock (base, head, base, head; log
+    `gates/perf-dev-157-hook10k-r2.log`): base 11.9/12.3 and 12.1/12.1
+    ms, head 12.3/12.2 and 12.9/14.0 ms, within noise of base.
+  No budget moved (orchestrator decision).
+- shellcheck: *not run* — no shell script changed. *test host*,
+  *desktop*, *CI*: *not run*.
+- `git diff 5f260bad..HEAD`: no added home path, user or host name; test
+  secrets are `hunter2`, `pw`, `fake…` and base64 of made-up text.
