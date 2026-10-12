@@ -992,6 +992,8 @@ expect transactions 3 '[.texts[] | select(. == "Transaction interrupted")] | len
 expect transactions 4 "$txv.lines | join(\" | \")" \
   "↓ lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | ↓ mesa  1:26.2.0-2 → 1:26.1.0-1 | ↓ vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
 expect transactions 4 "[$tf.membersShown, $txv.statusShown] | map(tostring) | join(\",\")" "false,false"
+# WP-208: a whole group under the cap is not partial
+expect transactions 4 "$txv.partial" ""
 expect transactions 4 '[.texts[] | select(. == "3 packages in one transaction:")] | length' 0
 expect transactions 5 "[$txv.shown, ($td.kv | map(select(startswith(\"Transaction\"))) | join(\"\"))] | map(tostring) | join(\",\")" \
   "false,Transaction: 1 package: 1 installed"
@@ -1141,8 +1143,26 @@ run drift-show "" 1920x1080 "summon:$(sel $MESA);wait:sectionView.detail.form.me
   HOME="$work/home-drift-show" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$work/members-capped.json"
 expect drift-show 2 "$tf.members | join(\" | \")" \
   "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
+# WP-208: the group lists 2 of its 3 members, so the detail says partial
+expect drift-show 2 "$txv.partial" "The index lists at most 500 events; the rest of this transaction is in the ledger."
+shows drift-show 2 "The index lists at most 500 events; the rest of this transaction is in the ledger."
 argv_check drift-show "$work/home-drift-show" "$(printf '%s\n' "$startup" "$(q drift show $MESA --json)")"
 clean_log drift-show
+# WP-208 (review F1): a group whose index lists only its leader. The detail
+# lists that one package and says the rest is in the ledger, above the
+# form's three members from `drift show`.
+jq '.events |= map(select(.id != "'$LIB32'" and .id != "'$VULKAN'"))' "$sample" >"$work/leader-only.json"
+mkdir -p "$work/home-leader-only"
+jq '[.events[] | select(.id == "'$LIB32'" or .id == "'$VULKAN'")]' "$sample" >"$work/home-leader-only/extra-events.json"
+run tx-leader-only "" 1920x1080 "summon:$(sel $MESA);wait:sectionView.detail.form.members.2=· downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1" \
+  HOME="$work/home-leader-only" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$work/leader-only.json"
+expect tx-leader-only 2 "[$txv.shown, $txv.summary, ($txv.lines | join(\" | \")), ($td.kv | map(select(startswith(\"Transaction\"))) | join(\"\"))] | map(tostring) | join(\",\")" \
+  "true,1 package: 1 downgraded in this transaction,↓ mesa  1:26.2.0-2 → 1:26.1.0-1,Transaction: 1 package: 1 downgraded"
+expect tx-leader-only 2 "$txv.partial" "The index lists at most 500 events; the rest of this transaction is in the ledger."
+shows tx-leader-only 2 "The index lists at most 500 events; the rest of this transaction is in the ledger."
+expect tx-leader-only 2 "($tf.members | length)" 3
+expect tx-leader-only 2 '.overflow | join(" | ")' ""
+clean_log tx-leader-only
 mkdir -p "$work/home-drift-show-member"
 cp "$work/home-drift-show/extra-events.json" "$work/home-drift-show-member/"
 run drift-show-member "" 1920x1080 \
@@ -2978,7 +2998,7 @@ expect graph-settle 5 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | 
 # (the last tick's paint may still be pending at step 3: compare 4 and 5)
 check "graph-settle: no paint while asleep" "$(sed -n 5p "$work/graph-settle.steps" | jq .view.graph.paints)" "$(sed -n 4p "$work/graph-settle.steps" | jq .view.graph.paints)"
 for t in "Graph" "Play growth" "2026-10-01 · 75 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
-  "Newest 83 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
+  "83 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
   shows graph-settle 3 "$t"
 done
 expect graph-settle 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis"
@@ -3091,7 +3111,7 @@ graph_run graph-big "$work/graph-big.json" 1920x1080 "summon;text:8;wait:graph.s
 expect graph-big 3 '[.view.graph.nodes, .view.graph.folded, .view.graph.clusters, .view.graph.ticks] | map(tostring) | join(",")' "400,295,99,200"
 graph_time_ok graph-big '.view.graph.ticksOver <= 5' 3
 expect graph-big 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis,Folded"
-shows graph-big 3 "Newest 500 events · 50 completed cases in the index · older ones are only in the logbook · 295 changes folded into 99"
+shows graph-big 3 "500 events · 50 completed cases in the index · the others are only in the logbook · 295 changes folded into 99"
 expect graph-big 4 '[.view.graph.card.members > 0, (.view.graph.card.title | test("^[0-9]+ changes · 20[0-9-]+ · [a-z]+$"))] | map(tostring) | join(",")' "true,true"
 expect graph-big 4 '.view.graph.card.line | startswith("Folded changes · since ")' true
 expect graph-big 4 '.overflow | join(" | ")' ""

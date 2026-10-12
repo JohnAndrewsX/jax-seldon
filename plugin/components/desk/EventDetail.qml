@@ -456,15 +456,15 @@ DetailPane {
         font.pixelSize: Style.font.caption
       }
 
-      // CONTRACT.md rule 4: the index may have cut the transaction's
-      // oldest lines; the ledger has them.
+      // CONTRACT.md rule 4: the index may list only part of the
+      // transaction (Model.transactionDetail's partialText, WP-208); the
+      // ledger has it all.
       Text {
         id: txPartial
         width: parent.width
-        visible: !!root.transaction && root.transaction.partial
+        visible: !!root.transaction && root.transaction.partial !== ""
         textFormat: Text.PlainText
-        text: "The index lists the newest " + Model.INDEX_EVENTS_MAX
-          + " events; older lines of this transaction are in the ledger."
+        text: root.transaction ? root.transaction.partialText : ""
         color: root.tone.dim
         wrapMode: Text.Wrap
         font.family: root.fontFamily
@@ -476,7 +476,7 @@ DetailPane {
       id: form
       width: parent.width
       // the list above holds every member of the open group already
-      membersShownAbove: !!root.transaction && transactionList.visible && !root.transaction.partial
+      membersShownAbove: !!root.transaction && transactionList.visible && root.transaction.partial === ""
         && !!form.shown && form.shown.grouped && root.transaction.packages.length === form.shown.members
       service: root.service
       indexData: root.indexData

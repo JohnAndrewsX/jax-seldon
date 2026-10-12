@@ -2727,7 +2727,7 @@ test("transactionDetail: a mixed transaction lists every package, unusual ones f
     "↑ pipewire  1:1.4.7-1 → 1:1.4.8-1", "↑ wireplumber  0.5.10-1 → 0.5.11-1"])
   same(t.packages.filter(x => x.selected).map(x => x.id), [PIPEWIRE])
   same([t.summary, t.command, t.status, t.title, t.files, t.partial, t.list],
-    ["4 packages: 1 removed, 1 installed, 2 upgraded", "pacman -Syu", "", "", 0, false, true])
+    ["4 packages: 1 removed, 1 installed, 2 upgraded", "pacman -Syu", "", "", 0, "", true])
   const kv = M.eventDetail(idx, p, PIPEWIRE).kv
   same(kv.map(r => r[0]).slice(0, 6), ["When", "Who", "What", "Command", "Transaction", "Case"])
   same([kv[3][1], kv[4][1]], ["pacman -Syu", "4 packages: 1 removed, 1 installed, 2 upgraded"])
@@ -2820,7 +2820,7 @@ test("transactionDetail: a downgrade group, a cut index, a clipped command (WP-1
   const t = M.eventDetail(idx, p, MESA).transaction
   same(t.packages.map(M.txPackageLine), ["↓ lib32-mesa  1:26.2.0-2 → 1:26.1.0-1",
     "↓ mesa  1:26.2.0-2 → 1:26.1.0-1", "↓ vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"])
-  same([t.summary, t.partial], ["3 packages: 3 downgraded", false])
+  same([t.summary, t.partial], ["3 packages: 3 downgraded", ""])
   assert.ok(t.command.startsWith("pacman -U /var/cache/pacman/pkg/mesa-"))
   // a member that the index no longer lists is not in the list (rule 4)
   const capped = JSON.parse(sample)
@@ -2833,18 +2833,120 @@ test("transactionDetail: a downgrade group, a cut index, a clipped command (WP-1
   const last = full.events[full.events.length - 1]
   last.source = "pacman"; last.kind = "upgrade"; last.txId = "tx-old"; last.meta = { from: "1", to: "2", command: "pacman -Syu" }
   const fp = M.deskChangelog(full)
-  same(M.eventDetail(full, fp, last.id).transaction.partial, true)
-  same(M.eventDetail(full, fp, MESA).transaction.partial, false)
+  same(M.eventDetail(full, fp, last.id).transaction.partial, "maybe")
+  same(M.eventDetail(full, fp, MESA).transaction.partial, "")
   // under the cap a transaction at the oldest end is whole
   const under = JSON.parse(sample)
   const oldest = under.events[under.events.length - 1]
   Object.assign(oldest, { source: "pacman", kind: "upgrade", txId: "tx-old", meta: { from: "1", to: "2" } })
-  same(M.eventDetail(under, M.deskChangelog(under), oldest.id).transaction.partial, false)
+  same(M.eventDetail(under, M.deskChangelog(under), oldest.id).transaction.partial, "")
   // a command the index clipped says so
   const clip = JSON.parse(sample)
   clip.events.filter(e => e.txId === "tx-20260927T123000").forEach(e => { e.meta.truncated = true })
   assert.ok(M.eventDetail(clip, M.deskChangelog(clip), MESA).kv.find(r => r[0] === "Command")[1]
     .endsWith("(clipped in the index; the ledger has it in full)"))
+})
+
+// WP-208 (ADR-0054 §3): the index lists every listed drift item's event,
+// however old, and the newest of the rest; a transaction is partial by its
+// own rows, not by holding the list's last event.
+test("transactionDetail: a transaction is partial by its own rows (WP-208)", () => {
+  const base = JSON.parse(sample)
+  const template = base.drift.find(d => d.eventId === MESA)
+  const theme = base.events.find(e => e.id === THEME)
+  // a full list, newest first: position n gets a newer id and ts the lower n is
+  const at = n => ({ id: "01M5" + String(9000 - n).padStart(22, "0"),
+    ts: new Date(Date.UTC(2026, 9, 1, 12) - n * 60000).toISOString() })
+  const pkg = (tx, name, extra) => Object.assign({ source: "pacman", kind: "upgrade", subject: name, detail: "1 → 2",
+    actor: "system", zone: "red", txId: tx, meta: { from: "1", to: "2", command: "pacman -Syu" } }, extra)
+  const rows = []
+  const push = e => rows.push(Object.assign(e, at(rows.length)))
+  const filler = k => { for (let i = 0; i < k; i++) push(Object.assign({}, theme)) }
+  filler(100)
+  for (let i = 0; i < 4; i++) push(pkg("T-WHOLE", "whole-" + i))   // an open group of 4, all listed
+  for (let i = 0; i < 3; i++) push(pkg("T-FEW", "few-" + i))       // an open group of 5, 3 listed
+  push(pkg("T-EXPL", "expl-member"))                                // a group of 2 whose leader (explicit) is pinned
+  filler(364)
+  // the 0.2.0 counter-example (WP-203 stage 1): the rest ends in a
+  // transaction of 40 whose newest 24 lines are listed; the others are cut
+  for (let i = 0; i < 24; i++) push(pkg("T-BOUND", "bound-" + i, { case: "C-2026-001" }))
+  push(pkg("T-PIN", "pin-leader"))                                  // a pinned leader of 3, the others cut
+  push(pkg("T-EXPL", "expl-leader", { explicit: true }))            // T-EXPL's leader, both members listed
+  push(pkg("T-OLD", "old-single"))                                  // a pinned single item: other lines, if any, are cut
+  push(Object.assign({}, theme))                                    // a pinned single item, the list's last
+  same(rows.length, M.INDEX_EVENTS_MAX)
+  const leader = tx => rows.filter(e => e.txId === tx).slice(-1)[0]
+  const group = (tx, members) => Object.assign({}, template, { eventId: leader(tx).id, ts: leader(tx).ts,
+    subject: leader(tx).subject, kind: "upgrade", txId: tx, members: members })
+  const single = e => {
+    const d = Object.assign({}, template, e, { eventId: e.id })
+    delete d.id; delete d.txId; delete d.members; delete d.meta
+    return d
+  }
+  const v = Object.assign(base, { events: rows, drift: [group("T-WHOLE", 4), group("T-FEW", 5), group("T-PIN", 3),
+    group("T-EXPL", 2), single(leader("T-OLD")), single(rows[rows.length - 1])] })
+  const p = M.deskChangelog(v)
+  const tx = id => M.eventDetail(v, p, id).transaction
+  // what the detail shows: the summary, the kind, the list (the note sits
+  // in it) and the note
+  const shown = t => [t.summary, t.partial, t.list, t.partialText]
+  const CUT = "The index lists at most 500 events; the rest of this transaction is in the ledger."
+  const MAYBE = "The index lists at most 500 events; the ledger may hold more of this transaction."
+  const BOUND = rows.find(e => e.subject === "bound-0").id
+  // (a) the transaction holding the oldest event that is no listed item's
+  // event: its older lines, if any, are cut; that event may be its oldest
+  same(shown(tx(BOUND)), ["24 packages: 24 upgraded", "maybe", true, MAYBE])
+  // (b) a pinned leader of 3 past that event, its one listed line: (c) knows
+  // the others are cut; the list shows for one package, so the note does
+  same(shown(tx(leader("T-PIN").id)), ["1 package: 1 upgraded", "cut", true, CUT])
+  same(M.eventDetail(v, p, leader("T-PIN").id).kv.find(r => r[0] === "Transaction")[1], "1 package: 1 upgraded")
+  // (b) alone: a pinned single item, or a pinned leader whose group is all
+  // listed; the index cannot tell whether the transaction had more lines
+  same(shown(tx(leader("T-OLD").id)), ["1 package: 1 upgraded", "maybe", true, MAYBE])
+  same(shown(tx(leader("T-EXPL").id)), ["2 packages: 2 upgraded", "maybe", true, MAYBE])
+  // review F4 (gates/rv-208/probe/boundary-solo.json): the boundary event
+  // is a whole one-package transaction; the index cannot tell it from a cut
+  // one, so the note hedges
+  const solo = JSON.parse(JSON.stringify(v))
+  const SOLO = rows.find(e => e.subject === "bound-23").id
+  Object.assign(solo.events.find(e => e.id === SOLO), { kind: "install", subject: "solo", detail: "1-1", txId: "T-SOLO",
+    meta: { version: "1-1", command: "pacman -S solo" } })
+  same(shown(M.eventDetail(solo, M.deskChangelog(solo), SOLO).transaction), ["1 package: 1 installed", "maybe", true, MAYBE])
+  // the boundary in an open group that lacks members: (c) is certain
+  const open = JSON.parse(JSON.stringify(v))
+  open.events.filter(e => e.txId === "T-BOUND").forEach(e => { delete e.case })
+  open.drift.push(group("T-BOUND", 40))
+  same(shown(M.eventDetail(open, M.deskChangelog(open), BOUND).transaction), ["24 packages: 24 upgraded", "cut", true, CUT])
+  // (c) fewer open members listed than the group's `members`, far from the boundary
+  same(shown(tx(leader("T-FEW").id)), ["3 packages: 3 upgraded", "cut", true, CUT])
+  // an untouched whole transaction
+  same(shown(tx(leader("T-WHOLE").id)), ["4 packages: 4 upgraded", "", true, ""])
+  // a line linked to a case is no open member: 3 open lines listed, so a
+  // group of 4 lacks one (the transaction's 4 lines do not hide it), a
+  // group of 3 is whole
+  const linked = JSON.parse(JSON.stringify(v))
+  linked.events.find(e => e.subject === "whole-0").case = "C-2026-001"
+  same(M.eventDetail(linked, M.deskChangelog(linked), leader("T-WHOLE").id).transaction.partial, "cut")
+  linked.drift[0].members = 3
+  same(M.eventDetail(linked, M.deskChangelog(linked), leader("T-WHOLE").id).transaction.partial, "")
+  // under the cap nothing was cut by position; a group still counts its rows
+  const under = JSON.parse(JSON.stringify(v))
+  under.events = under.events.filter(e => !/^bound-[0-9]$/.test(e.subject))
+  const up = M.deskChangelog(under)
+  const utx = id => M.eventDetail(under, up, id).transaction.partial
+  same([utx(rows.find(e => e.subject === "bound-10").id), utx(leader("T-OLD").id), utx(leader("T-EXPL").id),
+    utx(leader("T-PIN").id), utx(leader("T-FEW").id), utx(leader("T-WHOLE").id)], ["", "", "", "cut", "cut", ""])
+  // one whole completed package says no more than its rows: no list
+  same(shown(M.eventDetail(under, up, leader("T-OLD").id).transaction), ["1 package: 1 upgraded", "", false, ""])
+  // the detail says so, and a file left by a transaction the index no
+  // longer lists keeps its own line, without the note
+  same(M.transactionRows(tx(BOUND)), [["Command", "pacman -Syu"], ["Transaction", "24 packages: 24 upgraded"]])
+  const note = JSON.parse(JSON.stringify(v))
+  Object.assign(note.events[note.events.length - 5], { kind: "note", subject: "/etc/x.pacnew", meta: { transaction: "T-GONE" } })
+  delete note.events[note.events.length - 5].txId
+  const gone = M.eventDetail(note, M.deskChangelog(note), note.events[note.events.length - 5].id)
+  same([gone.transaction.partial, gone.kv.find(r => r[0] === "Transaction")[1]],
+    ["", "not in the index any more (it lists at most 500 events) · left 1 file"])
 })
 
 test("transactions keyed by Object.prototype names keep the desk whole (WP-137 round 2, B2)", () => {
@@ -2918,7 +3020,7 @@ test("transactionDetail: a file pacman left names its transaction (WP-141 hook, 
   // a note whose transaction the index no longer lists
   v.events[0].meta.transaction = "tx-gone"
   const gone = M.eventDetail(v, M.deskChangelog(v), NOTE)
-  same(gone.kv.find(r => r[0] === "Transaction")[1], "not in the index any more (it keeps the newest 500 events) · left 1 file")
+  same(gone.kv.find(r => r[0] === "Transaction")[1], "not in the index any more (it lists at most 500 events) · left 1 file")
   // a note without meta.transaction (another source, or a manual note) has none
   assert.strictEqual(M.eventTx({ source: "manual", kind: "note", meta: { transaction: "tx-1" } }), "")
 })
@@ -3262,7 +3364,7 @@ test("graphBuild: nodes from the index, changes only, crises from drift", () => 
   assert.strictEqual(nodeOf(b, "C-2026-001").done, true)
   assert.strictEqual(nodeOf(b, "C-2026-003").sub, "active · R3 · shell")
   assert.strictEqual(nodeOf(b, "C-2026-003").caseId, "C-2026-003")
-  assert.strictEqual(b.footer, "Newest 83 events · 2 completed cases in the index")
+  assert.strictEqual(b.footer, "83 events · 2 completed cases in the index")
 })
 
 test("graphBuild: edges event→case, case→area, decision→case, proposedCase dashed", () => {
@@ -3351,7 +3453,7 @@ test("graphBuild: beyond the cap, changes fold by day and source; areas, cases, 
   const foldedKeys = new Set(clusters.map((c) => c.title.replace(/^\d+ changes · /, "")))
   const smallestFolded = Math.min(...clusters.map((c) => c.count))
   for (const key of Object.keys(sizes)) if (!foldedKeys.has(key)) assert.ok(sizes[key] <= smallestFolded, key)
-  assert.match(b.footer, / · older ones are only in the logbook · 295 changes folded into 99$/)
+  assert.match(b.footer, / · the others are only in the logbook · 295 changes folded into 99$/)
   // a cluster carries its members' case links
   const linkedCluster = b.edges.find((e) => b.nodes[e.a].kind === "cluster" || b.nodes[e.b].kind === "cluster")
   assert.ok(linkedCluster)
