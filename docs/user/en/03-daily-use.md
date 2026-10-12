@@ -136,7 +136,7 @@ The desk's keys work while the desk is open.
 | `i` | Today's *New case* field, Work's intent field |
 | `e` | open in your editor: Today the journal, Changelog this month's ledger, Work the case, Decisions the decision, System `STATUS.md`, Memory the logbook |
 | `f` / `F` | Changelog: the next / previous chip |
-| ↑ / `k` on the first row | Changelog: the agent's triage proposal, then *Agent sorts N open changes*; ↓ / `j` back to the list. Today, while Seldon is not set up: the setup card's row |
+| ↑ / `k` on the first row | Changelog: the agent's triage proposal, then *Agent sorts N open changes*; ↓ / `j` back to the list. Today, while Seldon is not set up: the setup card's row. Work: *By agent*, *Import tasks…* and *New case* |
 | ← / →, `h` / `l` on a notice | the notice's buttons; ↑ / ↓ the notices, ↓ on the last one or Esc back to the list |
 | Enter on Appearance | Settings: the width slider, the presets, the sidebar; ↑ / ↓ a control, ← / → its value, Esc back |
 | `a` | Work: hand the case to an agent (press twice); while an agent works on it, *Focus* (once) |
@@ -170,7 +170,8 @@ sentence, the new-case sheet, *Reopen* (it only adds a case), *Focus*,
 *Apply proposals*, *Capture now* and *Open in editor*.
 
 Every button has a key path. The buttons above the list (the notices,
-the setup card, *Agent sorts N open changes*) and the controls in
+the setup card, *Agent sorts N open changes*, Work's *By agent*, *Import
+tasks…* and *New case*) and the controls in
 Settings › Appearance are reached with the arrows; the one under the
 cursor has a frame, and a dim line next to it names the keys. There,
 Enter arms the button and the second Enter runs it, whatever it does

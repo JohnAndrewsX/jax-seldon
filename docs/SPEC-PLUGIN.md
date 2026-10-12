@@ -291,7 +291,9 @@ Top to bottom (prototype `prototype-desk-v6`):
 
 - **Header** (`Header.qml`): the A5 mark in the accent and "SELDON"
   (heading font, bold, letter-spaced) over "machine · Omarchy version ·
-  captured N ago" (`Model.deskSubline`); the **status chip** when a notice
+  captured N ago" (`Model.deskSubline`), which wraps into the room left
+  of the KPI strip where it does not fit there (a 740 px desk; two lines
+  at most, never under the strip, WP-215); the **status chip** when a notice
   is up — the first notice's title and "+N" for more, in the notice's
   tone, "N notices" where the title does not fit, the count alone where
   that does not fit either (a 50 % desk on a 1920 px screen, WP-126b; never
@@ -335,12 +337,12 @@ icons only; the search is then reached by widening it).
 | `,` | Settings |
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search (filters the current section's list); Enter leaves it and keeps the filter, Esc clears it and leaves |
-| `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c), its crises (while its detail is shown) the stops between it and the first row (WP-201), and *Agent sorts N open changes* the row above it, in Today the setup card's row (WP-202); `↑` at the top of a list and its head goes on to the notices' buttons on a fresh press (a held `↑` stops at the top), `↓` on the last notice comes back (WP-202, below) |
-| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c), on one of its crises that crisis arms, then is applied alone (WP-201); on a button the keys reached (a notice's, the setup card's, a Settings control) it arms, then runs what the click runs (WP-202), on *Agent sorts* it does nothing (`a` twice starts that agent); on a Settings group with controls the cursor goes to its first control; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
+| `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c), its crises (while its detail is shown) the stops between it and the first row (WP-201), and *Agent sorts N open changes* the row above it, in Today the setup card's row (WP-202), in Work the header's buttons (WP-215); `↑` at the top of a list and its head goes on to the notices' buttons on a fresh press (a held `↑` stops at the top), `↓` on the last notice comes back (WP-202, below) |
+| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c), on one of its crises that crisis arms, then is applied alone (WP-201); on a button the keys reached (a notice's, the setup card's, Work's header buttons, a Settings control) it arms, then runs what the click runs (WP-202, WP-215), on *Agent sorts* it does nothing (`a` twice starts that agent); on a Settings group with controls the cursor goes to its first control; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
-| `←`/`→` | the current section's (the Prime Radiant's periods, the graph's day); on the notices, the setup card and a Settings control: the next button or value (WP-202; `h`/`l` too on the notices) |
+| `←`/`→` | the current section's (the Prime Radiant's periods, the graph's day); on the notices, the setup card, Work's header buttons and a Settings control: the next button or value (WP-202, WP-215; `h`/`l` too on the notices) |
 | other letters | the current section's (`i`, `e`, `a`, `r`, `f`/`F`, `x`, `d` as ADR-0034 §2 lists them; sections 1–3 and 4–6 in §5.4; `h`/`l` the Prime Radiant's periods, §6; the graph's `p`, `0`, `-`, `=`, §5.4) |
 
 Every character goes to the current section first (`Section.textKey`);
@@ -406,18 +408,19 @@ House rules for every key, now and later (WP-183; the checklist
   visible button, never only a key.
 - **Every button has a key path** (WP-202), in the pattern of the
   Changelog's proposal row (WP-126c): the cursor reaches the button — a
-  row above the list (the notices, Today's setup row, *Agent sorts*) or a
-  control in the detail (Settings) —, the button under it wears the focus
-  ring (Omarchy's panel cursor on a `ButtonGroup` chip), and a dim line
-  names the keys. Enter arms, the second Enter runs exactly what the
+  row above the list (the notices, Today's setup row, *Agent sorts*,
+  Work's header buttons, WP-215) or a control in the detail (Settings)
+  —, the button under it wears the focus ring (Omarchy's panel cursor on
+  a `ButtonGroup` chip), and a dim line names the keys. Enter arms, the second Enter runs exactly what the
   click runs (the same function, the same argv); every such button arms,
   also *Copy* and *Check again*, so one rule holds for all. *Agent sorts*
   is pressed with `a`, twice, as *Hand to agent* on a case: Enter never
   starts an agent (operator decision, WP-122). The arm's id names what it
   would run (`notice:<id>:<title>:<script or command>:<action>`,
   `setup:<step>:<banner>:<action>`, `ask:triage`,
-  `settings:<control>:<value>`): a notice, step or value that changed
-  under the cursor only arms again. Besides every key that does not
+  `work:<button>:<on|off|open|close>`, `settings:<control>:<value>`): a
+  notice, step, state or value that changed under the cursor only arms
+  again. Besides every key that does not
   press, a **detour** drops the arm and the cursor's place on the
   button: any mouse press on the desk (`Desk.pointerPressed`, a
   transparent `MouseArea` over the desk that lets every press through),
@@ -438,7 +441,7 @@ shell? Press Enter again.") and the second Enter runs it through
 `Notices.fix` → `Service.fix`, as the click. `↓` on the last notice or Esc
 goes back to the section, onto the top of its list head
 (`Section.enterFromTop`: Today's setup row, the Changelog's *Agent sorts*,
-else the first row); any other key leaves the notices first and then does
+Work's header buttons, else the first row); any other key leaves the notices first and then does
 what it does. Entering folds the notices out. A dim line under the
 notices says "↑ at the top of a list reaches these buttons", while there
 "←/→ a button · Enter twice runs it · ↓ back to the list", while armed
@@ -902,14 +905,29 @@ while the engine works, its refusal (no default agent, with its fix) the
 result line and the text kept, then the field empties and the new case is
 selected); the WIP line "2 / 3 active" against the bar setting `wipLimit`
 (default 3; "· at the limit" in the accent, "· over the limit" urgent;
-warns, never blocks; above the three buttons that follow, which wrap, in
-a list column (at most 360 px wide: the line and the buttons need more);
-beside them in the stacked layout, where the list is the desk's width;
-nothing in the row draws over anything else, WP-211); *By agent* (the Completed group narrowed to the cases
+warns, never blocks; beside the three buttons that follow where the
+row's measure says it fits, else above them, and the buttons wrap only
+where the column is too narrow for them; with the default font a list
+column (at most 360 px wide) is too narrow for the line beside them, so
+it sits above them there and beside them in the stacked layout, where
+the list is the desk's width, while a narrower font can put it beside
+them in a list column too; nothing in the row draws over anything else,
+WP-211); *By agent* (the Completed group narrowed to the cases
 an agent closed, a spot check, ADR-0027 §5; its header then reads
 "COMPLETED · 1 / 2"); *Import tasks…* (WP-102b, below); *New case* (`+`);
 the engine's answer to the last case action (after an import: "Imported N
-cases: C-… · M tasks skipped"). Then the cases by group — ACTIVE ·
+cases: C-… · M tasks skipped"). By key (WP-215, §5.3's "every button
+has a key path"): ↑ on the first row, or in an empty list, puts the
+cursor on *By agent*; ←/→ walk *By agent*, *Import tasks…* and *New
+case*, the button under the cursor wears the focus ring, Enter arms it
+("By agent? Press Enter again.") and the second Enter runs its click
+(`work:agent:on|off`, `work:import:open|close`, `work:new:open|close`;
+none of them starts an agent; where the engine cannot write, *Import
+tasks…* and *New case* arm nothing and the line says why); ↓ goes back
+to the first row, ↑ on to the notices; a dim line under the buttons
+reads "↑ from the first row reaches these buttons", there "←/→ a button
+· Enter twice runs it · ↓ back to the list", while armed the arm's
+question. `+` still opens the sheet at once. Then the cases by group — ACTIVE ·
 VERIFICATION · QUEUED · COMPLETED (completed and dropped, the index's last
 50) — with "id · imported · risk · area · closed by agent · reopens … · N
 proposed" (`imported` from the tag, CONTRACT.md rule 8) and the plan's
@@ -1786,6 +1804,7 @@ loaded. Routes the plugin honours:
   button, never pressing it (WP-202): `select notices` or `select
   notice:<id>` (the first, or that notice's first button; any section),
   in Today `select setup`, in the Changelog `select ask` (*Agent sorts*),
+  in Work `select header` (*By agent*, WP-215),
   in Settings `select width|presets|sidebar|offer`. The Prime Radiant keeps the 0.1 overlay's names:
   `setPeriod <30|90|365|all>` shows section 7 with that period and
   returns the period now selected; an unknown id changes nothing — not

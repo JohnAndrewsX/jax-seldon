@@ -1089,10 +1089,13 @@ of a list are not on screen. `overlap` (WP-211) lists the items of a
 header row (an Item named `headerRow:<name>`; a Row's or Flow's items
 count one by one) that draw over each other or leave the row, sideways
 or out of its height, and `headerRows` names the rows it found, so a
-case fails when its row is not there. Work's WIP row is one, checked on
-750×700, 900×700, 1366×768 and 1920×1080 windows and on 2048×1152 at
+case fails when its row is not there. The rows (WP-211, WP-215): the
+desk header (`headerRow:desk`: mark and subline, chip, KPI strip,
+Settings, Esc), Today's date row, the Changelog's count row and its
+"N hidden" row, Decisions' summary row and Work's WIP row, each checked
+on 750×700, 900×700, 1366×768 and 1920×1080 windows and on 2048×1152 at
 `QT_SCALE_FACTOR` 1.25 (a 2560×1440 screen at scale 1.25), each at
-100 % and 50 %. Live cases run Service.qml without
+100 % and 50 % (cases `work-wip-*` and `header-rows-*`). Live cases run Service.qml without
 `SELDON_INDEX` against the fake engine (`tests/plugin/fake-seldon`, in a
 temp `HOME`) and compare its `argv.log` argument by argument with the
 CONTRACT.md forms; the editor and terminal launchers are

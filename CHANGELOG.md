@@ -21,6 +21,32 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
+- Work's *By agent*, *Import tasks…* and *New case* work by key too: ↑ on the first row reaches them, Enter twice runs one. New keys, nothing removed: this ships in the next minor release.
+
+### Plugin
+
+- **Work's header buttons have a key path (WP-215).** ↑ on Work's first
+  row (or in an empty list) puts the cursor on *By agent*; ←/→ walk *By
+  agent*, *Import tasks…* and *New case*, the one under the cursor wears
+  the focus ring, Enter arms it ("By agent? Press Enter again.") and the
+  second Enter runs exactly what its click runs. None of them starts an
+  agent, so Enter never does. ↓ goes back to the first row, ↑ on to the
+  notices; any other key, a click on the desk, a summon or another
+  selection cancels. A dim line under the buttons names the keys; where
+  the engine cannot write, *Import tasks…* and *New case* arm nothing and
+  the line says why. `shell call jax.seldon select header` places the
+  cursor for scripts, never pressing. A compatible addition (new keys,
+  nothing changed or removed), so it ships in the next minor release.
+- **The desk header keeps its subline clear of the KPI strip on a narrow
+  desk (WP-215).** On a 740 px desk (a 750 px window) "machine · Omarchy
+  version · captured N ago" ran under ACTIVE and VERIFICATION; it now
+  wraps into the room left of the strip, two lines at most.
+- **Every header row is checked for overlap (WP-215).** The harness's
+  overlap check (WP-211) now covers the desk header, Today's date row,
+  the Changelog's count and "N hidden" rows and Decisions' summary row
+  besides Work's WIP row, from a 750 px window to 2048×1152 at scale
+  1.25, at 100 % and 50 %.
+
 ## [0.3.0] - 2026-10-12
 
 **Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
