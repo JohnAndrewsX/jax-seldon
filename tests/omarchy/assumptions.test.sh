@@ -75,7 +75,7 @@ lint() {
     elif [[ -z $code ]]; then
       echo "$id: '$symbol' is only in comments of $f (cited at line $n)"
     elif ! sed -n "${n}p" "$plugins/$f" | grep -qF -- "$symbol"; then
-      at=$(grep -nF -- "$symbol" "$plugins/$f" | grep -Ev '^[0-9]+:[[:space:]]*(//|/\*|\*|#)' | head -n 1 | cut -d: -f1)
+      at=$(grep -nF -- "$symbol" "$plugins/$f" | grep -Ev '^[0-9]+:[[:space:]]*(//|/\*|\*|#)' | head -n 1 | cut -d: -f1 || true)
       echo "warn $id: $ref does not hold '$symbol' (now at line ${at:-?}); refresh the hint in tests/omarchy/assumptions.json" >&2
     fi
   done < <(jq -r '.assumptions[] | select(.plugin and .pluginSymbol) | [.id, .plugin, .pluginSymbol] | @tsv' "$file")
@@ -135,7 +135,7 @@ fresh() {
   cp "$ledger" "$1"
   while IFS=$'\t' read -r id ref symbol; do
     sed -n "${ref##*:}p" "$plugins/${ref%:*}" | grep -qF -- "$symbol" && continue
-    at=$(grep -nF -- "$symbol" "$plugins/${ref%:*}" | grep -Ev '^[0-9]+:[[:space:]]*(//|/\*|\*|#)' | head -n 1 | cut -d: -f1)
+    at=$(grep -nF -- "$symbol" "$plugins/${ref%:*}" | grep -Ev '^[0-9]+:[[:space:]]*(//|/\*|\*|#)' | head -n 1 | cut -d: -f1 || true)
     hint "$1" "$id" "${ref%:*}:${at:-1}" > "$1.new" && mv "$1.new" "$1"
   done < <(jq -r '.assumptions[] | [.id, .plugin, .pluginSymbol] | @tsv' "$ledger")
 }
@@ -149,8 +149,14 @@ else
 fi
 hint "$tmp/fresh.json" restart-shell plugin/Model.js:1 > "$tmp/moved.json"
 out=$(lint "$tmp/moved.json" "$plugins" 2> "$tmp/warn")
-want="warn restart-shell: plugin/Model.js:1 does not hold 'omarchy-restart-shell' (now at line $(grep -nF 'RESTART_SHELL_ARGV = ["omarchy-restart-shell"]' "$plugins/plugin/Model.js" | cut -d: -f1)); refresh the hint"
-if [[ -z $out ]] && [[ $(wc -l < "$tmp/warn") -eq 1 ]] && grep -qF -- "$want" "$tmp/warn"; then
+# the line the warning names, by the lint's own rule: the first code line
+# of the scratch copy holding the ledger's pluginSymbol
+symbol=$(jq -r '.assumptions[] | select(.id == "restart-shell") | .pluginSymbol' "$ledger")
+at=$(grep -nF -- "$symbol" "$plugins/plugin/Model.js" | grep -Ev '^[0-9]+:[[:space:]]*(//|/\*|\*|#)' | head -n 1 | cut -d: -f1 || true)
+want="warn restart-shell: plugin/Model.js:1 does not hold '$symbol' (now at line $at); refresh the hint"
+if [[ -z $symbol || -z $at ]]; then
+  fail "lint on a stale line hint (scratch copy): no code line of plugin/Model.js holds restart-shell's pluginSymbol '$symbol'"
+elif [[ -z $out ]] && [[ $(wc -l < "$tmp/warn") -eq 1 ]] && grep -qF -- "$want" "$tmp/warn"; then
   pass "lint warns, never fails: a stale line hint, with the line the pluginSymbol is at now (scratch copy)"
 else
   fail "lint on a stale line hint (scratch copy): $out $(cat "$tmp/warn")"
@@ -391,9 +397,13 @@ else
   want_sha=$(jq -r --arg p "$target" '[.assumptions[] | select(.path == $p)][0].sha256' "$ledger")
   if [[ -f $copy/$target && $(sha "$copy/$target") == "$want_sha" ]]; then
     printf '\n// scratch change\n' >> "$copy/$target"
+    # the hint and the re-measure step as the ledger has them now
+    cited=$(jq -r '.assumptions[] | select(.id == "facade-settings-write") | .plugin' "$ledger")
+    remeasure=$(jq -r '.assumptions[] | select(.id == "facade-settings-write") | .remeasure' "$ledger")
+    [[ -n $cited && -n $remeasure ]] || fail "the ledger has no facade-settings-write entry with plugin and remeasure"
     expect "a changed installed file: the notice names facade-settings-write" 0 "$copy" "$ledger" -- \
       "NOTICE: $target changed" "facade-settings-write (still names 'updateEntryInline')" \
-      "at plugin/Desk.qml:527" "re-measure: the desk's settings writes" NOT:"shell-settings-write" NOT:"no longer names"
+      "at ${cited:-plugin/?}." "re-measure: ${remeasure:-?}" NOT:"shell-settings-write" NOT:"no longer names"
     expect "a changed installed file with --gate: refused" 1 "$copy" "$ledger" --gate -- "refused (--gate)"
   else
     echo "skip changed installed file: $target already differs from the ledger here (see \`just check-upstream\`)"
