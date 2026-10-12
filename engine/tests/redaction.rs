@@ -1818,6 +1818,7 @@ const CLEAR: &[&str] = &[
     "nmcli con up Home passwd-file ./pw",
     // WP-157: nmcli's fields to show, not to set
     "nmcli -g wifi-sec.psk con show Home",
+    "nmcli -f wifi-sec.psk con show Home",
     "nmcli -s -g 802-11-wireless-security.psk connection show Home",
     "nmcli --fields=wifi-sec.psk -s c s Home",
     "nmcli -t -f 802-1x.password,ipv4.dns con show Eap",
