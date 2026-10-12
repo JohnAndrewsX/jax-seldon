@@ -259,15 +259,15 @@ struct InitCmd {
 fn main() -> ExitCode {
     let argv: Vec<OsString> = std::env::args_os().collect();
     // `seldon hook claude-code`, the line `hook install` writes, runs
-    // before every tool call: it skips building the parser of every
-    // command (about 0.15 ms of the hook's budget, WP-092)
-    let cli = if is_plain_claude_code_hook(&argv) {
-        plain_claude_code_hook()
-    } else {
-        match Cli::try_parse_from(&argv) {
+    // before every tool call, `hook session-start` and `hook generic` in
+    // every session: they skip building the parser of every command
+    // (about 0.15 to 0.25 ms of the hooks' 1 ms budget, WP-092, WP-218)
+    let cli = match plain_agent_hook(&argv) {
+        Some(command) => plain_hook_cli(command),
+        None => match Cli::try_parse_from(&argv) {
             Ok(cli) => cli,
             Err(err) => return parse_error(&err, &argv),
-        }
+        },
     };
     // hooks an agent harness calls never block it: errors go to stderr, exit 0
     if let Some(Command::Hook(h)) = &cli.command
@@ -331,13 +331,32 @@ fn fail_with(as_json: bool, err: &Error) -> ExitCode {
     }
 }
 
-/// `seldon hook claude-code` and nothing else.
-fn is_plain_claude_code_hook(argv: &[OsString]) -> bool {
-    matches!(argv, [_, hook, harness] if hook == "hook" && harness == "claude-code")
+/// The agent hook of `seldon hook claude-code`, `seldon hook session-start`
+/// or `seldon hook generic`, each with nothing else; `None` for every other
+/// command line, which the parser reads.
+fn plain_agent_hook(argv: &[OsString]) -> Option<commands::hook::HookCommand> {
+    use commands::hook::HookCommand;
+    let [_, hook, name] = argv else {
+        return None;
+    };
+    // the full path for the test that compares the two (WP-218)
+    #[cfg(debug_assertions)]
+    if std::env::var_os("SELDON_TEST_HOOK_PARSE").is_some() {
+        return None;
+    }
+    if hook != "hook" {
+        return None;
+    }
+    match name.to_str()? {
+        "claude-code" => Some(HookCommand::ClaudeCode),
+        "session-start" => Some(HookCommand::SessionStart),
+        "generic" => Some(HookCommand::Generic { case_id: None }),
+        _ => None,
+    }
 }
 
-/// What the parser reads from `seldon hook claude-code`.
-fn plain_claude_code_hook() -> Cli {
+/// What the parser reads from `seldon hook <command>` ([`plain_agent_hook`]).
+fn plain_hook_cli(command: commands::hook::HookCommand) -> Cli {
     Cli {
         version: false,
         json: false,
@@ -345,9 +364,7 @@ fn plain_claude_code_hook() -> Cli {
         quiet: false,
         no_commit: false,
         config: None,
-        command: Some(Command::Hook(commands::hook::HookArgs {
-            command: commands::hook::HookCommand::ClaudeCode,
-        })),
+        command: Some(Command::Hook(commands::hook::HookArgs { command })),
     }
 }
 
@@ -590,31 +607,45 @@ fn detail(err: &clap::Error) -> String {
 mod tests {
     use super::*;
 
-    /// WP-092: the fast path of `main` takes exactly `hook claude-code`
-    /// and gives what the parser gives for it.
+    /// WP-092, WP-218: the fast path of `main` takes exactly `hook
+    /// claude-code`, `hook session-start` and `hook generic`, and gives
+    /// what the parser gives for each.
     #[test]
-    fn plain_claude_code_hook_is_what_the_parser_reads() {
+    fn a_plain_agent_hook_is_what_the_parser_reads() {
         let argv = |args: &[&str]| -> Vec<OsString> {
             std::iter::once("seldon")
                 .chain(args.iter().copied())
                 .map(OsString::from)
                 .collect()
         };
-        let plain = argv(&["hook", "claude-code"]);
-        assert!(is_plain_claude_code_hook(&plain));
-        assert_eq!(
-            format!("{:?}", plain_claude_code_hook()),
-            format!("{:?}", Cli::try_parse_from(&plain).unwrap())
-        );
+        for name in ["claude-code", "session-start", "generic"] {
+            let plain = argv(&["hook", name]);
+            let command = plain_agent_hook(&plain).unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(
+                format!("{:?}", plain_hook_cli(command)),
+                format!("{:?}", Cli::try_parse_from(&plain).unwrap()),
+                "{name}"
+            );
+        }
         for other in [
             &["hook", "claude-code", "--json"][..],
             &["--quiet", "hook", "claude-code"],
-            &["hook", "generic"],
+            &["hook", "session-start", "--json"],
+            &["--no-commit", "hook", "session-start"],
+            &["hook", "generic", "--case", "C-2026-001"],
+            &["hook", "generic", "--case=C-2026-001"],
+            &["hook", "session-stop"],
+            &["hook", "install"],
+            &["hook", "uninstall"],
+            &["hook", "--help"],
+            &["hook", "Generic"],
             &["log", "claude-code"],
+            &["log", "session-start"],
             &["hook"],
             &["hook", "claude-code", "x"],
+            &["hook", "generic", "x"],
         ] {
-            assert!(!is_plain_claude_code_hook(&argv(other)), "{other:?}");
+            assert!(plain_agent_hook(&argv(other)).is_none(), "{other:?}");
         }
     }
 
