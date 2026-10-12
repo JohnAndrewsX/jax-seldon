@@ -100,6 +100,32 @@ forks from a second thread sees it.
   while another thread may drop the lock, the module docs say what to
   do (spawn from the lock's thread, or wait for the re-acquire).
 
+- Not the project's guard hook, but Claude Code's own removal check:
+  it refused the first loop command (an `rm -rf` of per-run variables in
+  the same command as a `bash -c` busy loop). Rewritten without it: the
+  load came from `yes`, the per-run dirs went under one folder that was
+  removed afterwards by its literal path. Nothing was removed or run
+  around the check.
+
 ## just check
 
-JUST_CHECK
+`SELDON_FULL_CHECK=1 just check` on the dev host at `fdf54949`
+(`CARGO_TARGET_DIR`, `TMPDIR`, `JUST_TEMPDIR` and `XDG_RUNTIME_DIR` under
+the private gates folder, the runtime dir 0700 and removed afterwards;
+shellcheck through the orchestrator kit, i.e. on the **test host**):
+
+- Run 1, host load about 36 to 48 (other agents' gates), not yet under
+  the shared check lock: engine, contract and three harnesses green;
+  `desk-view` 2243 passed, 1 failed, `aside #1`
+  (`.view.sectionView.case.actions` empty). The same assertion failed in
+  earlier gate logs on loaded hosts (dev-201 r2b, the WP-205 delayed
+  run); WP-205 is about this family of index races. This WP changes no
+  plugin or harness file.
+- Run 2, same commit, load about 14 at the start and 4 at the end:
+  exit 0, `check: ok`. The engine tests ran as **fixture** tests (112
+  `test result: ok` lines, with and without `watch`, 0 failed), the Quickshell harnesses as **headless**:
+  service-states 367/0, desk-view 2244/0, bar-view 196/0,
+  ipc-restart 44/0.
+
+Later full checks run under `flock /tmp/seldon-check.lock` (orchestrator,
+2026-10-12).
