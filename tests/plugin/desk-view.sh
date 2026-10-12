@@ -1189,6 +1189,33 @@ shows work-reopened 2 "reopens C-2026-002"
 shows work-reopened 2 "3 / 3 active · at the limit"
 clean_log work-reopened
 
+# 8d'. A cut index (ADR-0053 rung 21, WP-206; made here from the sample,
+#      no fixture): the active rows cut while `summary.activeCases` counts
+#      40 — ACTIVE keeps its header over the line naming `seldon plan
+#      list`, the WIP line counts 40, the cursor starts on the first listed
+#      row. Rung 21 ran dry (no case listed, 40 active and 2 000 queued
+#      counted): both headers below an empty list, no "No cases yet", no
+#      first-run card on Today.
+jq '.cases.active = [] | .summary.activeCases = 40' "$sample" >"$work/work-cut.json"
+run work-cut "$work/work-cut.json" 1920x1080 "summon:$wk"
+expect work-cut 1 "[($tv.gaps | join(\",\")), ($tv.groups | join(\",\")), $tv.wip, $tv.selected] | join(\"|\")" \
+  "ACTIVE · 0 / 40|active 0,verification 1,queued 3,completed 2|40 / 3 active|C-2026-008"
+for text in "ACTIVE · 0 / 40" "The index lists none of them; seldon plan list --status active shows them." "VERIFICATION · 1" "40 / 3 active · over the limit"; do
+  shows work-cut 1 "$text"
+done
+clean_log work-cut
+jq '.cases = {queued: [], active: [], verification: [], completed: []}
+  | .summary += {activeCases: 40, queuedCases: 2000, openDrift: 0, crisis: 0}' "$sample" >"$work/work-cut-dry.json"
+run work-cut-dry "$work/work-cut-dry.json" 1920x1080 "summon;text:3"
+expect work-cut-dry 1 "$tv.firstRun" false
+expect work-cut-dry 2 "[($tv.gaps | join(\",\")), ($tv.ids | length), $tv.selected] | map(tostring) | join(\"|\")" \
+  "ACTIVE · 0 / 40,QUEUED · 0 / 2000|0|"
+for text in "ACTIVE · 0 / 40" "QUEUED · 0 / 2000" "The index lists none of them; seldon plan list --status queued shows them."; do
+  shows work-cut-dry 2 "$text"
+done
+expect work-cut-dry 2 '[.texts[] | select(startswith("No cases yet"))] | length' 0
+clean_log work-cut-dry
+
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"
 run work-live "" 1920x1080 \

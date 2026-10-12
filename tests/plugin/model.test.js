@@ -3028,6 +3028,56 @@ test("WP-204: Work's headers show the summary's whole count when the index lists
   same(M.workView({ rows: M.deskWork(idx).rows }, "", "").labels.queued, "QUEUED · 3")
 })
 
+test("WP-206: a cut index (rung 21) keeps Work's empty groups, the WIP count and anyCase from the summary", () => {
+  const idx = M.parseIndex(sample).index
+  // a whole index: no gap, the lists' counts, as before
+  const whole = M.workView(M.deskWork(idx), "", "")
+  same([whole.gaps, whole.tail, whole.lead.every(l => l.length === 0)], [[], [], true])
+  same(M.wipStatus(idx, 3), { active: 2, limit: 3, text: "2 / 3 active", tone: "" })
+  assert.strictEqual(M.anyCase(idx), true)
+  // rung 21: every active row cut, activeCases 40; the other groups listed
+  const cut = JSON.parse(sample)
+  cut.cases.active = []
+  cut.summary.activeCases = 40
+  const v = M.workView(M.deskWork(cut), "", "")
+  same(v.labels.active, "ACTIVE · 0 / 40")
+  same(v.gaps.map(g => [g.group, g.header, g.text]), [["active", "ACTIVE · 0 / 40",
+    "The index lists none of them; seldon plan list --status active shows them."]])
+  // ACTIVE comes first: the gap stands before the first row (verification), nowhere else
+  same(v.rows[0].group, "verification")
+  same(v.lead.map(l => l.map(g => g.group)), v.rows.map((_, i) => i === 0 ? ["active"] : []))
+  same(v.tail, [])
+  same(M.wipStatus(cut, 3), { active: 40, limit: 3, text: "40 / 3 active", tone: "urgent" })
+  assert.strictEqual(M.anyCase(cut), true)
+  // the By agent filter does not make a gap of Completed (it has listed rows)
+  same(M.workView(M.deskWork(cut), "agent", "").gaps.map(g => g.group), ["active"])
+  // a search covers the listed rows only: no gap
+  same(M.workView(M.deskWork(cut), "", "C-2026").gaps, [])
+  // rung 21 ran dry: no case listed at all, the summary counts 40 active and 2 000 queued
+  const dry = JSON.parse(sample)
+  dry.cases = { queued: [], active: [], verification: [], completed: [] }
+  dry.summary = Object.assign({}, dry.summary, { activeCases: 40, queuedCases: 2000, openDrift: 0, crisis: 0 })
+  const d = M.workView(M.deskWork(dry), "", "")
+  same([d.rows, d.lead], [[], []])
+  same(d.tail.map(g => g.header), ["ACTIVE · 0 / 40", "QUEUED · 0 / 2000"])
+  same(d.tail[1].text, "The index lists none of them; seldon plan list --status queued shows them.")
+  assert.strictEqual(M.anyCase(dry), true)
+  assert.strictEqual(M.deskToday(dry, M.deskChangelog(dry)).firstRun, false)
+  same(M.wipStatus(dry, 3).text, "40 / 3 active")
+  // a gap between rows: queued unlisted while completed is listed (no rung does this; an odd index)
+  const mid = JSON.parse(sample)
+  mid.cases.queued = []
+  mid.summary.queuedCases = 9
+  const m = M.workView(M.deskWork(mid), "", "")
+  const at = m.rows.findIndex(r => r.group === "completed")
+  same([m.lead[at].map(g => g.header), m.tail], [["QUEUED · 0 / 9"], []])
+  // a summary below the list never lowers the WIP count; no summary count, no gap
+  const low = JSON.parse(sample)
+  low.summary.activeCases = 0
+  same(M.wipStatus(low, 3).active, 2)
+  same(M.workView({ rows: [] }, "", "").gaps, [])
+})
+
 test("caseDeskActions by status; Enter never launches; hints and verbs", () => {
   const ids = st => M.caseDeskActions({ status: st, actionable: true }).map(a => a.id + (a.arm ? "!" : "") + (a.primary ? "*" : "") + (a.enter ? "^" : ""))
   same(ids("queued"), ["start!*^", "drop!", "open"])

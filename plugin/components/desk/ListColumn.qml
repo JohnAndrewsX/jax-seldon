@@ -23,6 +23,9 @@ Item {
   property alias model: list.model
   property alias delegate: list.delegate
   property alias currentIndex: list.currentIndex
+  // Drawn after the last row, also when there is none (Work's groups the
+  // index lists no row of, WP-206).
+  property alias footer: list.footer
   property color foreground: Color.popups.text
   property string fontFamily: Style.font.family
   // Draw the hairline at the right (not in the stacked layout).
