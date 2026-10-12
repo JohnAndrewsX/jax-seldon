@@ -6524,7 +6524,7 @@ var TX_STATUS_TEXTS = {
 var TX_KINDS = ["downgrade", "remove", "install", "upgrade", "reinstall"]
 var TX_GLYPHS = { upgrade: "↑", downgrade: "↓", install: "+", remove: "−", reinstall: "↻" }
 var TX_VERBS = { upgrade: "upgraded", downgrade: "downgraded", install: "installed", remove: "removed", reinstall: "reinstalled" }
-// CONTRACT.md rule 4: the index lists the newest 500 events.
+// CONTRACT.md rule 4: the index lists at most 500 events (ADR-0054).
 var INDEX_EVENTS_MAX = 500
 
 // The transaction an event belongs to: a pacman package event's own
@@ -6545,16 +6545,33 @@ function txStatusOf(e) {
   return TX_STATUSES.indexOf(s) !== -1 ? s : ""
 }
 
+// Where the cap may have cut the list (CONTRACT.md rule 4, ADR-0054 §1):
+// the position of the oldest event that is no listed drift item's
+// `eventId`, when the list is full; every event from there on may have
+// lost older neighbours (the events after it are pinned drift events,
+// however old). -1 under the cap: nothing was cut.
+function eventsBoundary(index) {
+  var all = events(index)
+  if (all.length < INDEX_EVENTS_MAX) return -1
+  var pinned = driftLookup(index).byId
+  for (var i = all.length - 1; i >= 0; i--)
+    if (!isObject(all[i]) || typeof all[i].id !== "string" || pinned[all[i].id] === undefined) return i
+  return 0
+}
+
 // The transactions of an index: { <txId>: { packages: [event], files: n,
-// status, oldest } }, built once per index. `oldest`: the index's oldest
-// event is one of its packages, so the cap may have cut it.
+// status, partial } }, built once per index. `partial`: the index may
+// list only part of it (WP-208): one of its events is at or past the
+// list's boundary (eventsBoundary), or it lists fewer open members than
+// its drift group's `members`.
 function transactionIndex(index) {
   var all = events(index)
+  var boundary = eventsBoundary(index)
   // keyed by txId or meta.transaction, text a hand-edited ledger line may
   // make `constructor` or `__proto__`: no prototype (WP-137 round 2, B2)
   var out = Object.create(null)
   var at = function(id) {
-    if (out[id] === undefined) out[id] = { packages: [], files: 0, status: "", oldest: false }
+    if (out[id] === undefined) out[id] = { packages: [], files: 0, status: "", partial: false, open: 0 }
     return out[id]
   }
   for (var i = 0; i < all.length; i++) {
@@ -6562,14 +6579,18 @@ function transactionIndex(index) {
     var id = eventTx(e)
     if (id === "") continue
     var t = at(id)
+    if (boundary !== -1 && i >= boundary) t.partial = true
     if (e.kind === "note") {
       t.files++
       continue
     }
     t.packages.push(e)
+    if (isOpenMember(e, id)) t.open++
     if (t.status === "") t.status = txStatusOf(e)
-    if (i === all.length - 1 && all.length >= INDEX_EVENTS_MAX) t.oldest = true
   }
+  var groups = driftLookup(index).byTx
+  for (var tx in groups)
+    if (out[tx] !== undefined && out[tx].open < groups[tx].members) out[tx].partial = true
   return out
 }
 
@@ -6602,7 +6623,7 @@ function transactionDetail(index, prepared, id) {
   var row = changelogRow(prepared, id)
   if (!row || row.tx === "") return null
   var all = prepared && isObject(prepared.tx) ? prepared.tx : transactionIndex(index)
-  var t = all[row.tx] || { packages: [], files: 0, status: "", oldest: false }
+  var t = all[row.tx] || { packages: [], files: 0, status: "", partial: false, open: 0 }
   var sorted = t.packages.slice().sort(function(a, b) {
     var k = TX_KINDS.indexOf(a.kind) - TX_KINDS.indexOf(b.kind)
     return k !== 0 ? k : str(a.subject) < str(b.subject) ? -1 : str(a.subject) > str(b.subject) ? 1 : 0
@@ -6626,7 +6647,8 @@ function transactionDetail(index, prepared, id) {
     summary: txSummary(t.packages),
     packages: packages,
     files: t.files,
-    partial: t.oldest,
+    // with no package listed, Transaction says "not in the index any more"
+    partial: t.partial && t.packages.length > 0,
     list: packages.length > 1 || status !== "" || t.files > 0
   }
 }
@@ -6639,7 +6661,7 @@ function transactionRows(tx) {
   var out = []
   if (tx.command !== "") out.push(["Command", tx.command + (tx.clipped ? " (clipped in the index; the ledger has it in full)" : "")])
   var parts = [tx.packages.length > 0 ? tx.summary
-    : "not in the index any more (it keeps the newest " + INDEX_EVENTS_MAX + " events)"]
+    : "not in the index any more (it lists " + INDEX_EVENTS_MAX + " events)"]
   if (tx.status !== "") parts.push(tx.status)
   if (tx.files > 0) parts.push("left " + plural(tx.files, "file", "files"))
   out.push(["Transaction", parts.join(" · ")])
