@@ -134,12 +134,13 @@ and the package does not exist yet. Update the plugin first:
 - **Apply proposals armed by Enter drops on a click on the desk.** It
   also asks again when the proposal's open items changed between the
   two Enters. *Discard* keeps its two clicks.
-- **Work counts every case on a cut index (WP-204, WP-206).** Where the
-  index lists fewer queued or active cases than its `summary` counts
-  (ADR-0053), the group header shows both: "QUEUED · 50 / 450". A group
-  the index lists no row of keeps its header, "QUEUED · 0 / 500", over a
-  dim line "The index lists none of them. This lists them:" and the
-  command, `seldon plan list --status queued`. The WIP line ("2 / 3
+- **Work counts every queued and active case on a cut index (WP-204,
+  WP-206).** Where the index lists fewer queued or active cases than
+  its `summary` counts (ADR-0053), the group header shows both:
+  "QUEUED · 50 / 450". A group the index lists no row of keeps its
+  header, "QUEUED · 0 / 500", over a dim line "The index lists none of
+  them. This lists them:" and the command, `seldon plan list --status
+  queued`. The WIP line ("2 / 3
   active") counts the summary too, and Today shows its first-run card
   ("Seldon is recording. Nothing to do.") only when the summary counts
   no case either. A whole index looks as before.

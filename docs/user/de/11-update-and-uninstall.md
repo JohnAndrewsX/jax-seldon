@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ e0df9cca -->
+<!-- source: en/11-update-and-uninstall.md @ 4f566f2c -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -111,7 +111,8 @@ starte nach dem Update des Plugins die Shell neu. Ein Plugin 0.2.0 liest
 den Index einer Engine 0.3.0, und ein Plugin 0.3.0 arbeitet mit einer
 Engine 0.2.0. Was sich für dich ändert:
 
-- Jeder Knopf auf dem Desk hat einen Weg per Taste. ↑ oben in einer
+- Die Knöpfe des Desk haben einen Weg per Taste, außer *By agent* und
+  *Import tasks…* in Work, die noch einen Klick brauchen. ↑ oben in einer
   Liste erreicht die Knöpfe der Hinweise, ↑ auf der ersten Zeile von
   Today die Einrichtungskarte, ↑ auf der ersten Zeile des Changelog den
   Vorschlag des Agenten oder *Agent sorts N open changes* (zweimal `a`),
@@ -122,9 +123,9 @@ Engine 0.2.0. Was sich für dich ändert:
   Die Tabelle steht unter [Alltag](03-daily-use.md#tasten).
 - Ein sehr großes Logbuch sperrt den Desk nicht mehr aus. Das Plugin
   liest einen Index unter 1 MB; die Engine lässt jetzt die ältesten
-  Zeilen weg, bis er passt (Vergangenes zuerst, Krisen zuletzt), hält
-  jede Zahl vollständig, und `seldon status` nennt, was sie weggelassen
-  hat. Das Logbuch und jeder Befehl behalten jede Zeile. Die Köpfe in
+  Zeilen weg, bis er passt (Vergangenes zuerst, Krisen zuletzt), zählt
+  weiter jeden wartenden und aktiven Case, jede offene Änderung und
+  Krise, und `seldon status` nennt, was sie weggelassen hat. Das Logbuch und jeder Befehl behalten jede Zeile. Die Köpfe in
   Work zeigen dann beide Zahlen, „QUEUED · 50 / 450“
   ([Alltag](03-daily-use.md#work-3)). Ein Plugin 0.2.0 zählt die Gruppen
   in Work bei einem solchen Index nach den gelisteten Zeilen, bis du es
