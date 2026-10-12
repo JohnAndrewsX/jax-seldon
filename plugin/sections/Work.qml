@@ -11,7 +11,9 @@ import "../Model.js" as Model
 // *Run*, which sends `seldon agent start --new --json -- <intent>` (one
 // argument after `--`, exactly as typed), keeps the text until the engine
 // has made the case and then selects it; the WIP line ("2 / 3 active")
-// against the bar setting `wipLimit` (warns, never blocks); *By agent*,
+// against the bar setting `wipLimit` (warns, never blocks; above the
+// buttons in a list column, at most 360 px; beside them in the stacked
+// layout, WP-211); *By agent*,
 // the Completed group's spot-check filter (ADR-0027 §5); *New case*, the
 // hand-made case (NewCaseSheet.qml in the detail); the engine's answer to
 // the last case action; then the cases by group — Active · Verification ·
@@ -308,6 +310,8 @@ Section {
       ids: root.rows.map(function(r) { return r.id }),
       filter: root.completedFilter,
       wip: root.wip.text,
+      // the WIP line beside the buttons, not above them (WP-211)
+      wipBeside: wipRow.beside,
       cursor: root.cursor,
       selected: root.selectedId,
       working: Object.keys(root.sessions || {}).sort(),
@@ -489,16 +493,31 @@ Section {
       }
     }
 
+    // The WIP line beside the buttons where it fits, else above them, and
+    // the buttons wrap (WP-211). A list column (at most 360 px) is too
+    // narrow for both, so the line sits beside them only in the stacked
+    // layout, where the list is the desk's width.
     Item {
+      id: wipRow
+      objectName: "headerRow:work"
+      // whole pixels: the Flow beside the line must not wrap on a rounding
+      readonly property real buttonsWidth: Math.ceil(agentFilter.implicitWidth + importButton.implicitWidth
+        + newButton.implicitWidth + Style.spacing.sm * 2)
+      readonly property bool beside: Math.ceil(wipMetrics.advanceWidth) + Style.spacing.sm + wipRow.buttonsWidth <= wipRow.width
       width: parent.width
-      implicitHeight: Math.max(wipText.implicitHeight, newButton.implicitHeight)
+      implicitHeight: wipRow.beside ? Math.max(wipText.implicitHeight, wipButtons.implicitHeight)
+        : wipText.implicitHeight + Style.spacing.sm + wipButtons.implicitHeight
+
+      TextMetrics {
+        id: wipMetrics
+        font: wipText.font
+        text: wipText.text
+      }
 
       Text {
         id: wipText
-        anchors.left: parent.left
-        anchors.right: agentFilter.left
-        anchors.rightMargin: Style.spacing.sm
-        anchors.verticalCenter: parent.verticalCenter
+        width: wipRow.beside ? wipRow.width - wipRow.buttonsWidth - Style.spacing.sm : wipRow.width
+        y: wipRow.beside ? Math.round((wipRow.height - wipText.implicitHeight) / 2) : 0
         textFormat: Text.PlainText
         text: root.index ? root.wip.text + (root.wip.tone === "urgent" ? " · over the limit" : root.wip.tone === "accent" ? " · at the limit" : "") : ""
         color: root.wip.tone === "urgent" ? root.tone.urgentText : root.wip.tone === "accent" ? root.tone.accentText : root.foreground
@@ -508,56 +527,56 @@ Section {
         font.bold: true
       }
 
-      Button {
-        id: agentFilter
-        anchors.right: importButton.left
-        anchors.rightMargin: Style.spacing.sm
-        anchors.verticalCenter: parent.verticalCenter
-        text: "By agent"
-        selected: root.completedFilter === Model.COMPLETED_FILTER_AGENT
-        bordered: true
-        foreground: root.foreground
-        fontFamily: Style.font.family
-        fontSize: Style.font.caption
-        verticalPadding: Style.spacing.xs
-        tooltipText: "Completed: only the cases an agent closed (a spot check)"
-        onClicked: root.toggleCompletedFilter()
-      }
+      Flow {
+        id: wipButtons
+        x: wipRow.beside ? wipRow.width - wipRow.buttonsWidth : 0
+        y: wipRow.beside ? Math.round((wipRow.height - wipButtons.implicitHeight) / 2) : wipText.implicitHeight + Style.spacing.sm
+        width: wipRow.beside ? wipRow.buttonsWidth : wipRow.width
+        spacing: Style.spacing.sm
 
-      Button {
-        id: importButton
-        anchors.right: newButton.left
-        anchors.rightMargin: Style.spacing.sm
-        anchors.verticalCenter: parent.verticalCenter
-        text: "Import tasks…"
-        tooltipText: root.canWrite ? "Your Markdown task files as cases: a dry run first, then one click"
-          : (root.service ? root.service.writeBlocker : "")
-        enabled: root.canWrite
-        selected: root.importOpen
-        bordered: true
-        foreground: root.foreground
-        fontFamily: Style.font.family
-        fontSize: Style.font.caption
-        verticalPadding: Style.spacing.xs
-        onClicked: root.importOpen ? root.closeImport() : root.openImport()
-      }
+        Button {
+          id: agentFilter
+          text: "By agent"
+          selected: root.completedFilter === Model.COMPLETED_FILTER_AGENT
+          bordered: true
+          foreground: root.foreground
+          fontFamily: Style.font.family
+          fontSize: Style.font.caption
+          verticalPadding: Style.spacing.xs
+          tooltipText: "Completed: only the cases an agent closed (a spot check)"
+          onClicked: root.toggleCompletedFilter()
+        }
 
-      Button {
-        id: newButton
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        text: "New case"
-        iconText: "+"
-        iconSize: Style.font.caption
-        tooltipText: root.canWrite ? "Key +" : (root.service ? root.service.writeBlocker : "")
-        enabled: root.canWrite
-        selected: root.sheetOpen
-        bordered: true
-        foreground: root.foreground
-        fontFamily: Style.font.family
-        fontSize: Style.font.caption
-        verticalPadding: Style.spacing.xs
-        onClicked: root.sheetOpen ? root.closeSheet() : root.openSheet()
+        Button {
+          id: importButton
+          text: "Import tasks…"
+          tooltipText: root.canWrite ? "Your Markdown task files as cases: a dry run first, then one click"
+            : (root.service ? root.service.writeBlocker : "")
+          enabled: root.canWrite
+          selected: root.importOpen
+          bordered: true
+          foreground: root.foreground
+          fontFamily: Style.font.family
+          fontSize: Style.font.caption
+          verticalPadding: Style.spacing.xs
+          onClicked: root.importOpen ? root.closeImport() : root.openImport()
+        }
+
+        Button {
+          id: newButton
+          text: "New case"
+          iconText: "+"
+          iconSize: Style.font.caption
+          tooltipText: root.canWrite ? "Key +" : (root.service ? root.service.writeBlocker : "")
+          enabled: root.canWrite
+          selected: root.sheetOpen
+          bordered: true
+          foreground: root.foreground
+          fontFamily: Style.font.family
+          fontSize: Style.font.caption
+          verticalPadding: Style.spacing.xs
+          onClicked: root.sheetOpen ? root.closeSheet() : root.openSheet()
+        }
       }
     }
 

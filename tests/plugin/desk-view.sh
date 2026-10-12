@@ -1191,6 +1191,7 @@ shows work 8 "COMPLETED · 1 / 2"
 expect work 9 "[$tv.filter, ($tv.groups | join(\"+\"))] | join(\",\")" ",active 2+verification 1+queued 3+completed 2"
 expect work 10 "[$tv.selected, ($tc.kv[] | select(startswith(\"Dates\")))] | join(\",\")" "C-2026-001,Dates: created 2026-09-01 · started 2026-09-01 · closed 2026-09-01"
 for i in 1 7 8; do expect work $i '.overflow | join(" | ")' ""; done
+for i in 1 7 8; do expect work $i '.overlap | join(" | ")' ""; done
 clean_log work
 
 run work-reopened "$fx/index-variants/case-reopened.json" 1920x1080 "summon:$wk;select:C-2026-009"
@@ -1243,6 +1244,40 @@ for text in "ACTIVE · 0 / 40" "seldon plan list --status active" "VERIFICATION 
   shows work-cut-hand 1 "$text"
 done
 clean_log work-cut-hand
+
+# 8d‴. The WIP line and the buttons share Work's header row (WP-211): over
+#      the limit ("40 / 3 active · over the limit") and the short line
+#      ("2 / 3 active") on a 750 px window (stacked), a 900 px one (the
+#      sidebar's icons), 1366 and 1920 at 100 % and 50 % (the 960 px floor),
+#      and 2048×1152 at scale 1.25 (a 2560×1440 screen; the desk 1019 px at
+#      50 %, where the operator met it on 0.2.0). The line is beside the
+#      buttons only when stacked, above them in a list column (at most
+#      360 px; `wipBeside`); no item of the row draws over another or
+#      leaves the row, sideways or downwards (the harness's `overlap`, the
+#      row named among its `headerRows`: no row, no pass), nothing leaves
+#      the desk, and the line keeps all its words.
+for size in 750x700 900x700 1366x768 1920x1080 2048x1152; do
+  scale=1
+  [[ $size == 2048x1152 ]] && scale=1.25
+  for line in over short; do
+    index="$work/work-cut-hand.json" text="40 / 3 active · over the limit"
+    [[ $line == short ]] && index="$sample" text="2 / 3 active"
+    name="work-wip-$line-$size"
+    run "$name" "$index" "$size" "summon:$wk;shot:$name;width:50;shot:$name-50" \
+      HARNESS_SHOTS="${DESK_SHOTS:-}" QT_SCALE_FACTOR="$scale"
+    beside=false
+    [[ $size == 750x700 ]] && beside=true
+    for i in 1 3; do
+      expect "$name" $i '.headerRows | index("headerRow:work") != null' true
+      expect "$name" $i "$tv.wipBeside" "$beside"
+      expect "$name" $i '.overlap | join(" | ")' ""
+      expect "$name" $i '.overflow | join(" | ")' ""
+      shows "$name" $i "$text"
+    done
+    clean_log "$name"
+  done
+done
+expect work-wip-short-2048x1152 3 .view.desk.w 1019
 
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"
