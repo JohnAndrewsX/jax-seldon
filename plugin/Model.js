@@ -618,9 +618,87 @@ function changelogMove(s, dy) {
 // how the keys reach it, and, while it is the selection, what they do
 // there; `listOnly`: a stacked desk shows the list, not the detail, so
 // Enter first shows the detail (review F1).
-function proposalHint(shown, listOnly) {
+// `crises`: the shown proposal's crises the keys walk (WP-201; 0 until
+// its items are built), `crisis`: the state of the one under the cursor
+// (crisisState; "" on the bar), `blocker`: why nothing can be applied now.
+function proposalHint(shown, listOnly, crises, crisis, blocker) {
   if (!shown) return "↑ from the first row, or a click, opens it"
-  return listOnly ? "Enter shows it · ↓ back to the list" : "Enter twice applies · ↓ back to the list"
+  if (listOnly) return "Enter shows it · ↓ back to the list"
+  if (crisis === "open") return "Enter twice applies the crisis under the cursor · ↑/↓ the crises"
+  if (crisis === "closed") return "Resolved — nothing to apply · ↑/↓ the crises"
+  if (crisis === "blocked") return blockedText(blocker) + " · ↑/↓ the crises"
+  return crises > 0 ? "Enter twice applies · ↓ its crises, then the list" : "Enter twice applies · ↓ back to the list"
+}
+
+// The crisis under the cursor (WP-201 round 2, I6): "" none, "open" (Enter
+// twice applies it), "closed" (no longer open drift: a stop, nothing to
+// apply), "blocked" (open, but nothing can be applied now: the engine
+// cannot write, or a run is under way).
+function crisisState(item, canApply) {
+  if (!isObject(item)) return ""
+  if (!item.open) return "closed"
+  return canApply ? "open" : "blocked"
+}
+
+function blockedText(blocker) {
+  return (blocker ? String(blocker) : "A run is under way") + " — cannot apply now"
+}
+
+// A crisis inside the shown proposal by key (WP-201; ADR-0028 §3,
+// ADR-0036: one crisis, one deliberate act, one per run). The crises are
+// the stops between the proposal's bar and the list's first row. s: { at
+// (the crisis under the cursor, -1: the bar), count (the crises shown),
+// rows (the list's) }. Returns the new `at` (-1: back on the bar), or null
+// when the key leaves the crises (↑ from the bar, ↓ from the last crisis
+// to the list); an empty list keeps the last crisis.
+function crisisMove(s, dy) {
+  var count = Math.max(0, Number(s && s.count) || 0)
+  var at = Number(s && s.at)
+  if (!(at >= 0 && at < count)) at = -1
+  if (count === 0) return null
+  if (at < 0) return dy > 0 ? 0 : null
+  var to = at + (dy > 0 ? 1 : -1)
+  if (to < count) return Math.max(-1, to)
+  return (Number(s.rows) || 0) > 0 ? null : at
+}
+
+// The arm of one crisis names what the second Enter would run (SPEC-PLUGIN
+// §5.3; WP-201 round 2, I3): the proposal, the item, its action and
+// target, its intent and its evidence refs (not their text, which the
+// engine writes), all as the view shows them (triageView). An item an
+// agent rewrote under the cursor, or a replaced proposal, only arms
+// again, with the new hint. Its prefix is the Changelog's `triage:`
+// (every detour drops it). Only compared, never parsed.
+function crisisKey(proposalId, item) {
+  var it = isObject(item) ? item : {}
+  var refs = Array.isArray(it.evidence) ? it.evidence.map(function(e) { return isObject(e) ? e.label : "" }) : []
+  return "triage:crisis:" + String(proposalId) + ":" + String(it.eventId) + ":"
+    + [it.actionText, it.intent].concat(refs).join("|")
+}
+
+// The arm of *Apply proposals* names what it would apply (I7): the count
+// and the open items Apply takes, so a proposal rewritten between the
+// two Enters only arms again.
+function triageApplyKey(proposalId, view) {
+  var open = isObject(view) && Array.isArray(view.regular)
+    ? view.regular.filter(function(i) { return i.open }).map(function(i) { return i.eventId }) : []
+  return "triage:apply:" + String(proposalId) + ":" + open.length + ":" + open.join(",")
+}
+
+// The arm's hint names the subject and what the item does (its action
+// and target), so a rewritten item asks again in its new words.
+function crisisArmHint(item) {
+  var it = isObject(item) ? item : {}
+  return "Apply the crisis " + String(it.subject) + " (" + String(it.actionText) + ") as you? Press Enter again."
+    + " Only this item; the other crises stay."
+}
+
+// The dim line under CRISES — EACH ON ITS OWN; `state`: crisisState.
+function crisisHint(state, blocker) {
+  if (state === "open") return "Enter twice applies this crisis alone · ↑/↓ the other crises"
+  if (state === "closed") return "Resolved — nothing to apply · ↑/↓ the other crises"
+  if (state === "blocked") return blockedText(blocker) + " · ↑/↓ the other crises"
+  return "↓ from the proposal reaches each crisis · Enter twice applies the one under the cursor"
 }
 
 // Whether `id` (IPC `select`, a desk payload's `select`, the shim's
@@ -1962,24 +2040,36 @@ function reopensOf(c) {
   return ""
 }
 
+// The queued and active cases `summary` counts: the index may list fewer
+// (CONTRACT.md rule 4, ADR-0053 §5), the summary counts all.
+function wholeCases(index) {
+  var s = index && isObject(index.summary) ? index.summary : {}
+  return { queued: count(s.queuedCases), active: count(s.activeCases) }
+}
+
 // [{ id, title, cases, total }] for queued, active (+ verification),
 // completed. `filter` "agent" keeps only the completed cases an agent closed
-// (the spot check, ADR-0027 §5); `total` is the column's count without it.
+// (the spot check, ADR-0027 §5); `total` is the column's count without it,
+// and the summary's count where the index lists fewer (WP-204).
 function workColumns(index, filter) {
   var cases = index && isObject(index.cases) ? index.cases : {}
+  var whole = wholeCases(index)
   var out = []
   for (var k = 0; k < WORK_COLUMNS.length; k++) {
     var col = WORK_COLUMNS[k]
     var list = []
+    var total = 0
     for (var g = 0; g < col.groups.length; g++) {
       var group = cases[col.groups[g]]
-      if (!Array.isArray(group)) continue
-      for (var i = 0; i < group.length; i++)
-        if (isObject(group[i])) list.push(workCase(group[i], col.groups[g], col.id))
+      var listed = list.length
+      if (Array.isArray(group))
+        for (var i = 0; i < group.length; i++)
+          if (isObject(group[i])) list.push(workCase(group[i], col.groups[g], col.id))
+      total += Math.max(list.length - listed, whole[col.groups[g]] || 0)
     }
     var shown = col.id === "completed" && filter === COMPLETED_FILTER_AGENT
       ? list.filter(function(c) { return c.closedByAgent }) : list
-    out.push({ id: col.id, title: col.title, cases: shown, total: list.length })
+    out.push({ id: col.id, title: col.title, cases: shown, total: total })
   }
   return out
 }
@@ -2001,10 +2091,13 @@ function workCases(columns) {
 }
 
 // "2 / 3 active": cases with status active (not verification) against the
-// limit. tone: "" below it, "accent" at it, "urgent" over it.
+// limit. tone: "" below it, "accent" at it, "urgent" over it. The count is
+// `summary.activeCases` where the index lists fewer (ADR-0053 rung 21,
+// WP-206); a summary below the list never lowers it.
 function wipStatus(index, limit) {
   var cases = index && isObject(index.cases) ? index.cases : {}
-  var active = Array.isArray(cases.active) ? cases.active.length : 0
+  var listed = Array.isArray(cases.active) ? cases.active.length : 0
+  var active = Math.max(listed, wholeCases(index).active)
   var max = clampWipLimit(limit)
   return {
     active: active,
@@ -5079,12 +5172,15 @@ function discardResult(exitCode, stdoutText, stderrText) {
 var FIRST_RUN_TITLE = "Seldon is recording. Nothing to do."
 var FIRST_RUN_LEAD = "Every change to this machine lands in the Changelog. Plan a change below, or just keep working: routine stays quiet, and only a crisis colours the bar."
 
-// Whether the logbook has a case in any column.
+// Whether the logbook has a case in any column: a listed one, or a queued
+// or active one the summary counts while a cut index lists none
+// (ADR-0053 rung 21, WP-206).
 function anyCase(index) {
   var c = index && isObject(index.cases) ? index.cases : {}
   var lists = [c.queued, c.active, c.verification, c.completed]
   for (var i = 0; i < lists.length; i++) if (Array.isArray(lists[i]) && lists[i].length > 0) return true
-  return false
+  var whole = wholeCases(index)
+  return whole.queued > 0 || whole.active > 0
 }
 
 // Today's list and overview (prototype `today`): the date and the day's
@@ -5182,7 +5278,7 @@ var WORK_GROUPS = [
 
 // Every case as a desk row, by group (Active · Verification · Queued ·
 // Completed, the last completed and dropped, newest closed first as the
-// index lists them).
+// index lists them); `whole`: the summary's queued and active counts.
 function deskWork(index) {
   var cases = index && isObject(index.cases) ? index.cases : {}
   var rows = []
@@ -5204,14 +5300,24 @@ function deskWork(index) {
       rows.push(c)
     }
   }
-  return { rows: rows }
+  return { rows: rows, whole: wholeCases(index) }
 }
 
 // The rows the Work list shows: the By agent filter on Completed
 // (ADR-0027 §5), the sidebar search, and each group's header ("ACTIVE ·
-// 2", "COMPLETED · 1 / 2" while the filter hides some).
+// 2", "COMPLETED · 1 / 2" while the filter hides some, "QUEUED · 50 / 450"
+// while the index lists fewer than the summary counts, WP-204). A search
+// covers the listed rows only, so it counts against them: "QUEUED · 1 / 50".
+// A group the summary counts but the index lists none of (ADR-0053 rungs
+// 16–20: "QUEUED · 0 / 500" after the listed active rows; rung 21 run dry:
+// "ACTIVE · 0 / 40" too) is a gap (WP-206): its header, WORK_GAP_TEXT and
+// the command that lists them on a line of its own, in `tail` after the
+// last shown row (the ladder cuts from the bottom of the list up), or in
+// `lead[i]` before the shown row i when a later group has rows (a
+// hand-made index); none during a search.
 function workView(prepared, filter, search) {
   var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var whole = prepared && isObject(prepared.whole) ? prepared.whole : {}
   var q = String(search || "").trim().toLowerCase()
   var shown = []
   var totals = {}
@@ -5229,13 +5335,33 @@ function workView(prepared, filter, search) {
     shown.push(r)
   }
   var labels = {}
+  var gaps = []
   for (var k = 0; k < WORK_GROUPS.length; k++) {
     var id = WORK_GROUPS[k].id
+    var listed = totals[id]
+    if (q === "") totals[id] = Math.max(totals[id], count(whole[id]))
     labels[id] = WORK_GROUPS[k].label.toUpperCase() + " · " + counts0[id]
       + (counts0[id] !== totals[id] ? " / " + totals[id] : "")
+    if (listed === 0 && totals[id] > 0)
+      gaps.push({ group: id, order: k, header: labels[id], text: WORK_GAP_TEXT,
+        command: "seldon plan list --status " + id })
   }
-  return { rows: shown, labels: labels, counts: counts0, totals: totals }
+  var order = {}
+  for (var o = 0; o < WORK_GROUPS.length; o++) order[WORK_GROUPS[o].id] = o
+  var lead = []
+  var next = 0
+  for (var j = 0; j < shown.length; j++) {
+    var here = []
+    while (next < gaps.length && gaps[next].order < order[shown[j].group]) here.push(gaps[next++])
+    lead.push(here)
+  }
+  return { rows: shown, labels: labels, counts: counts0, totals: totals, gaps: gaps, lead: lead, tail: gaps.slice(next) }
 }
+
+// The dim line under a group header the index lists no row of (WP-206):
+// the summary counts them, the logbook has them; the command follows on a
+// line of its own, so it never wraps inside a flag.
+var WORK_GAP_TEXT = "The index lists none of them. This lists them:"
 
 function findWorkRow(prepared, id) {
   var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []

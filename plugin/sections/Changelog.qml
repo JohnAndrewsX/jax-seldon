@@ -29,7 +29,9 @@ import "../Model.js" as Model
 // Enter opens the selected open item's default form (Link when the engine
 // proposes a case, else Explain) or, on the proposal, arms Apply proposals
 // and applies on the second press (on a stacked desk Enter first shows the
-// detail, as for every row), `f` / `F` the next / previous chip, `e` this
+// detail, as for every row); inside the shown proposal ↓/↑ walk its crises
+// before the list, and Enter twice applies the one under the cursor alone
+// (WP-201, `TriageDetail.crisisMove`), `f` / `F` the next / previous chip, `e` this
 // month's ledger in the editor, Esc hides a shown form (its draft kept).
 // Above the proposal (or the first row without one) ↑ reaches *Agent sorts
 // N open changes* (WP-202): `a` arms it, the second `a` starts the agent as
@@ -127,8 +129,15 @@ Section {
     return true
   }
 
+  // A press on the desk (WP-202): the keys' place on *Agent sorts* and on a
+  // crisis goes, with its arm (WP-201), and so does an armed *Apply
+  // proposals*: a click applies it at once, so its arm is always made by
+  // a key (round 2, I4). Discard's arm stays: it is made and confirmed by
+  // clicks.
   function leaveKeys() {
     root.askFocused = false
+    triage.crisisAt = -1
+    if (root.arm && root.arm.armedId.indexOf("triage:apply:") === 0) root.arm.disarm()
   }
 
   function enterFromTop() {
@@ -148,6 +157,8 @@ Section {
       else root.selectRow(root.cursorRow)
       return true
     }
+    // inside the shown proposal its crises come first (WP-201)
+    if (root.triageShown && triage.crisisMove(dy, root.rows.length)) return true
     var s = { rows: root.rows.length, cursor: root.cursor, cursorRow: root.cursorRow,
       proposal: root.proposalRowShown, triageShown: root.triageShown }
     if (dy < 0 && Model.changelogAtTop(s)) return root.focusAsk()
@@ -437,7 +448,7 @@ Section {
             objectName: "proposalHint"
             width: parent.width
             textFormat: Text.PlainText
-            text: Model.proposalHint(root.triageShown, root.stacked && !root.detailShown)
+            text: Model.proposalHint(root.triageShown, root.stacked && !root.detailShown, triage.crisisCount, triage.crisisState, triage.blocker)
             color: root.dim
             wrapMode: Text.Wrap
             font.family: Style.font.family

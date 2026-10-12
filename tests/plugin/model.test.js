@@ -2999,6 +2999,112 @@ test("deskWork and workView: groups in order, labels, the By agent filter, searc
   same(M.workView(M.deskWork(null), "", "").rows, [])
 })
 
+test("WP-204: Work's headers show the summary's whole count when the index lists fewer", () => {
+  const idx = M.parseIndex(sample).index
+  // the sample lists every case: the plain count
+  same(M.workColumns(idx).map(c => M.columnHeader(c)), ["QUEUED 3", "ACTIVE 3", "COMPLETED 2"])
+  // a cut index (ADR-0053 rungs 3 and 21; rule 4 caps no queued or active list): 50 of 450 queued, 2 of 40 active
+  const cut = JSON.parse(sample)
+  const one = cut.cases.queued[0]
+  cut.cases.queued = Array.from({ length: 50 }, (_, i) => Object.assign({}, one, { id: "C-2026-" + String(100 + i) }))
+  cut.summary.queuedCases = 450
+  cut.summary.activeCases = 40
+  same(M.workColumns(cut).map(c => M.columnHeader(c)), ["QUEUED 50 / 450", "ACTIVE 3 / 41", "COMPLETED 2"])
+  same(M.workColumns(cut, M.COMPLETED_FILTER_AGENT).map(c => M.columnHeader(c)), ["QUEUED 50 / 450", "ACTIVE 3 / 41", "COMPLETED 1 / 2"])
+  const v = M.workView(M.deskWork(cut), "", "")
+  same(v.labels, { active: "ACTIVE · 2 / 40", verification: "VERIFICATION · 1", queued: "QUEUED · 50 / 450", completed: "COMPLETED · 2" })
+  same(v.rows.length, 55)
+  // a search covers the listed rows only: it counts against them, not the whole (review 1)
+  same(M.workView(M.deskWork(cut), "", "C-2026-149").labels,
+    { active: "ACTIVE · 0 / 2", verification: "VERIFICATION · 0 / 1", queued: "QUEUED · 1 / 50", completed: "COMPLETED · 0 / 2" })
+  same(M.workView(M.deskWork(cut), "", "C-2026-1").labels.queued, "QUEUED · 50")
+  same(M.workView(M.deskWork(cut), "agent", "").labels, { active: "ACTIVE · 2 / 40", verification: "VERIFICATION · 1",
+    queued: "QUEUED · 50 / 450", completed: "COMPLETED · 1 / 2" })
+  // a summary below the list (an older or odd index) never lowers the count
+  cut.summary.queuedCases = 7
+  same(M.workColumns(cut)[0].total, 50)
+  same(M.workView(M.deskWork(cut), "", "").labels.queued, "QUEUED · 50")
+  // no summary: the lists' lengths
+  same(M.workView({ rows: M.deskWork(idx).rows }, "", "").labels.queued, "QUEUED · 3")
+})
+
+test("WP-206: a cut index keeps Work's empty groups, the WIP count and anyCase from the summary", () => {
+  const idx = M.parseIndex(sample).index
+  const line = "The index lists none of them. This lists them:"
+  const gapsOf = v => v.gaps.map(g => [g.group, g.header, g.text, g.command])
+  // a whole index: no gap, the lists' counts, as before
+  const whole = M.workView(M.deskWork(idx), "", "")
+  same([whole.gaps, whole.tail, whole.lead.every(l => l.length === 0)], [[], [], true])
+  same(M.wipStatus(idx, 3), { active: 2, limit: 3, text: "2 / 3 active", tone: "" })
+  assert.strictEqual(M.anyCase(idx), true)
+  // ADR-0053 §2 rungs 16–20: completed (rung 14) and queued (rung 16) cut to 0,
+  // active and verification listed; QUEUED after the last row, in the tail
+  const r16 = JSON.parse(sample)
+  r16.cases.completed = []
+  r16.cases.queued = []
+  r16.summary.queuedCases = 500
+  const a = M.workView(M.deskWork(r16), "", "")
+  same(a.rows.map(r => r.group), ["active", "active", "verification"])
+  same(a.labels, { active: "ACTIVE · 2", verification: "VERIFICATION · 1", queued: "QUEUED · 0 / 500", completed: "COMPLETED · 0" })
+  same(gapsOf(a), [["queued", "QUEUED · 0 / 500", line, "seldon plan list --status queued"]])
+  same([a.lead, a.tail.map(g => g.group)], [[[], [], []], ["queued"]])
+  same(M.wipStatus(r16, 3).text, "2 / 3 active")
+  // the By agent filter (Completed only) and a search make no gap
+  same(M.workView(M.deskWork(r16), "agent", "").gaps.map(g => g.group), ["queued"])
+  same(M.workView(M.deskWork(r16), "", "C-2026").gaps, [])
+  // rung 21 under way: verification cut (rung 20), 1 of 40 active listed
+  const r21 = JSON.parse(JSON.stringify(r16))
+  r21.cases.verification = []
+  r21.cases.active = r21.cases.active.slice(0, 1)
+  r21.summary.activeCases = 40
+  const b = M.workView(M.deskWork(r21), "", "")
+  same([b.labels.active, b.tail.map(g => g.header)], ["ACTIVE · 1 / 40", ["QUEUED · 0 / 500"]])
+  same(M.wipStatus(r21, 3), { active: 40, limit: 3, text: "40 / 3 active", tone: "urgent" })
+  // rung 21 ran dry: no case listed, 40 active and 2 000 queued counted; both in the tail
+  const dry = JSON.parse(sample)
+  dry.cases = { queued: [], active: [], verification: [], completed: [] }
+  dry.summary = Object.assign({}, dry.summary, { activeCases: 40, queuedCases: 2000, openDrift: 0, crisis: 0 })
+  const d = M.workView(M.deskWork(dry), "", "")
+  same([d.rows, d.lead], [[], []])
+  same(gapsOf(d), [["active", "ACTIVE · 0 / 40", line, "seldon plan list --status active"],
+    ["queued", "QUEUED · 0 / 2000", line, "seldon plan list --status queued"]])
+  same(d.tail.map(g => g.group), ["active", "queued"])
+  assert.strictEqual(M.anyCase(dry), true)
+  assert.strictEqual(M.deskToday(dry, M.deskChangelog(dry)).firstRun, false)
+  same(M.wipStatus(dry, 3).text, "40 / 3 active")
+  // nothing listed and only one of the two counts: still a case, no first-run card
+  for (const key of ["queuedCases", "activeCases"]) {
+    const one = JSON.parse(JSON.stringify(dry))
+    one.summary.activeCases = 0
+    one.summary.queuedCases = 0
+    one.summary[key] = 5
+    assert.strictEqual(M.anyCase(one), true, key)
+    assert.strictEqual(M.deskToday(one, M.deskChangelog(one)).firstRun, false, key)
+  }
+  // hand-made, no ladder state: a gap before listed rows goes into lead[i]
+  const hand = JSON.parse(sample)
+  hand.cases.active = []
+  hand.summary.activeCases = 40
+  const h = M.workView(M.deskWork(hand), "", "")
+  same(h.rows[0].group, "verification")
+  same(h.lead.map(l => l.map(g => g.group)), h.rows.map((_, i) => i === 0 ? ["active"] : []))
+  same(h.tail, [])
+  const mid = JSON.parse(sample)
+  mid.cases.queued = []
+  mid.summary.queuedCases = 9
+  const m = M.workView(M.deskWork(mid), "", "")
+  const at = m.rows.findIndex(r => r.group === "completed")
+  same([m.lead[at].map(g => g.header), m.tail], [["QUEUED · 0 / 9"], []])
+  // a summary below the list never lowers the WIP count (1 counted, 2 listed; 0 too)
+  const low = JSON.parse(sample)
+  low.summary.activeCases = 1
+  same(M.wipStatus(low, 3).active, 2)
+  low.summary.activeCases = 0
+  same(M.wipStatus(low, 3).active, 2)
+  // no summary count, no gap
+  same(M.workView({ rows: [] }, "", "").gaps, [])
+})
+
 test("caseDeskActions by status; Enter never launches; hints and verbs", () => {
   const ids = st => M.caseDeskActions({ status: st, actionable: true }).map(a => a.id + (a.arm ? "!" : "") + (a.primary ? "*" : "") + (a.enter ? "^" : ""))
   same(ids("queued"), ["start!*^", "drop!", "open"])
@@ -3965,6 +4071,117 @@ test("parseProposal follows proposal.schema.json (WP-124b round 2, R1)", () => {
   assert.strictEqual(bad((d) => { d.items[0].evidence[0].text = astral + "x" }), null, "257 code points")
   // larger than the engine reads: not even parsed
   assert.strictEqual(M.parseProposal(proposalFile + " ".repeat(4 * 1024 * 1024), ix.triage), null)
+})
+
+test("WP-201: a crisis inside the proposal by key, one per run", () => {
+  // the walk: the bar (-1), the crises, then the list (null); ↑ from the bar leaves too
+  const cm = (at, dy, o) => M.crisisMove(Object.assign({ at, count: 2, rows: 6 }, o), dy)
+  assert.strictEqual(cm(-1, 1), 0)
+  assert.strictEqual(cm(0, 1), 1)
+  assert.strictEqual(cm(1, 1), null)
+  assert.strictEqual(cm(1, -1), 0)
+  assert.strictEqual(cm(0, -1), -1)
+  assert.strictEqual(cm(-1, -1), null)
+  // an empty list keeps the last crisis; no crises (or not built yet): the list's keys
+  assert.strictEqual(cm(1, 1, { rows: 0 }), 1)
+  assert.strictEqual(cm(-1, 1, { count: 0 }), null)
+  assert.strictEqual(cm(-1, -1, { count: 0 }), null)
+  // a cursor past the crises (the file shrank) counts as the bar
+  assert.strictEqual(cm(5, 1), 0)
+  // the hint lines name the keys, and say so on a closed or blocked crisis (round 2, I6)
+  assert.strictEqual(M.crisisHint(""), "↓ from the proposal reaches each crisis · Enter twice applies the one under the cursor")
+  assert.strictEqual(M.crisisHint("open"), "Enter twice applies this crisis alone · ↑/↓ the other crises")
+  assert.strictEqual(M.crisisHint("closed"), "Resolved — nothing to apply · ↑/↓ the other crises")
+  assert.strictEqual(M.crisisHint("blocked", "Dev mode is read-only"), "Dev mode is read-only — cannot apply now · ↑/↓ the other crises")
+  assert.strictEqual(M.crisisHint("blocked", ""), "A run is under way — cannot apply now · ↑/↓ the other crises")
+  assert.strictEqual(M.proposalHint(true, false, 2, ""), "Enter twice applies · ↓ its crises, then the list")
+  assert.strictEqual(M.proposalHint(true, false, 2, "open"), "Enter twice applies the crisis under the cursor · ↑/↓ the crises")
+  assert.strictEqual(M.proposalHint(true, false, 2, "closed"), "Resolved — nothing to apply · ↑/↓ the crises")
+  assert.strictEqual(M.proposalHint(true, false, 2, "blocked", "Needs the Seldon engine"), "Needs the Seldon engine — cannot apply now · ↑/↓ the crises")
+  // not built yet (0 crises): ↓ goes to the list, and the hint says so (I1)
+  assert.strictEqual(M.proposalHint(true, false, 0, ""), "Enter twice applies · ↓ back to the list")
+  assert.strictEqual(M.proposalHint(true, true, 2, ""), "Enter shows it · ↓ back to the list")
+  assert.strictEqual(M.crisisState(null, true), "")
+  assert.strictEqual(M.crisisState({ open: true }, true), "open")
+  assert.strictEqual(M.crisisState({ open: true }, false), "blocked")
+  assert.strictEqual(M.crisisState({ open: false }, false), "closed")
+
+  // the arm id names what the second Enter would run (round 2, I3): the
+  // action and its target, the intent and every ref change it; the
+  // evidence text (the engine's) does not
+  const ix0 = M.parseIndex(sample).index
+  const prep0 = M.deskChangelog(ix0)
+  const keyOf = (edit) => {
+    const p = M.parseProposal(proposalFile, ix0.triage)
+    if (edit) edit(p.items[2])
+    return M.crisisKey(PID, M.triageView(ix0, p, prep0, null).crises[0])
+  }
+  const base = keyOf()
+  assert.ok(base.startsWith("triage:crisis:" + PID + ":" + UNIT + ":"), base)
+  assert.strictEqual(keyOf(), base)
+  assert.notStrictEqual(keyOf((it) => { it.action = "link"; it.caseId = "C-2026-004"; delete it.title; delete it.intent }), base)
+  assert.notStrictEqual(keyOf((it) => { it.title = "another title" }), base)
+  assert.notStrictEqual(keyOf((it) => { it.intent = "another intent" }), base)
+  assert.notStrictEqual(keyOf((it) => { it.evidence[0].ref = "2026-10-01 14:41" }), base)
+  assert.notStrictEqual(keyOf((it) => { it.evidence.push({ kind: "plan", ref: "C-2026-004", text: "by human · x" }) }), base)
+  assert.strictEqual(keyOf((it) => { it.evidence[0].text = "by human · reworded" }), base)
+  const linkKey = keyOf((it) => { it.action = "link"; it.caseId = "C-2026-004"; delete it.title; delete it.intent })
+  assert.notStrictEqual(keyOf((it) => { it.action = "link"; it.caseId = "C-2026-005"; delete it.title; delete it.intent }), linkKey)
+  const unit = M.triageView(ix0, M.parseProposal(proposalFile, ix0.triage), prep0, null).crises[0]
+  assert.strictEqual(M.crisisArmHint(unit), "Apply the crisis " + unit.subject
+    + " (Explain: Ollama-User-Service von Codex) as you? Press Enter again. Only this item; the other crises stay.")
+  // Apply proposals too (I7): the open items it takes
+  const v0 = M.triageView(ix0, M.parseProposal(proposalFile, ix0.triage), prep0, null)
+  assert.strictEqual(M.triageApplyKey(PID, v0), "triage:apply:" + PID + ":2:" + THEME + ",01M3KVWFR06078ZQTPRZCFYHK0")
+  assert.ok(M.triageApplyKey(PID, null).startsWith("triage:apply:" + PID + ":"))
+  const fewer = M.parseProposal(proposalFile, ix0.triage)
+  fewer.items.splice(1, 1)
+  assert.notStrictEqual(M.triageApplyKey(PID, M.triageView(ix0, fewer, prep0, null)), M.triageApplyKey(PID, v0))
+
+  // TriageDetail's keys over the model: two crises (the theme flagged one
+  // too); ↓ ↓ Enter Enter applies the second alone, with one --item
+  const ix = M.parseIndex(sample).index
+  const prepared = M.deskChangelog(ix)
+  const two = M.parseProposal(proposalFile, ix.triage)
+  two.items[0].crisis = true
+  const desk = (index) => {
+    const calls = []
+    const k = { at: -1, armed: "", index, calls }
+    k.view = () => M.triageView(k.index, two, prepared, null)
+    k.current = () => M.triageSeen(k.index, PID).state === "current"
+    k.move = (dy) => {
+      k.armed = "" // every key that does not press disarms (Desk.keyPressed)
+      const v = k.current() ? k.view() : null
+      const to = M.crisisMove({ at: k.at, count: v ? v.crises.length : 0, rows: 6 }, dy)
+      k.at = to === null ? -1 : to
+    }
+    k.enter = () => {
+      const c = k.current() && k.at >= 0 ? k.view().crises[k.at] : null
+      if (!c || !c.open) { k.armed = ""; return }
+      const key = M.crisisKey(PID, c)
+      if (k.armed === key) { k.armed = ""; calls.push(M.applyArgs(PID, c.eventId).args) } else k.armed = key
+    }
+    return k
+  }
+  const k = desk(ix)
+  same(k.view().crises.map((i) => i.eventId), [THEME, UNIT])
+  k.move(1); k.move(1)
+  k.enter()
+  same(k.calls, [])
+  assert.strictEqual(k.armed, M.crisisKey(PID, k.view().crises[1]))
+  k.enter()
+  same(k.calls, [["drift", "apply", PID, "--item", UNIT, "--json"]])
+  assert.strictEqual(k.armed, "")
+  // a move between the two presses: nothing runs, the next Enter only arms
+  const m = desk(ix)
+  m.move(1); m.enter(); m.move(1); m.move(-1); m.enter()
+  same(m.calls, [])
+  // a replaced proposal never applies: armed, then the index names another
+  const r = desk(ix)
+  r.move(1); r.enter()
+  r.index = Object.assign({}, ix, { triage: Object.assign({}, ix.triage, { id: "01M3W10000000000000000000S" }) })
+  r.enter(); r.enter()
+  same(r.calls, [])
 })
 
 test("triageSeen: the proposal the user opened against the index's (B1)", () => {

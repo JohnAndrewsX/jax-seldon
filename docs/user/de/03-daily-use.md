@@ -291,7 +291,9 @@ open changes*: Zweimal `a` startet den Agenten.
   der Tastatur schaltet Enter es scharf, ein zweites Enter wendet es an.
   Ein zweites Apply ändert nichts.
 - Krisen sind nie Teil von Apply. Sie stehen unter **CRISES, EACH ON ITS
-  OWN**, jede mit ihrem eigenen *Apply this crisis*.
+  OWN**, jede mit ihrem eigenen *Apply this crisis*. Mit der Tastatur
+  geht ↓ vom Vorschlag aus durch die Krisen; Enter schaltet die unter dem
+  Cursor scharf, ein zweites Enter wendet nur diese Krise an.
 - *Discard* wirft den Vorschlag weg (zwei Klicks). Das Logbuch ändert
   sich nicht.
 - Kommt ein neuerer Vorschlag, während du einen liest, schalten sich

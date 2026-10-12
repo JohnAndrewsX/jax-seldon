@@ -1,0 +1,114 @@
+# WP-204 — handover
+
+Branch `wp/204-work-totals` from `next` 1e872c28. Plugin only: no
+engine, schema, fixture or contract change.
+
+## What was done
+
+- `plugin/Model.js`:
+  - `wholeCases(index)` (new): `{queued, active}` from
+    `summary.queuedCases` / `summary.activeCases`, 0 when absent.
+  - `workColumns`: each column's `total` is the sum over its groups of
+    max(listed, summary count). Queued uses `queuedCases`. Active is
+    max(listed active, `activeCases`) + listed verification, because
+    `summary.activeCases` counts `active` only (`engine/src/index/build.rs`,
+    `groups.active.len()`). Completed has no summary count and stays as
+    it was, so the *By agent* filter's "COMPLETED 1 / 2" is unchanged.
+    `columnHeader` already prints "N / total" when they differ:
+    "QUEUED 50 / 450".
+  - `deskWork` also returns `whole: wholeCases(index)`. `workView` raises
+    each group's total to max(listed, whole), giving "QUEUED · 50 / 450"
+    and "ACTIVE · 2 / 40". The headers are unchanged when the list is
+    whole. A summary that is lower than the list never lowers the count.
+    During a search the whole count is not used (review 1, F1): the
+    search covers the listed rows only, so it reads "QUEUED · 1 / 50".
+- `docs/SPEC-PLUGIN.md` (Work): one sentence on the whole-count header
+  (ADR-0053 §5, rungs 3 and 21), and one sentence saying that the search
+  covers the listed rows only.
+- `tests/plugin/model.test.js`: test "WP-204: …". It builds a cut index
+  from the sample (50 queued listed, `queuedCases` 450, `activeCases`
+  40) and checks the following:
+  - `workColumns` headers: "QUEUED 50 / 450", "ACTIVE 3 / 41",
+    "COMPLETED 2". With *By agent*: "COMPLETED 1 / 2".
+  - `workView` labels: "ACTIVE · 2 / 40", "VERIFICATION · 1",
+    "QUEUED · 50 / 450", "COMPLETED · 2".
+  - During a search every label counts against the listed rows:
+    "ACTIVE · 0 / 2", "VERIFICATION · 0 / 1", "QUEUED · 1 / 50",
+    "COMPLETED · 0 / 2". A search that matches every listed queued row
+    reads "QUEUED · 50". The *By agent* filter alone keeps the whole
+    counts.
+  - A summary below the list keeps "QUEUED · 50".
+  - No summary falls back to the list length.
+  - The whole sample keeps its plain counts.
+
+  The shipped fixture lists every case, so the short-list case lives
+  only in this test, as the WP allows. CONTRACT.md rule 4 caps no queued
+  or active list. Only the size budget shortens them (ADR-0053 rungs 3
+  and 21); the test comment says so (review 1, F3).
+
+## Review 1
+
+APPROVE with two fixes, both done:
+
+- **F1**: during a search the second number is the listed count.
+  Done in `workView`, the SPEC-PLUGIN sentence and the test.
+- **F3**: the test comment and this handover say "ADR-0053 rungs 3 and
+  21", not "rule 4's caps".
+
+Not in this round: F2 (an empty listed group has no header) goes to a
+follow-up. F4 (`workColumns`/`columnHeader` are test-only) stays.
+
+## Note for the reviewer
+
+The WP names `Model.workColumns`, but the Desk (`sections/Work.qml`)
+renders its group headers from `Model.workView(Model.deskWork(index))`.
+No QML calls `workColumns` or `columnHeader` any more; only
+`model.test.js` does. I changed both so they agree. Without the
+`workView` change the visible headers would still read "QUEUED · 50".
+
+## Not done
+
+- An empty listed group (for example, every active row cut on rung 21)
+  shows no header in the Desk, so it shows no "0 / 40" either. The Desk
+  draws a header only above a row. This is outside this WP.
+- `wipStatus` still counts the listed `cases.active` (ADR-0053 §5 row).
+  Not part of this WP.
+
+## How it was verified
+
+Round 2 (review 1 fixes), dev host, TMPDIR and JUST_TEMPDIR under the
+private gates folder:
+
+- **fixture**: `node tests/plugin/model.test.js`, 219 passed. The old
+  behaviour (the whole count during a search) was put back for a moment
+  and fails the WP-204 test with "QUEUED · 1 / 450". The file was then
+  restored and checked with `cmp`.
+- **headless**: `just qmllint` ok (52 files); `just docs-check` ok (514
+  links).
+- **not run** in round 2: the full `just check` (the orchestrator gates
+  it); CI; desktop.
+
+Round 1:
+
+- **fixture**: `node tests/plugin/model.test.js`, 219 passed, including
+  the new WP-204 test against the sample fixture and the cut index
+  built from it.
+- **headless**: `SELDON_FULL_CHECK=1 just check` on the dev host at
+  abdcf939 (the code of this handover; only this file was added after
+  it): `check: ok`, exit 0. Results:
+  - desk-view 2242/0. Its `work #1` still finds "QUEUED · 3" on the
+    sample, so the whole list keeps the plain count.
+  - service-states 366/0, bar-view 195/0, ipc-restart 43/0,
+    terminal-scripts 73/0.
+  - qmllint ok (52 files), plugin-validate ok, tokens ok, plaintext ok,
+    docs-check ok (514 links).
+  - Every harness reported "no leftover" in the quickshell by-id
+    directory (328 before and after). The runtime dir was 2 % full
+    before and after.
+  - desk-view logged that the real state directory was changed by the
+    live engine, not by the harness. The harness judges this itself.
+  - TMPDIR, JUST_TEMPDIR and the cargo target were under the private
+    gates folder.
+- **test host**: shellcheck through the orchestrator kit's wrapper,
+  inside the same `just check` run.
+- **not run**: CI; a live desktop with a logbook over the caps.

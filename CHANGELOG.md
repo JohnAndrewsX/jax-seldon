@@ -21,7 +21,7 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
-- Every button on the desk works by key now: the notices, the setup card, *Agent sorts* and the width and sidebar settings.
+- Every button on the desk works by key now: the notices, the setup card, *Agent sorts*, the width and sidebar settings, and each crisis in an agent's proposal.
 - A very large logbook no longer locks the desk out: the engine keeps `index.json` under 1 MB, leaves out the oldest rows first and still counts every case, change and crisis.
 - Your agents read less: the Seldon skill is a short core, and the details load when a task needs them; an unedited skill updates itself.
 
@@ -87,6 +87,22 @@ and the package does not exist yet. Update the plugin first:
   notices|setup|ask|width|…` places the cursor for scripts, never
   pressing. This closes the 0.2.0 note that these buttons still needed a
   pointer.
+- **A crisis in a triage proposal by key (WP-201).** In the shown
+  proposal, once its items are on screen, ↓ walks its crises before the
+  list (↑ back onto the bar); the crisis under the cursor wears the focus
+  ring and is scrolled into view, Enter arms it ("Apply the crisis
+  <subject> (<what it does>) as you? Press Enter again. Only this item;
+  the other crises stay.") and the second Enter applies that one item,
+  as *Apply this crisis* does (`drift apply <id> --item <eventId>`, one
+  per run). A crisis already resolved says "Resolved — nothing to
+  apply". Any other key, a click on the desk, another selection, leaving
+  the proposal, a newer proposal or an agent rewriting the item cancels.
+  An armed Apply stays gone when a replaced proposal becomes the current
+  one again. Before, accepting the agent's crisis resolution needed a
+  click; by key you retyped it from the crisis's own row.
+- **Apply proposals armed by Enter drops on a click on the desk.** It
+  also asks again when the proposal's open items changed between the
+  two Enters. *Discard* keeps its two clicks.
 
 ## [0.2.0] - 2026-10-11
 
