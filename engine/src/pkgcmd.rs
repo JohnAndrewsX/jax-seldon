@@ -710,15 +710,20 @@ impl Reader<'_> {
 
     /// The `$(…)`, `$((…))`, `$[…]`, `${…}` or backtick substitution at
     /// `i`, pushed literally into the current word without the heredoc
-    /// bodies it holds; returns the index after it.
+    /// bodies it holds; returns the index after it. A `|` (not `||`),
+    /// `<<<` or `<(` inside a `$(…)` or backticks feeds the line from there
+    /// on, as one outside does ([`Segment::fed`]; `--key-file $(printf PW
+    /// | tee k; echo k)`, WP-157 round 3).
     fn substitution(&mut self, i: usize, lexer: &mut Lexer) -> usize {
+        let mut inner = Lexer::default();
         let end = match (self.at(i), self.at(i + 1), self.at(i + 2)) {
-            (Some('`'), ..) => self.read(i + 1, Stop::Backtick, &mut Lexer::default()),
+            (Some('`'), ..) => self.read(i + 1, Stop::Backtick, &mut inner),
             (_, Some('('), Some('(')) => closing(&self.chars, i + 1, '(', ')'),
-            (_, Some('('), _) => self.read(i + 2, Stop::Paren, &mut Lexer::default()),
+            (_, Some('('), _) => self.read(i + 2, Stop::Paren, &mut inner),
             (_, Some('['), _) => closing(&self.chars, i + 1, '[', ']'),
             _ => closing(&self.chars, i + 1, '{', '}'),
         };
+        lexer.fed |= inner.fed;
         for &(b, k) in &self.chars[i..end] {
             if !self.cuts.iter().any(|&(s, e)| s <= b && b < e) {
                 lexer.push(k);
@@ -2281,6 +2286,12 @@ mod tests {
         assert_eq!(fed("a | sudo sh -c 'b; c | d'"), [false, true, true, true]);
         assert_eq!(fed("sudo sh -c 'b; c' <<< x; e"), [true, true, true]);
         assert_eq!(fed("x > out; y | z"), [false, false, true]);
+        // round 3: an operator inside `$( )` or backticks, not `||` or a
+        // quoted `|`
+        assert_eq!(fed("a $(b | c); d"), [true, true]);
+        assert_eq!(fed("a `b <<< c`; d"), [true, true]);
+        assert_eq!(fed("a $(b || c); d $((1 | 2)) '$(x | y)'"), [false, false]);
+        assert_eq!(fed("a $(echo '|'); d"), [false, false]);
     }
 
     #[test]

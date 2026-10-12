@@ -3130,8 +3130,9 @@ body included; the word after nmcli's `password` when it is a name
 (WP-140); a PEM block in base64 when the key is public or a certificate
 (`LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t…`), a line of base64
 characters only after the token (a single word such as `done` on the
-next line), and an unindented line of 40 or more base64 characters
-alone right before it (a hash on the line before a key) (WP-157). A `pass:…` value
+next line), and each line of an unbroken run of unindented lines of 40
+or more base64 characters right before it (a hash on the line before a
+key) (WP-157). A `pass:…` value
 after an option another rule also masks (`--pass`, `--password=`,
 `--secret-key`, …) is counted under both rules in the import report; the
 earlier rule in the order masks it, `openssl-pass` before `key-option`;
@@ -3318,7 +3319,8 @@ command inside prints; not after a short option (`restic -p <(…)`),
 whose name says nothing. A command is fed when, earlier on the line
 (before its first word, across line ends, `(`, loops, `if` and `>(…)`)
 or among its own words, the text holds `|` or `|&` (not `||`), `<<<` or
-`<(`, or a `sh -c` or `eval` it was opened from is fed, or when any
+`<(`, also inside a `$(…)` or backticks (round 3: `--key-file $(printf
+PW | tee k; echo k)`), or a `sh -c` or `eval` it was opened from is fed, or when any
 command of the line writes a file (`printf PW > k; cryptsetup … -d k`; a
 write to `/dev/null`, `/dev/stdout` or `/dev/stderr` is none; WP-140
 round 2): `echo PW | (cd / && sudo cryptsetup open …)`, `exec 3< <(echo

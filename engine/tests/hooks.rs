@@ -3308,6 +3308,11 @@ mod privileged {
                 "echo hunter2 | sudo tee >(sudo cryptsetup open /dev/x vault)",
                 "tee ‹redacted›",
             ),
+            // round 3: the feed inside a command substitution
+            (
+                "sudo cryptsetup open /dev/x v --key-file $(printf hunter2 | tee /tmp/k >/dev/null; echo /tmp/k)",
+                "cryptsetup ‹redacted›",
+            ),
             (
                 "sudo mount -t cifs //srv/s /mnt -o user=bob,pass=hunter2",
                 "sudo mount -t cifs //srv/s /mnt -o ‹redacted›",

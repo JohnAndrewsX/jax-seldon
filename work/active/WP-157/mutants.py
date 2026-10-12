@@ -107,6 +107,7 @@ MUTANTS = [
     ("fed: substitution feeds nothing", PKG, plain("                        // later one\n                        lexer.current.fed = true;\n                        lexer.fed = true;\n", "                        // later one\n")),
     ("fed: substitution feeds no later command (round 2)", PKG, plain("                        // later one\n                        lexer.current.fed = true;\n                        lexer.fed = true;\n", "                        // later one\n                        lexer.current.fed = true;\n")),
     ("fed: taken by the next command (round 2, F1)", PKG, plain("            segment.fed |= self.fed;\n", "            segment.fed |= std::mem::take(&mut self.fed);\n")),
+    ("fed: nothing inside $( ) feeds (round 3, N3)", PKG, plain("        lexer.fed |= inner.fed;\n", "")),
     ("fed: sh -c not fed by its caller", PKG, plain("fed: inner.fed || segment.fed,", "fed: inner.fed,")),
     ("fed: every command", ARGS, plain("    segment.fed || writes\n", "    segment.fed || writes || !segment.words.is_empty()\n")),
     # ssh-keygen
