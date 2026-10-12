@@ -276,3 +276,71 @@ private `gates/dev-214/`; the deploy's build in `wt/next/engine/target`
 
 **Guard blocks:** two, both reported and not routed around:
 `omarchy plugin update` (b) and a write under `~/.config` (c).
+
+## Live stage, round 2 (next d7961d29, after the audit-ignore change)
+
+The release dry run on `main` stopped at `cargo audit` (RUSTSEC-2024-0449);
+the orchestrator accepted it in `packaging/audit-ignore.txt` (d7961d29),
+which `acceptance-check` rightly refused after d8d57fce. So the passed
+scenarios ran again on d7961d29. Everything below on the **test host**.
+
+- **Deploy:** `SELDON_TEST_HOST=<test host> just deploy-test-host --branch
+  next <gates>/gate-n030c.log` from the read-only `wt/next` (HEAD =
+  origin/next = d7961d29). `gate-n030c` is next's green gate on 08a75007
+  (`exit 0`); between it and d7961d29 only `packaging/audit-ignore.txt`
+  and records changed, so the script accepted it (next's own gate on
+  d7961d29, `gate-n030d`, was still running). Summary: `commit
+  d7961d29cc0d24ffcdb8787368772a56cecab6d8`, host runs
+  `0.3.0+next.d7961d29`, plugin files unchanged, smoke ok.
+- **gate — passed** (1 step, 0 passwords): a new bundle of `next`,
+  cloned as `~/seldon-gate-d7961d29` (HEAD d7961d29, clean);
+  `OMARCHY_PATH=/usr/share/omarchy bash scripts/check-omarchy-assumptions.sh
+  --gate` → "check-upstream: ok (every assumption's file matches the
+  ledger)", 17 files, exit 0.
+- **wip — passed** (2 steps, 0 passwords): `shell.json` saved;
+  `hyprctl eval "hl.monitor({ output = \"<output>\", mode =
+  \"1920x1080@60\", position = \"0x0\", scale = 0.9375 })"` → `ok`, scale
+  0.9375; `omarchy bar set jax.seldon deskWidth 50`; `omarchy-shell shell
+  summon jax.seldon '{"section":"work"}'`; a `grim` shot 2048x1152 (private
+  `refs/live-214/wip-214b-work-50.png`): "0 / 3 active" above *By agent*
+  and *Import tasks…*, *New case* wrapped, nothing over anything. Restore:
+  `omarchy-shell shell hide jax.seldon`, `shell.json` copied back (`cmp`
+  identical), `hyprctl reload` → 1920x1080@60, scale 1; service
+  `deskWidth` 100, `deskSidebar` open.
+- **restart — passed** (3 steps, 0 passwords): crashes 0 and "No
+  coredumps found." before; three `omarchy restart shell`, each waited
+  for `omarchy-shell shell ping`: pid 396468 → 402129 → 402977 → 403823,
+  service status ok with `0.3.0+next.d7961d29` and plugin 0.3.0 each time;
+  crashes 0 and "No coredumps found." after.
+- **b, c:** not run, same reasons (guard), not tried again.
+
+Branch fast-forwarded to `next` d7961d29; the record updated (`commit`,
+`engine`, the gate's clone, the restart engine string; date and counts
+the same values, measured again) and committed.
+
+### `bash packaging/acceptance-check.sh 0.3.0` (exit 0)
+
+```text
+acceptance-check: v0.3.0 at HEAD (256647d6c129)
+  record   packaging/acceptance/v0.3.0.json, 2026-10-12
+  status   partial: 3 passed, 2 not run
+  commit   d7961d29cc0d24ffcdb8787368772a56cecab6d8, 1 later commit(s), none outside docs and records
+  omarchy  4.0.4-1, channel rc
+  engine   0.3.0+next.d7961d29; plugin 0.3.0
+  scenario gate: passed (test host); 1 human step(s), 0 password prompt(s) — Omarchy assumptions, check-upstream --gate (WP-194), before the live checks
+  scenario b: not run — 0.2.0 to 0.3.0: engine and plugin updated in either order, restart notice once, settings kept, the skill updated at the next capture
+  scenario c: not run — triage: a crisis inside a proposal by key, applied alone (WP-201 scenario c)
+  scenario wip: passed (test host); 2 human step(s), 0 password prompt(s) — Work's WIP line at 2048x1152 logical, desk at 50 %: above the buttons, nothing drawn over anything (WP-211)
+  scenario restart: passed (test host); 3 human step(s), 0 password prompt(s) — three shell restarts (WP-162)
+  limit    b: not run; guard: omarchy plugin update is a red-zone command for agents; the operator runs it. The mixed install is covered by engineMin 0.2.0 (no new argv or index field) and contract 2 unchanged
+  limit    c: not run on the test host (guard: creating a red-zone change under ~/.config is not allowed for agents); evidence is WP-201's headless cases in tests/plugin/desk-view.sh: triage-crisis-keys, triage-press-apply, triage-crisis-rewrite, triage-crisis-stacked, triage-crisis-big, triage-crisis-big-walk, triage-back-apply, triage-back-crisis
+  limit    restart: one monitor; the two-monitor restart test runs on the dev host after the tag with the release
+acceptance-check: ok
+```
+
+New leftovers on the test host from this round (not cleaned):
+`~/seldon-next-d7961d29.bundle`, `~/seldon-gate-d7961d29/`,
+`~/shell.json.before-wip-214b`, `~/wip-214b-work-50.png`, one more line in
+`~/.local/state/seldon-dev/deploy.jsonl`. The host runs engine and plugin
+0.3.0 from `next` d7961d29, monitor at scale 1, `shell.json` as before.
+No guard block in this round.
