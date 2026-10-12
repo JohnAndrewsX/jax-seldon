@@ -1,9 +1,59 @@
 # WP-203 — handover (every listed drift item keeps its event in the index)
 
-Branch `wp/203-drift-events` in `wt/WP-203`, from `next` 1e872c28. Nothing
-merged. ADR-0054 (an amendment of the accepted ADR-0053) is **proposed**;
-the reviewer and the operator decide it. No `contractVersion` bump, no
-schema change.
+Branch `wp/203-drift-events` in `wt/WP-203`, from `next` 1e872c28, with
+`next` 50bbd290 merged in (round 3). Nothing merged into `next`. The
+operator accepted ADR-0054 (2026-10-12, E84); the file still says
+**proposed**, because the orchestrator sets the status, DECISIONS.md and
+STATUS.md at merge. No `contractVersion` bump, no schema change.
+
+## Round 3 (merge of `next` 50bbd290)
+
+- Merge commit 1d2c8ad2. Two conflicts:
+  - `docs/user/de/03-daily-use.md`, the source line: both sides changed
+    the English page (WP-201's dadf6b69, WP-203's f3a9ff8b), and the
+    German page now holds both translations. Neither commit matches the
+    merged English page, so cf3c5339 points the line at the merge
+    1d2c8ad2, whose English page it matches (`git diff --quiet 1d2c8ad2
+    -- docs/user/en/03-daily-use.md`); docs-check reports no warning.
+  - `engine/tests/index.rs`, `status_writes_a_large_logbook_under_its_budget`:
+    WP-207's approach (the whole warning computed from the two files, the
+    boundary check) with WP-203's rule. The kept events are the newest of
+    the non-pinned rest (`kept == all[..kept.len()]`, both without the
+    drift rows' events); every drift row's event is kept; the boundary
+    check puts back `all[kept.len()]`, the first non-pinned event the cut
+    did not keep. The cut count is `whole − written`, no constant.
+- **fixture** (dev host, private gates folder): the test passes with two
+  TMPDIR lengths, `gates/tmp-dev-203` (whole index 1 097 997 B, written
+  999 969 B) and a 70-character longer one (1 098 068 B, written
+  999 803 B).
+- ADR-0054 §3 and its consequences still name the 286 events cut on the
+  ×200 logbook. That was the measurement on this host; since WP-207 the
+  test counts it from the two files. Not edited (the text the operator
+  accepted).
+- **headless** and **fixture** (dev host, private gates folder, at
+  cf3c5339, under `flock /tmp/seldon-check.lock`, twice: logs
+  `gates/check-dev-203-r3.log` and `-r3b.log`): `SELDON_FULL_CHECK=1 just
+  check` → **exit 1 both times**, on one check only. In both runs:
+  - cargo 2 903 passed, 0 failed, 20 ignored over 112 test binaries;
+    fmt and clippy (with and without `watch`) clean;
+  - validate-fixtures ok (154 instances, 14 variants); docs-check ok
+    (514 links, 14 translated pages); qmllint ok (53 files);
+    model.test.js 221; real-home-guard.test 40/0; service-states 366/0;
+  - desk-view 2336 passed, 1 failed. The one failure is the real-home
+    guard: `real paths changed during the run
+    (~/.local/state/seldon/recent-config.json changed …)`. The real
+    `index.json`, `cursors.json` and `recent-config.json` got new
+    modification times at the same sizes (09:47:29 → 10:02:29 in the
+    first run, 10:32:30 → 10:47:29 in the second). That is the
+    operator's live released 0.2.0 engine on its 15-minute timer (the
+    host was upgraded to 0.2.0 at 08:41–08:50). The guard allows the
+    live engine's `index.json`, `lock`, `cursors.json` and
+    `manifest.json` (`tests/plugin/real-home-guard.sh:44`), but not
+    `recent-config.json`, which 0.2.0 writes (`collectors/recent.rs`).
+    desk-view runs about 15 minutes, so every run spans one tick. The
+    tests' own HOME was private; the quickshell runtime held 333 by-id
+    entries before and after. Not WP-203's code; the gate is not green.
+    I did not change the guard (not this WP's file); see open question 5.
 
 ## Round 2 (stage 1 and stage 2: APPROVE WITH FIXES)
 
@@ -244,3 +294,10 @@ run separately.
    and an untouched whole transaction; stage 1's counter-example
    (`gates/rv-203/probe-tx.js`, "24 packages: 24 upgraded" of 40) reads
    partial.
+5. **The real-home guard and the 0.2.0 live engine (round 3).**
+   `real_engine_files` in `tests/plugin/real-home-guard.sh` lacks
+   `recent-config.json`. Since this host runs the released 0.2.0, every
+   full check fails desk-view's guard as soon as the live timer fires
+   during the suite. A fix on `next` (add the file to the list, with a
+   case in `real-home-guard.test.sh`) is the orchestrator's call; with it,
+   or with the live timer paused by the operator, the gate can be re-run.
