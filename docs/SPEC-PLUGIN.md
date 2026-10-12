@@ -1811,8 +1811,9 @@ hovered, pinned, cardNode, card, view `{ x, y, k, fit }`. `select <id>`
 with section 8 shown keeps that node's card ("not found" for an unknown
 id).
 - The shim: `IpcHandler` target **`jax.seldon.panel`**, owned by the bar
-  widget, kept for one minor release (removed in 0.3.0, announced in the
-  CHANGELOG; ADR-0034 §7). It forwards through the plugin's facade:
+  widget, kept until 0.4.0 (WP-188; the 0.2.0 CHANGELOG announced 0.3.0,
+  before operator decision E86 gave that number to the next release;
+  ADR-0034 §7). It forwards through the plugin's facade:
   `open`, `show` → `summon jax.seldon {}`; `close`, `hide` → `hide`;
   `toggle` → `toggle`; `tab <today|changelog|work|decisions|system|memory>`
   → summon at that section ("ok" / "unknown tab"); `resolve crisis` → the

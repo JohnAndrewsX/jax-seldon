@@ -65,7 +65,7 @@ installed today are cited only *when shipped*.
 - [ ] One meaning per letter (ADR-0034 §2); nothing on Super; a focused field keeps every key.
 - [ ] Writing actions arm first; a held key never confirms (SPEC §5.3, WP-173).
 - [ ] No undo key without a true inverse verb: `plan reopen` makes a *new* case, so it is not one;
-      reports get `report reopen`, not `report undo` (*proposal*, Reports ADR, 0.3).
+      reports get `report reopen`, not `report undo` (*proposal*, Reports ADR, 0.4).
 - [ ] Copy copies the id, never logbook text (SPEC §5.3). Every hinted key is also a click.
 
 ## 6. Copy (*proposal* unless cited; WP-183b lints labels)

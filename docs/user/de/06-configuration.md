@@ -586,7 +586,7 @@ o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 
 `omarchy-shell shell summon jax.seldon '{"section":"radiant"}'` öffnet den
 Desk beim Prime Radiant. Das Ziel des 0.1-Panels,
-`omarchy-shell jax.seldon.panel toggle`, leitet bis 0.3.0 an den Desk
+`omarchy-shell jax.seldon.panel toggle`, leitet bis 0.4.0 an den Desk
 weiter.
 
 ---

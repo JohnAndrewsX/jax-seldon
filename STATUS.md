@@ -6,8 +6,8 @@ decision E82): release, plugin split, AUR and bump jobs green; build
 provenance verified; restart test on two monitors passed on the dev host
 and a fresh install verified on the test host (2026-10-12). Earlier:
 v0.1.0 (2026-10-02) … v0.1.4.
-**Branches:** `main` = v0.2.0 plus the release bump; `next` carries 0.2.x
-and 0.2.y work.
+**Branches:** `main` = v0.2.0 plus the release bump; `next` carries the
+0.3.0 work (E86); queued packages are 0.3.x, the contract-3 release is 0.4.
 **Contract version:** 2
 **Last updated:** 2026-10-12
 
