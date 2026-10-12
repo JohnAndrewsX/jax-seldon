@@ -3028,53 +3028,80 @@ test("WP-204: Work's headers show the summary's whole count when the index lists
   same(M.workView({ rows: M.deskWork(idx).rows }, "", "").labels.queued, "QUEUED · 3")
 })
 
-test("WP-206: a cut index (rung 21) keeps Work's empty groups, the WIP count and anyCase from the summary", () => {
+test("WP-206: a cut index keeps Work's empty groups, the WIP count and anyCase from the summary", () => {
   const idx = M.parseIndex(sample).index
+  const line = "The index lists none of them. This lists them:"
+  const gapsOf = v => v.gaps.map(g => [g.group, g.header, g.text, g.command])
   // a whole index: no gap, the lists' counts, as before
   const whole = M.workView(M.deskWork(idx), "", "")
   same([whole.gaps, whole.tail, whole.lead.every(l => l.length === 0)], [[], [], true])
   same(M.wipStatus(idx, 3), { active: 2, limit: 3, text: "2 / 3 active", tone: "" })
   assert.strictEqual(M.anyCase(idx), true)
-  // rung 21: every active row cut, activeCases 40; the other groups listed
-  const cut = JSON.parse(sample)
-  cut.cases.active = []
-  cut.summary.activeCases = 40
-  const v = M.workView(M.deskWork(cut), "", "")
-  same(v.labels.active, "ACTIVE · 0 / 40")
-  same(v.gaps.map(g => [g.group, g.header, g.text]), [["active", "ACTIVE · 0 / 40",
-    "The index lists none of them; seldon plan list --status active shows them."]])
-  // ACTIVE comes first: the gap stands before the first row (verification), nowhere else
-  same(v.rows[0].group, "verification")
-  same(v.lead.map(l => l.map(g => g.group)), v.rows.map((_, i) => i === 0 ? ["active"] : []))
-  same(v.tail, [])
-  same(M.wipStatus(cut, 3), { active: 40, limit: 3, text: "40 / 3 active", tone: "urgent" })
-  assert.strictEqual(M.anyCase(cut), true)
-  // the By agent filter does not make a gap of Completed (it has listed rows)
-  same(M.workView(M.deskWork(cut), "agent", "").gaps.map(g => g.group), ["active"])
-  // a search covers the listed rows only: no gap
-  same(M.workView(M.deskWork(cut), "", "C-2026").gaps, [])
-  // rung 21 ran dry: no case listed at all, the summary counts 40 active and 2 000 queued
+  // ADR-0053 §2 rungs 16–20: completed (rung 14) and queued (rung 16) cut to 0,
+  // active and verification listed; QUEUED after the last row, in the tail
+  const r16 = JSON.parse(sample)
+  r16.cases.completed = []
+  r16.cases.queued = []
+  r16.summary.queuedCases = 500
+  const a = M.workView(M.deskWork(r16), "", "")
+  same(a.rows.map(r => r.group), ["active", "active", "verification"])
+  same(a.labels, { active: "ACTIVE · 2", verification: "VERIFICATION · 1", queued: "QUEUED · 0 / 500", completed: "COMPLETED · 0" })
+  same(gapsOf(a), [["queued", "QUEUED · 0 / 500", line, "seldon plan list --status queued"]])
+  same([a.lead, a.tail.map(g => g.group)], [[[], [], []], ["queued"]])
+  same(M.wipStatus(r16, 3).text, "2 / 3 active")
+  // the By agent filter (Completed only) and a search make no gap
+  same(M.workView(M.deskWork(r16), "agent", "").gaps.map(g => g.group), ["queued"])
+  same(M.workView(M.deskWork(r16), "", "C-2026").gaps, [])
+  // rung 21 under way: verification cut (rung 20), 1 of 40 active listed
+  const r21 = JSON.parse(JSON.stringify(r16))
+  r21.cases.verification = []
+  r21.cases.active = r21.cases.active.slice(0, 1)
+  r21.summary.activeCases = 40
+  const b = M.workView(M.deskWork(r21), "", "")
+  same([b.labels.active, b.tail.map(g => g.header)], ["ACTIVE · 1 / 40", ["QUEUED · 0 / 500"]])
+  same(M.wipStatus(r21, 3), { active: 40, limit: 3, text: "40 / 3 active", tone: "urgent" })
+  // rung 21 ran dry: no case listed, 40 active and 2 000 queued counted; both in the tail
   const dry = JSON.parse(sample)
   dry.cases = { queued: [], active: [], verification: [], completed: [] }
   dry.summary = Object.assign({}, dry.summary, { activeCases: 40, queuedCases: 2000, openDrift: 0, crisis: 0 })
   const d = M.workView(M.deskWork(dry), "", "")
   same([d.rows, d.lead], [[], []])
-  same(d.tail.map(g => g.header), ["ACTIVE · 0 / 40", "QUEUED · 0 / 2000"])
-  same(d.tail[1].text, "The index lists none of them; seldon plan list --status queued shows them.")
+  same(gapsOf(d), [["active", "ACTIVE · 0 / 40", line, "seldon plan list --status active"],
+    ["queued", "QUEUED · 0 / 2000", line, "seldon plan list --status queued"]])
+  same(d.tail.map(g => g.group), ["active", "queued"])
   assert.strictEqual(M.anyCase(dry), true)
   assert.strictEqual(M.deskToday(dry, M.deskChangelog(dry)).firstRun, false)
   same(M.wipStatus(dry, 3).text, "40 / 3 active")
-  // a gap between rows: queued unlisted while completed is listed (no rung does this; an odd index)
+  // nothing listed and only one of the two counts: still a case, no first-run card
+  for (const key of ["queuedCases", "activeCases"]) {
+    const one = JSON.parse(JSON.stringify(dry))
+    one.summary.activeCases = 0
+    one.summary.queuedCases = 0
+    one.summary[key] = 5
+    assert.strictEqual(M.anyCase(one), true, key)
+    assert.strictEqual(M.deskToday(one, M.deskChangelog(one)).firstRun, false, key)
+  }
+  // hand-made, no ladder state: a gap before listed rows goes into lead[i]
+  const hand = JSON.parse(sample)
+  hand.cases.active = []
+  hand.summary.activeCases = 40
+  const h = M.workView(M.deskWork(hand), "", "")
+  same(h.rows[0].group, "verification")
+  same(h.lead.map(l => l.map(g => g.group)), h.rows.map((_, i) => i === 0 ? ["active"] : []))
+  same(h.tail, [])
   const mid = JSON.parse(sample)
   mid.cases.queued = []
   mid.summary.queuedCases = 9
   const m = M.workView(M.deskWork(mid), "", "")
   const at = m.rows.findIndex(r => r.group === "completed")
   same([m.lead[at].map(g => g.header), m.tail], [["QUEUED · 0 / 9"], []])
-  // a summary below the list never lowers the WIP count; no summary count, no gap
+  // a summary below the list never lowers the WIP count (1 counted, 2 listed; 0 too)
   const low = JSON.parse(sample)
+  low.summary.activeCases = 1
+  same(M.wipStatus(low, 3).active, 2)
   low.summary.activeCases = 0
   same(M.wipStatus(low, 3).active, 2)
+  // no summary count, no gap
   same(M.workView({ rows: [] }, "", "").gaps, [])
 })
 

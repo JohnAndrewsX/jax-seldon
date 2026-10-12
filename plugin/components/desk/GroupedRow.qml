@@ -6,11 +6,12 @@ import ".."
 
 // A desk list delegate with an optional group header above its row (the
 // Changelog's day, Today's NEEDS YOU / JOURNAL, Work's ACTIVE · 2): the
-// header in dim small capitals when `header` is set (the first row of
-// its group), then a ListRow. The ListView stays one list, so the cursor
-// walks rows only. `gaps` ([{ header, text }], Work's, WP-206): groups
-// with no listed row that come before this row's group, each a GroupGap
-// above the header.
+// header (GroupHeader, dim small capitals) when `header` is set (the
+// first row of its group), then a ListRow. The ListView stays one list,
+// so the cursor walks rows only. `gaps` ([{ header, text, command }],
+// Work's, WP-206): groups with no listed row that come before this row's
+// group (a hand-made index; the cut ladder leaves them after the last
+// row, in Work's footer), each a GroupHeader above the header.
 Column {
   id: root
 
@@ -26,8 +27,6 @@ Column {
   property color foreground: Color.popups.text
   property string fontFamily: Style.font.family
 
-  readonly property Tone tone: Tone {}
-
   signal clicked()
 
   spacing: Style.spacing.sm
@@ -35,28 +34,22 @@ Column {
   Repeater {
     model: root.gaps
 
-    GroupGap {
+    GroupHeader {
       required property var modelData
 
       width: root.width
       header: modelData.header
       text: modelData.text
+      command: modelData.command
       fontFamily: root.fontFamily
     }
   }
 
-  Text {
+  GroupHeader {
     visible: root.header !== ""
     width: root.width
-    topPadding: Style.spacing.md
-    textFormat: Text.PlainText
-    text: root.header.toUpperCase()
-    color: root.tone.dim
-    elide: Text.ElideRight
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    font.letterSpacing: Style.space(1)
-    font.bold: true
+    header: root.header
+    fontFamily: root.fontFamily
   }
 
   ListRow {

@@ -18,8 +18,10 @@ import "../Model.js" as Model
 // Queued · Completed (completed and dropped, the index's last 50) — with
 // id · risk · area, "closed by agent", "reopens …" and the plan's steps.
 // A group the summary counts but a cut index lists no row of (ADR-0053
-// rung 21) keeps its header, "ACTIVE · 0 / 40", over one dim line naming
-// `seldon plan list` (GroupGap.qml, WP-206).
+// §2: queued from rung 16, active once rung 21 ran dry) keeps its header,
+// "QUEUED · 0 / 500", over a dim line and `seldon plan list --status …`
+// (GroupHeader.qml, WP-206), after the last row; the cursor on the last
+// row brings it into view (ListColumn).
 //
 // The detail: the selected case with its sticky bar by status
 // (Model.caseDeskActions: Start / Hand to agent / To verification /
@@ -301,6 +303,8 @@ Section {
       labels: Model.WORK_GROUPS.filter(function(g) { return root.work.counts[g.id] > 0 })
         .map(function(g) { return root.work.labels[g.id] }),
       gaps: root.work.gaps.map(function(g) { return g.header }),
+      // the list scrolled to its end: the footer's gaps are in view
+      atEnd: list.view.atYEnd,
       ids: root.rows.map(function(r) { return r.id }),
       filter: root.completedFilter,
       wip: root.wip.text,
@@ -419,12 +423,13 @@ Section {
       Repeater {
         model: root.work.tail
 
-        GroupGap {
+        GroupHeader {
           required property var modelData
 
           width: parent ? parent.width : 0
           header: modelData.header
           text: modelData.text
+          command: modelData.command
         }
       }
     }

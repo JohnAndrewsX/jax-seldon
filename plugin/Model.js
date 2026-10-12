@@ -5230,10 +5230,13 @@ function deskWork(index) {
 // 2", "COMPLETED · 1 / 2" while the filter hides some, "QUEUED · 50 / 450"
 // while the index lists fewer than the summary counts, WP-204). A search
 // covers the listed rows only, so it counts against them: "QUEUED · 1 / 50".
-// A group the summary counts but the index lists none of (ADR-0053 rung
-// 21: "ACTIVE · 0 / 40") is a gap (WP-206): its header and WORK_GAP_LINE,
-// in `lead[i]` before the shown row i when a later group has rows, else in
-// `tail`; none during a search.
+// A group the summary counts but the index lists none of (ADR-0053 rungs
+// 16–20: "QUEUED · 0 / 500" after the listed active rows; rung 21 run dry:
+// "ACTIVE · 0 / 40" too) is a gap (WP-206): its header, WORK_GAP_TEXT and
+// the command that lists them on a line of its own, in `tail` after the
+// last shown row (the ladder cuts from the bottom of the list up), or in
+// `lead[i]` before the shown row i when a later group has rows (a
+// hand-made index); none during a search.
 function workView(prepared, filter, search) {
   var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
   var whole = prepared && isObject(prepared.whole) ? prepared.whole : {}
@@ -5262,7 +5265,8 @@ function workView(prepared, filter, search) {
     labels[id] = WORK_GROUPS[k].label.toUpperCase() + " · " + counts0[id]
       + (counts0[id] !== totals[id] ? " / " + totals[id] : "")
     if (listed === 0 && totals[id] > 0)
-      gaps.push({ group: id, order: k, header: labels[id], text: WORK_GAP_LINE[id] || "" })
+      gaps.push({ group: id, order: k, header: labels[id], text: WORK_GAP_TEXT,
+        command: "seldon plan list --status " + id })
   }
   var order = {}
   for (var o = 0; o < WORK_GROUPS.length; o++) order[WORK_GROUPS[o].id] = o
@@ -5276,12 +5280,10 @@ function workView(prepared, filter, search) {
   return { rows: shown, labels: labels, counts: counts0, totals: totals, gaps: gaps, lead: lead, tail: gaps.slice(next) }
 }
 
-// The dim line under a group header the index lists no row of (WP-206): the
-// summary counts them, the logbook has them, `seldon plan list` shows them.
-var WORK_GAP_LINE = {
-  active: "The index lists none of them; seldon plan list --status active shows them.",
-  queued: "The index lists none of them; seldon plan list --status queued shows them."
-}
+// The dim line under a group header the index lists no row of (WP-206):
+// the summary counts them, the logbook has them; the command follows on a
+// line of its own, so it never wraps inside a flag.
+var WORK_GAP_TEXT = "The index lists none of them. This lists them:"
 
 function findWorkRow(prepared, id) {
   var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []

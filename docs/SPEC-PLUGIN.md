@@ -871,12 +871,15 @@ steps. Where the index lists fewer queued or active cases than
 and 21), the group header shows the whole count: "QUEUED · 50 / 450"
 (WP-204). The sidebar search covers the listed rows only, so during a
 search the header counts against them: "QUEUED · 1 / 50". A group the
-summary counts but the index lists no row of (rung 21: every active row
-cut) keeps its header in its place, "ACTIVE · 0 / 40", over one dim line:
-"The index lists none of them; seldon plan list --status active shows
-them." It holds no row, so the cursor passes it; during a search it is
-not drawn (WP-206). The WIP line counts `summary.activeCases` where the
-index lists fewer active cases (never fewer than the list).
+summary counts but the index lists no row of (from rung 16 the queued
+cases, after the listed active and verification rows; once rung 21 ran
+dry the active ones too) keeps its header in its place, "QUEUED · 0 /
+500", over a dim line, "The index lists none of them. This lists them:",
+and the command on a line of its own, never wrapped: `seldon plan list
+--status queued`. It holds no row, so the cursor passes it; the cursor on
+the last row scrolls it into view; during a search it is not drawn
+(WP-206). The WIP line counts `summary.activeCases` where the index lists
+fewer active cases (never fewer than the list).
 
 The detail: the sticky bar by status (`Model.caseDeskActions`) — queued:
 *Start*, *Drop*; active: *Hand to agent* (`agent start <id> --json`), *To

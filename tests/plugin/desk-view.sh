@@ -1189,32 +1189,50 @@ shows work-reopened 2 "reopens C-2026-002"
 shows work-reopened 2 "3 / 3 active · at the limit"
 clean_log work-reopened
 
-# 8d'. A cut index (ADR-0053 rung 21, WP-206; made here from the sample,
-#      no fixture): the active rows cut while `summary.activeCases` counts
-#      40 — ACTIVE keeps its header over the line naming `seldon plan
-#      list`, the WIP line counts 40, the cursor starts on the first listed
-#      row. Rung 21 ran dry (no case listed, 40 active and 2 000 queued
-#      counted): both headers below an empty list, no "No cases yet", no
-#      first-run card on Today.
-jq '.cases.active = [] | .summary.activeCases = 40' "$sample" >"$work/work-cut.json"
-run work-cut "$work/work-cut.json" 1920x1080 "summon:$wk"
-expect work-cut 1 "[($tv.gaps | join(\",\")), ($tv.groups | join(\",\")), $tv.wip, $tv.selected] | join(\"|\")" \
-  "ACTIVE · 0 / 40|active 0,verification 1,queued 3,completed 2|40 / 3 active|C-2026-008"
-for text in "ACTIVE · 0 / 40" "The index lists none of them; seldon plan list --status active shows them." "VERIFICATION · 1" "40 / 3 active · over the limit"; do
-  shows work-cut 1 "$text"
+# 8d". A cut index (ADR-0053 §2, WP-206; each made here from the sample,
+#      no fixture). Rungs 16–20, the shape the ladder makes: completed and
+#      queued cut to 0, 40 active rows and one in verification listed,
+#      `summary.queuedCases` 500 — QUEUED keeps its header after the last
+#      row, over the line and the command on a line of its own; the list
+#      is longer than the column, and the cursor on the last row scrolls
+#      the gap into view. Rung 21 ran dry (no case listed, 40 active and
+#      2 000 queued counted): both headers below an empty list, no "No
+#      cases yet", no first-run card on Today. Hand-made, no ladder state:
+#      the active rows cut while the other groups stay — ACTIVE before the
+#      first listed row, the WIP line counts 40.
+jq '.cases.completed = [] | .cases.queued = [] | .summary.queuedCases = 500 | .summary.activeCases = 40
+  | .cases.active = [range(40) as $i | .cases.active[0] + {id: ("C-2026-" + (100 + $i | tostring))}]' \
+  "$sample" >"$work/work-cut-tail.json"
+run work-cut-tail "$work/work-cut-tail.json" 1920x1080 "summon:$wk;key:Down*45"
+expect work-cut-tail 1 "[($tv.gaps | join(\",\")), ($tv.groups | join(\",\")), $tv.wip, $tv.selected, $tv.atEnd] | map(tostring) | join(\"|\")" \
+  "QUEUED · 0 / 500|active 40,verification 1,queued 0,completed 0|40 / 3 active|C-2026-100|false"
+expect work-cut-tail 2 "[$tv.selected, $tv.cursor, $tv.atEnd] | map(tostring) | join(\"|\")" "C-2026-008|40|true"
+shows work-cut-tail 1 "ACTIVE · 40"
+for text in "QUEUED · 0 / 500" "The index lists none of them. This lists them:" "seldon plan list --status queued"; do
+  shows work-cut-tail 2 "$text"
 done
-clean_log work-cut
+for i in 1 2; do expect work-cut-tail $i '.overflow | join(" | ")' ""; done
+clean_log work-cut-tail
 jq '.cases = {queued: [], active: [], verification: [], completed: []}
   | .summary += {activeCases: 40, queuedCases: 2000, openDrift: 0, crisis: 0}' "$sample" >"$work/work-cut-dry.json"
 run work-cut-dry "$work/work-cut-dry.json" 1920x1080 "summon;text:3"
 expect work-cut-dry 1 "$tv.firstRun" false
 expect work-cut-dry 2 "[($tv.gaps | join(\",\")), ($tv.ids | length), $tv.selected] | map(tostring) | join(\"|\")" \
   "ACTIVE · 0 / 40,QUEUED · 0 / 2000|0|"
-for text in "ACTIVE · 0 / 40" "QUEUED · 0 / 2000" "The index lists none of them; seldon plan list --status queued shows them."; do
+for text in "ACTIVE · 0 / 40" "QUEUED · 0 / 2000" "The index lists none of them. This lists them:" \
+  "seldon plan list --status active" "seldon plan list --status queued"; do
   shows work-cut-dry 2 "$text"
 done
 expect work-cut-dry 2 '[.texts[] | select(startswith("No cases yet"))] | length' 0
 clean_log work-cut-dry
+jq '.cases.active = [] | .summary.activeCases = 40' "$sample" >"$work/work-cut-hand.json"
+run work-cut-hand "$work/work-cut-hand.json" 1920x1080 "summon:$wk"
+expect work-cut-hand 1 "[($tv.gaps | join(\",\")), ($tv.groups | join(\",\")), $tv.wip, $tv.selected] | join(\"|\")" \
+  "ACTIVE · 0 / 40|active 0,verification 1,queued 3,completed 2|40 / 3 active|C-2026-008"
+for text in "ACTIVE · 0 / 40" "seldon plan list --status active" "VERIFICATION · 1" "40 / 3 active · over the limit"; do
+  shows work-cut-hand 1 "$text"
+done
+clean_log work-cut-hand
 
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"

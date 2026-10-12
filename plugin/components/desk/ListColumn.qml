@@ -24,7 +24,8 @@ Item {
   property alias delegate: list.delegate
   property alias currentIndex: list.currentIndex
   // Drawn after the last row, also when there is none (Work's groups the
-  // index lists no row of, WP-206).
+  // index lists no row of, WP-206); the cursor on the last row scrolls it
+  // into view.
   property alias footer: list.footer
   property color foreground: Color.popups.text
   property string fontFamily: Style.font.family
@@ -110,7 +111,9 @@ Item {
     currentIndex: -1
     onCurrentIndexChanged: {
       root.dropPointer()
-      if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+      // the last row with a footer (Work's gaps, WP-206): the footer too
+      if (currentIndex >= 0 && currentIndex === count - 1 && footerItem) positionViewAtEnd()
+      else if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
     }
     onContentYChanged: root.dropPointer()
   }
