@@ -2865,16 +2865,25 @@ trigger is `private key`; first, so no later rule cuts the body into
 pieces); a PEM block in base64 (`private-key-base64`, WP-157: as a
 Kubernetes secret or another YAML or JSON file holds a key, `tls.key:
 LS0tLS1CRUdJTi…`): one token of base64 characters that holds
-`-----BEGIN` encoded at any of the three alignments to the token's start
-(`LS0tLS1CRUdJTi`, `LS0tQkVHSU4`, `LS0tLUJFR0lO`, so a file with a line
-before the key, such as openssl's `Bag Attributes`, counts too) and at
-least 40 more characters, masked whole from the token's first character,
+`-----BEGIN` encoded at any of the three alignments to the start of the
+encoded text (`LS0tLS1CRUdJTi`, `LS0tQkVHSU4`, `LS0tLUJFR0lO`, so a file
+with text before the key, such as openssl's `Bag Attributes`, counts
+too), the marker also cut by a line end and indentation where a wrap
+cuts it, then at least 40 more characters on its line, or fewer and a
+next line of 40 or more (round 2), masked whole from the token's first
+character and from the first of the unindented lines of 40 or more
+base64 characters right before it (the wrapped text before the key),
 and with it each following line that holds base64 characters only after
 its indentation (`=` padding at its end), LF or CRLF, as `base64` wraps
 its output and a YAML block scalar indents it, and each part after a
-literal `\n` inside a shell string; its
-triggers are the three literals as written; second, so no later rule
-(`aws-access-key`, `key-assignment`) cuts the token first; URLs with userinfo; `--password`
+literal `\n` inside a shell string (measured, round 2: with 1 to 399
+bytes before `-----BEGIN` and `base64`'s 76-column wrap, every line from
+the marker's on is masked at all 399 offsets, also indented as YAML and
+with CRLF; before round 2, 259 of them were not masked at all); its
+triggers are each marker's first and second half as written
+(`LS0tLS1`, `CRUdJTi`, `LS0tQ`, `kVHSU4`, `LS0tLU`, `JFR0lO`: a wrap
+leaves one half whole); second, so no later rule (`aws-access-key`,
+`key-assignment`) cuts the token first; URLs with userinfo; `--password`
 (also wget's `--http-password` and `--ftp-password`);
 `--token`, `--with-token`, `--secret`, `--client-secret`, `--passphrase`,
 curl's `--pass`, `--proxy-pass` and `--oauth2-bearer`, xh's `--bearer`
@@ -2955,12 +2964,16 @@ rule matches the option with the property and leaves that match as it
 is, `Rule::unless`);
 its triggers are `nmcli` and `pass`, `psk`, `secret`, `key` or `pin`;
 a mount password (`mount-password`, WP-157): the whole option list after
-`-o` or `--options` of `mount`, `mount.cifs` or `mount.smb3` when one of
-its comma-separated options is `pass=` or `pwd=` (any case; the list
+`-o` (also at the end of a short-option cluster, `-vo`, `-no`; round 2)
+or `--options` of `mount`, `mount.cifs` or `mount.smb3` when one of
+its comma-separated options is `pass=` or `pwd=`, or `user=` or
+`username=` with a `%` in its value (mount.cifs's `user=name%password`,
+`user=domain/name%password`; round 2) (any case; the list
 quoted or not, the first option too: `-o user=bob,pass=PW,vers=3.0` → `-o ‹redacted›`), within
 one command and every time it gives one; `password=` is a `…PASSWORD=`
 assignment (which masks the rest of the list after it); not `-o
-bypass=1`; its triggers are `mount` and `pass=` or `pwd=`;
+bypass=1`, `-vo rw` or `-o username=bob`; its triggers are `mount` and
+`pass=`, `pwd=`, `user=` or `username=`;
 e-mail addresses (`email`, WP-093: the local part, the domain
 stays: `‹redacted›@example.com`); and user-supplied patterns in
 `config.toml [redaction] patterns`.
@@ -3091,10 +3104,12 @@ or asked for (`--ask`); and in a note (`seldon log`, a case file) the
 plain-argument forms the hook masks whole (§8: `htpasswd -b`, `echo
 u:pw | chpasswd`, `usermod -p`, `ssh-keygen -N`, `mkpasswd PW`, …), which
 no §7 rule reads. Not masked (WP-157): a PEM block in base64 whose
-first line holds fewer than 40 characters after `-----BEGIN` (a wrap
-narrower than any tool's), and the base64 lines after a line that also
-holds other text; a mount password in an fstab line or in another
-program's options. Masked too much, by design: an
+marker has fewer than 40 base64 characters after it on its line and on
+the next line together (a wrap narrower than 40 columns), and the base64
+lines after a line that also holds other text; a mount password in an
+fstab line or in another program's options; a Python value in triple
+quotes (`{'password': """…"""}`, `'''…'''`: the empty `""` or `''`
+before it is read as the value and is no value; a follow-up WP). Masked too much, by design: an
 option word inside a quoted argument that spans lines (`git commit -m
 "…curl…⏎… -U flag"`, as on one line); a stray apostrophe (in the
 command's context, up to the line end; an option value with an unclosed
@@ -3113,9 +3128,10 @@ line without an END, the rest of the text, and before a lone END line,
 the words of base64 characters and blanks before it, prose glued to the
 body included; the word after nmcli's `password` when it is a name
 (WP-140); a PEM block in base64 when the key is public or a certificate
-(`LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t…`), and a line of base64
+(`LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t…`), a line of base64
 characters only after the token (a single word such as `done` on the
-next line) (WP-157). A `pass:…` value
+next line), and an unindented line of 40 or more base64 characters
+alone right before it (a hash on the line before a key) (WP-157). A `pass:…` value
 after an option another rule also masks (`--pass`, `--password=`,
 `--secret-key`, …) is counted under both rules in the import report; the
 earlier rule in the order masks it, `openssl-pass` before `key-option`;
@@ -3293,19 +3309,27 @@ that is not empty (`-N ''` sets no pass phrase and stays; WP-157);
 `mkpasswd` with an operand (`mkpasswd -m sha-512 PW`; the values of
 `-m`, `-S`, `-R`, `-P` and their long forms are none), with `-s` or
 `--stdin`, or fed (WP-157); and any program to which the line gives a
-process substitution after an option or keyword whose name holds `pass`,
-`pw`, `secret`, `token`, `key`, `cred` or `auth` (`restic
---password-file <(echo PW)`, `--passphrase-file=<(…)`, wg's
-`private-key <(…)`; WP-157), whatever the command inside prints. A
-command is fed when the line pipes into it (`|` or `|&` before it, not
-`||`; also past a `(`: `echo PW | (passwd alice)`), gives it a
-here-string (`<<<`) or a process substitution among its words (`--key-file
-<(…)`), or a `sh -c` or `eval` it was opened from is fed, or when one of
-the line's commands writes a file (`printf PW > k; cryptsetup … -d k`; a
-write to `/dev/null`, `/dev/stdout` or `/dev/stderr` is none; round 2).
-A pipe out of a command feeds it nothing (WP-157): `sudo passwd -S alice
-| grep alice` and `sudo cryptsetup status vault | grep cipher` stay
-whole. A command run by `xargs` with a pipe into it is fed: the words
+process substitution after an option, keyword or variable whose name
+holds `pass`, `pw`, `secret`, `token`, `key`, `cred` or `auth` in any
+case (`restic --password-file <(echo PW)`, `--passphrase-file=<(…)`,
+`RESTIC_PASSWORD_FILE=<(…)`, wg's `private-key <(…)`, also after a pass
+phrase source, `-passin file:<(…)`; WP-157 and round 2), whatever the
+command inside prints; not after a short option (`restic -p <(…)`),
+whose name says nothing. A command is fed when, earlier on the line
+(before its first word, across line ends, `(`, loops, `if` and `>(…)`)
+or among its own words, the text holds `|` or `|&` (not `||`), `<<<` or
+`<(`, or a `sh -c` or `eval` it was opened from is fed, or when any
+command of the line writes a file (`printf PW > k; cryptsetup … -d k`; a
+write to `/dev/null`, `/dev/stdout` or `/dev/stderr` is none; WP-140
+round 2): `echo PW | (cd / && sudo cryptsetup open …)`, `exec 3< <(echo
+PW); sudo cryptsetup … --key-file /dev/fd/3` (WP-157 round 2: the parser
+reads compounds flat, so the feed is sticky, not scoped). A pipe after a
+command feeds it nothing (WP-157): `sudo passwd -S alice | grep alice`,
+`sudo cryptsetup status vault | grep cipher` and `sudo passwd -S alice
+|| echo none | cat` stay whole. Masked too much, by design: a
+secret-taking command after an unrelated pipe, here-string or process
+substitution on the same line (`a | b; sudo passwd -S alice`, `diff
+<(sort a) <(sort b); sudo passwd -S alice`). A command run by `xargs` with a pipe into it is fed: the words
 xargs reads become its arguments (`echo PW | sudo xargs mkpasswd`), so
 `… | sudo xargs passwd -S` is masked too, by design. A heredoc's body is
 cut from the line before it is recorded. A short option counts also in a

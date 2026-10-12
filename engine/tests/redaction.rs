@@ -1618,6 +1618,29 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "ZmFrZUI2NGtleUJvZHlG",
         "  tls.key: ‹redacted›\r\n  next: x",
     ),
+    // round 2: wrapped at 76 with text before the key, as `base64`
+    // writes a bundle (F2)
+    // 40 bytes before the key: fewer than 40 characters after the marker on its line
+    (
+        "private-key-base64",
+        "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eC0tLS0tQkVHSU4gUFJJVkFU\nRSBLRVktLS0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2NEtleUJvZHlGQUtFZmFrZUZBS0VmYWtlRkFL\nRWZha2VGQUtFZmFrZUZBS0UwMwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\nnext line.",
+        "0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2",
+        "‹redacted›\nnext line.",
+    ),
+    // 100 bytes before it: the marker on the second line, the first masked too
+    (
+        "private-key-base64",
+        "pem:\nQmFnIEF0dHJpYnV0ZXM6IGZha2UgbG9jYWwga2V5IGlkIDAwIDExIDIyIDMzIDQ0IDU1IDY2IDc3\nIDg4IDk5IGFhIGJiIGNjIGRkIGVlIGZmIDAxMjM0NTY3ODlhYmNkZWYhCi0tLS0tQkVHSU4gUFJJ\nVkFURSBLRVktLS0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2NEtleUJvZHlGQUtFZmFrZUZBS0VmYWtl\nRkFLRWZha2VGQUtFZmFrZUZBS0UwMwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\nnext line.",
+        "ktLS0tLQpNSUlFdlFmYWtlV3JhcHBl",
+        "pem:\n‹redacted›\nnext line.",
+    ),
+    // the marker cut by the wrap
+    (
+        "private-key-base64",
+        "  eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eS0tLS0tQkVH\n  SU4gUFJJVkFURSBLRVktLS0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2NEtleUJvZHlGQUtFZmFrZUZB\n  S0VmYWtlRkFLRWZha2VGQUtFZmFrZUZBS0UwMwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\n  next: x",
+        "LS0tLQpNSUlFdlFmYWtlV3JhcHBlZE",
+        "  ‹redacted›\n  next: x",
+    ),
     // WP-157: a Python dict's single quotes, on the key, the value or both,
     // and a string prefix
     (
@@ -1675,6 +1698,38 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "mount -o ro /dev/sdb1 /a && mount -o ro -o uid=1,pass=fakeMt04 //s/x /b",
         "fakeMt04",
         "mount -o ro /dev/sdb1 /a && mount -o ro -o ‹redacted› //s/x /b",
+    ),
+    (
+        "mount-password",
+        "mount -o pwd=fakeMt10 //s/x /m",
+        "fakeMt10",
+        "mount -o ‹redacted› //s/x /m",
+    ),
+    // round 2: `-o` at the end of a cluster (F3), mount.cifs's
+    // `username=name%password` (F7)
+    (
+        "mount-password",
+        "sudo mount -vo user=bob,pass=fakeMt06 //srv/s /mnt",
+        "fakeMt06",
+        "mount -vo ‹redacted› //srv/s /mnt",
+    ),
+    (
+        "mount-password",
+        "sudo mount -t cifs -no pass=fakeMt07 //srv/s /mnt",
+        "fakeMt07",
+        "-no ‹redacted› //srv/s /mnt",
+    ),
+    (
+        "mount-password",
+        "sudo mount -t cifs //srv/s /mnt -o username=bob%fakeMt08,vers=3.0",
+        "fakeMt08",
+        "/mnt -o ‹redacted›",
+    ),
+    (
+        "mount-password",
+        "mount.cifs //srv/s /mnt -o 'user=dom/bob%fakeMt09'",
+        "fakeMt09",
+        "/mnt -o ‹redacted›",
     ),
     (
         "mount-password",
@@ -1834,6 +1889,9 @@ const CLEAR: &[&str] = &[
     "sudo mount -o bypass=1,ro /dev/sdb1 /m",
     "echo pass=1; mount -o remount,rw /",
     "sudo umount -l /mnt",
+    // round 2: a cluster without a password, a user without `%`
+    "sudo mount -vo rw /dev/sdb1 /m",
+    "sudo mount -t cifs //srv/s /mnt -o username=bob,vers=3.0",
 ];
 
 /// (rule, text with `\n` line ends, secrets): one row for each place where
@@ -2571,6 +2629,24 @@ mod redaction {
         }
     }
 
+    /// `private-key-base64` runs second, before any rule that could cut
+    /// its token: a token that also holds an AWS key shape is masked whole,
+    /// not cut by `aws-access-key` into pieces with base64 between them
+    /// (WP-157 round 2, F5).
+    #[test]
+    fn a_base64_key_is_masked_before_a_later_rule_cuts_it() {
+        let r = Redactor::builtin();
+        let token = format!(
+            "LS0tLS1CRUdJTi{}AKIAFAKEFAKEFAKEFAKE{}",
+            "A".repeat(40),
+            "B".repeat(20)
+        );
+        assert_eq!(
+            r.redact(&format!("tls.key: {token}\nnext line.")),
+            format!("tls.key: {REDACTED}\nnext line.")
+        );
+    }
+
     /// Rule `openssl-pass` matches only its own rows and no row of another
     /// rule (the import report counts a line once per rule), and a second
     /// pass changes nothing. A name `secret-option` or `password-option`
@@ -2702,6 +2778,19 @@ mod redaction {
             // one run of base64 characters with no `-----BEGIN` in it:
             // the token's leading part is tried from each of its starts
             ("base64 run", "LS0tLS1CRUdJTi x\n", "QUFB"),
+            // round 2: many unindented lines of 80 base64 characters and
+            // no marker (the lines before a key are tried from each line
+            // start); markers cut by a line end that never complete
+            (
+                "base64 lines without a marker",
+                "LS0tLS1CRUdJTi x\n",
+                "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB\n",
+            ),
+            (
+                "split marker near misses",
+                "LS0tLS1CRUdJTi x\n",
+                "QUFBLS0tLS1\n  CRUd x\nLS0tQ\nkVH y\n",
+            ),
             (
                 "base64 near misses",
                 "LS0tLS1CRUdJTi short\n",
@@ -2836,6 +2925,14 @@ mod redaction {
                 "base64 keys",
                 "keys ",
                 "LS0tLS1CRUdJTiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nAAAA x\n",
+                Some(20),
+            ),
+            // round 2: keys wrapped at 76 after 40 bytes of text, the marker
+            // with fewer than 40 characters after it on its line
+            (
+                "wrapped keys after text",
+                "",
+                "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eC0tLS0tQkVHSU4gUFJJVkFU\nRSBLRVktLS0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2NEtleUJvZHlGQUtFZmFrZUZBS0VmYWtlRkFL\nRWZha2VGQUtFZmFrZUZBS0UwMwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\nnext line.\n",
                 Some(20),
             ),
             (

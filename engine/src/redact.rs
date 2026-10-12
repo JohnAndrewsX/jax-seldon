@@ -178,18 +178,37 @@ const HEADER_GLUED: &str =
 /// BLOCK`; not `PUBLIC KEY` or `CERTIFICATE`.
 const PEM_LABEL: &str = r"(?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?";
 
+/// `-----BEGIN` in base64 at its three alignments to the start of the
+/// encoded text (`-----BEGIN`, `x-----BEGIN`, `xy-----BEGIN`).
+const PEM_BASE64_MARKERS: [&str; 3] = ["LS0tLS1CRUdJTi", "LS0tQkVHSU4", "LS0tLUJFR0lO"];
+
 /// A PEM block in base64, as Kubernetes secrets and other YAML or JSON
 /// files hold a key (`"tls.key": "LS0tLS1CRUdJTi…"`, WP-157): one token
-/// of base64 characters that holds `-----BEGIN` encoded at any of its
-/// three alignments to the token's start (`LS0tLS1CRUdJTi`, `LS0tQkVHSU4`,
-/// `LS0tLUJFR0lO`; a file with a line before the key, such as openssl's
-/// `Bag Attributes`, starts elsewhere) and at least 40 more characters,
-/// masked whole; then each following line that holds base64 characters
-/// only after its indentation, up to its line end (`base64` wraps at 76
-/// characters, a YAML block scalar indents), and each part after a
-/// literal `\n` inside a shell string. Any PEM label, so a certificate is
-/// masked too.
-const PEM_BASE64: &str = r"[A-Za-z0-9+/]*(?:LS0tLS1CRUdJTi|LS0tQkVHSU4|LS0tLUJFR0lO)[A-Za-z0-9+/=]{40,}(?:\r?\n[ \t]*[A-Za-z0-9+/]+={0,2}(?mR:$)|\\n[A-Za-z0-9+/]+={0,2})*";
+/// of base64 characters that holds a [`PEM_BASE64_MARKERS`] marker (a
+/// file with a line before the key, such as openssl's `Bag Attributes`,
+/// starts elsewhere), masked whole: from the token's first character, and
+/// from the first of the unindented lines of 40 or more base64 characters
+/// right before it (a wrapped text before the key); the marker may be cut
+/// by a line end and indentation, as a wrap cuts it (round 2); then at
+/// least 40 more characters on its line, or fewer and a next line of 40
+/// or more (a marker near a wrap); then each following line that holds
+/// base64 characters only after its indentation, up to its line end
+/// (`base64` wraps at 76 characters, a YAML block scalar indents), and
+/// each part after a literal `\n` inside a shell string. Any PEM label,
+/// so a certificate is masked too.
+fn pem_base64() -> String {
+    let markers: Vec<String> = PEM_BASE64_MARKERS
+        .iter()
+        .map(|m| {
+            let chars: Vec<String> = m.chars().map(String::from).collect();
+            chars.join(r"(?:\r?\n[ \t]*)?")
+        })
+        .collect();
+    format!(
+        r"(?:(?m:^)[A-Za-z0-9+/]{{40,}}\r?\n[ \t]*)*[A-Za-z0-9+/]*(?:{})(?:[A-Za-z0-9+/=]{{40,}}|[A-Za-z0-9+/=]*\r?\n[ \t]*[A-Za-z0-9+/]{{40,}}={{0,2}}(?mR:$))(?:\r?\n[ \t]*[A-Za-z0-9+/]+={{0,2}}(?mR:$)|\\n[A-Za-z0-9+/]+={{0,2}})*",
+        markers.join("|")
+    )
+}
 
 /// The key words of `json-secret`: a quoted key that ends in one names a
 /// secret.
@@ -649,14 +668,20 @@ fn has_json_value(value: &str) -> bool {
 }
 
 /// Whether a `mount` option list (`user=bob,pass=PW,vers=3.0`, quoted or
-/// not) gives a password as `pass=` or `pwd=` (WP-157; `password=` is
-/// `secret-assignment`'s).
+/// not) gives a password as `pass=` or `pwd=`, or in `user=` or
+/// `username=` after a `%` (`username=bob%PW`, mount.cifs; WP-157;
+/// `password=` is `secret-assignment`'s).
 fn mount_password(value: &str) -> bool {
     value.split(',').any(|option| {
         let option = option.trim_start_matches(['\'', '"']).as_bytes();
-        [&b"pass="[..], b"pwd="].iter().any(|name| {
-            option.len() >= name.len() && option[..name.len()].eq_ignore_ascii_case(name)
-        })
+        let named = |names: &[&[u8]]| {
+            names.iter().any(|name| {
+                option.len() >= name.len() && option[..name.len()].eq_ignore_ascii_case(name)
+            })
+        };
+        // mount.cifs also takes `user=name%password` (round 2)
+        named(&[&b"pass="[..], b"pwd="])
+            || (named(&[&b"user="[..], b"username="]) && option.contains(&b'%'))
     })
 }
 
@@ -785,8 +810,9 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
         // both ends of a block hold the label's last words
         "private-key" => &["private key"],
-        // `-----BEGIN` in base64 at each alignment, as written
-        "private-key-base64" => &["LS0tLS1CRUdJTi", "LS0tQkVHSU4", "LS0tLUJFR0lO"],
+        // each marker's first or second half, as written: a wrap cuts it
+        // in two, one of which holds a half whole
+        "private-key-base64" => &["LS0tLS1", "CRUdJTi", "LS0tQ", "kVHSU4", "LS0tLU", "JFR0lO"],
         // the `@` after the scheme: a URL without userinfo holds none
         "url-userinfo" => &["://>@"],
         "password-option" => &["--password", "--http-password", "--ftp-password"],
@@ -890,7 +916,12 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
             "nmcli+key",
             "nmcli+pin",
         ],
-        "mount-password" => &["mount+pass=", "mount+pwd="],
+        "mount-password" => &[
+            "mount+pass=",
+            "mount+pwd=",
+            "mount+user=",
+            "mount+username=",
+        ],
         "email" => &["@"],
         _ => &[],
     }
@@ -973,7 +1004,8 @@ fn again(name: &str) -> &'static [&'static str] {
         // every secret property or keyword holds one
         "nmcli-secret" => &["pass", "psk", "secret", "key", "pin"],
         // `--options` holds `-o`
-        "mount-password" => &["-o"],
+        // every short cluster (`-o`, `-vo`) and `--options` holds `-`
+        "mount-password" => &["-"],
         _ => &[],
     }
 }
@@ -1008,7 +1040,7 @@ fn builtin_rules() -> Vec<Rule> {
         // token and the base64 lines after it; second, so no later rule
         // (`aws-access-key`, `key-assignment`) cuts it into pieces first
         // (WP-157)
-        rule("private-key-base64", PEM_BASE64, WHOLE),
+        rule("private-key-base64", &pem_base64(), WHOLE),
         // scheme://user:pass@host → scheme://‹redacted›@host. With a
         // `:` in the userinfo, everything from `://` up to the last
         // `@` before white space or a quote, so a password may hold
@@ -1262,7 +1294,9 @@ fn builtin_rules() -> Vec<Rule> {
             ..option_rule(
                 "mount-password",
                 &command(r"(?-u:\b)mount(?-u:\b)"),
-                &format!(r"\s(?:-o{GAP}*|--options(?:=|{GAP}+))"),
+                // `-o`, also at the end of a cluster (`-vo`, `-no`;
+                // round 2)
+                &format!(r"\s(?:-[A-Za-z]*o{GAP}*|--options(?:=|{GAP}+))"),
                 "",
                 &format!("(?P<v>{WORD})"),
                 KEEP_PREFIX,

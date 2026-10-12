@@ -43,15 +43,6 @@ def entry(name, field, value):
 
 
 MUTANTS = [
-    # private-key-base64
-    ("b64: trigger never", REDACT, plain('"private-key-base64" => &["LS0tLS1CRUdJTi", "LS0tQkVHSU4", "LS0tLUJFR0lO"],', '"private-key-base64" => &["never"],')),
-    ("b64: one alignment only", REDACT, plain("(?:LS0tLS1CRUdJTi|LS0tQkVHSU4|LS0tLUJFR0lO)[", "(?:LS0tLS1CRUdJTi)[")),
-    ("b64: not from the token's start", REDACT, plain('r"[A-Za-z0-9+/]*(?:LS0tLS1CRUdJTi', 'r"(?:LS0tLS1CRUdJTi')),
-    ("b64: any short token", REDACT, plain("|LS0tLUJFR0lO)[A-Za-z0-9+/=]{40,}", "|LS0tLUJFR0lO)[A-Za-z0-9+/=]{0,}")),
-    ("b64: no wrapped lines", REDACT, plain(r"(?:\r?\n[ \t]*[A-Za-z0-9+/]+={0,2}(?mR:$)|", "(?:")),
-    ("b64: no indented lines", REDACT, plain(r"(?:\r?\n[ \t]*[A-Za-z0-9+/]", r"(?:\r?\n[A-Za-z0-9+/]")),
-    ("b64: no literal \\n", REDACT, plain(r"(?mR:$)|\\n[A-Za-z0-9+/]+={0,2})*", "(?mR:$))*")),
-    ("b64: a line taken up to any character", REDACT, plain("={0,2}(?mR:$)|", "={0,2}|")),
     # json-secret: Python dicts
     ("json: no single-quoted key", REDACT, plain("""|'{SECRET_KEY}')""", ")")),
     ("json: no single-quoted value", REDACT, plain(r"""|'(?:[^'\\\n]|\\.)*')|""", ")|")),
@@ -59,17 +50,65 @@ MUTANTS = [
     ("json: no single-quote triggers", REDACT, plain("""            "password'",\n            "passwd'",\n            "passphrase'",\n            "secret'",\n            "token'",\n            "api_key'",\n            "api-key'",\n            "apikey'",\n""", "")),
     ("json: '' is a value", REDACT, plain("""        .or_else(|| value.strip_prefix('\\'').and_then(|v| v.strip_suffix('\\'')))\n        .unwrap_or(value);\n    !inner.is_empty()""", """        .unwrap_or(value);\n    !inner.is_empty()""")),
     ("json: a prefix is a value", REDACT, plain("    let value = value.trim_start_matches(['r', 'R', 'b', 'B', 'u', 'U', 'f', 'F']);\n", "")),
-    # mount-password
-    ("mount: any option list", REDACT, plain("check: Some(mount_password),", "check: Some(|_| true),")),
-    ("mount: no pwd=", REDACT, plain('[&b"pass="[..], b"pwd="]', '[&b"pass="[..]]')),
-    ("mount: case-sensitive", REDACT, plain("option[..name.len()].eq_ignore_ascii_case(name)", "&option[..name.len()] == *name")),
-    ("mount: quotes kept", REDACT, plain("let option = option.trim_start_matches(['\\'', '\"']).as_bytes();", "let option = option.as_bytes();")),
-    ("mount: no --options", REDACT, plain(r'&format!(r"\s(?:-o{GAP}*|--options(?:=|{GAP}+))"),', r'&format!(r"\s(?:-o{GAP}*)"),')),
-    ("mount: scans on only for --options", REDACT, plain('"mount-password" => &["-o"],', '"mount-password" => &["--options"],')),
-    ("mount: no pwd= trigger", REDACT, plain('"mount-password" => &["mount+pass=", "mount+pwd="],', '"mount-password" => &["mount+pass="],')),
     # nmcli-secret: fields to show
     ("nmcli: a field is a property to set", REDACT, plain('unless: &["field"],', "unless: &[],")),
     ("nmcli: only -g names a field", REDACT, plain(r"(?P<field>-{{1,2}}[fg][a-z-]*", r"(?P<field>-{{1,2}}[g][a-z-]*")),
+    # private-key-base64
+    ("b64: trigger never", REDACT, plain('"private-key-base64" => &["LS0tLS1", "CRUdJTi", "LS0tQ", "kVHSU4", "LS0tLU", "JFR0lO"],', '"private-key-base64" => &["never"],')),
+    ("b64: whole markers as triggers (round 2)", REDACT, plain('"private-key-base64" => &["LS0tLS1", "CRUdJTi", "LS0tQ", "kVHSU4", "LS0tLU", "JFR0lO"],', '"private-key-base64" => &["LS0tLS1CRUdJTi", "LS0tQkVHSU4", "LS0tLUJFR0lO"],')),
+    ("b64: one alignment only", REDACT, plain('const PEM_BASE64_MARKERS: [&str; 3] = ["LS0tLS1CRUdJTi", "LS0tQkVHSU4", "LS0tLUJFR0lO"];', 'const PEM_BASE64_MARKERS: [&str; 3] = ["LS0tLS1CRUdJTi", "LS0tLS1CRUdJTi", "LS0tLS1CRUdJTi"];')),
+    ("b64: not from the token's start", REDACT, plain(r"[ \t]*)*[A-Za-z0-9+/]*(?:{})", r"[ \t]*)*(?:{})")),
+    ("b64: any short token", REDACT, plain(r"(?:{})(?:[A-Za-z0-9+/=]{{40,}}|", r"(?:{})(?:[A-Za-z0-9+/=]{{0,}}|")),
+    ("b64: no wrapped lines", REDACT, plain(r"(?:\r?\n[ \t]*[A-Za-z0-9+/]+={{0,2}}(?mR:$)|\\n", r"(?:\\n")),
+    ("b64: no indented lines", REDACT, plain(r"(?:\r?\n[ \t]*[A-Za-z0-9+/]+={{0,2}}(?mR:$)|", r"(?:\r?\n[A-Za-z0-9+/]+={{0,2}}(?mR:$)|")),
+    ("b64: no literal \\n", REDACT, plain(r"(?mR:$)|\\n[A-Za-z0-9+/]+={{0,2}})*", r"(?mR:$))*")),
+    ("b64: a line taken up to any character", REDACT, plain(r"[A-Za-z0-9+/]+={{0,2}}(?mR:$)|\\n", r"[A-Za-z0-9+/]+={{0,2}}|\\n")),
+    ("b64: no short first line (round 2)", REDACT, plain(r"|[A-Za-z0-9+/=]*\r?\n[ \t]*[A-Za-z0-9+/]{{40,}}={{0,2}}(?mR:$))(?:", r")(?:")),
+    ("b64: a marker never cut by a wrap (round 2)", REDACT, plain(r'chars.join(r"(?:\r?\n[ \t]*)?")', 'chars.join("")')),
+    ("b64: no lines before the marker's (round 2)", REDACT, plain(r'r"(?:(?m:^)[A-Za-z0-9+/]{{40,}}\r?\n[ \t]*)*[A-Za-z0-9+/]*', r'r"[A-Za-z0-9+/]*')),
+    ("b64: runs before email, not second (round 2)", REDACT, plain(
+        '    "private-key-base64",\n', '',
+        '    "email",\n];', '    "private-key-base64",\n    "email",\n];',
+        '        rule("private-key-base64", &pem_base64(), WHOLE),\n', '',
+        '        Rule {\n            unless: &["url", "unit"],', '        rule("private-key-base64", &pem_base64(), WHOLE),\n        Rule {\n            unless: &["url", "unit"],')),
+    # mount-password
+    ("mount: any option list", REDACT, plain("check: Some(mount_password),", "check: Some(|_| true),")),
+    ("mount: no pwd=", REDACT, plain('named(&[&b"pass="[..], b"pwd="])', 'named(&[&b"pass="[..]])')),
+    ("mount: case-sensitive", REDACT, plain("option[..name.len()].eq_ignore_ascii_case(name)", "&option[..name.len()] == *name")),
+    ("mount: quotes kept", REDACT, plain("let option = option.trim_start_matches(['\\'', '\"']).as_bytes();", "let option = option.as_bytes();")),
+    ("mount: no --options", REDACT, plain(r'&format!(r"\s(?:-[A-Za-z]*o{GAP}*|--options(?:=|{GAP}+))"),', r'&format!(r"\s(?:-[A-Za-z]*o{GAP}*)"),')),
+    ("mount: no cluster (round 2)", REDACT, plain(r'&format!(r"\s(?:-[A-Za-z]*o{GAP}*|', r'&format!(r"\s(?:-o{GAP}*|')),
+    ("mount: scans on only for --options", REDACT, plain('"mount-password" => &["-"],', '"mount-password" => &["--options"],')),
+    ("mount: no pwd= trigger", REDACT, plain('            "mount+pwd=",\n', '')),
+    ("mount: no user= triggers (round 2)", REDACT, plain('            "mount+user=",\n            "mount+username=",\n', '')),
+    ("mount: a user without % (round 2)", REDACT, plain("(named(&[&b\"user=\"[..], b\"username=\"]) && option.contains(&b'%'))", "named(&[&b\"user=\"[..], b\"username=\"])")),
+    ("mount: no user%password (round 2)", REDACT, plain("        named(&[&b\"pass=\"[..], b\"pwd=\"])\n            || (named(&[&b\"user=\"[..], b\"username=\"]) && option.contains(&b'%'))\n", "        named(&[&b\"pass=\"[..], b\"pwd=\"])\n")),
+    # process substitution: the word before it
+    ("args: substitution after =", ARGS, plain("c.is_whitespace() || matches!(c, '=' | ':' | '\\\\' | '\\'' | '\"')", "c.is_whitespace() || matches!(c, ':' | '\\\\' | '\\'' | '\"')")),
+    ("args: substitution after : (round 2)", ARGS, plain("c.is_whitespace() || matches!(c, '=' | ':' | '\\\\' | '\\'' | '\"')", "c.is_whitespace() || matches!(c, '=' | '\\\\' | '\\'' | '\"')")),
+    ("args: substitution after a continued line", ARGS, plain(
+        "c.is_whitespace() || matches!(c, '\\\\' | '\\'' | '\"')", "c.is_whitespace() || matches!(c, '\\'' | '\"')",
+        "c.is_whitespace() || matches!(c, '=' | ':' | '\\\\' | '\\'' | '\"')", "c.is_whitespace() || matches!(c, '=' | ':' | '\\'' | '\"')")),
+    ("args: substitution after a quoted option", ARGS, plain(
+        "c.is_whitespace() || matches!(c, '\\\\' | '\\'' | '\"')", "c.is_whitespace() || matches!(c, '\\\\')",
+        "c.is_whitespace() || matches!(c, '=' | ':' | '\\\\' | '\\'' | '\"')", "c.is_whitespace() || matches!(c, '=' | ':' | '\\\\')")),
+    ("args: substitution case-sensitive (round 2)", ARGS, plain("        let word = word.to_ascii_lowercase();\n", "")),
+    ("args: no pass phrase source (round 2)", ARGS, plain("names(word) || (gap.ends_with(':') && names(word_before(rest).0))", "names(word) || rest.is_empty()")),
+    ("args: substitution after key", ARGS, plain('"token", "key", "cred"', '"token", "no-key", "cred"')),
+    ("args: substitution after pw (round 2)", ARGS, plain('["pass", "pw", "secret"', '["pass", "zz", "secret"')),
+    ("args: substitution after secret (round 2)", ARGS, plain('"pw", "secret", "token"', '"pw", "zzzz", "token"')),
+    ("args: substitution after cred (round 2)", ARGS, plain('"key", "cred", "auth"]', '"key", "zzzz", "auth"]')),
+    ("args: substitution after auth (round 2)", ARGS, plain('"cred", "auth"]', '"cred", "zzzz"]')),
+    # fed: a command after a pipe, here-string or process substitution
+    ("fed: || pipes", PKG, plain("lexer.fed |= c == '|' && self.at(i + 1) != Some('|');", "lexer.fed |= c == '|';")),
+    ("fed: no pipe", PKG, plain("                    lexer.fed |= c == '|' && self.at(i + 1) != Some('|');\n", "")),
+    ("fed: here-string feeds nothing", PKG, plain("                        lexer.pending = Some(Pending::Read);\n                        lexer.current.fed = true;\n                        lexer.fed = true;\n", "                        lexer.pending = Some(Pending::Read);\n")),
+    ("fed: here-string feeds no later command (round 2)", PKG, plain("                        lexer.pending = Some(Pending::Read);\n                        lexer.current.fed = true;\n                        lexer.fed = true;\n", "                        lexer.pending = Some(Pending::Read);\n                        lexer.current.fed = true;\n")),
+    ("fed: substitution feeds nothing", PKG, plain("                        // later one\n                        lexer.current.fed = true;\n                        lexer.fed = true;\n", "                        // later one\n")),
+    ("fed: substitution feeds no later command (round 2)", PKG, plain("                        // later one\n                        lexer.current.fed = true;\n                        lexer.fed = true;\n", "                        // later one\n                        lexer.current.fed = true;\n")),
+    ("fed: taken by the next command (round 2, F1)", PKG, plain("            segment.fed |= self.fed;\n", "            segment.fed |= std::mem::take(&mut self.fed);\n")),
+    ("fed: sh -c not fed by its caller", PKG, plain("fed: inner.fed || segment.fed,", "fed: inner.fed,")),
+    ("fed: every command", ARGS, plain("    segment.fed || writes\n", "    segment.fed || writes || !segment.words.is_empty()\n")),
     # ssh-keygen
     ("args: ssh-keygen -N", ARGS, entry("ssh-keygen", "short_secret", '"P"')),
     ("args: ssh-keygen -P", ARGS, entry("ssh-keygen", "short_secret", '"N"')),
@@ -85,22 +124,6 @@ MUTANTS = [
     ("args: no operand after --", ARGS, plain("return self.positional && words.next().is_some();", "return false;")),
     # process substitution as a secret
     ("args: no substitution check", ARGS, plain("    secret_substitution(&line.text)\n        || ", "    ")),
-    ("args: substitution after key", ARGS, plain('"token", "key", "cred"', '"token", "no-key", "cred"')),
-    ("args: substitution after =", ARGS, plain("matches!(c, '=' | '\\\\' | '\\'' | '\"')", "matches!(c, '\\\\' | '\\'' | '\"')")),
-    ("args: substitution after a continued line", ARGS, plain("matches!(c, '=' | '\\\\' | '\\'' | '\"')", "matches!(c, '=' | '\\'' | '\"')")),
-    ("args: substitution after a quoted option", ARGS, plain("matches!(c, '=' | '\\\\' | '\\'' | '\"')", "matches!(c, '=' | '\\\\')")),
-    # fed: a pipe into the command only
-    ("fed: || pipes", PKG, plain("lexer.piped |= c == '|' && self.at(i + 1) != Some('|');", "lexer.piped |= c == '|';")),
-    ("fed: no pipe", PKG, plain("lexer.piped |= c == '|' && self.at(i + 1) != Some('|');", "")),
-    ("fed: here-string feeds nothing", PKG, plain("                        lexer.pending = Some(Pending::Read);\n                        lexer.current.fed = true;\n", "                        lexer.pending = Some(Pending::Read);\n")),
-    ("fed: substitution feeds nothing", PKG, plain("                        // `<(…)`: read for its heredocs, not kept\n                        lexer.current.fed = true;\n", "                        // `<(…)`: read for its heredocs, not kept\n")),
-    ("fed: not past (", PKG, plain(
-        "        let mut segment = std::mem::take(&mut self.current);\n",
-        "        let mut segment = std::mem::take(&mut self.current);\n        let piped = std::mem::take(&mut self.piped);\n",
-        "            segment.fed |= std::mem::take(&mut self.piped);\n",
-        "            segment.fed |= piped;\n")),
-    ("fed: sh -c not fed by its caller", PKG, plain("fed: inner.fed || segment.fed,", "fed: inner.fed,")),
-    ("fed: every command", ARGS, plain("    segment.fed || writes\n", "    segment.fed || writes || !segment.words.is_empty()\n")),
     # xargs
     ("xargs: no wrapper", PKG, plain('        name: "xargs",', '        name: "xargz",')),
     ("xargs: optional values take the next word", PKG, plain('short_attached: "eil",', 'short_attached: "",')),

@@ -316,10 +316,11 @@ pub(super) fn secret_on_the_line(line: &ShellLine) -> bool {
         })
 }
 
-/// Whether the line feeds `segment` its secret itself: a pipe into it, a
-/// here-string or a process substitution among its words
-/// ([`Segment::fed`]: `passwd -S alice | grep x` feeds `grep`, not
-/// `passwd`; WP-157), or a file one of the line's commands writes
+/// Whether the line feeds `segment` its secret itself: a `|`, `|&`, `<<<`
+/// or `<(` before it on the line or among its words, sticky across
+/// compounds ([`Segment::fed`]: `passwd -S alice | grep x` feeds `grep`,
+/// not `passwd`; `echo PW | (cd / && cryptsetup open …)` feeds
+/// `cryptsetup`; WP-157 round 2), or a file one of the line's commands writes
 /// (`writes`: `printf PW > k; cryptsetup … -d k`). A heredoc's body is cut
 /// from the line before it is recorded (SPEC-ENGINE §7), so a heredoc
 /// alone needs no mask.
@@ -342,20 +343,40 @@ fn writes_a_file(segments: &[Segment]) -> bool {
 /// `--authfile`, wg's `private-key`).
 const SECRET_WORDS: [&str; 7] = ["pass", "pw", "secret", "token", "key", "cred", "auth"];
 
-/// Whether `text` gives a process substitution to an option or keyword
-/// that names a secret, of any program (`restic --password-file <(echo
-/// PW)`, `--passphrase-file=<(…)`; WP-157): the command inside it prints
-/// the secret, from the line itself. One pass over the text, no regex.
+/// Whether `text` gives a process substitution to an option, keyword or
+/// variable that names a secret, in any case, of any program (`restic
+/// --password-file <(echo PW)`, `--passphrase-file=<(…)`,
+/// `RESTIC_PASSWORD_FILE=<(…)`; WP-157), also after a pass phrase source
+/// (`-passin file:<(…)`: the option before it; round 2): the command inside
+/// it prints the secret, from the line itself. Each `<(` reads back over at
+/// most two words, which stop at the `(` of the one before it: one pass over
+/// the text, no regex.
 fn secret_substitution(text: &str) -> bool {
-    text.match_indices("<(").any(|(at, _)| {
-        let before = text[..at]
-            .trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '=' | '\\' | '\'' | '"'));
-        let word = before
-            .rsplit(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
-            .next()
-            .unwrap_or_default();
+    let names = |word: &str| {
+        let word = word.to_ascii_lowercase();
         SECRET_WORDS.iter().any(|w| word.contains(w))
+    };
+    text.match_indices("<(").any(|(at, _)| {
+        let gap = text[..at]
+            .trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '\\' | '\'' | '"'));
+        let (word, rest) = word_before(gap);
+        names(word) || (gap.ends_with(':') && names(word_before(rest).0))
     })
+}
+
+/// The word at the end of `text` after white space, `=`, `:`, `\` and
+/// quotes, and the text before it.
+fn word_before(text: &str) -> (&str, &str) {
+    let text = text.trim_end_matches(|c: char| {
+        c.is_whitespace() || matches!(c, '=' | ':' | '\\' | '\'' | '"')
+    });
+    let start = text
+        .char_indices()
+        .rev()
+        .take_while(|&(_, c)| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .last()
+        .map_or(text.len(), |(i, _)| i);
+    (&text[start..], &text[..start])
 }
 
 #[cfg(test)]
@@ -433,10 +454,31 @@ mod tests {
             // what xargs reads becomes arguments, a secret or not: masked
             // too much, by design
             "printf 'a\\nb' | sudo xargs -n1 passwd -S",
+            // round 2: a pipe, here-string or process substitution feeds
+            // every command after it, inside a compound too
+            "echo pw | (cd / && sudo cryptsetup open /dev/x vault)",
+            "printf 'pw\\npw\\n' | (sleep 1; sudo passwd alice)",
+            "echo pw | while read p; do sudo cryptsetup open /dev/x v; done",
+            "echo pw | if true; then sudo passwd alice; fi",
+            "echo pw | sudo tee >(sudo cryptsetup open /dev/x vault)",
+            "exec 3< <(echo pw); sudo cryptsetup open /dev/x vault --key-file /dev/fd/3",
+            "exec 3<<< pw; sudo cryptsetup open /dev/x vault --key-file /dev/fd/3",
+            // ... and an unrelated one: masked too much, by design
+            "a | b; sudo passwd -S alice",
+            "diff <(sort a) <(sort b); sudo passwd -S alice",
             // a process substitution as a secret, any program
             "sudo restic -r /srv/r --password-file <(echo pw) backup /etc",
             "tool --passphrase-file=<(printf pw)",
             "sudo wg set wg0 private-key <(echo key)",
+            // round 2: any case, a variable, after a source prefix, each
+            // secret word
+            "RESTIC_PASSWORD_FILE=<(echo pw) sudo -E restic backup /etc",
+            "tool --PASSWORD-FILE <(echo pw)",
+            "openssl rsa -in k.pem -passin file:<(echo pw)",
+            "tool --pwfile <(echo pw)",
+            "tool --secret-file <(echo pw)",
+            "tool --credentials <(echo pw)",
+            "podman login --authfile <(echo pw) r.example",
             "tool --token-file \\\n  <(echo tok)",
             "tool \"--password-file\" <(echo pw)",
             // a fed `sh -c`
@@ -478,8 +520,10 @@ mod tests {
             "sudo passwd -S alice |& grep -q L && echo locked",
             "sudo cryptsetup status vault | grep -i cipher",
             "sudo passwd -S alice || echo none | cat",
-            "diff <(sort a) <(sort b); sudo passwd -S alice",
             "sudo tee /etc/x < <(echo hi)",
+            "tool --file <(echo x) && cat file:x",
+            "diff --label a: <(sort a) b",
+            "sudo passwd -S alice; echo done | cat",
             // no pass phrase, a value that only looks like the option
             "ssh-keygen -t ed25519 -N '' -f k",
             "ssh-keygen -t ed25519 -C '-N x' -f k",

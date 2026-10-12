@@ -186,10 +186,13 @@ hook-local list gains `ssh-keygen -N`/`-P` with a value that is not empty,
 `mkpasswd` with an operand, `-s`/`--stdin` or fed, and any program to
 which the line gives a process substitution after an option or keyword
 that names a secret (`--password-file <(echo PW)`). A command counts as
-fed only when the line feeds that command (a pipe into it, a here-string,
-a process substitution among its words, a fed `sh -c` around it) or
-writes a file; a pipe out of it no longer counts (`passwd -S alice |
-grep` stays whole). `xargs` is a wrapper of the shared parser, so `… |
+fed when, earlier on the line (before its first word, across line ends,
+`(`, loops, `if` and `>(…)`) or among its own words, the text holds `|`
+or `|&` (not `||`), `<<<` or `<(`, or a fed `sh -c` around it, or when
+the line writes a file (round 2: sticky, not scoped, as the parser reads
+compounds flat); a pipe after it no longer counts (`passwd -S alice |
+grep` stays whole), and a command after an unrelated pipe is masked too
+much, by design (`a | b; sudo passwd -S alice`). `xargs` is a wrapper of the shared parser, so `… |
 sudo xargs <program>` is read as `<program>` (its subject, its class, its
 secret). A mount password (`mount -o pass=…`) is a SPEC-ENGINE §7 rule
 (`mount-password`), as nmcli's secrets are, so a mount line keeps its

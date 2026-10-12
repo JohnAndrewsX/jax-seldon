@@ -422,11 +422,17 @@ pub struct Segment {
     /// opened from (`pkexec sh -c 'lpadmin …'`), if any
     /// ([`simple_commands`]).
     pub privileged_by: Option<&'static str>,
-    /// The line itself feeds the command (WP-157): a pipe into it (`echo
-    /// PW | passwd alice`, not `passwd -S alice | grep x`), a here-string
-    /// (`<<< PW`) or a process substitution among its words (`--key-file
-    /// <(echo PW)`); also every command of a `sh -c` or `eval` that is
-    /// fed itself. A heredoc is cut from the record and feeds nothing.
+    /// The line itself can feed the command (WP-157): a `|` or `|&` (not
+    /// `||`), a here-string (`<<<`) or a process substitution (`<(`)
+    /// stands before its first word on the line, or among its own words
+    /// (`passwd alice <<< PW`, `--key-file <(echo PW)`); also every
+    /// command of a `sh -c` or `eval` that is fed itself. Sticky, not
+    /// scoped: the parser reads compounds flat, so a pipe into `( … )`,
+    /// `while … done`, `if … fi` or `>( … )` feeds every command after it
+    /// (WP-157 round 2), and so does an unrelated one (`a | b; passwd
+    /// -S x`: masked too much). A pipe after the command feeds it nothing
+    /// (`passwd -S alice | grep x`). A heredoc is cut from the record and
+    /// feeds nothing.
     pub fed: bool,
 }
 
@@ -609,8 +615,8 @@ impl Reader<'_> {
                         _ => {}
                     }
                     lexer.end_segment();
-                    // `|` and `|&` pipe into the next command, `||` does not
-                    lexer.piped |= c == '|' && self.at(i + 1) != Some('|');
+                    // `|` and `|&` feed every command after them, `||` does not
+                    lexer.fed |= c == '|' && self.at(i + 1) != Some('|');
                     i += 1;
                     if matches!(
                         (c, self.at(i)),
@@ -643,9 +649,11 @@ impl Reader<'_> {
                             Pending::Write
                         });
                     } else if self.at(i) == Some('<') && self.at(i + 1) == Some('<') {
-                        // a here-string
+                        // a here-string: this command's, and an `exec 3<<<`
+                        // a later one reads through the descriptor
                         lexer.pending = Some(Pending::Read);
                         lexer.current.fed = true;
+                        lexer.fed = true;
                         i += 2;
                     } else if self.at(i) == Some('<') {
                         i += 1;
@@ -655,8 +663,11 @@ impl Reader<'_> {
                         }
                         lexer.pending = Some(Pending::Heredoc { strip_tabs });
                     } else if self.at(i) == Some('(') {
-                        // `<(…)`: read for its heredocs, not kept
+                        // `<(…)`: read for its heredocs, not kept; it feeds
+                        // this command and, through `exec 3< <(…)`, a
+                        // later one
                         lexer.current.fed = true;
+                        lexer.fed = true;
                         i = self.read(i + 1, Stop::Paren, &mut Lexer::default());
                     } else {
                         // `< file`, `<&3`: read
@@ -783,8 +794,9 @@ struct Lexer {
     pending: Option<Pending>,
     /// Heredocs whose bodies start after the next newline.
     heredocs: Vec<(String, bool)>,
-    /// A `|` ended the last command: the next one is [`Segment::fed`].
-    piped: bool,
+    /// A `|`, `|&`, `<<<` or `<(` stood earlier on the line: every command
+    /// from here on is [`Segment::fed`].
+    fed: bool,
 }
 
 impl Lexer {
@@ -819,8 +831,7 @@ impl Lexer {
         self.pending = None;
         let mut segment = std::mem::take(&mut self.current);
         if !segment.words.is_empty() || !segment.writes.is_empty() {
-            // `a | (b)`: the pipe goes past the empty command before `(`
-            segment.fed |= std::mem::take(&mut self.piped);
+            segment.fed |= self.fed;
             self.segments.push(segment);
         }
     }
@@ -2236,9 +2247,11 @@ mod tests {
         assert_eq!(s.privilege(), Some("sudo"));
     }
 
-    /// A command the line feeds: the one after `|` or `|&` (not `||`), past
-    /// a `(`; one with a here-string or a process substitution; the
-    /// commands of a fed `sh -c` (WP-157).
+    /// A command the line feeds: every one after `|` or `|&` (not `||`),
+    /// `<<<` or `<(`, across `(`, loops, `if` and `>(…)`; one with a
+    /// here-string or a process substitution of its own; the commands of a
+    /// fed `sh -c` (WP-157 round 2). A pipe after a command feeds it
+    /// nothing.
     #[test]
     fn fed_commands() {
         let fed = |line: &str| -> Vec<bool> {
@@ -2247,16 +2260,27 @@ mod tests {
                 .map(|s| s.fed)
                 .collect()
         };
-        assert_eq!(fed("a | b || c |& d"), [false, true, false, true]);
-        assert_eq!(fed("a | (b; c) && d"), [false, true, false, false]);
+        assert_eq!(fed("a | b || c |& d"), [false, true, true, true]);
+        assert_eq!(fed("a | (b; c) && d"), [false, true, true, true]);
         assert_eq!(
-            fed("a <<< x; b < f; c <(d) e; f << EOF\nx\nEOF"),
-            [true, false, true, false]
+            fed("a | while read p; do b; done"),
+            [false, true, true, true]
         );
+        assert_eq!(fed("a | if c; then b; fi"), [false, true, true, true]);
+        assert_eq!(fed("a | sudo tee >(b)"), [false, true, true]);
+        assert_eq!(fed("exec 3< <(a); b"), [true, true]);
+        assert_eq!(fed("exec 3<<< a; b"), [true, true]);
+        assert_eq!(fed("a; b | c"), [false, false, true]);
+        assert_eq!(fed("a || b"), [false, false]);
+        assert_eq!(
+            fed("a < f; b << EOF\nx\nEOF\nc <(d) e; f"),
+            [false, false, true, true]
+        );
+        assert_eq!(fed("a <<< x; b"), [true, true]);
         assert_eq!(fed("a |\n b"), [false, true]);
         assert_eq!(fed("a | sudo sh -c 'b; c | d'"), [false, true, true, true]);
-        assert_eq!(fed("sudo sh -c 'b; c' <<< x; e"), [true, true, false]);
-        assert_eq!(fed("x | y > out; z"), [false, true, false]);
+        assert_eq!(fed("sudo sh -c 'b; c' <<< x; e"), [true, true, true]);
+        assert_eq!(fed("x > out; y | z"), [false, false, true]);
     }
 
     #[test]

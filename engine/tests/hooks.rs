@@ -3284,6 +3284,31 @@ mod privileged {
                 "sudo passwd -S alice | grep alice",
             ),
             (
+                "sudo cryptsetup status vault | grep cipher",
+                "sudo cryptsetup status vault | grep cipher",
+            ),
+            (
+                "sudo passwd -S alice || echo none | cat",
+                "sudo passwd -S alice || echo none | cat",
+            ),
+            // round 2: a pipe into a compound feeds every command in it
+            (
+                "echo hunter2 | (cd / && sudo cryptsetup open /dev/x vault)",
+                "cryptsetup ‹redacted›",
+            ),
+            (
+                "printf 'hunter2\\nhunter2\\n' | (sleep 1; sudo passwd alice)",
+                "passwd ‹redacted›",
+            ),
+            (
+                "echo hunter2 | while read p; do sudo cryptsetup open /dev/x \"$p\"; done",
+                "cryptsetup ‹redacted›",
+            ),
+            (
+                "echo hunter2 | sudo tee >(sudo cryptsetup open /dev/x vault)",
+                "tee ‹redacted›",
+            ),
+            (
                 "sudo mount -t cifs //srv/s /mnt -o user=bob,pass=hunter2",
                 "sudo mount -t cifs //srv/s /mnt -o ‹redacted›",
             ),
