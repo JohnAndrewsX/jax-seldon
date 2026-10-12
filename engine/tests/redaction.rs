@@ -2698,6 +2698,9 @@ mod redaction {
             // WP-157: base64 runs and line ends with a `-----BEGIN` too
             // short, or broken, after them; a mount with options but no
             // password; nmcli fields; single-quoted keys without a value
+            // one run of base64 characters with no `-----BEGIN` in it:
+            // the token's leading part is tried from each of its starts
+            ("base64 run", "LS0tLS1CRUdJTi x\n", "QUFB"),
             (
                 "base64 near misses",
                 "LS0tLS1CRUdJTi short\n",

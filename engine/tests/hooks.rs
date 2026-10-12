@@ -3321,6 +3321,52 @@ mod privileged {
         assert!(!ledger.contains("ZmFrZUI2NGtleUJvZHlG"), "{ledger}");
     }
 
+    /// WP-157: the reading of a long privileged line stays linear: the
+    /// pipes and here-strings that feed a command, `xargs` read past, the
+    /// process substitutions looked at for a secret, the nmcli fields and
+    /// mount options the redaction reads. Median of 21 calls of `hook
+    /// generic` (process start, parse, redaction, the record) at 16, 64
+    /// and 128 KB; the budget holds at 128 KB.
+    #[test]
+    #[ignore = "release timing at scale: `just check-perf`"]
+    fn a_long_privileged_line_is_read_in_linear_time() {
+        common::assert_optimised();
+        let h = Hooks::new();
+        let part = "echo a | sudo xargs -n1 -I{} lpadmin -x {} <<< b; \
+                    tool --pass-file <(echo c) | sudo passwd -S d || \
+                    nmcli -g wifi-sec.psk con show e && mount -o ro,f=1 /g /h; ";
+        for kb in [16, 64, 128] {
+            let mut line = String::from("sudo lpadmin -x a; ");
+            while line.len() < kb * 1024 {
+                line.push_str(part);
+            }
+            let input = json!({
+                "command": line,
+                "actor": "agent:codex",
+                "cwd": FIXTURE_CWD,
+            })
+            .to_string();
+            let what = format!("hook generic, long privileged line, {kb} KB");
+            let run = || {
+                h.hook("generic", &input);
+            };
+            if kb == 128 {
+                common::assert_within_budget(&what, std::time::Duration::from_millis(60), 21, run);
+            } else {
+                let (median, _) = common::median_time(21, run);
+                eprintln!("{what}: median {median:?} (no budget)");
+            }
+        }
+        // a pipe, a `<(` after `--pass-file`: every line is masked whole
+        let events = h.commands();
+        assert!(!events.is_empty());
+        assert!(
+            events
+                .iter()
+                .all(|e| e["meta"]["command"] == "lpadmin ‹redacted›")
+        );
+    }
+
     /// WP-140 round 3: a command line's direction and format characters
     /// are dropped before it is read and recorded, so a zero-width space
     /// inside `token=` or `Authorization:` hides no secret; a note keeps a

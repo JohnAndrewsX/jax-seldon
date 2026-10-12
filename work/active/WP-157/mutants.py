@@ -57,7 +57,7 @@ MUTANTS = [
     ("json: no single-quoted value", REDACT, plain(r"""|'(?:[^'\\\n]|\\.)*')|""", ")|")),
     ("json: no string prefix", REDACT, plain("(?P<v>(?:[rbuf]{{1,2}})?(?:", "(?P<v>(?:")),
     ("json: no single-quote triggers", REDACT, plain("""            "password'",\n            "passwd'",\n            "passphrase'",\n            "secret'",\n            "token'",\n            "api_key'",\n            "api-key'",\n            "apikey'",\n""", "")),
-    ("json: '' is a value", REDACT, plain(""".or_else(|| value.strip_prefix('\\'').and_then(|v| v.strip_suffix('\\'')))""", "")),
+    ("json: '' is a value", REDACT, plain("""        .or_else(|| value.strip_prefix('\\'').and_then(|v| v.strip_suffix('\\'')))\n        .unwrap_or(value);\n    !inner.is_empty()""", """        .unwrap_or(value);\n    !inner.is_empty()""")),
     ("json: a prefix is a value", REDACT, plain("    let value = value.trim_start_matches(['r', 'R', 'b', 'B', 'u', 'U', 'f', 'F']);\n", "")),
     # mount-password
     ("mount: any option list", REDACT, plain("check: Some(mount_password),", "check: Some(|_| true),")),
