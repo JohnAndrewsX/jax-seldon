@@ -172,10 +172,14 @@ run separately.
   - validate-fixtures ok (154 instances, 14 variants); docs-check ok;
     qmllint ok (52 files); model.test.js 218;
   - in a private headless Quickshell: service-states 366/0, desk-view
-    2242/0 (round 1: 2243/0; no failure, I did not trace the one check
-    fewer), bar-view 195/0, ipc-restart 43/0, and their mutant runs
+    2242/0 (round 1: 2243/0), bar-view 195/0, ipc-restart 43/0, and their mutant runs
     clean;
   - 328 by-id entries before and after each suite.
+  - desk-view 2242 against 2243: `graph-big #3: .view.graph.ticksOver <= 5`
+    went over its time budget twice on a loaded host (load 12.79, log line
+    `WARN graph-big: #3 … counted only with SELDON_PERF_STRICT=1`), so
+    `graph_time_ok` left it out of the count. It is a timing check, not a
+    WP-203 change; nothing under `plugin/` changed.
 
   desk-view's guard printed `ok   desk-view: the real
   ~/.local/state/seldon changed by the operator's live engine (not a

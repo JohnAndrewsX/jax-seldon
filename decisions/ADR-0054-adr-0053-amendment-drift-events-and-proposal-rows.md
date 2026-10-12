@@ -5,12 +5,12 @@
 
 > Amends [ADR-0053](ADR-0053-index-size-budget-cut.md) §2 (one rung
 > added before the crisis rows), §5 (the rows below) and its consequences
-> (a) and (b), and [ADR-0020](ADR-0020-index-drift-cap.md)'s event count
-> (CONTRACT.md rule 4: the newest 500 events become at most 500, below).
-> ADR-0053 and ADR-0020 stay accepted and unedited; everything else in
-> them stands. No schema
-> change, no new field: `contractVersion` and `contractReadableFrom` stay
-> 2. Work package: WP-203, from the WP-200 stage-2 review (Fable,
+> (a) and (b), and CONTRACT.md rule 4's event count (the newest 500
+> events become at most 500, below; no ADR set that count — rule 4 cites
+> [ADR-0020](ADR-0020-index-drift-cap.md) for the drift cap only, which
+> is unchanged). ADR-0053 stays accepted and unedited; everything else in
+> it stands. No schema change, no new field: `contractVersion` and
+> `contractReadableFrom` stay 2. Work package: WP-203, from the WP-200 stage-2 review (Fable,
 > 2026-10-11, follow-ups a and b).
 
 ## Context
