@@ -85,7 +85,7 @@ MUTANTS = [
     ("args: no operand after --", ARGS, plain("return self.positional && words.next().is_some();", "return false;")),
     # process substitution as a secret
     ("args: no substitution check", ARGS, plain("    secret_substitution(&line.text)\n        || ", "    ")),
-    ("args: substitution after key", ARGS, plain('"token", "key", "cred"', '"token", "cred"')),
+    ("args: substitution after key", ARGS, plain('"token", "key", "cred"', '"token", "no-key", "cred"')),
     ("args: substitution after =", ARGS, plain("matches!(c, '=' | '\\\\' | '\\'' | '\"')", "matches!(c, '\\\\' | '\\'' | '\"')")),
     ("args: substitution after a continued line", ARGS, plain("matches!(c, '=' | '\\\\' | '\\'' | '\"')", "matches!(c, '=' | '\\'' | '\"')")),
     ("args: substitution after a quoted option", ARGS, plain("matches!(c, '=' | '\\\\' | '\\'' | '\"')", "matches!(c, '=' | '\\\\')")),
