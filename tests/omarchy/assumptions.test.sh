@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # tests/omarchy/assumptions.json and scripts/check-omarchy-assumptions.sh
-# (WP-194). Everywhere (fixture): the ledger is well-formed, each cited
-# plugin line is code (not a comment) and still holds its pluginSymbol, its
-# validator hash is the pin's; on a synthetic tree the check says ok, names
+# (WP-194). Everywhere (fixture): the ledger is well-formed, each
+# pluginSymbol is in the code (not only the comments) of its plugin file,
+# whatever line it moved to, its validator hash is the pin's; on a
+# synthetic tree the check says ok, names
 # every assumption of a changed or missing file, says whether the file
 # still names the symbol, notes a validator other than the pin and a pin
 # it cannot read, refuses both with --gate, prints "skipped" (never "ok")
@@ -28,9 +29,16 @@ fail() { echo "FAIL $1" >&2; fails=$((fails + 1)); }
 
 # --- the ledger ---
 
-# lint LEDGER: prints one line per problem
+# code_lines: stdin without comment lines (//, /*, *, #) and without
+# trailing // comments
+code_lines() {
+  grep -Ev '^[[:space:]]*(//|/\*|\*|#)' | sed -E 's#[[:space:]]+//.*$##' || true
+}
+
+# lint LEDGER [ROOT]: prints one line per problem; ROOT holds plugin/
+# (default: this checkout)
 lint() {
-  local file=$1 pin_sha
+  local file=$1 plugins=${2:-$root} pin_sha
   jq -e . "$file" >/dev/null 2>&1 || { echo "not JSON"; return; }
   jq -r '
     .assumptions as $a
@@ -47,17 +55,22 @@ lint() {
             | .plugin as $p | select((.relies | startswith("Seldon relies on ") and endswith(" at " + $p + ".")) | not)
             | "\(.id): relies is not \"Seldon relies on … at \(.plugin).\""))
   ' "$file" || echo "jq could not read the assumptions"
-  # each cited line is code, not a comment, and still holds its pluginSymbol
-  local f n line
+  # each pluginSymbol is in the code of its plugin file; the line number
+  # is a hint for the reader, never a condition, so a plugin edit above it
+  # does not fail every other WP's check
+  local f n hits code
   while IFS=$'\t' read -r id ref symbol; do
     f=${ref%:*} n=${ref##*:}
-    line=$( [[ -f $root/$f ]] && sed -n "${n}p" "$root/$f")
-    if [[ ! -f $root/$f ]]; then
+    if [[ ! -f $plugins/$f ]]; then
       echo "$id: $f not found"
-    elif [[ $line =~ ^[[:space:]]*(//|/\*|\*|#) ]]; then
-      echo "$id: $ref is a comment, not code"
-    elif ! grep -qF -- "$symbol" <<< "$line"; then
-      echo "$id: $ref does not hold '$symbol'"
+      continue
+    fi
+    hits=$(grep -F -- "$symbol" "$plugins/$f" || true)
+    code=$(code_lines <<< "$hits" | grep -F -- "$symbol" || true)
+    if [[ -z $hits ]]; then
+      echo "$id: '$symbol' is gone from $f (cited at line $n)"
+    elif [[ -z $code ]]; then
+      echo "$id: '$symbol' is only in comments of $f (cited at line $n)"
     fi
   done < <(jq -r '.assumptions[] | select(.plugin and .pluginSymbol) | [.id, .plugin, .pluginSymbol] | @tsv' "$file")
   # the validator CI fetches is the one the ledger measured
@@ -68,7 +81,7 @@ lint() {
 
 problems=$(lint "$ledger")
 if [[ -z $problems ]]; then
-  pass "tests/omarchy/assumptions.json: well-formed, every cited plugin line is code holding its pluginSymbol, validator = pin"
+  pass "tests/omarchy/assumptions.json: well-formed, every pluginSymbol in the code of its plugin file, validator = pin"
 else
   fail "tests/omarchy/assumptions.json: $problems"
 fi
@@ -89,12 +102,61 @@ mutate() {
   out=$(lint "$tmp/mutant.json")
   if grep -q -- "$pattern" <<< "$out"; then pass "lint catches: $name"; else fail "lint misses: $name ($out)"; fi
 }
-mutate "a cited line that moved" '.assumptions[0].plugin |= sub(":[0-9]+$"; ":1")' "does not hold"
-# a comment line of Model.js that names RESTART_SHELL_ARGV, the code line's symbol
-comment=$(grep -n '^//.*RESTART_SHELL_ARGV\|^// .*restart' "$root/plugin/Model.js" | head -n 1 | cut -d: -f1)
+# a line hint that no longer holds its symbol is no failure
 # shellcheck disable=SC2016 # $ref is jq's, not the shell's
-mutate "a cited comment line" '(.assumptions[] | select(.id == "restart-shell")) |= (.plugin = $ref | .pluginSymbol = "/" | .relies |= sub(" at plugin/[^ ]+$"; " at " + $ref + "."))' "is a comment" \
-  --arg ref "plugin/Model.js:${comment:-1}"
+moved=$(jq --arg ref "plugin/Model.js:1" '(.assumptions[] | select(.id == "restart-shell")) |= (.plugin = $ref | .relies |= sub(" at plugin/[^ ]+$"; " at " + $ref + "."))' "$ledger" | tee "$tmp/moved.json" | jq -r '.assumptions[] | select(.id == "restart-shell") | .plugin')
+out=$(lint "$tmp/moved.json")
+if [[ $moved == plugin/Model.js:1 && -z $out ]]; then
+  pass "lint passes: a line hint that does not hold its pluginSymbol"
+else
+  fail "lint fails on a line hint: $moved ($out)"
+fi
+
+# lint on a scratch copy of the cited plugin files (fixture): a plugin
+# edit that moves every cited line passes; a pluginSymbol gone from its
+# file, or left only in comments, fails
+plugins=$tmp/plugins
+plugin_copy() {
+  rm -rf "$plugins"
+  local f
+  while read -r f; do
+    mkdir -p "$plugins/$(dirname "$f")"
+    cp "$root/$f" "$plugins/$f"
+  done < <(jq -r '.assumptions[].plugin | sub(":[0-9]+$"; "")' "$ledger" | sort -u)
+}
+plugin_copy
+while read -r f; do
+  { printf '// a plugin edit above the cited line\n%.0s' {1..40}; cat "$plugins/$f"; } > "$plugins/$f.new"
+  mv "$plugins/$f.new" "$plugins/$f"
+done < <(jq -r '.assumptions[].plugin | sub(":[0-9]+$"; "")' "$ledger" | sort -u)
+out=$(lint "$ledger" "$plugins")
+mismatch=$(jq -r '.assumptions[] | [.plugin, .pluginSymbol] | @tsv' "$ledger" | while IFS=$'\t' read -r ref symbol; do
+  sed -n "${ref##*:}p" "$plugins/${ref%:*}" | grep -qF -- "$symbol" || echo "$ref"
+done | wc -l)
+if [[ -z $out && $mismatch -gt 0 ]]; then
+  pass "lint passes: a plugin edit that moves the cited lines ($mismatch hints off by 40)"
+else
+  fail "lint fails on moved lines: $mismatch hints off ($out)"
+fi
+plugin_copy
+grep -vF 'pickDrawnWidget' "$plugins/plugin/Model.js" > "$plugins/Model.js.new"
+mv "$plugins/Model.js.new" "$plugins/plugin/Model.js"
+out=$(lint "$ledger" "$plugins")
+if grep -q "bar-drawn-slot: 'pickDrawnWidget' is gone from plugin/Model.js (cited at line" <<< "$out"; then
+  pass "lint catches: a pluginSymbol gone from its file"
+else
+  fail "lint misses: a pluginSymbol gone from its file ($out)"
+fi
+plugin_copy
+sed -E -i 's#^(.*pickDrawnWidget.*)$#// \1#' "$plugins/plugin/Model.js"
+printf 'var other = 1 // pickDrawnWidget\n/*\n * pickDrawnWidget\n */\n' >> "$plugins/plugin/Model.js"
+out=$(lint "$ledger" "$plugins")
+if grep -q "bar-drawn-slot: 'pickDrawnWidget' is only in comments of plugin/Model.js" <<< "$out" \
+    && ! grep -q -v '^bar-drawn-slot' <<< "$out"; then
+  pass "lint catches: a pluginSymbol only in comments (line, trailing and block)"
+else
+  fail "lint misses: a pluginSymbol only in comments ($out)"
+fi
 mutate "a missing pluginSymbol" 'del(.assumptions[2].pluginSymbol)' "no pluginSymbol"
 mutate "a sentence without its line" '.assumptions[0].relies = "Seldon relies on something."' "relies is not"
 mutate "a missing field" 'del(.assumptions[1].remeasure)' "no remeasure"
