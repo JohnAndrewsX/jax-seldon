@@ -79,17 +79,21 @@ fail=0
 # step reports land in $work/<case>.steps (one JSON object per line), the
 # whole log in <case>.log. HOME is $work/home unless the case names one;
 # XDG_STATE_HOME and XDG_CONFIG_HOME follow it. An empty index file is a
-# live run: the service reads the state index the fake engine writes.
+# live run: the service reads the state index the fake engine writes. Under
+# SELDON_FULL_CHECK=1 that first write comes 2 s late in every live run, so
+# a case that reads the index before it arrives (HARNESS_WAIT_INDEX,
+# `settle`, `wait:`) fails every time, not only on a loaded host (WP-205).
 run() {
-  local name=$1 index=$2 size=$3 steps=$4 home="$work/home" arg
+  local name=$1 index=$2 size=$3 steps=$4 home="$work/home" arg late=()
   shift 4
   for arg in "$@"; do [[ $arg == HOME=* ]] && home=${arg#HOME=}; done
+  [[ -z $index && ${SELDON_FULL_CHECK:-} == 1 ]] && late=(FAKE_SELDON_FIRST_WRITE_DELAY=2)
   mkdir -p "$home"
   env -i HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
     PATH="$work/bin" QT_QPA_PLATFORM=offscreen \
     XDG_RUNTIME_DIR="$rt" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_STEPS="$steps" HARNESS_W="${size%x*}" HARNESS_H="${size#*x}" \
-    SELDON_INDEX="$index" "$@" \
+    SELDON_INDEX="$index" "${late[@]}" "$@" \
     "$timeout_bin" 90 "$qs_bin" -p "$config/shell.qml" >"$work/$name.log" 2>&1 || true
   sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "HARNESS step " | sed 's/.*HARNESS step [^ ]* //' >"$work/$name.steps" || true
 }

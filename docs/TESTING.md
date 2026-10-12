@@ -1001,7 +1001,11 @@ the service holds an index (in the same 15 s; a timeout is logged), so
 a live case — no index file at start, the fake engine's start-up
 `status` writes it — asserts the loaded state instead of racing that
 write: every live case that reads the index from its first step sets
-it (WP-205). The facade stand-in answers `false` when the
+it (WP-205). With `SELDON_FULL_CHECK=1`, `desk-view.sh` makes that
+first write 2 s late in every live case (the fake engine's
+`FAKE_SELDON_FIRST_WRITE_DELAY`), so a live case that reads the index
+before it arrives fails on every full check, not only on a loaded host;
+it adds at most 2 s per live case (76 `run` lines). The facade stand-in answers `false` when the
 entry would not change, as `shell.qml` does. After each it prints
 `Desk.view()` (with the current section's own `view()` as
 `sectionView`), the facade's calls and writes, every visible text and
