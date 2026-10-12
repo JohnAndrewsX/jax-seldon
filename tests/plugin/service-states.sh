@@ -1003,7 +1003,8 @@ clean_log capture-fails-json "jax.seldon: seldon capture exit 2: index unreadabl
 #     lock. A snapshot during the first wait shows the neutral text.
 lock_msg() { echo "another seldon process holds the lock $work/home-$1/.local/state/seldon/lock"; }
 mkdir -p "$work/home-capture-locked"
-run capture-locked 3000 HARNESS_WAIT_INDEX=1 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-locked" \
+# no index wait: its snapshot action runs during the locked start-up capture, before any index, on purpose (.status ok checks the index at the end)
+run capture-locked 3000 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-locked" \
   FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_LOCKED=2 SELDON_LOCK_RETRY_MS=1500 \
   HARNESS_ACTIONS='[["snapshot"]]'
 waiting=$(sed 's/\x1b\[[0-9;]*m//g' "$work/capture-locked.log" | grep -a "HARNESS snapshot " | sed 's/.*HARNESS snapshot //' \
