@@ -221,7 +221,8 @@ plugin edit above a cited line fail `just check` for every other WP.
    when it is gone from the file ("'X' is gone from plugin/F (cited at
    line N)") or appears only in comments ("'X' is only in comments of
    plugin/F"): lines starting with `//`, `/*`, `*` or `#` and trailing
-   ` // …` comments do not count. The line number stays in `plugin` and
+   ` // …` comments do not count. A `/* … */` span is not parsed (round
+   4: the wording narrowed to this). The line number stays in `plugin` and
    in the sentence as a hint for the reader and in the messages, never as
    a pass or fail condition. The round-2 strength stays: every `symbol`
    is found in its Omarchy file where the hash matches (installed-tree
@@ -237,7 +238,8 @@ plugin edit above a cited line fail `just check` for every other WP.
      above everything (all 24 hints off by 40): lint clean;
    - `pickDrawnWidget` deleted from the scratch `Model.js`: "is gone";
    - `pickDrawnWidget` only in a `//` line, a trailing `// …` and a
-     `/* … */` block: "is only in comments", and nothing else named.
+     starred block (every line starting with `/*` or `*`): "is only in
+     comments", and nothing else named.
    Mutants of the lint itself, each restored afterwards (fixture): the
    comments branch disabled, trailing comments counted as code, and the
    old exact-line check put back; each was caught (the last by both
@@ -267,3 +269,42 @@ terminal-scripts 73/0; real-home-guard 40/0; check-tokens 14/0;
 service-states 366/0; desk-view 2243/0; bar-view 195/0; ipc-restart
 43/0. Only this paragraph follows 9b0c09b3. The scratch `TMPDIR` is
 empty afterwards.
+
+## Round 4 (round-3 re-check: APPROVE, two low findings)
+
+Orchestrator decisions: narrow the wording to what the code does, and
+warn (not fail) on a stale line hint. Docs and test script only.
+
+1. **Wording (finding 1).** `docs/TESTING.md`, the test's comments and
+   this handover now say what the lint counts as a comment: `//` line
+   comments, trailing ` // …` comments, and lines that start with `/*`
+   or `*`. A real `/* … */` span is not parsed: an unstarred line inside
+   one, or an inline `/* … */` on a code line, counts as code. The
+   plugin has no `/* … */` comment today. The test row's name says
+   "lines starting with /* or *" instead of "block".
+2. **Stale hint warning (finding 2).** When the `pluginSymbol` is in the
+   code of its file but the hint line no longer holds it, the lint
+   prints `warn <id>: plugin/F:N does not hold '<symbol>' (now at line
+   M); refresh the hint in tests/omarchy/assumptions.json` on stderr.
+   It is never a problem, so `just check` stays green and the line shows
+   in its output. Test rows (fixture): the `Model.js:1` hint gives
+   exactly that one warning with the line `RESTART_SHELL_ARGV` is at
+   now; the 40-lines-inserted copy gives one warning per stale hint
+   (24) and no problem. Mutant (fixture, restored afterwards): the
+   warning removed → both rows fail. Today's ledger gives no warning.
+
+### How round 4 was verified
+
+| Check | Where |
+|---|---|
+| `tests/omarchy/assumptions.test.sh`: 46 checks, no `warn` line for today's ledger | fixture; installed-tree part on a scratch copy of the desktop's tree |
+| the warning mutant, caught by two rows | fixture |
+| shellcheck of the test | test host (E80 wrapper) |
+| `just docs-check` | headless — result below |
+| `SELDON_FULL_CHECK=1 just check` | not run (the orchestrator gates this round) |
+
+**Round-4 checks:** on d6ac9940, `bash tests/omarchy/assumptions.test.sh`
+ok (46 checks, no `warn` line) and `just docs-check` ok (514 links), with
+`TMPDIR` and `JUST_TEMPDIR` under the private `gates/` (empty afterwards).
+Only this handover follows d6ac9940.
+
