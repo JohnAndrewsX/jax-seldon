@@ -1087,15 +1087,20 @@ Inside an item that clips (a list, a scrolled detail, a scrolled chart
 grid) only the part of a text inside the clip counts: rows scrolled out
 of a list are not on screen. `overlap` (WP-211) lists the items of a
 header row (an Item named `headerRow:<name>`; a Row's or Flow's items
-count one by one) that draw over each other or leave the row, sideways
+count one by one; an item squeezed to no width counts by the texts it
+still draws) that draw over each other or leave the row, sideways
 or out of its height, and `headerRows` names the rows it found, so a
-case fails when its row is not there. The rows (WP-211, WP-215): the
+case fails when its row is not there. Every positioner and text of the
+row is laid out first, also a type built on a Row (the KPI strip), so
+the first frame after a summon is measured as drawn. The rows (WP-211, WP-215): the
 desk header (`headerRow:desk`: mark and subline, chip, KPI strip,
 Settings, Esc), Today's date row, the Changelog's count row and its
 "N hidden" row, Decisions' summary row and Work's WIP row, each checked
 on 750×700, 900×700, 1366×768 and 1920×1080 windows and on 2048×1152 at
 `QT_SCALE_FACTOR` 1.25 (a 2560×1440 screen at scale 1.25), each at
-100 % and 50 % (cases `work-wip-*` and `header-rows-*`). Live cases run Service.qml without
+100 % and 50 % (cases `work-wip-*` and `header-rows-*`), and the desk
+header with a notice up on 750×700 and 900×700 windows, where the chip
+must show at least its count, whole (`header-chip-*`). Live cases run Service.qml without
 `SELDON_INDEX` against the fake engine (`tests/plugin/fake-seldon`, in a
 temp `HOME`) and compare its `argv.log` argument by argument with the
 CONTRACT.md forms; the editor and terminal launchers are

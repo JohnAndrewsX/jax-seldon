@@ -293,7 +293,8 @@ Top to bottom (prototype `prototype-desk-v6`):
   (heading font, bold, letter-spaced) over "machine · Omarchy version ·
   captured N ago" (`Model.deskSubline`), which wraps into the room left
   of the KPI strip where it does not fit there (a 740 px desk; two lines
-  at most, never under the strip, WP-215); the **status chip** when a notice
+  at most, then elided, never under the strip; while the chip is up it
+  leaves the chip the room for its count, WP-215); the **status chip** when a notice
   is up — the first notice's title and "+N" for more, in the notice's
   tone, "N notices" where the title does not fit, the count alone where
   that does not fit either (a 50 % desk on a 1920 px screen, WP-126b; never
@@ -924,7 +925,8 @@ case*, the button under the cursor wears the focus ring, Enter arms it
 (`work:agent:on|off`, `work:import:open|close`, `work:new:open|close`;
 none of them starts an agent; where the engine cannot write, *Import
 tasks…* and *New case* arm nothing and the line says why); ↓ goes back
-to the first row, ↑ on to the notices; a dim line under the buttons
+to the first row, ↑ on to the notices; the case keys `a`, `x`, `r` and
+`e` do nothing there (the cursor is on no case); a dim line under the buttons
 reads "↑ from the first row reaches these buttons", there "←/→ a button
 · Enter twice runs it · ↓ back to the list", while armed the arm's
 question. `+` still opens the sheet at once. Then the cases by group — ACTIVE ·

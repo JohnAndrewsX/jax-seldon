@@ -180,7 +180,8 @@ exception: Enter never starts an agent, so `a` arms it and a second `a`
 starts the agent, as on a case. Any other key, a click on the desk or
 another selection cancels it. ← / → pick another button or value. A
 held ↑ stops at the top of the list; press it once more for the
-notices.
+notices. On Work's buttons the cursor is on no case, so the case keys
+`a`, `x`, `r` and `e` do nothing there.
 
 A held key acts once. Its repeats never arm, confirm, write or start
 anything; an armed action stays armed until you release the key and
