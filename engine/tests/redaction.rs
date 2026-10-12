@@ -1567,6 +1567,183 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeNm07",
         "wifi-sec.wep-key0 ‹redacted› wifi-sec.psk-flags 0",
     ),
+    // WP-157: a PEM block in base64, the whole token: at each of the
+    // three alignments of `-----BEGIN`, after a line before the key
+    // (openssl's `Bag Attributes`), wrapped over lines, with CRLF
+    (
+        "private-key-base64",
+        "data:\n  tls.crt: x\n  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2ZmFrZUI2NGtleUJvZHlGQUtFZmFrZUZBS0UwMQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\ntype: kubernetes.io/tls",
+        "ZmFrZUI2NGtleUJvZHlG",
+        "  tls.key: ‹redacted›\ntype: kubernetes.io/tls",
+    ),
+    (
+        "private-key-base64",
+        "{\"tls.key\": \"eC0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLQpNSUlFdmZha2VCNjRrZXlCb2R5RkFLRWZha2VGQUtFMDEKLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo=\"}",
+        "dmZha2VCNjRrZXlCb2R5RkFL",
+        "{\"tls.key\": \"‹redacted›\"}",
+    ),
+    (
+        "private-key-base64",
+        "kubectl create secret generic k --from-literal=pem=eHktLS0tLUJFR0lOIFBSSVZBVEUgS0VZLS0tLS0KTUlJRXZmYWtlQjY0a2V5Qm9keUZBS0VmYWtlRkFLRTAxCi0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K -n app",
+        "ZmYWtlQjY0a2V5Qm9keUZBS0Vm",
+        "--from-literal=pem=‹redacted› -n app",
+    ),
+    (
+        "private-key-base64",
+        "bundle: QmFnIEF0dHJpYnV0ZXMKLS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2ZmFrZUI2NGtleUJvZHlGQUtFZmFrZUZBS0UwMQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==",
+        "QmFnIEF0dHJpYnV0ZXMK",
+        "bundle: ‹redacted›",
+    ),
+    (
+        "private-key-base64",
+        "LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0KYjNCbGJuTnphQzFyWlhrdGRqRWZh\na2VXcmFwcGVkS2V5Qm9keUZBS0VmYWtlRkFLRWZha2VGQUtFZmFrZTAyCi0tLS0tRU5EIE9QRU5T\nU0ggUFJJVkFURSBLRVktLS0tLQo=\nnext line.",
+        "a2VXcmFwcGVkS2V5Qm9keUZBS0Vm",
+        "‹redacted›\nnext line.",
+    ),
+    (
+        "private-key-base64",
+        "tls.key: |\n    LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0KYjNCbGJuTnphQzFyWlhrdGRqRWZh\n    a2VXcmFwcGVkS2V5Qm9keUZBS0VmYWtlRkFLRWZha2VGQUtFZmFrZTAyCi0tLS0tRU5EIE9QRU5T\n    U0ggUFJJVkFURSBLRVktLS0tLQo=\nkind: Secret",
+        "U0ggUFJJVkFURSBLRVktLS0tLQo",
+        "tls.key: |\n    ‹redacted›\nkind: Secret",
+    ),
+    (
+        "private-key-base64",
+        "printf '%s' 'LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0KYjNCbGJuTnphQzFyWlhrdGRqRWZh\\na2VXcmFwcGVkS2V5Qm9keUZBS0VmYWtlRkFLRWZha2VGQUtFZmFrZTAyCi0tLS0tRU5EIE9QRU5T\\nU0ggUFJJVkFURSBLRVktLS0tLQo=' | base64 -d > k",
+        "U0ggUFJJVkFURSBLRVktLS0tLQo",
+        "printf '%s' '‹redacted›' | base64 -d > k",
+    ),
+    (
+        "private-key-base64",
+        "  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2ZmFrZUI2NGtleUJvZHlGQUtFZmFrZUZBS0UwMQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\r\n  next: x",
+        "ZmFrZUI2NGtleUJvZHlG",
+        "  tls.key: ‹redacted›\r\n  next: x",
+    ),
+    // round 2: wrapped at 76 with text before the key, as `base64`
+    // writes a bundle (F2)
+    // 40 bytes before the key: fewer than 40 characters after the marker on its line
+    (
+        "private-key-base64",
+        "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eC0tLS0tQkVHSU4gUFJJVkFU\nRSBLRVktLS0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2NEtleUJvZHlGQUtFZmFrZUZBS0VmYWtlRkFL\nRWZha2VGQUtFZmFrZUZBS0UwMwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\nnext line.",
+        "0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2",
+        "‹redacted›\nnext line.",
+    ),
+    // 100 bytes before it: the marker on the second line, the first masked too
+    (
+        "private-key-base64",
+        "pem:\nQmFnIEF0dHJpYnV0ZXM6IGZha2UgbG9jYWwga2V5IGlkIDAwIDExIDIyIDMzIDQ0IDU1IDY2IDc3\nIDg4IDk5IGFhIGJiIGNjIGRkIGVlIGZmIDAxMjM0NTY3ODlhYmNkZWYhCi0tLS0tQkVHSU4gUFJJ\nVkFURSBLRVktLS0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2NEtleUJvZHlGQUtFZmFrZUZBS0VmYWtl\nRkFLRWZha2VGQUtFZmFrZUZBS0UwMwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\nnext line.",
+        "ktLS0tLQpNSUlFdlFmYWtlV3JhcHBl",
+        "pem:\n‹redacted›\nnext line.",
+    ),
+    // the marker cut by the wrap
+    (
+        "private-key-base64",
+        "  eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eS0tLS0tQkVH\n  SU4gUFJJVkFURSBLRVktLS0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2NEtleUJvZHlGQUtFZmFrZUZB\n  S0VmYWtlRkFLRWZha2VGQUtFZmFrZUZBS0UwMwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\n  next: x",
+        "LS0tLQpNSUlFdlFmYWtlV3JhcHBlZE",
+        "  ‹redacted›\n  next: x",
+    ),
+    // WP-157: a Python dict's single quotes, on the key, the value or both,
+    // and a string prefix
+    (
+        "json-secret",
+        "requests.get(u, headers={'x-api-key': 'fakePy01', 'Accept': 'json'})",
+        "fakePy01",
+        "{'x-api-key': ‹redacted›, 'Accept': 'json'}",
+    ),
+    (
+        "json-secret",
+        "requests.post(u, json={'password': \"fakePy02\", 'user': 'bob'})",
+        "fakePy02",
+        "{'password': ‹redacted›, 'user': 'bob'}",
+    ),
+    (
+        "json-secret",
+        "{\"client_secret\": 'fakePy03'}",
+        "fakePy03",
+        "{\"client_secret\": ‹redacted›}",
+    ),
+    (
+        "json-secret",
+        "h = {'X-Auth-Token': f'{prefix}fakePy04', 'apiKey': rb'fakePy05'}",
+        "fakePy0",
+        "{'X-Auth-Token': ‹redacted›, 'apiKey': ‹redacted›}",
+    ),
+    (
+        "authorization-header",
+        "requests.get(u, headers={'Authorization': 'Bearer fakePy06'})",
+        "fakePy06",
+        "{'Authorization': ‹redacted›}",
+    ),
+    // WP-157: a mount password in the option list, the whole list, every
+    // time in one command, in the next command
+    (
+        "mount-password",
+        "sudo mount -t cifs //srv/share /mnt -o user=bob,pass=fakeMt01,vers=3.0",
+        "fakeMt01",
+        "//srv/share /mnt -o ‹redacted›",
+    ),
+    (
+        "mount-password",
+        "sudo mount.cifs //srv/s /mnt -o 'username=bob,pwd=fakeMt02' && ls /mnt",
+        "fakeMt02",
+        "/mnt -o ‹redacted› && ls /mnt",
+    ),
+    (
+        "mount-password",
+        "mount --options=PASS=fakeMt03 //s/x /m",
+        "fakeMt03",
+        "mount --options=‹redacted› //s/x /m",
+    ),
+    (
+        "mount-password",
+        "mount -o ro /dev/sdb1 /a && mount -o ro -o uid=1,pass=fakeMt04 //s/x /b",
+        "fakeMt04",
+        "mount -o ro /dev/sdb1 /a && mount -o ro -o ‹redacted› //s/x /b",
+    ),
+    (
+        "mount-password",
+        "mount -o pwd=fakeMt10 //s/x /m",
+        "fakeMt10",
+        "mount -o ‹redacted› //s/x /m",
+    ),
+    // round 2: `-o` at the end of a cluster (F3), mount.cifs's
+    // `username=name%password` (F7)
+    (
+        "mount-password",
+        "sudo mount -vo user=bob,pass=fakeMt06 //srv/s /mnt",
+        "fakeMt06",
+        "mount -vo ‹redacted› //srv/s /mnt",
+    ),
+    (
+        "mount-password",
+        "sudo mount -t cifs -no pass=fakeMt07 //srv/s /mnt",
+        "fakeMt07",
+        "-no ‹redacted› //srv/s /mnt",
+    ),
+    (
+        "mount-password",
+        "sudo mount -t cifs //srv/s /mnt -o username=bob%fakeMt08,vers=3.0",
+        "fakeMt08",
+        "/mnt -o ‹redacted›",
+    ),
+    (
+        "mount-password",
+        "mount.cifs //srv/s /mnt -o 'user=dom/bob%fakeMt09'",
+        "fakeMt09",
+        "/mnt -o ‹redacted›",
+    ),
+    (
+        "mount-password",
+        "mount.smb3 //s/x /m -o \"pass=fakeMt05,ro\"",
+        "fakeMt05",
+        "mount.smb3 //s/x /m -o ‹redacted›",
+    ),
+    // WP-157: a field to show is no secret, a secret set after it is
+    (
+        "nmcli-secret",
+        "nmcli -s -g wifi-sec.psk con show Home && nmcli con mod Home wifi-sec.psk fakeNm08",
+        "fakeNm08",
+        "-g wifi-sec.psk con show Home && nmcli con mod Home wifi-sec.psk ‹redacted›",
+    ),
 ];
 
 /// Text that looks close to a rule and must come out unchanged.
@@ -1694,6 +1871,27 @@ const CLEAR: &[&str] = &[
     "nmcli con mod Home wifi-sec.key-mgmt wpa-psk wifi-sec.psk-flags 1",
     "nmcli dev wifi list --rescan yes && nmcli -f NAME,UUID con show",
     "nmcli con up Home passwd-file ./pw",
+    // WP-157: nmcli's fields to show, not to set
+    "nmcli -g wifi-sec.psk con show Home",
+    "nmcli -f wifi-sec.psk con show Home",
+    "nmcli -s -g 802-11-wireless-security.psk connection show Home",
+    "nmcli --fields=wifi-sec.psk -s c s Home",
+    "nmcli -t -f 802-1x.password,ipv4.dns con show Eap",
+    "nmcli --get-values wifi-sec.psk -s con show Home",
+    // a short base64 `-----BEGIN`, base64 that holds none
+    "LS0tLS1CRUdJTi is -----BEGIN in base64",
+    "echo QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5eg== | base64 -d",
+    // single quotes around a key that names no secret, an empty value
+    "{'password_hint': 'x', 'token_type': 'bearer'}",
+    "{'token': '', 'secret': f''}",
+    "jq '.token' f.json",
+    // a mount option list without a password, a `pass=` outside it
+    "sudo mount -o bypass=1,ro /dev/sdb1 /m",
+    "echo pass=1; mount -o remount,rw /",
+    "sudo umount -l /mnt",
+    // round 2: a cluster without a password, a user without `%`
+    "sudo mount -vo rw /dev/sdb1 /m",
+    "sudo mount -t cifs //srv/s /mnt -o username=bob,vers=3.0",
 ];
 
 /// (rule, text with `\n` line ends, secrets): one row for each place where
@@ -1844,6 +2042,21 @@ const CONTINUED: &[(&str, &str, &[&str])] = &[
         "nmcli-secret",
         "nmcli con mod Home \\\n  wifi-sec.psk \\\n  fakeCr33",
         &["fakeCr33"],
+    ),
+    // a PEM block in base64 wrapped over lines (WP-157)
+    (
+        "private-key-base64",
+        "LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0KYjNCbGJuTnphQzFyWlhrdGRqRWZh\na2VXcmFwcGVkS2V5Qm9keUZBS0VmYWtlRkFLRWZha2VGQUtFZmFrZTAyCi0tLS0tRU5EIE9QRU5T\nU0ggUFJJVkFURSBLRVktLS0tLQo=\nnext line.",
+        &[
+            "a2VXcmFwcGVkS2V5Qm9keUZBS0Vm",
+            "U0ggUFJJVkFURSBLRVktLS0tLQo",
+        ],
+    ),
+    // a mount option list after a continued line (WP-157)
+    (
+        "mount-password",
+        "mount -t cifs //s/x /m \\\n  -o \\\n  pass=fakeCr34",
+        &["fakeCr34"],
     ),
 ];
 
@@ -2394,6 +2607,46 @@ mod redaction {
         }
     }
 
+    /// The WP-157 rules match only their own rows and no row of another
+    /// rule (the import report counts a line once per rule), and a second
+    /// pass changes nothing.
+    #[test]
+    fn base64_key_and_mount_rules_are_disjoint_and_stable() {
+        const NEW: [&str; 2] = ["private-key-base64", "mount-password"];
+        let r = Redactor::builtin();
+        for (rule, input, ..) in TABLE {
+            let matched = r.matching_rules(input);
+            if NEW.contains(rule) {
+                assert_eq!(matched, vec![*rule], "`{input}`");
+            } else {
+                assert!(
+                    !matched.iter().any(|m| NEW.contains(m)),
+                    "{rule}: `{input}` also matches {matched:?}"
+                );
+            }
+            let once = r.redact(input);
+            assert_eq!(r.redact(&once), once, "`{input}`");
+        }
+    }
+
+    /// `private-key-base64` runs second, before any rule that could cut
+    /// its token: a token that also holds an AWS key shape is masked whole,
+    /// not cut by `aws-access-key` into pieces with base64 between them
+    /// (WP-157 round 2, F5).
+    #[test]
+    fn a_base64_key_is_masked_before_a_later_rule_cuts_it() {
+        let r = Redactor::builtin();
+        let token = format!(
+            "LS0tLS1CRUdJTi{}AKIAFAKEFAKEFAKEFAKE{}",
+            "A".repeat(40),
+            "B".repeat(20)
+        );
+        assert_eq!(
+            r.redact(&format!("tls.key: {token}\nnext line.")),
+            format!("tls.key: {REDACTED}\nnext line.")
+        );
+    }
+
     /// Rule `openssl-pass` matches only its own rows and no row of another
     /// rule (the import report counts a line once per rule), and a second
     /// pass changes nothing. A name `secret-option` or `password-option`
@@ -2519,6 +2772,45 @@ mod redaction {
                 "curl ",
                 "-H 'Authorization:' \"X-Api-Key:\" ",
             ),
+            // WP-157: base64 runs and line ends with a `-----BEGIN` too
+            // short, or broken, after them; a mount line with option words
+            // but no `-o`; nmcli fields; single-quoted keys without a value
+            // one run of base64 characters with no `-----BEGIN` in it:
+            // the token's leading part is tried from each of its starts
+            ("base64 run", "LS0tLS1CRUdJTi x\n", "QUFB"),
+            // round 2: many unindented lines of 80 base64 characters and
+            // no marker (the lines before a key are tried from each line
+            // start); markers cut by a line end that never complete
+            (
+                "base64 lines without a marker",
+                "LS0tLS1CRUdJTi x\n",
+                "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB\n",
+            ),
+            (
+                "split marker near misses",
+                "LS0tLS1CRUdJTi x\n",
+                "QUFBLS0tLS1\n  CRUd x\nLS0tQ\nkVH y\n",
+            ),
+            (
+                "base64 near misses",
+                "LS0tLS1CRUdJTi short\n",
+                "QUFBQUFB+/LS0tLS1CRUdJ\nLS0tQkVHSU4 LS0tLUJFR0l x\n",
+            ),
+            (
+                "mount words",
+                "mount -t cifs //s/x /m ",
+                "ro,user=bob,pass=1 'a;b' x-o ",
+            ),
+            (
+                "nmcli fields",
+                "nmcli ",
+                "-s -g wifi-sec.psk,ipv4.dns --fields=802-1x.password 'a;b' ",
+            ),
+            (
+                "single-quoted keys",
+                "h = {",
+                "'token': x, 'password_hint': 'y', 'api_key': '' ",
+            ),
             // invisible characters and no secret: the rules read the
             // visible copy, the text comes back whole (WP-159)
             (
@@ -2623,6 +2915,48 @@ mod redaction {
                 "quoted header values",
                 "curl ",
                 "-H 'Authorization: \"Bearer a\"' -H \"X-Api-Key: 'b'\" ",
+                Some(20),
+            ),
+            // WP-157: base64 keys, each followed by a line of base64 that
+            // continues it; mount option lists, each a match that the
+            // check of its value rejects, and ones with a password; nmcli
+            // fields before a secret; Python dicts
+            (
+                "base64 keys",
+                "keys ",
+                "LS0tLS1CRUdJTiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nAAAA x\n",
+                Some(20),
+            ),
+            // round 2: keys wrapped at 76 after 40 bytes of text, the marker
+            // with fewer than 40 characters after it on its line
+            (
+                "wrapped keys after text",
+                "",
+                "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eC0tLS0tQkVHSU4gUFJJVkFU\nRSBLRVktLS0tLQpNSUlFdlFmYWtlV3JhcHBlZEI2NEtleUJvZHlGQUtFZmFrZUZBS0VmYWtlRkFL\nRWZha2VGQUtFZmFrZUZBS0UwMwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==\nnext line.\n",
+                Some(20),
+            ),
+            (
+                "mount option lists",
+                "mount -t cifs //s/x /m ",
+                "-o ro,user=bob,bypass=1 'a;b' pass= ",
+                Some(20),
+            ),
+            (
+                "mount passwords",
+                "mount -t cifs //s/x /m ",
+                "-o user=a,pass=b -o 'pwd=c,ro' ",
+                Some(20),
+            ),
+            (
+                "nmcli fields and secrets",
+                "nmcli ",
+                "-g wifi-sec.psk con wifi-sec.psk a ",
+                Some(20),
+            ),
+            (
+                "python dicts",
+                "h = {",
+                "'x-api-key': 'a', 'password': f'b', ",
                 Some(20),
             ),
             // secrets split by invisible characters, and invisible

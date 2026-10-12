@@ -34,8 +34,9 @@
 //!   (`--case` wins over the field, either over `.seldon/active-case`;
 //!   without `actor`, `$SELDON_ACTOR`): the same classification for any
 //!   agent, called before the command runs.
-//! - Not read yet (a follow-up): commands run by `xargs`, `find -exec` or
-//!   an interpreter (`python -c`, `node -e`).
+//! - Not read yet (a follow-up): commands run by `find -exec` or an
+//!   interpreter (`python -c`, `node -e`); `xargs` is a wrapper of the
+//!   shared parser (WP-157).
 //! - `hook session-start` prints the context block an agent starts with.
 //! - `hook session-stop` writes the journal stub, runs `capture --all` and
 //!   commits.
