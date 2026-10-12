@@ -13,8 +13,8 @@ import Quickshell
 // cargo builds) only makes a run slower, not wrong: fixes run once the
 // service is ready, and the final snapshot waits until the service has
 // settled (ready, no probe or engine call in flight, fixes and recheck done,
-// HARNESS_UNTIL met), at the earliest after HARNESS_MS and at the latest
-// 15 s after that.
+// HARNESS_UNTIL met, the index shown with HARNESS_WAIT_INDEX), at the
+// earliest after HARNESS_MS and at the latest 15 s after that.
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin folder (required)
 //   HARNESS_MS          earliest final snapshot, ms after start (default 2500)
@@ -23,6 +23,13 @@ import Quickshell
 //                       ready; an id may name its banner: "snapper:copy"
 //   HARNESS_UNTIL       "field=value": also wait until the snapshot's field
 //                       has that value (e.g. "status=ok")
+//   HARNESS_WAIT_INDEX  if set, the actions and the final snapshot also wait
+//                       (up to 15 s after HARNESS_MS) until the service
+//                       shows an index (`indexShown`): a live run, whose
+//                       index the fake engine's start-up `status` writes,
+//                       asserts the loaded state instead of racing the
+//                       file watch; a timeout logs "HARNESS wait timed
+//                       out: index" (WP-216)
 //   HARNESS_MANIFEST    a manifest as JSON text, assigned to the service's
 //                       `manifest` after creation, as the shell injects it
 //                       (default: none, as before the shell's injection)
@@ -54,6 +61,7 @@ ShellRoot {
   readonly property int recheckMs: Number(Quickshell.env("HARNESS_RECHECK_MS") || 0)
   readonly property string fixes: Quickshell.env("HARNESS_FIX") || ""
   readonly property string until: Quickshell.env("HARNESS_UNTIL") || ""
+  readonly property bool waitIndex: (Quickshell.env("HARNESS_WAIT_INDEX") || "") !== ""
   readonly property string manifestJson: Quickshell.env("HARNESS_MANIFEST") || ""
   readonly property var actions: JSON.parse(Quickshell.env("HARNESS_ACTIONS") || "[]")
   readonly property int graceMs: 15000
@@ -82,6 +90,7 @@ ShellRoot {
     if (!s) return true
     if (!s.ready || s.busy || s.probing || s.queue.length > 0) return false
     if (!root.fixesDone || !root.recheckDone || !root.actionsDone) return false
+    if (root.waitIndex && !s.indexShown) return false
     if (root.until !== "") {
       var eq = root.until.indexOf("=")
       if (String(s.snapshot()[root.until.slice(0, eq)]) !== root.until.slice(eq + 1)) return false
@@ -136,6 +145,7 @@ ShellRoot {
     onTriggered: {
       var s = root.service
       if (!s.ready || s.busy || s.probing || s.queue.length > 0) return
+      if (root.waitIndex && !s.indexShown && Date.now() - root.startMs < root.runMs + root.graceMs) return
       while (root.actionIndex < root.actions.length) {
         var a = root.actions[root.actionIndex]
         root.actionIndex++
@@ -168,6 +178,7 @@ ShellRoot {
     onTriggered: {
       if (root.settled() || Date.now() - root.startMs > root.runMs + root.graceMs) {
         if (!root.settled()) console.log("HARNESS unsettled after grace period")
+        if (root.waitIndex && !(root.service && root.service.indexShown)) console.log("HARNESS wait timed out: index")
         root.emit("final")
         Qt.quit()
         return
