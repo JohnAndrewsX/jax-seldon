@@ -247,6 +247,51 @@ fn a_synced_write_is_timed_on_a_tmpfs_only() {
     }
 }
 
+/// WP-216: in the mount table the last mount on a mount point wins (it
+/// hides the earlier ones), the deepest mount point above a path wins over
+/// a shallower one in either order, and an escaped space in a mount point
+/// is read back.
+#[test]
+fn the_last_mount_on_a_mount_point_wins() {
+    let root = "22 1 0:21 / / rw,relatime shared:1 - btrfs /dev/vda2 rw";
+    let disk = "40 22 0:30 / /srv/state rw,relatime shared:5 - ext4 /dev/vdb1 rw";
+    let tmpfs = "41 40 0:31 / /srv/state rw,nosuid shared:6 - tmpfs tmpfs rw";
+    let deep = "42 41 0:32 / /srv/state/deep rw master:2 - xfs /dev/vdc1 rw";
+    let spaced = "43 22 0:33 / /srv/my\\040state rw - tmpfs tmpfs rw";
+    let of =
+        |table: &[&str], path: &str| common::file_system_in(&table.join("\n"), Path::new(path));
+
+    assert_eq!(
+        of(&[root, disk, tmpfs], "/srv/state/x").as_deref(),
+        Some("tmpfs")
+    );
+    assert_eq!(
+        of(&[root, tmpfs, disk], "/srv/state/x").as_deref(),
+        Some("ext4")
+    );
+    assert_eq!(
+        of(&[root, disk, tmpfs], "/srv/state").as_deref(),
+        Some("tmpfs")
+    );
+    assert_eq!(
+        of(&[root, deep, disk, tmpfs], "/srv/state/deep/x").as_deref(),
+        Some("xfs")
+    );
+    assert_eq!(
+        of(&[root, disk, tmpfs, deep], "/srv/state/deeper").as_deref(),
+        Some("tmpfs")
+    );
+    assert_eq!(
+        of(&[root, disk, tmpfs], "/srv/stateful").as_deref(),
+        Some("btrfs")
+    );
+    assert_eq!(
+        of(&[root, spaced], "/srv/my state/x").as_deref(),
+        Some("tmpfs")
+    );
+    assert_eq!(of(&[disk], "/home").as_deref(), None);
+}
+
 #[test]
 #[ignore = "release timing: `just check-perf`"]
 fn capture_cost_of_the_watched_files_and_plugin_trees() {

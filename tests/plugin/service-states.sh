@@ -54,7 +54,12 @@ model_const() {
 # in $work/<case>.json, the whole log in $work/<case>.log. HOME is
 # $work/home-<case> unless the case names one (HOME=… among the variables);
 # XDG_STATE_HOME and XDG_CONFIG_HOME default to that HOME's, so neither the
-# fake engine nor anything else can reach the real user's files.
+# fake engine nor anything else can reach the real user's files. A live
+# run (no SELDON_INDEX: the fake engine's start-up `status` writes the
+# index) sets HARNESS_WAIT_INDEX=1 or HARNESS_UNTIL=status=ok, so its
+# actions and snapshot see the loaded index, unless the line above it is
+# `# no index wait: <reason>` (tests/plugin/live-index-wait.py, WP-216); a
+# wait that times out fails the run.
 run() {
   local name=$1 ms=$2 home arg
   shift 2
@@ -66,6 +71,10 @@ run() {
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_MS="$ms" "$@" \
     "$timeout_bin" 60 "$qs_bin" -p "$harness" >"$work/$name.log" 2>&1 || true
   sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "HARNESS final " | sed 's/.*HARNESS final //' | tail -n 1 >"$work/$name.json" || true
+  if grep -a -q "HARNESS wait timed out: index" "$work/$name.log"; then
+    fail=$((fail + 1))
+    echo "FAIL $name: HARNESS wait timed out: index"
+  fi
 }
 
 # expect <case> <jq filter> <value>
@@ -130,6 +139,7 @@ clean_log engine-missing
 
 # 2b. A fresh machine: no index, no seldon. The first setup step, in the
 #     accent tone (WP-117).
+# no index wait: no engine on PATH, so no index is ever written
 run engine-fresh 2500 PATH="$base_path"
 expect engine-fresh .status engineMissing
 expect engine-fresh .fileState missing
@@ -322,6 +332,7 @@ clean_log live
 
 # 13. Engine exit 3 (logbook not initialised) without any index.
 mkdir -p "$work/home-uninit"
+# no index wait: an uninitialised logbook has no index; it waits for status=notInitialised
 run live-uninit 4000 HARNESS_UNTIL=status=notInitialised PATH="$fake_path" HOME="$work/home-uninit" FAKE_SELDON_MODE=uninit
 expect live-uninit .status notInitialised
 expect live-uninit .banner "Create your logbook"
@@ -479,7 +490,7 @@ clean_log restart-updated
 #      ok, so the banner is gone.
 mkdir -p "$work/home-snapper-live"
 actions='[["snapshot"], ["fix", "terminal", "snapper"], ["snapshot"], ["fix", "capture", "snapper"], ["wait"]]'
-run snapper-live 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-snapper-live" \
+run snapper-live 3000 HARNESS_WAIT_INDEX=1 PATH="$work/bin-tools:$fake_path" HOME="$work/home-snapper-live" \
   FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" FAKE_SELDON_FIXTURE_AFTER="$fx/index.sample.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/snapper-live.record" HARNESS_UNTIL=snapper=
 snaps=$(sed 's/\x1b\[[0-9;]*m//g' "$work/snapper-live.log" | grep -a "HARNESS snapshot " | sed 's/.*HARNESS snapshot //' \
@@ -504,7 +515,7 @@ clean_log snapper-live
 mkdir -p "$work/home-snapper-still"
 jq '(.state.collectors[] | select(.name == "snapper") | .message) = "Still no permission."' \
   "$fx/index-variants/snapper-degraded.json" >"$work/snapper-still.json"
-run snapper-still 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-snapper-still" \
+run snapper-still 3000 HARNESS_WAIT_INDEX=1 PATH="$work/bin-tools:$fake_path" HOME="$work/home-snapper-still" \
   FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" FAKE_SELDON_FIXTURE_AFTER="$work/snapper-still.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/snapper-still.record" HARNESS_UNTIL="snapperFull=Still no permission."$'\n'"$snapper_grants"
 expect snapper-still .snapper "$snapper_title"
@@ -553,6 +564,7 @@ expect xdg .pill "2 · 2"
 
 # 17. A relative XDG_STATE_HOME is invalid (XDG spec) and falls back to HOME.
 mkdir -p "$work/home-xdg-rel"
+# no index wait: an uninitialised logbook has no index
 run xdg-relative 2500 PATH="$fake_path" HOME="$work/home-xdg-rel" XDG_STATE_HOME="relative/state" FAKE_SELDON_MODE=uninit
 expect xdg-relative .indexPath "$work/home-xdg-rel/.local/state/seldon/index.json"
 
@@ -572,7 +584,7 @@ actions=$(jq -cn --arg n2 "$note2" --arg n3 "$note3" '[
   ["open", "journal"], ["wait"], ["open", "ledger"], ["wait"], ["open", "status"], ["wait"], ["open", "C-2026-004"],
   ["capture"], ["capture"]
 ]')
-run actions 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-actions" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+run actions 3000 HARNESS_WAIT_INDEX=1 PATH="$work/bin-tools:$fake_path" HOME="$work/home-actions" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   FAKE_SELDON_WRITTEN=3 HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/actions.record" HARNESS_UNTIL=capturing=false
 argv_check actions "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q log --json -- --help)" "$(q log --case C-2026-004 --json -- "$note2")" "$(q log --json -- "$note3")" \
@@ -606,7 +618,7 @@ clean_log actions
 #     <ADR id>. The engine sees nothing but the start-up calls.
 mkdir -p "$work/home-refused"
 actions=$(jq -cn '[["log", "", ""], ["log", "x", "C-26-1; rm -rf ~"], ["open", "../../etc/passwd"], ["open", "memory"], ["log", " \n\t ", ""]]')
-run refused 2500 PATH="$work/bin-tools:$fake_path" HOME="$work/home-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+run refused 2500 HARNESS_WAIT_INDEX=1 PATH="$work/bin-tools:$fake_path" HOME="$work/home-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/refused.record"
 argv_check refused "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
 expect refused .logResult.text "Write something first"
@@ -622,7 +634,7 @@ fi
 #     (shown by the QuickEntry only) and for open (also the panel's error line).
 mkdir -p "$work/home-errors"
 actions=$(jq -cn '[["log", "x", "C-2026-999"], ["open", "C-2026-999"]]')
-run errors 2500 PATH="$work/bin-tools:$fake_path" HOME="$work/home-errors" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+run errors 2500 HARNESS_WAIT_INDEX=1 PATH="$work/bin-tools:$fake_path" HOME="$work/home-errors" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/errors.record"
 expect errors .logResult.text "unknown case C-2026-999"
 expect errors .logResult.ok false
@@ -638,6 +650,7 @@ expect actions-devmode .canWrite false
 expect actions-devmode .logResult.text "Dev mode is read-only"
 expect actions-devmode .openResult.text "dev mode (SELDON_INDEX): engine calls are disabled"
 argv_check act-dev "$(q --version --json)"
+# no index wait: no engine on PATH, so no index is ever written
 run actions-noengine 2500 PATH="$base_path" HOME="$work/home-act-dev" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 expect actions-noengine .logResult.text "Needs the Seldon engine"
 
@@ -656,7 +669,7 @@ actions=$(jq -cn --arg t2 "$title2" '[
   ["plan", "done", "C-2026-005"], ["wait"], ["plan", "drop", "C-2026-006"], ["wait"],
   ["plan", "done", "C-2026-003"]
 ]')
-run plan 3000 PATH="$fake_path" HOME="$work/home-plan" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+run plan 3000 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-plan" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 argv_check plan "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q plan new --zone yellow --risk R1 --json -- --help)" \
   "$(q plan new --zone red --risk R2 --area dev-env --priority high --json -- "$title2")" \
@@ -690,7 +703,7 @@ actions=$(jq -cn '[["plan", "new", {title: " \t ", zone: "yellow", risk: "R1"}],
   ["plan", "new", {title: "t", zone: "yellow", risk: "R1", area: "Dev Env"}],
   ["plan", "new", {title: "t", zone: "purple", risk: "R1"}],
   ["plan", "list", ""], ["plan", "start", "C-26-1; rm -rf ~"]]')
-run plan-refused 2500 PATH="$fake_path" HOME="$work/home-plan-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+run plan-refused 2500 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-plan-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 argv_check plan-refused "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
 expect plan-refused .planResult.text "Not a case id: C-26-1; rm -rf ~"
 expect plan-refused .planResult.ok false
@@ -703,7 +716,7 @@ fi
 # 24. A held lock (exit 4) reaches the result line; dev mode refuses plan.
 mkdir -p "$work/home-plan-locked"
 actions=$(jq -cn '[["plan", "start", "C-2026-005"]]')
-run plan-locked 2500 PATH="$fake_path" HOME="$work/home-plan-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+run plan-locked 2500 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-plan-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   FAKE_SELDON_LOCKED=1 HARNESS_ACTIONS="$actions"
 expect plan-locked .planResult.text "the logbook is locked by another seldon (pid 4242)"
 expect plan-locked .planResult.ok false
@@ -735,7 +748,7 @@ actions=$(jq -cn --arg t "$THEME" --arg u "$UNIT" --arg o "$OLLAMA" --arg f "$ME
   ["drift", "link", {eventId: $t, caseId: "C-2026-005"}], ["wait"],
   ["drift", "link", {eventId: $o, caseId: "C-2026-999"}]
 ]')
-run drift 3000 PATH="$fake_path" HOME="$work/home-drift" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+run drift 3000 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-drift" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 argv_check drift "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q drift show $MESA --json)" \
   "$(q drift link $THEME C-2026-005 --json)" \
@@ -786,7 +799,7 @@ clean_log drift "jax.seldon: seldon drift exit 1: unknown case C-2026-999$"
 mkdir -p "$work/home-drift-again"
 echo "$THEME linked C-2026-005" >"$work/home-drift-again/resolved"
 actions=$(jq -cn --arg t "$THEME" '[["drift", "link", {eventId: $t, caseId: "C-2026-005"}]]')
-run drift-again 2500 PATH="$fake_path" HOME="$work/home-drift-again" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+run drift-again 2500 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-drift-again" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 expect drift-again .driftResult.text "Already resolved: linked to C-2026-005"
 expect drift-again .driftResult.already true
 expect drift-again .driftResult.ok true
@@ -803,7 +816,7 @@ actions=$(jq -cn --arg t "$THEME" '[["drift", "link", {eventId: ($t | ascii_down
   ["drift", "dismiss", {eventId: $t, text: " \t "}], ["drift", "explain", {eventId: $t, text: "two\nlines"}],
   ["drift", "explain", {eventId: $t, text: "x", area: "Dev Env"}], ["drift", "purge", {eventId: $t}],
   ["driftShow", "not-an-id"]]')
-run drift-refused 2500 PATH="$fake_path" HOME="$work/home-drift-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+run drift-refused 2500 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-drift-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 argv_check drift-refused "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
 expect drift-refused .driftResult.text "Not a drift action: purge"
 expect drift-refused .driftResult.ok false
@@ -814,7 +827,7 @@ else
 fi
 mkdir -p "$work/home-drift-locked"
 actions=$(jq -cn --arg u "$UNIT" '[["drift", "dismiss", {eventId: $u, text: "x"}]]')
-run drift-locked 2500 PATH="$fake_path" HOME="$work/home-drift-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+run drift-locked 2500 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-drift-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   FAKE_SELDON_LOCKED=1 HARNESS_ACTIONS="$actions"
 expect drift-locked .driftResult.text "the logbook is locked by another seldon (pid 4242)"
 expect drift-locked .driftResult.ok false
@@ -834,7 +847,7 @@ mkdir -p "$work/home-decide"
 dtitle='Zed "second" editor'
 actions=$(jq -cn --arg t "$dtitle" '[["decide", "--help"], ["wait"], ["decide", $t], ["wait"],
   ["open", "ADR-0004"], ["wait"], ["open", "logbook"]]')
-run decide 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+run decide 3000 HARNESS_WAIT_INDEX=1 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/decide.record"
 argv_check decide "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q decide --no-edit --json -- --help)" "$(q open ADR-0005 --editor --json)" \
@@ -870,7 +883,7 @@ clean_log decide
 mkdir -p "$work/home-decide-refused"
 actions=$(jq -cn '[["decide", ""], ["decide", " \t "], ["decide", "two\nlines"], ["decide", 42],
   ["open", "ADR-4"], ["open", "ADR-0004; reboot"], ["open", "decisions/ADR-0001-language.md"], ["open", "memory"]]')
-run decide-refused 2500 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+run decide-refused 2500 HARNESS_WAIT_INDEX=1 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/decide-refused.record"
 argv_check decide-refused "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
 expect decide-refused .decideResult.text "Give the decision a title"
@@ -887,7 +900,7 @@ fi
 #     panel's error line). Dev mode refuses decide.
 mkdir -p "$work/home-decide-locked"
 actions=$(jq -cn '[["decide", "keep me"], ["wait"], ["open", "ADR-0009"]]')
-run decide-locked 2500 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+run decide-locked 2500 HARNESS_WAIT_INDEX=1 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   FAKE_SELDON_LOCKED=1 HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/decide-locked.record"
 argv_check decide-locked "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q decide --no-edit --json -- "keep me")" "$(q open ADR-0009 --editor --json)")"
@@ -909,7 +922,7 @@ argv_check decide-dev "$(q --version --json)"
 #     action "agent"; dev mode refuses.
 mkdir -p "$work/home-agent"
 actions=$(jq -cn '[["agent", "C-26-1; rm -rf ~"], ["agent", "C-2026-005"], ["agent", "C-2026-004"], ["wait"], ["agent", "C-2026-003"]]')
-run agent 2500 PATH="$fake_path" HOME="$work/home-agent" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+run agent 2500 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-agent" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 argv_check agent "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q agent start C-2026-005 --json)" "$(q agent start C-2026-003 --json)")"
 expect agent .planResult.text "Agent started on C-2026-003 · launcher default (omarchy)"
@@ -930,14 +943,14 @@ fi
 clean_log agent "jax.seldon: seldon agent exit 1: C-2026-005 is queued; "
 mkdir -p "$work/home-agent-queued"
 actions=$(jq -cn '[["agent", "C-2026-005"]]')
-run agent-queued 2500 PATH="$fake_path" HOME="$work/home-agent-queued" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+run agent-queued 2500 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-agent-queued" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 expect agent-queued .planResult.text 'C-2026-005 is queued; start it first: `seldon plan start C-2026-005`'
 expect agent-queued .planResult.ok false
 expect agent-queued .planResult.caseId C-2026-005
 expect agent-queued .lastError ""
 mkdir -p "$work/home-agent-nolauncher"
 actions=$(jq -cn '[["agent", "C-2026-004"]]')
-run agent-nolauncher 2500 PATH="$fake_path" HOME="$work/home-agent-nolauncher" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+run agent-nolauncher 2500 HARNESS_WAIT_INDEX=1 PATH="$fake_path" HOME="$work/home-agent-nolauncher" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   FAKE_SELDON_NO_LAUNCHER=1 HARNESS_ACTIONS="$actions"
 expect agent-nolauncher .planResult.text 'launcher `default`: `omarchy` not found; set `[agent] launcher` in config.toml'
 expect agent-nolauncher .planResult.ok false
@@ -990,6 +1003,7 @@ clean_log capture-fails-json "jax.seldon: seldon capture exit 2: index unreadabl
 #     lock. A snapshot during the first wait shows the neutral text.
 lock_msg() { echo "another seldon process holds the lock $work/home-$1/.local/state/seldon/lock"; }
 mkdir -p "$work/home-capture-locked"
+# no index wait: its snapshot action runs during the locked start-up capture, before any index, on purpose (.status ok checks the index at the end)
 run capture-locked 3000 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-locked" \
   FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_LOCKED=2 SELDON_LOCK_RETRY_MS=1500 \
   HARNESS_ACTIONS='[["snapshot"]]'
@@ -1019,7 +1033,7 @@ clean_log capture-locked "jax.seldon: seldon capture exit 4: another seldon proc
 # 33. A lock that stays: three retries, then the capture's error is its
 #     result as before, and the status queued with it runs.
 mkdir -p "$work/home-capture-gives-up"
-run capture-gives-up 3000 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-gives-up" \
+run capture-gives-up 3000 HARNESS_WAIT_INDEX=1 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-gives-up" \
   FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_LOCKED=99 SELDON_LOCK_RETRY_MS=400
 argv_check capture-gives-up "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" \
   "$(q capture --all --json --quiet)" "$(q capture --all --json --quiet)" "$(q capture --all --json --quiet)" \
@@ -1046,7 +1060,7 @@ actions=$(jq -cn --arg u "$UNIT" --arg t "$THEME" '[
   ["drift", "dismiss", {eventId: $u, text: "x"}], ["drift", "link", {eventId: $t, caseId: "C-2026-005"}], ["snapshot"], ["wait"],
   ["decide", "first"], ["decide", "second"], ["snapshot"], ["wait"],
   ["accept", "ADR-0004"], ["accept", "ADR-0004"], ["snapshot"]]')
-run busy 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-busy" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+run busy 3000 HARNESS_WAIT_INDEX=1 PATH="$work/bin-tools:$fake_path" HOME="$work/home-busy" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 argv_check busy "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q plan start C-2026-005 --json)" "$(q drift dismiss $UNIT --json -- x)" "$(q decide --no-edit --json -- first)" \
   "$(q open ADR-0005 --editor --json)" "$(q decide accept ADR-0004 --json)")"
@@ -1379,7 +1393,7 @@ snap_expect() {
   fi
 }
 mkdir -p "$work/home-capture-warned"
-run capture-warned 3000 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-warned" \
+run capture-warned 3000 HARNESS_WAIT_INDEX=1 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-warned" \
   FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_WARNINGS="$warnings_json" \
   FAKE_SELDON_CAPTURE_WARNED=1 FAKE_SELDON_CAPTURE_EXIT=2 FAKE_SELDON_CAPTURE_EXIT_CALLS=2 \
   FAKE_SELDON_CAPTURE_STDERR="seldon: collector exploded" \
@@ -1403,7 +1417,7 @@ clean_log capture-warned "jax.seldon: seldon capture exit 2: seldon: collector e
 # 36b. A locked capture (exit 4) leaves the warnings while it waits; its
 #      retry, which finishes without warnings, clears them.
 mkdir -p "$work/home-capture-warned-locked"
-run capture-warned-locked 3000 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-warned-locked" \
+run capture-warned-locked 3000 HARNESS_WAIT_INDEX=1 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-warned-locked" \
   FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_WARNINGS="$warnings_json" \
   FAKE_SELDON_CAPTURE_WARNED=1 FAKE_SELDON_CAPTURE_EXIT=4 FAKE_SELDON_CAPTURE_EXIT_CALLS=2 FAKE_SELDON_CAPTURE_STDERR= \
   FAKE_SELDON_CAPTURE_STDOUT='{"error":{"code":4,"message":"another seldon process holds the lock"}}' \

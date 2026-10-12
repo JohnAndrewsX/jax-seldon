@@ -15,7 +15,8 @@ total_fail=0
 
 # guard_case <name> <want: ok|live|FAIL> <config logbook, @ = HOME; "-": no config> <mutation> [runtime want: ok|FAIL] [state files]
 # A fresh HOME with a config.toml (unless "-") and an engine state dir
-# (index.json, cursors.json, lock and the named state files), a
+# (index.json, cursors.json, lock and the named state files, a/b in a
+# dir a), a
 # session runtime dir $HOME/run with one Quickshell instance dir (the live
 # shell's), the guard sourced, the mutation run (bash, in HOME), then
 # real_home_check: its first line is the home's verdict, the rest the
@@ -40,7 +41,10 @@ guard_case() {
     >"$home/.local/state/seldon/index.json"
   echo '{}' >"$home/.local/state/seldon/cursors.json"
   : >"$home/.local/state/seldon/lock"
-  for f in $seed; do echo '{}' >"$home/.local/state/seldon/$f"; done
+  for f in $seed; do
+    [[ $f != */* ]] || mkdir -p "$home/.local/state/seldon/${f%/*}"
+    echo '{}' >"$home/.local/state/seldon/$f"
+  done
   out=$(env -u XDG_RUNTIME_DIR HOME="$home" "${xdg[@]}" bash -c "$case_script" _ "$root" "$mutation" || true) # live runtime dir: unset; a case names its own
   rt_got=ok
   grep -q '^FAIL guard: new entries no process holds in ' <<<"$out" && rt_got=FAIL
@@ -90,6 +94,13 @@ guard_case engine-all live "@/Seldon" "$rewrite; for f in manifest.json owned.js
 guard_case other-file-changed FAIL "@/Seldon" "$rewrite; echo x >>.local/state/seldon/calls.log" ok "calls.log"
 guard_case recent-config-like FAIL "@/Seldon" "$rewrite; echo x >>.local/state/seldon/recent-config.json.bak" ok "recent-config.json.bak"
 guard_case launches-changed FAIL "@/Seldon" "$rewrite; echo x >>.local/state/seldon/launches.json" ok "launches.json"
+# Each other name written only on an operator's action (WP-216; hooks is
+# hooks-changed above): a change during a run fails, a triage proposal
+# rewritten in place (temp file and rename) too.
+for f in agent-launch.log hooks-user-wide; do
+  guard_case "$f-changed" FAIL "@/Seldon" "$rewrite; echo x >>.local/state/seldon/$f" ok "$f"
+done
+guard_case proposals-changed FAIL "@/Seldon" "$rewrite; echo x >.local/state/seldon/proposals/p.tmp && mv .local/state/seldon/proposals/p.tmp .local/state/seldon/proposals/p1.json" ok "proposals/p1.json"
 guard_case recent-config-appears FAIL "@/Seldon" "$rewrite; echo {} >.local/state/seldon/recent-config.json"
 
 # The session's runtime dir (WP-161): the live shell's instance dir stays,
@@ -114,16 +125,18 @@ guard_case runtime-xdg-new-instance ok "@/Seldon" "mkdir -p xdg/quickshell/by-id
 # real_engine_not_routine, and every listed name is still the engine's.
 
 # engine_state_names <src dir> — one line per `state_dir.join(…)` in the
-# Rust sources: the literal's value, or a constant's (the `const` of that
+# Rust sources, also one rustfmt splits over lines (`state_dir\n.join(\n
+# "name",\n)`): the literal's value, or a constant's (the `const` of that
 # name in the same file, else the only value of a `const` of that name in
 # the tree); "?<file>: <argument>" when neither resolves.
 engine_state_names() {
   local src=$1 line file arg name value
-  while IFS= read -r line; do
+  while IFS= read -r -d '' line; do
     file=${line%%:*}
     arg=${line#*.join(}
     arg=${arg%)}
     arg=${arg//[[:space:]]/}
+    arg=${arg%,}
     if [[ $arg =~ ^\"([^\"]+)\"$ ]]; then
       echo "${BASH_REMATCH[1]}"
       continue
@@ -140,7 +153,7 @@ engine_state_names() {
     else
       echo "?${file#"$src"/}: $arg"
     fi
-  done < <(grep -rHoE --include='*.rs' 'state_dir[[:space:]]*\.join\([^)]*\)' "$src" || true)
+  done < <(grep -rHzoP --include='*.rs' 'state_dir\s*\.join\([^)]*\)' "$src" || true)
 }
 
 # The guard's two lists, sourced in a scratch HOME ("r <name>", "n <name>").
@@ -149,6 +162,17 @@ mkdir -p "$lists_home/run"
 # shellcheck disable=SC2016 # expanded by the inner bash
 lists_script='source "$1"; printf "r %s\n" "${real_engine_files[@]}"; printf "n %s\n" "${real_engine_not_routine[@]}"'
 guard_lists=$(env -u XDG_RUNTIME_DIR HOME="$lists_home" real_runtime_session="$lists_home/run" bash -c "$lists_script" _ "$root/tests/plugin/real-home-guard.sh") # live runtime dir: unset; a scratch session dir is watched
+
+# The routine list holds exactly these seven names (WP-216): a name moved
+# into it or out of it needs an edit here, which the FAIL rows above then
+# have to agree with.
+routine=$(grep '^r ' <<<"$guard_lists" | cut -d' ' -f2- | LC_ALL=C sort | paste -sd' ')
+want_routine="autocommit.json cursors.json index.json lock manifest.json owned.json recent-config.json"
+if [[ $routine == "$want_routine" ]]; then
+  total_pass=$((total_pass + 1)); echo "ok   routine-list: $routine"
+else
+  total_fail=$((total_fail + 1)); echo "FAIL routine-list: $routine (want $want_routine)"
+fi
 
 # drift_case <name> <want: ok|FAIL> <src dir>
 drift_case() {
@@ -176,7 +200,7 @@ drift_case() {
 drift_case drift-engine ok "$root/engine/src"
 # A copy of engine/src with one more state file: a literal, a constant, a
 # name nothing resolves, and a known file dropped from the guard's view.
-for d in literal constant unresolved; do
+for d in literal constant unresolved split; do
   mkdir -p "$work/drift-$d"
   cp -r "$root/engine/src" "$work/drift-$d/src"
 done
@@ -186,7 +210,10 @@ printf '\npub const WP212_FILE: &str = "new-state.json";\nfn wp212(d: &crate::co
   >>"$work/drift-constant/src/collectors/recent.rs"
 printf '\nfn wp212(d: &crate::config::Dirs, name: &str) -> std::path::PathBuf {\n    d.state_dir.join(name)\n}\n' \
   >>"$work/drift-unresolved/src/collectors/recent.rs"
+printf '\nfn wp216(dirs: &crate::config::Dirs) -> std::path::PathBuf {\n    dirs\n        .state_dir\n        .join(\n            "new-state-with-a-name-long-enough-for-rustfmt-to-split-it.json",\n        )\n}\n' \
+  >>"$work/drift-split/src/collectors/recent.rs"
 drift_case drift-new-literal FAIL "$work/drift-literal/src"
+drift_case drift-new-split FAIL "$work/drift-split/src"
 drift_case drift-new-constant FAIL "$work/drift-constant/src"
 drift_case drift-unresolved FAIL "$work/drift-unresolved/src"
 mkdir -p "$work/drift-gone"
