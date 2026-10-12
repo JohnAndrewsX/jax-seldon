@@ -3961,7 +3961,8 @@ clean_log keys-work
 # click's dry run; Esc closes it; ↑ → → *New case*, Enter twice opens the
 # sheet, a title and Return create the case. The engine's argv holds those
 # two calls and no agent start: Enter never starts an agent.
-mkdir -p "$work/home-keys-work"
+mkdir -p "$work/home-keys-work/projects"
+printf '%s\n' "# Desk" "- [ ] Fix the bar flicker" >"$work/home-keys-work/projects/TODO.md"
 run keys-work-live "" 1920x1080 \
   "summon:$wk;key:Up;key:Right;key:Return;key:Return;type:~/projects/TODO.md;key:Return;settle;key:Escape;key:Up;key:Right;key:Right;key:Return;key:Return;type:Key case;key:Return;settle" \
   HOME="$work/home-keys-work" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"

@@ -106,7 +106,8 @@ Item {
       // whole pixels: a line that fits must not wrap on a rounding
       width: Math.min(Math.ceil(subMetrics.advanceWidth), brand.room)
       textFormat: Text.PlainText
-      text: root.subline
+      // a wrapped line ends on its "·", the next one starts with a word
+      text: root.subline.replace(/ · /g, "\u00a0· ")
       wrapMode: Text.Wrap
       maximumLineCount: 2
       elide: Text.ElideRight
