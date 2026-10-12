@@ -358,3 +358,25 @@ check and that the warning rows run on a refreshed scratch ledger.
 | `just docs-check` | headless, ok (514 links) |
 | `SELDON_FULL_CHECK=1 just check` under `flock /tmp/seldon-check.lock` | headless — result below |
 
+**Round-5 gate: not green.** `SELDON_FULL_CHECK=1 just check` under
+`flock /tmp/seldon-check.lock` (E80 wrapper on `PATH`) ran twice on
+03513b6a and exited 1 both times, each time on the plugin harness's
+real-path guard, not on a WP-194 check. The guard saw the real
+`~/.local/state/seldon` rewritten during the run: `cursors.json`,
+`index.json`, `recent-config.json` and the directory got new mtimes,
+with sizes unchanged, 896 s and 900 s apart. In the first run desk-view
+failed (2336 passed, 1 failed); in the second, service-states (365
+passed, 1 failed). The cadence looks like a periodic job of the engine
+installed on this machine writing its own state, which no harness
+process here touches (each has its own `HOME`). This is not confirmed:
+I did not inspect the real directory or the host's jobs (red zone).
+Everything before the plugin harness passed in both runs (private
+`gates/check-dev-194-r5.log` and `-r5b.log`): cargo tests 2893 passed,
+0 failed; check-packaging ok; install 230/0; deploy-test-host 327/0;
+runtime-dir 45/0; assumptions.test ok; check-upstream ok (17 files);
+docs-check ok; plugin-validate ok; qmllint ok (53 files);
+terminal-scripts 73/0; real-home-guard 40/0; check-tokens 14/0; and in
+the first run service-states 366/0. Not run in either run: bar-view and
+ipc-restart, and in the first run the rest of desk-view after the
+guard. The scratch `TMPDIR` is empty afterwards.
+
