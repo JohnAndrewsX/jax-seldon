@@ -323,14 +323,15 @@ ShellRoot {
 
   // Every header row (objectName "headerRow:<name>", WP-211) whose items
   // draw over each other or leave the row, sideways or out of its height:
-  // its visible items are its children, a positioner's (Row, Flow; laid
-  // out first) counted as its own children; a text counts by its box like
-  // overflow() (an elided one by its width, a wrapped one that cannot wrap
-  // by what it draws). Tolerance 1 px.
+  // its visible items are its children, a positioner's (Row, Flow)
+  // counted as its own children, all laid out first (layOut); a text
+  // counts by its box like overflow() (an elided one by its width, a
+  // wrapped one that cannot wrap by what it draws). Tolerance 1 px.
   function overlap(item, out) {
     if (!item || item.visible === false) return out
     var name = String(item.objectName || "")
     if (name.indexOf("headerRow:") === 0) {
+      root.layOut(item)
       var row = item.mapToItem(win.contentItem, 0, 0)
       var parts = root.rowParts(item, [])
       for (var a = 0; a < parts.length; a++) {
@@ -362,6 +363,23 @@ ShellRoot {
     return out
   }
 
+  // A positioner places its items in its polish and a wrapped text lays
+  // itself out there too, before the next frame; the report runs before
+  // that, so lay out the whole row first (its height follows), then measure.
+  function layOut(item) {
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) {
+      var k = kids[i]
+      var type = String(k)
+      if (type.indexOf("QQuickRow") === 0 || type.indexOf("QQuickFlow") === 0) {
+        k.forceLayout()
+        root.layOut(k)
+      } else if (root.isText(k) && typeof k.forceLayout === "function") {
+        k.forceLayout()
+      }
+    }
+  }
+
   function rowParts(item, out) {
     var kids = item.children
     for (var i = 0; kids && i < kids.length; i++) {
@@ -369,14 +387,11 @@ ShellRoot {
       if (!k || k.visible === false || k.width <= 0 && !root.isText(k) || k.height <= 0) continue
       var type = String(k)
       if (type.indexOf("QQuickRow") === 0 || type.indexOf("QQuickFlow") === 0) {
-        // A positioner places its items in its polish, before the next
-        // frame; the report runs before that, so lay them out now.
-        k.forceLayout()
         root.rowParts(k, out)
         continue
       }
-      var p = k.mapToItem(win.contentItem, 0, 0)
       var text = root.isText(k)
+      var p = k.mapToItem(win.contentItem, 0, 0)
       var w = text && k.elide === Text.ElideNone ? Math.max(k.width, k.contentWidth) : k.width
       var h = text ? Math.max(k.height, k.contentHeight) : k.height
       out.push({ label: text ? k.text : String(k.text || k.objectName || type.split("(")[0]), x: p.x, y: p.y, w: w, h: h })
