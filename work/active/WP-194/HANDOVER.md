@@ -380,3 +380,20 @@ the first run service-states 366/0. Not run in either run: bar-view and
 ipc-restart, and in the first run the rest of desk-view after the
 guard. The scratch `TMPDIR` is empty afterwards.
 
+## Paused (wind-down before the account switch)
+
+- Done: merged `next` 71f070b8 (WP-212, the real-home guard fix) into
+  the branch as f4a58c25, no conflicts. `bash
+  tests/omarchy/assumptions.test.sh` on f4a58c25: ok, no `warn` line
+  (fixture; installed-tree part on a scratch copy of the desktop's
+  tree).
+- Stopped at: `SELDON_FULL_CHECK=1 just check` under `flock
+  /tmp/seldon-check.lock` on f4a58c25. It waited about 50 minutes for
+  the lock behind other gates and never started (its log holds only
+  `exit=143`). I stopped it while it was still queued, because it could
+  not finish within the wind-down window. Not run: the full check on
+  f4a58c25.
+- Next: run that full check on f4a58c25 (or its successor with only
+  this handover added) under the lock, with the same environment as
+  round 3. Record the result here, then reply "WP-194 ready <sha>".
+
