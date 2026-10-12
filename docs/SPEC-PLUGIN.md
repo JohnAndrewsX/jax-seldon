@@ -335,8 +335,8 @@ icons only; the search is then reached by widening it).
 | `,` | Settings |
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search (filters the current section's list); Enter leaves it and keeps the filter, Esc clears it and leaves |
-| `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c) and *Agent sorts N open changes* the row above it, in Today the setup card's row (WP-202); `↑` at the top of a list and its head goes on to the notices' buttons on a fresh press (a held `↑` stops at the top), `↓` on the last notice comes back (WP-202, below) |
-| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c); on a button the keys reached (a notice's, the setup card's, a Settings control) it arms, then runs what the click runs (WP-202), on *Agent sorts* it does nothing (`a` twice starts that agent); on a Settings group with controls the cursor goes to its first control; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
+| `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c), its crises (while its detail is shown) the stops between it and the first row (WP-201), and *Agent sorts N open changes* the row above it, in Today the setup card's row (WP-202); `↑` at the top of a list and its head goes on to the notices' buttons on a fresh press (a held `↑` stops at the top), `↓` on the last notice comes back (WP-202, below) |
+| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c), on one of its crises that crisis arms, then is applied alone (WP-201); on a button the keys reached (a notice's, the setup card's, a Settings control) it arms, then runs what the click runs (WP-202), on *Agent sorts* it does nothing (`a` twice starts that agent); on a Settings group with controls the cursor goes to its first control; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
@@ -641,12 +641,16 @@ C crises held back — apply each below", which shows the proposal in the
 detail (below). The proposal row is the row above the first list row
 (WP-126c, `Model.changelogMove`): ↑/`k` on the first row moves the
 selection onto it and then no list row is selected; ↓/`j` goes back to
-the row the list was at. A key only selects, as on an event row: on a
+the row the list was at; while the proposal's detail is shown and it has
+crises, ↓/`j` first walks them (WP-201, below) and ↓ on the last one
+goes back to the list. A key only selects, as on an event row: on a
 stacked desk the list stays and Enter shows the proposal's detail; a
 click, IPC and *Review* show it at once. A dim line under the row says
 so ("↑ from the first row, or a click, opens it"; while selected, "Enter
-twice applies · ↓ back to the list", on a stacked desk showing its list
-"Enter shows it · ↓ back to the list", `Model.proposalHint`). IPC
+twice applies · ↓ back to the list", with crises "Enter twice applies ·
+↓ its crises, then the list", on a crisis "Enter twice applies the
+crisis under the cursor · ↑/↓ the crises", on a stacked desk showing its
+list "Enter shows it · ↓ back to the list", `Model.proposalHint`). IPC
 `select proposal` (or the proposal's id; `Model.isProposalTarget`), a
 payload's `"select":"proposal"` and the shim's `resolve proposal` open it
 too. *Agent sorts* is the row above the proposal (WP-202): `↑` on the
@@ -713,7 +717,13 @@ holds only for the current proposal and is dropped when the index
 replaces it, so the bar never asks to confirm a write that would not
 happen; a row click, another selection (IPC `select` included) or, on a
 stacked desk, the detail's Back disarms too (`Changelog.disarmTriage`,
-the prefix rule of Work's and Decisions' arms); enabled also with nothing open, so a second run says what it
+the prefix rule of Work's and Decisions' arms); a press on the desk
+drops an armed *Apply proposals* as well, since a click applies it at
+once and its arm is therefore always a key's, while Discard's arm,
+made and confirmed by clicks, stays (`Changelog.leaveKeys`, WP-201
+round 2); its id names the open items it would apply
+(`Model.triageApplyKey`), so a proposal rewritten between the two
+Enters only arms again; enabled also with nothing open, so a second run says what it
 skipped) and *Discard* (it removes the agent's
 unapplied work, so it arms: "Confirm discard", hint "Discard proposal
 <id>? Click Confirm discard. The logbook does not change.", then `drift
@@ -729,7 +739,41 @@ since you opened it, what Apply writes can differ from what is shown
 here."; then **CRISES — EACH ON ITS OWN**: every
 item that is a crisis by the file's flag or the index's class, with
 *Apply this crisis* (`drift apply <id> --item <eventId> --json`, one per
-run); then **WHAT APPLY TAKES**. The items are built only while the pane
+run), and under the heading a dim line naming the keys ("↓ from the
+proposal reaches each crisis · Enter twice applies the one under the
+cursor", on an open one "Enter twice applies this crisis alone · ↑/↓
+the other crises", on one no longer open "Resolved — nothing to apply ·
+↑/↓ the other crises", while nothing can be applied "<the write
+blocker, else A run is under way> — cannot apply now · ↑/↓ the other
+crises", `Model.crisisHint`, `Model.crisisState`; the row's line says
+the same, `Model.proposalHint`). **A crisis by key** (WP-201; ADR-0028
+§3, ADR-0036: one crisis, one deliberate act, one per run): once the
+items are built (the asynchronous Loader is ready; until then ↓ on the
+shown proposal goes to the list and the row's line says "↓ back to the
+list", so no crisis is armed before its item, evidence and button are
+on screen), ↓ from the bar walks the crises (`Model.crisisMove`), ↑
+from the first goes back onto the bar, ↓ from the last to the list (an
+empty list keeps it). A crisis no longer open stays a stop (its button
+off). The button under the cursor wears the focus ring and is brought
+into view (`TriageDetail.reveal`: the whole item when it fits the pane,
+else the button's end at its bottom; `view`'s `crisisVisible`). Enter
+arms it; the arm's id names what the second Enter would run
+(`Model.crisisKey`: `triage:crisis:<proposal>:<eventId>:` then the
+item's action and target, intent and evidence refs, not the evidence
+text), so an item an agent rewrote between the two Enters only arms
+again, with its new hint "Apply the crisis <subject> (<Link to C-… or
+Explain: <title>>) as you? Press Enter again. Only this item; the other
+crises stay.". The second Enter runs the click's call
+(`TriageDetail.applyCrisis`); Enter on a crisis that is no longer open,
+or while nothing can be applied, does nothing. The window between the
+second Enter and the engine's read of the file is the click's ("Apply
+re-reads the file …" above); closing it would be contract. Besides
+every key that did not press, a press on the desk (`Changelog.leaveKeys`), another
+selection (IPC `select` included), leaving the proposal, the stacked
+Back and a replaced proposal drop the cursor's place and the arm; when
+a replaced proposal becomes the current one again (the newer one
+discarded elsewhere), no arm of it comes back (`TriageDetail`
+`onCurrentChanged`). Then **WHAT APPLY TAKES**. The items are built only while the pane
 is shown, by an asynchronous Loader (a 200 × 10 proposal: the click
 returns at once, the list builds in slices). Each item: the change's
 subject (from `index.events`), "Link to C-…" or "Explain: <title>" with

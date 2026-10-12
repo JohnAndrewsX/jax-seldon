@@ -258,7 +258,7 @@ The desk's keys (the full table with every section's keys:
 | `i` | the one-sentence new case (Today, Work) |
 | `e` | open in the editor: the journal, this month's ledger, the case, the decision, `STATUS.md`, the logbook |
 | `f` / `F` | Changelog: the next / previous chip |
-| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` back. On it, Enter twice applies it; ↑ again: *Agent sorts*, `a` twice starts it. Today, while Seldon is not set up: the setup card's row; ←/→ a button, Enter twice runs it |
+| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` its crises (Enter twice applies the one under the cursor alone), then back to the list. On it, Enter twice applies it; ↑ again: *Agent sorts*, `a` twice starts it. Today, while Seldon is not set up: the setup card's row; ←/→ a button, Enter twice runs it |
 | Enter on Appearance | Settings: the width slider, the presets, the sidebar; ↑/↓ a control, ←/→ its value, Enter twice saves it, Esc back |
 | `a` | Work: hand the case to the agent (twice), or *Focus* while one works on it |
 | `x` | Work: drop the case (twice) |

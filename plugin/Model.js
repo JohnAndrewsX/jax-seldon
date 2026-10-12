@@ -618,9 +618,87 @@ function changelogMove(s, dy) {
 // how the keys reach it, and, while it is the selection, what they do
 // there; `listOnly`: a stacked desk shows the list, not the detail, so
 // Enter first shows the detail (review F1).
-function proposalHint(shown, listOnly) {
+// `crises`: the shown proposal's crises the keys walk (WP-201; 0 until
+// its items are built), `crisis`: the state of the one under the cursor
+// (crisisState; "" on the bar), `blocker`: why nothing can be applied now.
+function proposalHint(shown, listOnly, crises, crisis, blocker) {
   if (!shown) return "↑ from the first row, or a click, opens it"
-  return listOnly ? "Enter shows it · ↓ back to the list" : "Enter twice applies · ↓ back to the list"
+  if (listOnly) return "Enter shows it · ↓ back to the list"
+  if (crisis === "open") return "Enter twice applies the crisis under the cursor · ↑/↓ the crises"
+  if (crisis === "closed") return "Resolved — nothing to apply · ↑/↓ the crises"
+  if (crisis === "blocked") return blockedText(blocker) + " · ↑/↓ the crises"
+  return crises > 0 ? "Enter twice applies · ↓ its crises, then the list" : "Enter twice applies · ↓ back to the list"
+}
+
+// The crisis under the cursor (WP-201 round 2, I6): "" none, "open" (Enter
+// twice applies it), "closed" (no longer open drift: a stop, nothing to
+// apply), "blocked" (open, but nothing can be applied now: the engine
+// cannot write, or a run is under way).
+function crisisState(item, canApply) {
+  if (!isObject(item)) return ""
+  if (!item.open) return "closed"
+  return canApply ? "open" : "blocked"
+}
+
+function blockedText(blocker) {
+  return (blocker ? String(blocker) : "A run is under way") + " — cannot apply now"
+}
+
+// A crisis inside the shown proposal by key (WP-201; ADR-0028 §3,
+// ADR-0036: one crisis, one deliberate act, one per run). The crises are
+// the stops between the proposal's bar and the list's first row. s: { at
+// (the crisis under the cursor, -1: the bar), count (the crises shown),
+// rows (the list's) }. Returns the new `at` (-1: back on the bar), or null
+// when the key leaves the crises (↑ from the bar, ↓ from the last crisis
+// to the list); an empty list keeps the last crisis.
+function crisisMove(s, dy) {
+  var count = Math.max(0, Number(s && s.count) || 0)
+  var at = Number(s && s.at)
+  if (!(at >= 0 && at < count)) at = -1
+  if (count === 0) return null
+  if (at < 0) return dy > 0 ? 0 : null
+  var to = at + (dy > 0 ? 1 : -1)
+  if (to < count) return Math.max(-1, to)
+  return (Number(s.rows) || 0) > 0 ? null : at
+}
+
+// The arm of one crisis names what the second Enter would run (SPEC-PLUGIN
+// §5.3; WP-201 round 2, I3): the proposal, the item, its action and
+// target, its intent and its evidence refs (not their text, which the
+// engine writes), all as the view shows them (triageView). An item an
+// agent rewrote under the cursor, or a replaced proposal, only arms
+// again, with the new hint. Its prefix is the Changelog's `triage:`
+// (every detour drops it). Only compared, never parsed.
+function crisisKey(proposalId, item) {
+  var it = isObject(item) ? item : {}
+  var refs = Array.isArray(it.evidence) ? it.evidence.map(function(e) { return isObject(e) ? e.label : "" }) : []
+  return "triage:crisis:" + String(proposalId) + ":" + String(it.eventId) + ":"
+    + [it.actionText, it.intent].concat(refs).join("|")
+}
+
+// The arm of *Apply proposals* names what it would apply (I7): the count
+// and the open items Apply takes, so a proposal rewritten between the
+// two Enters only arms again.
+function triageApplyKey(proposalId, view) {
+  var open = isObject(view) && Array.isArray(view.regular)
+    ? view.regular.filter(function(i) { return i.open }).map(function(i) { return i.eventId }) : []
+  return "triage:apply:" + String(proposalId) + ":" + open.length + ":" + open.join(",")
+}
+
+// The arm's hint names the subject and what the item does (its action
+// and target), so a rewritten item asks again in its new words.
+function crisisArmHint(item) {
+  var it = isObject(item) ? item : {}
+  return "Apply the crisis " + String(it.subject) + " (" + String(it.actionText) + ") as you? Press Enter again."
+    + " Only this item; the other crises stay."
+}
+
+// The dim line under CRISES — EACH ON ITS OWN; `state`: crisisState.
+function crisisHint(state, blocker) {
+  if (state === "open") return "Enter twice applies this crisis alone · ↑/↓ the other crises"
+  if (state === "closed") return "Resolved — nothing to apply · ↑/↓ the other crises"
+  if (state === "blocked") return blockedText(blocker) + " · ↑/↓ the other crises"
+  return "↓ from the proposal reaches each crisis · Enter twice applies the one under the cursor"
 }
 
 // Whether `id` (IPC `select`, a desk payload's `select`, the shim's
