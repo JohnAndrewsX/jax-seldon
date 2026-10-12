@@ -4,6 +4,50 @@ Branch `wp/208-tx-partial` in `wt/WP-208`, from `next` 9a9f5f7b (v0.3.0).
 Plugin only: no engine, schema or fixture change; no `contractVersion`
 bump. Nothing merged.
 
+## Round 3 (review round 2: APPROVE; orchestrator decision on F4)
+
+Commit 311550dd. Where round 3 changed round 2, this section rules.
+
+- **F4, rule (a) hedged.** The boundary event may be the oldest line of
+  a whole transaction, so a transaction at or past the boundary is now
+  `maybe` ("the ledger may hold more of this transaction"); only rule
+  (c), a group listing fewer open members than its `members`, is `cut`
+  ("the rest of this transaction is in the ledger"). (c) runs after the
+  loop, so `cut` still wins; the round-2 test "boundary and a pinned
+  older line: certain" is gone (both are now `maybe`), replaced by:
+  - the review's `boundary-solo` case, built in the model test: the
+    boundary event turned into a one-package install `T-SOLO` →
+    "1 package: 1 installed", `maybe`, list true, the hedged note;
+  - the boundary transaction as an open group of 40 listing 24 →
+    `cut` with the certain note.
+  - WP-137's "cut index" test: the boundary transaction now `maybe`.
+- SPEC-PLUGIN (the transaction detail paragraph) and the CHANGELOG
+  Plugin entry say the same.
+- The 0.2.0 counter-example (T-REVIEW, 24 of 40) still reads partial,
+  now with the hedged note.
+
+### Round 3 verification
+
+- **fixture** (dev host, node): `model.test.js` 222 passed. Mutants,
+  each alone, source restored and compared with `diff -q`: (a) back to
+  `cut` → WP-137 and WP-208 fail; no boundary rule → both fail; only
+  past the boundary (`i > boundary`) → both fail; no `members` rule →
+  WP-208 fails.
+- **fixture** (dev host): the review's `probe-208.js` (read only) at
+  311550dd: `boundary-solo.json` T-SOLO `maybe` list true, ollama
+  `maybe`, mesa `cut`; `boundary.json` T-REVIEW `maybe` list true,
+  ollama `maybe`, mesa `cut`; `leader-only.json` mesa `cut`, every
+  other transaction `""`.
+- **headless** (dev host, private gates folder, under `flock
+  /tmp/seldon-check.lock`; log `gates/desk-view-dev-208-r3.log`):
+  `tests/plugin/desk-view.sh` alone at 311550dd → 2460 passed, 0 failed,
+  exit 0; the tx cases (`transactions`, `drift-show`, `drift-show-member`,
+  `tx-leader-only`) pass with clean logs; the real
+  `~/.local/state/seldon` and `~/.config/seldon` untouched; 333 by-id
+  entries before and after.
+- **not run** in round 3: the full `just check` (the orchestrator gates
+  it), CI, a live desktop.
+
 ## Round 2 (review-1: SEND BACK; orchestrator decisions F1–F3, Q1)
 
 Commit 1a6378dc. Round 1 below stays as written; where round 2 changed
@@ -221,3 +265,5 @@ in two strings and SPEC-PLUGIN; easy to drop if you want the WP's form.
 4. Review Q4 (round 2 headless): the one-package case is in the dev's
    gate (`tx-leader-only` in desk-view), so the reviewer can read it from
    the full check's log without setting up a harness.
+5. Answered (round 3, review Q5/F4): rule (a) hedged; only (c) is
+   certain.
