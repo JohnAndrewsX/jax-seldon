@@ -54,6 +54,29 @@ STATUS.md at merge. No `contractVersion` bump, no schema change.
     tests' own HOME was private; the quickshell runtime held 333 by-id
     entries before and after. Not WP-203's code; the gate is not green.
     I did not change the guard (not this WP's file); see open question 5.
+- Merge of `next` 71f070b8 (WP-212, the guard fix): b26b56bd, no
+  conflicts; under `plugin/` and `tests/plugin/` it changes only
+  `real-home-guard.sh` and its test.
+- **headless** and **fixture** (dev host, private gates folder, at
+  b26b56bd, under the lock; log `gates/check-dev-203-r3c.log`): exit 1.
+  - cargo 2 903 / 0 / 20 over 112 binaries; validate-fixtures,
+    docs-check, qmllint (53 files) ok; model.test.js 221;
+    real-home-guard.test 71/0; service-states 366/0.
+  - desk-view: the guard now passes (`changed by the operator's live
+    engine (not a leak)`; 333 by-id entries before and after).
+  - desk-view 2323 passed, 14 failed, all in the scenario `drift-only`:
+    at step #1 no row was selected (`sectionView.selected` empty), and the
+    rest followed from that (`HARNESS nothing to click: Link to case…`,
+    `wait timed out: sectionView.detail.form.isOpen=false`). The host's
+    load was 8.91. `drift-only` passed in the round-1, round-2, r3 and
+    r3b runs on the same plugin and scenario code. Most likely a timing
+    failure, but no re-run has confirmed it yet.
+- **Paused (wind-down, 2026-10-12 12:46).** The re-run (`-r3d.log`)
+  waited behind three other checks for the lock and had not started; I
+  stopped it. The next step: at b26b56bd (or later), run
+  `SELDON_FULL_CHECK=1 just check` under `flock /tmp/seldon-check.lock`.
+  If it is green, WP-203 is ready. If `drift-only` fails again, look at
+  that scenario under load before any other step. Nothing else is open.
 
 ## Round 2 (stage 1 and stage 2: APPROVE WITH FIXES)
 
