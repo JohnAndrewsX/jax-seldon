@@ -37,7 +37,19 @@ struct Hooks {
 
 impl Hooks {
     fn new() -> Self {
-        let env = Env::new(Snapper::NoPermissions);
+        Self::with(Env::new(Snapper::NoPermissions))
+    }
+
+    /// With the home, logbook and state on tmpfs, for the timings of a
+    /// recorded call ([`common::sync_timing_dir`], WP-210).
+    fn on_tmpfs() -> Self {
+        Self::with(Env::new_in(
+            Snapper::NoPermissions,
+            &common::sync_timing_dir(),
+        ))
+    }
+
+    fn with(env: Env) -> Self {
         let logbook = env.init_logbook();
         std::fs::write(env.tmp.path().join("pacman.log"), "").unwrap();
         Hooks {
@@ -553,8 +565,8 @@ mod claude_code {
     /// line that holds `-e` and `-am` (WP-097) each take
     /// < 5 ms, median wall time of 21 calls, process start included
     /// (`assert_within_budget`). A recorded command syncs its ledger line
-    /// and case file: on tmpfs, as in the default temp dir here; on a disk
-    /// the sync alone takes longer (SPEC §1). Returns the number of
+    /// and case file: on tmpfs ([`Hooks::on_tmpfs`]); on a disk the sync
+    /// alone takes longer (SPEC §1, WP-210). Returns the number of
     /// commands recorded.
     fn hook_budget(h: &Hooks, case: &str, lines: &str) -> usize {
         const BUDGET: std::time::Duration = std::time::Duration::from_millis(5);
@@ -643,7 +655,7 @@ mod claude_code {
     #[ignore = "release timing at scale: `just check-perf`"]
     fn fast_enough_at_10_000_ledger_lines() {
         common::assert_optimised();
-        let h = Hooks::new();
+        let h = Hooks::on_tmpfs();
         let case = h.active_case();
         common::scale::filler_notes(&h.logbook, 10_000);
         assert!(h.ledger().len() > seldon::index::FAST_REBUILD_MAX_LINES);
@@ -696,7 +708,7 @@ mod claude_code {
     #[ignore = "release timing at scale: `just check-perf`"]
     fn fast_enough_just_below_the_rebuild_threshold() {
         common::assert_optimised();
-        let h = Hooks::new();
+        let h = Hooks::on_tmpfs();
         let case = h.active_case();
         // room for 4 × 2 × (1 + 21) recorded commands (three kinds, the
         // third with two events per call, each with a re-measurement)

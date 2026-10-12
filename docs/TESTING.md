@@ -37,11 +37,30 @@ prints ×150), then the ignored tests of `tests/index.rs`,
 `tests/hooks.rs` and `tests/redaction.rs` one at a time: `status` at
 11 656 ledger lines, 304 cases and 365 journal files < 100 ms,
 `hook claude-code` at 10 000 lines and at 950 lines (with the index
-rebuild) < 5 ms, for a call it does not record and a recorded one, with
-the temp dir on tmpfs, and the redaction of long lines (16 KB < 1 ms and
+rebuild) < 5 ms, for a call it does not record and a recorded one, and
+the redaction of long lines (16 KB < 1 ms and
 64 KB < 2 ms without a masked value; 128 KB with many masked values
-< 20 ms or < 10 ms, WP-087). Every
-check measures a median over budget once more before it fails. Required
+< 20 ms or < 10 ms, WP-087), and `tests/capture_cost.rs`. Every
+check measures a median over budget once more before it fails. The
+rows that time a synced write are medium-bound (WP-210): `hook,
+recorded … (tmpfs)` at 10 000 and at 900 lines (the ledger line and the
+case file are synced, below the threshold the index too) and
+`recent-config scan and save (the capture-cost delta, tmpfs)` (the saved
+scan is written atomically and synced with its directory). SPEC-ENGINE
+§1 states their budgets with the state on tmpfs; with the state on the
+btrfs disk of the gates their medians were 11–32 ms (WP-157's base
+runs), on tmpfs 1.7–4.7 ms. So `check-perf` makes a
+directory of its own on the tmpfs `/dev/shm` (`mktemp -d
+/dev/shm/seldon-perf.XXXXXX`, never `/tmp` or the runtime directory;
+it refuses to start with less than 256 MiB free there), passes it as
+`SELDON_PERF_TMPFS` and removes it on exit; those rows keep their home,
+logbook and state there (`common::sync_timing_dir`), their stub
+programs in `TMPDIR` (a container's `/dev/shm` may be `noexec`), and
+refuse a directory that `/proc/self/mountinfo` does not show on a
+tmpfs, so a disk never decides them (`a_synced_write_is_timed_on_a_tmpfs_only`).
+The directory holds about 2 MiB at its peak (one hook home of 10 000
+ledger lines). Run directly, they use `TMPDIR` when it is a tmpfs. Every other row runs in `TMPDIR`, whatever its
+medium, with its budget unchanged. Required
 before the handover of a WP that touches the index build, `status` or
 the hooks), `just build-release` (static musl binary,
 `x86_64-unknown-linux-musl`), `just fixtures-refresh` (stub until the engine

@@ -20,8 +20,13 @@ pub struct TempDir(PathBuf);
 
 impl TempDir {
     pub fn new(tag: &str) -> Self {
+        Self::new_in(&std::env::temp_dir(), tag)
+    }
+
+    /// [`TempDir::new`] under `base` instead of the temp dir.
+    pub fn new_in(base: &Path, tag: &str) -> Self {
         static N: AtomicUsize = AtomicUsize::new(0);
-        let dir = std::env::temp_dir().join(format!(
+        let dir = base.join(format!(
             "seldon-test-{tag}-{}-{}",
             std::process::id(),
             N.fetch_add(1, Ordering::SeqCst)
@@ -61,15 +66,34 @@ pub struct Env {
     pub tmp: TempDir,
     pub home: PathBuf,
     bin: PathBuf,
+    /// The stubs' own temp dir when `tmp` is elsewhere ([`Env::new_in`]).
+    _bin_tmp: Option<TempDir>,
     /// Whether the host has git (git tests are skipped without it).
     pub has_git: bool,
 }
 
 impl Env {
     pub fn new(snapper: Snapper) -> Self {
-        let tmp = TempDir::new("env");
+        Self::with(snapper, TempDir::new("env"), None)
+    }
+
+    /// [`Env::new`] with its home, logbook and state under `base` (the
+    /// tmpfs of [`sync_timing_dir`]); the stub programs stay in the temp
+    /// dir, since a tmpfs such as a container's `/dev/shm` may be
+    /// mounted `noexec`.
+    pub fn new_in(snapper: Snapper, base: &Path) -> Self {
+        Self::with(
+            snapper,
+            TempDir::new_in(base, "env"),
+            Some(TempDir::new("env-bin")),
+        )
+    }
+
+    fn with(snapper: Snapper, tmp: TempDir, bin_tmp: Option<TempDir>) -> Self {
         let home = tmp.path().join("home");
-        let bin = tmp.path().join("bin");
+        let bin = bin_tmp
+            .as_ref()
+            .map_or_else(|| tmp.path().join("bin"), |b| b.path().join("bin"));
         std::fs::create_dir_all(&home).unwrap();
         std::fs::create_dir_all(&bin).unwrap();
         // made here, not on first use: tests compare the temp tree before
@@ -103,6 +127,7 @@ impl Env {
             tmp,
             home,
             bin,
+            _bin_tmp: bin_tmp,
             has_git: git.is_some(),
         }
     }
@@ -534,6 +559,62 @@ pub fn assert_optimised() {
     if cfg!(debug_assertions) {
         panic!("a timing budget needs an optimised build: run `just check-perf`");
     }
+}
+
+/// Where a timing whose budget holds with the state on tmpfs keeps its
+/// state (SPEC-ENGINE §1, WP-210): a recorded hook call and the saved
+/// recent-config scan sync what they write, and a sync to a disk alone
+/// takes longer than the budget. `SELDON_PERF_TMPFS` (the tmpfs `just
+/// check-perf` makes and removes under `/dev/shm`), else the temp dir.
+/// Panics when that directory is not on a tmpfs, so such a row is never
+/// timed on a disk: it fails with the reason instead of a timing.
+pub fn sync_timing_dir() -> PathBuf {
+    let dir = std::env::var_os("SELDON_PERF_TMPFS").map_or_else(std::env::temp_dir, PathBuf::from);
+    assert_on_tmpfs(&dir);
+    eprintln!("synced writes on tmpfs ({})", dir.display());
+    dir
+}
+
+/// Panics unless `dir` is on a tmpfs ([`sync_timing_dir`]).
+pub fn assert_on_tmpfs(dir: &Path) {
+    let fs = file_system_of(dir);
+    assert_eq!(
+        fs.as_deref(),
+        Some("tmpfs"),
+        "{} is not on a tmpfs: a synced write is timed on tmpfs only; \
+         `just check-perf` makes one (SELDON_PERF_TMPFS)",
+        dir.display()
+    );
+}
+
+/// The type of the file system `path` is on (`tmpfs`, `ext4`, `btrfs` …),
+/// from `/proc/self/mountinfo`: the deepest mount point above it, the
+/// last one mounted when two share it.
+pub fn file_system_of(path: &Path) -> Option<String> {
+    let path = std::fs::canonicalize(path).ok()?;
+    let info = std::fs::read_to_string("/proc/self/mountinfo").ok()?;
+    let mut found: Option<(usize, String)> = None;
+    for line in info.lines() {
+        // `36 35 98:0 /root /mnt rw,noatime master:1 - ext4 /dev/root rw`
+        let Some((mount, fs)) = line
+            .split_once(" - ")
+            .and_then(|(left, right)| Some((left.split(' ').nth(4)?, right.split(' ').next()?)))
+        else {
+            continue;
+        };
+        let mount = PathBuf::from(
+            mount
+                .replace("\\040", " ")
+                .replace("\\011", "\t")
+                .replace("\\012", "\n")
+                .replace("\\134", "\\"),
+        );
+        let depth = mount.components().count();
+        if path.starts_with(&mount) && found.as_ref().is_none_or(|(d, _)| depth >= *d) {
+            found = Some((depth, fs.to_string()));
+        }
+    }
+    found.map(|(_, fs)| fs)
 }
 
 /// The median wall time of `runs` calls of `f` after one warm-up call, and
