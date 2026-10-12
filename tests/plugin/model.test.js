@@ -2865,20 +2865,24 @@ test("transactionDetail: a transaction is partial by its own rows (WP-208)", () 
   filler(100)
   for (let i = 0; i < 4; i++) push(pkg("T-WHOLE", "whole-" + i))   // an open group of 4, all listed
   for (let i = 0; i < 3; i++) push(pkg("T-FEW", "few-" + i))       // an open group of 5, 3 listed
-  filler(367)
+  filler(366)
   // the 0.2.0 counter-example (WP-203 stage 1): the rest ends in a
   // transaction of 40 whose newest 24 lines are listed; the others are cut
   for (let i = 0; i < 24; i++) push(pkg("T-BOUND", "bound-" + i, { case: "C-2026-001" }))
   push(pkg("T-PIN", "pin-leader"))                                  // a pinned leader of 3, the others cut
+  push(pkg("T-OLD", "old-single"))                                  // a pinned single item; its other lines, in a case, cut
   push(Object.assign({}, theme))                                    // a pinned single item, the list's last
   same(rows.length, M.INDEX_EVENTS_MAX)
   const leader = tx => rows.filter(e => e.txId === tx).slice(-1)[0]
   const group = (tx, members) => Object.assign({}, template, { eventId: leader(tx).id, ts: leader(tx).ts,
     subject: leader(tx).subject, kind: "upgrade", txId: tx, members: members })
-  const single = Object.assign({}, template, rows[rows.length - 1], { eventId: rows[rows.length - 1].id })
-  delete single.id; delete single.txId; delete single.members; delete single.meta
-  const v = Object.assign(base, { events: rows,
-    drift: [group("T-WHOLE", 4), group("T-FEW", 5), group("T-PIN", 3), single] })
+  const single = e => {
+    const d = Object.assign({}, template, e, { eventId: e.id })
+    delete d.id; delete d.txId; delete d.members; delete d.meta
+    return d
+  }
+  const v = Object.assign(base, { events: rows, drift: [group("T-WHOLE", 4), group("T-FEW", 5), group("T-PIN", 3),
+    single(leader("T-OLD")), single(rows[rows.length - 1])] })
   const p = M.deskChangelog(v)
   const tx = id => M.eventDetail(v, p, id).transaction
   const BOUND = rows.find(e => e.subject === "bound-0").id
@@ -2886,13 +2890,17 @@ test("transactionDetail: a transaction is partial by its own rows (WP-208)", () 
   same([tx(BOUND).summary, tx(BOUND).partial], ["24 packages: 24 upgraded", true])
   // (b) a pinned leader older than that event; it is not the list's last event
   same([tx(leader("T-PIN").id).summary, tx(leader("T-PIN").id).partial], ["1 package: 1 upgraded", true])
+  same([tx(leader("T-OLD").id).summary, tx(leader("T-OLD").id).partial], ["1 package: 1 upgraded", true])
   // (c) fewer open members listed than the group's `members`, far from the boundary
   same([tx(leader("T-FEW").id).summary, tx(leader("T-FEW").id).partial], ["3 packages: 3 upgraded", true])
   // an untouched whole transaction
   same([tx(leader("T-WHOLE").id).summary, tx(leader("T-WHOLE").id).partial], ["4 packages: 4 upgraded", false])
-  // a member resolved into a case is no open member: the group counts 3 of 4
+  // a line linked to a case is no open member: 3 open lines listed, so a
+  // group of 4 lacks one (the transaction's 4 lines do not hide it), a
+  // group of 3 is whole
   const linked = JSON.parse(JSON.stringify(v))
   linked.events.find(e => e.subject === "whole-0").case = "C-2026-001"
+  same(M.eventDetail(linked, M.deskChangelog(linked), leader("T-WHOLE").id).transaction.partial, true)
   linked.drift[0].members = 3
   same(M.eventDetail(linked, M.deskChangelog(linked), leader("T-WHOLE").id).transaction.partial, false)
   // under the cap nothing was cut by position; a group still counts its rows
@@ -2900,15 +2908,15 @@ test("transactionDetail: a transaction is partial by its own rows (WP-208)", () 
   under.events = under.events.filter(e => !/^bound-[0-9]$/.test(e.subject))
   const up = M.deskChangelog(under)
   const utx = id => M.eventDetail(under, up, id).transaction.partial
-  same([utx(rows.find(e => e.subject === "bound-10").id), utx(leader("T-PIN").id), utx(leader("T-FEW").id),
-    utx(leader("T-WHOLE").id)], [false, true, true, false])
+  same([utx(rows.find(e => e.subject === "bound-10").id), utx(leader("T-OLD").id), utx(leader("T-PIN").id),
+    utx(leader("T-FEW").id), utx(leader("T-WHOLE").id)], [false, false, true, true, false])
   // the detail says so, and a file left by a transaction the index no
   // longer lists keeps its own line, without the note
   same(M.transactionRows(tx(BOUND)), [["Command", "pacman -Syu"], ["Transaction", "24 packages: 24 upgraded"]])
   const note = JSON.parse(JSON.stringify(v))
-  Object.assign(note.events[note.events.length - 3], { kind: "note", subject: "/etc/x.pacnew", meta: { transaction: "T-GONE" } })
-  delete note.events[note.events.length - 3].txId
-  const gone = M.eventDetail(note, M.deskChangelog(note), note.events[note.events.length - 3].id)
+  Object.assign(note.events[note.events.length - 4], { kind: "note", subject: "/etc/x.pacnew", meta: { transaction: "T-GONE" } })
+  delete note.events[note.events.length - 4].txId
+  const gone = M.eventDetail(note, M.deskChangelog(note), note.events[note.events.length - 4].id)
   same([gone.transaction.partial, gone.kv.find(r => r[0] === "Transaction")[1]],
     [false, "not in the index any more (it lists 500 events) · left 1 file"])
 })
