@@ -177,7 +177,8 @@ check-assumptions:
 
 # Read only, no network. Without arguments a notice and exit 0; with
 # --gate exit 1 on any mismatch or a missing tree (the release gates of
-# WP-126 and WP-188, on the test host, before the live check).
+# WP-126 and WP-188, on the test host from the deployed clone, before the
+# live check); a pin that cannot be read is a notice, under --gate a refusal.
 # The installed Omarchy files against the assumptions ledger (WP-194).
 check-upstream *args:
     OMARCHY_PATH="{{ omarchy_path }}" bash scripts/check-omarchy-assumptions.sh {{ args }}

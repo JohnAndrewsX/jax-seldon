@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # tests/omarchy/assumptions.json and scripts/check-omarchy-assumptions.sh
 # (WP-194). Everywhere (fixture): the ledger is well-formed, each cited
-# plugin line still holds its symbol, its validator hash is the pin's; on a
-# synthetic tree the check says ok, names every assumption of a changed or
-# missing file, says whether the file still names the symbol, notes a
-# validator other than the pin, refuses with --gate, prints "skipped" (never
-# "ok") without a tree and writes nothing. Where Omarchy is installed: a
-# scratch copy of the ledger's files checks as the tree does, and one
-# changed file produces the notice naming its assumptions. Each check runs
-# with its own HOME and XDG_RUNTIME_DIR. Runs in `just check-assumptions`.
+# plugin line is code (not a comment) and still holds its pluginSymbol, its
+# validator hash is the pin's; on a synthetic tree the check says ok, names
+# every assumption of a changed or missing file, says whether the file
+# still names the symbol, notes a validator other than the pin and a pin
+# it cannot read, refuses both with --gate, prints "skipped" (never "ok")
+# without a tree and writes nothing. Where Omarchy is installed: every
+# symbol is in its file where the hash matches; a scratch copy of the
+# ledger's files checks as the tree does; a change to shell.qml alone
+# names the shell's settings write and service lookup, one to
+# PluginShellApi.qml the facade's. Each check runs with its own HOME and
+# XDG_RUNTIME_DIR. Runs in `just check-assumptions`.
 #
 # Usage: bash tests/omarchy/assumptions.test.sh
 set -euo pipefail
@@ -34,7 +37,7 @@ lint() {
     | ($a | map(.id) | group_by(.) | map(select(length > 1) | "duplicate id \(.[0])")[]),
       ($a | group_by(.path) | map(select((map(.sha256) | unique | length) > 1) | "two sha256 for \(.[0].path)")[]),
       ($a[] | . as $e
-        | (["id", "path", "sha256", "omarchyVersion", "measured", "symbol", "plugin", "relies", "remeasure"][]
+        | (["id", "path", "sha256", "omarchyVersion", "measured", "symbol", "pluginSymbol", "plugin", "relies", "remeasure"][]
             | select(($e[.] | type) != "string" or $e[.] == "") | "\($e.id // "?"): no \(.)"),
           (select((.path | type) == "string" and (.path | test("^/|\\.\\.")) ) | "\(.id): path not relative"),
           (select((.sha256 | type) == "string" and (.sha256 | test("^[0-9a-f]{64}$") | not)) | "\(.id): sha256 not 64 hex"),
@@ -44,24 +47,28 @@ lint() {
             | .plugin as $p | select((.relies | startswith("Seldon relies on ") and endswith(" at " + $p + ".")) | not)
             | "\(.id): relies is not \"Seldon relies on … at \(.plugin).\""))
   ' "$file" || echo "jq could not read the assumptions"
-  # each cited line still holds its symbol
+  # each cited line is code, not a comment, and still holds its pluginSymbol
+  local f n line
   while IFS=$'\t' read -r id ref symbol; do
-    local f=${ref%:*} n=${ref##*:}
+    f=${ref%:*} n=${ref##*:}
+    line=$( [[ -f $root/$f ]] && sed -n "${n}p" "$root/$f")
     if [[ ! -f $root/$f ]]; then
       echo "$id: $f not found"
-    elif ! sed -n "${n}p" "$root/$f" | grep -qF -- "$symbol"; then
+    elif [[ $line =~ ^[[:space:]]*(//|/\*|\*|#) ]]; then
+      echo "$id: $ref is a comment, not code"
+    elif ! grep -qF -- "$symbol" <<< "$line"; then
       echo "$id: $ref does not hold '$symbol'"
     fi
-  done < <(jq -r '.assumptions[] | select(.plugin and .symbol) | [.id, .plugin, .symbol] | @tsv' "$file")
+  done < <(jq -r '.assumptions[] | select(.plugin and .pluginSymbol) | [.id, .plugin, .pluginSymbol] | @tsv' "$file")
   # the validator CI fetches is the one the ledger measured
-  read -r _ _ pin_sha < <(SELDON_OMARCHY_PIN=${PIN:-$root/packaging/omarchy-pin} bash "$root/packaging/omarchy-validate.sh" --print-pin)
+  read -r _ _ pin_sha < <(bash "$root/packaging/omarchy-validate.sh" --print-pin)
   jq -r --arg pin "$pin_sha" '.assumptions[] | select(.path == "bin/omarchy-plugin-validate" and .sha256 != $pin)
     | "\(.id): validator sha256 is not packaging/omarchy-pin'"'"'s"' "$file"
 }
 
 problems=$(lint "$ledger")
 if [[ -z $problems ]]; then
-  pass "tests/omarchy/assumptions.json: well-formed, every cited plugin line holds its symbol, validator = pin"
+  pass "tests/omarchy/assumptions.json: well-formed, every cited plugin line is code holding its pluginSymbol, validator = pin"
 else
   fail "tests/omarchy/assumptions.json: $problems"
 fi
@@ -74,14 +81,21 @@ else
 fi
 
 # lint mutants: each must be caught
-# mutate NAME JQ-FILTER PATTERN
+# mutate NAME JQ-FILTER PATTERN [JQ-ARGS...]
 mutate() {
   local name=$1 filter=$2 pattern=$3 out
-  jq "$filter" "$ledger" > "$tmp/mutant.json"
+  shift 3
+  jq "$@" "$filter" "$ledger" > "$tmp/mutant.json"
   out=$(lint "$tmp/mutant.json")
   if grep -q -- "$pattern" <<< "$out"; then pass "lint catches: $name"; else fail "lint misses: $name ($out)"; fi
 }
 mutate "a cited line that moved" '.assumptions[0].plugin |= sub(":[0-9]+$"; ":1")' "does not hold"
+# a comment line of Model.js that names RESTART_SHELL_ARGV, the code line's symbol
+comment=$(grep -n '^//.*RESTART_SHELL_ARGV\|^// .*restart' "$root/plugin/Model.js" | head -n 1 | cut -d: -f1)
+# shellcheck disable=SC2016 # $ref is jq's, not the shell's
+mutate "a cited comment line" '(.assumptions[] | select(.id == "restart-shell")) |= (.plugin = $ref | .pluginSymbol = "/" | .relies |= sub(" at plugin/[^ ]+$"; " at " + $ref + "."))' "is a comment" \
+  --arg ref "plugin/Model.js:${comment:-1}"
+mutate "a missing pluginSymbol" 'del(.assumptions[2].pluginSymbol)' "no pluginSymbol"
 mutate "a sentence without its line" '.assumptions[0].relies = "Seldon relies on something."' "relies is not"
 mutate "a missing field" 'del(.assumptions[1].remeasure)' "no remeasure"
 # shellcheck disable=SC2016 # $i is jq's, not the shell's
@@ -175,6 +189,27 @@ expect "a ledger updated, the pin not: the pin notice alone" 0 "$tree" "$tmp/led
   "NOTICE: CI validates with another validator" "refresh packaging/omarchy-pin" NOT:"changed (" NOT:"files differ"
 expect "a ledger updated, the pin not, --gate: refused" 1 "$tree" "$tmp/ledger2.json" --gate -- "refused (--gate)"
 printf '#!/bin/bash\necho validate\n' > "$tree/bin/omarchy-plugin-validate"
+# a pin that cannot be read: the validator was not compared, never "ok"
+mv "$tmp/pin" "$tmp/pin.kept"
+expect "no pin: a notice, exit 0, never ok" 0 "$tree" "$tmp/ledger.json" -- \
+  "NOTICE: cannot read packaging/omarchy-pin" "could not be read, so the validator was not compared" NOT:"ok ("
+expect "no pin with --gate: refused" 1 "$tree" "$tmp/ledger.json" --gate -- \
+  "refused (--gate): every file matches the ledger, but packaging/omarchy-pin could not be read"
+printf 'repo=omacom/omarchy\ncommit=short\n' > "$tmp/pin"
+expect "a malformed pin with --gate: refused" 1 "$tree" "$tmp/ledger.json" --gate -- \
+  "cannot read packaging/omarchy-pin" "refused (--gate)" NOT:"ok ("
+printf '// changed\n' >> "$tree/shell/Api.qml"
+expect "no pin and a changed file with --gate: both named" 1 "$tree" "$tmp/ledger.json" --gate -- \
+  "api-alpha" "1 of 3 files differ from the ledger; packaging/omarchy-pin could not be read"
+printf 'function alpha() {}\nfunction beta() {}\n' > "$tree/shell/Api.qml"
+mv "$tmp/pin.kept" "$tmp/pin"
+expect "the pin back: ok again" 0 "$tree" "$tmp/ledger.json" --gate -- "ok (every assumption"
+rm "$tree/bin/omarchy-plugin-validate"
+mv "$tmp/pin" "$tmp/pin.kept"
+jq '.assumptions |= map(select(.id != "validator"))' "$tmp/ledger.json" > "$tmp/noval.json"
+expect "no validator installed: the pin is not needed" 0 "$tree" "$tmp/noval.json" --gate -- "ok (every assumption" NOT:"cannot read"
+mv "$tmp/pin.kept" "$tmp/pin"
+printf '#!/bin/bash\necho validate\n' > "$tree/bin/omarchy-plugin-validate"
 after=$(cd "$tree" && find . -type f -exec sha256sum {} + | sort)
 if [[ $before == "$after" ]]; then pass "the check wrote nothing into the tree"; else fail "the tree changed under the check"; fi
 
@@ -216,13 +251,50 @@ else
   else
     fail "the scratch copy checks differently: $(diff "$tmp/want" "$tmp/got")"
   fi
+  # each symbol is found in its file wherever the file is the one measured
+  sym_problems=''
+  while IFS=$'\t' read -r id path want symbol; do
+    [[ -f $installed/$path && $(sha "$installed/$path") == "$want" ]] || continue
+    grep -qF -- "$symbol" "$installed/$path" || sym_problems+=" $id ('$symbol' not in $path)"
+  done < <(jq -r '.assumptions[] | [.id, .path, .sha256, .symbol] | @tsv' "$ledger")
+  if [[ -z $sym_problems ]]; then
+    pass "every symbol is in its Omarchy file where the hash matches"
+  else
+    fail "symbols not in their Omarchy file:$sym_problems"
+  fi
+  measured=$(jq -r --arg p shell/Ui/Button.qml '[.assumptions[] | select(.path == $p)][0].sha256' "$ledger")
+  if [[ -f $installed/shell/Ui/Button.qml && $(sha "$installed/shell/Ui/Button.qml") == "$measured" ]]; then
+    jq '(.assumptions[] | select(.path == "shell/Ui/Button.qml") | .symbol) = "noSuchSymbolInButton"' "$ledger" > "$tmp/badsym.json"
+    caught=0
+    while IFS=$'\t' read -r id path want symbol; do
+      [[ -f $installed/$path && $(sha "$installed/$path") == "$want" ]] || continue
+      grep -qF -- "$symbol" "$installed/$path" || caught=1
+    done < <(jq -r '.assumptions[] | [.id, .path, .sha256, .symbol] | @tsv' "$tmp/badsym.json")
+    if ((caught)); then pass "lint catches: a symbol not in its Omarchy file"; else fail "lint misses: a symbol not in its Omarchy file"; fi
+  fi
+
+  # a change to shell.qml alone names the shell's own settings write and service lookup
+  target=shell/shell.qml
+  want_sha=$(jq -r --arg p "$target" '[.assumptions[] | select(.path == $p)][0].sha256' "$ledger")
+  if [[ -f $copy/$target && $(sha "$copy/$target") == "$want_sha" ]]; then
+    cp "$copy/$target" "$tmp/shell.qml.kept"
+    printf '\n// scratch change\n' >> "$copy/$target"
+    expect "a changed shell.qml: the notice names shell-settings-write and shell-service-lookup" 0 "$copy" "$ledger" -- \
+      "NOTICE: $target changed" "shell-settings-write (still names 'updateEntryInline')" \
+      "shell-service-lookup (still names 'serviceFor')" "shell-overlay-routing" "1 of 17 files differ" \
+      NOT:"facade-settings-write" NOT:"no longer names"
+    cp "$tmp/shell.qml.kept" "$copy/$target"
+  else
+    echo "skip changed shell.qml: $target already differs from the ledger here (see \`just check-upstream\`)"
+  fi
+
   target=shell/services/PluginShellApi.qml
   want_sha=$(jq -r --arg p "$target" '[.assumptions[] | select(.path == $p)][0].sha256' "$ledger")
   if [[ -f $copy/$target && $(sha "$copy/$target") == "$want_sha" ]]; then
     printf '\n// scratch change\n' >> "$copy/$target"
     expect "a changed installed file: the notice names facade-settings-write" 0 "$copy" "$ledger" -- \
       "NOTICE: $target changed" "facade-settings-write (still names 'updateEntryInline')" \
-      "at plugin/Desk.qml:527" "re-measure: the desk's settings writes"
+      "at plugin/Desk.qml:527" "re-measure: the desk's settings writes" NOT:"shell-settings-write" NOT:"no longer names"
     expect "a changed installed file with --gate: refused" 1 "$copy" "$ledger" --gate -- "refused (--gate)"
   else
     echo "skip changed installed file: $target already differs from the ledger here (see \`just check-upstream\`)"

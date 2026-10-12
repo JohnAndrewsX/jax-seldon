@@ -8,8 +8,9 @@
 #
 # Usage: scripts/check-omarchy-assumptions.sh [--gate]
 #   default  a notice, exit 0 (`just check`)
-#   --gate   exit 1 on any mismatch, and when the tree is missing (the
-#            release gates of WP-126 and WP-188, on the test host)
+#   --gate   exit 1 on any mismatch, a pin that differs or cannot be
+#            read, and a missing tree (the release gates of WP-126 and
+#            WP-188, on the test host, from the deployed clone)
 # Exit 2: usage, a malformed ledger, jq missing.
 #
 # OMARCHY_PATH names the tree (default /usr/share/omarchy); without its
@@ -94,14 +95,25 @@ for path in "${paths[@]}"; do
   done <<< "$rows"
 done
 
-# CI runs the validator of packaging/omarchy-pin, not the installed one
+# CI runs the validator of packaging/omarchy-pin, not the installed one.
+# A pin that cannot be read means the comparison did not happen: a notice,
+# and --gate refuses (a gate that did not look is not a pass).
 pin_note=''
 validator=$tree/bin/omarchy-plugin-validate
-if [[ -f $validator ]] && read -r _ _ pin_sha < <(bash "$root/packaging/omarchy-validate.sh" --print-pin); then
-  installed=$(sha256sum < "$validator" | cut -d' ' -f1)
-  if [[ $installed != "$pin_sha" ]]; then
-    pin_note=1
-    echo "$me: NOTICE: CI validates with another validator: bin/omarchy-plugin-validate is ${installed:0:12} here, packaging/omarchy-pin fetches ${pin_sha:0:12} (packaging/README.md, \"The Omarchy pin\")"
+if [[ -f $validator ]]; then
+  pin_sha=''
+  if pin=$(bash "$root/packaging/omarchy-validate.sh" --print-pin); then
+    read -r _ _ pin_sha <<< "$pin"
+  fi
+  if [[ ! $pin_sha =~ ^[0-9a-f]{64}$ ]]; then
+    pin_note=unread
+    echo "$me: NOTICE: cannot read packaging/omarchy-pin, so the installed validator was not compared with the one CI fetches"
+  else
+    installed=$(sha256sum < "$validator" | cut -d' ' -f1)
+    if [[ $installed != "$pin_sha" ]]; then
+      pin_note=differs
+      echo "$me: NOTICE: CI validates with another validator: bin/omarchy-plugin-validate is ${installed:0:12} here, packaging/omarchy-pin fetches ${pin_sha:0:12} (packaging/README.md, \"The Omarchy pin\")"
+    fi
   fi
 fi
 
@@ -109,10 +121,15 @@ if ((changed == 0)) && [[ -z $pin_note ]]; then
   echo "$me: ok (every assumption's file matches the ledger)"
   exit 0
 fi
+case $pin_note in
+  differs) pin_text='CI validates with another validator: refresh packaging/omarchy-pin (packaging/README.md, "The Omarchy pin")' ;;
+  unread) pin_text='packaging/omarchy-pin could not be read, so the validator was not compared' ;;
+  *) pin_text='' ;;
+esac
 if ((changed)); then
-  summary="$changed of ${#paths[@]} files differ from the ledger${pin_note:+; CI validates with another validator}: re-measure the assumptions above and update the ledger's sha256, omarchyVersion, measured and sentence in the same commit, never silence it (docs/TESTING.md, \"Omarchy assumptions\")"
+  summary="$changed of ${#paths[@]} files differ from the ledger${pin_text:+; $pin_text}: re-measure the assumptions above and update the ledger's sha256, omarchyVersion, measured and sentence in the same commit, never silence it (docs/TESTING.md, \"Omarchy assumptions\")"
 else
-  summary="every file matches the ledger, but CI validates with another validator: refresh packaging/omarchy-pin (packaging/README.md, \"The Omarchy pin\")"
+  summary="every file matches the ledger, but $pin_text"
 fi
 if ((gate)); then
   echo "$me: refused (--gate): $summary" >&2

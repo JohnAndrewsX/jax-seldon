@@ -1,5 +1,5 @@
 {
-  "about": "What Seldon assumes about Omarchy (WP-194): installed files under $OMARCHY_PATH, each hashed read-only, each assumption naming the plugin line that relies on it. scripts/check-omarchy-assumptions.sh (`just check-upstream`) compares the hashes; on a mismatch, re-measure the assumption and update sha256, omarchyVersion, measured and the sentence in the same commit, never silence it. docs/TESTING.md, \"Omarchy assumptions\".",
+  "about": "What Seldon assumes about Omarchy (WP-194): installed files under $OMARCHY_PATH, each hashed read-only, each assumption naming the plugin line that relies on it. `symbol` is found in the Omarchy file, `pluginSymbol` on the cited plugin line. scripts/check-omarchy-assumptions.sh (`just check-upstream`) compares the hashes; on a mismatch, re-measure the assumption and update sha256, omarchyVersion, measured and the sentence in the same commit, never silence it. docs/TESTING.md, \"Omarchy assumptions\".",
   "assumptions": [
     {
       "id": "facade-settings-write",
@@ -8,6 +8,7 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "updateEntryInline",
+      "pluginSymbol": "updateEntryInline",
       "plugin": "plugin/Desk.qml:527",
       "relies": "Seldon relies on the scoped facade's updateEntryInline(id, settings) replacing the plugin's own shell.json entry and returning true only when something changed, at plugin/Desk.qml:527.",
       "remeasure": "the desk's settings writes (tests/plugin/desk-view.sh, settings scenarios) and one width change on the test host, read back from the shell.json entry"
@@ -19,6 +20,7 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "serviceFor",
+      "pluginSymbol": "serviceFor",
       "plugin": "plugin/BarWidget.qml:55",
       "relies": "Seldon relies on the facade's serviceFor(own id) handing the bar widget the plugin's own Service.qml instance, at plugin/BarWidget.qml:55.",
       "remeasure": "the pill finds its service (tests/plugin/bar-view.sh) and shows counts on the test host after a shell restart"
@@ -29,7 +31,8 @@
       "sha256": "ff0cb5ec5fcdda0b21af447b11f07a24e065a3557796639364109aaa2ce5c763",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "shell[method]",
+      "symbol": "summon",
+      "pluginSymbol": "shell[method]",
       "plugin": "plugin/BarWidget.qml:75",
       "relies": "Seldon relies on the facade's summon, hide and toggle taking the plugin's own id and returning true when they act, at plugin/BarWidget.qml:75.",
       "remeasure": "a left click on the pill and `omarchy-shell jax.seldon.panel toggle` open and close the desk on the test host"
@@ -40,7 +43,8 @@
       "sha256": "4a4b7694e5b9e0bd952ce0efa2d6dc2cea44cdfa98cc2f442e40fe41cbc1beab",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "root.shell.hide",
+      "symbol": "isBarWidgetPanelPlugin",
+      "pluginSymbol": "root.shell.hide",
       "plugin": "plugin/Desk.qml:175",
       "relies": "Seldon relies on a manifest with `overlay` and `bar-widget` being owned by the panel loader, so `shell summon|hide|toggle jax.seldon` reaches Desk.qml and hide() unloads it, at plugin/Desk.qml:175.",
       "remeasure": "`omarchy-shell shell toggle jax.seldon` and `shell call jax.seldon view \"\"` on the test host (SPEC-PLUGIN §8)"
@@ -51,7 +55,8 @@
       "sha256": "4a4b7694e5b9e0bd952ce0efa2d6dc2cea44cdfa98cc2f442e40fe41cbc1beab",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "service",
+      "symbol": "item.service",
+      "pluginSymbol": "property var service",
       "plugin": "plugin/Desk.qml:66",
       "relies": "Seldon relies on the overlay loader assigning shell, manifest and service (the plugin's own Service.qml) after the desk is created, each starting as null, at plugin/Desk.qml:66.",
       "remeasure": "the desk opens with its service bound (tests/plugin/desk-view.sh creates it bare and assigns in the shell's order) and `view` on the test host"
@@ -63,8 +68,9 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "clearComponentCache",
-      "plugin": "plugin/Model.js:4092",
-      "relies": "Seldon relies on the shell's plugin reload clearing the component cache only when Qt offers it, so new plugin code needs a shell restart and the update notice offers one, at plugin/Model.js:4092.",
+      "pluginSymbol": "restartShellNotice",
+      "plugin": "plugin/Service.qml:76",
+      "relies": "Seldon relies on the shell's plugin reload clearing the component cache only when Qt offers it, so new plugin code needs a shell restart and the update notice offers one, at plugin/Service.qml:76.",
       "remeasure": "after `omarchy plugin update` on the test host: the desk shows the restart notice and new code runs only after a restart (memory/omarchy-shell.md, WP-090)"
     },
     {
@@ -73,10 +79,35 @@
       "sha256": "4a4b7694e5b9e0bd952ce0efa2d6dc2cea44cdfa98cc2f442e40fe41cbc1beab",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "root.manifest",
+      "symbol": "publicPluginManifest",
+      "pluginSymbol": "root.manifest",
       "plugin": "plugin/Service.qml:75",
       "relies": "Seldon relies on the shell handing the service a fresh copy of manifest.json after every rescan, whose version the service compares with the code's own, at plugin/Service.qml:75.",
       "remeasure": "tests/plugin/service-states.sh (update notice) and an `omarchy plugin update` on the test host"
+    },
+    {
+      "id": "shell-settings-write",
+      "path": "shell/shell.qml",
+      "sha256": "4a4b7694e5b9e0bd952ce0efa2d6dc2cea44cdfa98cc2f442e40fe41cbc1beab",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-12",
+      "symbol": "updateEntryInline",
+      "pluginSymbol": "updateEntryInline",
+      "plugin": "plugin/Desk.qml:527",
+      "relies": "Seldon relies on the shell's updateEntryInline, behind the facade, replacing only the caller's own shell.json entry with { id } and the settings and returning true only when something changed, at plugin/Desk.qml:527.",
+      "remeasure": "the desk's settings writes (tests/plugin/desk-view.sh, settings scenarios) and one width change on the test host, read back from the shell.json entry"
+    },
+    {
+      "id": "shell-service-lookup",
+      "path": "shell/shell.qml",
+      "sha256": "4a4b7694e5b9e0bd952ce0efa2d6dc2cea44cdfa98cc2f442e40fe41cbc1beab",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-12",
+      "symbol": "serviceFor",
+      "pluginSymbol": "serviceFor",
+      "plugin": "plugin/BarWidget.qml:55",
+      "relies": "Seldon relies on the shell's serviceFor, behind the facade, returning the plugin's own service instance (and null before it mounts), at plugin/BarWidget.qml:55.",
+      "remeasure": "the pill finds its service (tests/plugin/bar-view.sh) and shows counts on the test host after a shell restart"
     },
     {
       "id": "bar-api-module-widgets",
@@ -85,6 +116,7 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "moduleWidgets",
+      "pluginSymbol": "moduleWidgets",
       "plugin": "plugin/BarWidget.qml:138",
       "relies": "Seldon relies on the third-party bar facade offering moduleWidgets(id) and a scoped shell, so one pill instance owns the `jax.seldon.panel` IPC target, at plugin/BarWidget.qml:138.",
       "remeasure": "tests/plugin/bar-view.sh and tests/plugin/ipc-restart.sh, and no \"another handler is registered\" line in the test host's shell log"
@@ -95,9 +127,10 @@
       "sha256": "9874c0f36271840b43002890ae333c83097df7f4cff0bade81536a41ed83590b",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "placeholder",
-      "plugin": "plugin/Model.js:4127",
-      "relies": "Seldon relies on the bar building the widget once per monitor plus a zero-size, hidden placeholder in the centre section, all listed by moduleWidgets, at plugin/Model.js:4127.",
+      "symbol": "centerAnchor",
+      "pluginSymbol": "isDrawnWidget",
+      "plugin": "plugin/Model.js:4129",
+      "relies": "Seldon relies on the bar building the widget once per monitor plus a zero-size, hidden placeholder in the centre section, all listed by moduleWidgets, at plugin/Model.js:4129.",
       "remeasure": "tests/plugin/bar-view.sh, and on the test host `omarchy-shell jax.seldon.panel pill` answers once with one handler"
     },
     {
@@ -107,8 +140,9 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "pickDrawnSlot",
-      "plugin": "plugin/Model.js:4136",
-      "relies": "Seldon relies on the shell's pickDrawnSlot choosing the first visible, non-zero-size slot, which Model.pickDrawnWidget mirrors, at plugin/Model.js:4136.",
+      "pluginSymbol": "pickDrawnWidget",
+      "plugin": "plugin/Model.js:4138",
+      "relies": "Seldon relies on the shell's pickDrawnSlot choosing the first visible, non-zero-size slot, which Model.pickDrawnWidget mirrors, at plugin/Model.js:4138.",
       "remeasure": "the shell's pickDrawnSlot and isDrawnSlot against Model.pickDrawnWidget and isDrawnWidget (node tests/plugin/model.test.js), then tests/plugin/bar-view.sh"
     },
     {
@@ -118,6 +152,7 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "setting(",
+      "pluginSymbol": "setting(",
       "plugin": "plugin/BarWidget.qml:46",
       "relies": "Seldon relies on the BarWidget base exposing the inline shell.json entry as settings and setting(name, fallback), at plugin/BarWidget.qml:46.",
       "remeasure": "`omarchy bar set jax.seldon captureIntervalMin 30 --json` on the test host reaches the service (`omarchy-shell jax.seldon.service status`)"
@@ -129,6 +164,7 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "iconCanvas",
+      "pluginSymbol": "Style.bar.iconCanvas",
       "plugin": "plugin/BarWidget.qml:249",
       "relies": "Seldon relies on the Style tokens, among them Style.bar.iconCanvas (16 px at scale 1.0) sizing the pill's glyph box, at plugin/BarWidget.qml:249.",
       "remeasure": "`just qmllint` (the token check against Commons) and the pill's glyph at scale 1.0 and 1.25 (tests/plugin/bar-view.sh)"
@@ -139,7 +175,8 @@
       "sha256": "cc9b62e2eaf8c307aa02206d9320c3d0ca349cf8feed452a6eddf387adaa5320",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "Color.popups.text",
+      "symbol": "popups",
+      "pluginSymbol": "Color.popups.text",
       "plugin": "plugin/Desk.qml:135",
       "relies": "Seldon relies on the Color tokens following the active theme, among them Color.popups.text as the desk's foreground, at plugin/Desk.qml:135.",
       "remeasure": "`just qmllint` (the token check) and the desk in two themes, one light (docs/TESTING.md, theme renders)"
@@ -151,6 +188,7 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "surfaceSpec",
+      "pluginSymbol": "Border.surfaceSpec",
       "plugin": "plugin/Desk.qml:706",
       "relies": "Seldon relies on Border.surfaceSpec(section, token, colour, width) giving the desk card the theme's popup border, at plugin/Desk.qml:706.",
       "remeasure": "the desk card's border in tests/plugin/desk-view.sh renders and in two themes on the test host"
@@ -161,7 +199,8 @@
       "sha256": "e17d8150d0b0e60f431bd6df5e661f5d9fe1f5eec9c2e2420f6eff2179a45baf",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "BorderSurface",
+      "symbol": "borderSpec",
+      "pluginSymbol": "BorderSurface",
       "plugin": "plugin/Desk.qml:697",
       "relies": "Seldon relies on the qs.Ui BorderSurface drawing the desk card with its colour and borderSpec, at plugin/Desk.qml:697.",
       "remeasure": "tests/plugin/desk-view.sh renders and the desk card on the test host"
@@ -172,7 +211,8 @@
       "sha256": "fda48672cc11dba109acea1cc98eb4b29746e5ce09f90a47f487b776ff99e799",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "focusable",
+      "symbol": "Keys.onReturnPressed",
+      "pluginSymbol": "focusable: true",
       "plugin": "plugin/components/desk/NewCaseSheet.qml:276",
       "relies": "Seldon relies on qs.Ui Button with focusable: true being a Tab stop that Enter and Space click, and on its label never eliding, at plugin/components/desk/NewCaseSheet.qml:276.",
       "remeasure": "the desk's key paths (tests/plugin/desk-view.sh, Tab and Enter scenarios) and the label-fit probe"
@@ -183,7 +223,8 @@
       "sha256": "4af792f394534b7d61b270fcb44203bba8d88ed25f8822e0b90e456e35487542",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "onChanged",
+      "symbol": "signal changed",
+      "pluginSymbol": "onChanged: function(v)",
       "plugin": "plugin/components/desk/NewCaseSheet.qml:179",
       "relies": "Seldon relies on qs.Ui ButtonGroup emitting changed(value) without assigning value itself, so a binding on value survives, at plugin/components/desk/NewCaseSheet.qml:179.",
       "remeasure": "the new-case sheet's chips (tests/plugin/desk-view.sh) and a reset after submit"
@@ -195,6 +236,7 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "popupOpen",
+      "pluginSymbol": "popupOpen",
       "plugin": "plugin/components/desk/JournalField.qml:35",
       "relies": "Seldon relies on qs.Ui Dropdown exposing popupOpen and taking focus on an inner trigger, so the field counts as editing while its popup is open, at plugin/components/desk/JournalField.qml:35.",
       "remeasure": "the journal field's keys (tests/plugin/desk-view.sh: Tab to the trigger, Down opens, Enter picks) with the desk's key catcher blocked meanwhile"
@@ -205,9 +247,10 @@
       "sha256": "9509f925d230863ffd5246965cbaab87818c53c718bcc5deea68bea3a38a17c4",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "omarchy plugin update",
-      "plugin": "plugin/Model.js:4093",
-      "relies": "Seldon relies on `omarchy plugin update` pulling the git checkout and rescanning plugins without restarting the shell, which is why the update notice exists, at plugin/Model.js:4093.",
+      "symbol": "rescanPlugins",
+      "pluginSymbol": "restartShellNotice",
+      "plugin": "plugin/Service.qml:76",
+      "relies": "Seldon relies on `omarchy plugin update` pulling the git checkout and rescanning plugins without restarting the shell, which is why the update notice exists, at plugin/Service.qml:76.",
       "remeasure": "`omarchy plugin update jax.seldon` on the test host with a newer checkout: the notice appears, nothing restarts by itself"
     },
     {
@@ -216,7 +259,8 @@
       "sha256": "e4c996275a15025c9aac829d34913d6bcaf8a30a17fae5ce5e260df2ddf21cd7",
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
-      "symbol": "omarchy-restart-shell",
+      "symbol": "secure",
+      "pluginSymbol": "omarchy-restart-shell",
       "plugin": "plugin/Model.js:4097",
       "relies": "Seldon relies on omarchy-restart-shell, run without arguments from a detached process, restarting the shell and refusing while a secure lock is up, at plugin/Model.js:4097.",
       "remeasure": "the notice's Restart shell on the test host gives one new shell within seconds (memory/omarchy-shell.md, WP-090)"
@@ -228,6 +272,7 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "schemaVersion",
+      "pluginSymbol": "schemaVersion",
       "plugin": "plugin/manifest.json:2",
       "relies": "Seldon relies on Omarchy's validator accepting the manifest's schemaVersion 1, kinds, entry points and the unknown `seldon` key, and CI runs the same file through packaging/omarchy-pin, at plugin/manifest.json:2.",
       "remeasure": "`omarchy plugin validate plugin/`, then refresh packaging/omarchy-pin to the new validator (packaging/README.md, \"The Omarchy pin\")"
@@ -239,6 +284,7 @@
       "omarchyVersion": "4.0.4-1",
       "measured": "2026-10-12",
       "symbol": "entryPoints",
+      "pluginSymbol": "entryPoints",
       "plugin": "plugin/manifest.json:10",
       "relies": "Seldon relies on the shell README's plugin contract (manifest keys, entry points per kind, the injected properties), at plugin/manifest.json:10.",
       "remeasure": "read the README's diff against SPEC-PLUGIN §1, §8 and memory/omarchy-shell.md"
