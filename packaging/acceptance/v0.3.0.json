@@ -1,16 +1,16 @@
 {
   "version": "0.3.0",
   "status": "partial",
-  "commit": "d8d57fce3b43731957b5a5e97d997b44ee0b7b53",
+  "commit": "d7961d29cc0d24ffcdb8787368772a56cecab6d8",
   "date": "2026-10-12",
   "omarchy": { "version": "4.0.4-1", "channel": "rc" },
-  "engine": "0.3.0+next.d8d57fce",
+  "engine": "0.3.0+next.d7961d29",
   "plugin": "0.3.0",
   "scenarios": [
     { "id": "gate", "title": "Omarchy assumptions, check-upstream --gate (WP-194), before the live checks",
       "where": "test host", "result": "passed",
       "counts": { "humanSteps": 1, "passwordPrompts": 0, "snapshotCoverage": null, "r3GatesHonoured": null },
-      "notes": "OMARCHY_PATH=/usr/share/omarchy bash scripts/check-omarchy-assumptions.sh --gate in a clone of next at d8d57fce (cloned on the test host from a git bundle of next, clean): 17 files under /usr/share/omarchy match the ledger, exit 0" },
+      "notes": "OMARCHY_PATH=/usr/share/omarchy bash scripts/check-omarchy-assumptions.sh --gate in a clone of next at d7961d29 (cloned on the test host from a git bundle of next, clean): 17 files under /usr/share/omarchy match the ledger, exit 0" },
     { "id": "b", "title": "0.2.0 to 0.3.0: engine and plugin updated in either order, restart notice once, settings kept, the skill updated at the next capture",
       "where": "not run", "result": "not run" },
     { "id": "c", "title": "triage: a crisis inside a proposal by key, applied alone (WP-201 scenario c)",
@@ -18,11 +18,11 @@
     { "id": "wip", "title": "Work's WIP line at 2048x1152 logical, desk at 50 %: above the buttons, nothing drawn over anything (WP-211)",
       "where": "test host", "result": "passed",
       "counts": { "humanSteps": 2, "passwordPrompts": 0, "snapshotCoverage": null, "r3GatesHonoured": null },
-      "notes": "the 1920x1080@60 output at scale 0.9375 with Omarchy's own form, hyprctl eval \"hl.monitor({ output = \\\"<output>\\\", mode = \\\"1920x1080@60\\\", position = \\\"0x0\\\", scale = 0.9375 })\" (hyprctl keyword monitor is refused by Hyprland's Lua config: use eval); a full-screen shot is 2048x1152; omarchy bar set jax.seldon deskWidth 50, the desk at Work: about 1014 px wide, \"0 / 3 active\" above By agent and Import tasks…, New case wrapped, nothing over anything; restored with hyprctl reload (scale 1) and the bar entry copied back (deskWidth 100 by default)" },
+      "notes": "the 1920x1080@60 output at scale 0.9375 with Omarchy's own form, hyprctl eval \"hl.monitor({ output = \\\"<output>\\\", mode = \\\"1920x1080@60\\\", position = \\\"0x0\\\", scale = 0.9375 })\" (hyprctl keyword monitor is refused by Hyprland's Lua config: use eval); a full-screen shot is 2048x1152; omarchy bar set jax.seldon deskWidth 50, the desk at Work: about 1014 px wide, \"0 / 3 active\" above By agent and Import tasks…, New case wrapped, nothing over anything; restored with hyprctl reload (scale 1) and the saved shell.json copied back (identical; deskWidth 100 by default)" },
     { "id": "restart", "title": "three shell restarts (WP-162)",
       "where": "test host", "result": "passed",
       "counts": { "humanSteps": 3, "passwordPrompts": 0, "snapshotCoverage": null, "r3GatesHonoured": null },
-      "notes": "omarchy restart shell three times: a new quickshell process each time, the shell answering ping, jax.seldon.service status ok with engine 0.3.0+next.d8d57fce and plugin 0.3.0 each time; ~/.cache/quickshell/crashes 0 before and after, coredumpctl list quickshell: No coredumps found before and after" }
+      "notes": "omarchy restart shell three times: a new quickshell process each time, the shell answering ping, jax.seldon.service status ok with engine 0.3.0+next.d7961d29 and plugin 0.3.0 each time; ~/.cache/quickshell/crashes 0 before and after, coredumpctl list quickshell: No coredumps found before and after" }
   ],
   "limitations": [
     "b: not run; guard: omarchy plugin update is a red-zone command for agents; the operator runs it. The mixed install is covered by engineMin 0.2.0 (no new argv or index field) and contract 2 unchanged",
