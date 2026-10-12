@@ -4,14 +4,9 @@ Branch `wp/211-wip-line`, base `next` 50bbd290. Plugin and harness only:
 no engine, schema or fixture change. Round 2 answers review 1
 (SEND BACK, F1–F5); see "Round 2" at the end.
 
-**Status: PAUSED (wind-down, 2026-10-12 12:46).** F1–F5 are done and
-committed (cff236d5, a0e20b27), and the mutation runs are recorded. Round
-2's full gate has **not run**. It waited on `/tmp/seldon-check.lock`
-behind other agents' checks and could not finish before the account
-switch, so I stopped it before it started. **Next:** run, on this
-branch's head, `SELDON_FULL_CHECK=1 flock /tmp/seldon-check.lock just
-check` with the usual private env. Put its result where "How it was
-verified" says *not run*. Then reply `WP-211 ready <sha>`.
+Round 2 was paused for the account switch (2026-10-12 12:46) before its
+full gate. It resumed afterwards: the gate ran on af1886ae and is green
+(below).
 
 ## What was done
 
@@ -71,18 +66,19 @@ verified" says *not run*. Then reply `WP-211 ready <sha>`.
   `flock /tmp/seldon-check.lock`. It used a private HOME, a 0700
   XDG_RUNTIME_DIR removed afterwards, TMPDIR, JUST_TEMPDIR and
   CARGO_TARGET_DIR under the private gates folder, and the real
-  RUSTUP_HOME and CARGO_HOME: **not run** (paused, see the top). The
-  last green full gate is round 1's, on 2d65c9b5 under
-  `/tmp/seldon-gate.lock`: `check: ok`, desk-view 2471 passed, 0 failed.
-  Since then, the mutation baseline (round 2's case 8d‴ only, on
-  a0e20b27's plugin and harness, headless, under the check lock) gave
-  113 passed, 0 failed. qmllint and plugin-validate are ok on cff236d5.
+  RUSTUP_HOME and CARGO_HOME. Round 2, on af1886ae (code as a0e20b27
+  plus the handover): `check: ok`. desk-view 2491 passed, 0 failed: all
+  111 WIP-row checks ok, including `wipBeside` and the height check, and
+  the 2048 desk 1019 px. No drift-only or today-live failure. Also:
+  service-states 367, bar-view 196, ipc-restart 44, model.test.js 221,
+  qmllint ok (53 files), plugin-validate ok. The private runtime dir was
+  removed afterwards. (Round 1's gate on 2d65c9b5 under
+  `/tmp/seldon-gate.lock` was also green: desk-view 2471.)
 - **headless**: shots of every WIP case (`DESK_SHOTS`, private, not
   committed). At 2048×1152 at 50 % the line is above the buttons and
   *New case* wraps. At 1366 and 1920, at 100 % and 50 %, the line is also
-  above the buttons. At 750×700 (stacked) it is beside them. (These are
-  round 1's shots; round 2 did not change the layout, and `wipBeside`
-  asserts the same in the mutation baseline.)
+  above the buttons. At 750×700 (stacked) it is beside them. These shots
+  are from the round-2 gate on af1886ae.
   (Round 1 said the line was beside the buttons at 1366 and 1920 at
   100 %. That was wrong: review 1, F1.)
 - **desktop**: not run. The dev host runs released builds only (E38).
