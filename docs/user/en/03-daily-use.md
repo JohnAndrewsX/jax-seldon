@@ -270,7 +270,9 @@ click, or with the keys: the proposal is the row above the list, so ↑
   Enter arms it and a second Enter applies it. A second Apply changes
   nothing.
 - Crises are never part of Apply. They are listed under **CRISES, EACH
-  ON ITS OWN**, each with its own *Apply this crisis*.
+  ON ITS OWN**, each with its own *Apply this crisis*. By key, ↓ from
+  the proposal walks the crises; Enter arms the one under the cursor and
+  a second Enter applies that crisis alone.
 - *Discard* throws the proposal away (two clicks). The logbook does not
   change.
 - When a newer proposal arrives while you read one, Apply and Discard

@@ -1189,6 +1189,51 @@ shows work-reopened 2 "reopens C-2026-002"
 shows work-reopened 2 "3 / 3 active · at the limit"
 clean_log work-reopened
 
+# 8d". A cut index (ADR-0053 §2, WP-206; each made here from the sample,
+#      no fixture). Rungs 16–20, the shape the ladder makes: completed and
+#      queued cut to 0, 40 active rows and one in verification listed,
+#      `summary.queuedCases` 500 — QUEUED keeps its header after the last
+#      row, over the line and the command on a line of its own; the list
+#      is longer than the column, and the cursor on the last row scrolls
+#      the gap into view. Rung 21 ran dry (no case listed, 40 active and
+#      2 000 queued counted): both headers below an empty list, no "No
+#      cases yet", no first-run card on Today. Hand-made, no ladder state:
+#      the active rows cut while the other groups stay — ACTIVE before the
+#      first listed row, the WIP line counts 40.
+jq '.cases.completed = [] | .cases.queued = [] | .summary.queuedCases = 500 | .summary.activeCases = 40
+  | .cases.active = [range(40) as $i | .cases.active[0] + {id: ("C-2026-" + (100 + $i | tostring))}]' \
+  "$sample" >"$work/work-cut-tail.json"
+run work-cut-tail "$work/work-cut-tail.json" 1920x1080 "summon:$wk;key:Down*45"
+expect work-cut-tail 1 "[($tv.gaps | join(\",\")), ($tv.groups | join(\",\")), $tv.wip, $tv.selected, $tv.atEnd] | map(tostring) | join(\"|\")" \
+  "QUEUED · 0 / 500|active 40,verification 1,queued 0,completed 0|40 / 3 active|C-2026-100|false"
+expect work-cut-tail 2 "[$tv.selected, $tv.cursor, $tv.atEnd] | map(tostring) | join(\"|\")" "C-2026-008|40|true"
+shows work-cut-tail 1 "ACTIVE · 40"
+for text in "QUEUED · 0 / 500" "The index lists none of them. This lists them:" "seldon plan list --status queued"; do
+  shows work-cut-tail 2 "$text"
+done
+for i in 1 2; do expect work-cut-tail $i '.overflow | join(" | ")' ""; done
+clean_log work-cut-tail
+jq '.cases = {queued: [], active: [], verification: [], completed: []}
+  | .summary += {activeCases: 40, queuedCases: 2000, openDrift: 0, crisis: 0}' "$sample" >"$work/work-cut-dry.json"
+run work-cut-dry "$work/work-cut-dry.json" 1920x1080 "summon;text:3"
+expect work-cut-dry 1 "$tv.firstRun" false
+expect work-cut-dry 2 "[($tv.gaps | join(\",\")), ($tv.ids | length), $tv.selected] | map(tostring) | join(\"|\")" \
+  "ACTIVE · 0 / 40,QUEUED · 0 / 2000|0|"
+for text in "ACTIVE · 0 / 40" "QUEUED · 0 / 2000" "The index lists none of them. This lists them:" \
+  "seldon plan list --status active" "seldon plan list --status queued"; do
+  shows work-cut-dry 2 "$text"
+done
+expect work-cut-dry 2 '[.texts[] | select(startswith("No cases yet"))] | length' 0
+clean_log work-cut-dry
+jq '.cases.active = [] | .summary.activeCases = 40' "$sample" >"$work/work-cut-hand.json"
+run work-cut-hand "$work/work-cut-hand.json" 1920x1080 "summon:$wk"
+expect work-cut-hand 1 "[($tv.gaps | join(\",\")), ($tv.groups | join(\",\")), $tv.wip, $tv.selected] | join(\"|\")" \
+  "ACTIVE · 0 / 40|active 0,verification 1,queued 3,completed 2|40 / 3 active|C-2026-008"
+for text in "ACTIVE · 0 / 40" "seldon plan list --status active" "VERIFICATION · 1" "40 / 3 active · over the limit"; do
+  shows work-cut-hand 1 "$text"
+done
+clean_log work-cut-hand
+
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"
 run work-live "" 1920x1080 \
@@ -3160,31 +3205,35 @@ clean_log triage-dev
 
 # WP-126c: the proposal by keys alone. ↑ on the first row moves the
 # selection onto the proposal row (no list row selected, the hint says
-# what the keys do), ↓ goes back; Enter arms Apply proposals, a second
-# Enter applies it; the crisis stays for its own button. Also IPC: the
+# what the keys do), ↓ reaches its crisis (WP-201), ↑ back onto the bar;
+# Enter arms Apply proposals, a second Enter applies it; the crisis stays,
+# never with the rest. Also IPC: the
 # desk's `select proposal`, a payload's select and the shim's
 # `resolve proposal`.
 mkdir -p "$work/home-triage-keys"
 run triage-keys "" 1920x1080 \
-  "summon:$cl;key:Up;key:Down;text:k;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;text:1;call:select:proposal;text:2;key:Down;call:select:proposal;hide;summon:{\"section\":\"changelog\",\"select\":\"proposal\"};hide;shim:resolve:proposal" \
+  "summon:$cl;key:Up;wait:sectionView.triage.detail.built=true;key:Down;text:k;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;text:1;call:select:proposal;text:2;wait:sectionView.triage.detail.built=true;key:Down;key:Down;call:select:proposal;hide;summon:{\"section\":\"changelog\",\"select\":\"proposal\"};hide;shim:resolve:proposal" \
   HOME="$work/home-triage-keys" FAKE_SELDON_FIXTURE="$sample"
 expect triage-keys 1 "[$tt.shown, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "false,0,$THEME"
 shows triage-keys 1 "↑ from the first row, or a click, opens it"
 expect triage-keys 2 "[$tt.shown, $tv.cursor, $ttd.head] | map(tostring) | join(\",\")" "true,-1,$head"
 expect triage-keys 2 '.marks.rows | join(",")' ""
-shows triage-keys 2 "Enter twice applies · ↓ back to the list"
-expect triage-keys 3 "[$tt.shown, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "false,0,$THEME"
-expect triage-keys 4 "$tt.shown" true
-expect triage-keys 5 "[$ttd.applyArmed, $ttd.hint] | map(tostring) | join(\",\")" \
+# its crisis is a stop once the items are built (WP-201 round 2, I1)
+shows triage-keys 3 "Enter twice applies · ↓ its crises, then the list"
+expect triage-keys 4 "[$tt.shown, $tv.cursor, $ttd.crisisAt] | map(tostring) | join(\",\")" "true,-1,0"
+expect triage-keys 5 "[$tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "true,-1"
+expect triage-keys 6 "[$ttd.applyArmed, $ttd.hint] | map(tostring) | join(\",\")" \
   "true,Apply 2 proposed changes as you? Press Enter again. Crises stay, each with its own button."
-expect triage-keys 7 "[$ttd.applyArmed, ([$ttd.regular[].outcome] | join(\"+\")), $ttd.crises[0].outcome] | map(tostring) | join(\",\")" \
+expect triage-keys 8 "[$ttd.applyArmed, ([$ttd.regular[].outcome] | join(\"+\")), $ttd.crises[0].outcome] | map(tostring) | join(\",\")" \
   "false,done+done,skipped: crisis: applied only one by one (\`--item\`), never with the rest"
 # IPC select from another section answers "not found"; in the Changelog "ok"
-expect triage-keys 9 ".call" "not found"
-expect triage-keys 11 "$tt.shown" false
-expect triage-keys 12 "[.call, $tt.shown] | map(tostring) | join(\",\")" "ok,true"
-expect triage-keys 14 "[.view.section, $tt.shown] | map(tostring) | join(\",\")" "changelog,true"
-expect triage-keys 16 "[.call, .view.section, $tt.shown] | map(tostring) | join(\",\")" "ok,changelog,true"
+expect triage-keys 10 ".call" "not found"
+# (↓ first reaches the crisis, then the list)
+expect triage-keys 13 "[$tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "true,0"
+expect triage-keys 14 "$tt.shown" false
+expect triage-keys 15 "[.call, $tt.shown] | map(tostring) | join(\",\")" "ok,true"
+expect triage-keys 17 "[.view.section, $tt.shown] | map(tostring) | join(\",\")" "changelog,true"
+expect triage-keys 19 "[.call, .view.section, $tt.shown] | map(tostring) | join(\",\")" "ok,changelog,true"
 argv_check triage-keys "$work/home-triage-keys" "$(printf '%s\n' "$startup" "$(q drift apply $PROPOSAL --json)")"
 clean_log triage-keys
 
@@ -3283,6 +3332,137 @@ for armed in apply discard; do
   clean_log "triage-swap-$armed"
 done
 
+# WP-201: a crisis inside the proposal by key. Two crises (the theme's
+# item flagged one too): ↓ walks them from the bar, the one under the
+# cursor wears the ring and the hint names the keys; Enter arms it ("Apply
+# the crisis … as you?"), the second Enter applies it alone (`--item`, the
+# click's call), the other crisis stays open; ↓ from the last crisis goes
+# to the list, ↑ back onto the bar. A detour drops the cursor's place and
+# the arm: a press on the desk (the proposal row), ↑ back to the bar, IPC
+# `select proposal`; the next Enter only arms again.
+mkdir -p "$fx_work/crises/proposals"
+jq '.triage.counts.crises = 2' "$sample" >"$fx_work/crises/index.json"
+jq '.items[0].crisis = true' "$fx/proposals/$PROPOSAL.json" >"$fx_work/crises/proposals/$PROPOSAL.json"
+mkdir -p "$work/home-triage-crisis-keys"
+built='wait:sectionView.triage.detail.built=true'
+run triage-crisis-keys "" 1920x1080 \
+  "summon:$cl;key:Up;$built;key:Down;key:Down;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;key:Return;view;key:Down;key:Up;$built;key:Down;key:Return;clickName:proposalRow;key:Return;clickName:proposalRow;key:Down;key:Return;key:Up;key:Down;key:Return;call:select:proposal;view" \
+  HOME="$work/home-triage-crisis-keys" FAKE_SELDON_FIXTURE="$fx_work/crises/index.json"
+ck="([$tt.shown, $ttd.crisisAt, $ttd.crisisArmed, $ttd.applyArmed] | map(tostring) | join(\",\"))"
+expect triage-crisis-keys 3 "[$ck, ([$ttd.crises[].id] | join(\"+\")), $ttd.crisisHint] | join(\",\")" \
+  "true,-1,false,false,$THEME+$UNIT,↓ from the proposal reaches each crisis · Enter twice applies the one under the cursor"
+shows triage-crisis-keys 3 "Enter twice applies · ↓ its crises, then the list"
+# the button under the cursor is in view (round 2, I2)
+expect triage-crisis-keys 4 "[$ck, ($ttd.crisisVisible | tostring)] | join(\",\")" "true,0,false,false,true"
+expect triage-crisis-keys 5 "[$ck, $ttd.crisisHint, ($ttd.crisisVisible | tostring)] | join(\",\")" \
+  "true,1,false,false,Enter twice applies this crisis alone · ↑/↓ the other crises,true"
+shows triage-crisis-keys 5 "Enter twice applies the crisis under the cursor · ↑/↓ the crises"
+arm_unit='Apply the crisis ~/.config/systemd/user/ollama.service (Explain: Ollama-User-Service von Codex) as you? Press Enter again. Only this item; the other crises stay.'
+expect triage-crisis-keys 6 "[$ck, $ttd.hint] | join(\",\")" "true,1,true,false,$arm_unit"
+shows triage-crisis-keys 6 "$arm_unit"
+# applied alone: the other crisis and the regular items stay open
+expect triage-crisis-keys 8 "[$ck, ([$ttd.crises[] | .id + \":\" + .outcome + \":\" + (.open | tostring)] | join(\"+\")), ([$ttd.regular[] | .id + \":\" + .outcome] | join(\"+\"))] | join(\",\")" \
+  "true,1,false,false,$THEME::true+$UNIT:done:false,$MONITORS:"
+# Enter on the applied (closed) crisis does nothing, and the hint says why (I5, I6)
+expect triage-crisis-keys 10 "[$ck, .view.arm.armed, $ttd.crisisHint, ($ttd.crisisVisible | tostring)] | join(\",\")" \
+  "true,1,false,false,,Resolved — nothing to apply · ↑/↓ the other crises,true"
+shows triage-crisis-keys 10 "Resolved — nothing to apply · ↑/↓ the crises"
+shows triage-crisis-keys 10 "Resolved — nothing to apply · ↑/↓ the other crises"
+# ↓ from the last crisis: the list; ↑: the bar
+expect triage-crisis-keys 11 "[$tt.shown, $tv.cursor, $ttd.crisisAt] | map(tostring) | join(\",\")" "false,0,-1"
+expect triage-crisis-keys 12 "$ck" "true,-1,false,false"
+expect triage-crisis-keys 14 "[$ck, ($ttd.crisisVisible | tostring)] | join(\",\")" "true,0,false,false,true"
+expect triage-crisis-keys 15 "$ck" "true,0,true,false"
+# a press on the desk: the cursor's place and the arm go; Enter arms the
+# bar, and a press drops that key-made arm too (I4)
+expect triage-crisis-keys 16 "[$ck, .view.arm.armed] | join(\",\")" "true,-1,false,false,"
+expect triage-crisis-keys 17 "$ck" "true,-1,false,true"
+expect triage-crisis-keys 18 "[$ck, .view.arm.armed] | join(\",\")" "true,-1,false,false,"
+expect triage-crisis-keys 20 "$ck" "true,0,true,false"
+expect triage-crisis-keys 21 "[$ck, .view.arm.armed] | join(\",\")" "true,-1,false,false,"
+expect triage-crisis-keys 23 "$ck" "true,0,true,false"
+expect triage-crisis-keys 24 "[.call, $ck, .view.arm.armed] | join(\",\")" "ok,true,-1,false,false,"
+argv_check triage-crisis-keys "$work/home-triage-crisis-keys" "$(printf '%s\n' "$startup" "$(q drift apply $PROPOSAL --item $UNIT --json)")"
+clean_log triage-crisis-keys
+
+# An Apply proposals armed by Enter drops on a press on the desk (round 2,
+# I4: a click applies at once, so this arm is always a key's); the next
+# Enter only arms. Discard's arm (made and confirmed by clicks) is
+# triage-ask's and triage-detour's.
+mkdir -p "$work/home-triage-press-apply"
+run triage-press-apply "" 1920x1080 \
+  "summon:$cl;key:Up;key:Return;clickName:proposalRow;view;key:Return;view" \
+  HOME="$work/home-triage-press-apply" FAKE_SELDON_FIXTURE="$sample"
+expect triage-press-apply 3 "$ttd.applyArmed" true
+expect triage-press-apply 5 "[$tt.shown, $ttd.applyArmed, .view.arm.armed] | map(tostring) | join(\",\")" "true,false,"
+expect triage-press-apply 7 "$ttd.applyArmed" true
+argv_check triage-press-apply "$work/home-triage-press-apply" "$startup"
+clean_log triage-press-apply
+
+# The arm names what it would run (round 2, I3): a crisis armed, then an
+# agent rewrites its item under the same proposal id (an explanation
+# becomes a link to C-2026-004; the fake engine's
+# FAKE_SELDON_PROPOSAL_AFTER, on a capture without a key): the old arm no
+# longer matches, the next Enter only arms again with the new words, the
+# one after applies.
+mkdir -p "$fx_work/rewrite"
+jq '.items[2] |= (del(.title, .intent) | .action = "link" | .caseId = "C-2026-004")' \
+  "$fx/proposals/$PROPOSAL.json" >"$fx_work/rewrite/$PROPOSAL.json"
+mkdir -p "$work/home-triage-crisis-rewrite"
+run triage-crisis-rewrite "" 1920x1080 \
+  "summon:$cl;key:Up;$built;key:Down;key:Return;service:captureNow;wait:sectionView.triage.detail.crises.0.action=Link to C-2026-004;view;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0" \
+  HOME="$work/home-triage-crisis-rewrite" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_PROPOSAL_AFTER="$fx_work/rewrite/$PROPOSAL.json"
+expect triage-crisis-rewrite 5 "[$ttd.crisisArmed, $ttd.hint] | map(tostring) | join(\",\")" "true,$arm_unit"
+expect triage-crisis-rewrite 8 "[$ttd.crisisAt, $ttd.crisisArmed, (.view.arm.armed | startswith(\"triage:crisis:$PROPOSAL:$UNIT:Explain: \"))] | map(tostring) | join(\",\")" \
+  "0,false,true"
+expect triage-crisis-rewrite 9 "[$ttd.crisisArmed, $ttd.hint] | map(tostring) | join(\",\")" \
+  "true,Apply the crisis ~/.config/systemd/user/ollama.service (Link to C-2026-004) as you? Press Enter again. Only this item; the other crises stay."
+expect triage-crisis-rewrite 11 "$ttd.crises[0].outcome" "done"
+argv_check triage-crisis-rewrite "$work/home-triage-crisis-rewrite" \
+  "$(printf '%s\n' "$startup" "$(q capture --all --json --quiet)" "$(q status --json)" "$(q drift apply $PROPOSAL --item $UNIT --json)")"
+clean_log triage-crisis-rewrite
+
+# The same on a stacked desk: ↑ only selects the proposal (↓ there goes
+# back to the list, triage-keys-stacked); once Enter shows the detail, ↓
+# reaches its crisis, Enter twice applies it alone; the Back drops the
+# cursor's place.
+mkdir -p "$work/home-triage-crisis-stacked"
+run triage-crisis-stacked "" 700x900 \
+  "summon:$cl;key:Up;key:Return;$built;key:Down;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:‹ Back to the list;view" \
+  HOME="$work/home-triage-crisis-stacked" FAKE_SELDON_FIXTURE="$sample"
+expect triage-crisis-stacked 2 "[.view.detailShown, $tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "false,true,-1"
+expect triage-crisis-stacked 5 "[.view.detailShown, $ck, $ttd.crisisVisible] | map(tostring) | join(\",\")" "true,true,0,false,false,true"
+shows triage-crisis-stacked 5 "Enter twice applies this crisis alone · ↑/↓ the other crises"
+expect triage-crisis-stacked 6 "$ck" "true,0,true,false"
+expect triage-crisis-stacked 8 "[$ck, $ttd.crises[0].outcome] | join(\",\")" "true,0,false,false,done"
+expect triage-crisis-stacked 10 "[.view.detailShown, $tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "false,true,-1"
+argv_check triage-crisis-stacked "$work/home-triage-crisis-stacked" "$(printf '%s\n' "$startup" "$(q drift apply $PROPOSAL --item $UNIT --json)")"
+clean_log triage-crisis-stacked
+
+# A → B → A (WP-126c review round 2, M1): A armed (Apply by key, or a
+# crisis), B replaces it, B is discarded elsewhere before any key, A is
+# current again: the arm does not come back, the cursor is on the bar, and
+# the next Enter only arms Apply proposals. Nothing is applied.
+for armed in apply crisis; do
+  if [[ $armed == apply ]]; then steps="summon:$cl;key:Up;key:Return"; else steps="summon:$cl;key:Up;$built;key:Down;key:Return"; fi
+  n=$(($(tr -cd ';' <<<"$steps" | wc -c) + 1))
+  mkdir -p "$work/home-triage-back-$armed"
+  run "triage-back-$armed" "" 1920x1080 \
+    "$steps;service:captureNow;wait:sectionView.triage.detail.seen=replaced;service:captureNow;wait:sectionView.triage.detail.seen=current;view;key:Return;view" \
+    HOME="$work/home-triage-back-$armed" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$fx_work/swap/index.json" \
+    FAKE_SELDON_FIXTURE_BACK="$sample"
+  expect "triage-back-$armed" $n "[$ttd.applyArmed, $ttd.crisisArmed] | map(tostring) | join(\",\")" \
+    "$([[ $armed == apply ]] && echo true,false || echo false,true)"
+  expect "triage-back-$armed" $((n + 2)) "[$ttd.id, $ttd.seen, $ttd.applyArmed, $ttd.crisisArmed, $ttd.crisisAt, .view.arm.armed] | map(tostring) | join(\",\")" \
+    "$PROPOSAL,replaced,false,false,-1,"
+  expect "triage-back-$armed" $((n + 5)) "[$ttd.id, $ttd.seen, $ttd.applyArmed, $ttd.crisisArmed, $ttd.crisisAt, .view.arm.armed, $ttd.hint] | map(tostring) | join(\",\")" \
+    "$PROPOSAL,current,false,false,-1,,$head"
+  expect "triage-back-$armed" $((n + 7)) "[$ttd.applyArmed, $ttd.crisisArmed] | map(tostring) | join(\",\")" "true,false"
+  argv_check "triage-back-$armed" "$work/home-triage-back-$armed" \
+    "$(printf '%s\n' "$startup" "$(q capture --all --json --quiet)" "$(q status --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
+  clean_log "triage-back-$armed"
+done
+
 # R2, R3: a proposal of 200 items × 10 refs of 256 characters (dev mode,
 # read-only). The items are built only when the detail shows; the desk
 # opens and the detail opens in time; a 256-character text wraps on a
@@ -3315,6 +3495,42 @@ expect triage-big 11 "[$tt.shown, $ttd.built] | map(tostring) | join(\",\")" "fa
 clean_log triage-big
 echo "     triage-big: desk created in $(sed -n 2p "$work/triage-big.steps" | jq -r '.firstFrame.createMs') ms," \
   "the click took $(sed -n 3p "$work/triage-big.steps" | jq -r '.call') ms"
+
+# WP-201 round 2 (I1, I2): the crises of a big proposal (200 items × 10
+# refs of 256 characters, live) are stops only once its items are built:
+# ↑ ↓ Enter Enter before that reaches no crisis and applies nothing; once
+# built (a run of its own) ↓ walks its three crises (the first open, two no longer
+# open), each one's button in view, to the last and ↑ back. A short
+# window (600 px): each crisis is taller than the pane, so its button's
+# end is brought into view, not its top.
+mkdir -p "$fx_work/bigc/proposals"
+cp "$sample" "$fx_work/bigc/index.json"
+jq '.items |= (to_entries | map(if .key == 1 or .key == 199 then .value.crisis = true else . end) | map(.value))' \
+  "$fx_work/big/proposals/$PROPOSAL.json" >"$fx_work/bigc/proposals/$PROPOSAL.json"
+mkdir -p "$work/home-triage-crisis-big"
+run triage-crisis-big "" 1920x600 \
+  "summon:$cl;key:Up;key:Down;key:Return;key:Return;view" \
+  HOME="$work/home-triage-crisis-big" FAKE_SELDON_FIXTURE="$fx_work/bigc/index.json"
+expect triage-crisis-big 3 "[$ttd.built, $tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "false,false,-1"
+expect triage-crisis-big 6 "[$ttd.crisisAt, $ttd.crisisArmed, $ttd.applyArmed, .view.arm.armed] | map(tostring) | join(\",\")" \
+  "-1,false,false,"
+argv_check triage-crisis-big "$work/home-triage-crisis-big" "$startup"
+clean_log triage-crisis-big
+# (a run of its own: coming back to a proposal left mid-build rebuilds it,
+# which takes seconds offscreen and more on a loaded host, as before WP-201)
+mkdir -p "$work/home-triage-crisis-big-walk"
+run triage-crisis-big-walk "" 1920x600 \
+  "summon:$cl;key:Up;$built;key:Down;key:Down;key:Down;key:Up;key:Up;view" \
+  HOME="$work/home-triage-crisis-big-walk" FAKE_SELDON_FIXTURE="$fx_work/bigc/index.json"
+expect triage-crisis-big-walk 3 "[$tt.shown, $ttd.built, ($ttd.crises | length), $ttd.crisisAt] | map(tostring) | join(\",\")" "true,true,3,-1"
+for i in 4 5 6 7 8; do
+  at=$((i <= 6 ? i - 4 : 8 - i))
+  expect triage-crisis-big-walk $i "[$ttd.crisisAt, $ttd.crisisVisible] | map(tostring) | join(\",\")" "$at,true"
+done
+expect triage-crisis-big-walk 4 "$ttd.crisisHint" "Enter twice applies this crisis alone · ↑/↓ the other crises"
+expect triage-crisis-big-walk 6 "$ttd.crisisHint" "Resolved — nothing to apply · ↑/↓ the other crises"
+argv_check triage-crisis-big-walk "$work/home-triage-crisis-big-walk" "$startup"
+clean_log triage-crisis-big-walk
 
 # WP-177, one cursor: the pointer's row is drawn (Omarchy's hover cursor)
 # only once the pointer really moved — the first sample primes Omarchy's
