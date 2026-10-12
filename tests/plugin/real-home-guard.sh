@@ -12,8 +12,8 @@
 #   - nothing under ~/.config/seldon changed and config.toml is
 #     byte-identical;
 #   - no path appeared or disappeared;
-#   - every changed entry is the state dir itself or one of its index.json,
-#     lock, cursors.json, manifest.json;
+#   - every changed entry is the state dir itself or one of the files the
+#     engine writes there during routine work (`real_engine_files`);
 #   - the post-run index.json names the logbook config.toml names
 #     (`logbook.path`) and the same machine as before the run
 #     (`logbook.machine`).
@@ -40,8 +40,20 @@ real_home=$HOME
 real_state="$real_home/.local/state/seldon"
 real_config="$real_home/.config/seldon"
 real_paths=("$real_state" "$real_config")
-# The state files the operator's engine rewrites on every capture.
-real_engine_files=(index.json lock cursors.json manifest.json)
+# The state files the operator's engine writes during routine work (a
+# periodic `seldon capture`, an index build; WP-212), by the engine's
+# names: index.json and lock (config.rs), cursors.json (collectors/mod.rs),
+# manifest.json and owned.json (collectors/config.rs, MANIFEST_FILE and
+# OWNED_FILE), recent-config.json (collectors/recent.rs, FILE) and
+# autocommit.json (index/autocommit.rs).
+real_engine_files=(index.json lock cursors.json manifest.json owned.json recent-config.json autocommit.json)
+# What else the engine names in its state dir: written only on an
+# operator's action (agent launches, triage proposals, the theme hook) or
+# once (the hooks migration marker), never by a capture, so a change during
+# a run still fails. real-home-guard.test.sh fails when engine/src names a
+# state file in neither list.
+# shellcheck disable=SC2034 # read by real-home-guard.test.sh only
+real_engine_not_routine=(launches.json agent-launch.log proposals hooks hooks-user-wide)
 
 real_fingerprint() {
   local p
