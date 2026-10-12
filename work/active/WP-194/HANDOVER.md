@@ -9,8 +9,8 @@ Not merged.
    17 installed files under `$OMARCHY_PATH`, measured on Omarchy 4.0.4-1
    on 2026-10-12. Each entry: `id`, `path` (relative to `$OMARCHY_PATH`),
    `sha256`, `omarchyVersion`, `measured`, `symbol` (in the Omarchy
-   file), `pluginSymbol` (on the plugin line; round 2), `plugin`
-   (`plugin/<file>:<line>`), `relies` ("Seldon relies on … at
+   file), `pluginSymbol` (in the code of the plugin file; round 2, round 3),
+   `plugin` (`plugin/<file>:<line>`, the line a hint since round 3), `relies` ("Seldon relies on … at
    `plugin/<file>:<line>`."), `remeasure` (the harness or live step to
    repeat). Every file was confirmed by a grep of what the plugin calls:
 
@@ -19,12 +19,12 @@ Not merged.
    | `shell/services/PluginShellApi.qml` | `updateEntryInline` (Desk.qml:527), `serviceFor` (BarWidget.qml:55), summon/hide/toggle (BarWidget.qml:75) |
    | `shell/shell.qml` | overlay routing (Desk.qml:175), loader injection (Desk.qml:66), reload without `clearComponentCache` (Service.qml:76), fresh public manifest (Service.qml:75), settings write (Desk.qml:527) and service lookup (BarWidget.qml:55) behind the facade (round 2) |
    | `shell/Ui/PluginBarApi.qml` | `moduleWidgets` for third parties (BarWidget.qml:138) |
-   | `shell/plugins/bar/Bar.qml` | per-monitor instances plus the hidden centre placeholder (Model.js:4129) |
-   | `shell/plugins/bar/BarModel.js` | `pickDrawnSlot` mirrored by `pickDrawnWidget` (Model.js:4138) |
+   | `shell/plugins/bar/Bar.qml` | per-monitor instances plus the hidden centre placeholder (Model.js:4141) |
+   | `shell/plugins/bar/BarModel.js` | `pickDrawnSlot` mirrored by `pickDrawnWidget` (Model.js:4150) |
    | `shell/Ui/BarWidget.qml` | `settings` / `setting()` from the shell.json entry (BarWidget.qml:46) |
    | `shell/Commons/Style.qml`, `Color.qml`, `Border.qml` | `Style.bar.iconCanvas` (BarWidget.qml:249), `Color.popups.text` (Desk.qml:135), `Border.surfaceSpec` (Desk.qml:706) |
    | `shell/Ui/BorderSurface.qml`, `Button.qml`, `ButtonGroup.qml`, `Dropdown.qml` | the desk card (Desk.qml:697), `focusable` (NewCaseSheet.qml:276), `changed` without assigning `value` (NewCaseSheet.qml:179), `popupOpen` (JournalField.qml:35) |
-   | `bin/omarchy-plugin-update`, `bin/omarchy-restart-shell` | reload without new code (Service.qml:76), the restart argv (Model.js:4097) |
+   | `bin/omarchy-plugin-update`, `bin/omarchy-restart-shell` | reload without new code (Service.qml:76), the restart argv (Model.js:4109) |
    | `bin/omarchy-plugin-validate` | the manifest rules (manifest.json:2); its hash equals `packaging/omarchy-pin` |
    | `shell/README.md` | the documented plugin contract (manifest.json:10) |
 
@@ -208,3 +208,50 @@ terminal-scripts 73/0; real-home-guard 40/0; check-tokens 14/0;
 service-states 366/0; desk-view 2243/0; bar-view 195/0; ipc-restart
 43/0. Only this handover follows 3d59ce7a. The scratch `TMPDIR` is empty
 afterwards.
+
+## Round 3 (found at merge: a moved plugin line failed `just check`)
+
+The orchestrator's merge into `next` failed the gate: WP-204 moved
+`Model.js` lines, and `bar-instances` cited `plugin/Model.js:4129`,
+which no longer held `isDrawnWidget`. Citing by exact line made every
+plugin edit above a cited line fail `just check` for every other WP.
+
+1. **A citation is the plugin file and its `pluginSymbol`.** The lint
+   now greps the `pluginSymbol` in the whole cited file and fails only
+   when it is gone from the file ("'X' is gone from plugin/F (cited at
+   line N)") or appears only in comments ("'X' is only in comments of
+   plugin/F"): lines starting with `//`, `/*`, `*` or `#` and trailing
+   ` // …` comments do not count. The line number stays in `plugin` and
+   in the sentence as a hint for the reader and in the messages, never as
+   a pass or fail condition. The round-2 strength stays: every `symbol`
+   is found in its Omarchy file where the hash matches (installed-tree
+   part), comment-only citations fail.
+2. **Merged `next` 23fd3105** (WP-204, WP-207, the 0.2.0 AUR bump) into
+   the branch: 34fc4815, no conflicts. The three moved hints were
+   updated to the current code lines: `bar-instances` Model.js:4141,
+   `bar-drawn-slot` Model.js:4150, `restart-shell` Model.js:4109.
+3. **Tests (fixture).** Replacing the round-2 "moved line" and "comment
+   line" mutants:
+   - a ledger whose `restart-shell` hint is `Model.js:1`: lint clean;
+   - a scratch copy of the cited plugin files with 40 lines inserted
+     above everything (all 24 hints off by 40): lint clean;
+   - `pickDrawnWidget` deleted from the scratch `Model.js`: "is gone";
+   - `pickDrawnWidget` only in a `//` line, a trailing `// …` and a
+     `/* … */` block: "is only in comments", and nothing else named.
+   Mutants of the lint itself, each restored afterwards (fixture): the
+   comments branch disabled, trailing comments counted as code, and the
+   old exact-line check put back; each was caught (the last by both
+   moved-line rows).
+
+`docs/TESTING.md` (the `just check` row and "Omarchy assumptions") and
+the ledger's `about` say the line is a hint and when the check fails.
+
+### How round 3 was verified
+
+| Check | Where |
+|---|---|
+| `tests/omarchy/assumptions.test.sh` on the merged tree: 46 checks, including the moved-line rows | fixture; installed-tree part on a scratch copy of the desktop's tree |
+| three mutants of the new lint, all caught | fixture |
+| shellcheck of the script and the test | test host (E80 wrapper) |
+| `SELDON_FULL_CHECK=1 just check` under `flock /tmp/seldon-check.lock` on the merged tree | headless — result below |
+
