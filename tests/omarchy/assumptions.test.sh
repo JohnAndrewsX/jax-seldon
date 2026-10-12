@@ -105,28 +105,15 @@ mutate() {
   local name=$1 filter=$2 pattern=$3 out
   shift 3
   jq "$@" "$filter" "$ledger" > "$tmp/mutant.json"
-  out=$(lint "$tmp/mutant.json")
+  out=$(lint "$tmp/mutant.json" 2> /dev/null)
   if grep -q -- "$pattern" <<< "$out"; then pass "lint catches: $name"; else fail "lint misses: $name ($out)"; fi
 }
-# a line hint that no longer holds its symbol is no failure, only a warning
-# shellcheck disable=SC2016 # $ref is jq's, not the shell's
-moved=$(jq --arg ref "plugin/Model.js:1" '(.assumptions[] | select(.id == "restart-shell")) |= (.plugin = $ref | .relies |= sub(" at plugin/[^ ]+$"; " at " + $ref + "."))' "$ledger" | tee "$tmp/moved.json" | jq -r '.assumptions[] | select(.id == "restart-shell") | .plugin')
-out=$(lint "$tmp/moved.json" 2> "$tmp/warn")
-if [[ $moved == plugin/Model.js:1 && -z $out ]]; then
-  pass "lint passes: a line hint that does not hold its pluginSymbol"
-else
-  fail "lint fails on a line hint: $moved ($out)"
-fi
-want="warn restart-shell: plugin/Model.js:1 does not hold 'omarchy-restart-shell' (now at line $(grep -nF 'RESTART_SHELL_ARGV = ["omarchy-restart-shell"]' "$root/plugin/Model.js" | cut -d: -f1)); refresh the hint"
-if [[ $(wc -l < "$tmp/warn") -eq 1 ]] && grep -qF -- "$want" "$tmp/warn"; then
-  pass "lint warns: a stale line hint, with the line the pluginSymbol is at now"
-else
-  fail "lint does not warn on a stale line hint ($(cat "$tmp/warn"))"
-fi
-
-# lint on a scratch copy of the cited plugin files (fixture): a plugin
-# edit that moves every cited line passes; a pluginSymbol gone from its
-# file, or left only in comments, fails
+# lint on a scratch copy of the cited plugin files (fixture): a stale
+# line hint is a warning, never a failure; a plugin edit that moves every
+# cited line passes; a pluginSymbol gone from its file, or left only in
+# comments, fails. Whether the real ledger's hints are fresh is never
+# asserted (a plugin edit in another WP must not fail this test): the
+# warning rows run on a ledger refreshed against the scratch copy.
 plugins=$tmp/plugins
 plugin_copy() {
   rm -rf "$plugins"
@@ -136,24 +123,62 @@ plugin_copy() {
     cp "$root/$f" "$plugins/$f"
   done < <(jq -r '.assumptions[].plugin | sub(":[0-9]+$"; "")' "$ledger" | sort -u)
 }
+# hint LEDGER ID REF: LEDGER with ID's hint (plugin and sentence) at REF
+hint() {
+  # shellcheck disable=SC2016 # $id and $ref are jq's, not the shell's
+  jq --arg id "$2" --arg ref "$3" '(.assumptions[] | select(.id == $id)) |= (.plugin = $ref | .relies |= sub(" at plugin/[^ ]+$"; " at " + $ref + "."))' "$1"
+}
+# fresh OUT: the real ledger, each stale hint moved to the first code line
+# of the scratch copy that holds its pluginSymbol
+fresh() {
+  local id ref symbol at
+  cp "$ledger" "$1"
+  while IFS=$'\t' read -r id ref symbol; do
+    sed -n "${ref##*:}p" "$plugins/${ref%:*}" | grep -qF -- "$symbol" && continue
+    at=$(grep -nF -- "$symbol" "$plugins/${ref%:*}" | grep -Ev '^[0-9]+:[[:space:]]*(//|/\*|\*|#)' | head -n 1 | cut -d: -f1)
+    hint "$1" "$id" "${ref%:*}:${at:-1}" > "$1.new" && mv "$1.new" "$1"
+  done < <(jq -r '.assumptions[] | [.id, .plugin, .pluginSymbol] | @tsv' "$ledger")
+}
 plugin_copy
+fresh "$tmp/fresh.json"
+out=$(lint "$tmp/fresh.json" "$plugins" 2> "$tmp/warn")
+if [[ -z $out && ! -s $tmp/warn ]]; then
+  pass "lint on a refreshed ledger (scratch copy): no problem, no warning"
+else
+  fail "lint on a refreshed ledger (scratch copy): $out $(cat "$tmp/warn")"
+fi
+hint "$tmp/fresh.json" restart-shell plugin/Model.js:1 > "$tmp/moved.json"
+out=$(lint "$tmp/moved.json" "$plugins" 2> "$tmp/warn")
+want="warn restart-shell: plugin/Model.js:1 does not hold 'omarchy-restart-shell' (now at line $(grep -nF 'RESTART_SHELL_ARGV = ["omarchy-restart-shell"]' "$plugins/plugin/Model.js" | cut -d: -f1)); refresh the hint"
+if [[ -z $out ]] && [[ $(wc -l < "$tmp/warn") -eq 1 ]] && grep -qF -- "$want" "$tmp/warn"; then
+  pass "lint warns, never fails: a stale line hint, with the line the pluginSymbol is at now (scratch copy)"
+else
+  fail "lint on a stale line hint (scratch copy): $out $(cat "$tmp/warn")"
+fi
+# a plugin edit that moves every cited line: 40 lines above everything
 while read -r f; do
   { printf '// a plugin edit above the cited line\n%.0s' {1..40}; cat "$plugins/$f"; } > "$plugins/$f.new"
   mv "$plugins/$f.new" "$plugins/$f"
 done < <(jq -r '.assumptions[].plugin | sub(":[0-9]+$"; "")' "$ledger" | sort -u)
-out=$(lint "$ledger" "$plugins" 2> "$tmp/warn")
-mismatch=$(jq -r '.assumptions[] | [.plugin, .pluginSymbol] | @tsv' "$ledger" | while IFS=$'\t' read -r ref symbol; do
+out=$(lint "$tmp/fresh.json" "$plugins" 2> "$tmp/warn")
+stale=$(jq -r '.assumptions[] | [.plugin, .pluginSymbol] | @tsv' "$tmp/fresh.json" | while IFS=$'\t' read -r ref symbol; do
   sed -n "${ref##*:}p" "$plugins/${ref%:*}" | grep -qF -- "$symbol" || echo "$ref"
 done | wc -l)
-if [[ -z $out && $mismatch -gt 0 && $(grep -c '^warn ' "$tmp/warn") -eq $mismatch ]]; then
-  pass "lint passes: a plugin edit that moves the cited lines ($mismatch hints off by 40, each a warning)"
+if [[ -z $out && $stale -gt 0 && $(grep -c '^warn ' "$tmp/warn") -eq $stale ]]; then
+  pass "lint passes: a plugin edit that moves the cited lines ($stale hints off by 40, each a warning; scratch copy)"
 else
-  fail "lint fails on moved lines: $mismatch hints off ($out)"
+  fail "lint on moved lines (scratch copy): $stale stale, $(grep -c '^warn ' "$tmp/warn") warnings ($out)"
+fi
+out=$(lint "$ledger" "$plugins" 2> /dev/null)
+if [[ -z $out ]]; then
+  pass "lint passes: the real ledger after the same plugin edit (warnings only)"
+else
+  fail "lint fails the real ledger after a plugin edit: $out"
 fi
 plugin_copy
 grep -vF 'pickDrawnWidget' "$plugins/plugin/Model.js" > "$plugins/Model.js.new"
 mv "$plugins/Model.js.new" "$plugins/plugin/Model.js"
-out=$(lint "$ledger" "$plugins")
+out=$(lint "$ledger" "$plugins" 2> /dev/null)
 if grep -q "bar-drawn-slot: 'pickDrawnWidget' is gone from plugin/Model.js (cited at line" <<< "$out"; then
   pass "lint catches: a pluginSymbol gone from its file"
 else
@@ -162,7 +187,7 @@ fi
 plugin_copy
 sed -E -i 's#^(.*pickDrawnWidget.*)$#// \1#' "$plugins/plugin/Model.js"
 printf 'var other = 1 // pickDrawnWidget\n/*\n * pickDrawnWidget\n */\n' >> "$plugins/plugin/Model.js"
-out=$(lint "$ledger" "$plugins")
+out=$(lint "$ledger" "$plugins" 2> /dev/null)
 if grep -q "bar-drawn-slot: 'pickDrawnWidget' is only in comments of plugin/Model.js" <<< "$out" \
     && ! grep -q -v '^bar-drawn-slot' <<< "$out"; then
   pass "lint catches: a pluginSymbol only in comments (// lines, trailing //, lines starting with /* or *)"
