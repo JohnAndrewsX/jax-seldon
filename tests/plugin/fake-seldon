@@ -25,6 +25,10 @@
 #                        once `capture` has run three times (a newer
 #                        proposal discarded elsewhere: the index names the
 #                        older one again; WP-201)
+#   FAKE_SELDON_PROPOSAL_AFTER  if set, `status` copies this file over the
+#                        proposal next to the state index once `capture`
+#                        has run twice (an agent rewrote it under the same
+#                        id; WP-201 round 2)
 #   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
 #   FAKE_SELDON_LOCKED   if set, every `plan`, resolving `drift`, `decide`,
 #                        `agent` and `config` call exits 4 (lock held)
@@ -897,6 +901,10 @@ case "$cmd" in
     if [[ -n $tpath && -f "${fixture%/*}/$tpath" && ! -f "$dir/$tpath" && ! -f "$dir/$tpath.discarded" ]]; then
       mkdir -p "$dir/proposals"
       cat "${fixture%/*}/$tpath" >"$dir/$tpath"
+    fi
+    if [[ -n ${FAKE_SELDON_PROPOSAL_AFTER:-} && $captures -ge 2 && -n $tpath && -f "$dir/$tpath" ]]; then
+      cat "$FAKE_SELDON_PROPOSAL_AFTER" >"$dir/$tpath.tmp"
+      mv "$dir/$tpath.tmp" "$dir/$tpath"
     fi
     echo '{"ok":true}'
     ;;
