@@ -6,8 +6,8 @@ decision E82): release, plugin split, AUR and bump jobs green; build
 provenance verified; restart test on two monitors passed on the dev host
 and a fresh install verified on the test host (2026-10-12). Earlier:
 v0.1.0 (2026-10-02) … v0.1.4.
-**Branches:** `main` = v0.2.0 plus the release bump; `next` carries 0.2.x
-and 0.2.y work.
+**Branches:** `main` = v0.2.0 plus the release bump; `next` carries the
+0.3.0 work (E86); the queue's release plan is below.
 **Contract version:** 2
 **Last updated:** 2026-10-12
 
@@ -22,27 +22,31 @@ and 0.2.y work.
 
 ## Queued (next up)
 
-In 0.1.4 (operator decision 2026-10-06: keep building 0.1.4 before a
-release): the rest of ADR-0027 (a case the user started authorises the
-agent; the agent verifies and closes; only steps that can make the
-machine unbootable need the user's go) — WP-100 and WP-096 done, WP-101
-(one-click start, snapshot and close path, reopen) done, WP-094 (skill)
-done (it quotes `plan snapshot` and the agent-close refusal).
-ADR-0028 (attention by consequence) ships in 0.1.4: WP-109 (engine
-classification) and WP-110 (plugin quiet surfaces) done, WP-111 (agent
-texts, docs) done. Then the 0.1.4 release preparation
-(tag on the operator's go). Later from ADR-0028: WP-112 (measured routine
-paths after a real update), WP-113 (plugin trees, toggles, opt-in
-authorized_keys; each item approved separately), WP-114 (pacman.conf;
-needs an AGENTS.md §6 amendment).
-0.2.0 (ADR-0034 desk, on the integration branch `next` until 0.1.4 is tagged): wave 1 WP-120 (contract v2, ADR-0035), WP-121 (desk shell), WP-113, WP-102a; wave 2 WP-122, WP-123, WP-124a (triage, supersedes WP-095), WP-114; wave 3 WP-125 (graph), WP-124b, WP-119, WP-102b; wave 4 WP-126. WP-130 (guard) on main; no
-Omarchy upstream contribution before 1.0. Then the
-contract v2 bundle for v0.2.0 (a case's risk in the ledger — `meta.risk` on
-case-created/started and a ledger line for `plan set --risk`, so ADR-0029's
-harm guard reads only engine-written records (WP-115 stage 2); autocommit result in the index,
-`meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
-account: WP-033 (update-impact, option C) and WP-042 (marketplace
-submission). (see `work/queued/`)
+The release plan after operator decision E86 (VERSIONING: before 1.0 a
+compatible addition is a minor release, a fix a patch):
+
+- **0.3.0** — everything on `next` at the freeze (`d608611c`); WP-214
+  prepares it (versions, CHANGELOG, the recorded live test), the tag on
+  the operator's go (E85). WP-213 renumbers the plans.
+- **0.3.x patches** (fixes, tests, CI): WP-169 (terminal escapes), WP-208
+  (a transaction marked partial by its own rows), WP-209 (redaction
+  paths), WP-216 (WP-210/212 leftovers), WP-183b (readability harness),
+  WP-191 (CI stage 2, ADR first).
+- **After 0.3.0, a minor release** (a new command, flag, field, config
+  key or plugin surface): WP-167's word table → WP-178 → WP-181 stage 1
+  → WP-163 minimum → WP-180 part 1; WP-179 → WP-182 → WP-180 part 2 with
+  WP-134 (`[hooks] guard`); WP-215 (header keys); the study packages
+  WP-142, WP-144..153; WP-170 after the live week; WP-112 on the
+  operator's word.
+- **The contract-3 release** (a later minor, formerly 0.3): the crashes,
+  reports and recipes ADRs → WP-184 (contract 3) → WP-185, WP-186 →
+  WP-187 (b, c) → WP-181 stage 2 → WP-189 → WP-197 (after the budget go)
+  → WP-188 last (shim removal, WP-192 part 2's tag gate).
+- **Not scheduled:** WP-033 (update-impact, waits for the AUR account),
+  WP-114 (its live case: mirrorlist and Omarchy's channel switch),
+  WP-131 (parked, E30), WP-095 (superseded by WP-124); WP-132 and WP-133
+  target `main` (the dev-host guard, no release). Filing the store
+  submission (WP-042) waits for the operator's go. (see `work/queued/`)
 
 ## Preparation done (2026-10-01)
 - Kickoff checklist steps 1–3: repo + first commit, WP files, host verified
