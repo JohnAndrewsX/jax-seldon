@@ -1003,7 +1003,11 @@ entry would not change, as `shell.qml` does. After each it prints
 every text outside the window, the desk or its Prime Radiant slot.
 Inside an item that clips (a list, a scrolled detail, a scrolled chart
 grid) only the part of a text inside the clip counts: rows scrolled out
-of a list are not on screen. Live cases run Service.qml without
+of a list are not on screen. `overlap` (WP-211) lists the items of a
+header row (an Item named `headerRow:<name>`; a Row's or Flow's items
+count one by one) that draw over each other or leave the row; Work's
+WIP row is one, checked on 750, 900, 1366 and 1920 px windows at 100 %
+and 50 %. Live cases run Service.qml without
 `SELDON_INDEX` against the fake engine (`tests/plugin/fake-seldon`, in a
 temp `HOME`) and compare its `argv.log` argument by argument with the
 CONTRACT.md forms; the editor and terminal launchers are

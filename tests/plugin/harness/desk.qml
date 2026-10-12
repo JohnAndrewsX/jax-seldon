@@ -323,7 +323,7 @@ ShellRoot {
 
   // Every header row (objectName "headerRow:<name>", WP-211) whose items
   // draw over each other or leave the row: its visible items are its
-  // children, a positioner's (Row, Flow) counted as its own children; a
+  // children, a positioner's (Row, Flow; laid out first) counted as its own children; a
   // text counts by its box like overflow() (an elided one by its width, a
   // wrapped one that cannot wrap by what it draws). Tolerance 1 px.
   function overlap(item, out) {
@@ -354,6 +354,9 @@ ShellRoot {
       if (!k || k.visible === false || k.width <= 0 && !root.isText(k) || k.height <= 0) continue
       var type = String(k)
       if (type.indexOf("QQuickRow") === 0 || type.indexOf("QQuickFlow") === 0) {
+        // A positioner places its items in its polish, before the next
+        // frame; the report runs before that, so lay them out now.
+        k.forceLayout()
         root.rowParts(k, out)
         continue
       }
