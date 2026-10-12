@@ -333,8 +333,10 @@ ShellRoot {
   // its visible items are its children, a positioner's (Row, Flow)
   // counted as its own children, all laid out first (layOut); a text
   // counts by its box like overflow() (an elided one by its width, a
-  // wrapped one that cannot wrap by what it draws); an item squeezed to
-  // no width counts by the texts it still draws (WP-215). Tolerance 1 px.
+  // wrapped one that cannot wrap by what it draws); a text an item draws
+  // outside its own box (the chip's label in a chip squeezed to no room,
+  // not clipped) counts on its own, not against that item (WP-215).
+  // Tolerance 1 px.
   function overlap(item, out) {
     if (!item || item.visible === false) return out
     var name = String(item.objectName || "")
@@ -352,8 +354,10 @@ ShellRoot {
         if (pa.y < row.y - 1 || pa.y + pa.h > row.y + item.height + 1)
           out.push(name + ": " + pa.label + " leaves the row's height")
         for (var b = a + 1; b < parts.length; b++) {
-          var hit = root.intersect(pa, parts[b])
-          if (hit && hit.w > 1 && hit.h > 1) out.push(name + ": " + pa.label + " × " + parts[b].label)
+          var pb = parts[b]
+          if (pb.owner === a || pa.owner >= 0 && pa.owner === pb.owner) continue
+          var hit = root.intersect(pa, pb)
+          if (hit && hit.w > 1 && hit.h > 1) out.push(name + ": " + pa.label + " × " + pb.label)
         }
       }
     }
@@ -393,36 +397,54 @@ ShellRoot {
     for (var i = 0; kids && i < kids.length; i++) {
       var k = kids[i]
       if (!k || k.visible === false || k.height <= 0) continue
-      if (k.width <= 0 && !root.isText(k)) {
-        root.squeezedTexts(k, out)
-        continue
-      }
       var type = String(k)
       if (type.indexOf("QQuickRow") === 0 || type.indexOf("QQuickFlow") === 0) {
         root.rowParts(k, out)
         continue
       }
       var text = root.isText(k)
-      var p = k.mapToItem(win.contentItem, 0, 0)
-      var w = text && (k.elide === Text.ElideNone || k.width <= 0) ? Math.max(k.width, k.contentWidth) : k.width
-      var h = text ? Math.max(k.height, k.contentHeight) : k.height
-      out.push({ label: text ? k.text : String(k.text || k.objectName || type.split("(")[0]), x: p.x, y: p.y, w: w, h: h })
+      if (k.width <= 0 && !text) {
+        root.strayTexts(k, null, -1, out)
+        continue
+      }
+      var box = text ? root.textBox(k) : root.itemBox(k)
+      box.label = text ? k.text : String(k.text || k.objectName || type.split("(")[0])
+      box.owner = -1
+      out.push(box)
+      if (!text) root.strayTexts(k, box, out.length - 1, out)
     }
     return out
   }
 
-  // The texts an item of no width still draws (the chip's label, not
-  // clipped): each counts by what it draws.
-  function squeezedTexts(item, out) {
+  function itemBox(k) {
+    var p = k.mapToItem(win.contentItem, 0, 0)
+    return { x: p.x, y: p.y, w: k.width, h: k.height }
+  }
+
+  // What a text draws: an elided one its width, one that cannot elide or
+  // has no width left (it then draws whole) what it holds.
+  function textBox(k) {
+    var p = k.mapToItem(win.contentItem, 0, 0)
+    var w = k.elide === Text.ElideNone || k.width <= 0 ? Math.max(k.width, k.contentWidth) : k.width
+    return { x: p.x, y: p.y, w: w, h: Math.max(k.height, k.contentHeight) }
+  }
+
+  // The texts inside an item that draw outside its box (none: every text
+  // it still draws), each a part of its own, owned by that item's part.
+  function strayTexts(item, box, owner, out) {
     var kids = item.children
     for (var i = 0; kids && i < kids.length; i++) {
       var k = kids[i]
       if (!k || k.visible === false) continue
-      if (root.isText(k) && k.contentWidth > 1) {
-        var p = k.mapToItem(win.contentItem, 0, 0)
-        out.push({ label: k.text, x: p.x, y: p.y, w: k.contentWidth, h: Math.max(k.height, k.contentHeight) })
-      } else {
-        root.squeezedTexts(k, out)
+      if (root.isText(k)) {
+        var t = root.textBox(k)
+        if (t.w > 1 && (!box || t.x < box.x - 1 || t.x + t.w > box.x + box.w + 1 || t.y < box.y - 1 || t.y + t.h > box.y + box.h + 1)) {
+          t.label = k.text
+          t.owner = owner
+          out.push(t)
+        }
+      } else if (k.clip !== true) {
+        root.strayTexts(k, box, owner, out)
       }
     }
     return out

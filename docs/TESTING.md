@@ -1087,8 +1087,8 @@ Inside an item that clips (a list, a scrolled detail, a scrolled chart
 grid) only the part of a text inside the clip counts: rows scrolled out
 of a list are not on screen. `overlap` (WP-211) lists the items of a
 header row (an Item named `headerRow:<name>`; a Row's or Flow's items
-count one by one; an item squeezed to no width counts by the texts it
-still draws) that draw over each other or leave the row, sideways
+count one by one; a text an item draws outside its own box, such as
+the chip's count in a chip squeezed to no room, counts on its own) that draw over each other or leave the row, sideways
 or out of its height, and `headerRows` names the rows it found, so a
 case fails when its row is not there. Every positioner and text of the
 row is laid out first, also a type built on a Row (the KPI strip), so

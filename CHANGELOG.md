@@ -50,8 +50,9 @@ and the package does not exist yet. Update the plugin first:
   the Changelog's count and "N hidden" rows and Decisions' summary row
   besides Work's WIP row, from a 750 px window to 2048×1152 at scale
   1.25, at 100 % and 50 %, and the desk header with a notice up. It
-  also sees a text drawn by an item squeezed to no width (the chip's
-  count) and measures the first frame after a summon as drawn.
+  also sees a text drawn outside its item (the chip's count in a chip
+  squeezed to no room) and measures the first frame after a summon as
+  drawn.
 
 ## [0.3.0] - 2026-10-12
 
