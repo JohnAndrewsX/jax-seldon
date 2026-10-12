@@ -47,8 +47,9 @@ recorded … (tmpfs)` at 10 000 and at 900 lines (the ledger line and the
 case file are synced, below the threshold the index too) and
 `recent-config scan and save (the capture-cost delta, tmpfs)` (the saved
 scan is written atomically and synced with its directory). SPEC-ENGINE
-§1 states their budgets with the state on tmpfs; on the btrfs disk of
-the gates the sync alone took 10–30 ms. So `check-perf` makes a
+§1 states their budgets with the state on tmpfs; with the state on the
+btrfs disk of the gates their medians were 11–32 ms (WP-157's base
+runs), on tmpfs 1.7–4.7 ms. So `check-perf` makes a
 directory of its own on the tmpfs `/dev/shm` (`mktemp -d
 /dev/shm/seldon-perf.XXXXXX`, never `/tmp` or the runtime directory;
 it refuses to start with less than 256 MiB free there), passes it as
@@ -56,8 +57,9 @@ it refuses to start with less than 256 MiB free there), passes it as
 logbook and state there (`common::sync_timing_dir`), their stub
 programs in `TMPDIR` (a container's `/dev/shm` may be `noexec`), and
 refuse a directory that `/proc/self/mountinfo` does not show on a
-tmpfs, so a disk never decides them. Run directly, they use `TMPDIR`
-when it is a tmpfs. Every other row runs in `TMPDIR`, whatever its
+tmpfs, so a disk never decides them (`a_synced_write_is_timed_on_a_tmpfs_only`).
+The directory holds about 2 MiB at its peak (one hook home of 10 000
+ledger lines). Run directly, they use `TMPDIR` when it is a tmpfs. Every other row runs in `TMPDIR`, whatever its
 medium, with its budget unchanged. Required
 before the handover of a WP that touches the index build, `status` or
 the hooks), `just build-release` (static musl binary,
