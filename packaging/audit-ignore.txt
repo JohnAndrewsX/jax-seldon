@@ -10,3 +10,4 @@
 # entry fails the release build until it is reviewed again (new date) or
 # removed. Entries are reviewed like code. Blank lines and lines starting
 # with `#` are ignored.
+RUSTSEC-2024-0449  2027-01-31  unmaintained notice, no vulnerability; unsafe-libyaml (via serde_yaml) parses only local YAML the user already controls: logbook front matter written by the engine, config, files named for import; no network input; parser swap queued as a WP before the expiry
