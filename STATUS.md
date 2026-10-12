@@ -674,6 +674,12 @@ compatible addition is a minor release, a fix a patch):
 - E86 the next release is **0.3.0** by VERSIONING as it stands (a
   compatible addition before 1.0 is a minor release); the contract-3
   release becomes 0.4 (WP-213 renumbers the plans).
+- E87 the panel shim `jax.seldon.panel` stays in 0.3.0; it goes with
+  WP-188 in the contract-3 release (planned 0.4). ADR-0034 §7 named 0.3.0;
+  only the release moved (E86), so no new ADR.
+- E88 0.3.0 is tagged without the release workflow's acceptance gate
+  (E67), which comes with WP-188; the operator's go quotes
+  `packaging/acceptance-check.sh 0.3.0`.
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:

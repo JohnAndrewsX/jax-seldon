@@ -261,7 +261,7 @@ runs on the bumped commit; a fix after the live test means a new deploy,
 a new live test and a new record. `tests/release/acceptance-check.test.sh`
 (in `just check-packaging`) covers the checker. From WP-188 on, the
 release workflow runs it on the tag and refuses a tag without a `passed`
-record; until then (0.3.0 included) the operator's go quotes its output.
+record; until then (0.3.0 included, operator decision 2026-10-12, E88) the operator's go quotes its output.
 
 ## Tag flow
 
