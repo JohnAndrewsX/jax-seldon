@@ -17,7 +17,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: check-runtime-space fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard check-runtime-dir check-assumptions schema-validate docs-check plugin-validate qmllint plugin-test
+check: check-runtime-space fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard check-runtime-dir check-perf-dirs check-assumptions schema-validate docs-check plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # The session's runtime dir (WP-161): a full /run/user/<uid> takes the
@@ -86,21 +86,45 @@ check-rss:
 # the saved recent-config scan) hold their budget with the state on tmpfs
 # (SPEC-ENGINE §1, WP-210): this check makes a tmpfs directory of its own
 # under /dev/shm (never /tmp or the runtime dir), refuses one with less
-# than 256 MiB free, and removes it; the tests refuse a directory that is
-# not on a tmpfs. Every other row runs in TMPDIR, whatever its medium.
+# than 16 MiB free, and removes it, also when interrupted (exit 130 on
+# SIGINT, 143 on SIGTERM); the tests refuse a directory that is not on a
+# tmpfs. Every other row runs in TMPDIR, whatever its medium. A run killed
+# with SIGKILL runs no trap: its directory stays until reboot, so the next
+# run first removes this user's seldon-perf.* directories older than a
+# day (no run takes that long, so never one in use; WP-216).
+# tests/perf/check-perf.test.sh runs this recipe with a stub cargo
+# (SELDON_PERF_SHM: another parent for the directory).
 check-perf:
     #!/usr/bin/env bash
     set -euo pipefail
+    shm_root=${SELDON_PERF_SHM:-/dev/shm}
+    find "$shm_root" -maxdepth 1 -type d -name 'seldon-perf.*' -user "$(id -u)" -mmin +1440 -exec rm -rf -- {} +
     SELDON_BENCH_X150=1 cargo bench --manifest-path engine/Cargo.toml --locked --bench index
-    free=$(df --output=avail -m /dev/shm | tail -n 1)
-    if (( free < 256 )); then
-      echo "check-perf: /dev/shm has ${free} MiB free, the sync timings need 256" >&2
+    # The directory peaks at 2.1 MiB (one hook home of 10 000 ledger
+    # lines; sampled every 0.2 s, 2026-10-12, WP-216). 16 MiB, about 8x
+    # that, covers a peak between two samples and larger scale fixtures,
+    # and still fits a container's default 64 MiB /dev/shm.
+    floor=16
+    free=$(df --output=avail -m "$shm_root" | tail -n 1)
+    if (( free < floor )); then
+      echo "check-perf: $shm_root has ${free} MiB free, the sync timings need $floor" >&2
       exit 1
     fi
-    shm=$(mktemp -d /dev/shm/seldon-perf.XXXXXX)
+    shm=$(mktemp -d "$shm_root/seldon-perf.XXXXXX")
     trap 'rm -rf -- "$shm"' EXIT
-    trap 'exit 130' INT TERM
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     SELDON_PERF_TMPFS="$shm" cargo test --manifest-path engine/Cargo.toml --locked --profile bench --test index --test hooks --test redaction --test capture_cost -- --ignored --test-threads=1 --nocapture
+
+# `check-perf`'s tmpfs directory without a timing (WP-216): removed after a
+# run and after SIGINT/SIGTERM (exit 130/143), left by SIGKILL and swept by
+# the next run once older than a day; a stub cargo, a scratch parent.
+check-perf-dirs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash -n tests/perf/check-perf.test.sh
+    if command -v shellcheck >/dev/null; then shellcheck tests/perf/check-perf.test.sh; fi
+    bash tests/perf/check-perf.test.sh
 
 # The AUR package (WP-040): PKGBUILD and helper syntax, shellcheck when
 # installed, .SRCINFO in step with the PKGBUILD. Never runs makepkg.
