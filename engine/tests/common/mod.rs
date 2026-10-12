@@ -593,6 +593,12 @@ pub fn assert_on_tmpfs(dir: &Path) {
 pub fn file_system_of(path: &Path) -> Option<String> {
     let path = std::fs::canonicalize(path).ok()?;
     let info = std::fs::read_to_string("/proc/self/mountinfo").ok()?;
+    file_system_in(&info, &path)
+}
+
+/// [`file_system_of`] on a given mount table (`/proc/self/mountinfo`
+/// text) and a canonical path: a test feeds it a table of its own.
+pub fn file_system_in(info: &str, path: &Path) -> Option<String> {
     let mut found: Option<(usize, String)> = None;
     for line in info.lines() {
         // `36 35 98:0 /root /mnt rw,noatime master:1 - ext4 /dev/root rw`
