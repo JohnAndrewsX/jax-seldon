@@ -71,12 +71,30 @@ STATUS.md at merge. No `contractVersion` bump, no schema change.
     load was 8.91. `drift-only` passed in the round-1, round-2, r3 and
     r3b runs on the same plugin and scenario code. Most likely a timing
     failure, but no re-run has confirmed it yet.
-- **Paused (wind-down, 2026-10-12 12:46).** The re-run (`-r3d.log`)
-  waited behind three other checks for the lock and had not started; I
-  stopped it. The next step: at b26b56bd (or later), run
-  `SELDON_FULL_CHECK=1 just check` under `flock /tmp/seldon-check.lock`.
-  If it is green, WP-203 is ready. If `drift-only` fails again, look at
-  that scenario under load before any other step. Nothing else is open.
+- Paused at 12:46 (wind-down): the re-run (`-r3d.log`) had waited behind
+  three other checks for the lock and had not started; I stopped it.
+- Merge of `next` fdcda9ca (WP-205, the index wait that removes the
+  `drift-only` / `today-live` race): 31389d84, no conflicts. It does not
+  touch guide 03, ADR-0054, DECISIONS.md or `engine/tests/index.rs`.
+- **headless** and **fixture** (dev host, private gates folder, at
+  31389d84, under `flock /tmp/seldon-check.lock`; log
+  `gates/check-dev-203-r3e.log`): `SELDON_FULL_CHECK=1 just check` →
+  `check: ok`, exit 0. In it:
+  - cargo 2 915 passed, 0 failed, 22 ignored over 112 test binaries;
+    fmt and clippy `-D warnings` (with and without `watch`) clean;
+  - validate-fixtures ok (154 instances, 14 variants); docs-check ok
+    (514 links, 14 translated pages); qmllint ok (53 files);
+    model.test.js 221; real-home-guard.test 71/0;
+  - in a private headless Quickshell: service-states 366/0, desk-view
+    2337/0 (`drift-only` included, log clean), bar-view 195/0,
+    ipc-restart 43/0;
+  - the real `~/.local/state/seldon` was untouched, or changed by the
+    operator's live engine (desk-view: `not a leak`); 333 by-id entries
+    before and after each suite.
+- **test host**: shellcheck through the orchestrator kit's wrapper and
+  the deploy's plugin validation, inside the same `just check` run.
+- **not run**: CI; a live desktop. Only this handover commit came after
+  the run.
 
 ## Round 2 (stage 1 and stage 2: APPROVE WITH FIXES)
 
