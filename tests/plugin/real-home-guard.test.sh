@@ -147,9 +147,8 @@ engine_state_names() {
 lists_home="$work/lists"
 mkdir -p "$lists_home/run"
 # shellcheck disable=SC2016 # expanded by the inner bash
-guard_lists=$(env -u XDG_RUNTIME_DIR HOME="$lists_home" real_runtime_session="$lists_home/run" bash -c \
-  'source "$1"; printf "r %s\n" "${real_engine_files[@]}"; printf "n %s\n" "${real_engine_not_routine[@]}"' \
-  _ "$root/tests/plugin/real-home-guard.sh") # live runtime dir: unset; a scratch session dir is watched
+lists_script='source "$1"; printf "r %s\n" "${real_engine_files[@]}"; printf "n %s\n" "${real_engine_not_routine[@]}"'
+guard_lists=$(env -u XDG_RUNTIME_DIR HOME="$lists_home" real_runtime_session="$lists_home/run" bash -c "$lists_script" _ "$root/tests/plugin/real-home-guard.sh") # live runtime dir: unset; a scratch session dir is watched
 
 # drift_case <name> <want: ok|FAIL> <src dir>
 drift_case() {
