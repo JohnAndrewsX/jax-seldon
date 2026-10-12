@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ 0971b672 -->
+<!-- source: en/03-daily-use.md @ eb182538 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
@@ -195,7 +195,9 @@ Agenten, also schaltet `a` ihn scharf und ein zweites `a` startet den
 Agenten, wie bei einem Case. Jede andere Taste, ein Klick auf den Desk
 oder eine andere Auswahl bricht ab. ← / → wählen einen anderen Knopf
 oder Wert. Ein gehaltenes ↑ hält oben in der Liste an; ein weiterer
-Druck führt zu den Hinweisen.
+Druck führt zu den Hinweisen. Auf den Knöpfen in Work steht der Cursor
+auf keinem Case, also tun die Case-Tasten `a`, `x`, `r` und `e` dort
+nichts.
 
 Eine gehaltene Taste wirkt einmal. Ihre Wiederholungen schalten nie
 scharf, bestätigen nie, schreiben nie und starten nichts; eine scharfe
