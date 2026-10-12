@@ -992,6 +992,8 @@ expect transactions 3 '[.texts[] | select(. == "Transaction interrupted")] | len
 expect transactions 4 "$txv.lines | join(\" | \")" \
   "↓ lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | ↓ mesa  1:26.2.0-2 → 1:26.1.0-1 | ↓ vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
 expect transactions 4 "[$tf.membersShown, $txv.statusShown] | map(tostring) | join(\",\")" "false,false"
+# WP-208: a whole group under the cap is not partial
+expect transactions 4 "$txv.partial" ""
 expect transactions 4 '[.texts[] | select(. == "3 packages in one transaction:")] | length' 0
 expect transactions 5 "[$txv.shown, ($td.kv | map(select(startswith(\"Transaction\"))) | join(\"\"))] | map(tostring) | join(\",\")" \
   "false,Transaction: 1 package: 1 installed"
@@ -1141,6 +1143,9 @@ run drift-show "" 1920x1080 "summon:$(sel $MESA);wait:sectionView.detail.form.me
   HOME="$work/home-drift-show" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$work/members-capped.json"
 expect drift-show 2 "$tf.members | join(\" | \")" \
   "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
+# WP-208: the group lists 2 of its 3 members, so the detail says partial
+expect drift-show 2 "$txv.partial" "The index lists at most 500 events; the rest of this transaction is in the ledger."
+shows drift-show 2 "The index lists at most 500 events; the rest of this transaction is in the ledger."
 argv_check drift-show "$work/home-drift-show" "$(printf '%s\n' "$startup" "$(q drift show $MESA --json)")"
 clean_log drift-show
 mkdir -p "$work/home-drift-show-member"
