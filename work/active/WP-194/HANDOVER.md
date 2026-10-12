@@ -397,3 +397,20 @@ guard. The scratch `TMPDIR` is empty afterwards.
   this handover added) under the lock, with the same environment as
   round 3. Record the result here, then reply "WP-194 ready <sha>".
 
+## Resumed: round-5 gate on next 71f070b8
+
+**Round-5 gate: green.** `SELDON_FULL_CHECK=1 just check` under `flock
+/tmp/seldon-check.lock`, with the E80 shellcheck wrapper on `PATH`,
+exited 0 (`check: ok`) on b485d94a. That is f4a58c25 (the merge of
+`next` 71f070b8 with WP-212's guard fix) plus only the paused-handover
+note. Log in the private `gates/check-dev-194-r5d.log`: cargo tests 2893
+passed, 0 failed; check-packaging ok; install 230/0; deploy-test-host
+327/0; runtime-dir 45/0; assumptions.test ok (no `warn` line);
+check-upstream ok (17 files); docs-check ok; plugin-validate ok; qmllint
+ok (53 files); terminal-scripts 73/0; real-home-guard 71/0; check-tokens
+14/0; service-states 366/0; desk-view 2337/0 (no drift-only or
+today-live failure); bar-view 195/0; ipc-restart 43/0 (headless). The
+two earlier round-5 runs that the real-path guard stopped are covered by
+WP-212. Only this paragraph follows b485d94a. The scratch `TMPDIR` is
+empty afterwards.
+
