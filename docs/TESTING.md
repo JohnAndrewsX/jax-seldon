@@ -926,15 +926,22 @@ where the operator's real Seldon is live (the installed plugin runs
 state dir. The guard passes that as "changed by the operator's live engine
 (not a leak)" only if nothing under `~/.config/seldon` changed
 (`config.toml` byte-identical), no path appeared or disappeared, every
-changed entry is the state dir or its `index.json`, `lock`,
-`cursors.json` or `manifest.json`, and the post-run `index.json` names the
+changed entry is the state dir or a file the engine writes there during
+routine work (`index.json`, `lock`, `cursors.json`, `manifest.json`,
+`owned.json`, `recent-config.json`, `autocommit.json`; WP-212), and the
+post-run `index.json` names the
 logbook `config.toml` names (`logbook.path`) and the machine it named
 before the run (`logbook.machine`). It reads only `config.toml` and those
 two index fields, never the logbook. Anything else still fails, with the
 reason. The same check fails when a new entry that no running process holds
 appeared in the session's `quickshell/by-id` (WP-161). `tests/plugin/real-home-guard.test.sh` (part of `just plugin-test`)
 proves both sides in scratch HOMEs, and the runtime check in scratch
-runtime dirs.
+runtime dirs. It also reads every `state_dir.join(…)` in `engine/src`
+(a literal, or a constant it resolves) and fails when the engine names a
+state file the guard lists neither as routine nor as written only on an
+operator's action (`launches.json`, `agent-launch.log`, `proposals`,
+`hooks`, `hooks-user-wide`), or when the guard lists a name the engine no
+longer uses; copies of `engine/src` with one more state file prove that.
 
 To watch one case by hand:
 

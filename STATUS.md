@@ -1,15 +1,15 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
-**Release:** v0.1.0 on GitHub (2026-10-02); AUR pending registration.
-**Phase:** 0 exited — **gate G3 passed 2026-10-02** (operator's run on
-the dev host, `work/completed/PHASE-0-EXIT-transcript.md`). Phases 1–3
-complete and live-verified (G2 passed), Phase 4 packaging and docs merged.
-Open: WP-042 marketplace submission (after the operator's release setup),
-WP-038 (engine attributes its own installs), WP-033 and WP-043 (operator
-decisions).
-**Contract version:** 1 (draft)
-**Last updated:** 2026-10-07 (tick 113)
+**Release:** v0.2.0 on GitHub (tag 2026-10-12 on `4a7a2376`, operator
+decision E82): release, plugin split, AUR and bump jobs green; build
+provenance verified; restart test on two monitors passed on the dev host
+and a fresh install verified on the test host (2026-10-12). Earlier:
+v0.1.0 (2026-10-02) … v0.1.4.
+**Branches:** `main` = v0.2.0 plus the release bump; `next` carries 0.2.x
+and 0.2.y work.
+**Contract version:** 2
+**Last updated:** 2026-10-12
 
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
