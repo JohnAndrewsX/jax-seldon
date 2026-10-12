@@ -414,3 +414,36 @@ two earlier round-5 runs that the real-path guard stopped are covered by
 WP-212. Only this paragraph follows b485d94a. The scratch `TMPDIR` is
 empty afterwards.
 
+## Round 6 (round-5 re-check: APPROVE WITH FIXES, two findings)
+
+1. **No real plugin text in the stale-hint row (finding 1).** The row
+   took its expected line from `grep -nF 'RESTART_SHELL_ARGV = [...]'`
+   on the copy of the real `Model.js`. A rename in another WP made that
+   grep fail, and under `set -euo pipefail` the script ended with rc=1
+   and no FAIL line. Now the expected line comes from the lint's own
+   rule: the first code line of the scratch copy that holds the ledger's
+   `restart-shell` `pluginSymbol`. If none is found, the row prints a
+   FAIL line ("no code line of plugin/Model.js holds …") and the script
+   goes on. The two other `at=` lookups (in the lint's warning and in
+   `fresh`) end in `|| true` too, so a failed lookup never ends the
+   script silently.
+2. **The facade row reads the ledger (finding 2).** The expected
+   `at plugin/Desk.qml:527.` and the re-measure text are taken from the
+   ledger's `facade-settings-write` entry with jq. A missing entry is a
+   FAIL line.
+
+### How round 6 was verified
+
+| Check | Where |
+|---|---|
+| `tests/omarchy/assumptions.test.sh` on d2d4183c: ok, 47 checks, no `warn` line | fixture; installed-tree part on a scratch copy of the desktop's tree |
+| rename: `RESTART_SHELL_ARGV` → `RESTART_ARGV` (3 uses) in a scratch copy of the tree; the new test ok (rc 0, the stale-hint row passes); the round-5 test on the same copy ended with rc=1 and no FAIL line (the review's P4) | fixture |
+| hint refresh: a line inserted above `Desk.qml:527` and the ledger's two `Desk.qml:527` hints moved to 528 in a scratch copy; the test ok, the facade row passes | fixture (installed-tree part) |
+| failed lookup: the `omarchy-restart-shell` code line commented out in a scratch copy; six FAIL lines and the summary "6 failure(s)", rc=1, no silent stop | fixture |
+| shellcheck of the test | test host (E80 wrapper) |
+| `SELDON_FULL_CHECK=1 just check` | not run (the orchestrator gates this round) |
+
+Each scratch copy came from `git archive` of d2d4183c in the private
+`gates/` TMPDIR and was removed afterwards. Only this handover follows
+d2d4183c.
+
