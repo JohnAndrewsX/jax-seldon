@@ -297,8 +297,10 @@ If no agent can start, the line under the field says why and how to fix
 it, and your sentence stays in the field.
 
 "2 / 3 active" compares your active cases with your limit. The limit
-warns; it never blocks. *By agent* narrows Completed to the cases an
-agent closed, for a spot check when you feel like one (it is never due).
+warns; it never blocks. The line sits above the buttons, or beside them
+when the desk is narrow enough to stack list and detail. *By agent*
+narrows Completed to the cases an agent closed, for a spot check when
+you feel like one (it is never due).
 *Import tasks…* turns your own Markdown task list into queued cases, dry
 run first. *New case* (`+`) asks for a title, zone, risk, priority and an
 optional area. It starts at yellow, R1, normal. Use it when you want to
@@ -309,6 +311,14 @@ The cases follow in groups: ACTIVE, VERIFICATION, QUEUED and COMPLETED
 the plan's steps. "N proposed" means Seldon thinks some open drift
 belongs to this case. "agent working" marks a case an agent session runs
 on.
+
+On a very large logbook the index lists only part of the queued or
+active cases (the engine keeps it below 1 MB). The group's header then
+shows both numbers, "QUEUED · 50 / 450", and the WIP line counts every
+active case. A group the index lists none of keeps its header, over a
+dim line "The index lists none of them. This lists them:" and the
+command, for example `seldon plan list --status queued`. The search
+finds the listed cases only.
 
 The detail shows the case: status, risk, zone, area, agent, rollback
 snapshot, the first paragraph of its Intent and Result, the plan's

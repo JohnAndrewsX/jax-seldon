@@ -233,7 +233,8 @@ Options (with the one-liner: `| bash -s -- --unit`):
   shell to finish the update" with a *Restart shell* button; a plugin
   version without this notice shows nothing, so restart after every
   update. From 0.1.x to 0.2.0, update the engine and the plugin together
-  (index contract 2): [what changed](docs/user/en/11-update-and-uninstall.md).
+  (index contract 2); from 0.2.x to 0.3.0 the order does not matter:
+  [what changed](docs/user/en/11-update-and-uninstall.md).
 - **Remove:** `bash install.sh --uninstall`, or with the one-liner
   `… | bash -s -- --uninstall`. It removes exactly the files it
   installed (a file you changed since is kept, and it says so). Your
@@ -270,10 +271,13 @@ an agent working on this repository follows the repository's
 
 ## Project status
 
-v0.2.0: the desk replaces the bar popup and the fullscreen overlay (one
-window, nine sections, your width), your agent can sort the open changes
-for you to apply, and a new logbook looks back 90 days without asking.
-Engine and plugin move to index contract 2 together. Before 1.0.0 a
+v0.3.0: the desk's buttons work by key (the notices, the setup card,
+*Agent sorts*, the width and the sidebar), a very large logbook keeps the
+desk working (the engine leaves the oldest rows out of the index and
+still counts every queued and active case, change and crisis), and the
+agent skill is a short core
+that loads its details when a task needs them. The index format is
+still contract 2, as since v0.2.0, which made the desk. Before 1.0.0 a
 minor release may still change the CLI, the logbook layout or the
 contract; the [changelog](CHANGELOG.md) then says so under Breaking.
 Next: the AUR package, the listing in the Omarchy plugin directory and

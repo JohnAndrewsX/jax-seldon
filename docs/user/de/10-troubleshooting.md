@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 85570258 -->
+<!-- source: en/10-troubleshooting.md @ e0df9cca -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Hinweise des Desks, die Exit-Codes
@@ -71,7 +71,7 @@ zurück.
 | Create the logbook (Schritt 2 der Einrichtungskarte) | es gibt noch kein Logbuch | *Create logbook* öffnet ein Terminal, das `seldon init --defaults` startet (ohne Frage); die Karte geht von selbst weiter, sobald das Logbuch da ist. Liegen in dem Ordner schon andere Dateien, sagt der Schritt das, und *Choose a folder* startet `seldon init`, das fragt, wohin |
 | Read snapshots (optional, Schritt 3 der Einrichtungskarte) | Snapper weist deinen Benutzer ab, und `/.snapshots` ist nicht lesbar | *Grant* öffnet ein Terminal, das sagt, was die Freigabe erlaubt, die einmalige Lesefreigabe startet (dort tippst du dein Passwort) und die Snapshots aufzeichnet; danach geht die Karte von selbst weiter. *Not now* legt den Schritt für immer weg; Settings › Capture bietet ihn wieder an. Seldon funktioniert auch ohne Snapshots |
 | No index yet | die Engine hat `~/.local/state/seldon/index.json` noch nicht geschrieben | *Build index* startet `seldon status`, das ihn schreibt |
-| Index unreadable | die Datei `index.json` ist kaputt oder 1 MB groß oder größer; dann nennt das Detail ihre Größe: „index.json is 1.2 MB, over the 1 MB the plugin reads; rebuild it from the logbook, and if it stays, seldon status in a terminal names the largest section.“ | *Build index* startet `seldon status`, das den Index aus dem Logbuch neu schreibt |
+| Index unreadable | die Datei `index.json` ist kaputt oder 1 MB groß oder größer (die Engine hält sie darunter, indem sie die ältesten Zeilen weglässt; eine Engine vor 0.3.0 tat das nicht); dann nennt das Detail ihre Größe: „index.json is 1.2 MB, over the 1 MB the plugin reads; rebuild it from the logbook, and if it stays, seldon status in a terminal names the largest section.“ | *Build index* startet `seldon status`, das den Index aus dem Logbuch neu schreibt |
 | Index is stale | der Index ist älter als zwei Stunden; das Detail sagt, wann er zuletzt aktualisiert wurde | *Capture now* |
 | Index format mismatch | Plugin und Engine sprechen verschiedene Versionen des Index; das Detail nennt beide Versionen und die Seite, die du aktualisieren musst | *Update* öffnet ein Terminal, das das ältere aktualisiert: das Plugin mit `omarchy plugin update jax.seldon` (danach die Shell neu starten), die Engine mit dem Installer (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)). *Copy* kopiert den Befehl |
 | The engine is newer than the plugin | die Engine schreibt ein neueres Index-Format, das dieses Plugin laut Index noch lesen kann; die Leiste zeigt weiter Zahlen und Farbe | das Plugin aktualisieren: *Update* startet `omarchy plugin update jax.seldon`, danach die Shell neu starten |

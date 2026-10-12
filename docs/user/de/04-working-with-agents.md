@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 3f26fb5a -->
+<!-- source: en/04-working-with-agents.md @ e0df9cca -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -627,6 +627,13 @@ einmal ausführst. `seldon init` bietet ihn neben den Claude-Code-Hooks an
 (`seldon init --defaults`), hat noch keinen Skill: Das erste *Agent sorts
 N open changes* verlangt diesen Befehl, und die Zeile unter dem Button
 sagt das.
+
+Der Skill ist ein kurzer Kern, `SKILL.md`, mit den Regeln, die jede
+Aufgabe braucht. Die Einzelheiten stehen in Themendateien daneben, die
+der Kern in der Zeile verlinkt, die sie braucht; ein Agent liest sie also
+nur für eine solche Aufgabe: `logbook.md` (Befehle melden ohne Hook),
+`case.md`, `snapshot.md`, `update.md` (die privilegierten Schritte),
+`drift.md`, `triage.md` und `crash.md`.
 
 Der Skill sagt dem Agenten kurz, was die `AGENTS.md` des Logbuchs
 ausführlich sagt:

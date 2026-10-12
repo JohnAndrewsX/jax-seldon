@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "jax.seldon",
   "name": "JAX Seldon",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "JohnAndrewsX",
   "license": "MIT",
   "description": "The memory of your Omarchy machine, for you and your agents: ledger, journal, cases, drift and the Prime Radiant in one desk.",

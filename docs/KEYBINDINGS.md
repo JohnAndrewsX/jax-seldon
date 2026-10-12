@@ -77,7 +77,7 @@ Tab and Shift-Tab do nothing: the desk is not a bar popup.
 | `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section (an event, a case, a decision id, …; the Changelog: `proposal`, the agent's triage proposal; the graph: keep that node's card); put the keys on a button, never pressing it: `notices`, `notice:<id>` (any section), `setup` (Today), `ask` (Changelog, *Agent sorts*), `width`, `presets`, `sidebar`, `offer` (Settings) |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`); an unknown id changes nothing |
 | `omarchy-shell shell call jax.seldon hover "heatmap 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (fractions of its plot; `""` clears), while it is shown |
-| `omarchy-shell jax.seldon.panel open\|close\|show\|hide\|toggle\|tab <name>\|resolve <eventId\|crisis\|proposal>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until 0.3.0 |
+| `omarchy-shell jax.seldon.panel open\|close\|show\|hide\|toggle\|tab <name>\|resolve <eventId\|crisis\|proposal>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until a later release removes it (announced in the CHANGELOG) |
 | `omarchy-shell jax.seldon.service status\|refresh\|capture` | the service |
 
 The suggested Hyprland binding is documented, never installed by the

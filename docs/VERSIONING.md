@@ -114,7 +114,7 @@ the release means for them.
 - `## [Unreleased]` always has the heading, empty until the release is
   prepared. Pull requests add their lines to the other parts as before.
 - The release work package writes the points when it moves the
-  `[Unreleased]` lines under the version (WP-126 for 0.2.0, WP-188 for
+  `[Unreleased]` lines under the version (WP-126 for 0.2.0, WP-214 for
   0.3.0), and the operator reads them in the release body with the tag
   question.
 
@@ -259,9 +259,9 @@ the versions, each scenario with its counts and each limitation. A
 on it. The version bump changes `engine/` and `plugin/`, so the live test
 runs on the bumped commit; a fix after the live test means a new deploy,
 a new live test and a new record. `tests/release/acceptance-check.test.sh`
-(in `just check-packaging`) covers the checker. From 0.3 the release
-workflow runs it on the tag and refuses a tag without a `passed` record
-(WP-188).
+(in `just check-packaging`) covers the checker. From WP-188 on, the
+release workflow runs it on the tag and refuses a tag without a `passed`
+record; until then (0.3.0 included) the operator's go quotes its output.
 
 ## Tag flow
 

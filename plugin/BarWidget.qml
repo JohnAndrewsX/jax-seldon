@@ -28,8 +28,8 @@ import "Model.js" as Model
 // widget's clicks go the same way, through the scoped facade (`bar.shell`).
 // The widget has no popup of its own any more, so it offers the bar no
 // open/close: Tab between bar panels passes it by.
-// `jax.seldon.panel`, the 0.1.x panel's IPC target, stays one minor
-// release as a shim to the desk (ADR-0034 §7; removed in 0.3.0).
+// `jax.seldon.panel`, the 0.1.x panel's IPC target, stays as a shim to
+// the desk (ADR-0034 §7); 0.3.0 keeps it, WP-188 removes it.
 BarWidget {
   id: root
   moduleName: "jax.seldon"

@@ -21,9 +21,23 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
-- Every button on the desk works by key now: the notices, the setup card, *Agent sorts*, the width and sidebar settings, and each crisis in an agent's proposal.
-- A very large logbook no longer locks the desk out: the engine keeps `index.json` under 1 MB, leaves out the oldest rows first and still counts every case, change and crisis.
+## [0.3.0] - 2026-10-12
+
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
+and the package does not exist yet. Update the plugin first:
+`omarchy plugin update jax.seldon` (Omarchy shows the changes and asks
+`Update jax.seldon?`; answer yes), then `omarchy-restart-shell`.
+
+### Highlights
+
+- The desk's buttons work by key now: the notices, the setup card, *Agent sorts*, the width and sidebar settings, and each crisis in an agent's proposal.
+- A very large logbook no longer locks the desk out: the engine keeps `index.json` under 1 MB, leaves out the oldest rows first and still counts every queued and active case, every change and crisis.
+- On such a logbook Work's headers count every queued and active case ("QUEUED · 50 / 450"), and a group the desk shows none of names the command that lists it.
+- Old open changes no longer go missing from the Changelog and *Needs you*: every change the index lists has its row.
 - Your agents read less: the Seldon skill is a short core, and the details load when a task needs them; an unedited skill updates itself.
+- More secrets stay out of your logbook: keys in base64, passwords in Python-style settings and mount options, pass phrases typed on the command line.
+- Update the engine and the plugin in either order: the index format is the same as in 0.2.0.
+- The old `jax.seldon.panel` command still forwards to the desk in this release; the changelog announces the release that removes it.
 
 ### Engine
 
@@ -43,7 +57,7 @@ and the package does not exist yet. Update the plugin first:
   not fit is not written. Below 1 MB nothing changes; the fixture scaled
   ×150 (1 200 cases) stays at 897 KB, uncut.
 - **Every open change the index lists has its row on the desk (WP-203,
-  ADR-0054, proposed).** The index listed the newest 500 events, so an
+  ADR-0054).** The index listed the newest 500 events, so an
   open change older than those had no row in the Changelog, in *Needs
   you* or in the triage sheet, while the bar counted it: on the fixture
   scaled ×150 none of the 200 listed crises had one. The 500 events are
@@ -51,10 +65,10 @@ and the package does not exist yet. Update the plugin first:
   newest of the rest. Over 1 MB, the open changes an agent's triage
   proposal names stay until only crises are left to cut, so its items
   no longer read "No longer open" early. No contract change. A 0.2.0
-  plugin shows the new rows as ordinary Changelog rows; only its
-  transaction detail can now list part of an old transaction without
-  the 'partial' note (it inferred the note from the list's end), until
-  the plugin update of WP-208.
+  plugin shows the new rows as ordinary Changelog rows. The desk's
+  transaction detail, in this release as in 0.2.0, can list part of an
+  old transaction without the 'partial' note (the plugin infers the note
+  from the list's end); a later plugin update fixes it.
 - **A shorter agent skill (WP-196).** `SKILL.md` is a core of at most
   120 lines, front matter included: is there a logbook, attended or not,
   act then account, when to ask first, privileged commands, the engine
@@ -90,7 +104,7 @@ and the package does not exist yet. Update the plugin first:
 
 ### Plugin
 
-- **Every desk button has a key path.** ↑ at the top of a list reaches
+- **The desk's buttons have a key path.** ↑ at the top of a list reaches
   the notices' buttons (*Restart shell*, *Install*, *Update rules*, …),
   ↑ on Today's first row the setup card's row, ↑ on the Changelog's
   proposal *Agent sorts N open changes*, Enter on Settings › Appearance
@@ -120,6 +134,25 @@ and the package does not exist yet. Update the plugin first:
 - **Apply proposals armed by Enter drops on a click on the desk.** It
   also asks again when the proposal's open items changed between the
   two Enters. *Discard* keeps its two clicks.
+- **Work counts every queued and active case on a cut index (WP-204,
+  WP-206).** Where the index lists fewer queued or active cases than
+  its `summary` counts (ADR-0053), the group header shows both:
+  "QUEUED · 50 / 450". A group the index lists no row of keeps its
+  header, "QUEUED · 0 / 500", over a dim line "The index lists none of
+  them. This lists them:" and the command, `seldon plan list --status
+  queued`. The WIP line ("2 / 3
+  active") counts the summary too, and Today shows its first-run card
+  ("Seldon is recording. Nothing to do.") only when the summary counts
+  no case either. A whole index looks as before.
+- **Work's WIP line keeps its words on a narrow desk (WP-211).** In a
+  list column it sits above *By agent*, *Import tasks…* and *New case*,
+  which wrap; only in the stacked layout, where the list is the desk's
+  width, beside them. At 50 % on a 2048 px screen the line no longer
+  runs under the buttons.
+- **The `jax.seldon.panel` shim stays in 0.3.0.** 0.2.0 announced its
+  removal for this release; it now goes with a later minor release,
+  which names it under **Breaking**. Bind `omarchy-shell shell toggle
+  jax.seldon` meanwhile.
 
 ### Docs
 
@@ -1983,7 +2016,8 @@ plugin `jax.seldon` (published from `plugin/` as `jax-seldon-plugin`).
 - Specs (engine, plugin, logbook, contract), 22 ADRs, plugin README with
   security section, keybinding docs, preview image.
 
-[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.3.0
 [0.2.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.2.0
 [0.1.4]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.4
 [0.1.3]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.3
