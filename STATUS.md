@@ -8,7 +8,7 @@ the test host, b and c not run because the guard keeps agents out of
 release, plugin split and bump jobs green, build provenance verified; the
 AUR push is skipped (no AUR key yet, the package is not published).
 Earlier: v0.2.0 (2026-10-12), v0.1.0 (2026-10-02) … v0.1.4.
-**Branches:** `main` = v0.2.0 plus the release bump; `next` carries the
+**Branches:** `main` = v0.3.0 plus the release bump; `next` carries the
 0.3.0 work (E86); the queue's release plan is below.
 **Contract version:** 2
 **Last updated:** 2026-10-12
