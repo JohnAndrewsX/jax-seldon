@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ 899b1f74 -->
+<!-- source: en/03-daily-use.md @ dadf6b69 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
@@ -291,7 +291,9 @@ open changes*: Zweimal `a` startet den Agenten.
   der Tastatur schaltet Enter es scharf, ein zweites Enter wendet es an.
   Ein zweites Apply ändert nichts.
 - Krisen sind nie Teil von Apply. Sie stehen unter **CRISES, EACH ON ITS
-  OWN**, jede mit ihrem eigenen *Apply this crisis*.
+  OWN**, jede mit ihrem eigenen *Apply this crisis*. Mit der Tastatur
+  geht ↓ vom Vorschlag aus durch die Krisen; Enter schaltet die unter dem
+  Cursor scharf, ein zweites Enter wendet nur diese Krise an.
 - *Discard* wirft den Vorschlag weg (zwei Klicks). Das Logbuch ändert
   sich nicht.
 - Kommt ein neuerer Vorschlag, während du einen liest, schalten sich
