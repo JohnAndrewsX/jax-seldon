@@ -127,7 +127,7 @@ Restart the shell either way. What changes for you:
 - `omarchy-shell shell toggle jax.seldon` opens and closes the desk;
   bind your key to it. The 0.1 panel's target,
   `omarchy-shell jax.seldon.panel …`, still works and forwards to the
-  desk until 0.4.0, which removes it.
+  desk until 0.3.0, which removes it.
 - The index format is version 2. A 0.1.x plugin shows "Index format
   mismatch" against a 0.2.0 engine, and a 0.2.0 plugin against a 0.1.x
   engine; each names the side to update. Going back to a 0.1.x engine

@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 913a185a -->
+<!-- source: en/11-update-and-uninstall.md @ 488725cf -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -139,7 +139,7 @@ nichts. Starte die Shell in beiden Fällen neu. Was sich für dich ändert:
 - `omarchy-shell shell toggle jax.seldon` öffnet und schließt den Desk;
   leg deine Taste darauf. Das Ziel des Panels von 0.1,
   `omarchy-shell jax.seldon.panel …`, funktioniert weiter und leitet bis
-  0.4.0 an den Desk weiter; 0.4.0 entfernt es.
+  0.3.0 an den Desk weiter; 0.3.0 entfernt es.
 - Das Index-Format hat die Version 2. Ein Plugin 0.1.x zeigt gegen eine
   Engine 0.2.0 „Index format mismatch“, ein Plugin 0.2.0 ebenso gegen
   eine Engine 0.1.x; beide nennen die Seite, die du aktualisieren musst.
