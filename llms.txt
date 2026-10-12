@@ -10,6 +10,7 @@ An agent started inside a logbook follows the logbook's own `AGENTS.md`; the lon
 
 - [Agent guide](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md): how to work inside a logbook — session start, attended sessions, cases, when to ask, R3, snapshots, install routes, commands, hooks, drift, closing, a worked example, the do-not list
 - [Logbook AGENTS.md template (en)](https://github.com/JohnAndrewsX/jax-seldon/blob/main/engine/templates/en/AGENTS.md): the rules `seldon init` writes into every logbook (German: `engine/templates/de/AGENTS.md`), in a `seldon:begin rules v3` block that `seldon rules update` (and a capture, while nobody edited it) rewrites; the user's own rules follow the block and can only add limits
+- [Seldon agent skill](https://github.com/JohnAndrewsX/jax-seldon/blob/main/engine/assets/skills/seldon/SKILL.md): what `seldon hook install skills` puts into the agents' skill folders — a short core with the rules every task needs, and topic files beside it (`logbook.md`, `case.md`, `snapshot.md`, `update.md`, `drift.md`, `triage.md`, `crash.md`) that the core links where a task needs them
 - [Repository AGENTS.md](https://github.com/JohnAndrewsX/jax-seldon/blob/main/AGENTS.md): rules for agents that develop Seldon itself, not for agents working in a logbook
 
 ## Read-only commands (safe at any time)

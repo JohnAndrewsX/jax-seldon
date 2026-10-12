@@ -175,7 +175,7 @@ The picture at the top of this page shows the desk on Today.
 |---|---|---|---|
 | 1 | Today | the day's state, events today and in 7 days, the note field (`n`), NEEDS YOU (the crises), today's journal and yesterday's behind one row; the overview: the setup card until Seldon is set up, then "Seldon is recording. …", the active cases as tiles ("agent working" first in its line while an agent runs on one), *New case* from one sentence (`i`) | write a note; *Open in editor* (`e`, today's journal); resolve a crisis in place |
 | 2 | Changelog | *Agent sorts N open changes* and the agent's proposal; the chips open · crisis · attention · routine · in case · all (`f` / `F`); every event, newest first by day, a stripe on open changes (crisis urgent, attention accent) | resolve a change (*Link*, *Explain*, *Dismiss*); *Apply proposals*, *Discard*; *Ask agent*; *Ledger* (`e`); *Capture now* (`c`) |
-| 3 | Work | one sentence to a new case and *Run* (`i`); "2 / 3 active" against your limit; *By agent*; *Import tasks…*; *New case* (`+`); the cases grouped ACTIVE · VERIFICATION · QUEUED · COMPLETED | by status (below); *Open in editor* (`e`); *Ask agent* |
+| 3 | Work | one sentence to a new case and *Run* (`i`); "2 / 3 active" against your limit; *By agent*; *Import tasks…*; *New case* (`+`); the cases grouped ACTIVE · VERIFICATION · QUEUED · COMPLETED, each header with the whole count when the index lists fewer ("QUEUED · 50 / 450") | by status (below); *Open in editor* (`e`); *Ask agent* |
 | 4 | Decisions | your decisions (ADRs), newest first, proposed ones marked; the detail shows the decision's first paragraph | *Accept* (twice); *New decision* (`d`); *Open in editor* (`e`) |
 | 5 | System | seven tiles: Omarchy, Packages, Snapshots, Deviations, Collectors, Recently edited (files under `~/.config` Seldon does not watch, each with *Watch*), Ignored by pacman; a tile's detail shows its rows and where they come from | *Watch*; *Open in editor* (`e`, the logbook's `STATUS.md`) |
 | 6 | Memory | what your agents read at session start: the headings of `memory/lessons.md` and the memory topics | *Open in editor* (`e`, the logbook folder) |
@@ -324,7 +324,7 @@ below are the setup card's steps:
 |---|---|---|
 | Engine missing | Install the engine (step 1 of the setup card); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the engine it downloads against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; the desk then finds it by itself; *Copy* puts the one-liner on the clipboard; *Check again* (on the urgent notice) looks for the engine again |
 | Logbook not initialised | Create the logbook, step 2 of the setup card, with what the machine remembers without Seldon (the card stands in for the notice "Create your logbook") | *Create logbook* opens a terminal that says what happens, shows and runs `seldon init --defaults` (no question: `~/Seldon`, the last 90 days recorded as history "before Seldon"), then says whether the logbook was created; the desk then updates by itself; *Copy*; *Check again*; when the folder already holds other files, *Choose a folder* runs `seldon init`, which asks where |
-| Index missing | No index yet / Index unreadable (also an `index.json` of 1 MB or more, which the plugin does not parse: "index.json is 1.2 MB, over the 1 MB the plugin reads; …") | *Build index* runs `seldon status`, which writes it |
+| Index missing | No index yet / Index unreadable (also an `index.json` of 1 MB or more, which the plugin does not parse: "index.json is 1.2 MB, over the 1 MB the plugin reads; …"; the engine keeps it below that by leaving out the oldest rows, an older engine may not) | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
 | Index format mismatch | Index format mismatch, with both contract versions | *Update* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older (then restart the shell, see [Update](#update)), the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
 | Engine newer than the plugin (an index of a newer contract that says this plugin can read it, ADR-0051) | The engine is newer than the plugin: "The engine writes index vN; this plugin reads v2 — update the plugin.", in the neutral tone; no status notice, the pill keeps its counts and colour | *Update* / *Copy*: `omarchy plugin update jax.seldon` (then restart the shell, see [Update](#update)) |
@@ -378,7 +378,7 @@ o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 | `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section; `notices`, `setup`, `ask`, `width`, … put the keys on a button without pressing it |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`) |
 | `omarchy-shell shell call jax.seldon hover "series 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON, while section 7 is shown; `hover ""` clears; a malformed argument returns `{"error": …}` and changes nothing |
-| `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide\|tab <name>\|resolve crisis\|proposal\|<event id>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk; removed in 0.3.0 |
+| `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide\|tab <name>\|resolve crisis\|proposal\|<event id>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk; a later release removes it (the CHANGELOG announces it under Breaking) |
 | `omarchy-shell jax.seldon.service status` | the service state, as JSON |
 | `omarchy-shell jax.seldon.service refresh` | look for the engine again and re-read the index |
 | `omarchy-shell jax.seldon.service capture` | capture now |
@@ -549,7 +549,7 @@ update.
 reads and writes index contract 2, and a 0.1.x plugin or engine shows
 "Index format mismatch" against it. The bar popup and the fullscreen
 Prime Radiant are replaced by the desk; the pill and its counts stay, and
-the `jax.seldon.panel` IPC target forwards to the desk until 0.3.0. Your
+the `jax.seldon.panel` IPC target still forwards to the desk. Your
 settings keep their values; `deskWidth` and `deskSidebar` start at their
 defaults (100 %, open). The digits `1`–`8` are the desk's sections now;
 the Prime Radiant's periods moved to `←`/`→` and `h`/`l`.

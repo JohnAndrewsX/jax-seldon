@@ -577,6 +577,13 @@ logbook the setup card created (`seldon init --defaults`) has no skill
 yet: the first *Agent sorts N open changes* asks for this command, and
 the note under the button says so.
 
+The skill is a short core, `SKILL.md`, with the rules every task needs.
+The details are topic files beside it, which the core links from the
+line that needs them, so an agent reads them only for such a task:
+`logbook.md` (reporting commands without a hook), `case.md`,
+`snapshot.md`, `update.md` (the privileged steps), `drift.md`,
+`triage.md` and `crash.md`.
+
 The skill tells the agent, in short, what the logbook's `AGENTS.md` says
 at length:
 

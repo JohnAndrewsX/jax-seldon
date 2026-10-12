@@ -94,6 +94,43 @@ still read it, the plugin keeps working and only asks, in a quiet
 notice, for its own update ("The engine is newer than the plugin").
 After an update, `seldon doctor` should show only `ok`.
 
+## What changed from 0.2.x
+
+0.3.0 keeps the index format of 0.2.0 (version 2), so update the engine
+and the plugin in either order, with the commands above, and restart the
+shell after the plugin update. A 0.2.0 plugin reads a 0.3.0 engine's
+index, and a 0.3.0 plugin works with a 0.2.0 engine. What changes for
+you:
+
+- Every button on the desk has a key path. ↑ at the top of a list
+  reaches the notices' buttons, ↑ on Today's first row the setup card,
+  ↑ on the Changelog's first row the agent's proposal or *Agent sorts N
+  open changes* (`a` twice), Enter on Settings › Appearance the width
+  and the sidebar. ←/→ pick a button or a value, Enter arms, a second
+  Enter runs. In a shown proposal ↓ walks its crises, and Enter twice
+  applies the one under the cursor alone. The table is in
+  [Daily use](03-daily-use.md#keys).
+- A very large logbook no longer locks the desk out. The plugin reads
+  an index below 1 MB; the engine now leaves out the oldest rows until
+  it fits (history first, crises last), keeps every count whole, and
+  `seldon status` names what it left out. The logbook and every command
+  keep every row. Work's headers then show both numbers, "QUEUED · 50 /
+  450" ([Daily use](03-daily-use.md#work-3)). A 0.2.0 plugin on such an
+  index counts Work's groups from the listed rows until you update it.
+- Every open change the index lists has its row in the Changelog and in
+  *Needs you*, however old the change is.
+- The agent skill is a short core, and its details are topic files the
+  core links where a task needs them
+  ([Working with agents](04-working-with-agents.md#the-agent-skill)).
+  The next capture updates a skill you did not edit; an edited one is
+  kept, and `seldon doctor` says `outdated`.
+- More secrets are masked before they reach the logbook: private keys in
+  base64, passwords in Python-style settings and in mount options, and
+  pass phrases typed on the command line
+  ([Configuration](06-configuration.md#redaction)).
+- `omarchy-shell jax.seldon.panel …` still forwards to the desk; a later
+  release removes it.
+
 ## What changed from 0.1.x
 
 0.2.0 changes the plugin's surface and the index format, so update the
@@ -127,7 +164,8 @@ Restart the shell either way. What changes for you:
 - `omarchy-shell shell toggle jax.seldon` opens and closes the desk;
   bind your key to it. The 0.1 panel's target,
   `omarchy-shell jax.seldon.panel …`, still works and forwards to the
-  desk until 0.3.0, which removes it.
+  desk; a later release removes it, and the changelog announces it
+  first.
 - The index format is version 2. A 0.1.x plugin shows "Index format
   mismatch" against a 0.2.0 engine, and a 0.2.0 plugin against a 0.1.x
   engine; each names the side to update. Going back to a 0.1.x engine
