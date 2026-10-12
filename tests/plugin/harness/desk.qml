@@ -321,6 +321,51 @@ ShellRoot {
     return out
   }
 
+  // Every header row (objectName "headerRow:<name>", WP-211) whose items
+  // draw over each other or leave the row: its visible items are its
+  // children, a positioner's (Row, Flow) counted as its own children; a
+  // text counts by its box like overflow() (an elided one by its width, a
+  // wrapped one that cannot wrap by what it draws). Tolerance 1 px.
+  function overlap(item, out) {
+    if (!item || item.visible === false) return out
+    var name = String(item.objectName || "")
+    if (name.indexOf("headerRow:") === 0) {
+      var row = item.mapToItem(win.contentItem, 0, 0)
+      var parts = root.rowParts(item, [])
+      for (var a = 0; a < parts.length; a++) {
+        var pa = parts[a]
+        if (pa.x < row.x - 1 || pa.x + pa.w > row.x + item.width + 1)
+          out.push(name + ": " + pa.label + " leaves the row")
+        for (var b = a + 1; b < parts.length; b++) {
+          var hit = root.intersect(pa, parts[b])
+          if (hit && hit.w > 1 && hit.h > 1) out.push(name + ": " + pa.label + " × " + parts[b].label)
+        }
+      }
+    }
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) overlap(kids[i], out)
+    return out
+  }
+
+  function rowParts(item, out) {
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) {
+      var k = kids[i]
+      if (!k || k.visible === false || k.width <= 0 && !root.isText(k) || k.height <= 0) continue
+      var type = String(k)
+      if (type.indexOf("QQuickRow") === 0 || type.indexOf("QQuickFlow") === 0) {
+        root.rowParts(k, out)
+        continue
+      }
+      var p = k.mapToItem(win.contentItem, 0, 0)
+      var text = root.isText(k)
+      var w = text && k.elide === Text.ElideNone ? Math.max(k.width, k.contentWidth) : k.width
+      var h = text ? Math.max(k.height, k.contentHeight) : k.height
+      out.push({ label: text ? k.text : String(k.text || k.objectName || type.split("(")[0]), x: p.x, y: p.y, w: w, h: h })
+    }
+    return out
+  }
+
   // The overlap of a clip and a box: b itself without a clip (undefined),
   // null when the clip is empty (null) or they do not overlap.
   function intersect(a, b) {
@@ -401,6 +446,7 @@ ShellRoot {
       } : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
       texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined),
+      overlap: overlap(win.contentItem, []),
       marks: marks(win.contentItem, { rows: [], rings: [], bars: [], barsOutside: [] }),
       tones: root.desk && root.desk.tone ? root.desk.tone.tones : null
     }))

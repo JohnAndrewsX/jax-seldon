@@ -490,6 +490,7 @@ Section {
     }
 
     Item {
+      objectName: "headerRow:work"
       width: parent.width
       implicitHeight: Math.max(wipText.implicitHeight, newButton.implicitHeight)
 

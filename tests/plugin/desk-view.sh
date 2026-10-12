@@ -1181,6 +1181,7 @@ shows work 8 "COMPLETED · 1 / 2"
 expect work 9 "[$tv.filter, ($tv.groups | join(\"+\"))] | join(\",\")" ",active 2+verification 1+queued 3+completed 2"
 expect work 10 "[$tv.selected, ($tc.kv[] | select(startswith(\"Dates\")))] | join(\",\")" "C-2026-001,Dates: created 2026-09-01 · started 2026-09-01 · closed 2026-09-01"
 for i in 1 7 8; do expect work $i '.overflow | join(" | ")' ""; done
+for i in 1 7 8; do expect work $i '.overlap | join(" | ")' ""; done
 clean_log work
 
 run work-reopened "$fx/index-variants/case-reopened.json" 1920x1080 "summon:$wk;select:C-2026-009"
@@ -1233,6 +1234,23 @@ for text in "ACTIVE · 0 / 40" "seldon plan list --status active" "VERIFICATION 
   shows work-cut-hand 1 "$text"
 done
 clean_log work-cut-hand
+
+# 8d‴. The WIP line and the buttons share Work's header row (WP-211): over
+#      the limit ("40 / 3 active · over the limit") on a 750 px window
+#      (stacked), a 900 px one (the sidebar's icons), 1366 and 1920 at
+#      100 % and 50 % (the 960 px floor); no item of the row draws over
+#      another or leaves the row (the harness's `overlap`), nothing leaves
+#      the desk, and the line keeps all its words.
+for size in 750x700 900x700 1366x768 1920x1080; do
+  run "work-wip-$size" "$work/work-cut-hand.json" "$size" \
+    "summon:$wk;shot:work-wip-$size;width:50;shot:work-wip-$size-50" HARNESS_SHOTS="${DESK_SHOTS:-}"
+  for i in 1 3; do
+    expect "work-wip-$size" $i '.overlap | join(" | ")' ""
+    expect "work-wip-$size" $i '.overflow | join(" | ")' ""
+    shows "work-wip-$size" $i "40 / 3 active · over the limit"
+  done
+  clean_log "work-wip-$size"
+done
 
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"
