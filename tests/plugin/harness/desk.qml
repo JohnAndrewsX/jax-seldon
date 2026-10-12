@@ -347,6 +347,16 @@ ShellRoot {
     return out
   }
 
+  // The visible header rows' names: a case proves the row it checks is there.
+  function headerRows(item, out) {
+    if (!item || item.visible === false) return out
+    var name = String(item.objectName || "")
+    if (name.indexOf("headerRow:") === 0) out.push(name)
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) headerRows(kids[i], out)
+    return out
+  }
+
   function rowParts(item, out) {
     var kids = item.children
     for (var i = 0; kids && i < kids.length; i++) {
@@ -449,7 +459,7 @@ ShellRoot {
       } : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
       texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined),
-      overlap: overlap(win.contentItem, []),
+      overlap: overlap(win.contentItem, []), headerRows: headerRows(win.contentItem, []),
       marks: marks(win.contentItem, { rows: [], rings: [], bars: [], barsOutside: [] }),
       tones: root.desk && root.desk.tone ? root.desk.tone.tones : null
     }))

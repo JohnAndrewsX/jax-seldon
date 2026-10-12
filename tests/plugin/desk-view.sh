@@ -1241,7 +1241,8 @@ clean_log work-cut-hand
 #      sidebar's icons), 1366 and 1920 at 100 % and 50 % (the 960 px floor),
 #      and 2048×1152 at scale 1.25 (a 2560×1440 screen; the desk 1019 px at
 #      50 %, where the operator met it on 0.2.0); no item of the row draws
-#      over another or leaves the row (the harness's `overlap`), nothing
+#      over another or leaves the row (the harness's `overlap`, the row
+#      named among its `headerRows`: no row, no pass), nothing
 #      leaves the desk, and the line keeps all its words.
 for size in 750x700 900x700 1366x768 1920x1080 2048x1152; do
   scale=1
@@ -1253,6 +1254,7 @@ for size in 750x700 900x700 1366x768 1920x1080 2048x1152; do
     run "$name" "$index" "$size" "summon:$wk;shot:$name;width:50;shot:$name-50" \
       HARNESS_SHOTS="${DESK_SHOTS:-}" QT_SCALE_FACTOR="$scale"
     for i in 1 3; do
+      expect "$name" $i '.headerRows | index("headerRow:work") != null' true
       expect "$name" $i '.overlap | join(" | ")' ""
       expect "$name" $i '.overflow | join(" | ")' ""
       shows "$name" $i "$text"
