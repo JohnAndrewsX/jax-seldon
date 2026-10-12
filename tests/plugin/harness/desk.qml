@@ -41,9 +41,10 @@ import qs.Ui
 //   HARNESS_NO_PILL     if set, no pill: the plugin is enabled but not in
 //                       the bar, so nothing pushes an entry to the service
 //   HARNESS_WAIT_INDEX  if set, the first step also waits (in the same up
-//                       to 15 s) until the service holds an index: a live
-//                       run whose fake engine writes it at start-up
-//                       asserts the loaded state, not a race (WP-205)
+//                       to 15 s) until the service shows an index
+//                       (`indexShown`, what the desk reads): a live run
+//                       whose fake engine writes it at start-up asserts
+//                       the loaded state, not a race (WP-205)
 //   HARNESS_STEPS       ";"-separated steps, each optionally "*N" repeated:
 //                       summon[:<json>]  `shell summon jax.seldon <json>`
 //                       fresh[:<json>]   drop the desk and summon a new one
@@ -742,11 +743,11 @@ ShellRoot {
       var s = root.service
       var waited = Date.now() - root.startMs
       if (root.step === 0 && waited < 15000 && (waited < 1000 || !s || !s.ready || s.probing || (!root.noPill && (!root.widget || !root.widget.service))
-          || (root.waitIndex && !s.index))) {
+          || (root.waitIndex && !s.indexShown))) {
         stepper.restart()
         return
       }
-      if (root.step === 0 && root.waitFor === "" && root.waitIndex && !(s && s.index) && !root.indexTimedOut) {
+      if (root.step === 0 && root.waitFor === "" && root.waitIndex && !(s && s.indexShown) && !root.indexTimedOut) {
         root.indexTimedOut = true
         console.log("HARNESS wait timed out: index")
       }

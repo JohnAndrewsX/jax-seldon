@@ -556,6 +556,7 @@ clean_log fold
 #     says what failed under the notice, which stays.
 q() { printf '%q ' "$@"; }
 mkdir -p "$work/home-rules"
+# no index wait: waits for the rules notice first
 run rules-outdated "" 1920x1080 \
   "summon;wait:chip=The logbook's agent rules are outdated (v1);click:Update rules;settle;wait:chip^=Agent rules updated to v3;hide;summon;view" \
   HOME="$work/home-rules" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_RULES=outdated
@@ -572,6 +573,7 @@ fi
 clean_log rules-outdated
 mkdir -p "$work/home-rules-fail"
 echo "AGENTS.md is not UTF-8 text" >"$work/home-rules-fail/rules-fail"
+# no index wait: waits for the rules notice first
 run rules-fail "" 1920x1080 "summon;wait:chip=The logbook's agent rules are outdated (v1);click:Update rules;settle;view" \
   HOME="$work/home-rules-fail" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_RULES=outdated
 shows rules-fail 5 "Updating the agent rules failed: AGENTS.md is not UTF-8 text"
@@ -584,6 +586,7 @@ clean_log rules-fail
 reset_warning="state reset recorded: pacman took a new baseline because ~/.local/state/seldon was missing, unreadable or bound to another logbook, so changes made in between may be missing. If you have a backup of it, restore it and run \`seldon capture\` again (user guide: Back up and restore the state directory)"
 move_warning=$'cannot move ~/.local/state/seldon/owned.json aside: permission denied\ncaused by: EACCES'
 mkdir -p "$work/home-capture-warned"
+# no index wait: settles first
 run capture-warned "" 1920x1080 "summon;settle;text:c;settle;view" \
   HOME="$work/home-capture-warned" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_CAPTURE_WARNED=1 \
   FAKE_SELDON_CAPTURE_WARNINGS="$(jq -cn --arg a "$reset_warning" --arg b "$move_warning" '[$a, $b]')"
@@ -632,6 +635,7 @@ EOF
 setup_terminal capture
 three="Set up Seldon · 3 of 3 steps to go" two="Set up Seldon · 2 of 3 steps to go"
 optional="Set up Seldon · 1 of 3 steps to go (optional)"
+# no index wait: waits for the setup card first (no logbook at start)
 run setup-flow "" 1920x1080 \
   "summon;wait:setup=$three;clickName:setup-engine-terminal;summon;wait:setup=$two;clickName:setup-logbook-terminal;summon;wait:setup=$optional;clickName:setup-snapshots-terminal;summon;wait:sectionView.firstRun=true;view" \
   HOME="$work/home-setup" PATH="$setup_late:$setup_bin" FAKE_SELDON_MODE=uninit \
@@ -667,6 +671,7 @@ mkdir -p "$work/home-setup-partial"
 cp "$root/tests/plugin/fake-seldon" "$setup_late/seldon"
 chmod 755 "$setup_late/seldon"
 setup_terminal partial
+# no index wait: settles first
 run setup-partial "" 1920x1080 "summon;settle;wait:setup=$optional;clickName:setup-snapshots-terminal;summon;wait:setup=;wait:setupWatch=;view" \
   HOME="$work/home-setup-partial" PATH="$setup_late:$setup_bin" SELDON_SETUP_CAPTURE_MS=1500 \
   FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" HARNESS_RECORD="$work/setup-partial.record"
@@ -714,6 +719,7 @@ clean_log first-run
 #     WP-119 round 2, S5), live: step 2 says why and offers Choose a folder,
 #     which opens plain `seldon init` (it asks where) in the terminal.
 mkdir -p "$work/home-blocked"
+# no index wait: waits for the setup card first (no logbook, no index)
 run setup-blocked "" 1920x1080 "summon;wait:sectionView.setup.actions.0=Choose a folder;clickName:setup-logbook-terminal" \
   HOME="$work/home-blocked" FAKE_SELDON_MODE=uninit FAKE_SELDON_UNINIT_REASON=logbook-folder-not-empty \
   HARNESS_RECORD="$work/setup-blocked.record"
@@ -882,7 +888,7 @@ clean_log today-refuse
 intent='Install tool X. It needs --help $(id) and one package '
 mkdir -p "$work/home-today-new"
 run today-new "" 1920x1080 "summon;text:i;type:$intent;key:Return;settle;summon" \
-  HOME="$work/home-today-new" FAKE_SELDON_FIXTURE="$sample"
+  HOME="$work/home-today-new" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
 expect today-new 2 "[$tv.intentEditing, .view.keys] | map(tostring) | join(\",\")" "true,false"
 expect today-new 3 "$tv.intent" "$intent"
 # the agent started: the desk steps aside (WP-156)
@@ -1372,7 +1378,7 @@ clean_log held-key
 mkdir -p "$work/home-held-forms"
 run held-forms "" 1920x1080 \
   "summon;text:4;text:d;type:Held;keyRepeat:Return*3;keyDown:Return;keyRepeat:Return*10;keyUp:Return;key:Return;settle;summon:$cl;keyDown:Return;keyRepeat:Return;keyRepeat:Return*10;keyUp:Return;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle" \
-  HOME="$work/home-held-forms" FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/held-forms.record"
+  HOME="$work/home-held-forms" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/held-forms.record"
 expect held-forms 5 '[.view.sectionView.form.open, .view.sectionView.form.armed, .view.sectionView.form.title] | map(tostring) | join(",")' "true,false,Held"
 expect held-forms 5 "$kg" decision,3
 for i in 6 7 8; do
@@ -1398,7 +1404,7 @@ clean_log held-forms
 mkdir -p "$work/home-held-fields"
 run held-fields "" 1920x1080 \
   "summon;text:n;type:Hi;keyRepeat:Return*3;keyDown:Return;keyUp:Return;settle;key:Escape;text:i;type:Go;keyRepeat:Return*3;keyDown:Return;keyUp:Return;settle;summon:$wk;text:+;type:Held case;keyRepeat:Return*3;focusName:caseCreate;keyRepeat:Return*3;keyRepeat:Space*3;keyDown:Space;keyUp:Space;settle;text:i;type:Go work;keyRepeat:Return*3;keyDown:Return;keyUp:Return;settle" \
-  HOME="$work/home-held-fields" FAKE_SELDON_FIXTURE="$sample"
+  HOME="$work/home-held-fields" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
 expect held-fields 4 "[.keyGuard.name, .keyGuard.events, $tv.journal.text] | map(tostring) | join(\",\")" "journal,3,Hi"
 expect held-fields 5 "$kg" journal,4
 expect held-fields 11 "[.keyGuard.name, .keyGuard.events, $tv.intent] | map(tostring) | join(\",\")" "intent,3,Go"
@@ -1421,7 +1427,7 @@ mkdir -p "$work/home-held-import/projects"
 printf '%s\n' "# Desk" "- [ ] Fix the bar flicker" "- [ ] Try a lighter theme" >"$work/home-held-import/projects/TODO.md"
 run held-import "" 1920x1080 \
   "summon:$wk;click:Import tasks…;type:~/projects/TODO.md;keyRepeat:Return*3;keyDown:Return;keyUp:Return;settle;focusName:importDryRun;keyRepeat:Return*3;focusName:importNow;keyRepeat:Return*3;keyRepeat:Space*3;keyDown:Space;keyUp:Space;settle" \
-  HOME="$work/home-held-import" FAKE_SELDON_FIXTURE="$sample"
+  HOME="$work/home-held-import" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
 expect held-import 4 "[.keyGuard.name, .keyGuard.events, $tv.import.result] | map(tostring) | join(\",\")" "import,3,"
 expect held-import 5 "[.keyGuard.name, .keyGuard.events, $tv.import.result] | map(tostring) | join(\",\")" "import,4,Reading the task file…"
 expect held-import 9 "[.keyGuard.name, .keyGuard.events, $tv.import.result] | map(tostring) | join(\",\")" "button,3,Would create 2 cases"
@@ -1537,7 +1543,7 @@ mkdir -p "$work/home-import-area/projects"
 printf '%s\n' "- [ ] One" "- [ ] Two" >"$work/home-import-area/projects/TODO.md"
 run import-area "" 1920x1080 \
   "summon:$wk;click:Import tasks…;type:~/projects/TODO.md;key:Return;settle;key:Tab;type:dev;key:Return;settle;click:Import 2 cases;settle" \
-  HOME="$work/home-import-area" FAKE_SELDON_FIXTURE="$sample"
+  HOME="$work/home-import-area" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
 expect import-area 5 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" ",true"
 expect import-area 7 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,false"
 expect import-area 9 "[$ti.area, $ti.canImport] | map(tostring) | join(\",\")" "dev,true"
@@ -1608,7 +1614,7 @@ clean_log import-dev
 
 mkdir -p "$work/home-work-locked"
 run work-locked "" 1920x1080 "summon:$wk;text:+;type:keep me;key:Return;settle;key:Escape;view;text:+" \
-  HOME="$work/home-work-locked" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_LOCKED=1
+  HOME="$work/home-work-locked" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_LOCKED=1
 expect work-locked 2 "$ts.editing" true
 expect work-locked 5 "[$ts.result, $ts.title, $ts.open, .view.lastError] | map(tostring) | join(\",\")" "the logbook is locked by another seldon (pid 4242),keep me,true,"
 shows work-locked 5 "the logbook is locked by another seldon (pid 4242)"
@@ -1620,7 +1626,7 @@ clean_log work-locked
 intent=' Install tool X. It needs --help $(id) and one package'
 mkdir -p "$work/home-run"
 run work-run "" 1920x1080 "summon:$wk;text:i;type:$intent;key:Return;settle;summon:$wk;wait:sectionView.selected=C-2026-009;view" \
-  HOME="$work/home-run" FAKE_SELDON_FIXTURE="$sample"
+  HOME="$work/home-run" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
 expect work-run 2 "[$tv.intentEditing, .view.keys] | map(tostring) | join(\",\")" "true,false"
 expect work-run 3 "$tv.intent" "$intent"
 # the agent started: the desk steps aside (WP-156) and remembers the new case
@@ -1634,7 +1640,7 @@ check "work-run: agent start --new, the sentence one argument after --" "$(grep 
 clean_log work-run
 mkdir -p "$work/home-run-refused"
 run work-run-refused "" 1920x1080 "summon:$wk;text:i;type:Install zed;key:Return;settle" \
-  HOME="$work/home-run-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_DEFAULT_AGENT=1
+  HOME="$work/home-run-refused" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_DEFAULT_AGENT=1
 expect work-run-refused 5 "[$tv.resultOk, $tv.intent, ($tv.groups | join(\"+\"))] | map(tostring) | join(\",\")" "false,Install zed,active 2+verification 1+queued 3+completed 2"
 expect work-run-refused 5 "$tv.result" "no default agent: Omarchy has none set, so \`omarchy agent prompt\` cannot start one; nothing was created. Fix: \`omarchy default agent <name>\` (e.g. claude), or set \`[agent] launcher\` in ~/.config/seldon/config.toml"
 clean_log work-run-refused
@@ -1695,6 +1701,7 @@ expect cursor-follow 7 "[$tv.chip, $tv.cursor, $tv.selected != \"$THEME\"] | map
 clean_log cursor-follow
 
 mkdir -p "$work/home-capture-click"
+# no index wait: its start-up capture is held locked, the index comes late on purpose
 run capture-click "" 1920x1080 "summon:$cl;view;click:Capturing;settle;view" \
   HOME="$work/home-capture-click" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_CAPTURE_LOCKED=1 SELDON_LOCK_RETRY_MS=50000
 expect capture-click 2 "[$tv.capturing, $tv.captureResult] | map(tostring) | join(\",\")" "true,waiting for another seldon process; trying again shortly"
@@ -2022,6 +2029,7 @@ clean_log aside-index
 # 11): asked when the desk opens, the tile of C-2026-003 only.
 mkdir -p "$work/home-aside-tile"
 echo C-2026-003 >"$work/home-aside-tile/sessions"
+# no index wait: settles first
 run aside-tile "" 1920x1080 "summon:{\"section\":\"today\"};settle;pause:800" \
   HOME="$work/home-aside-tile" FAKE_SELDON_FIXTURE="$sample"
 expect aside-tile 3 "$sv.sessions | join(\",\")" "C-2026-003"
@@ -2424,7 +2432,7 @@ clean_log decision-nocases
 mkdir -p "$work/home-decisions-live"
 run decisions-live "" 1920x1080 \
   "summon;text:4;text:d;type:--help \"q\";key:Return;key:Backspace;type:\";key:Return;key:Return;settle;summon;wait:sectionView.cursor=ADR-0005;key:Down;click:Open in editor;settle;summon;key:Down;text:e;settle;summon;pause:2100;click:Open in editor;settle;summon;text:6;key:Down;text:e;settle;summon;pause:2100;click:Open in editor;settle;summon;text:5;text:e;settle" \
-  HOME="$work/home-decisions-live" FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/decisions-live.record"
+  HOME="$work/home-decisions-live" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/decisions-live.record"
 expect decisions-live 3 '[.view.sectionView.form.open, .view.sectionView.form.editing, .view.editing, .view.keys] | map(tostring) | join(",")' "true,true,true,false"
 shows decisions-live 3 "New decision"
 shows decisions-live 3 "NEW DECISION"
@@ -2557,7 +2565,7 @@ clean_log decisions-accept-locked
 #      instead and gives the keys back, so the next Esc closes the desk.
 mkdir -p "$work/home-decisions-locked"
 run decisions-locked "" 1920x1080 "summon;text:4;text:d;key:Return;type:keep me;key:Return;key:Return;settle;key:Escape;view;text:d;click:Zed statt VS Code als Zweiteditor;key:Escape" \
-  HOME="$work/home-decisions-locked" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_LOCKED=1
+  HOME="$work/home-decisions-locked" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_LOCKED=1
 expect decisions-locked 4 .view.sectionView.form.result "Give the decision a title"
 expect decisions-locked 4 .view.sectionView.form.armed false
 expect decisions-locked 5 .view.sectionView.form.result ""
@@ -2732,6 +2740,7 @@ clean_log search-sections
 # 10g. Not initialised (panel scenario 5): sections 4–6 say there is no
 #      index, `d` opens no form, `e` runs nothing; the Prime Radiant is 9f.
 mkdir -p "$work/home-uninit-sections"
+# no index wait: no logbook, so no index
 run uninit-sections "" 1920x1080 "summon;text:4;text:d;text:e;text:5;text:e;text:6;text:e;view" \
   HOME="$work/home-uninit-sections" FAKE_SELDON_MODE=uninit
 expect uninit-sections 2 '[.view.status, (.view.sectionView.rows | length), .view.sectionView.form.open] | map(tostring) | join(",")' "notInitialised,0,false"
@@ -2754,6 +2763,7 @@ clean_log uninit-sections "seldon capture exit 3: logbook not initialised"
 #       before the engine has answered anything.
 mkdir -p "$work/home-preview/.local/state/seldon"
 cp "$fx/index-variants/not-initialised.json" "$work/home-preview/.local/state/seldon/index.json"
+# no index wait: waits for the preview first (no logbook, no index)
 run preview-uninit "" 1920x1080 "summon;wait:sectionView.preview.summary^=The last;clickName:setup-logbook-terminal" \
   HOME="$work/home-preview" FAKE_SELDON_MODE=uninit FAKE_SELDON_PREVIEW="$fx/preview.sample.json" \
   HARNESS_RECORD="$work/preview.record"
@@ -2789,6 +2799,7 @@ clean_log preview-uninit "seldon (capture|agent) exit 3: logbook not initialised
 #       opens while the first capture still runs: the status becomes
 #       notInitialised only at its exit 3, which asks for the preview.
 mkdir -p "$work/home-preview-failed"
+# no index wait: waits for the preview first (no logbook, no index)
 run preview-failed "" 1920x1080 "summon;wait:sectionView.preview.summary=cannot read the preview" \
   HOME="$work/home-preview-failed" FAKE_SELDON_MODE=uninit FAKE_SELDON_PREVIEW_EXIT=2 FAKE_SELDON_VERSION_DELAY=3
 expect preview-failed 2 "[$tv.preview.shown, $tv.preview.setUp, $tv.rows] | map(tostring) | join(\",\")" "true,true,0"
@@ -2966,6 +2977,7 @@ clean_log graph-hidden
 #      the index on each capture): two captures while the Prime Radiant is
 #      shown leave the graph dirty and unbuilt; showing section 8 builds
 #      once, and the same nodes keep their settled layout (no tick).
+# no index wait: settles first
 run graph-dirty "" 1920x1080 "summon;settle;text:8;wait:graph.sleeping=true;text:7;text:c;settle;pause:500;text:c;settle;pause:500;text:8;pause:300" \
   HOME="$work/home-graph-dirty" FAKE_SELDON_FIXTURE="$sample"
 expect graph-dirty 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "0,0"
@@ -3351,7 +3363,7 @@ mkdir -p "$work/home-triage-crisis-keys"
 built='wait:sectionView.triage.detail.built=true'
 run triage-crisis-keys "" 1920x1080 \
   "summon:$cl;key:Up;$built;key:Down;key:Down;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;key:Return;view;key:Down;key:Up;$built;key:Down;key:Return;clickName:proposalRow;key:Return;clickName:proposalRow;key:Down;key:Return;key:Up;key:Down;key:Return;call:select:proposal;view" \
-  HOME="$work/home-triage-crisis-keys" FAKE_SELDON_FIXTURE="$fx_work/crises/index.json"
+  HOME="$work/home-triage-crisis-keys" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$fx_work/crises/index.json"
 ck="([$tt.shown, $ttd.crisisAt, $ttd.crisisArmed, $ttd.applyArmed] | map(tostring) | join(\",\"))"
 expect triage-crisis-keys 3 "[$ck, ([$ttd.crises[].id] | join(\"+\")), $ttd.crisisHint] | join(\",\")" \
   "true,-1,false,false,$THEME+$UNIT,↓ from the proposal reaches each crisis · Enter twice applies the one under the cursor"
@@ -3396,7 +3408,7 @@ clean_log triage-crisis-keys
 mkdir -p "$work/home-triage-press-apply"
 run triage-press-apply "" 1920x1080 \
   "summon:$cl;key:Up;key:Return;clickName:proposalRow;view;key:Return;view" \
-  HOME="$work/home-triage-press-apply" FAKE_SELDON_FIXTURE="$sample"
+  HOME="$work/home-triage-press-apply" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
 expect triage-press-apply 3 "$ttd.applyArmed" true
 expect triage-press-apply 5 "[$tt.shown, $ttd.applyArmed, .view.arm.armed] | map(tostring) | join(\",\")" "true,false,"
 expect triage-press-apply 7 "$ttd.applyArmed" true
@@ -3415,7 +3427,7 @@ jq '.items[2] |= (del(.title, .intent) | .action = "link" | .caseId = "C-2026-00
 mkdir -p "$work/home-triage-crisis-rewrite"
 run triage-crisis-rewrite "" 1920x1080 \
   "summon:$cl;key:Up;$built;key:Down;key:Return;service:captureNow;wait:sectionView.triage.detail.crises.0.action=Link to C-2026-004;view;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0" \
-  HOME="$work/home-triage-crisis-rewrite" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_PROPOSAL_AFTER="$fx_work/rewrite/$PROPOSAL.json"
+  HOME="$work/home-triage-crisis-rewrite" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_PROPOSAL_AFTER="$fx_work/rewrite/$PROPOSAL.json"
 expect triage-crisis-rewrite 5 "[$ttd.crisisArmed, $ttd.hint] | map(tostring) | join(\",\")" "true,$arm_unit"
 expect triage-crisis-rewrite 8 "[$ttd.crisisAt, $ttd.crisisArmed, (.view.arm.armed | startswith(\"triage:crisis:$PROPOSAL:$UNIT:Explain: \"))] | map(tostring) | join(\",\")" \
   "0,false,true"
@@ -3433,7 +3445,7 @@ clean_log triage-crisis-rewrite
 mkdir -p "$work/home-triage-crisis-stacked"
 run triage-crisis-stacked "" 700x900 \
   "summon:$cl;key:Up;key:Return;$built;key:Down;key:Return;key:Return;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:‹ Back to the list;view" \
-  HOME="$work/home-triage-crisis-stacked" FAKE_SELDON_FIXTURE="$sample"
+  HOME="$work/home-triage-crisis-stacked" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
 expect triage-crisis-stacked 2 "[.view.detailShown, $tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "false,true,-1"
 expect triage-crisis-stacked 5 "[.view.detailShown, $ck, $ttd.crisisVisible] | map(tostring) | join(\",\")" "true,true,0,false,false,true"
 shows triage-crisis-stacked 5 "Enter twice applies this crisis alone · ↑/↓ the other crises"
@@ -3453,7 +3465,7 @@ for armed in apply crisis; do
   mkdir -p "$work/home-triage-back-$armed"
   run "triage-back-$armed" "" 1920x1080 \
     "$steps;service:captureNow;wait:sectionView.triage.detail.seen=replaced;service:captureNow;wait:sectionView.triage.detail.seen=current;view;key:Return;view" \
-    HOME="$work/home-triage-back-$armed" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$fx_work/swap/index.json" \
+    HOME="$work/home-triage-back-$armed" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$fx_work/swap/index.json" \
     FAKE_SELDON_FIXTURE_BACK="$sample"
   expect "triage-back-$armed" $n "[$ttd.applyArmed, $ttd.crisisArmed] | map(tostring) | join(\",\")" \
     "$([[ $armed == apply ]] && echo true,false || echo false,true)"
@@ -3514,7 +3526,7 @@ jq '.items |= (to_entries | map(if .key == 1 or .key == 199 then .value.crisis =
 mkdir -p "$work/home-triage-crisis-big"
 run triage-crisis-big "" 1920x600 \
   "summon:$cl;key:Up;key:Down;key:Return;key:Return;view" \
-  HOME="$work/home-triage-crisis-big" FAKE_SELDON_FIXTURE="$fx_work/bigc/index.json"
+  HOME="$work/home-triage-crisis-big" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$fx_work/bigc/index.json"
 expect triage-crisis-big 3 "[$ttd.built, $tt.shown, $ttd.crisisAt] | map(tostring) | join(\",\")" "false,false,-1"
 expect triage-crisis-big 6 "[$ttd.crisisAt, $ttd.crisisArmed, $ttd.applyArmed, .view.arm.armed] | map(tostring) | join(\",\")" \
   "-1,false,false,"
@@ -3525,7 +3537,7 @@ clean_log triage-crisis-big
 mkdir -p "$work/home-triage-crisis-big-walk"
 run triage-crisis-big-walk "" 1920x600 \
   "summon:$cl;key:Up;$built;key:Down;key:Down;key:Down;key:Up;key:Up;view" \
-  HOME="$work/home-triage-crisis-big-walk" FAKE_SELDON_FIXTURE="$fx_work/bigc/index.json"
+  HOME="$work/home-triage-crisis-big-walk" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$fx_work/bigc/index.json"
 expect triage-crisis-big-walk 3 "[$tt.shown, $ttd.built, ($ttd.crises | length), $ttd.crisisAt] | map(tostring) | join(\",\")" "true,true,3,-1"
 for i in 4 5 6 7 8; do
   at=$((i <= 6 ? i - 4 : 8 - i))
@@ -3612,7 +3624,7 @@ tones() {
 want=$(tones "#cacccc" "#101315" "#cacccc" "#a55555" "#707880")
 mkdir -p "$work/home-tones-default"
 run tones-default "" 1920x1080 "summon:$wk;click:Import tasks…;type:~/projects/TODO.md;focusName:importDryRun" \
-  HOME="$work/home-tones-default" FAKE_SELDON_FIXTURE="$sample"
+  HOME="$work/home-tones-default" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
 for key in dim accentText urgentText accentUi ui focusRing themeFocus divider; do
   expect tones-default 1 ".tones.$key | tostring" "$(jq -r ".$key | tostring" <<<"$want")"
 done
