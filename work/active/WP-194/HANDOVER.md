@@ -19,12 +19,12 @@ Not merged.
    | `shell/services/PluginShellApi.qml` | `updateEntryInline` (Desk.qml:527), `serviceFor` (BarWidget.qml:55), summon/hide/toggle (BarWidget.qml:75) |
    | `shell/shell.qml` | overlay routing (Desk.qml:175), loader injection (Desk.qml:66), reload without `clearComponentCache` (Service.qml:76), fresh public manifest (Service.qml:75), settings write (Desk.qml:527) and service lookup (BarWidget.qml:55) behind the facade (round 2) |
    | `shell/Ui/PluginBarApi.qml` | `moduleWidgets` for third parties (BarWidget.qml:138) |
-   | `shell/plugins/bar/Bar.qml` | per-monitor instances plus the hidden centre placeholder (Model.js:4141) |
-   | `shell/plugins/bar/BarModel.js` | `pickDrawnSlot` mirrored by `pickDrawnWidget` (Model.js:4150) |
+   | `shell/plugins/bar/Bar.qml` | per-monitor instances plus the hidden centre placeholder (Model.js:4222) |
+   | `shell/plugins/bar/BarModel.js` | `pickDrawnSlot` mirrored by `pickDrawnWidget` (Model.js:4231) |
    | `shell/Ui/BarWidget.qml` | `settings` / `setting()` from the shell.json entry (BarWidget.qml:46) |
    | `shell/Commons/Style.qml`, `Color.qml`, `Border.qml` | `Style.bar.iconCanvas` (BarWidget.qml:249), `Color.popups.text` (Desk.qml:135), `Border.surfaceSpec` (Desk.qml:706) |
    | `shell/Ui/BorderSurface.qml`, `Button.qml`, `ButtonGroup.qml`, `Dropdown.qml` | the desk card (Desk.qml:697), `focusable` (NewCaseSheet.qml:276), `changed` without assigning `value` (NewCaseSheet.qml:179), `popupOpen` (JournalField.qml:35) |
-   | `bin/omarchy-plugin-update`, `bin/omarchy-restart-shell` | reload without new code (Service.qml:76), the restart argv (Model.js:4109) |
+   | `bin/omarchy-plugin-update`, `bin/omarchy-restart-shell` | reload without new code (Service.qml:76), the restart argv (Model.js:4190) |
    | `bin/omarchy-plugin-validate` | the manifest rules (manifest.json:2); its hash equals `packaging/omarchy-pin` |
    | `shell/README.md` | the documented plugin contract (manifest.json:10) |
 
@@ -307,4 +307,54 @@ warn (not fail) on a stale line hint. Docs and test script only.
 ok (46 checks, no `warn` line) and `just docs-check` ok (514 links), with
 `TMPDIR` and `JUST_TEMPDIR` under the private `gates/` (empty afterwards).
 Only this handover follows d6ac9940.
+
+## Round 5 (found at merge: the warning row asserted fresh real hints)
+
+The orchestrator's merge into `next` 50bbd290 (WP-201, WP-206 moved
+`Model.js` lines) failed the gate: the round-4 row "lint warns" ran on
+the real ledger and expected exactly one warning, so the three real
+hints that WP-201 and WP-206 had made stale turned the warning back into
+a failure for every other WP.
+
+1. **The real ledger only warns.** The lint of the real ledger prints a
+   `warn` line per stale hint on stderr and never fails any check. No
+   row asserts anything about how fresh the real ledger's hints are.
+2. **The warning rows run on a scratch copy** of the cited plugin files
+   with a ledger refreshed against that copy (each stale hint moved to
+   the first code line holding its `pluginSymbol`), so they depend only
+   on what the test controls:
+   - the refreshed ledger: no problem, no warning;
+   - its `restart-shell` hint set to `Model.js:1`: exactly one warning,
+     with the line `RESTART_SHELL_ARGV` is at now, no problem;
+   - 40 lines inserted above everything: one warning per stale hint
+     (24), no problem;
+   - the real ledger on the same moved copy: no problem (warnings only).
+   The lint calls on mutant ledgers and on the "gone" and "comments"
+   copies send their warnings to `/dev/null`; only the real ledger's
+   lint shows them in `just check`.
+3. **Merged `next` 50bbd290** into the branch (d35b8bfa, no conflicts).
+   The test fix (65151f56) was committed while the ledger still had the
+   three stale hints: `tests/omarchy/assumptions.test.sh` passed there
+   with three `warn` lines and no failure, the state the gate saw.
+   Then the hints were refreshed as a normal ledger update (81386632):
+   `bar-instances` Model.js:4222, `bar-drawn-slot` Model.js:4231,
+   `restart-shell` Model.js:4190; the test passes with no warning.
+4. Mutants (fixture, restored afterwards): the warning sent to stdout
+   (a failure again) → the real-ledger row and four scratch rows fail;
+   the warning removed → the "warns" and "moved lines" rows fail.
+
+`docs/TESTING.md` says a stale hint in the real ledger never fails any
+check and that the warning rows run on a refreshed scratch ledger.
+
+### How round 5 was verified
+
+| Check | Where |
+|---|---|
+| `tests/omarchy/assumptions.test.sh` on 65151f56 (stale hints): ok, three `warn` lines | fixture; installed-tree part on a scratch copy of the desktop's tree |
+| the same after the refresh: ok, no `warn` line; 47 checks | fixture; installed-tree part on a scratch copy of the desktop's tree |
+| a cited line moved in a scratch copy of `plugin/`: passes, refreshed and real ledger | fixture |
+| two warning mutants, each caught | fixture |
+| shellcheck of the test | test host (E80 wrapper) |
+| `just docs-check` | headless, ok (514 links) |
+| `SELDON_FULL_CHECK=1 just check` under `flock /tmp/seldon-check.lock` | headless — result below |
 
