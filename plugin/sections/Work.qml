@@ -11,8 +11,9 @@ import "../Model.js" as Model
 // *Run*, which sends `seldon agent start --new --json -- <intent>` (one
 // argument after `--`, exactly as typed), keeps the text until the engine
 // has made the case and then selects it; the WIP line ("2 / 3 active")
-// against the bar setting `wipLimit` (warns, never blocks; beside the
-// buttons where it fits, above them on a narrow desk, WP-211); *By agent*,
+// against the bar setting `wipLimit` (warns, never blocks; above the
+// buttons in a list column, at most 360 px; beside them in the stacked
+// layout, WP-211); *By agent*,
 // the Completed group's spot-check filter (ADR-0027 §5); *New case*, the
 // hand-made case (NewCaseSheet.qml in the detail); the engine's answer to
 // the last case action; then the cases by group — Active · Verification ·
@@ -492,8 +493,10 @@ Section {
       }
     }
 
-    // The WIP line beside the buttons while it fits there; on a narrow
-    // desk (WP-211) it goes above them, and the buttons wrap.
+    // The WIP line beside the buttons where it fits, else above them, and
+    // the buttons wrap (WP-211). A list column (at most 360 px) is too
+    // narrow for both, so the line sits beside them only in the stacked
+    // layout, where the list is the desk's width.
     Item {
       id: wipRow
       objectName: "headerRow:work"

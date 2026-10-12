@@ -322,10 +322,11 @@ ShellRoot {
   }
 
   // Every header row (objectName "headerRow:<name>", WP-211) whose items
-  // draw over each other or leave the row: its visible items are its
-  // children, a positioner's (Row, Flow; laid out first) counted as its own children; a
-  // text counts by its box like overflow() (an elided one by its width, a
-  // wrapped one that cannot wrap by what it draws). Tolerance 1 px.
+  // draw over each other or leave the row, sideways or out of its height:
+  // its visible items are its children, a positioner's (Row, Flow; laid
+  // out first) counted as its own children; a text counts by its box like
+  // overflow() (an elided one by its width, a wrapped one that cannot wrap
+  // by what it draws). Tolerance 1 px.
   function overlap(item, out) {
     if (!item || item.visible === false) return out
     var name = String(item.objectName || "")
@@ -336,6 +337,10 @@ ShellRoot {
         var pa = parts[a]
         if (pa.x < row.x - 1 || pa.x + pa.w > row.x + item.width + 1)
           out.push(name + ": " + pa.label + " leaves the row")
+        // a row's height that leaves out its items (a second line of
+        // wrapped buttons) lets them draw over what follows the row
+        if (pa.y < row.y - 1 || pa.y + pa.h > row.y + item.height + 1)
+          out.push(name + ": " + pa.label + " leaves the row's height")
         for (var b = a + 1; b < parts.length; b++) {
           var hit = root.intersect(pa, parts[b])
           if (hit && hit.w > 1 && hit.h > 1) out.push(name + ": " + pa.label + " × " + parts[b].label)

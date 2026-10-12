@@ -902,9 +902,10 @@ while the engine works, its refusal (no default agent, with its fix) the
 result line and the text kept, then the field empties and the new case is
 selected); the WIP line "2 / 3 active" against the bar setting `wipLimit`
 (default 3; "· at the limit" in the accent, "· over the limit" urgent;
-warns, never blocks; beside the three buttons that follow where it fits,
-above them on a narrow desk, where the buttons wrap: nothing in the row
-draws over anything else, WP-211); *By agent* (the Completed group narrowed to the cases
+warns, never blocks; above the three buttons that follow, which wrap, in
+a list column (at most 360 px wide: the line and the buttons need more);
+beside them in the stacked layout, where the list is the desk's width;
+nothing in the row draws over anything else, WP-211); *By agent* (the Completed group narrowed to the cases
 an agent closed, a spot check, ADR-0027 §5; its header then reads
 "COMPLETED · 1 / 2"); *Import tasks…* (WP-102b, below); *New case* (`+`);
 the engine's answer to the last case action (after an import: "Imported N

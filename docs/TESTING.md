@@ -1005,11 +1005,12 @@ Inside an item that clips (a list, a scrolled detail, a scrolled chart
 grid) only the part of a text inside the clip counts: rows scrolled out
 of a list are not on screen. `overlap` (WP-211) lists the items of a
 header row (an Item named `headerRow:<name>`; a Row's or Flow's items
-count one by one) that draw over each other or leave the row, and
-`headerRows` names the rows it found, so a case fails when its row is
-not there; Work's
-WIP row is one, checked on 750, 900, 1366 and 1920 px windows at 100 %
-and 50 %. Live cases run Service.qml without
+count one by one) that draw over each other or leave the row, sideways
+or out of its height, and `headerRows` names the rows it found, so a
+case fails when its row is not there. Work's WIP row is one, checked on
+750×700, 900×700, 1366×768 and 1920×1080 windows and on 2048×1152 at
+`QT_SCALE_FACTOR` 1.25 (a 2560×1440 screen at scale 1.25), each at
+100 % and 50 %. Live cases run Service.qml without
 `SELDON_INDEX` against the fake engine (`tests/plugin/fake-seldon`, in a
 temp `HOME`) and compare its `argv.log` argument by argument with the
 CONTRACT.md forms; the editor and terminal launchers are
