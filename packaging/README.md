@@ -277,7 +277,8 @@ on the test host; it never replaces the installed tree as the reference
 commit:
 
 - *When:* after the test host moves to a new Omarchy release, or when
-  `just plugin-validate` on the dev host prints the notice.
+  `just plugin-validate` on the dev host (or `just check-upstream`,
+  "CI validates with another validator") prints the notice.
 - *The commit:* the release tag of the version `omarchy version` prints
   on the test host (lightweight tags point at the commit; an annotated
   one at a tag object, resolve it once more as for the actions):
@@ -300,7 +301,10 @@ commit:
   the pin.
 - *Then:* `just check-packaging` (`tests/release/omarchy-pin.test.sh`
   runs the installed validator through the pin where they match), and
-  CI on the pull request runs the fetched one.
+  CI on the pull request runs the fetched one. In the same commit the
+  `plugin-validator` entry of `tests/omarchy/assumptions.json` takes the
+  new sha256 (`just check-assumptions` requires it to equal the pin;
+  docs/TESTING.md, "Omarchy assumptions").
 
 ## One-time setup (operator)
 

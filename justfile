@@ -17,7 +17,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: check-runtime-space fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard check-runtime-dir schema-validate docs-check plugin-validate qmllint plugin-test
+check: check-runtime-space fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard check-runtime-dir check-assumptions schema-validate docs-check plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # The session's runtime dir (WP-161): a full /run/user/<uid> takes the
@@ -175,6 +175,28 @@ check-install:
 # scripts/deploy-test-host.sh (WP-098) against a fake test host.
 check-deploy:
     bash tests/deploy/deploy-test-host.test.sh
+
+# The ledger's check against fixtures (a synthetic tree; where Omarchy is
+# installed, a scratch copy of its files), then the installed tree in
+# notice mode: a changed file is a notice that names what to re-measure,
+# not a failure; "skipped" without an Omarchy tree (CI). shellcheck when
+# installed. docs/TESTING.md, "Omarchy assumptions".
+# What Seldon assumes about Omarchy (WP-194): tests/omarchy/assumptions.json.
+check-assumptions:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash -n scripts/check-omarchy-assumptions.sh tests/omarchy/assumptions.test.sh
+    if command -v shellcheck >/dev/null; then shellcheck scripts/check-omarchy-assumptions.sh tests/omarchy/assumptions.test.sh; fi
+    bash tests/omarchy/assumptions.test.sh
+    OMARCHY_PATH="{{ omarchy_path }}" bash scripts/check-omarchy-assumptions.sh
+
+# Read only, no network. Without arguments a notice and exit 0; with
+# --gate exit 1 on any mismatch or a missing tree (the release gates of
+# WP-126 and WP-188, on the test host from the deployed clone, before the
+# live check); a pin that cannot be read is a notice, under --gate a refusal.
+# The installed Omarchy files against the assumptions ledger (WP-194).
+check-upstream *args:
+    OMARCHY_PATH="{{ omarchy_path }}" bash scripts/check-omarchy-assumptions.sh {{ args }}
 
 # Validate fixtures against schema/ (script owned by WP-002).
 schema-validate:

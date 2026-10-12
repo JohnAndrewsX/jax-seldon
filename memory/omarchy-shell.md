@@ -4,6 +4,15 @@ Source of truth: `/usr/share/omarchy/shell/README.md`, `shell/plugins/README.md`
 `shell/services/PluginRegistry.qml`, `bin/omarchy-plugin-validate`. Verified
 on Omarchy 4.0.4-1, quickshell 0.3.1. Workers append; the Reviewer prunes.
 
+## Assumptions (2026-10-12, Omarchy 4.0.4-1, WP-194)
+
+The installed files these findings rest on are hashed in
+`tests/omarchy/assumptions.json`, one sentence per assumption naming the
+plugin line that relies on it. After an `omarchy update`, `just
+check-upstream` names the assumptions to re-measure; a finding below that
+is re-measured updates the ledger's hash and sentence in the same commit
+(docs/TESTING.md, "Omarchy assumptions").
+
 ## Manifest contract (what the shell and `omarchy plugin validate` enforce)
 
 - `schemaVersion` must be the JSON **number** `1`.
