@@ -42,8 +42,9 @@ exists (ADR-0047). This file explains it; the schema decides.
    (ADR-0051 §3) — including that `summary.crisis` and
    `summary.openDrift` stay complete. The output of `seldon preview --json` keeps its own
    strict check.
-4. The index is a **view**, not a database: newest 500 events, last 50
-   completed cases, 366 heatmap days, 10 snapshots, and the newest 200 open
+4. The index is a **view**, not a database: at most 500 events (the
+   event of every listed drift item, however old, and the newest of the
+   rest; WP-203, ADR-0054), last 50 completed cases, 366 heatmap days, 10 snapshots, and the newest 200 open
    drift items with crises first (ADR-0020; `summary.openDrift` and
    `summary.crisis` always count all). Anything older is in the logbook,
    which the panel can open in the editor. Over the size budget (rule 5)
@@ -56,9 +57,10 @@ exists (ADR-0047). This file explains it; the schema decides.
    case's `intent` and `result` and a decision's `lead` (below). An index
    that would be 1 000 000 bytes or more is cut before it is written
    (ADR-0053): its lists lose their oldest rows in a fixed order, history
-   first, then `system`'s optional parts, crisis rows last, only as many
-   as the file needs. An event a listed drift item names (`eventId`) is
-   cut only with its item. `summary`, `series.risk` and
+   first, then `system`'s optional parts, then the open changes an
+   unapplied triage proposal names (ADR-0054), crisis rows last, only as
+   many as the file needs. An event a listed drift item names (`eventId`)
+   is cut only with its item. `summary`, `series.risk` and
    `system.areas[].cases` keep the counts of the whole index; the engine
    warns, names the largest section and what it cut. It never writes an
    index of 1 000 000 bytes or more. Since contract 2 the cut is marked beside the text (ADR-0035

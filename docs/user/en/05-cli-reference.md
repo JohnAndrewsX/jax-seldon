@@ -425,8 +425,9 @@ a commit. `--check` refuses to write an index that does not match the
 format (exit 2).
 
 The desk's graph (section 8) is drawn from this index. It therefore
-shows the newest 500 events and 50 completed cases, not the whole
-logbook. No command draws the whole logbook as a graph yet.
+shows 500 events (the change behind every open item the index lists and
+the newest of the rest) and 50 completed cases, not the whole logbook.
+No command draws the whole logbook as a graph yet.
 
 <!-- help: seldon index -->
 ```text

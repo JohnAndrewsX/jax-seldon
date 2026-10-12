@@ -2707,9 +2707,13 @@ ends in `… (N more characters in the ledger)`, N the characters left out
 (ADR-0025). The ledger line, the `ledger/*.md` views and the member events
 of `drift show` keep the full text; `drift list` and the `item` of `drift
 show` come from `index.drift` and are clipped. `subject` (at most 512
-characters) is never cut. With the counts of rule 4 this bounds both
-sections: 500 events and 200 drift items with 4096-character texts come
-to about 520 KB. Beside a cut the index says so (contract 2, ADR-0035 §3):
+characters) is never cut. `index.events` holds at most 500 events, newest
+first: the event every listed drift item names (`eventId`, a group's
+leader), however old, and the newest of the rest (`build::listed_events`,
+WP-203, ADR-0054), so a 0.2.0 plugin has a Changelog row for every listed
+crisis; with 200 listed items the newest 300 others stay. With the counts
+of rule 4 this bounds both sections: 500 events and 200 drift items with
+4096-character texts come to about 520 KB. Beside a cut the index says so (contract 2, ADR-0035 §3):
 an event with any clipped text has `meta.truncated: true`, a drift item
 with a clipped `detail` has `truncated: true`; an uncut one has neither.
 `truncated` is index-only: the ledger refuses it on write, and one a
@@ -2727,7 +2731,9 @@ timeline's releases and snapshots, `series.packages`, `series.drift`,
 lessons, topics and areas; then completed cases, events, queued cases,
 open changes and decisions to none, today's journal, cases in
 verification, active cases, proposed decisions, the optional parts of
-`system`, and last crisis rows. The events rungs never take an event a
+`system`, the open changes an unapplied triage proposal names (`triage`
+with `applied` null; the drift-items rungs before leave them, ADR-0054),
+and last crisis rows. The events rungs never take an event a
 listed drift item names (`eventId`; their floor counts the whole list):
 a 0.2.0 plugin finds a drift item only through its event. A cut drift
 item takes its event, a cut case its timeline span, a cut crisis row
@@ -2756,7 +2762,8 @@ autocommit` is on and the record is this logbook's; `message` is one
 line, redacted again at build time, at most 256 characters. `triage`
 points at the newest valid proposal of this logbook in `proposals/` (§2),
 by id: `{id, at, actor, counts: {items, crises}, path, applied}`, `path`
-relative to the directory of `index.json`, `counts` as proposed; a
+relative to the directory of `index.json`, `counts` as proposed (the
+build also keeps its items' `eventId`s for `index::fit`, never written); a
 `.json` file not named `<ULID>.json`, a file that fails
 `proposal.schema.json`, whose name is not its id, or that cannot be read
 is skipped with a build warning, another logbook's silently (other

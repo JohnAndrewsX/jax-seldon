@@ -292,6 +292,10 @@ pub struct Triage {
     /// `proposals/<id>.json`, relative to the directory of `index.json`.
     pub path: String,
     pub applied: Option<String>,
+    /// The event ids of its items (the drift rows it names), for
+    /// [`super::budget::fit`]; never written (WP-203).
+    #[serde(skip)]
+    pub event_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

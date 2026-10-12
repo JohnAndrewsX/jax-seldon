@@ -41,7 +41,20 @@ and the package does not exist yet. Update the plugin first:
   logbook, the views and every command keep every row. `seldon status`
   names the largest section and what it cut. An index that still would
   not fit is not written. Below 1 MB nothing changes; the fixture scaled
-  ×150 (1 200 cases) stays at 881 KB, uncut.
+  ×150 (1 200 cases) stays at 897 KB, uncut.
+- **Every open change the index lists has its row on the desk (WP-203,
+  ADR-0054, proposed).** The index listed the newest 500 events, so an
+  open change older than those had no row in the Changelog, in *Needs
+  you* or in the triage sheet, while the bar counted it: on the fixture
+  scaled ×150 none of the 200 listed crises had one. The 500 events are
+  now the change behind every listed open item, however old, and the
+  newest of the rest. Over 1 MB, the open changes an agent's triage
+  proposal names stay until only crises are left to cut, so its items
+  no longer read "No longer open" early. No contract change. A 0.2.0
+  plugin shows the new rows as ordinary Changelog rows; only its
+  transaction detail can now list part of an old transaction without
+  the 'partial' note (it inferred the note from the list's end), until
+  the plugin update of WP-208.
 - **A shorter agent skill (WP-196).** `SKILL.md` is a core of at most
   120 lines, front matter included: is there a logbook, attended or not,
   act then account, when to ask first, privileged commands, the engine

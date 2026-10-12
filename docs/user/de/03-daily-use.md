@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ dadf6b69 -->
+<!-- source: en/03-daily-use.md @ 1d2c8ad2 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
@@ -460,8 +460,9 @@ wird.
 | Esc | das Abspielen anhalten, eine gehaltene Karte loslassen, dann schließen |
 
 Der Graph entsteht aus dem Index und enthält deshalb, was der Index
-enthält: die neuesten 500 Ereignisse und 50 abgeschlossenen Cases. Die
-Fußzeile nennt die Zahlen. Über 400 Knoten werden die Änderungen eines
+enthält: 500 Ereignisse (die Änderung hinter jedem offenen Punkt, den
+der Index nennt, auch eine alte, und die neuesten der übrigen) und 50
+abgeschlossene Cases. Die Fußzeile nennt die Zahlen. Über 400 Knoten werden die Änderungen eines
 Tages und einer Quelle zu einem Knoten („+12“); seine Karte zählt sie
 auf. Das Layout bewegt sich nur, solange der Abschnitt zu sehen ist, und
 hält nach wenigen Sekunden an.

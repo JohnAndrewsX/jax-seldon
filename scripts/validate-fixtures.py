@@ -1180,6 +1180,15 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
             d["txId"], d["members"] = lead["txId"], len(members)
         drift.append({k: d[k] for k in DRIFT_KEYS if d.get(k) is not None or k == "proposedCase"})
     drift.sort(key=lambda d: (instant(d["ts"]), d["eventId"]), reverse=True)
+    # ADR-0020 (`build::cap_drift`): the summary counts every open item; the index lists 200, every crisis
+    # first (up to 200), then the others in list order into what is left, kept newest first
+    drift_total, crisis_total = len(drift), sum(d["crisis"] for d in drift)
+    capped, left = [], {True: 200, False: max(0, 200 - crisis_total)}
+    for d in drift:
+        if left[d["crisis"]] > 0:
+            left[d["crisis"]] -= 1
+            capped.append(d)
+    drift = capped
 
     # case objects
     attributed = {}
@@ -1220,7 +1229,7 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
     week_ago = today - dt.timedelta(days=6)
     summary = {
         "activeCases": len(groups["active"]), "queuedCases": len(groups["queued"]),
-        "openDrift": len(drift), "crisis": sum(d["crisis"] for d in drift),
+        "openDrift": drift_total, "crisis": crisis_total,
         "eventsToday": sum(day(e) == today for e in folded),
         "events7d": sum(week_ago <= day(e) <= today for e in folded),
     }
@@ -1368,12 +1377,18 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
     korder = {"release": 0, "snapshot": 1, "case": 2, "crisis": 3}
     timeline.sort(key=lambda t: (t["ts"], korder[t["kind"]], t["ref"]))
 
+    # rule 4 (WP-203): at most 500 events, newest first: the event of every listed drift item, however
+    # old, and the newest of the rest
+    named = {d["eventId"] for d in drift}
+    pinned = sum(e["id"] in named for e in folded)
+    rest = [e["id"] for e in folded if e["id"] not in named][:max(0, 500 - pinned)]
+    listed = named | set(rest)
     pfm, _ = frontmatter(os.path.join(lb, "PROJECT.md"))
     return {
         "logbook": {"language": pfm["language"], "machine": pfm["machineId"]},
         "summary": summary,
         "today": today_obj,
-        "events": [clipped(e) for e in folded[:500]],
+        "events": [clipped(e) for e in folded if e["id"] in listed],
         "drift": drift,
         "cases": groups,
         "decisions": decisions,
