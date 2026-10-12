@@ -10,8 +10,10 @@ import "../../Model.js" as Model
 // (the first notice's title and how many more, or "N notices" where the
 // title does not fit; a click folds the notices under the header); the KPI strip; Settings (`,`) and Esc.
 // Where the subline does not fit left of the KPI strip (a 740 px desk) it
-// wraps into the room there, on two lines at most (WP-215). The row is
-// `headerRow:desk` for the harness's overlap check (WP-211).
+// wraps into the room there, on two lines at most; while the chip is up it
+// leaves the chip the room for its count, so the chip never lies on the
+// strip (WP-215). The row is `headerRow:desk` for the harness's overlap
+// check (WP-211).
 Item {
   id: root
 
@@ -67,8 +69,11 @@ Item {
 
   Item {
     id: brand
-    // the subline's room: up to the KPI strip, its spacing kept
-    readonly property real room: Math.max(0, kpiStrip.x - Style.spacing.huge - brand.x - title.x)
+    // the subline's room: up to the KPI strip, its spacing kept, less the
+    // chip's count form while the chip is up (SPEC-PLUGIN §5.2: the count
+    // alone where nothing more fits)
+    readonly property real room: Math.max(0, kpiStrip.x - Style.spacing.huge - brand.x - title.x
+      - (chip.visible ? Math.ceil(chipCountMetrics.advanceWidth) + Style.spacing.xl * 2 + Style.spacing.huge : 0))
     objectName: "deskBrand"
     x: Style.spacing.huge
     anchors.verticalCenter: parent.verticalCenter
@@ -106,7 +111,7 @@ Item {
       // whole pixels: a line that fits must not wrap on a rounding
       width: Math.min(Math.ceil(subMetrics.advanceWidth), brand.room)
       textFormat: Text.PlainText
-      // a wrapped line ends on its "·", the next one starts with a word
+      // the "·" keeps to the word before it: no line starts with it
       text: root.subline.replace(/ · /g, "\u00a0· ")
       wrapMode: Text.Wrap
       maximumLineCount: 2
@@ -127,6 +132,12 @@ Item {
     id: chipShort
     font: chipLabel.font
     text: "▾ " + chip.shortText
+  }
+
+  TextMetrics {
+    id: chipCountMetrics
+    font: chipLabel.font
+    text: (root.noticesFolded ? "▸ " : "▾ ") + root.chipCount
   }
 
   BorderSurface {

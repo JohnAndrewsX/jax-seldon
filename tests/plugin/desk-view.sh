@@ -1305,6 +1305,23 @@ for size in 750x700 900x700 1366x768 1920x1080 2048x1152; do
   done
   clean_log "$name"
 done
+# … with a notice up (the restart notice, manifest 99) on a 750 and a
+#   900 px window: the subline leaves the chip the room for its count, so
+#   the chip shows at least the count, whole, and never lies on the KPI
+#   strip (SPEC-PLUGIN §5.2). Today, Work, and both again at 50 %.
+chip_manifest=$(jq -c '.version = "99.0.0"' <<<"$manifest")
+for size in 750x700 900x700; do
+  name="header-chip-$size"
+  run "$name" "$sample" "$size" "summon;text:3;shot:$name-100;width:50;text:1;text:3;shot:$name" \
+    HARNESS_MANIFEST="$chip_manifest" HARNESS_SHOTS="${DESK_SHOTS:-}"
+  for i in 1 2 4 5 6; do
+    expect "$name" $i '.headerRows | index("headerRow:desk") != null' true
+    expect "$name" $i '[(.view.chipShown | length > 2), .view.chipTruncated] | map(tostring) | join(",")' "true,false"
+    expect "$name" $i '.overlap | join(" | ")' ""
+    expect "$name" $i '.overflow | join(" | ")' ""
+  done
+  clean_log "$name"
+done
 
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"
@@ -3985,6 +4002,27 @@ expect keys-work-stacked 3 "[.view.detailShown, ($wh)] | map(tostring) | join(\"
 expect keys-work-stacked 4 "$wh" "agent,true,work:agent:on,-1,"
 expect keys-work-stacked 5 "[.view.detailShown, ($wh)] | map(tostring) | join(\"|\")" "false|agent,false,,-1,agent"
 clean_log keys-work-stacked
+# … with a notice up (the restart notice): ↑ on the buttons goes on to the
+# notices, ↓ there comes back onto *By agent*, Enter arms it.
+run keys-work-notice "$sample" 1920x1080 "summon:$wk;key:Up;key:Up;key:Down;key:Return" \
+  HARNESS_MANIFEST="$updated_manifest"
+expect keys-work-notice 2 "[.view.noticeKeys.id, ($wh)] | join(\"|\")" "|agent,false,,-1,"
+expect keys-work-notice 3 "[.view.noticeKeys.id, $tv.head.button] | join(\"|\")" "restart|"
+expect keys-work-notice 4 "[.view.noticeKeys.id, ($wh)] | join(\"|\")" "|agent,false,,-1,"
+expect keys-work-notice 5 "$wh" "agent,true,work:agent:on,-1,"
+clean_log keys-work-notice
+# … live, the case keys: on the buttons the cursor is not on a case, so
+# `a`, `x`, `r` and `e`, once or twice, do nothing there (no arm, no engine
+# call); ↓ back on the first row, `a` arms its case's action again.
+mkdir -p "$work/home-keys-letters"
+run keys-work-letters "" 1920x1080 \
+  "summon:$wk;key:Up;text:a;text:a;text:x;text:x;text:r;text:r;text:e;settle;key:Down;text:a" \
+  HOME="$work/home-keys-letters" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
+for i in 3 4 5 6 7 8 9 10; do expect keys-work-letters $i "$wh" "agent,false,,-1,"; done
+expect keys-work-letters 11 "$wh" ",false,,0,"
+expect keys-work-letters 12 "$wh" ",false,case:C-2026-003:agent,0,"
+argv_check keys-work-letters "$work/home-keys-letters" "$startup"
+clean_log keys-work-letters
 
 # Settings › Appearance: Enter reaches the slider; Enter on the stored
 # width arms nothing; ← previews 90 %, Enter arms, IPC `select width`

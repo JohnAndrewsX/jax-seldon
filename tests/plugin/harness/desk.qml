@@ -333,11 +333,13 @@ ShellRoot {
   // its visible items are its children, a positioner's (Row, Flow)
   // counted as its own children, all laid out first (layOut); a text
   // counts by its box like overflow() (an elided one by its width, a
-  // wrapped one that cannot wrap by what it draws). Tolerance 1 px.
+  // wrapped one that cannot wrap by what it draws); an item squeezed to
+  // no width counts by the texts it still draws (WP-215). Tolerance 1 px.
   function overlap(item, out) {
     if (!item || item.visible === false) return out
     var name = String(item.objectName || "")
     if (name.indexOf("headerRow:") === 0) {
+      root.layOut(item)
       root.layOut(item)
       var row = item.mapToItem(win.contentItem, 0, 0)
       var parts = root.rowParts(item, [])
@@ -373,17 +375,16 @@ ShellRoot {
   // A positioner places its items in its polish and a wrapped text lays
   // itself out there too, before the next frame; the report runs before
   // that, so lay out the whole row first (its height follows), then measure.
+  // Every item that can (a Row, a Flow, a type built on one such as the
+  // KPI strip, a text), the inner ones first; twice, since a positioner's
+  // new width moves what is bound to it (the subline's room, WP-215).
   function layOut(item) {
     var kids = item.children
     for (var i = 0; kids && i < kids.length; i++) {
       var k = kids[i]
-      var type = String(k)
-      if (type.indexOf("QQuickRow") === 0 || type.indexOf("QQuickFlow") === 0) {
-        k.forceLayout()
-        root.layOut(k)
-      } else if (root.isText(k) && typeof k.forceLayout === "function") {
-        k.forceLayout()
-      }
+      if (!k || k.visible === false) continue
+      root.layOut(k)
+      if (typeof k.forceLayout === "function") k.forceLayout()
     }
   }
 
@@ -391,7 +392,11 @@ ShellRoot {
     var kids = item.children
     for (var i = 0; kids && i < kids.length; i++) {
       var k = kids[i]
-      if (!k || k.visible === false || k.width <= 0 && !root.isText(k) || k.height <= 0) continue
+      if (!k || k.visible === false || k.height <= 0) continue
+      if (k.width <= 0 && !root.isText(k)) {
+        root.squeezedTexts(k, out)
+        continue
+      }
       var type = String(k)
       if (type.indexOf("QQuickRow") === 0 || type.indexOf("QQuickFlow") === 0) {
         root.rowParts(k, out)
@@ -399,9 +404,26 @@ ShellRoot {
       }
       var text = root.isText(k)
       var p = k.mapToItem(win.contentItem, 0, 0)
-      var w = text && k.elide === Text.ElideNone ? Math.max(k.width, k.contentWidth) : k.width
+      var w = text && (k.elide === Text.ElideNone || k.width <= 0) ? Math.max(k.width, k.contentWidth) : k.width
       var h = text ? Math.max(k.height, k.contentHeight) : k.height
       out.push({ label: text ? k.text : String(k.text || k.objectName || type.split("(")[0]), x: p.x, y: p.y, w: w, h: h })
+    }
+    return out
+  }
+
+  // The texts an item of no width still draws (the chip's label, not
+  // clipped): each counts by what it draws.
+  function squeezedTexts(item, out) {
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) {
+      var k = kids[i]
+      if (!k || k.visible === false) continue
+      if (root.isText(k) && k.contentWidth > 1) {
+        var p = k.mapToItem(win.contentItem, 0, 0)
+        out.push({ label: k.text, x: p.x, y: p.y, w: k.contentWidth, h: Math.max(k.height, k.contentHeight) })
+      } else {
+        root.squeezedTexts(k, out)
+      }
     }
     return out
   }

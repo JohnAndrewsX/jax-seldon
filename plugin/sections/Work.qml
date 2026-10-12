@@ -300,6 +300,9 @@ Section {
   }
 
   function textKey(t) {
+    // on the header's buttons the cursor is not on a case: its keys do
+    // nothing there (WP-215)
+    if (root.headFocused && (t === "e" || t === "a" || t === "x" || t === "r")) return true
     if (t === "e") {
       root.press("open")
       return true
