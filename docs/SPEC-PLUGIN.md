@@ -498,7 +498,9 @@ search filters the crises and entries, yesterday's included. Nothing is
 selected on entry, so the detail is the **overview**: the setup card
 while a setup step is left (`todaySetupSlot`, below), one sentence ("Seldon is
 recording. 2 changes need you." / "… Nothing needs you."), or, while
-the logbook has no case and nothing is open, the **first-run card**
+the logbook has no case and nothing is open (a queued or active case
+`summary` counts is a case, also when a cut index lists none, WP-206),
+the **first-run card**
 "Seldon is recording. Nothing to do." with one line on what Seldon does
 from here (WP-119; a tile whose figure is 0 shows it in the muted tone),
 a lead on what stays quiet, the active cases as tiles (id · risk, title, the plan's
@@ -912,7 +914,16 @@ steps. Where the index lists fewer queued or active cases than
 `summary.queuedCases` / `summary.activeCases` count (ADR-0053 §5, rungs 3
 and 21), the group header shows the whole count: "QUEUED · 50 / 450"
 (WP-204). The sidebar search covers the listed rows only, so during a
-search the header counts against them: "QUEUED · 1 / 50".
+search the header counts against them: "QUEUED · 1 / 50". A group the
+summary counts but the index lists no row of (from rung 16 the queued
+cases, after the listed active and verification rows; once rung 21 ran
+dry the active ones too) keeps its header in its place, "QUEUED · 0 /
+500", over a dim line, "The index lists none of them. This lists them:",
+and the command on a line of its own, never wrapped: `seldon plan list
+--status queued`. It holds no row, so the cursor passes it; the cursor on
+the last row scrolls it into view; during a search it is not drawn
+(WP-206). The WIP line counts `summary.activeCases` where the index lists
+fewer active cases (never fewer than the list).
 
 The detail: the sticky bar by status (`Model.caseDeskActions`) — queued:
 *Start*, *Drop*; active: *Hand to agent* (`agent start <id> --json`), *To

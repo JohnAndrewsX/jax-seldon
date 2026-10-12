@@ -2091,10 +2091,13 @@ function workCases(columns) {
 }
 
 // "2 / 3 active": cases with status active (not verification) against the
-// limit. tone: "" below it, "accent" at it, "urgent" over it.
+// limit. tone: "" below it, "accent" at it, "urgent" over it. The count is
+// `summary.activeCases` where the index lists fewer (ADR-0053 rung 21,
+// WP-206); a summary below the list never lowers it.
 function wipStatus(index, limit) {
   var cases = index && isObject(index.cases) ? index.cases : {}
-  var active = Array.isArray(cases.active) ? cases.active.length : 0
+  var listed = Array.isArray(cases.active) ? cases.active.length : 0
+  var active = Math.max(listed, wholeCases(index).active)
   var max = clampWipLimit(limit)
   return {
     active: active,
@@ -5169,12 +5172,15 @@ function discardResult(exitCode, stdoutText, stderrText) {
 var FIRST_RUN_TITLE = "Seldon is recording. Nothing to do."
 var FIRST_RUN_LEAD = "Every change to this machine lands in the Changelog. Plan a change below, or just keep working: routine stays quiet, and only a crisis colours the bar."
 
-// Whether the logbook has a case in any column.
+// Whether the logbook has a case in any column: a listed one, or a queued
+// or active one the summary counts while a cut index lists none
+// (ADR-0053 rung 21, WP-206).
 function anyCase(index) {
   var c = index && isObject(index.cases) ? index.cases : {}
   var lists = [c.queued, c.active, c.verification, c.completed]
   for (var i = 0; i < lists.length; i++) if (Array.isArray(lists[i]) && lists[i].length > 0) return true
-  return false
+  var whole = wholeCases(index)
+  return whole.queued > 0 || whole.active > 0
 }
 
 // Today's list and overview (prototype `today`): the date and the day's
@@ -5302,6 +5308,13 @@ function deskWork(index) {
 // 2", "COMPLETED · 1 / 2" while the filter hides some, "QUEUED · 50 / 450"
 // while the index lists fewer than the summary counts, WP-204). A search
 // covers the listed rows only, so it counts against them: "QUEUED · 1 / 50".
+// A group the summary counts but the index lists none of (ADR-0053 rungs
+// 16–20: "QUEUED · 0 / 500" after the listed active rows; rung 21 run dry:
+// "ACTIVE · 0 / 40" too) is a gap (WP-206): its header, WORK_GAP_TEXT and
+// the command that lists them on a line of its own, in `tail` after the
+// last shown row (the ladder cuts from the bottom of the list up), or in
+// `lead[i]` before the shown row i when a later group has rows (a
+// hand-made index); none during a search.
 function workView(prepared, filter, search) {
   var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
   var whole = prepared && isObject(prepared.whole) ? prepared.whole : {}
@@ -5322,14 +5335,33 @@ function workView(prepared, filter, search) {
     shown.push(r)
   }
   var labels = {}
+  var gaps = []
   for (var k = 0; k < WORK_GROUPS.length; k++) {
     var id = WORK_GROUPS[k].id
+    var listed = totals[id]
     if (q === "") totals[id] = Math.max(totals[id], count(whole[id]))
     labels[id] = WORK_GROUPS[k].label.toUpperCase() + " · " + counts0[id]
       + (counts0[id] !== totals[id] ? " / " + totals[id] : "")
+    if (listed === 0 && totals[id] > 0)
+      gaps.push({ group: id, order: k, header: labels[id], text: WORK_GAP_TEXT,
+        command: "seldon plan list --status " + id })
   }
-  return { rows: shown, labels: labels, counts: counts0, totals: totals }
+  var order = {}
+  for (var o = 0; o < WORK_GROUPS.length; o++) order[WORK_GROUPS[o].id] = o
+  var lead = []
+  var next = 0
+  for (var j = 0; j < shown.length; j++) {
+    var here = []
+    while (next < gaps.length && gaps[next].order < order[shown[j].group]) here.push(gaps[next++])
+    lead.push(here)
+  }
+  return { rows: shown, labels: labels, counts: counts0, totals: totals, gaps: gaps, lead: lead, tail: gaps.slice(next) }
 }
+
+// The dim line under a group header the index lists no row of (WP-206):
+// the summary counts them, the logbook has them; the command follows on a
+// line of its own, so it never wraps inside a flag.
+var WORK_GAP_TEXT = "The index lists none of them. This lists them:"
 
 function findWorkRow(prepared, id) {
   var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
