@@ -172,3 +172,31 @@ Every change in 0.3.0: [CHANGELOG.md](https://github.com/JohnAndrewsX/jax-seldon
    1920×1080 monitor (for example `hyprctl keyword monitor` with a mode
    and scale that give 2048×1152 logical, restored afterwards); that is a
    live-stage decision, not made here.
+
+## Round 2 (review 1: SEND BACK, B1 B2 N1 N2)
+
+Orchestrator decisions: B1 reword (WP-215 later), B2 reword (WP-208
+stays out of 0.3.0), N1 and N2 as proposed; WP-201 and WP-203 stay out
+of Breaking; the old CHANGELOG blank line stays.
+
+| Finding | Fix | Commit |
+|---|---|---|
+| B1 "every button" by key | Highlight 1 "The desk's buttons work by key now: the notices, the setup card, *Agent sorts*, the width and sidebar settings, and each crisis in an agent's proposal."; Plugin heading "The desk's buttons have a key path."; README status names the buttons; guide 11 en/de: "except Work's *By agent* and *Import tasks…*, which still need a click" | 4f566f2c, de in the next |
+| B2 the WP-208 fix implied | the WP-203 entry: "The desk's transaction detail, in this release as in 0.2.0, can list part of an old transaction without the 'partial' note (the plugin infers the note from the list's end); a later plugin update fixes it." | 4f566f2c |
+| N1 "every case" | Highlights 2 and 3, the Plugin heading "Work counts every queued and active case on a cut index", README status, guide 11 en/de ("still counts every queued and active case, every open change and crisis") | 4f566f2c and the next |
+| N2 SPEC-PLUGIN §8 wrap | rewrapped; the CHANGELOG blank line left as it was (orchestrator) | 4f566f2c |
+
+Guide de 11's source line is 4f566f2c. The older "every button" lines in
+guide 03 and SPEC-PLUGIN (from WP-202) are left for WP-215, as the
+review proposes.
+
+**Verified (fixture):** `bash packaging/release-notes.sh 0.3.0` exit 0
+(the new Highlights 1–3 in the body); `scripts/docs-check.sh` →
+"docs-check: ok (523 links, 14 translated pages, 61 commands, 704
+command lines)". No full check this round (orchestrator); no file under
+`engine/`, `plugin/`, `schema/` or `scripts/` changed since 89719cfa.
+
+**Live test:** after the orchestrator merges, gates and pushes `next`,
+from a checkout of `next` equal to `origin/next`; scenario `wip` with
+the test host's 1920x1080 output set to scale 0.9375 (2048x1152
+logical) and restored, both commands recorded here then.
