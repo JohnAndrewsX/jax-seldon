@@ -1813,7 +1813,8 @@ id).
 - The shim: `IpcHandler` target **`jax.seldon.panel`**, owned by the bar
   widget, kept beyond the one minor release ADR-0034 §7 named: 0.3.0
   still has it (operator decision E86), and the release that removes it
-  announces that in the CHANGELOG under Breaking (WP-188). It forwards through the plugin's facade:
+  announces that in the CHANGELOG under Breaking (WP-188). It forwards
+  through the plugin's facade:
   `open`, `show` → `summon jax.seldon {}`; `close`, `hide` → `hide`;
   `toggle` → `toggle`; `tab <today|changelog|work|decisions|system|memory>`
   → summon at that section ("ok" / "unknown tab"); `resolve crisis` → the

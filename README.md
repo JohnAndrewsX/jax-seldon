@@ -271,9 +271,11 @@ an agent working on this repository follows the repository's
 
 ## Project status
 
-v0.3.0: every button on the desk works by key, a very large logbook
-keeps the desk working (the engine leaves the oldest rows out of the
-index and still counts everything), and the agent skill is a short core
+v0.3.0: the desk's buttons work by key (the notices, the setup card,
+*Agent sorts*, the width and the sidebar), a very large logbook keeps the
+desk working (the engine leaves the oldest rows out of the index and
+still counts every queued and active case, change and crisis), and the
+agent skill is a short core
 that loads its details when a task needs them. The index format is
 still contract 2, as since v0.2.0, which made the desk. Before 1.0.0 a
 minor release may still change the CLI, the logbook layout or the

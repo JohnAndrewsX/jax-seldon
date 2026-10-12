@@ -30,9 +30,9 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
-- Every button on the desk works by key now: the notices, the setup card, *Agent sorts*, the width and sidebar settings, and each crisis in an agent's proposal.
-- A very large logbook no longer locks the desk out: the engine keeps `index.json` under 1 MB, leaves out the oldest rows first and still counts every case, change and crisis.
-- On such a logbook Work's headers count every case ("QUEUED · 50 / 450"), and a group the desk shows none of names the command that lists it.
+- The desk's buttons work by key now: the notices, the setup card, *Agent sorts*, the width and sidebar settings, and each crisis in an agent's proposal.
+- A very large logbook no longer locks the desk out: the engine keeps `index.json` under 1 MB, leaves out the oldest rows first and still counts every queued and active case, every change and crisis.
+- On such a logbook Work's headers count every queued and active case ("QUEUED · 50 / 450"), and a group the desk shows none of names the command that lists it.
 - Old open changes no longer go missing from the Changelog and *Needs you*: every change the index lists has its row.
 - Your agents read less: the Seldon skill is a short core, and the details load when a task needs them; an unedited skill updates itself.
 - More secrets stay out of your logbook: keys in base64, passwords in Python-style settings and mount options, pass phrases typed on the command line.
@@ -65,10 +65,10 @@ and the package does not exist yet. Update the plugin first:
   newest of the rest. Over 1 MB, the open changes an agent's triage
   proposal names stay until only crises are left to cut, so its items
   no longer read "No longer open" early. No contract change. A 0.2.0
-  plugin shows the new rows as ordinary Changelog rows; only its
-  transaction detail can now list part of an old transaction without
-  the 'partial' note (it inferred the note from the list's end), until
-  the plugin update of WP-208.
+  plugin shows the new rows as ordinary Changelog rows. The desk's
+  transaction detail, in this release as in 0.2.0, can list part of an
+  old transaction without the 'partial' note (the plugin infers the note
+  from the list's end); a later plugin update fixes it.
 - **A shorter agent skill (WP-196).** `SKILL.md` is a core of at most
   120 lines, front matter included: is there a logbook, attended or not,
   act then account, when to ask first, privileged commands, the engine
@@ -104,7 +104,7 @@ and the package does not exist yet. Update the plugin first:
 
 ### Plugin
 
-- **Every desk button has a key path.** ↑ at the top of a list reaches
+- **The desk's buttons have a key path.** ↑ at the top of a list reaches
   the notices' buttons (*Restart shell*, *Install*, *Update rules*, …),
   ↑ on Today's first row the setup card's row, ↑ on the Changelog's
   proposal *Agent sorts N open changes*, Enter on Settings › Appearance

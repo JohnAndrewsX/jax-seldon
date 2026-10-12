@@ -102,7 +102,8 @@ shell after the plugin update. A 0.2.0 plugin reads a 0.3.0 engine's
 index, and a 0.3.0 plugin works with a 0.2.0 engine. What changes for
 you:
 
-- Every button on the desk has a key path. ↑ at the top of a list
+- The desk's buttons have a key path, except Work's *By agent* and
+  *Import tasks…*, which still need a click. ↑ at the top of a list
   reaches the notices' buttons, ↑ on Today's first row the setup card,
   ↑ on the Changelog's first row the agent's proposal or *Agent sorts N
   open changes* (`a` twice), Enter on Settings › Appearance the width
@@ -112,7 +113,8 @@ you:
   [Daily use](03-daily-use.md#keys).
 - A very large logbook no longer locks the desk out. The plugin reads
   an index below 1 MB; the engine now leaves out the oldest rows until
-  it fits (history first, crises last), keeps every count whole, and
+  it fits (history first, crises last), still counts every queued and
+  active case, every open change and crisis, and
   `seldon status` names what it left out. The logbook and every command
   keep every row. Work's headers then show both numbers, "QUEUED · 50 /
   450" ([Daily use](03-daily-use.md#work-3)). A 0.2.0 plugin on such an
