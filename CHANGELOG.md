@@ -75,6 +75,19 @@ and the package does not exist yet. Update the plugin first:
   pressing. This closes the 0.2.0 note that these buttons still needed a
   pointer.
 
+### Docs
+
+- **What Seldon assumes about Omarchy, checked offline (WP-194).**
+  `tests/omarchy/assumptions.json` lists 17 installed Omarchy files the
+  plugin builds on (the plugin facade, the bar's widget list, the
+  loader, the `qs.Ui` controls and tokens, the plugin update, restart
+  and validator scripts), each with its hash, the Omarchy version it was
+  measured on and one sentence per assumption naming the plugin line
+  that relies on it. After an `omarchy update`, `just check-upstream`
+  names what to re-measure; `just check` shows it as a notice, a
+  release refuses it on the test host (`--gate`). No network, no
+  scheduled job; CI prints "skipped".
+
 ## [0.2.0] - 2026-10-11
 
 **Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
