@@ -8,7 +8,8 @@ Not merged.
 1. **The ledger, `tests/omarchy/assumptions.json`.** 22 assumptions over
    17 installed files under `$OMARCHY_PATH`, measured on Omarchy 4.0.4-1
    on 2026-10-12. Each entry: `id`, `path` (relative to `$OMARCHY_PATH`),
-   `sha256`, `omarchyVersion`, `measured`, `symbol`, `plugin`
+   `sha256`, `omarchyVersion`, `measured`, `symbol` (in the Omarchy
+   file), `pluginSymbol` (on the plugin line; round 2), `plugin`
    (`plugin/<file>:<line>`), `relies` ("Seldon relies on … at
    `plugin/<file>:<line>`."), `remeasure` (the harness or live step to
    repeat). Every file was confirmed by a grep of what the plugin calls:
@@ -16,14 +17,14 @@ Not merged.
    | File | Assumptions (plugin line) |
    |---|---|
    | `shell/services/PluginShellApi.qml` | `updateEntryInline` (Desk.qml:527), `serviceFor` (BarWidget.qml:55), summon/hide/toggle (BarWidget.qml:75) |
-   | `shell/shell.qml` | overlay routing (Desk.qml:175), loader injection (Desk.qml:66), reload without `clearComponentCache` (Model.js:4092), fresh public manifest (Service.qml:75) |
+   | `shell/shell.qml` | overlay routing (Desk.qml:175), loader injection (Desk.qml:66), reload without `clearComponentCache` (Service.qml:76), fresh public manifest (Service.qml:75), settings write (Desk.qml:527) and service lookup (BarWidget.qml:55) behind the facade (round 2) |
    | `shell/Ui/PluginBarApi.qml` | `moduleWidgets` for third parties (BarWidget.qml:138) |
-   | `shell/plugins/bar/Bar.qml` | per-monitor instances plus the hidden centre placeholder (Model.js:4127) |
-   | `shell/plugins/bar/BarModel.js` | `pickDrawnSlot` mirrored by `pickDrawnWidget` (Model.js:4136) |
+   | `shell/plugins/bar/Bar.qml` | per-monitor instances plus the hidden centre placeholder (Model.js:4129) |
+   | `shell/plugins/bar/BarModel.js` | `pickDrawnSlot` mirrored by `pickDrawnWidget` (Model.js:4138) |
    | `shell/Ui/BarWidget.qml` | `settings` / `setting()` from the shell.json entry (BarWidget.qml:46) |
    | `shell/Commons/Style.qml`, `Color.qml`, `Border.qml` | `Style.bar.iconCanvas` (BarWidget.qml:249), `Color.popups.text` (Desk.qml:135), `Border.surfaceSpec` (Desk.qml:706) |
    | `shell/Ui/BorderSurface.qml`, `Button.qml`, `ButtonGroup.qml`, `Dropdown.qml` | the desk card (Desk.qml:697), `focusable` (NewCaseSheet.qml:276), `changed` without assigning `value` (NewCaseSheet.qml:179), `popupOpen` (JournalField.qml:35) |
-   | `bin/omarchy-plugin-update`, `bin/omarchy-restart-shell` | reload without new code (Model.js:4093), the restart argv (Model.js:4097) |
+   | `bin/omarchy-plugin-update`, `bin/omarchy-restart-shell` | reload without new code (Service.qml:76), the restart argv (Model.js:4097) |
    | `bin/omarchy-plugin-validate` | the manifest rules (manifest.json:2); its hash equals `packaging/omarchy-pin` |
    | `shell/README.md` | the documented plugin contract (manifest.json:10) |
 
@@ -88,8 +89,8 @@ Not merged.
 
 - **WP-126 and WP-188** already name WP-194's `--gate` before their live
   checks (`work/queued/WP-126.md:103`, `WP-188.md:80`); I did not edit
-  them. The command to give them is in "How it was verified" (the test
-  host row): the four files over ssh, `--gate`, exit code back.
+  them. Round 2 (orchestrator, Q3): they run it from the deployed clone,
+  see "Round 2".
 - No network check, no cron or scheduled job, no check on push (out of
   scope).
 - No ADR (the WP says none).
@@ -130,3 +131,80 @@ afterwards.
 - `--gate` on a missing tree refuses (exit 1) while the notice mode says
   "skipped" with exit 0. The WP says "skipped, never passed"; I read a
   gate that could not look as a refusal. Reviewer to confirm.
+
+## Round 2 (review 1: APPROVE WITH FIXES, findings 1–5)
+
+Orchestrator decisions: fix findings 1–5 here; Q1 `--gate` keeps
+refusing a pin-only difference; Q3 the test-host gate runs from the
+deployed clone.
+
+1. **`symbol` split (finding 1).** Each entry now has `symbol` (an
+   identifier found in the Omarchy file; the check greps it there) and
+   `pluginSymbol` (the plugin-line lint). The seven plugin-only spellings
+   became Omarchy identifiers: `summon`, `isBarWidgetPanelPlugin`,
+   `publicPluginManifest`, `popups`, `borderSpec`, `signal changed`,
+   `secure`. New lint (the test's installed-tree part, hosts with
+   Omarchy): wherever an installed file hashes to the ledger, each of its
+   symbols is found in it, with a mutant (`Button.qml` given a symbol it
+   lacks). Measured: all 24 symbols found in their 4.0.4-1 files.
+2. **`shell/shell.qml` entries (finding 2).** `shell-settings-write`
+   (`updateEntryInline`, Desk.qml:527) and `shell-service-lookup`
+   (`serviceFor`, BarWidget.qml:55): 24 assumptions over 17 files. Test
+   row: one appended line in a scratch copy of `shell.qml` alone names
+   both (and `shell-overlay-routing`, "1 of 17 files differ"), names no
+   `facade-*` and never "no longer names"; the `PluginShellApi.qml` row
+   now also asserts it does not name `shell-settings-write`.
+3. **Unreadable pin (finding 3).** When the installed validator exists
+   and `omarchy-validate.sh --print-pin` fails or gives no 64-hex hash:
+   "NOTICE: cannot read packaging/omarchy-pin, so the installed validator
+   was not compared with the one CI fetches"; notice mode exits 0 (never
+   "ok"); `--gate` exits 1 ("refused (--gate): every file matches the
+   ledger, but packaging/omarchy-pin could not be read, …"). Test rows: a
+   missing pin (notice and gate), a malformed pin (gate), a missing pin
+   plus a changed file (both named), the pin back (ok), and no installed
+   validator (no pin needed, ok). Reproduced the reviewer's command on
+   the real tree: now rc=1 with that line.
+4. **Code lines, distinctive symbols (finding 4).** No citation is a
+   comment any more: `shell-reload-keeps-code` and `plugin-update-reload`
+   cite `Service.qml:76` (`restartShellNotice`), `bar-instances`
+   `Model.js:4129` (`isDrawnWidget`), `bar-drawn-slot` `Model.js:4138`
+   (`pickDrawnWidget`). Generic symbols replaced: `service` →
+   `item.service`, `focusable` → `Keys.onReturnPressed` (plugin side
+   `focusable: true`), `onChanged` → `signal changed` (plugin side
+   `onChanged: function(v)`). New lint: a cited line that starts with
+   `//`, `/*`, `*` or `#` fails, with a mutant that finds a comment line
+   of `Model.js` at run time.
+5. **Dead `PIN` default (finding 5)** removed; the lint reads the real
+   pin.
+
+Q3: `docs/TESTING.md` ("Omarchy assumptions") and the justfile say the
+release gate runs `bash scripts/check-omarchy-assumptions.sh --gate` in
+the deployed clone of the release commit on the test host, never from
+loose copied files. Observed today (test host, read-only `ls`): there is
+no clone of this repository in the home there and no `just`; WP-126 and
+WP-188 have to put the clone there before the gate. My round-1 test-host
+run (the four files in a temp dir) stays valid as evidence that the
+hashes match; it is not the release-gate form.
+
+### How round 2 was verified
+
+| Check | Where |
+|---|---|
+| `tests/omarchy/assumptions.test.sh`: 43 checks (lint and mutants, synthetic tree, pin rows) | fixture |
+| symbols found in their installed files; shell.qml-only and PluginShellApi-only changes in a scratch copy | fixture (copy of the desktop's tree in `TMPDIR`), desktop (read-only) |
+| `check-upstream --gate` on the installed tree, ok; with a missing pin, refused rc=1 | desktop (read-only) |
+| shellcheck of the script and the test | test host (E80 wrapper) |
+| ledger hashes = test host's tree | test host (round 1; no hash changed in round 2) |
+| `SELDON_FULL_CHECK=1 just check` | headless — result below |
+
+**Round-2 gate:** `SELDON_FULL_CHECK=1 just check` exited 0 (`check:
+ok`) on 3d59ce7a, this time with the E80 shellcheck wrapper on `PATH`,
+so every shellcheck inside the check ran on the test host. Log in the
+private `gates/check-dev-194-r2.log`: cargo tests 2893 passed, 0 failed;
+check-packaging ok; install 230/0; deploy-test-host 327/0; runtime-dir
+45/0; assumptions.test ok (43 checks); check-upstream ok (17 files);
+docs-check ok; plugin-validate ok; qmllint ok (52 files);
+terminal-scripts 73/0; real-home-guard 40/0; check-tokens 14/0;
+service-states 366/0; desk-view 2243/0; bar-view 195/0; ipc-restart
+43/0. Only this handover follows 3d59ce7a. The scratch `TMPDIR` is empty
+afterwards.
