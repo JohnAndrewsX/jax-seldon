@@ -129,8 +129,8 @@
       "measured": "2026-10-12",
       "symbol": "centerAnchor",
       "pluginSymbol": "isDrawnWidget",
-      "plugin": "plugin/Model.js:4141",
-      "relies": "Seldon relies on the bar building the widget once per monitor plus a zero-size, hidden placeholder in the centre section, all listed by moduleWidgets, at plugin/Model.js:4141.",
+      "plugin": "plugin/Model.js:4222",
+      "relies": "Seldon relies on the bar building the widget once per monitor plus a zero-size, hidden placeholder in the centre section, all listed by moduleWidgets, at plugin/Model.js:4222.",
       "remeasure": "tests/plugin/bar-view.sh, and on the test host `omarchy-shell jax.seldon.panel pill` answers once with one handler"
     },
     {
@@ -141,8 +141,8 @@
       "measured": "2026-10-12",
       "symbol": "pickDrawnSlot",
       "pluginSymbol": "pickDrawnWidget",
-      "plugin": "plugin/Model.js:4150",
-      "relies": "Seldon relies on the shell's pickDrawnSlot choosing the first visible, non-zero-size slot, which Model.pickDrawnWidget mirrors, at plugin/Model.js:4150.",
+      "plugin": "plugin/Model.js:4231",
+      "relies": "Seldon relies on the shell's pickDrawnSlot choosing the first visible, non-zero-size slot, which Model.pickDrawnWidget mirrors, at plugin/Model.js:4231.",
       "remeasure": "the shell's pickDrawnSlot and isDrawnSlot against Model.pickDrawnWidget and isDrawnWidget (node tests/plugin/model.test.js), then tests/plugin/bar-view.sh"
     },
     {
@@ -261,8 +261,8 @@
       "measured": "2026-10-12",
       "symbol": "secure",
       "pluginSymbol": "omarchy-restart-shell",
-      "plugin": "plugin/Model.js:4109",
-      "relies": "Seldon relies on omarchy-restart-shell, run without arguments from a detached process, restarting the shell and refusing while a secure lock is up, at plugin/Model.js:4109.",
+      "plugin": "plugin/Model.js:4190",
+      "relies": "Seldon relies on omarchy-restart-shell, run without arguments from a detached process, restarting the shell and refusing while a secure lock is up, at plugin/Model.js:4190.",
       "remeasure": "the notice's Restart shell on the test host gives one new shell within seconds (memory/omarchy-shell.md, WP-090)"
     },
     {
