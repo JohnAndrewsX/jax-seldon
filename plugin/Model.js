@@ -1962,24 +1962,36 @@ function reopensOf(c) {
   return ""
 }
 
+// The queued and active cases `summary` counts: the index may list fewer
+// (CONTRACT.md rule 4, ADR-0053 §5), the summary counts all.
+function wholeCases(index) {
+  var s = index && isObject(index.summary) ? index.summary : {}
+  return { queued: count(s.queuedCases), active: count(s.activeCases) }
+}
+
 // [{ id, title, cases, total }] for queued, active (+ verification),
 // completed. `filter` "agent" keeps only the completed cases an agent closed
-// (the spot check, ADR-0027 §5); `total` is the column's count without it.
+// (the spot check, ADR-0027 §5); `total` is the column's count without it,
+// and the summary's count where the index lists fewer (WP-204).
 function workColumns(index, filter) {
   var cases = index && isObject(index.cases) ? index.cases : {}
+  var whole = wholeCases(index)
   var out = []
   for (var k = 0; k < WORK_COLUMNS.length; k++) {
     var col = WORK_COLUMNS[k]
     var list = []
+    var total = 0
     for (var g = 0; g < col.groups.length; g++) {
       var group = cases[col.groups[g]]
-      if (!Array.isArray(group)) continue
-      for (var i = 0; i < group.length; i++)
-        if (isObject(group[i])) list.push(workCase(group[i], col.groups[g], col.id))
+      var listed = list.length
+      if (Array.isArray(group))
+        for (var i = 0; i < group.length; i++)
+          if (isObject(group[i])) list.push(workCase(group[i], col.groups[g], col.id))
+      total += Math.max(list.length - listed, whole[col.groups[g]] || 0)
     }
     var shown = col.id === "completed" && filter === COMPLETED_FILTER_AGENT
       ? list.filter(function(c) { return c.closedByAgent }) : list
-    out.push({ id: col.id, title: col.title, cases: shown, total: list.length })
+    out.push({ id: col.id, title: col.title, cases: shown, total: total })
   }
   return out
 }
@@ -5182,7 +5194,7 @@ var WORK_GROUPS = [
 
 // Every case as a desk row, by group (Active · Verification · Queued ·
 // Completed, the last completed and dropped, newest closed first as the
-// index lists them).
+// index lists them); `whole`: the summary's queued and active counts.
 function deskWork(index) {
   var cases = index && isObject(index.cases) ? index.cases : {}
   var rows = []
@@ -5204,14 +5216,17 @@ function deskWork(index) {
       rows.push(c)
     }
   }
-  return { rows: rows }
+  return { rows: rows, whole: wholeCases(index) }
 }
 
 // The rows the Work list shows: the By agent filter on Completed
 // (ADR-0027 §5), the sidebar search, and each group's header ("ACTIVE ·
-// 2", "COMPLETED · 1 / 2" while the filter hides some).
+// 2", "COMPLETED · 1 / 2" while the filter hides some, "QUEUED · 50 / 450"
+// while the index lists fewer than the summary counts, WP-204). A search
+// covers the listed rows only, so it counts against them: "QUEUED · 1 / 50".
 function workView(prepared, filter, search) {
   var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
+  var whole = prepared && isObject(prepared.whole) ? prepared.whole : {}
   var q = String(search || "").trim().toLowerCase()
   var shown = []
   var totals = {}
@@ -5231,6 +5246,7 @@ function workView(prepared, filter, search) {
   var labels = {}
   for (var k = 0; k < WORK_GROUPS.length; k++) {
     var id = WORK_GROUPS[k].id
+    if (q === "") totals[id] = Math.max(totals[id], count(whole[id]))
     labels[id] = WORK_GROUPS[k].label.toUpperCase() + " · " + counts0[id]
       + (counts0[id] !== totals[id] ? " / " + totals[id] : "")
   }

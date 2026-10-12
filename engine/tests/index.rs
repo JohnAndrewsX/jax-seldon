@@ -2112,25 +2112,6 @@ fn status_writes_a_large_logbook_under_its_budget() {
     let size = std::fs::metadata(&path).unwrap().len() as usize;
     eprintln!("×200: whole index {before} bytes, written {size}");
     assert!(size < build::SIZE_BUDGET, "{size} bytes");
-    let v = common::json(&out);
-    let warning = format!(
-        "index.json would be {before} bytes, over its budget of 1000000 (CONTRACT.md rule 5); \
-         the largest section is `cases` ("
-    );
-    let warnings = v["warnings"].as_array().unwrap();
-    let w = warnings
-        .iter()
-        .filter_map(|w| w.as_str())
-        .find(|w| w.starts_with(&warning))
-        .unwrap_or_else(|| panic!("{warnings:?}"));
-    assert!(
-        w.ends_with(
-            " completed cases, 216 events; the summary still counts every case, change and crisis, \
-             the logbook keeps every row"
-        ),
-        "{w}"
-    );
-
     let ix = json_file(&path);
     common::assert_valid_index(&ix);
     assert_eq!(ix["summary"], whole["summary"], "every count, every crisis");
@@ -2150,10 +2131,29 @@ fn status_writes_a_large_logbook_under_its_budget() {
         "{}",
         events.len()
     );
-    assert_eq!(
-        events[..],
-        whole["events"].as_array().unwrap()[..events.len()]
+    let whole_events = whole["events"].as_array().unwrap();
+    assert_eq!(events[..], whole_events[..events.len()]);
+    // the warning names the size, the largest section and what went, all
+    // counted from the two files: `logbook.path` is the temp dir's, so how
+    // many events the cut takes varies by host (WP-207)
+    let completed = whole["cases"]["completed"].as_array().unwrap().len() - 10;
+    let cases = serde_json::to_string(&whole["cases"]).unwrap().len();
+    let warning = format!(
+        "index.json would be {before} bytes, over its budget of 1000000 (CONTRACT.md rule 5); \
+         the largest section is `cases` ({cases} bytes); written at {size} bytes without \
+         {completed} completed cases, {} events; the summary still counts every case, change \
+         and crisis, the logbook keeps every row",
+        whole_events.len() - events.len()
     );
+    let warnings = common::json(&out)["warnings"].clone();
+    assert!(
+        warnings.as_array().unwrap().contains(&json!(warning)),
+        "{warning}\n{warnings:#}"
+    );
+    // the cut took no event more than the file needs: putting back the
+    // newest it took is over the budget again
+    let back = whole_events[events.len()].to_string().len() + 1;
+    assert!(size + back >= build::SIZE_BUDGET, "{size} + {back} bytes");
     // `index --check` validates the cut index before it writes it
     let out = env.at(
         GENERATED_AT,
