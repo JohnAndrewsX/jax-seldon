@@ -2,6 +2,62 @@
 
 Branch `wp/205-today-live-wait` (from `next` at `3ba46b8f`), worktree
 `wt/WP-205`. Not merged. Role: Plugin Dev. Tests only; no plugin change.
+Round 2 merged local `next` at `50bbd290` (WP-201, WP-206) into the
+branch; see "Round 2" below. `22d375aa` merges `next` at `71f070b8`
+(WP-212, the real-home guard fix) for the last full check; no conflict.
+
+## Round 2 (review 1: SEND BACK for the merge with next)
+
+- **F1.** `bfe4c280` merges `next` `50bbd290`. Its only conflict, the
+  `triage-keys` `run` line, is resolved as next's steps plus
+  `HARNESS_WAIT_INDEX=1` (nothing else in that commit). `b731b419` adds
+  the wait to WP-201's live runs: triage-crisis-keys,
+  triage-press-apply, triage-crisis-rewrite, triage-crisis-stacked,
+  triage-back-apply/-crisis (one `run` line in a loop),
+  triage-crisis-big and triage-crisis-big-walk. Proof with the delay on:
+  the full check below runs every live case with its first index write
+  2 s late, and they all pass. The failing direction is the reviewer's
+  (as merged, without the wait, the delay on: 57 failed checks in 7 of
+  the 8 cases; *headless*, review 1 §2). I did not run it again.
+- **F2.** `HARNESS_WAIT_INDEX` now waits on `indexShown` (what
+  `Desk.qml` reads: `indexShown ? index : null`), not on `index`.
+- **F3.** `docs/TESTING.md` §3 no longer counts `run` lines.
+- **Guard.** `tests/plugin/live-index-wait.py`, run in `just
+  plugin-test` next to `check-tokens.py --rules`, so it also runs where
+  the Quickshell harnesses are skipped. It fails when a live `run`
+  (`run <case> ""`) has neither `HARNESS_WAIT_INDEX=1` nor the line
+  `# no index wait: <reason>` directly above it, or has both. It prints
+  the opt-outs, then checks itself on three mutants of `desk-view.sh`
+  (a wait removed, a marker removed, a new live case with neither), and
+  each must fail. Result: 71 live cases wait, 12 opt out, 0 problems,
+  3 of 3 mutants caught.
+- **The opt-outs** (each with its reason in the marker):
+  - wait first on purpose: rules-outdated, rules-fail (the rules
+    notice), setup-flow, setup-blocked (the setup card), preview-uninit,
+    preview-failed (the preview);
+  - settle first on purpose: capture-warned, setup-partial, aside-tile,
+    graph-dirty;
+  - never get an index: uninit-sections;
+  - start-up capture held locked, so the index comes late on purpose:
+    capture-click.
+- **Wait added to 11 older cases.** In round 1 these were left without
+  the wait because they read the index only after their first `settle`:
+  today-new, held-forms, held-fields, held-import, import-area,
+  work-locked, work-run, work-run-refused, decisions-live,
+  decisions-locked, tones-default. They don't settle first on purpose,
+  so they now wait instead of opting out.
+- **Q3.**
+  - `bar-view.sh` has no live runs: every `run` passes an index file.
+  - `service-states.sh` has live runs (no `SELDON_INDEX`), but not of
+    this shape. Its harness takes the final snapshot only once the
+    start-up engine calls are done (`harness/shell.qml`: ready, no probe
+    or engine call in flight), or once `HARNESS_UNTIL` is met. The live
+    runs without `HARNESS_UNTIL=status=ok` leave a narrower gap, from
+    `status` exiting to the `FileView` reload of the index it wrote.
+    For example `actions`, `snapper-live`, `plan`, `drift`, `decide`.
+  - No failure of that kind is known. A small follow-up WP (those runs
+    wait for `status=ok`, or the same delayed first write) would close
+    the gap; whether to open one is the orchestrator's call.
 
 ## The race
 
@@ -115,21 +171,42 @@ passed with the index 3 s late.
 
 ## Open points
 
-- The setting is opt-in: a new live case that reads the index from its
-  first step must set it (TESTING.md §3 says so); the full check's
-  delayed first write fails such a case every time. Making it the
-  default for live runs would need opt-outs for the uninit, setup,
-  preview and capture-locked cases; not done.
+- The setting is opt-in per case, and `live-index-wait.py` (round 2)
+  forces a choice: every new live case either waits or carries an
+  opt-out with its reason. The full check's delayed first write then
+  fails a wrong opt-out every time.
 - The full check now runs live cases only with the index 2 s late; the
   early-index timing (the index there by step 1) runs in a check
   without `SELDON_FULL_CHECK`. Cases with the setting behave the same
   either way.
-- `service-states.sh` and `bar-view.sh` were not searched for the same
-  race (not in this WP's inputs).
+- `service-states.sh`: see Q3 under "Round 2" (follow-up WP is the
+  orchestrator's call).
 
 ## just check
 
+Round 2, first full check (`b731b419`, under the lock, dev host): exit 1.
+All suites before desk-view passed (service-states 366; the guard
+`live-index-wait.py`: 71 wait, 12 opt out, 0 problems), and desk-view
+2335 passed, 2 failed: both its real-home guards, not this branch.
+`~/.local/state/seldon` changed twice, 15 minutes apart: the installed
+0.2.0 engine's routine capture, which also writes `autocommit.json` and
+`recent-config.json`. The guard of that time did not know those files.
+A new `quickshell/by-id` entry came from another app's Quickshell in the
+desktop session, not from a harness. bar-view and ipc-restart did not
+run. The guard fix is WP-212 (orchestrator); this branch merged it
+(`22d375aa`) and ran the check again:
+
 `SELDON_FULL_CHECK=1 flock /tmp/seldon-check.lock just check` on the dev
+host at `22d375aa` (`TMPDIR`, `JUST_TEMPDIR` and `CARGO_TARGET_DIR`
+under the private gates folder): exit 0, `check: ok`. The engine tests
+ran as **fixture** tests, the Quickshell harnesses as **headless**, the
+live desk cases with their first index write 2 s late: service-states
+366, desk-view 2337 (both real-home guards ok), bar-view 195,
+ipc-restart 43 passed, 0 failed; `live-index-wait: 71 live cases wait,
+12 opt out, 0 problems`; no `wait timed out` and no `FAIL` line in the
+log.
+
+Round 1: `SELDON_FULL_CHECK=1 flock /tmp/seldon-check.lock just check` on the dev
 host at `74d89ca4` (`TMPDIR`, `JUST_TEMPDIR` and `CARGO_TARGET_DIR`
 under the private gates folder): exit 0, `check: ok`; the engine tests
 ran as **fixture** tests, the Quickshell harnesses as **headless**, the
