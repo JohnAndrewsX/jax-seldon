@@ -3547,3 +3547,231 @@ mod privileged {
         assert_eq!(events[0]["meta"]["wrapper"], "sudo");
     }
 }
+
+/// WP-218: `hook claude-code`, `hook session-start` and `hook generic`
+/// skip the command-line parser (`plain_agent_hook` in `main.rs`); in a
+/// debug build `SELDON_TEST_HOOK_PARSE` sends them through it. The two
+/// paths give the same exit code, stdout, stderr and ledger for every
+/// input the tests above give these hooks.
+mod fast_path {
+    use super::*;
+
+    /// A made-up project directory outside the logbook.
+    const OTHER: &str = "/srv/made-up-project";
+
+    /// One hook call: the hook, its stdin and the variables the harness
+    /// sets (`FIXTURE_CWD` in the stdin and in `project` stands for the
+    /// logbook).
+    #[derive(Default)]
+    struct Call {
+        name: &'static str,
+        stdin: String,
+        case: Option<String>,
+        actor: Option<&'static str>,
+        project: Option<&'static str>,
+    }
+
+    fn call(name: &'static str, stdin: impl Into<String>) -> Call {
+        Call {
+            name,
+            stdin: stdin.into(),
+            ..Call::default()
+        }
+    }
+
+    /// `v` with `key` set to `value`.
+    fn with(v: &str, key: &str, value: Value) -> String {
+        let mut v: Value = serde_json::from_str(v).unwrap();
+        v[key] = value;
+        v.to_string()
+    }
+
+    /// The hook test inputs: every fixture as both tool events, inside and
+    /// outside the logbook, the session-start and generic payloads of
+    /// `session_scope`, `generic` and `green`, broken stdin, and the
+    /// variables `SELDON_CASE`, `SELDON_ACTOR` and `CLAUDE_PROJECT_DIR`.
+    fn calls(case: &str) -> Vec<Call> {
+        let mut calls = Vec::new();
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/hooks");
+        let mut fixtures: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|n| n.ends_with(".json"))
+            .collect();
+        fixtures.sort();
+        assert!(fixtures.len() >= 8, "{fixtures:?}");
+        for fixture in &fixtures {
+            for event in ["PreToolUse", "PostToolUse"] {
+                let p = payload(fixture, event);
+                calls.push(call("claude-code", with(&p, "cwd", json!(OTHER))));
+                calls.push(call("claude-code", p));
+            }
+        }
+        let bash = tool_call(
+            "Bash",
+            json!({"command": "sudo pacman -S --noconfirm zed"}),
+            "toolu_fast_1",
+        );
+        calls.push(Call {
+            case: Some(case.to_string()),
+            ..call("claude-code", with(&bash, "cwd", json!(OTHER)))
+        });
+        calls.push(Call {
+            project: Some(FIXTURE_CWD),
+            ..call(
+                "claude-code",
+                with(
+                    &bash.replace("toolu_fast_1", "toolu_fast_2"),
+                    "cwd",
+                    json!(OTHER),
+                ),
+            )
+        });
+        calls.push(call(
+            "claude-code",
+            with(&bash, "hook_event_name", json!("Notification")),
+        ));
+
+        let start =
+            json!({"session_id": "s-1", "hook_event_name": "SessionStart", "source": "startup"})
+                .to_string();
+        for cwd in [FIXTURE_CWD, "/", OTHER, "made-up/relative", ""] {
+            calls.push(call("session-start", with(&start, "cwd", json!(cwd))));
+        }
+        calls.push(call("session-start", start.clone()));
+        for marker in [case, "", "not-a-case"] {
+            calls.push(Call {
+                case: Some(marker.to_string()),
+                ..call("session-start", with(&start, "cwd", json!(OTHER)))
+            });
+        }
+        calls.push(Call {
+            project: Some(FIXTURE_CWD),
+            ..call("session-start", with(&start, "cwd", json!(OTHER)))
+        });
+
+        let generic = json!({"command": "sudo pacman -S --noconfirm ollama", "actor": "agent:codex", "cwd": FIXTURE_CWD})
+            .to_string();
+        calls.push(call(
+            "generic",
+            with(&generic, "startedAt", json!("2026-10-01T14:01:48+02:00")),
+        ));
+        calls.push(call(
+            "generic",
+            json!({"command": "pacman -Qi ollama", "actor": "agent:codex", "cwd": FIXTURE_CWD})
+                .to_string(),
+        ));
+        calls.push(call("generic", with(&generic, "case", json!(case))));
+        calls.push(call("generic", with(&generic, "cwd", json!(OTHER))));
+        calls.push(Call {
+            case: Some(case.to_string()),
+            ..call(
+                "generic",
+                json!({"command": "yay -S zed", "actor": "agent:codex", "cwd": OTHER}).to_string(),
+            )
+        });
+        for bad in [
+            json!({"command": "pacman -S x", "actor": "system"}),
+            json!({"command": "pacman -S x", "actor": "Agent:X"}),
+            json!({"command": "pacman -S x"}),
+            json!({"command": "pacman -S x", "actor": "agent:x", "startedAt": "soon"}),
+        ] {
+            calls.push(call("generic", bad.to_string()));
+        }
+        let esc = "\u{1b}[31mX";
+        for (key, value) in [
+            ("actor", format!("agent:{esc}")),
+            ("case", format!("C-{esc}")),
+            ("startedAt", format!("2026-10-01{esc}")),
+        ] {
+            calls.push(call("generic", with(&generic, key, json!(value))));
+        }
+        let bare = json!({"command": "pacman -S --noconfirm zed", "cwd": FIXTURE_CWD}).to_string();
+        for actor in [None, Some(""), Some("Agent:X"), Some("agent:codex")] {
+            calls.push(Call {
+                actor,
+                ..call("generic", bare.clone())
+            });
+        }
+
+        for name in ["claude-code", "session-start", "generic"] {
+            for stdin in ["", "not json", "{}", "[]"] {
+                calls.push(call(name, stdin));
+            }
+        }
+        calls
+    }
+
+    /// `seldon hook <name>` with the call's stdin and variables; through
+    /// the parser when `parse`.
+    fn run(h: &Hooks, c: &Call, parse: bool) -> Output {
+        *h.case_env.borrow_mut() = c.case.clone();
+        *h.actor_env.borrow_mut() = c.actor.map(String::from);
+        *h.project_dir.borrow_mut() = c.project.map(|p| h.at_logbook(p));
+        let mut cmd = h.command(&["hook", c.name], Some(NOW));
+        if parse {
+            cmd.env("SELDON_TEST_HOOK_PARSE", "1");
+        }
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(h.at_logbook(&c.stdin).as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    }
+
+    /// `text` with the environment's temp dir (home and logbook) as `<tmp>`.
+    fn neutral(h: &Hooks, text: &str) -> String {
+        let tmp = h.env.tmp.path();
+        let real = tmp.canonicalize().unwrap();
+        text.replace(real.to_str().unwrap(), "<tmp>")
+            .replace(tmp.to_str().unwrap(), "<tmp>")
+    }
+
+    /// The ledger without the events' ids, [`neutral`].
+    fn ledger(h: &Hooks) -> Vec<String> {
+        h.ledger()
+            .into_iter()
+            .map(|mut e| {
+                e.as_object_mut().unwrap().remove("id");
+                neutral(h, &e.to_string())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn both_paths_give_the_same() {
+        let (fast, full) = (Hooks::new(), Hooks::new());
+        let case = fast.active_case();
+        assert_eq!(full.active_case(), case);
+        let calls = calls(&case);
+        let (mut printed, mut reported) = (0, 0);
+        for (n, c) in calls.iter().enumerate() {
+            let a = run(&fast, c, false);
+            let b = run(&full, c, true);
+            let what = format!("call {n}: hook {} {:?}", c.name, c.stdin);
+            assert_eq!(a.status.code(), Some(0), "{what}");
+            assert_eq!(b.status.code(), Some(0), "{what}");
+            let (out_a, out_b) = (neutral(&fast, &stdout(&a)), neutral(&full, &stdout(&b)));
+            assert_eq!(out_a, out_b, "{what}: stdout");
+            let (err_a, err_b) = (neutral(&fast, &stderr(&a)), neutral(&full, &stderr(&b)));
+            assert_eq!(err_a, err_b, "{what}: stderr");
+            let (led_a, led_b) = (ledger(&fast), ledger(&full));
+            assert_eq!(led_a, led_b, "{what}: ledger");
+            printed += usize::from(!out_a.is_empty());
+            reported += usize::from(!err_a.is_empty());
+        }
+        // the inputs reach every outcome: records, context blocks, errors
+        let commands = fast.commands().len();
+        assert!(commands >= 8, "{commands} commands recorded");
+        assert!(printed >= 4, "{printed} context blocks");
+        assert!(reported >= 10, "{reported} reported errors");
+    }
+}
