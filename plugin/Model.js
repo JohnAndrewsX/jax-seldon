@@ -5899,9 +5899,11 @@ function graphBuild(index, cap) {
     else if (node.kind === "crisis") numbers.crises++
     else if (node.kind === "change") numbers.changes++
   }
-  var footer = "Newest " + plural(events.length, "event", "events") + " · " + completed + " completed " +
+  // not "newest": the index lists every listed drift item's event, however
+  // old, beside the newest of the rest (ADR-0054 §1, WP-208)
+  var footer = plural(events.length, "event", "events") + " · " + completed + " completed " +
     (completed === 1 ? "case" : "cases") + " in the index"
-  if (events.length >= GRAPH_EVENTS_MAX || completed >= GRAPH_COMPLETED_MAX) footer += " · older ones are only in the logbook"
+  if (events.length >= GRAPH_EVENTS_MAX || completed >= GRAPH_COMPLETED_MAX) footer += " · the others are only in the logbook"
   if (folded > 0) footer += " · " + plural(folded, "change", "changes") + " folded into " + fold.groups.length
   // More nodes that never fold (areas, cases, decisions, crises) than the
   // cap: the layout would not keep its budget, so the graph is a still
@@ -6526,6 +6528,13 @@ var TX_GLYPHS = { upgrade: "↑", downgrade: "↓", install: "+", remove: "−",
 var TX_VERBS = { upgrade: "upgraded", downgrade: "downgraded", install: "installed", remove: "removed", reinstall: "reinstalled" }
 // CONTRACT.md rule 4: the index lists at most 500 events (ADR-0054).
 var INDEX_EVENTS_MAX = 500
+// The note under a transaction the index may list only in part (WP-208):
+// `cut` when the index shows that lines are missing, `maybe` when only
+// the transaction's age says some may be.
+var TX_PARTIAL_TEXTS = {
+  cut: "The index lists at most " + INDEX_EVENTS_MAX + " events; the rest of this transaction is in the ledger.",
+  maybe: "The index lists at most " + INDEX_EVENTS_MAX + " events; the ledger may hold more of this transaction."
+}
 
 // The transaction an event belongs to: a pacman package event's own
 // `txId`, a file pacman left by its meta.transaction (WP-141), else "".
@@ -6560,10 +6569,13 @@ function eventsBoundary(index) {
 }
 
 // The transactions of an index: { <txId>: { packages: [event], files: n,
-// status, partial } }, built once per index. `partial`: the index may
-// list only part of it (WP-208): one of its events is at or past the
-// list's boundary (eventsBoundary), or it lists fewer open members than
-// its drift group's `members`.
+// status, partial, open } }, built once per index. `partial` (WP-208):
+// "cut" when the index lists part of it: it holds the list's boundary
+// event (eventsBoundary), or it lists fewer open members than its drift
+// group's `members`; else "maybe" when one of its events is past the
+// boundary (a pinned drift event: its transaction's other lines, if it
+// had any, are older than the boundary, and the index cannot tell); else
+// "".
 function transactionIndex(index) {
   var all = events(index)
   var boundary = eventsBoundary(index)
@@ -6571,7 +6583,7 @@ function transactionIndex(index) {
   // make `constructor` or `__proto__`: no prototype (WP-137 round 2, B2)
   var out = Object.create(null)
   var at = function(id) {
-    if (out[id] === undefined) out[id] = { packages: [], files: 0, status: "", partial: false, open: 0 }
+    if (out[id] === undefined) out[id] = { packages: [], files: 0, status: "", partial: "", open: 0 }
     return out[id]
   }
   for (var i = 0; i < all.length; i++) {
@@ -6579,7 +6591,8 @@ function transactionIndex(index) {
     var id = eventTx(e)
     if (id === "") continue
     var t = at(id)
-    if (boundary !== -1 && i >= boundary) t.partial = true
+    if (boundary !== -1 && i === boundary) t.partial = "cut"
+    else if (boundary !== -1 && i > boundary && t.partial === "") t.partial = "maybe"
     if (e.kind === "note") {
       t.files++
       continue
@@ -6590,7 +6603,7 @@ function transactionIndex(index) {
   }
   var groups = driftLookup(index).byTx
   for (var tx in groups)
-    if (out[tx] !== undefined && out[tx].open < groups[tx].members) out[tx].partial = true
+    if (out[tx] !== undefined && out[tx].open < groups[tx].members) out[tx].partial = "cut"
   return out
 }
 
@@ -6616,14 +6629,16 @@ function txSummary(packages) {
 // The selected event's transaction as the detail shows it, or null when
 // the event belongs to none: { status, title, text, command, clipped,
 // summary, packages: [{ id, glyph, verb, name, versions, selected }],
-// files, partial, list } — `list`: the package list is worth showing (two
-// or more packages, a status, or files left; one completed package says
-// no more than the detail's own rows).
+// files, partial, partialText, list } — `partial`: "cut", "maybe" or ""
+// (transactionIndex), `partialText` its note; `list`: the package list is
+// worth showing (two or more packages, a status, files left, or a partial
+// note; one whole completed package says no more than the detail's own
+// rows).
 function transactionDetail(index, prepared, id) {
   var row = changelogRow(prepared, id)
   if (!row || row.tx === "") return null
   var all = prepared && isObject(prepared.tx) ? prepared.tx : transactionIndex(index)
-  var t = all[row.tx] || { packages: [], files: 0, status: "", partial: false, open: 0 }
+  var t = all[row.tx] || { packages: [], files: 0, status: "", partial: "", open: 0 }
   var sorted = t.packages.slice().sort(function(a, b) {
     var k = TX_KINDS.indexOf(a.kind) - TX_KINDS.indexOf(b.kind)
     return k !== 0 ? k : str(a.subject) < str(b.subject) ? -1 : str(a.subject) > str(b.subject) ? 1 : 0
@@ -6638,6 +6653,8 @@ function transactionDetail(index, prepared, id) {
     return isObject(e) && isObject(e.meta) && typeof e.meta.command === "string" && e.meta.command !== ""
   })[0]
   var status = t.status
+  // with no package listed, Transaction says "not in the index any more"
+  var partial = t.packages.length > 0 ? t.partial : ""
   return {
     status: status,
     title: status !== "" ? TX_STATUS_TITLES[status] : "",
@@ -6647,9 +6664,9 @@ function transactionDetail(index, prepared, id) {
     summary: txSummary(t.packages),
     packages: packages,
     files: t.files,
-    // with no package listed, Transaction says "not in the index any more"
-    partial: t.partial && t.packages.length > 0,
-    list: packages.length > 1 || status !== "" || t.files > 0
+    partial: partial,
+    partialText: partial !== "" ? TX_PARTIAL_TEXTS[partial] : "",
+    list: packages.length > 1 || status !== "" || t.files > 0 || partial !== ""
   }
 }
 

@@ -21,7 +21,7 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
-- A pacman transaction's detail says again when it shows only part of the transaction, also for an old open change.
+- A pacman transaction's detail says again when it shows only part of the transaction, also for an old open change of one listed package.
 
 ### Plugin
 
@@ -31,12 +31,18 @@ and the package does not exist yet. Update the plugin first:
   0.3.0 the index lists every listed open change's event, however old,
   after the newest of the rest, so the transaction at the rest's end
   read whole ("24 packages: 24 upgraded" of 40), and an old open
-  change's transaction read "1 package". Now, with the list at its 500
-  events, a transaction is partial when one of its lines is the oldest
-  event that is no listed open change's, or older than it; or when a
-  group lists fewer open lines than its `members`, at any size. The
-  detail then says "The index lists at most 500 events; the rest of
-  this transaction is in the ledger." No contract change.
+  change's transaction read "1 package". Now the detail says "The index
+  lists at most 500 events; the rest of this transaction is in the
+  ledger." when, with the list at its 500 events, the transaction holds
+  the oldest event that is no listed open change's, or when a group
+  lists fewer open lines than its `members`, at any size. It says "The
+  index lists at most 500 events; the ledger may hold more of this
+  transaction." when only the transaction's age says lines may be
+  missing: at the cap, a line older than that event (an old open
+  change's) and neither of the above. The note shows under the package
+  list, which now appears for one package too. The graph's footer says
+  "N events" instead of "Newest N events", and "the others are only in
+  the logbook" instead of "older ones". No contract change.
 
 ## [0.3.0] - 2026-10-12
 

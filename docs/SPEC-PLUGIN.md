@@ -863,17 +863,21 @@ transaction" and every package of the transaction the index lists, the
 unusual first (↓ downgraded, − removed, + installed, ↑ upgraded, ↻
 reinstalled; by name within a kind), "name  old → new" or "name
 version", the selected event's line in bold; shown for two or more
-packages, a status or files left (one completed package says no more
-than the rows); a transaction the index may list only in part says "The
+packages, a status, files left or a partial note (one whole completed
+package says no more than the rows). The partial note (WP-208,
+ADR-0054 §3) sits under the list, also under a list of one package: "The
 index lists at most 500 events; the rest of this transaction is in the
-ledger." (WP-208): with the list at its 500-event cap (CONTRACT.md rule
-4, ADR-0054), one of its lines is the oldest event that is no listed
-drift item's `eventId`, or older than it (a pinned group leader); or,
-at any size (also under rule 5's cut), it lists fewer open members than
-its drift group's `members`. Without `meta.txStatus` nothing is marked
-and nothing claims the transaction completed (an index of an earlier
-build, or a line
-written before ADR-0043). The Changelog row (and Today's NEEDS YOU row)
+ledger." when the index shows that lines are missing (with the list at
+its 500-event cap, CONTRACT.md rule 4, the transaction holds the oldest
+event that is no listed drift item's `eventId`; or, at any size, also
+under rule 5's cut, it lists fewer open members than its drift group's
+`members`); "The index lists at most 500 events; the ledger may hold
+more of this transaction." when neither holds but, at the cap, one of
+its lines is older than that event (a pinned drift event, such as a
+single item's: its other lines, if it had any, were cut, and the index
+cannot tell). Without `meta.txStatus` nothing is marked and nothing
+claims the transaction completed (an index of an earlier build, or a
+line written before ADR-0043). The Changelog row (and Today's NEEDS YOU row)
 of such an event shows the status as one word in the urgent colour
 before its meta line (`ListRow.alert`), and the sidebar search finds the
 word; the class, the stripe and the counts are unchanged. Then a
@@ -1238,10 +1242,11 @@ network, from the index alone; `sections/Graph.qml` with
   (a foreground ring), Decision (a square, foreground at 72 %), Change (a
   dot, foreground at 42 %, larger with more links), Crisis (the urgent
   spindle), Folded (a ringed dot, only when something folded) — and the
-  keys while there is room. Then the canvas, and the footer: "Newest N
-  events · M completed cases in the index", with " · older ones are only
-  in the logbook" once the index is at its limits (500 events, 50
-  completed cases), and " · K changes folded into G". Until the view is
+  keys while there is room. Then the canvas, and the footer: "N events ·
+  M completed cases in the index" (not "newest": the index lists every
+  listed drift item's event, however old; ADR-0054, WP-208), with " ·
+  the others are only in the logbook" once the index is at its limits
+  (500 events, 50 completed cases), and " · K changes folded into G". Until the view is
   panned or zoomed (or a node dragged) it fits the visible nodes; `0` or
   a fit returns to that. A node keeps a few pixels on screen however far
   out the zoom is. Labels: areas and crises always; cases, decisions and
