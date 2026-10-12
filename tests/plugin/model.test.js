@@ -2918,7 +2918,7 @@ test("transactionDetail: a transaction is partial by its own rows (WP-208)", () 
   delete note.events[note.events.length - 4].txId
   const gone = M.eventDetail(note, M.deskChangelog(note), note.events[note.events.length - 4].id)
   same([gone.transaction.partial, gone.kv.find(r => r[0] === "Transaction")[1]],
-    [false, "not in the index any more (it lists 500 events) · left 1 file"])
+    [false, "not in the index any more (it lists at most 500 events) · left 1 file"])
 })
 
 test("transactions keyed by Object.prototype names keep the desk whole (WP-137 round 2, B2)", () => {
@@ -2992,7 +2992,7 @@ test("transactionDetail: a file pacman left names its transaction (WP-141 hook, 
   // a note whose transaction the index no longer lists
   v.events[0].meta.transaction = "tx-gone"
   const gone = M.eventDetail(v, M.deskChangelog(v), NOTE)
-  same(gone.kv.find(r => r[0] === "Transaction")[1], "not in the index any more (it lists 500 events) · left 1 file")
+  same(gone.kv.find(r => r[0] === "Transaction")[1], "not in the index any more (it lists at most 500 events) · left 1 file")
   // a note without meta.transaction (another source, or a manual note) has none
   assert.strictEqual(M.eventTx({ source: "manual", kind: "note", meta: { transaction: "tx-1" } }), "")
 })

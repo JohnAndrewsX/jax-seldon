@@ -865,12 +865,14 @@ reinstalled; by name within a kind), "name  old → new" or "name
 version", the selected event's line in bold; shown for two or more
 packages, a status or files left (one completed package says no more
 than the rows); a transaction the index may list only in part says "The
-index lists 500 events; the rest of this transaction is in the ledger."
-(WP-208): with the list at its 500-event cap (CONTRACT.md rule 4,
-ADR-0054), one of its lines is the oldest event that is no listed drift
-item's `eventId`, or older than it (a pinned group leader); or it lists
-fewer open members than its drift group's `members`. Without `meta.txStatus` nothing is marked and nothing claims
-the transaction completed (an index of an earlier build, or a line
+index lists at most 500 events; the rest of this transaction is in the
+ledger." (WP-208): with the list at its 500-event cap (CONTRACT.md rule
+4, ADR-0054), one of its lines is the oldest event that is no listed
+drift item's `eventId`, or older than it (a pinned group leader); or,
+at any size (also under rule 5's cut), it lists fewer open members than
+its drift group's `members`. Without `meta.txStatus` nothing is marked
+and nothing claims the transaction completed (an index of an earlier
+build, or a line
 written before ADR-0043). The Changelog row (and Today's NEEDS YOU row)
 of such an event shows the status as one word in the urgent colour
 before its meta line (`ListRow.alert`), and the sidebar search finds the

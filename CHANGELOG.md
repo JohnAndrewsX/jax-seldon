@@ -35,8 +35,8 @@ and the package does not exist yet. Update the plugin first:
   events, a transaction is partial when one of its lines is the oldest
   event that is no listed open change's, or older than it; or when a
   group lists fewer open lines than its `members`, at any size. The
-  detail then says "The index lists 500 events; the rest of this
-  transaction is in the ledger." No contract change.
+  detail then says "The index lists at most 500 events; the rest of
+  this transaction is in the ledger." No contract change.
 
 ## [0.3.0] - 2026-10-12
 

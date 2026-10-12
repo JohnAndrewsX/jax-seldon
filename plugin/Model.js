@@ -6661,7 +6661,7 @@ function transactionRows(tx) {
   var out = []
   if (tx.command !== "") out.push(["Command", tx.command + (tx.clipped ? " (clipped in the index; the ledger has it in full)" : "")])
   var parts = [tx.packages.length > 0 ? tx.summary
-    : "not in the index any more (it lists " + INDEX_EVENTS_MAX + " events)"]
+    : "not in the index any more (it lists at most " + INDEX_EVENTS_MAX + " events)"]
   if (tx.status !== "") parts.push(tx.status)
   if (tx.files > 0) parts.push("left " + plural(tx.files, "file", "files"))
   out.push(["Transaction", parts.join(" · ")])

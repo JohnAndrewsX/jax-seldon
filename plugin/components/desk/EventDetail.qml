@@ -463,7 +463,7 @@ DetailPane {
         width: parent.width
         visible: !!root.transaction && root.transaction.partial
         textFormat: Text.PlainText
-        text: "The index lists " + Model.INDEX_EVENTS_MAX
+        text: "The index lists at most " + Model.INDEX_EVENTS_MAX
           + " events; the rest of this transaction is in the ledger."
         color: root.tone.dim
         wrapMode: Text.Wrap
