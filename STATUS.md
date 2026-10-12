@@ -1,11 +1,13 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
-**Release:** v0.2.0 on GitHub (tag 2026-10-12 on `4a7a2376`, operator
-decision E82): release, plugin split and bump jobs green (the AUR push is skipped: no AUR key yet, the package is not published); build
-provenance verified; restart test on two monitors passed on the dev host
-and a fresh install verified on the test host (2026-10-12). Earlier:
-v0.1.0 (2026-10-02) … v0.1.4.
+**Release:** v0.3.0 on GitHub (tag 2026-10-12 on `4c9f563a`, operator
+decisions E85/E89; acceptance record partial: gate, wip, restart passed on
+the test host, b and c not run because the guard keeps agents out of
+`omarchy plugin update` and red-zone files; acceptance-check ok, E88);
+release, plugin split and bump jobs green, build provenance verified; the
+AUR push is skipped (no AUR key yet, the package is not published).
+Earlier: v0.2.0 (2026-10-12), v0.1.0 (2026-10-02) … v0.1.4.
 **Branches:** `main` = v0.2.0 plus the release bump; `next` carries the
 0.3.0 work (E86); the queue's release plan is below.
 **Contract version:** 2
@@ -42,7 +44,7 @@ compatible addition is a minor release, a fix a patch):
   reports and recipes ADRs → WP-184 (contract 3) → WP-185, WP-186 →
   WP-187 (b, c) → WP-181 stage 2 → WP-189 → WP-197 (after the budget go)
   → WP-188 last (shim removal, WP-192 part 2's tag gate).
-- **Not scheduled:** WP-033 (update-impact, waits for the AUR account),
+- **Not scheduled:** WP-033 (update-impact, waits for the AUR publication),
   WP-114 (its live case: mirrorlist and Omarchy's channel switch),
   WP-131 (parked, E30), WP-095 (superseded by WP-124); WP-132 and WP-133
   target `main` (the dev-host guard, no release). Filing the store
@@ -680,6 +682,12 @@ compatible addition is a minor release, a fix a patch):
 - E88 0.3.0 is tagged without the release workflow's acceptance gate
   (E67), which comes with WP-188; the operator's go quotes
   `packaging/acceptance-check.sh 0.3.0`.
+- E89 the operator's go for tag v0.3.0 and the release, given in
+  advance (operator away); tagged on `4c9f563a` after a green dry run.
+- Orchestrator (release, within CONTRIBUTING "Dependency advisories"):
+  RUSTSEC-2024-0449 (`unsafe-libyaml`, unmaintained, via `serde_yaml`)
+  accepted until 2027-01-31 on Fable's advice; WP-217 replaces the parser
+  before the expiry.
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:
