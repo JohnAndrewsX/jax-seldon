@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ 1d2c8ad2 -->
+<!-- source: en/03-daily-use.md @ e0df9cca -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
@@ -319,7 +319,9 @@ Case gewählt. Kann kein Agent starten, sagt die Zeile unter dem Feld,
 warum und wie du es behebst, und dein Satz bleibt im Feld.
 
 „2 / 3 active“ vergleicht deine aktiven Cases mit deinem Limit. Das
-Limit warnt; es blockiert nie. *By agent* zeigt unter Completed nur die
+Limit warnt; es blockiert nie. Die Zeile steht über den Knöpfen, oder
+neben ihnen, wenn der Desk so schmal ist, dass er Liste und Detail
+untereinander zeigt. *By agent* zeigt unter Completed nur die
 Cases, die ein Agent abgeschlossen hat, für eine Stichprobe, wenn dir
 danach ist (fällig ist sie nie). *Import tasks…* macht aus deiner eigenen
 Markdown-Aufgabenliste geplante Cases, zuerst als Probelauf. *New case*
@@ -332,6 +334,15 @@ COMPLETED (die letzten 50; aufgegebene eingeschlossen). Eine Zeile zeigt
 ID, Risiko, Bereich und die Schritte des Plans. „N proposed“ heißt,
 Seldon hält offene Drift für einen Teil dieses Case. „agent working“
 markiert einen Case, an dem eine Agenten-Sitzung läuft.
+
+Bei einem sehr großen Logbuch listet der Index nur einen Teil der
+wartenden oder aktiven Cases (die Engine hält ihn unter 1 MB). Der Kopf
+der Gruppe zeigt dann beide Zahlen, „QUEUED · 50 / 450“, und die
+WIP-Zeile zählt jeden aktiven Case. Eine Gruppe, von der der Index keinen
+Case listet, behält ihren Kopf, darunter eine gedimmte Zeile „The index
+lists none of them. This lists them:“ und den Befehl, zum Beispiel
+`seldon plan list --status queued`. Die Suche findet nur die gelisteten
+Cases.
 
 Das Detail zeigt den Case: Status, Risiko, Zone, Bereich, Agent,
 Rollback-Snapshot, den ersten Absatz von Intent und Result, den

@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 488725cf -->
+<!-- source: en/11-update-and-uninstall.md @ e0df9cca -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -103,6 +103,46 @@ nur in einem leisen Hinweis um sein eigenes Update („The engine is newer
 than the plugin“). Nach einem Update sollte `seldon doctor` nur `ok`
 zeigen.
 
+## Was sich gegenüber 0.2.x geändert hat
+
+0.3.0 behält das Index-Format von 0.2.0 (Version 2). Aktualisiere Engine
+und Plugin deshalb in beliebiger Reihenfolge, mit den Befehlen oben, und
+starte nach dem Update des Plugins die Shell neu. Ein Plugin 0.2.0 liest
+den Index einer Engine 0.3.0, und ein Plugin 0.3.0 arbeitet mit einer
+Engine 0.2.0. Was sich für dich ändert:
+
+- Jeder Knopf auf dem Desk hat einen Weg per Taste. ↑ oben in einer
+  Liste erreicht die Knöpfe der Hinweise, ↑ auf der ersten Zeile von
+  Today die Einrichtungskarte, ↑ auf der ersten Zeile des Changelog den
+  Vorschlag des Agenten oder *Agent sorts N open changes* (zweimal `a`),
+  Enter unter Settings › Appearance die Breite und die Seitenleiste. ←/→
+  wählen einen Knopf oder einen Wert, Enter bereitet vor, ein zweites
+  Enter führt aus. In einem gezeigten Vorschlag geht ↓ durch seine
+  Krisen, und zweimal Enter wendet die Krise unter dem Cursor allein an.
+  Die Tabelle steht unter [Alltag](03-daily-use.md#tasten).
+- Ein sehr großes Logbuch sperrt den Desk nicht mehr aus. Das Plugin
+  liest einen Index unter 1 MB; die Engine lässt jetzt die ältesten
+  Zeilen weg, bis er passt (Vergangenes zuerst, Krisen zuletzt), hält
+  jede Zahl vollständig, und `seldon status` nennt, was sie weggelassen
+  hat. Das Logbuch und jeder Befehl behalten jede Zeile. Die Köpfe in
+  Work zeigen dann beide Zahlen, „QUEUED · 50 / 450“
+  ([Alltag](03-daily-use.md#work-3)). Ein Plugin 0.2.0 zählt die Gruppen
+  in Work bei einem solchen Index nach den gelisteten Zeilen, bis du es
+  aktualisierst.
+- Jede offene Änderung, die der Index listet, hat ihre Zeile im
+  Changelog und unter *Needs you*, egal wie alt die Änderung ist.
+- Der Agenten-Skill ist ein kurzer Kern, und seine Einzelheiten stehen in
+  Themendateien, die der Kern dort verlinkt, wo eine Aufgabe sie braucht
+  ([Mit Agenten arbeiten](04-working-with-agents.md#der-agentenskill)).
+  Die nächste Erfassung aktualisiert einen Skill, den du nicht geändert
+  hast; ein geänderter bleibt, und `seldon doctor` sagt `outdated`.
+- Mehr Geheimnisse werden geschwärzt, bevor sie ins Logbuch kommen:
+  private Schlüssel in base64, Passwörter in Einstellungen im Stil von
+  Python und in Mount-Optionen und Passphrasen auf der Befehlszeile
+  ([Konfiguration](06-configuration.md#schwärzung)).
+- `omarchy-shell jax.seldon.panel …` leitet noch an den Desk weiter;
+  ein späteres Release entfernt es.
+
 ## Was sich gegenüber 0.1.x geändert hat
 
 0.2.0 ändert die Oberfläche des Plugins und das Index-Format.
@@ -138,8 +178,9 @@ nichts. Starte die Shell in beiden Fällen neu. Was sich für dich ändert:
   [Alltag](03-daily-use.md#tasten).
 - `omarchy-shell shell toggle jax.seldon` öffnet und schließt den Desk;
   leg deine Taste darauf. Das Ziel des Panels von 0.1,
-  `omarchy-shell jax.seldon.panel …`, funktioniert weiter und leitet bis
-  0.3.0 an den Desk weiter; 0.3.0 entfernt es.
+  `omarchy-shell jax.seldon.panel …`, funktioniert weiter und leitet an
+  den Desk weiter; ein späteres Release entfernt es, und das Changelog
+  kündigt das vorher an.
 - Das Index-Format hat die Version 2. Ein Plugin 0.1.x zeigt gegen eine
   Engine 0.2.0 „Index format mismatch“, ein Plugin 0.2.0 ebenso gegen
   eine Engine 0.1.x; beide nennen die Seite, die du aktualisieren musst.
