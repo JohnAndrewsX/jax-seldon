@@ -322,3 +322,41 @@ half (a wrap leaves one half whole).
   *desktop*, *CI*: *not run*.
 - `git diff 5f260bad..HEAD`: no added home path, user or host name; test
   secrets are `hunter2`, `pw`, `fake…` and base64 of made-up text.
+
+## Round 3
+
+Brief: the orchestrator's round 3 from Fable's round-2 re-check (APPROVE
+with N3; orchestrator: a masking regression against the base is fixed
+before merge). One code commit, 3254111f.
+
+- **N3 — a feed inside `$( )` or backticks.** `Reader::substitution`
+  reads the substitution with a lexer of its own and now hands its
+  sticky flag to the line's (`lexer.fed |= inner.fed`): a `|` (not `||`),
+  `<<<` or `<(` inside it feeds the line from there on, read by the same
+  rules as outside, so a quoted `|` (`$(echo '|')`), `||` and `$((1 | 2))`
+  feed nothing. Rows: `fed_commands` `a $(b | c); d` → `[true, true]`,
+  ``a `b <<< c`; d`` → `[true, true]`, `a $(b || c); d $((1 | 2))
+  '$(x | y)'` → `[false, false]`, `a $(echo '|'); d` → `[false, false]`;
+  end to end (`hooks`, `privileged::more_secrets_on_a_privileged_line`):
+  `sudo cryptsetup open /dev/x v --key-file $(printf hunter2 | tee /tmp/k
+  >/dev/null; echo /tmp/k)` → `cryptsetup ‹redacted›`. Mutant `lexer.fed
+  |= inner.fed` removed: killed (lib, hooks; *fixture*, log
+  `gates/mutants-dev-157-round3.log`). SPEC §8 names the substitution in
+  the feed rule.
+- **N1:** SPEC §7 "masked too much" now says "each line of an unbroken
+  run of unindented lines of 40 or more base64 characters right before
+  it", as the code does.
+- N2 stays for WP-209.
+
+### How it was verified (round 3)
+
+- **`SELDON_FULL_CHECK=1 flock /tmp/seldon-check.lock just check` on
+  3254111f: exit 0, `check: ok`** (log `gates/check-dev-157-round3.log`):
+  112 test binaries, 2903 passed, 0 failed, 22 ignored; install 229/0,
+  bar-view 196/0, deploy-test-host 326/0, qmllint ok, docs-check ok,
+  plugin-test ok with the Quickshell harnesses (*headless*); desk-view
+  passed, no real-home guard failure. Engine tests: *fixture*.
+- `just check-perf`: not re-run for this round (the change is one OR of a
+  flag per substitution); round 2's paired result stands: *not green*, as
+  on the base.
+- shellcheck, *test host*, *desktop*, *CI*: *not run*.
