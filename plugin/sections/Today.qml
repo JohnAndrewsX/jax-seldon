@@ -317,8 +317,10 @@ Section {
     emptyText: root.preview ? Model.previewSummary(root.preview) : root.index ? "" : "No index to show"
 
     // The date beside the day's state; *Open in editor* follows it on the
-    // same line when there is room, else under it.
+    // same line when there is room, else under it. A header row for the
+    // harness's overlap check (WP-211, WP-215).
     Item {
+      objectName: "headerRow:today"
       width: parent.width
       implicitHeight: Math.max(stateIcon.visible ? stateIcon.height : 0, dateFlow.implicitHeight)
 

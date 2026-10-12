@@ -66,6 +66,12 @@ import "../Model.js" as Model
 // Hand to agent (twice) or Focus (once), `x` Drop (twice), `r` Reopen, `e` Open in editor, `i` the intent
 // field, `+` the new-case sheet; Esc leaves a field or closes the sheet
 // (its draft kept). Any other key, a new selection or a new index disarms.
+// ↑ on the first row (or in an empty list) reaches the header's buttons
+// (WP-215, the WP-202 pattern): ←/→ *By agent*, *Import tasks…*, *New
+// case*, Enter arms the one under the cursor and the second Enter runs its
+// click; ↓ goes back to the first row, ↑ on to the notices; a click, a
+// summon, another section or selection drops the cursor's place and its
+// arm. None of the three starts an agent.
 Section {
   id: root
 
@@ -80,7 +86,8 @@ Section {
   readonly property var prepared: root.service ? root.service.deskWork : null
   readonly property var work: Model.workView(root.prepared, root.completedFilter, root.searchText)
   readonly property var rows: root.work.rows
-  readonly property int cursor: root.rowIndex(root.selectedId)
+  // While a header button has the keys no row is the cursor.
+  readonly property int cursor: root.headFocused ? -1 : root.rowIndex(root.selectedId)
   readonly property var sessions: root.service ? root.service.agentSessions : ({})
   readonly property var detailData: Model.withSession(Model.caseDetail(root.index, root.prepared, root.selectedId), root.sessions)
   readonly property var current: root.detailData ? root.detailData.row : null
@@ -108,6 +115,17 @@ Section {
   readonly property string reviewKey: root.detailData && root.detailData.imported && root.detailData.actionable
     ? root.detailData.id + "@" + (root.index ? String(root.index.generatedAt) : "") : ""
   readonly property bool formOpen: root.sheetOpen || root.importOpen
+  // WP-215: the keys' cursor on a header button ("agent", "import",
+  // "new"), "" while it is in the list; the button under it and the arm id
+  // its press makes (Model.workHeadTargets).
+  property string headButton: ""
+  readonly property bool headFocused: root.headButton !== ""
+  readonly property var headTargets: Model.workHeadTargets(root.completedFilter === Model.COMPLETED_FILTER_AGENT,
+    root.importOpen, root.sheetOpen, root.canWrite)
+  readonly property var headTarget: root.headFocused ? Model.pickAction({ actions: root.headTargets }, root.headButton) : null
+  readonly property string headKey: root.headTarget ? root.headTarget.key : ""
+  readonly property bool headArmed: root.headKey !== "" && !!root.arm && root.arm.armedId === root.headKey
+  onHeadKeyChanged: root.disarmHead()
 
   editing: intentField.activeFocus || (root.sheetOpen && sheet.editing) || (root.importOpen && importForm.editing)
 
@@ -119,11 +137,59 @@ Section {
 
   function disarm() {
     if (root.arm && root.arm.armedId.indexOf("case:") === 0) root.arm.disarm()
+    root.disarmHead()
+  }
+
+  function disarmHead() {
+    if (root.arm && root.arm.armedId.indexOf("work:") === 0) root.arm.disarm()
+  }
+
+  // The header's buttons have the keys (WP-215): the first one under the
+  // cursor; on a stacked desk showing a detail the list comes back.
+  function focusHead() {
+    root.headButton = root.headTargets[0].id
+    if (root.stacked && root.detailShown && root.desk) root.desk.back()
+    return true
+  }
+
+  // A press on the desk, a summon, the notices: the cursor's place on a
+  // header button goes, and its arm (WP-202's detours).
+  function leaveKeys() {
+    root.headButton = ""
+    root.disarmHead()
+  }
+
+  function enterFromTop() {
+    root.focusHead()
+  }
+
+  // A header button pressed (its click, or Enter twice on it): exactly
+  // what the button does.
+  function headClick(id) {
+    if (id === "agent") root.toggleCompletedFilter()
+    else if (id === "import") root.importOpen ? root.closeImport() : root.openImport()
+    else if (id === "new") root.sheetOpen ? root.closeSheet() : root.openSheet()
+  }
+
+  // Enter on the button under the cursor: arms; the second Enter runs its
+  // click. An off button arms nothing (the line says why).
+  function pressHead() {
+    var b = root.headTarget
+    if (!b || !b.enabled || !root.arm) return
+    if (root.arm.press(b.key, Model.keyArmHint(b.label))) root.headClick(b.id)
   }
 
   function move(dy) {
-    // ↑ at the top: on to the notices (WP-202)
-    if (dy < 0 && (root.rows.length === 0 || root.cursor === 0)) return false
+    if (root.headFocused) {
+      // ↑ on to the notices; ↓ back to the first row
+      if (dy < 0) return false
+      if (root.rows.length === 0) return true
+      root.leaveKeys()
+      root.selectedId = root.rows[0].id
+      return true
+    }
+    // ↑ at the top: the header's buttons (WP-215), then the notices (WP-202)
+    if (dy < 0 && (root.rows.length === 0 || root.cursor === 0)) return root.focusHead()
     if (root.rows.length === 0) return true
     var from = root.cursor >= 0 ? root.cursor : dy > 0 ? -1 : root.rows.length
     root.selectedId = root.rows[Math.max(0, Math.min(root.rows.length - 1, from + dy))].id
@@ -161,7 +227,18 @@ Section {
     return verb !== "" ? root.service.plan(verb, c.id) : false
   }
 
+  function moveAcross(dx) {
+    if (!root.headFocused) return false
+    root.headButton = Model.stepAction({ actions: root.headTargets }, root.headButton, dx)
+    return true
+  }
+
   function activate() {
+    // on a header button: arm, then run its click (never an agent)
+    if (root.headFocused) {
+      root.pressHead()
+      return true
+    }
     if (root.stacked && !root.detailShown) {
       if (root.desk) root.desk.showDetail()
       return true
@@ -180,6 +257,7 @@ Section {
   }
 
   function focusIntent() {
+    root.leaveKeys()
     root.disarm()
     if (root.sheetOpen) root.closeSheet()
     if (root.importOpen) root.closeImport()
@@ -188,6 +266,7 @@ Section {
   }
 
   function openSheet() {
+    root.leaveKeys()
     root.disarm()
     if (!root.canWrite) return
     root.importOpen = false
@@ -202,6 +281,7 @@ Section {
   }
 
   function openImport() {
+    root.leaveKeys()
     root.disarm()
     if (!root.canWrite) return
     root.sheetOpen = false
@@ -249,6 +329,8 @@ Section {
   }
 
   function select(id) {
+    // "header": the header's buttons get the keys (navigation only, WP-215)
+    if (String(id) === "header") return root.focusHead()
     if (!Model.findWorkRow(root.prepared, String(id))) return false
     if (root.rowIndex(String(id)) === -1) root.completedFilter = ""
     root.sheetOpen = false
@@ -312,6 +394,8 @@ Section {
       wip: root.wip.text,
       // the WIP line beside the buttons, not above them (WP-211)
       wipBeside: wipRow.beside,
+      // the keys on the header's buttons (WP-215)
+      head: { button: root.headButton, key: root.headKey, armed: root.headArmed, hint: headHint.text },
       cursor: root.cursor,
       selected: root.selectedId,
       working: Object.keys(root.sessions || {}).sort(),
@@ -402,6 +486,7 @@ Section {
   // Another section shown: disarm; a field gives the keys back, the sheet
   // and the import form stay open with their drafts.
   onActiveChanged: if (!root.active) {
+    root.leaveKeys()
     root.disarm()
     if (root.editing && root.desk) root.desk.takeKeys()
   }
@@ -544,7 +629,12 @@ Section {
           fontSize: Style.font.caption
           verticalPadding: Style.spacing.xs
           tooltipText: "Completed: only the cases an agent closed (a spot check)"
-          onClicked: root.toggleCompletedFilter()
+          hasCursor: root.headButton === "agent"
+          onClicked: root.headClick("agent")
+
+          FocusRing {
+            shown: root.headButton === "agent"
+          }
         }
 
         Button {
@@ -559,7 +649,12 @@ Section {
           fontFamily: Style.font.family
           fontSize: Style.font.caption
           verticalPadding: Style.spacing.xs
-          onClicked: root.importOpen ? root.closeImport() : root.openImport()
+          hasCursor: root.headButton === "import"
+          onClicked: root.headClick("import")
+
+          FocusRing {
+            shown: root.headButton === "import"
+          }
         }
 
         Button {
@@ -575,9 +670,29 @@ Section {
           fontFamily: Style.font.family
           fontSize: Style.font.caption
           verticalPadding: Style.spacing.xs
-          onClicked: root.sheetOpen ? root.closeSheet() : root.openSheet()
+          hasCursor: root.headButton === "new"
+          onClicked: root.headClick("new")
+
+          FocusRing {
+            shown: root.headButton === "new"
+          }
         }
       }
+    }
+
+    // The keys that reach the buttons (WP-215); while armed, the second
+    // Enter's question.
+    Text {
+      id: headHint
+      objectName: "workHeadHint"
+      width: parent.width
+      textFormat: Text.PlainText
+      text: root.headArmed ? root.arm.hint
+        : Model.workHeadHint(root.headFocused, root.headTarget && !root.headTarget.enabled && root.service ? root.service.writeBlocker : "")
+      color: root.headArmed ? root.foreground : root.dim
+      wrapMode: Text.Wrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
     }
 
     // The engine's answer to the last case action; a refused new case
@@ -608,7 +723,7 @@ Section {
       aside: (modelData.status === "active" && !!root.sessions && !!root.sessions[modelData.id] ? "agent working · " : "")
         + modelData.stepsText
       stripe: modelData.stripe
-      selected: modelData.id === root.selectedId && !root.formOpen
+      selected: modelData.id === root.selectedId && !root.formOpen && !root.headFocused
       cursor: list.hoverIndex === index
       onClicked: {
         root.sheetOpen = false

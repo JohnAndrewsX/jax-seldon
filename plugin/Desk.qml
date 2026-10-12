@@ -40,7 +40,8 @@ import "Model.js" as Model
 // disarms. A held key repeats only where it moves (keyPressed). Every
 // button has a key path (WP-202): ↑ at the top of a section's list goes
 // on to the notices' buttons (below), the sections reach their own
-// (Today's setup card, the Changelog's Agent sorts, Settings' controls);
+// (Today's setup card, the Changelog's Agent sorts, Work's header
+// buttons, Settings' controls);
 // Enter arms, the second Enter runs what the click runs, and a click on
 // the desk, a summon or a selection is a detour that drops the arm.
 //

@@ -9,8 +9,13 @@ import "../../Model.js" as Model
 // Omarchy version · captured N ago; the status chip when a notice is up
 // (the first notice's title and how many more, or "N notices" where the
 // title does not fit; a click folds the notices under the header); the KPI strip; Settings (`,`) and Esc.
+// Where the subline does not fit left of the KPI strip (a 740 px desk) it
+// wraps into the room there, on two lines at most (WP-215). The row is
+// `headerRow:desk` for the harness's overlap check (WP-211).
 Item {
   id: root
+
+  objectName: "headerRow:desk"
 
   readonly property Tone tone: Tone {}
 
@@ -54,11 +59,20 @@ Item {
     text: "H"
   }
 
+  TextMetrics {
+    id: subMetrics
+    font: sub.font
+    text: sub.text
+  }
+
   Item {
     id: brand
+    // the subline's room: up to the KPI strip, its spacing kept
+    readonly property real room: Math.max(0, kpiStrip.x - Style.spacing.huge - brand.x - title.x)
+    objectName: "deskBrand"
     x: Style.spacing.huge
     anchors.verticalCenter: parent.verticalCenter
-    width: title.x + Math.max(title.implicitWidth, sub.implicitWidth)
+    width: title.x + Math.max(title.implicitWidth, sub.width)
     height: Math.max(root.mark.box, sub.y + sub.implicitHeight)
 
     MaskIcon {
@@ -89,8 +103,13 @@ Item {
       id: sub
       x: title.x
       anchors.top: title.bottom
+      // whole pixels: a line that fits must not wrap on a rounding
+      width: Math.min(Math.ceil(subMetrics.advanceWidth), brand.room)
       textFormat: Text.PlainText
       text: root.subline
+      wrapMode: Text.Wrap
+      maximumLineCount: 2
+      elide: Text.ElideRight
       color: root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -151,6 +170,7 @@ Item {
 
   KpiStrip {
     id: kpiStrip
+    objectName: "kpiStrip"
     anchors.right: tools.left
     anchors.rightMargin: Style.spacing.huge
     anchors.verticalCenter: parent.verticalCenter

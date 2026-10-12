@@ -500,7 +500,10 @@ Section {
       }
     }
 
+    // The count line, *Ledger* and *Capture now*; a header row for the
+    // harness's overlap check (WP-211, WP-215).
     Item {
+      objectName: "headerRow:changelog"
       width: parent.width
       implicitHeight: Math.max(countText.implicitHeight, captureButton.implicitHeight)
 
@@ -579,6 +582,7 @@ Section {
     }
 
     Item {
+      objectName: "headerRow:changelog-hidden"
       width: parent.width
       visible: root.hiddenCount > 0
       implicitHeight: Math.max(hiddenText.implicitHeight, showButton.implicitHeight)
