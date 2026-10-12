@@ -1079,7 +1079,12 @@ reaches the engine, Review opens the new one; WP-201: a crisis by key —
 (`--item`), the other stays open, a press on the desk, ↑ or IPC `select`
 drops the arm, the same on a stacked desk once Enter shows the detail;
 A armed, replaced by B, A current again (the fake engine's
-`FAKE_SELDON_FIXTURE_BACK`): no arm comes back; a 200 × 10 proposal of
+`FAKE_SELDON_FIXTURE_BACK`): no arm comes back; round 2: Enter on an
+applied crisis does nothing and says "Resolved", a crisis rewritten by
+an agent under the cursor only arms again (`FAKE_SELDON_PROPOSAL_AFTER`),
+a press drops an Apply armed by Enter, and a live 200 × 10 proposal with
+three crises: no crisis by key before its items are built, then each
+crisis's button in view on a 600 px window; a 200 × 10 proposal of
 256-character texts — items built only when shown and in the background,
 the click under 200 ms, nothing outside its box at 1920, 960 and 700 px); Work on the sample (groups, the case
 detail, the bar by status, dev mode's refusal, By agent, a reopen) and
