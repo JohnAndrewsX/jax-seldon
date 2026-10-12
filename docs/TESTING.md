@@ -996,7 +996,12 @@ button; its result in `call`) and `timedClickName:<objectName>` (a click;
 `graphDrag:<id|empty>:<dx>,<dy>` (press on a node, or on a point with
 no node near, move, release; `call` holds the node's window point
 before and after); `HARNESS_NO_PILL` runs without the pill (the
-plugin not in the bar). The facade stand-in answers `false` when the
+plugin not in the bar); `HARNESS_WAIT_INDEX` holds the first step until
+the service holds an index (in the same 15 s; a timeout is logged), so
+a live case — no index file at start, the fake engine's start-up
+`status` writes it — asserts the loaded state instead of racing that
+write: every live case that reads the index from its first step sets
+it (WP-205). The facade stand-in answers `false` when the
 entry would not change, as `shell.qml` does. After each it prints
 `Desk.view()` (with the current section's own `view()` as
 `sectionView`), the facade's calls and writes, every visible text and
