@@ -2,7 +2,7 @@
 # STATUS.md — Seldon
 
 **Release:** v0.2.0 on GitHub (tag 2026-10-12 on `4a7a2376`, operator
-decision E82): release, plugin split, AUR and bump jobs green; build
+decision E82): release, plugin split and bump jobs green (the AUR push is skipped: no AUR key yet, the package is not published); build
 provenance verified; restart test on two monitors passed on the dev host
 and a fresh install verified on the test host (2026-10-12). Earlier:
 v0.1.0 (2026-10-02) … v0.1.4.
