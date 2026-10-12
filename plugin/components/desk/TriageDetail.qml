@@ -53,20 +53,27 @@ DetailPane {
   readonly property bool discardArmed: root.current && !!root.arm && root.arm.armedId === root.discardKey
   // Enter arms Apply proposals, the second Enter applies (WP-126c; a click
   // applies at once, as before)
-  readonly property string applyKey: "triage:apply:" + root.seenId
+  // the id names what the second Enter would apply (WP-201 round 2, I7)
+  readonly property string applyKey: Model.triageApplyKey(root.seenId, root.proposal)
   readonly property bool applyArmed: root.current && !!root.arm && root.arm.armedId === root.applyKey
   readonly property bool applyEnabled: !!root.proposal && root.canWrite && !root.pending && root.proposal.readable
   // A crisis by key (WP-201): the crisis under the cursor (-1: none, the
-  // bar has the keys), walked by ↓/↑ from the bar while the pane is shown
-  // (Changelog.move); Enter arms it, the second Enter runs the
-  // click's applyCrisis. Any move, a detour (a press, another selection,
-  // leaving the proposal) or a replaced proposal drops the cursor's place
-  // and the arm.
+  // bar has the keys), walked by ↓/↑ from the bar once the items are built
+  // (round 2, I1: never a crisis whose item and button are not on screen;
+  // until then ↓ goes to the list) (Changelog.move); Enter arms it, the
+  // second Enter runs the click's applyCrisis. Any move, a detour (a
+  // press, another selection, leaving the proposal) or a replaced
+  // proposal drops the cursor's place and the arm.
   property int crisisAt: -1
-  readonly property int crisisCount: root.shown && root.proposal ? root.proposal.crises.length : 0
+  readonly property int crisisCount: root.shown && root.proposal && items.status === Loader.Ready ? root.proposal.crises.length : 0
   readonly property var keyedCrisis: root.crisisAt >= 0 && root.crisisAt < root.crisisCount ? root.proposal.crises[root.crisisAt] : null
+  // The keyed crisis's button (set by its delegate), for crisisVisible.
+  property Item keyedButton: null
+  // Why nothing can be applied now ("" a run is under way, or it can).
+  readonly property string blocker: root.service ? root.service.writeBlocker : ""
+  readonly property string crisisState: Model.crisisState(root.keyedCrisis, root.canWrite && !root.pending && root.current)
   readonly property bool crisisArmed: root.current && !!root.keyedCrisis && !!root.arm
-    && root.arm.armedId === Model.crisisKey(root.seenId, root.keyedCrisis.eventId)
+    && root.arm.armedId === Model.crisisKey(root.seenId, root.keyedCrisis)
   readonly property color foregroundColor: Color.popups.text
 
   title: "Proposal"
@@ -136,10 +143,12 @@ DetailPane {
     return to !== null
   }
 
+  // The arm's id is built from the live item (Model.crisisKey): an item
+  // rewritten since the first Enter only arms again, with its new hint.
   function pressCrisis() {
     var c = root.keyedCrisis
     if (!c || !c.open || !root.current || !root.canWrite || root.pending || !root.arm) return false
-    if (root.arm.press(Model.crisisKey(root.seenId, c.eventId), Model.crisisArmHint(c.subject)))
+    if (root.arm.press(Model.crisisKey(root.seenId, c), Model.crisisArmHint(c)))
       root.applyCrisis(c.eventId)
     return true
   }
@@ -149,13 +158,45 @@ DetailPane {
     if (root.service && root.current) root.service.applyProposal(root.seenId, eventId)
   }
 
-  // The crisis under the cursor inside the scrolling content.
-  function reveal(item) {
+  // A crisis delegate's keyed state changed, or it was made (keyed) by a
+  // rebuild: remember its button and bring it into view.
+  function keyCrisis(item, button, keyed) {
+    if (keyed) {
+      root.keyedButton = button
+      root.reveal(item, button)
+    } else if (root.keyedButton === button) {
+      root.keyedButton = null
+    }
+  }
+
+  // The crisis under the cursor inside the scrolling content (I2): the
+  // whole item when it fits, else its button's end at the bottom; a
+  // scroll only when it is not in view already.
+  function reveal(item, button) {
     var f = root.flickable
-    var y = item.mapToItem(f.contentItem, 0, 0).y
-    if (y < f.contentY) f.contentY = Math.max(0, y)
-    else if (y + item.height > f.contentY + f.height)
-      f.contentY = Math.max(0, Math.min(y + item.height - f.height, f.contentHeight - f.height))
+    var view = f.height
+    var top = item.mapToItem(f.contentItem, 0, 0).y
+    var from = top
+    var to = top + item.height
+    if (item.height > view) {
+      to = button.mapToItem(f.contentItem, 0, 0).y + button.height
+      from = to - view
+    }
+    var y = f.contentY
+    if (from < y) y = from
+    else if (to > y + view) y = to - view
+    else return
+    var max = Math.max(0, f.contentHeight - view)
+    f.contentY = Math.max(0, Math.min(y, Math.max(max, to - view)))
+  }
+
+  // The keyed crisis's button lies inside the visible part of the pane.
+  function crisisVisible() {
+    var b = root.keyedButton
+    if (root.crisisAt < 0 || !b) return false
+    var f = root.flickable
+    var y = b.mapToItem(f.contentItem, 0, 0).y
+    return y >= f.contentY - 0.5 && y + b.height <= f.contentY + f.height + 0.5
   }
 
   onActionTriggered: function(id) {
@@ -203,7 +244,9 @@ DetailPane {
       discardArmed: root.discardArmed,
       crisisAt: root.crisisAt,
       crisisArmed: root.crisisArmed,
-      crisisHint: root.crisisCount > 0 ? Model.crisisHint(root.crisisAt >= 0) : "",
+      crisisHint: root.crisisCount > 0 ? Model.crisisHint(root.crisisState, root.blocker) : "",
+      crisisVisible: root.crisisVisible(),
+      scroll: { y: Math.round(root.flickable.contentY), h: Math.round(root.flickable.contentHeight), view: Math.round(root.flickable.height) },
       result: root.result && !root.result.pending ? resultText.text : "",
       resultOk: root.result ? root.result.ok : true,
       built: items.status === Loader.Ready,
@@ -375,7 +418,7 @@ DetailPane {
         Line {
           objectName: "crisisHint"
           visible: !!root.proposal && root.proposal.crises.length > 0
-          text: Model.crisisHint(root.crisisAt >= 0)
+          text: Model.crisisHint(root.crisisState, root.blocker)
           color: root.tone.dim
           font.pixelSize: Style.font.caption
         }
@@ -392,13 +435,18 @@ DetailPane {
 
             width: parent.width
             spacing: Style.spacing.sm
-            onKeyedChanged: if (crisis.keyed) root.reveal(crisis)
+            onKeyedChanged: root.keyCrisis(crisis, crisisButton, crisis.keyed)
+            // laid out (or its texts wrapped) after it was keyed: in view again
+            onYChanged: if (crisis.keyed) root.reveal(crisis, crisisButton)
+            onHeightChanged: if (crisis.keyed) root.reveal(crisis, crisisButton)
+            Component.onCompleted: if (crisis.keyed) root.keyCrisis(crisis, crisisButton, true)
 
             Proposed {
               modelData: crisis.modelData
             }
 
             Button {
+              id: crisisButton
               text: "Apply this crisis"
               tooltipText: "Only this item: drift apply --item " + crisis.modelData.eventId
               bordered: true

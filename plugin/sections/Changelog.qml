@@ -130,10 +130,14 @@ Section {
   }
 
   // A press on the desk (WP-202): the keys' place on *Agent sorts* and on a
-  // crisis goes, with its arm (WP-201).
+  // crisis goes, with its arm (WP-201), and so does an armed *Apply
+  // proposals*: a click applies it at once, so its arm is always made by
+  // a key (round 2, I4). Discard's arm stays: it is made and confirmed by
+  // clicks.
   function leaveKeys() {
     root.askFocused = false
     triage.crisisAt = -1
+    if (root.arm && root.arm.armedId.indexOf("triage:apply:") === 0) root.arm.disarm()
   }
 
   function enterFromTop() {
@@ -444,7 +448,7 @@ Section {
             objectName: "proposalHint"
             width: parent.width
             textFormat: Text.PlainText
-            text: Model.proposalHint(root.triageShown, root.stacked && !root.detailShown, triage.crisisCount, triage.crisisAt >= 0)
+            text: Model.proposalHint(root.triageShown, root.stacked && !root.detailShown, triage.crisisCount, triage.crisisState, triage.blocker)
             color: root.dim
             wrapMode: Text.Wrap
             font.family: Style.font.family
