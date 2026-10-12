@@ -2696,8 +2696,8 @@ mod redaction {
                 "-H 'Authorization:' \"X-Api-Key:\" ",
             ),
             // WP-157: base64 runs and line ends with a `-----BEGIN` too
-            // short, or broken, after them; a mount with options but no
-            // password; nmcli fields; single-quoted keys without a value
+            // short, or broken, after them; a mount line with option words
+            // but no `-o`; nmcli fields; single-quoted keys without a value
             // one run of base64 characters with no `-----BEGIN` in it:
             // the token's leading part is tried from each of its starts
             ("base64 run", "LS0tLS1CRUdJTi x\n", "QUFB"),
@@ -2707,9 +2707,9 @@ mod redaction {
                 "QUFBQUFB+/LS0tLS1CRUdJ\nLS0tQkVHSU4 LS0tLUJFR0l x\n",
             ),
             (
-                "mount options",
+                "mount words",
                 "mount -t cifs //s/x /m ",
-                "-o ro,user=bob,bypass=1 'a;b' pass= ",
+                "ro,user=bob,pass=1 'a;b' x-o ",
             ),
             (
                 "nmcli fields",
@@ -2828,12 +2828,19 @@ mod redaction {
                 Some(20),
             ),
             // WP-157: base64 keys, each followed by a line of base64 that
-            // continues it; mount option lists; nmcli fields before a
-            // secret; Python dicts
+            // continues it; mount option lists, each a match that the
+            // check of its value rejects, and ones with a password; nmcli
+            // fields before a secret; Python dicts
             (
                 "base64 keys",
                 "keys ",
                 "LS0tLS1CRUdJTiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nAAAA x\n",
+                Some(20),
+            ),
+            (
+                "mount option lists",
+                "mount -t cifs //s/x /m ",
+                "-o ro,user=bob,bypass=1 'a;b' pass= ",
                 Some(20),
             ),
             (
