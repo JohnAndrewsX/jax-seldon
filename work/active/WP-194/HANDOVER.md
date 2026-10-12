@@ -250,8 +250,20 @@ the ledger's `about` say the line is a hint and when the check fails.
 
 | Check | Where |
 |---|---|
-| `tests/omarchy/assumptions.test.sh` on the merged tree: 46 checks, including the moved-line rows | fixture; installed-tree part on a scratch copy of the desktop's tree |
+| `tests/omarchy/assumptions.test.sh` on the merged tree: 45 checks, including the moved-line rows | fixture; installed-tree part on a scratch copy of the desktop's tree |
 | three mutants of the new lint, all caught | fixture |
 | shellcheck of the script and the test | test host (E80 wrapper) |
 | `SELDON_FULL_CHECK=1 just check` under `flock /tmp/seldon-check.lock` on the merged tree | headless — result below |
 
+**Round-3 gate:** `SELDON_FULL_CHECK=1 just check` under `flock
+/tmp/seldon-check.lock`, with the E80 shellcheck wrapper on `PATH`,
+exited 0 (`check: ok`) on 9b0c09b3, the merge of `next` 23fd3105 plus
+the round-3 fix. Log in the private `gates/check-dev-194-r3.log`: cargo
+tests 2893 passed, 0 failed; check-packaging ok; install 230/0;
+deploy-test-host 327/0; runtime-dir 45/0; assumptions.test ok (45
+checks, among them both moved-line rows); check-upstream ok (17 files);
+docs-check ok; plugin-validate ok; qmllint ok (52 files);
+terminal-scripts 73/0; real-home-guard 40/0; check-tokens 14/0;
+service-states 366/0; desk-view 2243/0; bar-view 195/0; ipc-restart
+43/0. Only this paragraph follows 9b0c09b3. The scratch `TMPDIR` is
+empty afterwards.
