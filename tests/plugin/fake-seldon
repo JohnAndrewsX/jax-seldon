@@ -87,6 +87,11 @@
 #   FAKE_SELDON_VERSION_DELAY  seconds `--version` waits before it answers;
 #                        the harness waits for the probe, so its first step
 #                        meets the start-up capture still running (WP-138)
+#   FAKE_SELDON_FIRST_WRITE_DELAY  seconds the first `status` in mode ok
+#                        waits before it writes the index ($HOME/first-write
+#                        marks it done): a live case meets no index for its
+#                        first steps; desk-view.sh sets it on every live
+#                        case under SELDON_FULL_CHECK=1 (WP-205)
 #   FAKE_SELDON_RULES    the rules row `doctor --json` reports: current
 #                        (default) | outdated | damaged; $HOME/rules overrides
 #                        it, and `rules update` writes "current" there (WP-101);
@@ -882,6 +887,10 @@ case "$cmd" in
   status)
     sleep 0.3
     [[ $mode == uninit ]] && uninit
+    if [[ -n ${FAKE_SELDON_FIRST_WRITE_DELAY:-} && ! -e $HOME/first-write ]]; then
+      touch "$HOME/first-write"
+      sleep "$FAKE_SELDON_FIRST_WRITE_DELAY"
+    fi
     state=${XDG_STATE_HOME:-}
     [[ $state == /* ]] || state="$HOME/.local/state"
     dir="$state/seldon"

@@ -178,3 +178,22 @@ here-string, a process substitution, or a file the line writes),
 `openssl passwd` and `wpa_passphrase` (SPEC-ENGINE §8). The list is hook-local, as the stdin check is. nmcli's secrets are
 named by their property, so they are a §7 rule (`nmcli-secret`) and an
 nmcli line keeps its other words.
+
+## Amendment note (WP-157, 2026-10-12)
+
+The follow-ups of WP-140's Fable stage 2, not a new decision. The
+hook-local list gains `ssh-keygen -N`/`-P` with a value that is not empty,
+`mkpasswd` with an operand, `-s`/`--stdin` or fed, and any program to
+which the line gives a process substitution after an option or keyword
+that names a secret (`--password-file <(echo PW)`). A command counts as
+fed when, earlier on the line (before its first word, across line ends,
+`(`, loops, `if` and `>(…)`) or among its own words, the text holds `|`
+or `|&` (not `||`), `<<<` or `<(`, or a fed `sh -c` around it, or when
+the line writes a file (round 2: sticky, not scoped, as the parser reads
+compounds flat); a pipe after it no longer counts (`passwd -S alice |
+grep` stays whole), and a command after an unrelated pipe is masked too
+much, by design (`a | b; sudo passwd -S alice`). `xargs` is a wrapper of the shared parser, so `… |
+sudo xargs <program>` is read as `<program>` (its subject, its class, its
+secret). A mount password (`mount -o pass=…`) is a SPEC-ENGINE §7 rule
+(`mount-password`), as nmcli's secrets are, so a mount line keeps its
+other words (SPEC-ENGINE §7, §8).

@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ caf2bcf2 -->
+<!-- source: en/06-configuration.md @ e69d7954 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -333,8 +333,8 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
 - der Wert eines JSON-Schlüssels wie `"password"`, `"passwd"`,
   `"client_secret"`, `"access_token"`, `"api_key"`, `"x-api-key"` oder
   `"apiKey"` in
-  eingebettetem JSON (`curl -d '{"password": "…"}'`); `"password_hint"`
-  bleibt;
+  eingebettetem JSON (`curl -d '{"password": "…"}'`), auch in einem
+  Python-Dict (`{'x-api-key': '…'}`); `"password_hint"` bleibt;
 - AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
   `gho_…`, `github_pat_…` und die übrigen `gh…_`-Formen), GitLab-Tokens
   (`glpat-…`), Slack-Tokens (`xoxb-…`), API-Schlüssel (`sk-…`, `sk_…`);
@@ -351,10 +351,15 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   `--proxy` oder in `https_proxy=`;
 - ein privater PEM-Schlüssel (`-----BEGIN OPENSSH PRIVATE KEY-----` und
   die anderen `… PRIVATE KEY`-Blöcke): alles zwischen seiner BEGIN- und
-  END-Zeile wird ein einziges `‹redacted›`;
+  END-Zeile wird ein einziges `‹redacted›`; ein PEM-Block in Base64, wie
+  ein Kubernetes-Secret ihn hält (`tls.key: LS0tLS1CRUdJTi…`), wird ganz
+  geschwärzt;
 - Passwörter und Schlüssel von nmcli: der Wert nach `password`,
   `wifi-sec.psk`, `802-1x.password`, `vpn.secrets` und den anderen
-  geheimen Eigenschaften;
+  geheimen Eigenschaften (kein Feld, das nur angezeigt wird: `nmcli -g
+  wifi-sec.psk con show`);
+- ein Mount-Passwort: die Optionsliste mit `pass=` oder `pwd=` nach
+  `mount -o`;
 - Benutzer und Passwort in einer URL (`https://user:secret@host`), auch
   wenn das Passwort `/`, `?`, `#` oder `:` enthält.
 - der Teil vor dem `@` einer E-Mail-Adresse: `me@example.com` lautet

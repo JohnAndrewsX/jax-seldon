@@ -2869,7 +2869,28 @@ number of lines, LF or CRLF; a block whose END a clip cut off is masked
 to the end of the text, and an END line whose BEGIN was cut off masks
 the run of base64 characters, white space and line ends before it; its
 trigger is `private key`; first, so no later rule cuts the body into
-pieces); URLs with userinfo; `--password`
+pieces); a PEM block in base64 (`private-key-base64`, WP-157: as a
+Kubernetes secret or another YAML or JSON file holds a key, `tls.key:
+LS0tLS1CRUdJTi…`): one token of base64 characters that holds
+`-----BEGIN` encoded at any of the three alignments to the start of the
+encoded text (`LS0tLS1CRUdJTi`, `LS0tQkVHSU4`, `LS0tLUJFR0lO`, so a file
+with text before the key, such as openssl's `Bag Attributes`, counts
+too), the marker also cut by a line end and indentation where a wrap
+cuts it, then at least 40 more characters on its line, or fewer and a
+next line of 40 or more (round 2), masked whole from the token's first
+character and from the first of the unindented lines of 40 or more
+base64 characters right before it (the wrapped text before the key),
+and with it each following line that holds base64 characters only after
+its indentation (`=` padding at its end), LF or CRLF, as `base64` wraps
+its output and a YAML block scalar indents it, and each part after a
+literal `\n` inside a shell string (measured, round 2: with 1 to 399
+bytes before `-----BEGIN` and `base64`'s 76-column wrap, every line from
+the marker's on is masked at all 399 offsets, also indented as YAML and
+with CRLF; before round 2, 259 of them were not masked at all); its
+triggers are each marker's first and second half as written
+(`LS0tLS1`, `CRUdJTi`, `LS0tQ`, `kVHSU4`, `LS0tLU`, `JFR0lO`: a wrap
+leaves one half whole); second, so no later rule (`aws-access-key`,
+`key-assignment`) cuts the token first; URLs with userinfo; `--password`
 (also wget's `--http-password` and `--ftp-password`);
 `--token`, `--with-token`, `--secret`, `--client-secret`, `--passphrase`,
 curl's `--pass`, `--proxy-pass` and `--oauth2-bearer`, xh's `--bearer`
@@ -2887,7 +2908,10 @@ JSON key that ends in `password`, `passwd`, `passphrase`, `secret`,
 `token`, `api_key`, `api-key` or `apiKey` (`"password": "…"`, `"client_secret":"…"`,
 `"openaiApiKey": "…"`, `"x-api-key": "…"`, also escaped inside a shell string as
 `\"password\":\"…\"`, with white space and newlines around the `:`;
-not `"password_hint"` or `"token_type"`); `Authorization:`, also as a
+a Python dict's single quotes on the key, the value or both, and a
+Python string prefix before the value (`{'x-api-key': 'k'}`,
+`{'password': "pw"}`, `{'token': f'…'}`; WP-157; its triggers add the
+key words with `'`); not `"password_hint"` or `"token_type"`); `Authorization:`, also as a
 quoted key (`"Authorization": …`, `\"Authorization\": …`,
 `'Authorization': …`); headers whose name ends in
 a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
@@ -2938,8 +2962,25 @@ value after the keyword `password` (`dev wifi connect`, `hotspot`,
 `802-1x.private-key-password`, `vpn.secrets`, `wifi-sec.wep-key0`…`3`,
 `wireguard.private-key`, `….preshared-key`, `gsm.pin`; also with `+` or
 `-` before it), within one `nmcli` command and every time it gives one;
-not `wifi-sec.key-mgmt wpa-psk`, `wifi-sec.psk-flags 1` or `passwd-file`;
+not `wifi-sec.key-mgmt wpa-psk`, `wifi-sec.psk-flags 1` or `passwd-file`,
+and not a property named as a field to show, after `-f`, `-g` or another
+option that starts with `f` or `g` (`--fields`, `--get-values`; after
+`=` no property is read as one to set): `nmcli -s -g wifi-sec.psk con
+show Home` stays whole (WP-157; the
+rule matches the option with the property and leaves that match as it
+is, `Rule::unless`);
 its triggers are `nmcli` and `pass`, `psk`, `secret`, `key` or `pin`;
+a mount password (`mount-password`, WP-157): the whole option list after
+`-o` (also at the end of a short-option cluster, `-vo`, `-no`; round 2)
+or `--options` of `mount`, `mount.cifs` or `mount.smb3` when one of
+its comma-separated options is `pass=` or `pwd=`, or `user=` or
+`username=` with a `%` in its value (mount.cifs's `user=name%password`,
+`user=domain/name%password`; round 2) (any case; the list
+quoted or not, the first option too: `-o user=bob,pass=PW,vers=3.0` → `-o ‹redacted›`), within
+one command and every time it gives one; `password=` is a `…PASSWORD=`
+assignment (which masks the rest of the list after it); not `-o
+bypass=1`, `-vo rw` or `-o username=bob`; its triggers are `mount` and
+`pass=`, `pwd=`, `user=` or `username=`;
 e-mail addresses (`email`, WP-093: the local part, the domain
 stays: `‹redacted›@example.com`); and user-supplied patterns in
 `config.toml [redaction] patterns`.
@@ -3068,7 +3109,14 @@ quotes other than `Authorization` and the JSON keys above (`"X-Auth":
 (fewer dashes, two spaces); an nmcli secret in a file (`passwd-file`)
 or asked for (`--ask`); and in a note (`seldon log`, a case file) the
 plain-argument forms the hook masks whole (§8: `htpasswd -b`, `echo
-u:pw | chpasswd`, `usermod -p`, …), which no §7 rule reads. Masked too much, by design: an
+u:pw | chpasswd`, `usermod -p`, `ssh-keygen -N`, `mkpasswd PW`, …), which
+no §7 rule reads. Not masked (WP-157): a PEM block in base64 whose
+marker has fewer than 40 base64 characters after it on its line and on
+the next line together (a wrap narrower than 40 columns), and the base64
+lines after a line that also holds other text; a mount password in an
+fstab line or in another program's options; a Python value in triple
+quotes (`{'password': """…"""}`, `'''…'''`: the empty `""` or `''`
+before it is read as the value and is no value; a follow-up WP). Masked too much, by design: an
 option word inside a quoted argument that spans lines (`git commit -m
 "…curl…⏎… -U flag"`, as on one line); a stray apostrophe (in the
 command's context, up to the line end; an option value with an unclosed
@@ -3086,7 +3134,12 @@ after `$"pass:…"`, which reads as an unclosed quote; after a PEM BEGIN
 line without an END, the rest of the text, and before a lone END line,
 the words of base64 characters and blanks before it, prose glued to the
 body included; the word after nmcli's `password` when it is a name
-(WP-140). A `pass:…` value
+(WP-140); a PEM block in base64 when the key is public or a certificate
+(`LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t…`), a line of base64
+characters only after the token (a single word such as `done` on the
+next line), and each line of an unbroken run of unindented lines of 40
+or more base64 characters right before it (a hash on the line before a
+key) (WP-157). A `pass:…` value
 after an option another rule also masks (`--pass`, `--password=`,
 `--secret-key`, …) is counted under both rules in the import report; the
 earlier rule in the order masks it, `openssl-pass` before `key-option`;
@@ -3192,8 +3245,10 @@ command parser (`pkgcmd.rs`): package managers via `is_mutating` (query
 sub-commands never, ADR-0017 §5; `pacman -Sy` counts; `-V`, `-h`,
 `--version`, `--help`, yay's `-P` and `-G` never; yay's `-Yc` does) after
 the wrappers `sudo`, `doas`, `pkexec`, `run0`, `env`, `nice`, `timeout`,
-`time`, `nohup`, `command`, `exec` with their options and option clusters
-(`sudo -Eu root`; `command -v`, `sudo -l` run nothing), `omarchy
+`time`, `nohup`, `command`, `exec`, `xargs` with their options and option
+clusters (`sudo -Eu root`; `command -v`, `sudo -l` run nothing; xargs's
+`-i`, `-l` and `-e` take their value only in their cluster, and `xargs`
+without a command runs `echo` and is the command itself; WP-157), `omarchy
 (update|pkg add|aur add|drop|remove|install|remove|reinstall|plugin
 add|clone|enable|disable|remove|update|theme set|install|remove|update)`
 and the `omarchy-*` scripts, `systemctl (enable|disable|start|stop|mask|
@@ -3257,13 +3312,38 @@ passwd alice`, `passwd alice <<< …`); `useradd`, `usermod`, `groupadd`
 and `groupmod` with `-p` or `--password` (also a prefix such as
 `--passw`, and a value §7 cannot read whole, `--password $(openssl
 passwd -6 PW)`); `cryptsetup` on a line that feeds it; `openssl passwd`
-and `wpa_passphrase` (always). A line feeds a command when its text holds
-`|`, `<<<` or `<(` (a key piped in, a here-string, a process substitution
-as `--key-file`) or one of its commands writes a file (`printf PW > k;
-cryptsetup … -d k`; a write to `/dev/null`, `/dev/stdout` or
-`/dev/stderr` is none; round 2); a heredoc's body is cut from the line
-before it is recorded. A short option counts also in a cluster
-(`-Bbc`, `-mp`), a long one also as a prefix getopt takes (`--std`).
+and `wpa_passphrase` (always); `ssh-keygen` with `-N` or `-P` and a value
+that is not empty (`-N ''` sets no pass phrase and stays; WP-157);
+`mkpasswd` with an operand (`mkpasswd -m sha-512 PW`; the values of
+`-m`, `-S`, `-R`, `-P` and their long forms are none), with `-s` or
+`--stdin`, or fed (WP-157); and any program to which the line gives a
+process substitution after an option, keyword or variable whose name
+holds `pass`, `pw`, `secret`, `token`, `key`, `cred` or `auth` in any
+case (`restic --password-file <(echo PW)`, `--passphrase-file=<(…)`,
+`RESTIC_PASSWORD_FILE=<(…)`, wg's `private-key <(…)`, also after a pass
+phrase source, `-passin file:<(…)`; WP-157 and round 2), whatever the
+command inside prints; not after a short option (`restic -p <(…)`),
+whose name says nothing. A command is fed when, earlier on the line
+(before its first word, across line ends, `(`, loops, `if` and `>(…)`)
+or among its own words, the text holds `|` or `|&` (not `||`), `<<<` or
+`<(`, also inside a `$(…)` or backticks (round 3: `--key-file $(printf
+PW | tee k; echo k)`), or a `sh -c` or `eval` it was opened from is fed, or when any
+command of the line writes a file (`printf PW > k; cryptsetup … -d k`; a
+write to `/dev/null`, `/dev/stdout` or `/dev/stderr` is none; WP-140
+round 2): `echo PW | (cd / && sudo cryptsetup open …)`, `exec 3< <(echo
+PW); sudo cryptsetup … --key-file /dev/fd/3` (WP-157 round 2: the parser
+reads compounds flat, so the feed is sticky, not scoped). A pipe after a
+command feeds it nothing (WP-157): `sudo passwd -S alice | grep alice`,
+`sudo cryptsetup status vault | grep cipher` and `sudo passwd -S alice
+|| echo none | cat` stay whole. Masked too much, by design: a
+secret-taking command after an unrelated pipe, here-string or process
+substitution on the same line (`a | b; sudo passwd -S alice`, `diff
+<(sort a) <(sort b); sudo passwd -S alice`). A command run by `xargs` with a pipe into it is fed: the words
+xargs reads become its arguments (`echo PW | sudo xargs mkpasswd`), so
+`… | sudo xargs passwd -S` is masked too, by design. A heredoc's body is
+cut from the line before it is recorded. A short option counts also in a
+cluster (`-Bbc`, `-mp`, `-qNPW`), a long one also as a prefix getopt
+takes (`--std`).
 nmcli's secrets are a §7 rule (`nmcli-secret`), so its line keeps its
 other words. A privileged `snapper`
 command is no snapshot command for §5's case notes. It is not drift in

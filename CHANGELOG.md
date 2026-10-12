@@ -71,6 +71,23 @@ and the package does not exist yet. Update the plugin first:
   install or update writes `SKILL.md` after the topic files, so one that
   stops half way never leaves a core that links a missing file.
 
+- **More secrets are redacted, fewer words over-masked (WP-157).** A
+  PEM block in base64, as a Kubernetes secret holds a key (`tls.key:
+  LS0tLS1CRUdJTi…`), is masked whole, also when the block starts after
+  other text in the file, wrapped over lines (the marker cut by the wrap
+  too), indented in YAML or after a `\n` in a shell string. A Python dict's single-quoted keys and values
+  count as JSON's do (`{'x-api-key': 'k'}`, `{'password': f'…'}`). A
+  mount password masks the option list it stands in (`mount -o
+  user=bob,pass=… → -o ‹redacted›`; `pwd=`, `username=bob%…` and `-vo`
+  too). A hook records a line
+  with `ssh-keygen -N <pass phrase>` (not `-N ''`), `mkpasswd <password>`
+  or a process substitution after an option that names a secret
+  (`--password-file <(echo …)`) as `<program> ‹redacted›`, and reads
+  `… | sudo xargs <program>` as that program. Tighter: `sudo passwd -S
+  alice | grep alice` stays whole (a pipe after a program does not feed
+  it; one before it does, also into `( … )`, a loop or `if`), and `nmcli
+  -g wifi-sec.psk con show` no longer masks `con`.
+
 ### Plugin
 
 - **Every desk button has a key path.** ↑ at the top of a list reaches
@@ -103,6 +120,19 @@ and the package does not exist yet. Update the plugin first:
 - **Apply proposals armed by Enter drops on a click on the desk.** It
   also asks again when the proposal's open items changed between the
   two Enters. *Discard* keeps its two clicks.
+
+### Docs
+
+- **What Seldon assumes about Omarchy, checked offline (WP-194).**
+  `tests/omarchy/assumptions.json` lists 17 installed Omarchy files the
+  plugin builds on (the plugin facade, the bar's widget list, the
+  loader, the `qs.Ui` controls and tokens, the plugin update, restart
+  and validator scripts), each with its hash, the Omarchy version it was
+  measured on and one sentence per assumption naming the plugin line
+  that relies on it. After an `omarchy update`, `just check-upstream`
+  names what to re-measure; `just check` shows it as a notice, a
+  release refuses it on the test host (`--gate`). No network, no
+  scheduled job; CI prints "skipped".
 
 ## [0.2.0] - 2026-10-11
 

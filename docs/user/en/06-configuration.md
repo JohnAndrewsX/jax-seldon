@@ -309,7 +309,8 @@ redacted value reads `‹redacted›`. The built-in rules cover:
 - the value of a JSON key such as `"password"`, `"passwd"`,
   `"client_secret"`, `"access_token"`, `"api_key"`, `"x-api-key"` or
   `"apiKey"` in
-  inline JSON (`curl -d '{"password": "…"}'`); `"password_hint"` stays;
+  inline JSON (`curl -d '{"password": "…"}'`), also in a Python dict
+  (`{'x-api-key': '…'}`); `"password_hint"` stays;
 - AWS access keys (`AKIA…`, `ASIA…`), GitHub tokens (`ghp_…`, `gho_…`,
   `github_pat_…` and the other `gh…_` forms), GitLab tokens (`glpat-…`),
   Slack tokens (`xoxb-…`), API keys (`sk-…`, `sk_…`);
@@ -326,9 +327,13 @@ redacted value reads `‹redacted›`. The built-in rules cover:
   `--proxy` or in `https_proxy=`;
 - a PEM private key (`-----BEGIN OPENSSH PRIVATE KEY-----` and the
   other `… PRIVATE KEY` blocks): everything between its BEGIN and END
-  lines becomes one `‹redacted›`;
+  lines becomes one `‹redacted›`; a PEM block in base64, as a Kubernetes
+  secret holds it (`tls.key: LS0tLS1CRUdJTi…`), is masked whole;
 - nmcli's passwords and keys: the value after `password`, `wifi-sec.psk`,
-  `802-1x.password`, `vpn.secrets` and the other secret properties;
+  `802-1x.password`, `vpn.secrets` and the other secret properties (not a
+  field to show, `nmcli -g wifi-sec.psk con show`);
+- a mount password: the option list with `pass=` or `pwd=` after
+  `mount -o`;
 - the user and password in a URL (`https://user:secret@host`), also
   when the password contains `/`, `?`, `#` or `:`.
 - the part before the `@` of an e-mail address: `me@example.com` reads

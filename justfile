@@ -17,7 +17,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: check-runtime-space fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard check-runtime-dir schema-validate docs-check plugin-validate qmllint plugin-test
+check: check-runtime-space fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard check-runtime-dir check-assumptions schema-validate docs-check plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # The session's runtime dir (WP-161): a full /run/user/<uid> takes the
@@ -74,7 +74,7 @@ check-rss:
 # the index build bench with SELDON_BENCH_X150=1 (x10 and x150 < 100 ms),
 # `status` at 10 788 ledger lines / 304 cases / 365 journal files < 100 ms,
 # `hook claude-code` at 10 000 lines and just below the 1000-line rebuild
-# threshold < 5 ms (not recorded and recorded; the temp dir on tmpfs);
+# threshold < 5 ms (not recorded and recorded);
 # redaction of long lines (WP-084, WP-087): 16 KB < 1 ms, 64 KB < 2 ms
 # without a masked value, 128 KB with many masked values < 20 ms (two curl
 # option kinds) and < 10 ms (`--password`/`token=`);
@@ -82,10 +82,25 @@ check-rss:
 # < 100 ms and warm < 20 ms, plugins warm < 60 ms and with cold trees
 # < 150 ms on a synthetic home (the medians are the numbers to report).
 # Every check, the bench included, measures a median over budget once more
-# before it fails.
+# before it fails. The rows that time a synced write (a recorded hook call,
+# the saved recent-config scan) hold their budget with the state on tmpfs
+# (SPEC-ENGINE §1, WP-210): this check makes a tmpfs directory of its own
+# under /dev/shm (never /tmp or the runtime dir), refuses one with less
+# than 256 MiB free, and removes it; the tests refuse a directory that is
+# not on a tmpfs. Every other row runs in TMPDIR, whatever its medium.
 check-perf:
+    #!/usr/bin/env bash
+    set -euo pipefail
     SELDON_BENCH_X150=1 cargo bench --manifest-path engine/Cargo.toml --locked --bench index
-    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --test index --test hooks --test redaction --test capture_cost -- --ignored --test-threads=1 --nocapture
+    free=$(df --output=avail -m /dev/shm | tail -n 1)
+    if (( free < 256 )); then
+      echo "check-perf: /dev/shm has ${free} MiB free, the sync timings need 256" >&2
+      exit 1
+    fi
+    shm=$(mktemp -d /dev/shm/seldon-perf.XXXXXX)
+    trap 'rm -rf -- "$shm"' EXIT
+    trap 'exit 130' INT TERM
+    SELDON_PERF_TMPFS="$shm" cargo test --manifest-path engine/Cargo.toml --locked --profile bench --test index --test hooks --test redaction --test capture_cost -- --ignored --test-threads=1 --nocapture
 
 # The AUR package (WP-040): PKGBUILD and helper syntax, shellcheck when
 # installed, .SRCINFO in step with the PKGBUILD. Never runs makepkg.
@@ -160,6 +175,28 @@ check-install:
 # scripts/deploy-test-host.sh (WP-098) against a fake test host.
 check-deploy:
     bash tests/deploy/deploy-test-host.test.sh
+
+# The ledger's check against fixtures (a synthetic tree; where Omarchy is
+# installed, a scratch copy of its files), then the installed tree in
+# notice mode: a changed file is a notice that names what to re-measure,
+# not a failure; "skipped" without an Omarchy tree (CI). shellcheck when
+# installed. docs/TESTING.md, "Omarchy assumptions".
+# What Seldon assumes about Omarchy (WP-194): tests/omarchy/assumptions.json.
+check-assumptions:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash -n scripts/check-omarchy-assumptions.sh tests/omarchy/assumptions.test.sh
+    if command -v shellcheck >/dev/null; then shellcheck scripts/check-omarchy-assumptions.sh tests/omarchy/assumptions.test.sh; fi
+    bash tests/omarchy/assumptions.test.sh
+    OMARCHY_PATH="{{ omarchy_path }}" bash scripts/check-omarchy-assumptions.sh
+
+# Read only, no network. Without arguments a notice and exit 0; with
+# --gate exit 1 on any mismatch or a missing tree (the release gates of
+# WP-126 and WP-188, on the test host from the deployed clone, before the
+# live check); a pin that cannot be read is a notice, under --gate a refusal.
+# The installed Omarchy files against the assumptions ledger (WP-194).
+check-upstream *args:
+    OMARCHY_PATH="{{ omarchy_path }}" bash scripts/check-omarchy-assumptions.sh {{ args }}
 
 # Validate fixtures against schema/ (script owned by WP-002).
 schema-validate:
@@ -294,6 +331,8 @@ plugin-test: check-runtime-space
     shopt -s nullglob
     qml=(plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml plugin/components/desk/*.qml plugin/components/graph/*.qml plugin/sections/*.qml)
     python3 tests/plugin/check-tokens.py --rules "${qml[@]}"
+    # Every live desk case waits for its index or says why not (WP-205).
+    python3 tests/plugin/live-index-wait.py
     if [[ -n "{{ skip_host }}" ]]; then
       echo "plugin-test: Quickshell harnesses skipped (SELDON_SKIP_HOST_CHECKS set; they need quickshell and the installed shell)"
       echo "plugin-test: ok (node and bash parts)"

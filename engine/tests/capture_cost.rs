@@ -225,6 +225,28 @@ fn set_mtimes(dir: &Path, t: std::time::SystemTime) {
     }
 }
 
+/// WP-210: a timing of a synced write never runs on a disk. The medium is
+/// read from the mount table: the deepest mount point above a path
+/// decides, and a directory that is not on a tmpfs is refused.
+#[test]
+fn a_synced_write_is_timed_on_a_tmpfs_only() {
+    assert_eq!(
+        common::file_system_of(Path::new("/proc/self/fd")).as_deref(),
+        Some("proc")
+    );
+    assert_eq!(
+        common::file_system_of(Path::new("/sys/kernel")).as_deref(),
+        Some("sysfs")
+    );
+    let refused = std::panic::catch_unwind(|| common::assert_on_tmpfs(Path::new("/proc")));
+    let message = refused.expect_err("/proc taken for a tmpfs");
+    let message = message.downcast_ref::<String>().unwrap();
+    assert!(message.contains("/proc is not on a tmpfs"), "{message}");
+    if common::file_system_of(Path::new("/dev/shm")).as_deref() == Some("tmpfs") {
+        common::assert_on_tmpfs(Path::new("/dev/shm"));
+    }
+}
+
 #[test]
 #[ignore = "release timing: `just check-perf`"]
 fn capture_cost_of_the_watched_files_and_plugin_trees() {
@@ -314,7 +336,10 @@ fn capture_cost_of_the_watched_files_and_plugin_trees() {
 #[ignore = "release timing: `just check-perf`"]
 fn capture_cost_of_the_recent_config_scan() {
     common::assert_optimised();
-    let home = Home::new();
+    let mut home = Home::new();
+    // the save syncs the state file: its state on tmpfs (WP-210)
+    let state = TempDir::new_in(&common::sync_timing_dir(), "recent-state");
+    home.dirs.state_dir = state.path().join("seldon");
     let h = |rel: &str| home.dirs.home.join(rel);
     for a in 0..40 {
         for i in 0..8 {
@@ -348,7 +373,7 @@ fn capture_cost_of_the_recent_config_scan() {
     assert!(!scan.partial);
     eprintln!("recent-config scan: {} entries read", scan.entries);
     common::assert_within_budget(
-        "recent-config scan and save (the capture-cost delta)",
+        "recent-config scan and save (the capture-cost delta, tmpfs)",
         Duration::from_millis(10),
         RUNS,
         || {
