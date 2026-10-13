@@ -9,13 +9,14 @@
 #   default/pacman/mirrorlist-*              the channel mirror CI installs from
 #   test/shell.d/qml-text-format-scan.py     Omarchy's QML text-format scan
 # Then it proves that DEST is the pinned commit and that the tree is
-# self-contained for those checks, and prints its digest. The pin mirrors
-# the test host's installed tree; it never replaces it as the reference
-# (AGENTS.md §1).
+# self-contained for those checks, and prints its digest. The pin is
+# Omarchy stable's tree (E93, ADR-0055 §1); it never replaces an installed
+# tree as the reference (AGENTS.md §1).
 #
 # Usage: packaging/omarchy-tree.sh DEST           (DEST must not exist)
 #        packaging/omarchy-tree.sh --digest DIR   (the digest of an
-#          installed tree, e.g. /usr/share/omarchy on the test host)
+#          installed tree or an extracted package, e.g. the stable
+#          omarchy package's usr/share/omarchy at a refresh)
 #
 # The digest: sha256 over `sha256sum` of every file under shell/ and of
 # themes/*/colors.toml, paths relative to the tree, sorted bytewise.

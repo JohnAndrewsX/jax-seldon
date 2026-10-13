@@ -417,8 +417,8 @@ container with `SELDON_SKIP_HOST_CHECKS=1`, on every pull request and every
 push to `main` or `next`, then `just bench` and `just check-rss` (measured,
 not gated; a run without any measurement line fails the step with an
 error): the `check` job. Next to it, the `plugin-qml` job runs the
-plugin's QML checks that `check` skips, against a pinned Omarchy shell
-tree (below). The container comes from GHCR, a copy of Docker Hub's image with
+plugin's QML checks that `check` skips, against the Omarchy shell tree
+that stable ships, pinned (below). The container comes from GHCR, a copy of Docker Hub's image with
 the same digest that the `mirror` job makes once per digest, on a push to
 `main` or `next` only; pull requests only pull by digest (WP-195;
 packaging/README.md, "Pinned actions and image"): Docker Hub's anonymous
@@ -481,18 +481,22 @@ container:
   `Quickshell*`, `qs.Commons`, `qs.Ui` and files inside those two
   directories, a missing harness theme (`tokyo-night`,
   `catppuccin-latte`, `osaka-jade`) and a missing scan, and prints the
-  tree's digest. `omarchy-tree.sh --digest /usr/share/omarchy` prints the
-  same digest for an installed tree (2026-10-13: `637b7166…` for the pin,
-  the dev host and the test host alike, Omarchy 4.0.4).
-- **Quickshell and Qt** from Omarchy's package mirror of the test host's
-  channel (`rc-mirror.omarchy.org`), not Arch's newest: the job writes
+  tree's digest. `omarchy-tree.sh --digest DIR` prints the same digest for
+  an installed tree or an extracted package. The pin is Omarchy stable's
+  tree (E93; ADR-0055 §1): at each refresh its digest equals that of
+  `usr/share/omarchy` in the `omarchy` package `pkgs.omarchy.org/stable`
+  lists. Measured 2026-10-13, Omarchy 4.0.4-1 on stable and rc alike:
+  `637b7166…` for the pin and the stable package; the dev host and the
+  test host had the same digest then (both on rc).
+- **Quickshell and Qt** from Omarchy's stable package mirror
+  (`stable-mirror.omarchy.org`; E93), not Arch's newest: the job writes
   that mirror line, runs `pacman -Syuu` (the whole container moves to the
   mirror's snapshot) and fails unless the line equals the pin's
-  `default/pacman/mirrorlist-rc`. The step *Versions* prints `quickshell
-  --version`, `pacman -Q` of `quickshell`, `qt6-base`,
+  `default/pacman/mirrorlist-stable`. The step *Versions* prints
+  `quickshell --version`, `pacman -Q` of `quickshell`, `qt6-base`,
   `qt6-declarative` and `ttf-jetbrains-mono-nerd`, `qmllint --version`,
   the mirror line and the pinned commit to the log and the run summary
-  (2026-10-13: Quickshell 0.3.1, Qt 6.11.2, as on both hosts).
+  (2026-10-13: Quickshell 0.3.1, Qt 6.11.2, the same snapshot as rc).
 - **The checks**, with `OMARCHY_PATH` set to the tree: `just qmllint`;
   `just plugin-test` with `SELDON_FULL_CHECK=1` (the harnesses always
   run; a log line "Quickshell harnesses skipped" fails the step) and
@@ -500,18 +504,30 @@ container:
   (`python3 -I` on a copy of `plugin/` named `shell/`; it prints one line
   per `Text` with a non-literal binding and no `textFormat`, and any line
   fails the step). The three run whenever the tree step passed, so a red
-  run shows all of them. Each recipe step makes its own `HOME` and its own
+  run shows all of them, each under `shell: bash`, which GitHub runs as
+  `bash -eo pipefail`. Without it a step runs as `bash -e`, and a red
+  `just plugin-test` piped to `tee` or a crashed scan would pass. The
+  checkout keeps no token (`persist-credentials: false`). Each recipe
+  step makes its own `HOME` and its own
   `XDG_RUNTIME_DIR` (also `JUST_TEMPDIR`) with `mktemp -d` in
   `$RUNNER_TEMP`, mode 0700, removed by the step's EXIT trap (AGENTS.md
   §6); inside, each harness gives its Quickshells their own homes and its
   own runtime dir as on the dev host (WP-161). Quickshell renders with Qt
   Quick's software backend under `QT_QPA_PLATFORM=offscreen` (on the dev
   host too), so the runner needs no GPU.
-- `tests/release/workflow-pins.test.sh` holds the job to this: the mirror
-  line and the compared file name one channel, the tree step, the two
-  recipes with `SELDON_FULL_CHECK=1` and the private dirs, both refusals,
-  and no `SELDON_SKIP_HOST_CHECKS`, `continue-on-error`, `|| true` or
-  `set +e` (each with a mutant).
+- **Omarchy's text-format scan runs only in CI.** The `omarchy` package
+  installs no `test/` (`/usr/share/omarchy` has none), so the dev host does
+  not run it, and no recipe does. It is a second, independent parser for a
+  rule the dev host already enforces more strictly: `plaintext.test.js`
+  (E72) requires `textFormat: Text.PlainText` on every `Text`, with an
+  allow-list. A finding there that `plaintext.test.js` does not report is
+  a bug in one of the two parsers, not a plugin change (ADR-0055 §2).
+- `tests/release/workflow-pins.test.sh` holds the job to this: the stable
+  mirror line and the compared `mirrorlist-stable`, the checkout without
+  credentials, the tree step, the two recipes with `SELDON_FULL_CHECK=1`
+  and the private dirs, `shell: bash` on each of the three checks, both
+  refusals, and no `SELDON_SKIP_HOST_CHECKS`, `continue-on-error`, `||
+  true` or `set +e` (each with a mutant).
 
 The evidence word for these results is **CI**, never *test host* or
 *headless* (AGENTS.md §5). What CI never shows (ADR-0055 §6): layer-shell
@@ -519,13 +535,23 @@ geometry, live IPC with the running shell, real monitors and Hyprland,
 the real engine, the user's fonts, and the runtime smoke test; those stay
 with the test host and the operator's desktop.
 
-The **dev host** still runs all of it against the installed tree: `just
+The **hosts** still run the recipes against their installed trees: `just
 check` there runs qmllint and the harnesses, and a missing tool is an
-error, not a skip. The dev host and the test host stay the gate for the
-plugin's behaviour; the pin mirrors the tree installed there and never
-replaces it as the reference (AGENTS.md §1). Where CI and the test host
-disagree, the test host wins and the pin is refreshed (packaging/README.md,
-"The Omarchy pin"). Never set `SELDON_SKIP_HOST_CHECKS` on the dev host.
+error, not a skip. The scan is the exception above. The dev host runs
+edge, a preview; the test host runs rc, the rehearsal (E93). The pin
+never replaces an installed tree as the reference (AGENTS.md §1). Where
+CI and a host disagree (ADR-0055 §4):
+
+- red in CI blocks a release (no host runs stable);
+- red on the test host is a failed rc rehearsal and blocks a release, as
+  today;
+- red on the dev host (edge) only is a forward-compatibility finding: a
+  WP, not a release blocker.
+
+On an edge host, `just check-upstream` reports a validator other than the
+pin's as information ("edge preview"), never as "refresh
+packaging/omarchy-pin" (packaging/README.md, "The Omarchy pin"). Never set
+`SELDON_SKIP_HOST_CHECKS` on the dev host.
 
 ### Dependabot pull requests
 

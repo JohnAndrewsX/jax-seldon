@@ -218,7 +218,7 @@ plugin_qml() {
     on && $0 == "          persist-credentials: false" { ok = 1 } END { exit !ok }' <<< "$text" \
     || echo "$f: the plugin-qml job's checkout keeps its credentials (persist-credentials: false)"
   # every tree-gated check runs under `shell: bash` (bash -eo pipefail):
-  # GitHub's default in a container is `sh -e`, and without pipefail a red
+  # without it GitHub runs the step with `bash -e`, no pipefail, and a red
   # `just plugin-test | tee` or a crashed scan in `$(… | sed …)` passes
   awk -v want="        if: \${{ !cancelled() && steps.tree.outcome == 'success' }}" '
     function done_step() { if (gated && !bash) print name; gated = 0; bash = 0 }
