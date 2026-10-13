@@ -607,7 +607,7 @@ expect_problem "plugin-test skip guard exits 0" "harnesses were skipped" \
 expect_problem "plugin-test without a private HOME" "SELDON_FULL_CHECK=1 and a private HOME" \
   's/^          HOME="\$home" (XDG_RUNTIME_DIR="\$rt" JUST_TEMPDIR="\$rt" SELDON_FULL_CHECK)/          \1/' ci.yml
 expect_problem "qmllint with the session's runtime dir" "just qmllint with a private HOME" \
-  's/^(          HOME="\$home" )XDG_RUNTIME_DIR="\$rt" (JUST_TEMPDIR="\$rt" just qmllint)$/\1\2/' ci.yml
+  's/ XDG_RUNTIME_DIR="\$rt" (JUST_TEMPDIR="\$rt" just qmllint)$/ \1/' ci.yml
 expect_problem "a recipe step without chmod 700" "chmod 700" \
   '0,/^          chmod 700 "\$home" "\$rt"$/{/^          chmod 700 "\$home" "\$rt"$/d}' ci.yml
 expect_problem "a recipe step without its trap" "trap" \
