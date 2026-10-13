@@ -24,6 +24,17 @@ and the package does not exist yet. Update the plugin first:
 - A pacman transaction's detail says again when it shows only part of the transaction, also for an old open change of one listed package.
 - Work's *By agent*, *Import tasks…* and *New case* work by key too: ↑ on the first row reaches them, Enter twice runs one. New keys, nothing removed: this ships in the next minor release.
 
+### Engine
+
+- **`hook session-start` and `hook generic` start faster (WP-218).**
+  Like `hook claude-code` since WP-092, the two hooks an agent runs in
+  every session no longer build the parser of every command when they
+  are called with nothing else, as the hooks `hook install` writes are.
+  A session that is neither in the logbook nor launched by Seldon now
+  costs them about as much as `hook claude-code`, inside ADR-0030's
+  1 ms. Output and exit codes are unchanged; `hook generic --case ID`
+  takes the parser as before.
+
 ### Plugin
 
 - **A transaction is partial by its own rows (WP-208, ADR-0054 §3).**
