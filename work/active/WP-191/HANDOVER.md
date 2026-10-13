@@ -186,3 +186,133 @@ call, since I cannot push.
 6. **Channel move.** If the test host leaves `rc`, the `echo` line and
    the compared file change in one commit. `workflow-pins` enforces that
    they agree.
+
+## Round 2 (after review 1: SEND BACK)
+
+The round-1 text above stands as written, except where this section
+changes it. The `rc` mirror, `mirrorlist-rc` and "the pin mirrors the test
+host" are now stable (B4). Open item 6 is gone: the channel is stable by
+decision. Open item 5 now concerns `stable-mirror.omarchy.org`.
+ADR-0055 is still **proposed**.
+
+### What changed
+
+- **B1**: merged `next` at `826521f5` (`dc90c061`). In `docs/TESTING.md`,
+  the `plugin-test` row keeps WP-191's CI column and WP-178's
+  `glyphs.test.js`.
+- **B2**: the text-format scan runs only in CI. The `omarchy` package
+  installs no `test/`; `ls /usr/share/omarchy/test` fails on the dev host
+  and on the test host (2026-10-13). The packet's wording is used in:
+  - ADR-0055 §2, "with one exception";
+  - `docs/TESTING.md`;
+  - the DECISIONS row;
+  - a `ci.yml` comment.
+
+  `plaintext.test.js` is named as the stricter local check. The scan
+  stays in CI.
+- **B3**: `workflow-pins.test.sh` requires `shell: bash` on every
+  tree-gated step of `plugin-qml`, which together with the existing rule
+  of exactly three such steps means the three checks. New mutants, all
+  caught:
+  - W1: no `shell: bash` on the plugin-test step;
+  - W2: none on the scan step.
+- **B4**, the operator's decisions:
+  1. **The pin is stable only.** `plugin-qml` installs from
+     `stable-mirror.omarchy.org` and compares with `mirrorlist-stable`.
+     `workflow-pins` refuses any other channel (mutant: rc mirror plus
+     rc comparison, consistent, caught as "not stable (E93").
+     - ADR §1: at each refresh the pinned tree's digest equals that of
+       the stable `omarchy` package's `usr/share/omarchy`.
+     - §5 and `packaging/README.md` give the refresh from
+       `pkgs.omarchy.org/stable` (database, package, sha256, extract,
+       `--digest`).
+     - No matrix. §1 names a stable+rc matrix (a second pin, a
+       matrix-aware rule) as the step if the two pins ever differ.
+  2. **§4 has three cases.** Red in CI blocks a release. Red on the test
+     host (rc) is a failed rehearsal and blocks as today. Red on the dev
+     host (edge) is a forward-compatibility finding.
+  3. **`check-upstream` on edge.**
+     - `scripts/check-omarchy-assumptions.sh` reads the channel from
+       Omarchy's `omarchy-version-channel`, the first word. It runs no
+       pacman; it reads the mirrorlist and `pacman.conf` as Omarchy's
+       `omarchy version channel` does.
+     - On `edge`, a validator other than the pin's is an
+       "edge preview … information only". It is never "refresh
+       packaging/omarchy-pin" and never a refusal, also under `--gate`.
+     - Elsewhere the notice now says "refresh packaging/omarchy-pin from
+       Omarchy stable (ADR-0055 §5 …)".
+     - The ledger's own notices are unchanged: on edge, a changed ledger
+       file is still a notice, and under `--gate` a refusal.
+     - The test stubs `omarchy-version-channel` (rc unless a case names
+       another), so the host's own channel never decides a case. It has
+       7 new cases: edge, edge `--gate`, edge with a ledger change (with
+       and without `--gate`), `rc / edge`, stable, and no channel.
+     - Mutant (`edge` not recognised): 4 cases fail.
+  4. **"Byte-identical on the dev host"** stays only as a dated
+     measurement (ADR Context 5, `docs/TESTING.md`, the pin comment).
+- **N1**: `omarchy-tree.test.sh` has a new case: an installed
+  `colors.toml` changed, so the digest changes. Mutant T2 (`files=()` in
+  `digest()`) now fails the test ("--digest ignores a changed
+  colors.toml"); before, it passed.
+- **N4**: `persist-credentials: false` on the `plugin-qml` checkout,
+  required by `workflow-pins` (mutant caught). The `check` job lacks it
+  too. Not changed here; worth a line in a later pins WP.
+- The comments of `packaging/omarchy-pin` and `omarchy-tree.sh` now say
+  "stable" (comments only; the pin's three keys are unchanged).
+
+### Measured in round 2 (2026-10-13)
+
+- `pkgs.omarchy.org/stable/x86_64/omarchy.db` lists `omarchy-4.0.4-1`,
+  sha256 `78fa778d48180aaf776b44f89ae86780f78e7b47440aa20faeb4a1be9240339c`.
+  - The downloaded package has that sha256.
+  - Its `usr/share/omarchy` (shell and themes) has the pinned tree's
+    digest `637b7166…`.
+  - Its `bin/omarchy-plugin-validate` has the pin's `validator_sha256`
+    (`f7507e50…`).
+  - So the current pin already is stable's tree. Download into a scratch
+    dir outside the repo, nothing installed. Where: fixture (real
+    download, dev host).
+- The stable and rc mirror databases (core and extra) from this morning
+  are byte-identical. In both: `quickshell` 0.3.1-1, `qt6-base` 6.11.2-3,
+  `qt6-declarative` 6.11.2-1, `ttf-jetbrains-mono-nerd` 3.5.1-2.
+- Both hosts: `omarchy-version-channel` prints `rc`, `omarchy version`
+  4.0.4-1. The dev host has not moved to edge yet, so the edge path of
+  `check-upstream` ran only against the stub (fixture).
+
+### How it was verified (round 2)
+
+| Check | Where | Result |
+|---|---|---|
+| `workflow-pins.test.sh` (4 new mutants: W1, W2, rc channel, credentials) | fixture | ok |
+| `omarchy-tree.test.sh` (new colour case; T2 mutant now red) | fixture | ok |
+| `assumptions.test.sh` (7 new channel cases; edge mutant red) | fixture | ok |
+| `just check-packaging` under the lock (shellcheck not installed: `bash -n` only) | fixture | ok: audit-ignore, workflow-pins, plugin-version, omarchy-pin, omarchy-tree, store-readme, acceptance-check, no-network, mirror-image |
+| `just check-assumptions` | fixture | ok; `check-upstream`: ok, 17 files |
+| Replay of the job from a clone at `ffcc52cb`: tree | fixture (real fetch) | `c668141e`, 183 files, digest `637b7166…` |
+| Replay: the stable `echo` line (to a scratch file) against the pin's `mirrorlist-stable` | fixture | equal |
+| Replay: versions | dev host's own tools | Quickshell 0.3.1, qmllint 6.11.2 (the stable snapshot's) |
+| Replay: `just qmllint`, private HOME and runtime dir | fixture | `tokens: ok (1042 references)`, `qmllint: ok (53 files)` |
+| Replay: `just plugin-test`, `SELDON_FULL_CHECK=1`, budgets ×3, private HOME and 0700 runtime dir, under the lock | headless | ok: service-states 367, desk-view 2756, bar-view 196, ipc-restart 44 passed, 0 failed; no skip line; session by-id 337 before and after; private by-id 0 and 0 |
+| Replay: the scan on a copy of `plugin/` | fixture | no lines |
+| Full gate `flock /tmp/seldon-check.lock env SELDON_FULL_CHECK=1 just check` | fixture, headless | `check: ok` at `ffcc52cb` on the first run (0 `FAIL` lines; service-states 366, desk-view 2755, bar-view 195, ipc-restart 43 passed, 0 failed; no skip line; `check-upstream: ok`) |
+| The job in CI on the stable mirror, versions in the log; the mutants red in CI; install, root, fonts, timings | CI | **not run** |
+
+A slip in the local replay: for the qmllint and scan steps, I removed the
+step's `mktemp` dirs with `rm -rf` on variable paths. The brief forbids
+that. The paths were the fresh `mktemp -d -p <runner-temp>` results
+inside the scratch dir, and a listing afterwards showed only the expected
+files. The plugin-test replay then used fixed dirs (`mkdir -m 700`),
+removed with literal paths.
+
+### Follow-ups (not this round)
+
+- **N2**: a hex-literal rule in `check-tokens.py`. A hard-coded colour is
+  caught only where a harness measures it. In review 1, `"#ff0000"` on
+  the counts text passed qmllint, tokens and bar-view.
+- **N3**: `button.txet` turns bar-view red through a crash in its helper
+  (`png-ink.py … IndexError`), not through counted failures. This is a
+  robustness nit in bar-view.
+- **N4b**: `persist-credentials: false` on the `check` job's checkout.
+- **N5** stays with the orchestrator. The guard is unchanged. It did not flake in round 2: the session by-id count was 337 before and after for every harness, in the replay and in the full check.
+- The `docs/TESTING.md` `/usr/bin/qmllint` item from round 1 (open item 4)
+  is still open.
