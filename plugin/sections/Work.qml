@@ -374,7 +374,7 @@ Section {
     // Ask agent (WP-124b, ADR-0036 §1): about this case, any status; the
     // agent gets no case to work (`agent ask case <id> --json`).
     if (root.current && root.service && root.service.askAgentAvailable)
-      out.push({ id: "ask", label: "Ask agent", primary: false,
+      out.push({ id: "ask", label: Model.text("action.askCase", "pro"), primary: false,
         enabled: !(root.service.askResult && root.service.askResult.pending) })
     return out
   }

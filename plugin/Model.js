@@ -247,14 +247,19 @@ function terminalArgv(banner) {
 // A row: `easy`, `pro` (both always set; `pro` is "" only with `easyOnly`,
 // a sentence EASY shows and PRO has no place for); `rows`, the rows of
 // ADR-0045 §6's table it belongs to (1–12, in its order; [] for §5's
-// vocabulary); and what an action runs, at most one of
+// vocabulary and PRO's own actions); and what an `action.*` key runs,
+// exactly one of
 //   argv     the engine arguments, `seldon` left out, as CONTRACT.md's
 //            "Commands the plugin may run" lists them; `<…>` stands for an
 //            id or the user's own text (rule 4: model.test.js matches every
 //            argv against that block);
 //   exec     the name of a fixed argv constant of this file;
 //   scripts  the names of SPEC-PLUGIN §5.6's terminal scripts
-//            (TERMINAL_SCRIPTS); `pending` while the constant is not built.
+//            (TERMINAL_SCRIPTS);
+//   settings the name of the settings key it writes (no process);
+// or `pending`, why it cannot run yet: alone (no runnable argv), or with
+// the `exec`/`scripts` name of a constant not built yet. Rule 4 fails an
+// action with neither.
 // EASY's `argv` is the PRO action's argv with fixed words in place of
 // typed text (ADR-0036 §1).
 //
@@ -274,23 +279,28 @@ var WORDS = {
   "action.install": { easy: "Install", pro: "Install", rows: [1, 2], scripts: ["INSTALL_ENGINE_SCRIPT"] },
   "action.createLogbook": { easy: "Create logbook", pro: "Create logbook", rows: [1, 2], scripts: ["INIT_SCRIPT"] },
   "action.grant": { easy: "Grant", pro: "Grant", rows: [1, 2], scripts: ["SNAPPER_FIX_SCRIPT"] },
-  // the snapshot step's Not now: a settings write (SETUP_LATER_KEY), no argv
-  "action.notNow": { easy: "Not now", pro: "Not now", rows: [1] },
+  // the snapshot step's Not now: a settings write, no process
+  "action.notNow": { easy: "Not now", pro: "Not now", rows: [1], settings: "SETUP_LATER_KEY" },
   "action.update": { easy: "Update", pro: "Update", rows: [2], scripts: ["UPDATE_ENGINE_SCRIPT", "UPDATE_PLUGIN_SCRIPT"] },
   "action.restartShell": { easy: "Restart shell", pro: "Restart shell", rows: [2], exec: "RESTART_SHELL_ARGV" },
   "action.updateRules": { easy: "Update rules", pro: "Update rules", rows: [2], argv: ["rules", "update", "--json"] },
   "action.capture": { easy: "Capture now", pro: "Capture now", rows: [2, 12], argv: ["capture", "--all", "--json", "--quiet"] },
-  // 3: the engine's refusal "no default agent"; Seldon writes no Omarchy setting
+  // 3: the engine's refusal "no default agent"; Seldon writes no Omarchy
+  // setting. Omarchy's menu route, not a terminal script (E51); WP-179
+  // fixes the argv and builds the constant
   "card.pickAgent": { easy: "Pick your agent", pro: "Pick your agent", rows: [3] },
-  "action.pickAgent": { easy: "Pick agent", pro: "Pick agent", rows: [3], scripts: ["PICK_AGENT_SCRIPT"], pending: true },
-  // 4 and 10: a crisis, an open change; no Later, no dismiss in EASY
-  "action.askDrift": { easy: "Ask agent to explain", pro: "Ask agent", rows: [4, 10],
+  "action.pickAgent": { easy: "Pick agent", pro: "Pick agent", rows: [3], exec: "PICK_AGENT_ARGV",
+    pending: "WP-179 builds PICK_AGENT_ARGV (E51: Omarchy's menu route)" },
+  // 4: a crisis; no Later, no dismiss in EASY. PRO's event bar reads these
+  // for every open change, a crisis or not
+  "action.askDrift": { easy: "Ask agent to explain", pro: "Ask agent", rows: [4],
     argv: ["agent", "ask", "drift", "<eventId>", "--json"] },
-  "action.explain": { easy: "It was me…", pro: "Explain…", rows: [4, 10],
+  "action.explain": { easy: "It was me…", pro: "Explain…", rows: [4],
     argv: ["drift", "explain", "<eventId>", "--json", "--", "It was me."] },
   "confirm.explain": { easy: "This writes \u2018explained by you\u2019 into the record for good.", pro: "", easyOnly: true, rows: [4, 10] },
-  // 5: a transaction that did not complete (ADR-0043; PRO titles it by
-  // status, TX_STATUS_TITLES); PRO starts the agent from Today's New case
+  // 5: a transaction that did not complete (ADR-0043). PRO titles it by
+  // status (TX_STATUS_TITLES) and does not read this word until WP-179's
+  // Needs-you title replaces it; PRO starts the agent from Today's New case
   "card.txStopped": { easy: "An update stopped halfway", pro: "Transaction did not complete", rows: [5] },
   "action.finishUpdate": { easy: "Ask agent to finish it", pro: "New case", rows: [5],
     argv: ["agent", "start", "--new", "--json", "--", "Finish the interrupted update (event <eventId>)"] },
@@ -301,19 +311,31 @@ var WORDS = {
   // 7: a case in verification
   "card.verification": { easy: "Task waiting for your check", pro: "Verification", rows: [7] },
   "action.done": { easy: "Done", pro: "Complete", rows: [7], argv: ["plan", "done", "<caseId>", "--json"] },
-  "action.notDone": { easy: "Not done yet", pro: "Back to active", rows: [7], argv: ["plan", "start", "<caseId>", "--json"] },
+  // the engine refuses `plan start` on a case in verification (start only
+  // from queued): no way back yet, WP-179's ADR decides it
+  "action.notDone": { easy: "Not done yet", pro: "Back to active", rows: [7],
+    pending: "no engine verb takes a case from verification back to active (WP-179's ADR)" },
   // 8: Help; a click starts it, never Enter
   "help.change": { easy: "I want to change something", pro: "", easyOnly: true, rows: [8] },
   "help.wrong": { easy: "Something is wrong", pro: "", easyOnly: true, rows: [8] },
+  // 5 and 8: the confirm names the agent's powers
   "confirm.agent": { easy: "Your agent may install, remove and change things on this machine and asks you first only before anything that can break boot or login.",
-    pro: "", easyOnly: true, rows: [8] },
+    pro: "", easyOnly: true, rows: [5, 8] },
   "action.startAgent": { easy: "Start agent", pro: "Start agent", rows: [8],
     argv: ["agent", "start", "--new", "--json", "--", "<sentence>"] },
   // 9: one line for the journal
   "action.note": { easy: "Note for later", pro: "Note for today's journal", rows: [9], argv: ["log", "--json", "--", "<text>"] },
+  // 10: a change nobody explained, its Details (ADR-0045 §6's own words)
+  "action.askChange": { easy: "Ask agent", pro: "Ask agent", rows: [10],
+    argv: ["agent", "ask", "drift", "<eventId>", "--json"] },
+  "action.explainChange": { easy: "It was me", pro: "Explain…", rows: [10],
+    argv: ["drift", "explain", "<eventId>", "--json", "--", "It was me."] },
   // 11: Details › Open in editor (PRO: every Open in editor)
-  "action.openEditor": { easy: "Open in editor", pro: "Open in editor", rows: [11], argv: ["open", "<caseId>", "--editor", "--json"] }
+  "action.openEditor": { easy: "Open in editor", pro: "Open in editor", rows: [11], argv: ["open", "<caseId>", "--editor", "--json"] },
   // 12: Capture now, the header's: action.capture
+
+  // PRO's own: Ask agent on a case (ADR-0036 §1); EASY's Details may use it
+  "action.askCase": { easy: "Ask agent", pro: "Ask agent", rows: [], argv: ["agent", "ask", "case", "<caseId>", "--json"] }
 }
 
 var DESK_MODES = ["easy", "pro"]
