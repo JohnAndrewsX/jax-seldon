@@ -6,13 +6,17 @@
 # validator hash is the pin's; on a synthetic tree the check says ok, names
 # every assumption of a changed or missing file, says whether the file
 # still names the symbol, notes a validator other than the pin and a pin
-# it cannot read, refuses both with --gate, prints "skipped" (never "ok")
+# it cannot read, refuses both with --gate, reports a validator other than
+# the pin on an edge host as information only (E93, ADR-0055: the pin is
+# stable's; never "refresh", never refused), prints "skipped" (never "ok")
 # without a tree and writes nothing. Where Omarchy is installed: every
 # symbol is in its file where the hash matches; a scratch copy of the
 # ledger's files checks as the tree does; a change to shell.qml alone
 # names the shell's settings write and service lookup, one to
 # PluginShellApi.qml the facade's. Each check runs with its own HOME and
-# XDG_RUNTIME_DIR. Runs in `just check-assumptions`.
+# XDG_RUNTIME_DIR, and with a stub `omarchy-version-channel` (rc unless a
+# case names another channel), so the host's own channel never decides a
+# case. Runs in `just check-assumptions`.
 #
 # Usage: bash tests/omarchy/assumptions.test.sh
 set -euo pipefail
@@ -231,6 +235,11 @@ pin_file() {
   printf 'repo=omacom/omarchy\ncommit=0123456789abcdef0123456789abcdef01234567\nvalidator_sha256=%s\n' "$1" > "$tmp/pin"
 }
 pin_file "$(sha "$tree/bin/omarchy-plugin-validate")"
+# Omarchy's `omarchy version channel`, stubbed: prints $STUB_CHANNEL
+mkdir -p "$tmp/stub"
+printf '#!/bin/bash\necho "$STUB_CHANNEL"\n' > "$tmp/stub/omarchy-version-channel"
+chmod +x "$tmp/stub/omarchy-version-channel"
+host_channel=rc
 
 # run TREE LEDGER [ARGS...]: the check with its own HOME and runtime dir;
 # sets rc, leaves stdout and stderr in $tmp/out and $tmp/err
@@ -242,7 +251,8 @@ run() {
   mkdir -m 0700 "$tmp/run"
   rc=0
   env HOME="$tmp/home" XDG_RUNTIME_DIR="$tmp/run" OMARCHY_PATH="$t" SELDON_OMARCHY_LEDGER="$l" \
-    SELDON_OMARCHY_PIN="$tmp/pin" bash "$script" "$@" > "$tmp/out" 2> "$tmp/err" || rc=$?
+    SELDON_OMARCHY_PIN="$tmp/pin" PATH="$tmp/stub:$PATH" STUB_CHANNEL="$host_channel" \
+    bash "$script" "$@" > "$tmp/out" 2> "$tmp/err" || rc=$?
   rm -rf "${tmp:?}/home" "${tmp:?}/run"
 }
 # expect NAME RC [ARGS...] -- PATTERNS... (each on stdout+stderr); NOT:PATTERN must be absent
@@ -293,6 +303,29 @@ synth_ledger > "$tmp/ledger2.json"
 expect "a ledger updated, the pin not: the pin notice alone" 0 "$tree" "$tmp/ledger2.json" -- \
   "NOTICE: CI validates with another validator" "refresh packaging/omarchy-pin" NOT:"changed (" NOT:"files differ"
 expect "a ledger updated, the pin not, --gate: refused" 1 "$tree" "$tmp/ledger2.json" --gate -- "refused (--gate)"
+expect "a ledger updated, the pin not: refresh from stable" 0 "$tree" "$tmp/ledger2.json" -- \
+  "refresh packaging/omarchy-pin from Omarchy stable (ADR-0055 §5"
+# an edge host (E93): the pin is stable's; a validator other than the pin's
+# is a preview, information only, also under --gate
+host_channel=edge
+expect "edge, the validator not the pin's: information, ok, exit 0" 0 "$tree" "$tmp/ledger2.json" -- \
+  "check-upstream: edge preview: bin/omarchy-plugin-validate is" "packaging/omarchy-pin (Omarchy stable, ADR-0055)" \
+  "information only, the pin follows stable (E93)" "ok (every assumption's file matches the ledger; the validator is edge's" \
+  NOT:NOTICE NOT:"refresh packaging/omarchy-pin"
+expect "edge with --gate: not refused for the pin" 0 "$tree" "$tmp/ledger2.json" --gate -- \
+  "edge preview" "ok (every assumption" NOT:"refused" NOT:"refresh packaging/omarchy-pin"
+expect "edge, a ledger file changed too: the ledger's notice, no refresh" 0 "$tree" "$tmp/ledger.json" -- \
+  "NOTICE: bin/omarchy-plugin-validate changed" "edge preview" "1 of 3 files differ from the ledger:" \
+  NOT:"refresh packaging/omarchy-pin" NOT:"CI validates with another validator"
+expect "edge, a ledger file changed, --gate: refused for the ledger only" 1 "$tree" "$tmp/ledger.json" --gate -- \
+  "refused (--gate): 1 of 3 files differ from the ledger:" NOT:"refresh packaging/omarchy-pin"
+host_channel='rc / edge'
+expect "a mixed channel (rc / edge) counts as rc: refresh" 0 "$tree" "$tmp/ledger2.json" -- "refresh packaging/omarchy-pin" NOT:"edge preview"
+host_channel=stable
+expect "stable: refresh" 0 "$tree" "$tmp/ledger2.json" -- "refresh packaging/omarchy-pin" NOT:"edge preview"
+host_channel=''
+expect "no channel: refresh" 0 "$tree" "$tmp/ledger2.json" -- "refresh packaging/omarchy-pin" NOT:"edge preview"
+host_channel=rc
 printf '#!/bin/bash\necho validate\n' > "$tree/bin/omarchy-plugin-validate"
 # a pin that cannot be read: the validator was not compared, never "ok"
 mv "$tmp/pin" "$tmp/pin.kept"

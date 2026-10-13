@@ -3,8 +3,11 @@
 # installed files that tests/omarchy/assumptions.json lists, read-only, and
 # compares them with the ledger. On a mismatch it prints each affected
 # assumption and what to re-measure; it also says when the installed
-# validator is not the one packaging/omarchy-pin fetches for CI. No
-# network, nothing written.
+# validator is not the one packaging/omarchy-pin fetches for CI. The pin
+# is Omarchy stable's tree (E93, ADR-0055): on a host whose channel is
+# edge (`omarchy-version-channel`), a validator other than the pin's is
+# information (an edge preview), never "refresh the pin" and never a
+# refusal. No network, nothing written.
 #
 # Usage: scripts/check-omarchy-assumptions.sh [--gate]
 #   default  a notice, exit 0 (`just check`)
@@ -98,6 +101,12 @@ done
 # CI runs the validator of packaging/omarchy-pin, not the installed one.
 # A pin that cannot be read means the comparison did not happen: a notice,
 # and --gate refuses (a gate that did not look is not a pass).
+# The channel is the first word of Omarchy's `omarchy version channel`
+# (the mirror's: stable, rc, edge); none or another word counts as not edge.
+channel=''
+if command -v omarchy-version-channel >/dev/null; then
+  channel=$(omarchy-version-channel 2>/dev/null | awk 'NR == 1 { print $1 }') || channel=''
+fi
 pin_note=''
 validator=$tree/bin/omarchy-plugin-validate
 if [[ -f $validator ]]; then
@@ -110,19 +119,22 @@ if [[ -f $validator ]]; then
     echo "$me: NOTICE: cannot read packaging/omarchy-pin, so the installed validator was not compared with the one CI fetches"
   else
     installed=$(sha256sum < "$validator" | cut -d' ' -f1)
-    if [[ $installed != "$pin_sha" ]]; then
+    if [[ $installed != "$pin_sha" && $channel == edge ]]; then
+      pin_note=edge
+      echo "$me: edge preview: bin/omarchy-plugin-validate is ${installed:0:12} here, packaging/omarchy-pin (Omarchy stable, ADR-0055) fetches ${pin_sha:0:12}; information only, the pin follows stable (E93)"
+    elif [[ $installed != "$pin_sha" ]]; then
       pin_note=differs
       echo "$me: NOTICE: CI validates with another validator: bin/omarchy-plugin-validate is ${installed:0:12} here, packaging/omarchy-pin fetches ${pin_sha:0:12} (packaging/README.md, \"The Omarchy pin\")"
     fi
   fi
 fi
 
-if ((changed == 0)) && [[ -z $pin_note ]]; then
-  echo "$me: ok (every assumption's file matches the ledger)"
+if ((changed == 0)) && [[ -z $pin_note || $pin_note == edge ]]; then
+  echo "$me: ok (every assumption's file matches the ledger${pin_note:+; the validator is edge's, not the pin's: information})"
   exit 0
 fi
 case $pin_note in
-  differs) pin_text='CI validates with another validator: refresh packaging/omarchy-pin (packaging/README.md, "The Omarchy pin")' ;;
+  differs) pin_text='CI validates with another validator: refresh packaging/omarchy-pin from Omarchy stable (ADR-0055 §5; packaging/README.md, "The Omarchy pin")' ;;
   unread) pin_text='packaging/omarchy-pin could not be read, so the validator was not compared' ;;
   *) pin_text='' ;;
 esac
