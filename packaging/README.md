@@ -299,7 +299,7 @@ commit:
 
   ```
   curl -fsS --proto =https -o <scratch>/omarchy.db https://pkgs.omarchy.org/stable/x86_64/omarchy.db
-  bsdtar -xOf <scratch>/omarchy.db 'omarchy-*/desc' | grep -A1 -E '^%(VERSION|FILENAME|SHA256SUM)%'
+  bsdtar -xOf <scratch>/omarchy.db 'omarchy-[0-9]*/desc' | grep -A1 -E '^%(VERSION|FILENAME|SHA256SUM)%'
   curl -fsS --proto =https -o <scratch>/<filename> https://pkgs.omarchy.org/stable/x86_64/<filename>
   sha256sum <scratch>/<filename>                                        # must equal %SHA256SUM%
   bsdtar -xf <scratch>/<filename> -C <scratch>/x usr/share/omarchy/shell usr/share/omarchy/themes usr/share/omarchy/bin/omarchy-plugin-validate

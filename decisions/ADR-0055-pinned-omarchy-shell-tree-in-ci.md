@@ -150,8 +150,12 @@ need from Omarchy's stable package mirror:
 - It writes `Server = https://stable-mirror.omarchy.org/$repo/os/$arch` as
   the container's mirrorlist and runs `pacman -Syuu`, so the whole
   container matches that snapshot, downgrades included.
-- The packages are Arch's, signed by Arch's packagers. pacman checks them
-  against the image's `archlinux-keyring`, as on any Arch mirror.
+- The packages are Arch's, signed by Arch's packagers. The image is an
+  unmodified Arch image, so pacman's default
+  `SigLevel = Required DatabaseOptional` holds: every package is checked
+  against the image's `archlinux-keyring`; the databases are not signed.
+  A mirror therefore decides *which* signed packages CI sees, never their
+  content; the *Versions* step is the record.
 - A step compares that line with the pin's
   `default/pacman/mirrorlist-stable` and fails on a difference, so the
   mirror changes only with the pin.
@@ -160,8 +164,9 @@ The channel is stable by decision (E93), not by a host's channel.
 `tests/release/workflow-pins.test.sh` refuses any other.
 
 This pins the snapshot Omarchy ships to stable, not a package version.
-The snapshot moves when Omarchy releases to stable, the same event that
-moves the pin.
+The snapshot is expected to move with a stable release, the event that
+moves the pin; CI does not check this (assumption, 2026-10-13), the
+*Versions* step shows it.
 
 The job prints to its log and its run summary:
 
@@ -197,6 +202,11 @@ pin notice ("CI validates with another validator") on a host whose
 channel is stable or rc. On an edge host, the same difference is
 information ("edge preview"), never a request to refresh: the pin follows
 stable.
+
+`check-upstream` reads the channel through Omarchy's own
+`omarchy-version-channel`, which greps `/etc/pacman.d/mirrorlist` and
+`/etc/pacman.conf`: a dev tool reading two files, no pacman, not a
+collector (AGENTS.md §6).
 
 1. Read the `omarchy` entry of
    `https://pkgs.omarchy.org/stable/x86_64/omarchy.db`: `%VERSION%`,
