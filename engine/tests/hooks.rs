@@ -3480,6 +3480,14 @@ mod privileged {
         bash(&h, &nested(2000), "toolu_deep_2");
         let shallow = nested(seldon::pkgcmd::SUBSTITUTION_DEPTH_MAX - 1).replace("hunter2", "x");
         bash(&h, &shallow, "toolu_deep_3");
+        // round 2 (F1): the same inside an opened `sh -c` or `eval` script
+        let script = format!(
+            "lpadmin -x a {}echo alice:hunter2 | chpasswd{}",
+            "$(".repeat(17),
+            ")".repeat(17)
+        );
+        bash(&h, &format!("sudo sh -c '{script}'"), "toolu_deep_4");
+        bash(&h, &format!("eval 'sudo {script}'"), "toolu_deep_5");
         let events = h.commands();
         let got: Vec<&str> = events
             .iter()
@@ -3487,17 +3495,26 @@ mod privileged {
             .collect();
         assert_eq!(
             got,
-            ["lpadmin ‹redacted›", "lpadmin ‹redacted›", shallow.as_str()]
+            [
+                "lpadmin ‹redacted›",
+                "lpadmin ‹redacted›",
+                shallow.as_str(),
+                "lpadmin ‹redacted›",
+                "lpadmin ‹redacted›"
+            ]
         );
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(!ledger.contains("hunter2"), "{ledger}");
     }
 
     /// WP-157: the reading of a long privileged line stays linear: the
     /// pipes and here-strings that feed a command, `xargs` read past, the
     /// process substitutions looked at for a secret, the nmcli fields and
     /// mount options the redaction reads; WP-209: a line of substitutions,
-    /// wrappers and descriptors (`opened`). Median of 21 calls of `hook
+    /// wrappers and descriptors (`opened`); round 2: 7000 `pushd` and then
+    /// 13 000 substitutions (`pushd`, 125 KB). Median of 21 calls of `hook
     /// generic` (process start, parse, redaction, the record) at 16, 64
-    /// and 128 KB; the budget holds at 128 KB.
+    /// and 128 KB; the budget holds at 128 KB and for the `pushd` line.
     #[test]
     #[ignore = "release timing at scale: `just check-perf`"]
     fn a_long_privileged_line_is_read_in_linear_time() {
@@ -3514,14 +3531,26 @@ mod privileged {
                       nmcli con mod e -f wifi-sec.psk f; \
                       python3 -c 'h = {\"secret_key\": \"\"\"g\"\"\"}'; \
                       echo $($($($($($($($($($($($($($($($($($($($(h)))))))))))))))))))); ";
-        for (kind, part, kb) in [16, 64, 128]
+        // round 2 (F3): many `pushd` and then many substitutions, each of
+        // which starts with a copy of the line's directories and stack
+        let pushd = format!("{}echo {}", "pushd /; ".repeat(7000), "$(:) ".repeat(13000));
+        let lines = [16, 64, 128]
             .into_iter()
-            .flat_map(|kb| [("", part, kb), (" with substitutions", opened, kb)])
-        {
-            let mut line = String::from("sudo lpadmin -x a; ");
-            while line.len() < kb * 1024 {
-                line.push_str(part);
-            }
+            .flat_map(|kb| {
+                [("", part, kb), (" with substitutions", opened, kb)].map(|(kind, part, kb)| {
+                    let mut line = String::from("sudo lpadmin -x a; ");
+                    while line.len() < kb * 1024 {
+                        line.push_str(part);
+                    }
+                    (kind.to_string(), line, kb)
+                })
+            })
+            .chain([(
+                " of pushd and substitutions".to_string(),
+                format!("sudo lpadmin -x a; {pushd}; tool --pass-file <(echo c)"),
+                pushd.len().div_ceil(1024),
+            )]);
+        for (kind, line, kb) in lines {
             let input = json!({
                 "command": line,
                 "actor": "agent:codex",
@@ -3532,7 +3561,8 @@ mod privileged {
             let run = || {
                 h.hook("generic", &input);
             };
-            if kb == 128 {
+            // the budget holds at 128 KB, and for the pushd line (125 KB)
+            if kb >= 125 {
                 common::assert_within_budget(&what, std::time::Duration::from_millis(60), 21, run);
             } else {
                 let (median, _) = common::median_time(21, run);

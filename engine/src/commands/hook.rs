@@ -426,11 +426,18 @@ pub fn classify(line: &ShellLine, scope: &Scope, cwd: &Path) -> Option<Mutation>
 /// and a snapshot command always: then there is no privileged record. A
 /// green record that would need a case (ADR-0019: `sudo tee /etc/x`)
 /// gives way to the privileged one, so a command is never recorded twice.
+/// The privileged record is the first in the order the shell runs the
+/// commands ([`simple_commands`]: a substitution's before the command it
+/// stands in), one whose program a substitution names (`sudo $(which x)`)
+/// only when no other has a name (WP-209).
 pub fn mutations(line: &ShellLine, scope: &Scope, cwd: &Path) -> Vec<Mutation> {
     let segments = simple_commands(line);
     let dirs = workdirs(&segments, cwd, &scope.home, |w, d| scope.resolve(w, d));
     let mut found: Option<Mutation> = None;
     let mut privileged: Option<Mutation> = None;
+    // a privileged program named by a substitution (`sudo $(which x)`):
+    // the record's subject only when no command names its program
+    let mut computed: Option<Mutation> = None;
     for (segment, dirs) in segments.iter().zip(&dirs) {
         let argv = segment.argv();
         let mutation = classify_segment(argv, &segment.writes, scope, dirs);
@@ -443,7 +450,12 @@ pub fn mutations(line: &ShellLine, scope: &Scope, cwd: &Path) -> Vec<Mutation> {
             && let Some(program) = argv.first().map(|w| program_name(w))
             && !PRIVILEGE_PROBES.contains(&program)
         {
-            privileged.get_or_insert_with(|| Mutation {
+            let slot = if program.starts_with(['$', '`']) {
+                &mut computed
+            } else {
+                &mut privileged
+            };
+            slot.get_or_insert_with(|| Mutation {
                 subject: clip(program, SUBJECT_MAX),
                 zone: Some(Zone::Red),
                 needs_case: false,
@@ -457,7 +469,7 @@ pub fn mutations(line: &ShellLine, scope: &Scope, cwd: &Path) -> Vec<Mutation> {
             found = Some(m);
         }
     }
-    found.into_iter().chain(privileged).collect()
+    found.into_iter().chain(privileged.or(computed)).collect()
 }
 
 /// The program of a command word: its last path component.
@@ -1043,8 +1055,9 @@ fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
     if found.is_empty() {
         return Vec::new();
     }
-    // a substitution too deep to read may hold anything (WP-209)
-    let skipped = line.too_deep
+    // a substitution too deep to read may hold anything, also in an
+    // opened `sh -c` or `eval` script (WP-209, round 2)
+    let skipped = crate::pkgcmd::too_deep(&line)
         || password_on_stdin(&line)
         || secret_args::secret_on_the_line(&line)
         || names_skipped_path(&line, setup, cwd);

@@ -3068,6 +3068,14 @@ mod redaction {
                 "'password': \"\"\"a\"b\"\"\", 'token': '''c\nd ''', ",
                 Some(20),
             ),
+            // round 2 (F4): the unclosed triple quote with a key and an
+            // empty value in every filler, each a match the check rejects
+            (
+                "unclosed triple quote and key near misses",
+                "h = {'password': \"\"\"",
+                "a'' \"\" \\\" 'token': \"\" x ",
+                Some(20),
+            ),
             (
                 "escaped triple quotes",
                 "python3 -c \"",

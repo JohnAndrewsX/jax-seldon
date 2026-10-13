@@ -3152,7 +3152,10 @@ body included; the word after nmcli's `password` when it is a name
 characters only after the token (a single word such as `done` on the
 next line), and each line of an unbroken run of unindented lines of 40
 or more base64 characters right before it (a hash on the line before a
-key) (WP-157). A `pass:…` value
+key) (WP-157); a triple-quoted value whose closing quotes never come
+takes the text up to the next `"""` (or `'''`) of an unrelated string,
+over lines (`{'password': """` … `doc = """…`: all between masked; WP-209
+round 2). A `pass:…` value
 after an option another rule also masks (`--pass`, `--password=`,
 `--secret-key`, …) is counted under both rules in the import report; the
 earlier rule in the order masks it, `openssl-pass` before `key-option`;
@@ -3280,14 +3283,22 @@ shell reserved word before a command (`do`, `if`, `!`, `{`; also `then`,
 `$(…)`, backticks and `<(…)` are commands of the line too, read before
 the command they stand in, as the shell runs them, and classified,
 recorded as privileged and read for a secret like any other (WP-209:
-`x=$(sudo mkpasswd PW)`); they run in a subshell, so a `cd` among them
-moves only their own commands. Limits of this reading: `${…}`, `$((…))`
-and `$[…]` run no command and are not opened (a `$(…)` inside them is
-not read); a substitution nested deeper than 16
-(`pkgcmd::SUBSTITUTION_DEPTH_MAX`) is skipped to its end unread, and the hook
-records its line as `<program> ‹redacted›`, as for `skipPaths` below (a
-line nested thousands deep neither overflows the stack nor costs more
-than 16 copies of its text; WP-209); the string of `env -S` is not opened
+`x=$(sudo mkpasswd PW)`); they run in a subshell, so they start in the
+directories of the substitution or line around them, as they are then,
+and a `cd`, `pushd` or `popd` among them moves only their own commands
+(`cd a; $(cd /x; tee p $(tee q) r)`: `p`, `q` and `r` under `/x`; round
+2). Limits of this reading: `${…}`, `$((…))` and `$[…]` are not opened,
+so a `$(…)` or backticks inside them are not read (`${x:-$(cmd)}`, `$((
+$(cmd) ))`); nor is `$((cmd) )`, a substitution whose command starts with
+a subshell, which the parser reads as arithmetic, nor a backtick
+substitution nested inside backticks by escaping (`` `a \`b\` c` ``);
+a substitution nested deeper than 16
+(`pkgcmd::SUBSTITUTION_DEPTH_MAX`) is skipped to its end unread, in the
+line and in an `sh -c` or `eval` script it opens (round 2), its text
+stands in its command's word as `$(…)`, and the hook records the line as
+`<program> ‹redacted›`, as for `skipPaths` below (a line nested
+thousands deep neither overflows the stack nor costs more than 16 copies
+of its text; WP-209); the string of `env -S` is not opened
 as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like
 any other and is not read as commands. A variable the line sets to a
 literal (`F=x; … $F`) is read with its value. Relative paths resolve
@@ -3312,7 +3323,11 @@ Probes record nothing: the wrappers' own (`sudo -l|-v|-K|-V`, `pkexec
 privileged record when a class records the command by itself (a record
 that needs no case, or a snapshot command); a green record that would
 need a case (`sudo tee /etc/x`) gives way to it. One per line, for its
-first privileged command, beside the line's class record when another
+first privileged command in the order the shell runs them (a
+substitution's commands before the command they stand in: `sudo foo
+$(sudo bar)` is recorded as `bar`; WP-209; a program named by a
+substitution, `sudo $(which x)`, only when no other has a name; round 2),
+beside the line's class record when another
 command has one (`pkexec pacman -S cups && pkexec lpadmin …`: two events
 of one tool call). The record: `agent/command`, subject the program's
 last path component (`lpadmin`), zone red, `meta.command` the redacted

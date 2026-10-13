@@ -92,11 +92,25 @@ MUTANTS = [
     ("subst: not fed by the line", PKG, plain("            fed: outer.fed,\n", "")),
     ("subst: feeds nothing after it", PKG, plain("        outer.fed |= inner.fed;\n", "")),
     ("subst: numbered 0", PKG, plain("            segment.substitution = self.substitution;\n", "")),
-    ("subst: a cd moves the line", PKG, plain("                (shell, previous, stack) = saved;\n", "                let _ = saved;\n")),
+    ("subst: a cd moves the line", PKG, plain("Dirs::of(&mut states, &parents, segment.substitution)", "Dirs::of(&mut states, &parents, 0)")),
     ("subst: no depth limit", PKG, plain(
         "        let deep = self.depth >= SUBSTITUTION_DEPTH_MAX;", "        let deep = false;",
         "i = if self.depth >= SUBSTITUTION_DEPTH_MAX {", "i = if false {")),
-    ("subst: too deep recorded whole", HOOK, plain("    let skipped = line.too_deep\n        || password_on_stdin(&line)", "    let skipped = password_on_stdin(&line)")),
+    ("subst: too deep recorded whole", HOOK, plain("    let skipped = crate::pkgcmd::too_deep(&line)\n        || password_on_stdin(&line)", "    let skipped = password_on_stdin(&line)")),
+    # round 2: F1, an opened script's depth limit
+    ("round 2 F1: the hook reads the line's flag only", HOOK, plain("    let skipped = crate::pkgcmd::too_deep(&line)\n", "    let skipped = line.too_deep\n")),
+    ("round 2 F1: a script's flag not carried", PKG, plain("                        too_deep: inner.too_deep || too_deep,\n", "                        too_deep: inner.too_deep,\n")),
+    ("round 2 F1: no marker for a script without commands", PKG, plain("                if too_deep && parsed.segments.is_empty() {", "                if false && too_deep && parsed.segments.is_empty() {")),
+    ("round 2 F1: skipped text in the word", PKG, plain("            self.skips.push((i, end, brackets));\n", "            let _ = brackets;\n")),
+    ("round 2 F1: skipped <( ) text in the word", PKG, plain('                            self.skips.push((i, end, "(…)"));\n', "")),
+    ("round 2 F1: a backtick inside $( ) ends the skip", PKG, plain("(None, '`') if stop == Stop::Backtick && parens == 0 => return i,", "(None, '`') if stop == Stop::Backtick => return i,")),
+    ("round 2 F1: a computed program named first", HOOK, plain("            let slot = if program.starts_with(['$', '`']) {", "            let slot = if false {")),
+    # round 2: F2, directories per substitution, numbers in opened scripts
+    ("round 2 F2: seeded from the line, not the parent", PKG, plain("            let seed = states[&at].clone();", "            let seed = states[&0].clone();")),
+    ("round 2 F2: numbers restart in a script", PKG, plain("                        base + n\n", "                        n\n")),
+    ("round 2 F2: a script's own commands in their shell's parent", PKG, plain(
+        "                        parent: if inner.substitution == 0 {\n                            segment.parent\n                        } else {\n                            number(inner.parent)\n                        },",
+        "                        parent: number(inner.parent),")),
     # a descriptor the line feeds (N2)
     ("fd: no <( ) descriptor", ARGS, plain("                fds.insert(descriptor(before));\n", "                let _ = before;\n")),
     ("fd: no here-string descriptor", ARGS, plain("        fds.insert(descriptor(&text[..at]));\n", "        let _ = at;\n")),
