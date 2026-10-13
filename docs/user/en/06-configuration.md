@@ -310,7 +310,10 @@ redacted value reads `‹redacted›`. The built-in rules cover:
   `"client_secret"`, `"access_token"`, `"api_key"`, `"x-api-key"` or
   `"apiKey"` in
   inline JSON (`curl -d '{"password": "…"}'`), also in a Python dict
-  (`{'x-api-key': '…'}`); `"password_hint"` stays;
+  (`{'x-api-key': '…'}`) and in Python's triple quotes
+  (`{'password': """…"""}`), and of a key word followed by `key`
+  (`"secret_key"`, `"secretKey"`, `"aws_secret_access_key"`);
+  `"password_hint"` and `"secret_key_base"` stay;
 - AWS access keys (`AKIA…`, `ASIA…`), GitHub tokens (`ghp_…`, `gho_…`,
   `github_pat_…` and the other `gh…_` forms), GitLab tokens (`glpat-…`),
   Slack tokens (`xoxb-…`), API keys (`sk-…`, `sk_…`);
@@ -331,7 +334,9 @@ redacted value reads `‹redacted›`. The built-in rules cover:
   secret holds it (`tls.key: LS0tLS1CRUdJTi…`), is masked whole;
 - nmcli's passwords and keys: the value after `password`, `wifi-sec.psk`,
   `802-1x.password`, `vpn.secrets` and the other secret properties (not a
-  field to show, `nmcli -g wifi-sec.psk con show`);
+  field to show, `nmcli -g wifi-sec.psk con show`; `-f` and `-g` name
+  fields only before the object word, so `nmcli con modify Home -f
+  wifi-sec.psk …` is masked);
 - a mount password: the option list with `pass=` or `pwd=` after
   `mount -o`;
 - the user and password in a URL (`https://user:secret@host`), also

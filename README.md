@@ -233,7 +233,7 @@ Options (with the one-liner: `| bash -s -- --unit`):
   shell to finish the update" with a *Restart shell* button; a plugin
   version without this notice shows nothing, so restart after every
   update. From 0.1.x to 0.2.0, update the engine and the plugin together
-  (index contract 2); from 0.2.x to 0.3.0 the order does not matter:
+  (index contract 2); from 0.2.x or 0.3.x to 0.4.0 the order does not matter:
   [what changed](docs/user/en/11-update-and-uninstall.md).
 - **Remove:** `bash install.sh --uninstall`, or with the one-liner
   `… | bash -s -- --uninstall`. It removes exactly the files it
@@ -271,12 +271,13 @@ an agent working on this repository follows the repository's
 
 ## Project status
 
-v0.3.0: the desk's buttons work by key (the notices, the setup card,
-*Ask agent to sort*, the width and the sidebar), a very large logbook keeps the
-desk working (the engine leaves the oldest rows out of the index and
-still counts every queued and active case, change and crisis), and the
-agent skill is a short core
-that loads its details when a task needs them. The index format is
+v0.4.0: the agent hooks return within a millisecond in a session that
+has nothing to do with Seldon, Work's header buttons work by key, every
+coloured stripe on the desk has its word beside it and an empty list
+says what belongs there, and the redaction reads the commands inside
+`$(…)`, backticks and `<(…)` and masks more secrets. v0.3.0 brought the
+other desk buttons by key, an index that stays under 1 MB on a very
+large logbook, and the short agent skill. The index format is
 still contract 2, as since v0.2.0, which made the desk. Before 1.0.0 a
 minor release may still change the CLI, the logbook layout or the
 contract; the [changelog](CHANGELOG.md) then says so under Breaking.

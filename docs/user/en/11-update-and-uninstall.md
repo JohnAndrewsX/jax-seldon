@@ -94,6 +94,49 @@ still read it, the plugin keeps working and only asks, in a quiet
 notice, for its own update ("The engine is newer than the plugin").
 After an update, `seldon doctor` should show only `ok`.
 
+## What changed from 0.3.x
+
+0.4.0 keeps the index format of 0.2.0 and 0.3.0 (version 2), so update
+the engine and the plugin in either order, with the commands above, and
+restart the shell after the plugin update. A 0.3.0 or 0.2.0 plugin reads
+a 0.4.0 engine's index, and a 0.4.0 plugin works with a 0.2.0 or 0.3.0
+engine. What changes for you:
+
+- Your agents wait less. In a session that is neither in the logbook nor
+  launched by Seldon, the hooks for session start, session end and other
+  agents (`hook session-start`, `hook session-stop`, `hook generic`) now
+  return within a millisecond, as `hook claude-code` already did.
+- Work's *By agent*, *Import tasks…* and *New case* have a key path: ↑ on
+  Work's first row (or in an empty list) reaches *By agent*, ←/→ pick a
+  button, Enter arms, a second Enter runs; ↓ goes back to the list, ↑ on
+  to the notices. None of them starts an agent. The table is in
+  [Daily use](03-daily-use.md#keys).
+- No state reads by colour alone: a coloured stripe in a desk list has
+  its word beside it (`! crisis`, `attention`, `active`, `proposed`,
+  `failing`). An empty list says what belongs there and offers one step:
+  *Clear search* (or Esc) on a search without a match, *New case* in an
+  empty Work, *New decision* in an empty Decisions.
+- The Changelog's *Agent sorts N open changes* is now *Ask agent to sort
+  N changes*. Only the label changed: `a` twice still starts the agent,
+  Enter still does nothing there.
+- A pacman transaction's detail says again when it shows only part of
+  the transaction, also for an old open change of one listed package.
+- On a narrow desk the line under the Seldon mark wraps beside the
+  counts instead of running under them.
+- More secrets are masked before they reach the logbook: passwords in
+  Python's triple quotes, keys such as `"secret_key"` or
+  `"aws_secret_access_key"`, a password file given as `/dev/fd/3` that
+  the line feeds from `<(…)`, and a Wi-Fi key set with `nmcli … -f
+  wifi-sec.psk` ([Configuration](06-configuration.md#redaction)).
+- A hook reads the commands inside `$(…)`, backticks and `<(…)` as
+  commands of the line, so `x=$(sudo mkpasswd …)` is recorded, its
+  password masked. A line with `$(…)` nested more than 16 deep no longer
+  crashes the hook: it is recorded masked, and nothing after that
+  substitution is read, so a command after it is not recorded
+  ([Working with agents](04-working-with-agents.md#what-a-hook-records)).
+- `omarchy-shell jax.seldon.panel …` still forwards to the desk; a later
+  release removes it.
+
 ## What changed from 0.2.x
 
 0.3.0 keeps the index format of 0.2.0 (version 2), so update the engine
