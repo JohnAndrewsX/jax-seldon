@@ -333,11 +333,15 @@ ShellRoot {
   // its visible items are its children, a positioner's (Row, Flow)
   // counted as its own children, all laid out first (layOut); a text
   // counts by its box like overflow() (an elided one by its width, a
-  // wrapped one that cannot wrap by what it draws). Tolerance 1 px.
+  // wrapped one that cannot wrap by what it draws); a text an item draws
+  // outside its own box (the chip's label in a chip squeezed to no room,
+  // not clipped) counts on its own, not against that item (WP-215).
+  // Tolerance 1 px.
   function overlap(item, out) {
     if (!item || item.visible === false) return out
     var name = String(item.objectName || "")
     if (name.indexOf("headerRow:") === 0) {
+      root.layOut(item)
       root.layOut(item)
       var row = item.mapToItem(win.contentItem, 0, 0)
       var parts = root.rowParts(item, [])
@@ -350,8 +354,10 @@ ShellRoot {
         if (pa.y < row.y - 1 || pa.y + pa.h > row.y + item.height + 1)
           out.push(name + ": " + pa.label + " leaves the row's height")
         for (var b = a + 1; b < parts.length; b++) {
-          var hit = root.intersect(pa, parts[b])
-          if (hit && hit.w > 1 && hit.h > 1) out.push(name + ": " + pa.label + " × " + parts[b].label)
+          var pb = parts[b]
+          if (pb.owner === a || pa.owner >= 0 && pa.owner === pb.owner) continue
+          var hit = root.intersect(pa, pb)
+          if (hit && hit.w > 1 && hit.h > 1) out.push(name + ": " + pa.label + " × " + pb.label)
         }
       }
     }
@@ -373,17 +379,16 @@ ShellRoot {
   // A positioner places its items in its polish and a wrapped text lays
   // itself out there too, before the next frame; the report runs before
   // that, so lay out the whole row first (its height follows), then measure.
+  // Every item that can (a Row, a Flow, a type built on one such as the
+  // KPI strip, a text), the inner ones first; twice, since a positioner's
+  // new width moves what is bound to it (the subline's room, WP-215).
   function layOut(item) {
     var kids = item.children
     for (var i = 0; kids && i < kids.length; i++) {
       var k = kids[i]
-      var type = String(k)
-      if (type.indexOf("QQuickRow") === 0 || type.indexOf("QQuickFlow") === 0) {
-        k.forceLayout()
-        root.layOut(k)
-      } else if (root.isText(k) && typeof k.forceLayout === "function") {
-        k.forceLayout()
-      }
+      if (!k || k.visible === false) continue
+      root.layOut(k)
+      if (typeof k.forceLayout === "function") k.forceLayout()
     }
   }
 
@@ -391,17 +396,58 @@ ShellRoot {
     var kids = item.children
     for (var i = 0; kids && i < kids.length; i++) {
       var k = kids[i]
-      if (!k || k.visible === false || k.width <= 0 && !root.isText(k) || k.height <= 0) continue
+      if (!k || k.visible === false || k.height <= 0) continue
       var type = String(k)
       if (type.indexOf("QQuickRow") === 0 || type.indexOf("QQuickFlow") === 0) {
         root.rowParts(k, out)
         continue
       }
       var text = root.isText(k)
-      var p = k.mapToItem(win.contentItem, 0, 0)
-      var w = text && k.elide === Text.ElideNone ? Math.max(k.width, k.contentWidth) : k.width
-      var h = text ? Math.max(k.height, k.contentHeight) : k.height
-      out.push({ label: text ? k.text : String(k.text || k.objectName || type.split("(")[0]), x: p.x, y: p.y, w: w, h: h })
+      if (k.width <= 0 && !text) {
+        root.strayTexts(k, null, -1, out)
+        continue
+      }
+      var box = text ? root.textBox(k) : root.itemBox(k)
+      box.label = text ? k.text : String(k.text || k.objectName || type.split("(")[0])
+      box.owner = -1
+      out.push(box)
+      if (!text) root.strayTexts(k, box, out.length - 1, out)
+    }
+    return out
+  }
+
+  function itemBox(k) {
+    var p = k.mapToItem(win.contentItem, 0, 0)
+    return { x: p.x, y: p.y, w: k.width, h: k.height }
+  }
+
+  // What a text draws: an elided one its width, one that cannot elide
+  // what it holds; one with no width left draws whole, while its
+  // contentWidth reads 0, so its natural width (implicitWidth).
+  function textBox(k) {
+    var p = k.mapToItem(win.contentItem, 0, 0)
+    var w = k.width <= 0 ? Math.max(k.contentWidth, k.implicitWidth)
+      : k.elide === Text.ElideNone ? Math.max(k.width, k.contentWidth) : k.width
+    return { x: p.x, y: p.y, w: w, h: Math.max(k.height, k.contentHeight) }
+  }
+
+  // The texts inside an item that draw outside its box (none: every text
+  // it still draws), each a part of its own, owned by that item's part.
+  function strayTexts(item, box, owner, out) {
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) {
+      var k = kids[i]
+      if (!k || k.visible === false) continue
+      if (root.isText(k)) {
+        var t = root.textBox(k)
+        if (t.w > 1 && (!box || t.x < box.x - 1 || t.x + t.w > box.x + box.w + 1 || t.y < box.y - 1 || t.y + t.h > box.y + box.h + 1)) {
+          t.label = k.text
+          t.owner = owner
+          out.push(t)
+        }
+      } else if (k.clip !== true) {
+        root.strayTexts(k, box, owner, out)
+      }
     }
     return out
   }

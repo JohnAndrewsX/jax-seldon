@@ -22,6 +22,7 @@ and the package does not exist yet. Update the plugin first:
 ### Highlights
 
 - A pacman transaction's detail says again when it shows only part of the transaction, also for an old open change of one listed package.
+- Work's *By agent*, *Import tasks…* and *New case* work by key too: ↑ on the first row reaches them, Enter twice runs one. New keys, nothing removed: this ships in the next minor release.
 
 ### Plugin
 
@@ -42,6 +43,34 @@ and the package does not exist yet. Update the plugin first:
   package list, which now appears for one package too. The graph's footer says
   "N events" instead of "Newest N events", and "the others are only in
   the logbook" instead of "older ones". No contract change.
+- **Work's header buttons have a key path (WP-215).** ↑ on Work's first
+  row (or in an empty list) puts the cursor on *By agent*; ←/→ walk *By
+  agent*, *Import tasks…* and *New case*, the one under the cursor wears
+  the focus ring, Enter arms it ("By agent? Press Enter again.") and the
+  second Enter runs exactly what its click runs. None of them starts an
+  agent, so Enter never does. ↓ goes back to the first row, ↑ on to the
+  notices; any other key, a click on the desk, a summon or another
+  selection cancels. The case keys `a`, `x`, `r` and `e` do nothing
+  there: the cursor is on no case. A dim line under the buttons names the keys; where
+  the engine cannot write, *Import tasks…* and *New case* arm nothing and
+  the line says why. `shell call jax.seldon select header` places the
+  cursor for scripts, never pressing. A compatible addition (new keys,
+  nothing changed or removed), so it ships in the next minor release.
+- **The desk header keeps its subline clear of the KPI strip on a narrow
+  desk (WP-215).** On a 740 px desk (a 750 px window) "machine · Omarchy
+  version · captured N ago" ran under ACTIVE and VERIFICATION, and with
+  a notice up the status chip's count lay on ACTIVE (up to an 850 px
+  window) or the chip was an empty pill (900 px). The subline now wraps
+  into the room left of the strip, two lines at most, and leaves the
+  chip the room for its count, so the chip shows at least "▾ 1".
+- **Every header row is checked for overlap (WP-215).** The harness's
+  overlap check (WP-211) now covers the desk header, Today's date row,
+  the Changelog's count and "N hidden" rows and Decisions' summary row
+  besides Work's WIP row, from a 750 px window to 2048×1152 at scale
+  1.25, at 100 % and 50 %, and the desk header with a notice up. It
+  also sees a text drawn outside its item (the chip's count in a chip
+  squeezed to no room) and measures the first frame after a summon as
+  drawn.
 
 ## [0.3.0] - 2026-10-12
 

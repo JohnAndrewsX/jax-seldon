@@ -845,6 +845,26 @@ function askHint(focused) {
   return focused ? "a twice starts it · ↓ back to the list" : "↑ from the top of the list reaches it"
 }
 
+// Work's header buttons as key targets (WP-215), in the row's order:
+// [{ id, label, key, enabled }]. The key names what the press would run
+// (the filter it sets, the form it opens or closes), so an arm made before
+// the state changed only arms again. None of them starts an agent.
+function workHeadTargets(byAgent, importOpen, sheetOpen, canWrite) {
+  var write = canWrite === true
+  return [
+    { id: "agent", label: "By agent", enabled: true, key: "work:agent:" + (byAgent === true ? "off" : "on") },
+    { id: "import", label: "Import tasks…", enabled: write, key: "work:import:" + (importOpen === true ? "close" : "open") },
+    { id: "new", label: "New case", enabled: write, key: "work:new:" + (sheetOpen === true ? "close" : "open") }
+  ]
+}
+
+// The line under Work's header buttons: how the keys reach them and, there,
+// what they do; `blocker`: why the button under the cursor is off.
+function workHeadHint(focused, blocker) {
+  if (!focused) return "↑ from the first row reaches these buttons"
+  return hasText(blocker) ? String(blocker) : KEY_BUTTONS_HINT
+}
+
 // Settings: the controls of a group the keys walk (↑/↓), in order.
 function settingsControls(group, offerAgain) {
   if (group === "appearance") return ["width", "presets", "sidebar"]

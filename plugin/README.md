@@ -258,7 +258,7 @@ The desk's keys (the full table with every section's keys:
 | `i` | the one-sentence new case (Today, Work) |
 | `e` | open in the editor: the journal, this month's ledger, the case, the decision, `STATUS.md`, the logbook |
 | `f` / `F` | Changelog: the next / previous chip |
-| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` its crises (Enter twice applies the one under the cursor alone), then back to the list. On it, Enter twice applies it; ↑ again: *Agent sorts*, `a` twice starts it. Today, while Seldon is not set up: the setup card's row; ←/→ a button, Enter twice runs it |
+| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` its crises (Enter twice applies the one under the cursor alone), then back to the list. On it, Enter twice applies it; ↑ again: *Agent sorts*, `a` twice starts it. Today, while Seldon is not set up: the setup card's row; ←/→ a button, Enter twice runs it. Work: the header's buttons (*By agent*, *Import tasks…*, *New case*); ←/→ a button, Enter twice runs it |
 | Enter on Appearance | Settings: the width slider, the presets, the sidebar; ↑/↓ a control, ←/→ its value, Enter twice saves it, Esc back |
 | `a` | Work: hand the case to the agent (twice), or *Focus* while one works on it |
 | `x` | Work: drop the case (twice) |
@@ -375,7 +375,7 @@ o.bind("SUPER + SHIFT + L", "Seldon", "omarchy-shell shell toggle jax.seldon")
 | `omarchy-shell shell summon jax.seldon '{"section":"work"}'` | open the desk at a section (`today`, `changelog`, `work`, `decisions`, `system`, `memory`, `radiant`, `graph`, `settings`); `"select":"<id>"` selects an item, `"filter":"crisis"` a Changelog chip, `"period":"30"` opens the Prime Radiant on a period |
 | `omarchy-shell shell call jax.seldon view ""` | what the open desk shows, as JSON |
 | `omarchy-shell shell call jax.seldon section <id>` | show a section of the open desk |
-| `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section; `notices`, `setup`, `ask`, `width`, … put the keys on a button without pressing it |
+| `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section; `notices`, `setup`, `ask`, `header`, `width`, … put the keys on a button without pressing it |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`) |
 | `omarchy-shell shell call jax.seldon hover "series 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON, while section 7 is shown; `hover ""` clears; a malformed argument returns `{"error": …}` and changes nothing |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide\|tab <name>\|resolve crisis\|proposal\|<event id>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk; a later release removes it (the CHANGELOG announces it under Breaking) |

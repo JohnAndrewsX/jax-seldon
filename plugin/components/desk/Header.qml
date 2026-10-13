@@ -9,8 +9,15 @@ import "../../Model.js" as Model
 // Omarchy version · captured N ago; the status chip when a notice is up
 // (the first notice's title and how many more, or "N notices" where the
 // title does not fit; a click folds the notices under the header); the KPI strip; Settings (`,`) and Esc.
+// Where the subline does not fit left of the KPI strip (a 740 px desk) it
+// wraps into the room there, on two lines at most; while the chip is up it
+// leaves the chip the room for its count, so the chip never lies on the
+// strip (WP-215). The row is `headerRow:desk` for the harness's overlap
+// check (WP-211).
 Item {
   id: root
+
+  objectName: "headerRow:desk"
 
   readonly property Tone tone: Tone {}
 
@@ -54,11 +61,23 @@ Item {
     text: "H"
   }
 
+  TextMetrics {
+    id: subMetrics
+    font: sub.font
+    text: sub.text
+  }
+
   Item {
     id: brand
+    // the subline's room: up to the KPI strip, its spacing kept, less the
+    // chip's count form while the chip is up (SPEC-PLUGIN §5.2: the count
+    // alone where nothing more fits)
+    readonly property real room: Math.max(0, kpiStrip.x - Style.spacing.huge - brand.x - title.x
+      - (chip.visible ? Math.ceil(chipCountMetrics.advanceWidth) + Style.spacing.xl * 2 + Style.spacing.huge : 0))
+    objectName: "deskBrand"
     x: Style.spacing.huge
     anchors.verticalCenter: parent.verticalCenter
-    width: title.x + Math.max(title.implicitWidth, sub.implicitWidth)
+    width: title.x + Math.max(title.implicitWidth, sub.width)
     height: Math.max(root.mark.box, sub.y + sub.implicitHeight)
 
     MaskIcon {
@@ -89,8 +108,14 @@ Item {
       id: sub
       x: title.x
       anchors.top: title.bottom
+      // whole pixels: a line that fits must not wrap on a rounding
+      width: Math.min(Math.ceil(subMetrics.advanceWidth), brand.room)
       textFormat: Text.PlainText
-      text: root.subline
+      // the "·" keeps to the word before it: no line starts with it
+      text: root.subline.replace(/ · /g, "\u00a0· ")
+      wrapMode: Text.Wrap
+      maximumLineCount: 2
+      elide: Text.ElideRight
       color: root.tone.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -107,6 +132,12 @@ Item {
     id: chipShort
     font: chipLabel.font
     text: "▾ " + chip.shortText
+  }
+
+  TextMetrics {
+    id: chipCountMetrics
+    font: chipLabel.font
+    text: (root.noticesFolded ? "▸ " : "▾ ") + root.chipCount
   }
 
   BorderSurface {
@@ -151,6 +182,7 @@ Item {
 
   KpiStrip {
     id: kpiStrip
+    objectName: "kpiStrip"
     anchors.right: tools.left
     anchors.rightMargin: Style.spacing.huge
     anchors.verticalCenter: parent.verticalCenter

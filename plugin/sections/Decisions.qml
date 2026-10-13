@@ -152,7 +152,10 @@ ReadingSection {
   }
 
   head: [
+    // The summary and *New decision*; a header row for the harness's
+    // overlap check (WP-211, WP-215).
     Item {
+      objectName: "headerRow:decisions"
       width: parent ? parent.width : 0
       height: Math.max(summary.implicitHeight, newButton.implicitHeight)
 

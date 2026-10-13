@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ e0df9cca -->
+<!-- source: en/03-daily-use.md @ eb182538 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
@@ -149,7 +149,7 @@ Die Tasten des Desks gelten, solange der Desk offen ist.
 | `i` | das Feld *New case* in Today, das Feld für den einen Satz in Work |
 | `e` | im Editor öffnen: Today das Journal, Changelog das Ledger des Monats, Work den Case, Decisions die Entscheidung, System `STATUS.md`, Memory das Logbuch |
 | `f` / `F` | Changelog: der nächste / vorherige Chip |
-| ↑ / `k` in der ersten Zeile | Changelog: der Triage-Vorschlag des Agenten, dann *Agent sorts N open changes*; ↓ / `j` zurück zur Liste. Today, solange Seldon nicht eingerichtet ist: die Zeile der Setup-Karte |
+| ↑ / `k` in der ersten Zeile | Changelog: der Triage-Vorschlag des Agenten, dann *Agent sorts N open changes*; ↓ / `j` zurück zur Liste. Today, solange Seldon nicht eingerichtet ist: die Zeile der Setup-Karte. Work: *By agent*, *Import tasks…* und *New case* |
 | ← / →, `h` / `l` auf einem Hinweis | die Knöpfe des Hinweises; ↑ / ↓ die Hinweise, ↓ auf dem letzten oder Esc zurück zur Liste |
 | Enter auf Appearance | Settings: der Schieberegler für die Breite, die Vorgaben, die Seitenleiste; ↑ / ↓ ein Element, ← / → sein Wert, Esc zurück |
 | `a` | Work: den Case einem Agenten übergeben (zweimal drücken); solange ein Agent daran arbeitet, *Focus* (einmal) |
@@ -184,7 +184,8 @@ einen Case hinzu), *Focus*, *Apply proposals*, *Capture now* und *Open in
 editor*.
 
 Jeder Knopf hat einen Weg über die Tasten. Die Knöpfe über der Liste (die
-Hinweise, die Setup-Karte, *Agent sorts N open changes*) und die
+Hinweise, die Setup-Karte, *Agent sorts N open changes*, in Work *By
+agent*, *Import tasks…* und *New case*) und die
 Elemente in Settings › Appearance erreichst du mit den Pfeilen; der Knopf
 unter dem Cursor hat einen Rahmen, und eine blasse Zeile daneben nennt
 die Tasten. Dort schaltet Enter den Knopf scharf, und das zweite Enter
@@ -194,7 +195,9 @@ Agenten, also schaltet `a` ihn scharf und ein zweites `a` startet den
 Agenten, wie bei einem Case. Jede andere Taste, ein Klick auf den Desk
 oder eine andere Auswahl bricht ab. ← / → wählen einen anderen Knopf
 oder Wert. Ein gehaltenes ↑ hält oben in der Liste an; ein weiterer
-Druck führt zu den Hinweisen.
+Druck führt zu den Hinweisen. Auf den Knöpfen in Work steht der Cursor
+auf keinem Case, also tun die Case-Tasten `a`, `x`, `r` und `e` dort
+nichts.
 
 Eine gehaltene Taste wirkt einmal. Ihre Wiederholungen schalten nie
 scharf, bestätigen nie, schreiben nie und starten nichts; eine scharfe

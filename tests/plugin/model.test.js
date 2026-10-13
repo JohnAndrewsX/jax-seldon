@@ -3970,6 +3970,24 @@ test("WP-202: the keys' path to the desk's buttons", () => {
   assert.strictEqual(M.askHint(false), "↑ from the top of the list reaches it")
   // `a` twice, as on a case: Enter never starts an agent (WP-122)
   assert.strictEqual(M.askHint(true), "a twice starts it · ↓ back to the list")
+  // Work's header buttons (WP-215): the row's order, each key naming what
+  // the press runs; Import tasks… and New case off where nothing writes
+  const wh = (...a) => M.workHeadTargets(...a).map((b) => [b.id, b.label, b.key, b.enabled].join("|"))
+  same(wh(false, false, false, true), ["agent|By agent|work:agent:on|true",
+    "import|Import tasks…|work:import:open|true", "new|New case|work:new:open|true"])
+  same(wh(true, true, true, false), ["agent|By agent|work:agent:off|true",
+    "import|Import tasks…|work:import:close|false", "new|New case|work:new:close|false"])
+  same(wh(), ["agent|By agent|work:agent:on|true", "import|Import tasks…|work:import:open|false",
+    "new|New case|work:new:open|false"])
+  // ←/→ walk them as a notice's buttons, clamped at the ends
+  const heads = { actions: M.workHeadTargets(false, false, false, true) }
+  assert.strictEqual(M.stepAction(heads, "agent", 1), "import")
+  assert.strictEqual(M.stepAction(heads, "new", 1), "new")
+  assert.strictEqual(M.stepAction(heads, "agent", -1), "agent")
+  assert.strictEqual(M.pickAction(heads, "new").key, "work:new:open")
+  assert.strictEqual(M.workHeadHint(false, ""), "↑ from the first row reaches these buttons")
+  assert.strictEqual(M.workHeadHint(true, ""), "←/→ a button · Enter twice runs it · ↓ back to the list")
+  assert.strictEqual(M.workHeadHint(true, "Dev mode is read-only"), "Dev mode is read-only")
   // Settings: the controls the keys walk, the width ←/→ picks
   same(M.settingsControls("appearance", false), ["width", "presets", "sidebar"])
   same(M.settingsControls("capture", true), ["offer"])

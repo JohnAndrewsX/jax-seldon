@@ -27,6 +27,7 @@ checks in `tests/plugin/desk-view.sh` together.
 | `f` / `F` | Changelog: the next / previous chip (open, crisis, attention, routine, in case, all) |
 | `↑` / `k` on the first row | Changelog: the agent's triage proposal (the row above the list); `↓` / `j` back to the list. On the proposal, Enter arms *Apply proposals*, a second Enter applies it (on a narrow desk the first Enter shows its detail); `↓` walks its crises before the list (`↑` back onto the proposal), Enter arms the one under the cursor, a second Enter applies that crisis alone, as its *Apply this crisis* button does. `↑` on the proposal (or on the first row without one): *Agent sorts N open changes*, `a` twice starts the agent (Enter does nothing there) |
 | `↑` / `k` on the first row | Today, while Seldon is not set up: the setup card's row; `←`/`→` pick a button of the current step, Enter twice runs it (on a narrow desk the first Enter shows the card) |
+| `↑` / `k` on the first row | Work: the header's buttons, *By agent* first; `←`/`→` *By agent*, *Import tasks…*, *New case*, Enter twice runs the one under the cursor as its click does (none starts an agent); the case keys `a`, `x`, `r`, `e` do nothing there (the cursor is on no case); `↓` / `j` back to the first row, `↑` on to the notices |
 | `↑` / `k` at the top of a list | on a fresh press (a held `↑` stops at the top) the notices' buttons: `↑`/`↓` the notices, `←`/`→` (`h`/`l`) a notice's buttons, Enter twice runs one (*Restart shell*, *Install*, *Update rules*, …); `↓` on the last notice or Esc back to the list |
 | `Enter` on Appearance | Settings: the controls; `↑`/`↓` width slider, presets, sidebar, `←`/`→` the value (the width as a preview), Enter twice saves it, Esc back to the groups. On Capture the same reaches *Offer again* |
 | `a` | Work: hand the case to the agent (twice; the only key that starts one); while an agent works on the case, *Focus*: bring its window to the front (once) |
@@ -50,7 +51,7 @@ replay, then lets a kept card go, then closes.
 while it has the focus; Esc in it gives the keys back and keeps the text.
 Writing actions need a second press (the action bar shows the hint); any
 other key cancels. Every button the keys reach above (a notice's, the
-setup card's, a Settings control) takes Enter twice and runs what its
+setup card's, Work's header buttons, a Settings control) takes Enter twice and runs what its
 click runs (*Agent sorts* takes `a` twice); any other key, a click on the desk, a summon
 or another selection cancels. A held key counts as one press: its repeats never
 confirm, write or start anything; only the keys that move (arrows, page
@@ -74,7 +75,7 @@ Tab and Shift-Tab do nothing: the desk is not a bar popup.
 | `omarchy-shell shell call jax.seldon view ""` | what the desk shows, as JSON (while it is open) |
 | `omarchy-shell shell call jax.seldon section <id>` | show a section |
 | `omarchy-shell shell summon jax.seldon '{"section":"changelog","filter":"crisis"}'` | the Changelog at a chip (`open`, `crisis`, `attention`, `routine`, `case`, `all`); `"select":"<eventId>"` selects an event |
-| `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section (an event, a case, a decision id, …; the Changelog: `proposal`, the agent's triage proposal; the graph: keep that node's card); put the keys on a button, never pressing it: `notices`, `notice:<id>` (any section), `setup` (Today), `ask` (Changelog, *Agent sorts*), `width`, `presets`, `sidebar`, `offer` (Settings) |
+| `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section (an event, a case, a decision id, …; the Changelog: `proposal`, the agent's triage proposal; the graph: keep that node's card); put the keys on a button, never pressing it: `notices`, `notice:<id>` (any section), `setup` (Today), `ask` (Changelog, *Agent sorts*), `header` (Work, *By agent*), `width`, `presets`, `sidebar`, `offer` (Settings) |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`); an unknown id changes nothing |
 | `omarchy-shell shell call jax.seldon hover "heatmap 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (fractions of its plot; `""` clears), while it is shown |
 | `omarchy-shell jax.seldon.panel open\|close\|show\|hide\|toggle\|tab <name>\|resolve <eventId\|crisis\|proposal>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until a later release removes it (announced in the CHANGELOG) |

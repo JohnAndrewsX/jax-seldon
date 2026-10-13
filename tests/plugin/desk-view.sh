@@ -1299,6 +1299,50 @@ for size in 750x700 900x700 1366x768 1920x1080 2048x1152; do
 done
 expect work-wip-short-2048x1152 3 .view.desk.w 1019
 
+# 8d⁗. Every header row the desk draws (WP-215): the desk header (the mark
+#      and subline, the chip, the KPI strip, Settings and Esc), Today's
+#      date row, the Changelog's count row and its "N hidden" row,
+#      Decisions' summary row and Work's WIP row, at the sizes of 8d‴ and
+#      at 100 % and 50 %. Each step names the rows it found (no row, no
+#      pass); no item of a row draws over another or leaves it (`overlap`),
+#      nothing leaves the desk. On a 740 px desk the subline wraps left of
+#      the KPI strip instead of running under it.
+for size in 750x700 900x700 1366x768 1920x1080 2048x1152; do
+  scale=1
+  [[ $size == 2048x1152 ]] && scale=1.25
+  name="header-rows-$size"
+  run "$name" "$sample" "$size" \
+    "summon;text:2;select:$THEME;click:Hide;text:4;text:3;width:50;text:1;text:2;text:4;text:3;shot:$name" \
+    HARNESS_SHOTS="${DESK_SHOTS:-}" QT_SCALE_FACTOR="$scale"
+  for i in 1 8; do expect "$name" $i '.headerRows | sort | join(",")' "headerRow:desk,headerRow:today"; done
+  expect "$name" 2 '.headerRows | sort | join(",")' "headerRow:changelog,headerRow:desk"
+  expect "$name" 9 '.headerRows | sort | join(",")' "headerRow:changelog,headerRow:changelog-hidden,headerRow:desk"
+  for i in 5 10; do expect "$name" $i '.headerRows | sort | join(",")' "headerRow:decisions,headerRow:desk"; done
+  for i in 6 7 11; do expect "$name" $i '.headerRows | sort | join(",")' "headerRow:desk,headerRow:work"; done
+  for i in 1 2 3 4 5 6 7 8 9 10 11; do
+    expect "$name" $i '.overlap | join(" | ")' ""
+    expect "$name" $i '.overflow | join(" | ")' ""
+  done
+  clean_log "$name"
+done
+# … with a notice up (the restart notice, manifest 99) on a 750 and a
+#   900 px window: the subline leaves the chip the room for its count, so
+#   the chip shows at least the count, whole, and never lies on the KPI
+#   strip (SPEC-PLUGIN §5.2). Today, Work, and both again at 50 %.
+chip_manifest=$(jq -c '.version = "99.0.0"' <<<"$manifest")
+for size in 750x700 900x700; do
+  name="header-chip-$size"
+  run "$name" "$sample" "$size" "summon;text:3;shot:$name-100;width:50;text:1;text:3;shot:$name" \
+    HARNESS_MANIFEST="$chip_manifest" HARNESS_SHOTS="${DESK_SHOTS:-}"
+  for i in 1 2 4 5 6; do
+    expect "$name" $i '.headerRows | index("headerRow:desk") != null' true
+    expect "$name" $i '[(.view.chipShown | length > 2), .view.chipTruncated] | map(tostring) | join(",")' "true,false"
+    expect "$name" $i '.overlap | join(" | ")' ""
+    expect "$name" $i '.overflow | join(" | ")' ""
+  done
+  clean_log "$name"
+done
+
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"
 run work-live "" 1920x1080 \
@@ -3912,6 +3956,93 @@ expect keys-ask-stacked 4 "$ak" "true,false,false,-1"
 expect keys-ask-stacked 5 "$tt.askArmed" true
 argv_check keys-ask-stacked "$work/home-keys-ask-stacked" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)")"
 clean_log keys-ask-stacked
+
+# Work's header buttons (WP-215), on the sample (dev mode): ↑ on the first
+# row reaches *By agent* (no row selected, one ring, the line names the
+# keys); Enter arms, ↓ drops it and goes back to the first row; Enter
+# twice filters as the click does; → *Import tasks…*, off in dev mode,
+# arms nothing and the line says why; ← back, Enter arms "off"; a row
+# click drops place and arm; IPC `select header` only places the cursor;
+# a summon drops place and arm; Space twice runs it too.
+run keys-work "$sample" 1920x1080 \
+  "summon:$wk;key:Up;key:Return;key:Down;key:Up;key:Return;key:Return;key:Right;key:Return;key:Left;key:Return;click:Omarchy auf 4.0.7 aktualisieren;call:select:header;key:Return;summon:$wk;key:Up;key:Space;key:Space"
+wh="[$tv.head.button, $tv.head.armed, .view.arm.armed, $tv.cursor, $tv.filter] | map(tostring) | join(\",\")"
+expect keys-work 1 "$wh" ",false,,0,"
+shows keys-work 1 "↑ from the first row reaches these buttons"
+expect keys-work 2 "$wh" "agent,false,,-1,"
+expect keys-work 2 '.marks.rings | length' 1
+expect keys-work 2 '.marks.rows | join(",")' ""
+shows keys-work 2 "←/→ a button · Enter twice runs it · ↓ back to the list"
+expect keys-work 3 "$wh" "agent,true,work:agent:on,-1,"
+shows keys-work 3 "By agent? Press Enter again."
+expect keys-work 4 "$wh" ",false,,0,"
+expect keys-work 5 "$wh" "agent,false,,-1,"
+expect keys-work 6 "$wh" "agent,true,work:agent:on,-1,"
+expect keys-work 7 "$wh" "agent,false,,-1,agent"
+shows keys-work 7 "COMPLETED · 1 / 2"
+expect keys-work 8 "[($wh), $tv.head.hint] | join(\"|\")" "import,false,,-1,agent|Dev mode is read-only"
+expect keys-work 9 "[($wh), $tv.import.open] | map(tostring) | join(\"|\")" "import,false,,-1,agent|false"
+expect keys-work 10 "$wh" "agent,false,,-1,agent"
+expect keys-work 11 "$wh" "agent,true,work:agent:off,-1,agent"
+shows keys-work 11 "By agent? Press Enter again."
+expect keys-work 12 "$wh" ",false,,0,agent"
+expect keys-work 13 "[.call, ($wh)] | join(\"|\")" "ok|agent,false,,-1,agent"
+expect keys-work 14 "$wh" "agent,true,work:agent:off,-1,agent"
+expect keys-work 15 "$wh" ",false,,0,agent"
+expect keys-work 17 "$wh" "agent,true,work:agent:off,-1,agent"
+expect keys-work 18 "$wh" "agent,false,,-1,"
+for i in 2 3 8; do expect keys-work $i '.overlap | join(" | ")' ""; done
+clean_log keys-work
+# … live: → *Import tasks…*, Enter twice opens the form with the path
+# field focused (the cursor leaves the buttons), a path and Return make the
+# click's dry run; Esc closes it; ↑ → → *New case*, Enter twice opens the
+# sheet, a title and Return create the case. The engine's argv holds those
+# two calls and no agent start: Enter never starts an agent.
+mkdir -p "$work/home-keys-work/projects"
+printf '%s\n' "# Desk" "- [ ] Fix the bar flicker" >"$work/home-keys-work/projects/TODO.md"
+run keys-work-live "" 1920x1080 \
+  "summon:$wk;key:Up;key:Right;key:Return;key:Return;type:~/projects/TODO.md;key:Return;settle;key:Escape;key:Up;key:Right;key:Right;key:Return;key:Return;type:Key case;key:Return;settle" \
+  HOME="$work/home-keys-work" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
+expect keys-work-live 3 "$wh" "import,false,,-1,"
+expect keys-work-live 4 "$wh" "import,true,work:import:open,-1,"
+shows keys-work-live 4 "Import tasks…? Press Enter again."
+expect keys-work-live 5 "[($wh), $tv.import.open, $tv.import.editing] | map(tostring) | join(\"|\")" ",false,,0,|true|true"
+expect keys-work-live 9 "[$tv.import.open, .view.keys] | map(tostring) | join(\",\")" "false,true"
+expect keys-work-live 10 "$wh" "agent,false,,-1,"
+expect keys-work-live 13 "$wh" "new,true,work:new:open,-1,"
+expect keys-work-live 14 "[($wh), $ts.open, $ts.editing] | map(tostring) | join(\"|\")" ",false,,0,|true|true"
+argv_check keys-work-live "$work/home-keys-work" "$(printf '%s\n' "$startup" \
+  "$(q import task --json --dry-run -- '~/projects/TODO.md')" "$(q plan new --zone yellow --risk R1 --json -- "Key case")")"
+clean_log keys-work-live
+# … stacked: ↑ on the first row while its detail is shown brings the list
+# back with the cursor on *By agent*; Enter twice filters, no detail opens.
+run keys-work-stacked "$sample" 700x900 "summon:$wk;key:Return;key:Up;key:Return;key:Return"
+expect keys-work-stacked 2 .view.detailShown true
+expect keys-work-stacked 3 "[.view.detailShown, ($wh)] | map(tostring) | join(\"|\")" "false|agent,false,,-1,"
+expect keys-work-stacked 4 "$wh" "agent,true,work:agent:on,-1,"
+expect keys-work-stacked 5 "[.view.detailShown, ($wh)] | map(tostring) | join(\"|\")" "false|agent,false,,-1,agent"
+clean_log keys-work-stacked
+# … with a notice up (the restart notice): ↑ on the buttons goes on to the
+# notices, ↓ there comes back onto *By agent*, Enter arms it.
+run keys-work-notice "$sample" 1920x1080 "summon:$wk;key:Up;key:Up;key:Down;key:Return" \
+  HARNESS_MANIFEST="$updated_manifest"
+expect keys-work-notice 2 "[.view.noticeKeys.id, ($wh)] | join(\"|\")" "|agent,false,,-1,"
+expect keys-work-notice 3 "[.view.noticeKeys.id, $tv.head.button] | join(\"|\")" "restart|"
+expect keys-work-notice 4 "[.view.noticeKeys.id, ($wh)] | join(\"|\")" "|agent,false,,-1,"
+expect keys-work-notice 5 "$wh" "agent,true,work:agent:on,-1,"
+clean_log keys-work-notice
+# … live, the case keys: on the buttons the cursor is not on a case, so
+# `a`, `x`, `r` and `e`, once or twice, do nothing there (no arm, no engine
+# call); ↓ back on the first row, `a` arms its case's action again.
+mkdir -p "$work/home-keys-letters"
+run keys-work-letters "" 1920x1080 \
+  "summon:$wk;key:Up;text:a;text:a;text:x;text:x;text:r;text:r;text:e;settle;key:Down;text:a" \
+  HOME="$work/home-keys-letters" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
+for i in 3 4 5 6 7 8 9 10; do expect keys-work-letters $i "$wh" "agent,false,,-1,"; done
+expect keys-work-letters 11 "$wh" ",false,,0,"
+expect keys-work-letters 12 "$wh" ",false,case:C-2026-003:agent,0,"
+argv_check keys-work-letters "$work/home-keys-letters" "$startup"
+clean_log keys-work-letters
 
 # Settings › Appearance: Enter reaches the slider; Enter on the stored
 # width arms nothing; ← previews 90 %, Enter arms, IPC `select width`
