@@ -695,6 +695,12 @@ compatible addition is a minor release, a fix a patch):
   re-scoped to `serde-saphyr` (safe Rust, maintained), on the roadmap
   before the expiry, and needs the operator's §7 go after its
   measurements.
+- E91 (2026-10-13) the next release is 0.4.0 from `next`, cut after
+  WP-209 (redaction) merges, with WP-178 in it: WP-215's header keys are
+  already a compatible addition, so a release from `next` is a minor
+  anyway. The contract-3 release moves from 0.4 to 0.5 (only the number,
+  as E86). The tag still needs the operator's go with the acceptance
+  output (E88).
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:
