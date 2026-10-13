@@ -136,7 +136,7 @@ The desk's keys work while the desk is open.
 | `i` | Today's *New case* field, Work's intent field |
 | `e` | open in your editor: Today the journal, Changelog this month's ledger, Work the case, Decisions the decision, System `STATUS.md`, Memory the logbook |
 | `f` / `F` | Changelog: the next / previous chip |
-| ↑ / `k` on the first row | Changelog: the agent's triage proposal, then *Agent sorts N open changes*; ↓ / `j` back to the list. Today, while Seldon is not set up: the setup card's row. Work: *By agent*, *Import tasks…* and *New case* |
+| ↑ / `k` on the first row | Changelog: the agent's triage proposal, then *Ask agent to sort N changes*; ↓ / `j` back to the list. Today, while Seldon is not set up: the setup card's row. Work: *By agent*, *Import tasks…* and *New case* |
 | ← / →, `h` / `l` on a notice | the notice's buttons; ↑ / ↓ the notices, ↓ on the last one or Esc back to the list |
 | Enter on Appearance | Settings: the width slider, the presets, the sidebar; ↑ / ↓ a control, ← / → its value, Esc back |
 | `a` | Work: hand the case to an agent (press twice); while an agent works on it, *Focus* (once) |
@@ -170,12 +170,12 @@ sentence, the new-case sheet, *Reopen* (it only adds a case), *Focus*,
 *Apply proposals*, *Capture now* and *Open in editor*.
 
 Every button has a key path. The buttons above the list (the notices,
-the setup card, *Agent sorts N open changes*, Work's *By agent*, *Import
+the setup card, *Ask agent to sort N changes*, Work's *By agent*, *Import
 tasks…* and *New case*) and the controls in
 Settings › Appearance are reached with the arrows; the one under the
 cursor has a frame, and a dim line next to it names the keys. There,
 Enter arms the button and the second Enter runs it, whatever it does
-(also *Copy*): "Restart shell? Press Enter again." *Agent sorts* is the
+(also *Copy*): "Restart shell? Press Enter again." *Ask agent to sort* is the
 exception: Enter never starts an agent, so `a` arms it and a second `a`
 starts the agent, as on a case. Any other key, a click on the desk or
 another selection cancels it. ← / → pick another button or value. A
@@ -220,8 +220,9 @@ form. Resolved there, it leaves NEEDS YOU.
 The Changelog lists what happened, newest first, grouped by day. The
 chips at the top filter: **open · crisis · attention · routine · in case
 · all**, each with its count (`f` / `F`; the Changelog opens on *open*).
-Open changes have a stripe, a crisis in your theme's urgent colour,
-attention in the accent. Routine changes (a theme switch, a toggle, a
+Open changes have a stripe and a word beside it, so the colour is
+never the only sign: "! crisis" in your theme's urgent colour,
+"attention" in the accent. Routine changes (a theme switch, a toggle, a
 plain upgrade) are ordinary rows: history, nothing to resolve. A quiet
 line says "N changes without a case". *Capture now* (`c`) runs a capture
 and says what it found; *Ledger* (`e`) opens this month's ledger view in
@@ -257,8 +258,8 @@ is the recorded way.
 
 ![An agent's triage proposal in the Changelog: Apply proposals (2) and Discard at the top, the crisis held back under CRISES — EACH ON ITS OWN with Apply this crisis, and under WHAT APPLY TAKES each item with its evidence and who wrote it](../../images/desk-tokyo-night-triage.png)
 
-While changes are open, the Changelog's head offers **Agent sorts N open
-changes**. One click starts your agent with `seldon agent ask triage`.
+While changes are open, the Changelog's head offers **Ask agent to sort
+N changes**. One click starts your agent with `seldon agent ask triage`.
 The agent writes nothing into the logbook. It stores a proposal: for each
 change a link to a case or an explanation, each with evidence the engine
 checked. The proposal shows as a row, "Proposal · N items proposed by …",
@@ -266,7 +267,7 @@ and its detail lists every item with its evidence. Evidence written by an
 agent or of unknown authorship is marked "Read twice". Open it with a
 click, or with the keys: the proposal is the row above the list, so ↑
 (or `k`) on the first row reaches it and ↓ (or `j`) goes back. One more
-↑ reaches *Agent sorts N open changes*: `a` twice starts the agent.
+↑ reaches *Ask agent to sort N changes*: `a` twice starts the agent.
 
 - *Apply proposals* applies the items in one click, as you. By key,
   Enter arms it and a second Enter applies it. A second Apply changes
@@ -353,7 +354,7 @@ working on it keeps recording there; the result line says so.
 *Sample data.*
 
 Decisions lists your ADRs, newest first: title, id and status, the date
-at the right; a proposed one is striped. The detail shows the first
+at the right; a proposed one has a stripe and the word "proposed". The detail shows the first
 paragraph of the decision and the cases it names; a click on a case
 opens it in Work. *Open in editor* (`e`) opens the decision. *Accept*, on
 a proposed decision, takes two clicks: the first reads *Confirm accept*,
@@ -475,7 +476,7 @@ When the desk opens a window for you, it closes, so the new window is in
 front instead of behind it. That happens after the engine has answered:
 an agent started (*Hand to agent*, *Run*, *New case*) or focused
 (*Focus*), your editor opened (*Open in editor*, a new decision), an
-agent asked (*Ask agent*, *Agent sorts N open changes*). A fix in a
+agent asked (*Ask agent*, *Ask agent to sort N changes*). A fix in a
 terminal from a notice closes it at once. If the engine refuses, the desk
 stays open and shows why. The desk remembers the section and the
 selection, so the next open shows the case you left.
@@ -499,7 +500,7 @@ so the result is the same:
 | *Reopen* | `seldon plan reopen <ID>` |
 | *Hand to agent*, *Focus* | `seldon agent start <ID>`, `seldon agent focus <ID>` |
 | *Ask agent* | `seldon agent ask drift <EVENT>`, `seldon agent ask case <ID>` |
-| *Agent sorts N open changes* | `seldon agent ask triage` |
+| *Ask agent to sort N changes* | `seldon agent ask triage` |
 | *Apply proposals*, *Discard* | `seldon drift apply <PROPOSAL>`, `seldon drift discard <PROPOSAL>` |
 | *Link*, *Explain*, *Dismiss* | `seldon drift link`, `explain`, `dismiss` |
 | *New decision*, *Accept* | `seldon decide -- "Title"`, `seldon decide accept <ID>` |

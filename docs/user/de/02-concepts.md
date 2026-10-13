@@ -204,7 +204,7 @@ warum es passiert ist; sonst lässt er den Punkt offen.
 ## Triage
 
 Sind viele Änderungen offen, kann ein Agent sie für dich sortieren.
-*Agent sorts N open changes* im Changelog des Desks (oder `seldon agent
+*Ask agent to sort N changes* im Changelog des Desks (oder `seldon agent
 ask triage`) startet deinen Agenten mit genau dieser Aufgabe. Der Agent
 schreibt nichts ins Logbuch. Er legt einen *Vorschlag* ab: für jede
 Änderung, die er belegen kann, eine Verknüpfung mit einem Case oder eine
@@ -313,7 +313,7 @@ Der Desk zeigt jede Idee dieser Seite an einer Stelle:
 | Routine | Changelog (`2`), Chip *routine*: Geschichte, kein Streifen; weder die Bar noch die Kopfzeile zählt sie |
 | zur Kenntnis | Changelog, Chips *open* und *attention*, mit einem Streifen in der Akzentfarbe; die Zahl *attention* in der Kopfzeile |
 | Krise | Today (`1`) unter NEEDS YOU; Changelog, Chip *crisis*, mit einem Streifen in der Warnfarbe und *Why loud?*; die Zahl *crises* in der Kopfzeile |
-| Triage | der Kopf des Changelogs: *Agent sorts N open changes*, danach der Vorschlag als Zeile |
+| Triage | der Kopf des Changelogs: *Ask agent to sort N changes*, danach der Vorschlag als Zeile |
 | Case | Work (`3`), in den Gruppen ACTIVE, VERIFICATION, QUEUED und COMPLETED; Today zeigt die aktiven Cases als Kacheln |
 | Spur | Work, das Detail des Case: LOG und LINKED CHANGES |
 | Entscheidung | Decisions (`4`); eine vorgeschlagene Entscheidung hat einen Streifen, und die Seitenleiste zählt „N new“ |

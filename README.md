@@ -272,7 +272,7 @@ an agent working on this repository follows the repository's
 ## Project status
 
 v0.3.0: the desk's buttons work by key (the notices, the setup card,
-*Agent sorts*, the width and the sidebar), a very large logbook keeps the
+*Ask agent to sort*, the width and the sidebar), a very large logbook keeps the
 desk working (the engine leaves the oldest rows out of the index and
 still counts every queued and active case, change and crisis), and the
 agent skill is a short core

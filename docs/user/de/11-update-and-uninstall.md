@@ -115,7 +115,7 @@ Engine 0.2.0. Was sich für dich ändert:
   *Import tasks…* in Work, die noch einen Klick brauchen. ↑ oben in einer
   Liste erreicht die Knöpfe der Hinweise, ↑ auf der ersten Zeile von
   Today die Einrichtungskarte, ↑ auf der ersten Zeile des Changelog den
-  Vorschlag des Agenten oder *Agent sorts N open changes* (zweimal `a`),
+  Vorschlag des Agenten oder *Ask agent to sort N changes* (zweimal `a`),
   Enter unter Settings › Appearance die Breite und die Seitenleiste. ←/→
   wählen einen Knopf oder einen Wert, Enter bereitet vor, ein zweites
   Enter führt aus. In einem gezeigten Vorschlag geht ↓ durch seine

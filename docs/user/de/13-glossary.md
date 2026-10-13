@@ -52,7 +52,7 @@ Dateinamen und Werte im Code bleiben in beiden Sprachen englisch.
 | snapshot | Snapshot | ein Snapper-Snapshot des Dateisystems |
 | trace | Spur | die Ereignisse eines Case, in ihrer Reihenfolge |
 | transaction group | Transaktionsgruppe | die Pakete einer Paket-Transaktion, als ein Drift-Eintrag gezeigt und aufgelöst |
-| triage | Triage | der Vorschlag des Agenten für die offenen Änderungen, „Agent sorts N open changes“ im Changelog; *Apply proposals* wendet ihn in deinem Namen an |
+| triage | Triage | der Vorschlag des Agenten für die offenen Änderungen, „Ask agent to sort N changes“ im Changelog; *Apply proposals* wendet ihn in deinem Namen an |
 | verification | Prüfung | der Status eines Case zwischen aktiv und abgeschlossen; die Arbeit wartet auf deine Kontrolle |
 | watched paths | beobachtete Pfade | die Dateien und Ordner, die der Config-Collector hasht (`watchPaths`) |
 | zone | Zone | wie tief eine Änderung ins System greift: `green`, `yellow`, `red` (grün, gelb, rot) |

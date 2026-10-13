@@ -23,6 +23,8 @@ and the package does not exist yet. Update the plugin first:
 
 - A pacman transaction's detail says again when it shows only part of the transaction, also for an old open change of one listed package.
 - Work's *By agent*, *Import tasks…* and *New case* work by key too: ↑ on the first row reaches them, Enter twice runs one. New keys, nothing removed: this ships in the next minor release.
+- A coloured stripe in a desk list now always has its word beside it (crisis, attention, active, proposed, failing); an empty list says what belongs there, and a search without a match offers *Clear search*.
+- The Changelog's *Agent sorts N open changes* is now *Ask agent to sort N changes*.
 
 ### Engine
 
@@ -44,6 +46,25 @@ and the package does not exist yet. Update the plugin first:
 
 ### Plugin
 
+- **Status words, data states and copy (WP-178).** No state reads by
+  colour alone: one table, `Model.STATUS[kind][status] = { glyph, word,
+  tone }`, part of ADR-0045's word table, gives every stripe its word,
+  shown before the row's meta line in the same tone (`! crisis` and
+  `attention` in the Changelog and Today, `active` in Work, `proposed` in
+  Decisions, `failing` on System's Collectors tile; a transaction's
+  `failed` / `interrupted` / `unfinished` as before); routine rows stay
+  quiet. A list with no row says what belongs there and offers one action
+  (`Model.emptyState`): *Clear search* (or Esc) on a search without a
+  match, *New case* (`n`) in an empty Work, *New decision* (`d`) in an
+  empty Decisions. *Agent sorts N open changes* is *Ask agent to sort N
+  changes* (the actor stays, E6). After *Complete* the result line says
+  "Reopen makes a new case"; no undo. The reinstall mark `↻` and the
+  engine's events' `⟡` were not in JetBrainsMono Nerd Font and fell back
+  to another font: they are the font's Material Design reload and
+  four-pointed star now, and a test fails any glyph the font lacks.
+  SPEC-PLUGIN §5.3 gains the rule that an action without an opposite verb
+  never completes on Enter-Enter from a list, and how a `ConfirmDialog`
+  would have to be bound. No contract change.
 - **A transaction is partial by its own rows (WP-208, ADR-0054 §3).**
   The desk inferred that the index listed only part of a pacman
   transaction when the transaction held the list's last event. Since

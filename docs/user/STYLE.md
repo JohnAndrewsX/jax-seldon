@@ -86,7 +86,7 @@ them in the page language where it helps.
 | section | Abschnitt | one of the desk's targets: Today (1) … Graph (8), Settings (`,`); the names stay English |
 | Prime Radiant | Prime Radiant | section 7 of the desk; the fullscreen overlay until 0.1.x |
 | graph | Graph | section 8 of the desk |
-| triage ("Agent sorts N open changes") | Triage | the agent's proposal for the open changes (ADR-0036) |
+| triage ("Ask agent to sort N changes") | Triage | the agent's proposal for the open changes (ADR-0036) |
 | pill | Pill | the bar widget |
 | panel | Panel | the 0.1 bar panel with six tabs; only when the guide talks about 0.1.x |
 | hook | Hook | |
