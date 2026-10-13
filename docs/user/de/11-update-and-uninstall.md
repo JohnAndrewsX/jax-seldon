@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ e1563b04 -->
+<!-- source: en/11-update-and-uninstall.md @ 343d7ac3 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -102,6 +102,56 @@ dieses Plugin ihn noch lesen kann, arbeitet das Plugin weiter und bittet
 nur in einem leisen Hinweis um sein eigenes Update („The engine is newer
 than the plugin“). Nach einem Update sollte `seldon doctor` nur `ok`
 zeigen.
+
+## Was sich gegenüber 0.3.x geändert hat
+
+0.4.0 behält das Index-Format von 0.2.0 und 0.3.0 (Version 2).
+Aktualisiere Engine und Plugin deshalb in beliebiger Reihenfolge, mit
+den Befehlen oben, und starte nach dem Update des Plugins die Shell neu.
+Ein Plugin 0.3.0 oder 0.2.0 liest den Index einer Engine 0.4.0, und ein
+Plugin 0.4.0 arbeitet mit einer Engine 0.2.0 oder 0.3.0. Was sich für
+dich ändert:
+
+- Deine Agenten warten weniger. In einer Sitzung, die weder im Logbuch
+  liegt noch von Seldon gestartet wurde, kehren die Hooks für den Start
+  und das Ende einer Sitzung und für andere Agenten (`hook
+  session-start`, `hook session-stop`, `hook generic`) jetzt innerhalb
+  einer Millisekunde zurück, wie `hook claude-code` schon bisher.
+- *By agent*, *Import tasks…* und *New case* in Work haben einen Weg per
+  Taste: ↑ auf der ersten Zeile von Work (oder in einer leeren Liste)
+  erreicht *By agent*, ←/→ wählen einen Knopf, Enter bereitet vor, ein
+  zweites Enter führt aus; ↓ geht zurück zur Liste, ↑ weiter zu den
+  Hinweisen. Keiner davon startet einen Agenten. Die Tabelle steht unter
+  [Alltag](03-daily-use.md#tasten).
+- Kein Zustand ist nur an der Farbe zu erkennen: Neben einem farbigen
+  Streifen in einer Liste des Desk steht sein Wort (`! crisis`,
+  `attention`, `active`, `proposed`, `failing`). Eine leere Liste sagt,
+  was hineingehört, und bietet einen Schritt an: *Clear search* (oder
+  Esc) bei einer Suche ohne Treffer, *New case* in einem leeren Work,
+  *New decision* in leeren Decisions.
+- *Agent sorts N open changes* im Changelog heißt jetzt *Ask agent to
+  sort N changes*. Nur die Beschriftung ist neu: Zweimal `a` startet den
+  Agenten wie bisher, Enter tut dort weiter nichts.
+- Das Detail einer pacman-Transaktion sagt wieder, wenn es nur einen
+  Teil der Transaktion zeigt, auch bei einer alten offenen Änderung
+  eines einzelnen gelisteten Pakets.
+- Auf einem schmalen Desk bricht die Zeile unter dem Seldon-Zeichen
+  neben den Zahlen um, statt unter ihnen durchzulaufen.
+- Mehr Geheimnisse werden geschwärzt, bevor sie ins Logbuch kommen:
+  Passwörter in Pythons dreifachen Anführungszeichen, Schlüssel wie
+  `"secret_key"` oder `"aws_secret_access_key"`, eine Passwortdatei als
+  `/dev/fd/3`, die die Zeile aus `<(…)` füllt, und ein WLAN-Schlüssel,
+  der mit `nmcli … -f wifi-sec.psk` gesetzt wird
+  ([Konfiguration](06-configuration.md#schwärzung)).
+- Ein Hook liest die Befehle in `$(…)`, in Backticks und in `<(…)` als
+  Befehle der Zeile, deshalb wird `x=$(sudo mkpasswd …)` aufgezeichnet,
+  sein Passwort geschwärzt. Eine Zeile mit `$(…)`, das mehr als 16
+  Ebenen tief verschachtelt ist, bringt den Hook nicht mehr zum Absturz:
+  Sie wird geschwärzt aufgezeichnet, und nach dieser Ersetzung liest der
+  Hook nichts mehr, ein Befehl danach wird also nicht aufgezeichnet
+  ([Mit Agenten arbeiten](04-working-with-agents.md#was-ein-hook-aufzeichnet)).
+- `omarchy-shell jax.seldon.panel …` leitet noch an den Desk weiter;
+  ein späteres Release entfernt es.
 
 ## Was sich gegenüber 0.2.x geändert hat
 

@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ e1563b04 -->
+<!-- source: en/04-working-with-agents.md @ 343d7ac3 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -335,8 +335,15 @@ entfernt die Engine Passwörter und Tokens, die sie erkennt (siehe
 [Konfiguration](06-configuration.md#schwärzung)). Lesende Befehle
 zeichnen nichts auf.
 
-Befehle, die in `xargs`, `find -exec` oder einem Interpreter
-(`python -c`, `node -e`) stecken, liest der Hook nicht. Die Collectors
+Die Befehle in `$(…)`, in Backticks und in `<(…)` sind Befehle der
+Zeile; der Hook liest sie vor dem Befehl, in dem sie stehen, so wie die
+Shell sie ausführt: `x=$(sudo mkpasswd -m sha-512 …)` wird als
+`mkpasswd ‹redacted›` aufgezeichnet. Eine Zeile, die `$(…)` mehr als
+16 Ebenen tief verschachtelt, wird als ihr Programm und `‹redacted›`
+aufgezeichnet, und der Hook liest die Zeile dort nicht weiter: Ein
+Befehl nach dieser Ersetzung wird nicht aufgezeichnet. Befehle, die in
+`xargs`, `find -exec`, `${…}` oder einem Interpreter (`python -c`,
+`node -e`) stecken, liest der Hook nicht. Die Collectors
 sehen ihre Wirkung trotzdem bei der nächsten Erfassung, aber ohne den
 Namen des Agenten und ohne Case. Sag deinem Agenten, Änderungen als
 einfache Befehle auszuführen.
