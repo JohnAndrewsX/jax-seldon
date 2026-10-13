@@ -98,15 +98,34 @@ MUTANTS = [
     ("subst: no depth limit", PKG, plain(
         "        let deep = self.depth >= SUBSTITUTION_DEPTH_MAX;", "        let deep = false;",
         "i = if self.depth >= SUBSTITUTION_DEPTH_MAX {", "i = if false {")),
-    ("subst: too deep recorded whole", HOOK, plain("    let skipped = crate::pkgcmd::too_deep(&line)\n        || password_on_stdin(&segments)", "    let skipped = password_on_stdin(&segments)")),
+    ("subst: too deep recorded whole", HOOK, plain("    let skipped = line.too_deep\n        || segments.iter().any(|s| s.too_deep)\n        || password_on_stdin(&segments)", "    let skipped = password_on_stdin(&segments)")),
     # round 2: F1, an opened script's depth limit
-    ("round 2 F1: the hook reads the line's flag only", HOOK, plain("    let skipped = crate::pkgcmd::too_deep(&line)\n", "    let skipped = line.too_deep\n")),
+    ("round 2 F1: the hook reads the line's flag only", HOOK, plain("        || segments.iter().any(|s| s.too_deep)\n", "")),
     ("round 2 F1: a script's flag not carried", PKG, plain("                        too_deep: inner.too_deep || too_deep,\n", "                        too_deep: inner.too_deep,\n")),
     ("round 2 F1: no marker for a script without commands", PKG, plain("                if too_deep && parsed.segments.is_empty() {", "                if false && too_deep && parsed.segments.is_empty() {")),
-    ("round 2 F1: skipped text in the word", PKG, plain("            self.skips.push((i, end, brackets));\n", "            let _ = brackets;\n")),
-    ("round 2 F1: skipped <( ) text in the word", PKG, plain('                            self.skips.push((i, end, "(…)"));\n', "")),
-    ("round 2 F1: a backtick inside $( ) ends the skip", PKG, plain("(None, '`') if stop == Stop::Backtick && parens == 0 => return i,", "(None, '`') if stop == Stop::Backtick => return i,")),
+    ("round 2 F1: skipped text in the word", PKG, plain("        self.skipped = Some((i, brackets));\n", "        let _ = brackets;\n")),
+    ("round 2 F1: skipped <( ) text in the word", PKG, plain('                            self.skip(i, "(…)")\n', '                            {\n                                self.too_deep = true;\n                                self.chars.len()\n                            }\n')),
     ("round 2 F1: a computed program named first", HOOK, plain("            let slot = if program.starts_with(['$', '`']) {", "            let slot = if false {")),
+    # round 3: R2-F1 fail closed, R2-F3 (the reviewer's M4), R2-F4 (M3b), R2-F5
+    ("round 3 R2-F1: a skipped $( ) ends at its own bracket", PKG, plain(
+        """            (_, Some('('), _) if deep => self.skip(i, "$(…)"),""",
+        """            (_, Some('('), _) if deep => {\n                self.skip(i, "$(…)");\n                closing(&self.chars, i + 1, '(', ')')\n            }""")),
+    ("round 3 R2-F3 (M4): a backtick program is named", HOOK, plain("            let slot = if program.starts_with(['$', '`']) {", "            let slot = if program.starts_with('$') {")),
+    ("round 3 R2-F4 (M3b): the stack copied whole on a move", PKG, plain(
+        "        if owner != n {\n            states[n] = states[owner].clone();\n        }\n",
+        "        if owner != n {\n            states[n] = states[owner].clone();\n"
+        "            if let Some(d) = states[n].as_mut() {\n"
+        "                let mut v = Vec::new();\n                let mut s = d.stack.clone();\n"
+        "                while let Some((x, r)) = s.pop() {\n                    v.push(x);\n                    s = r;\n                }\n"
+        "                let mut t = DirStack::default();\n"
+        "                for x in v.into_iter().rev() {\n                    t = t.push(x);\n                }\n"
+        "                d.stack = t;\n            }\n        }\n"), "timing"),
+    ("round 3 R2-F5: parents from the commands only", PKG, plain(
+        "    let mut parents = parents.to_vec();\n",
+        "    let mut parents = vec![0; last + 1];\n    for s in segments {\n        parents[s.substitution] = s.parent;\n    }\n")),
+    ("round 3 R2-F5: a script's parents not numbered on", PKG, plain(
+        "parents.extend(parsed.parents.iter().skip(1).map(|&p| number(p)));",
+        "parents.extend(parsed.parents.iter().skip(1).map(|_| 0));")),
     # round 2: F2, directories per substitution, numbers in opened scripts
     ("round 2 F2: seeded from the line, not the parent", PKG, plain("            at = parents[at].min(at.saturating_sub(1));", "            at = 0;")),
     ("round 2 F2: numbers restart in a script", PKG, plain("                        base + n\n", "                        n\n")),
@@ -138,6 +157,11 @@ def main():
         cargo + ["--test", "redaction", "--", "--test-threads=4"],
         cargo + ["--test", "hooks", "--", "privileged", "--test-threads=4"],
     ]
+    # a mutant marked "timing" also runs the hook's timing row (bench
+    # profile; run the whole script under the check lock)
+    timing = cargo[:2] + ["--profile", "bench"] + cargo[2:] + [
+        "--test", "hooks", "--", "--ignored", "--exact",
+        "privileged::a_long_privileged_line_is_read_in_linear_time"]
     current = {}
 
     def stop(signum, _frame):
@@ -151,7 +175,7 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     results = []
-    for name, file, mutate in MUTANTS:
+    for name, file, mutate, *mark in MUTANTS:
         if only and not any(o in name for o in only):
             continue
         path = os.path.join(copy, file)
@@ -172,7 +196,7 @@ def main():
         try:
             open(path, "w", newline="").write(mutated)
             failed = []
-            for cmd in runs:
+            for cmd in runs + ([timing] if mark == ["timing"] else []):
                 proc = subprocess.Popen(cmd, cwd=copy, env=env, stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, text=True, start_new_session=True)
                 current["proc"] = proc
@@ -181,7 +205,8 @@ def main():
                     failed.append("does not compile")
                     break
                 if proc.returncode != 0:
-                    failed.append(cmd[6] if cmd[5] == "--test" else "lib")
+                    at = cmd.index("--test") if "--test" in cmd else None
+                    failed.append("lib" if at is None else cmd[at + 1] + (" timing" if cmd is timing else ""))
         finally:
             open(path, "w", newline="").write(orig)
             current.clear()

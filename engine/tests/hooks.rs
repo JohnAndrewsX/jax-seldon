@@ -3463,9 +3463,44 @@ mod privileged {
         assert!(!ledger.contains("hunter2"), "{ledger}");
     }
 
+    /// WP-209 round 3 (R2-F3): a computed program (`sudo $(which x)`,
+    /// `` sudo `which x` ``, `sudo $EDITOR`) is the subject only when no
+    /// privileged command on the line names its program.
+    #[test]
+    fn a_computed_program_is_the_subject_only_alone() {
+        let h = Hooks::new();
+        let lines = [
+            (
+                "sudo $(which lpadmin) -x a; sudo cupsenable p",
+                "cupsenable",
+            ),
+            ("sudo `which lpadmin` -x a; sudo cupsenable p", "cupsenable"),
+            ("sudo $EDITOR /etc/cups/x; sudo cupsenable p", "cupsenable"),
+            ("sudo $(which lpadmin) -x a", "$(which lpadmin)"),
+            ("sudo `which lpadmin` -x a", "`which lpadmin`"),
+        ];
+        for (n, (line, _)) in lines.iter().enumerate() {
+            bash(&h, line, &format!("toolu_computed_{n}"));
+        }
+        let events = h.commands();
+        let got: Vec<(&str, &str)> = events
+            .iter()
+            .map(|e| {
+                (
+                    e["meta"]["command"].as_str().unwrap(),
+                    e["subject"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        let want: Vec<(&str, &str)> = lines.to_vec();
+        assert_eq!(got, want);
+    }
+
     /// WP-209: a substitution nested deeper than the parser reads is
     /// skipped unread, so the line is recorded as `<program> ‹redacted›`;
-    /// one level less is read and recorded whole.
+    /// one level less is read and recorded whole. Round 3 (R2-F1): the
+    /// rest of the line is skipped with it, since no scan finds its end
+    /// as the shell does.
     #[test]
     fn a_substitution_nested_too_deep_is_masked_whole() {
         let h = Hooks::new();
@@ -3488,21 +3523,49 @@ mod privileged {
         );
         bash(&h, &format!("sudo sh -c '{script}'"), "toolu_deep_4");
         bash(&h, &format!("eval 'sudo {script}'"), "toolu_deep_5");
+        // round 3 (R2-F1): a `)` the shell does not read as the end, in a
+        // quote of an inner `$( )`, a heredoc body, a comment, `$'…'`;
+        // plain and under `sudo sh -c`
+        let mut lines = Vec::new();
+        for inner in [
+            "echo \"$(echo \")\")\" hunter2)",
+            "chpasswd <<EOF\nalice:pa)ss\nbob:hunter2\nEOF\n)",
+            "echo x # ) \nhunter2 y)",
+            "echo $'\\')' hunter2 )",
+        ] {
+            let script = format!(
+                "lpadmin -x a {}$({inner}{}",
+                "$(".repeat(16),
+                ")".repeat(16)
+            );
+            lines.push(format!("sudo {script}"));
+            lines.push(format!("sudo sh -c '{}'", script.replace('\'', "'\\''")));
+        }
+        for (n, line) in lines.iter().enumerate() {
+            let parsed = seldon::pkgcmd::parse_shell(line);
+            for s in seldon::pkgcmd::simple_commands(&parsed) {
+                let w = s.words.concat() + &s.writes.concat();
+                assert!(!w.contains("hunter2"), "{line}: {w}");
+            }
+            bash(&h, line, &format!("toolu_deep_skip_{n}"));
+        }
         let events = h.commands();
         let got: Vec<&str> = events
             .iter()
             .map(|e| e["meta"]["command"].as_str().unwrap())
             .collect();
-        assert_eq!(
-            got,
-            [
-                "lpadmin ‹redacted›",
-                "lpadmin ‹redacted›",
-                shallow.as_str(),
-                "lpadmin ‹redacted›",
-                "lpadmin ‹redacted›"
-            ]
-        );
+        let mut want = vec![
+            "lpadmin ‹redacted›",
+            "lpadmin ‹redacted›",
+            shallow.as_str(),
+            "lpadmin ‹redacted›",
+            "lpadmin ‹redacted›",
+        ];
+        want.extend(lines.iter().map(|_| "lpadmin ‹redacted›"));
+        assert_eq!(got, want);
+        for e in &events {
+            assert!(!e.to_string().contains("hunter2"), "{e}");
+        }
         let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
         assert!(!ledger.contains("hunter2"), "{ledger}");
     }
@@ -3512,7 +3575,9 @@ mod privileged {
     /// process substitutions looked at for a secret, the nmcli fields and
     /// mount options the redaction reads; WP-209: a line of substitutions,
     /// wrappers and descriptors (`opened`); round 2: 7000 `pushd` and then
-    /// 13 000 substitutions (`pushd`, 125 KB). Median of 21 calls of `hook
+    /// 13 000 substitutions (`pushd`, 126 KB); round 3: the same with a `cd`
+    /// in each substitution (165 KB), and nests one too deep in an `sh -c`
+    /// script, masked from the first one on. Median of 21 calls of `hook
     /// generic` (process start, parse, redaction, the record) at 16, 64
     /// and 128 KB; the budget holds at 128 KB and for the `pushd` line.
     #[test]
@@ -3530,10 +3595,13 @@ mod privileged {
                       setsid -f tool --pass-file /dev/fd/3 3< <(echo c) \"`cd d`\" && \
                       nmcli con mod e -f wifi-sec.psk f; \
                       python3 -c 'h = {\"secret_key\": \"\"\"g\"\"\"}'; \
-                      echo $($($($($($($($($($($($($($($($($($($($(h)))))))))))))))))))); ";
+                      echo $($($($($($($($($($($($($($($($(h)))))))))))))))); ";
         // round 2 (F3): many `pushd` and then many substitutions, each of
-        // which starts with a copy of the line's directories and stack
-        let pushd = format!("{}echo {}", "pushd /; ".repeat(7000), "$(:) ".repeat(13000));
+        // which starts with the line's directories and stack; round 3
+        // (R2-F4): each of which moves, so it copies them
+        let pushd = |sub: &str| format!("{}echo {}", "pushd /; ".repeat(7000), sub.repeat(13000));
+        // round 3 (R2-F2): nests one too deep in a `sudo sh -c` script
+        let nests = format!("{}x{}; ", "$(".repeat(17), ")".repeat(17));
         let lines = [16, 64, 128]
             .into_iter()
             .flat_map(|kb| {
@@ -3545,11 +3613,21 @@ mod privileged {
                     (kind.to_string(), line, kb)
                 })
             })
-            .chain([(
-                " of pushd and substitutions".to_string(),
-                format!("sudo lpadmin -x a; {pushd}; tool --pass-file <(echo c)"),
-                pushd.len().div_ceil(1024),
-            )]);
+            .chain([16, 64, 128].map(|kb| {
+                let mut line = String::from("sudo sh -c 'lpadmin -x a; ");
+                while line.len() < kb * 1024 {
+                    line.push_str(&nests);
+                }
+                (" of nests too deep in sh -c".to_string(), line + "'", kb)
+            }))
+            .chain(["$(:) ", "$(cd /) "].map(|sub| {
+                let line = format!(
+                    "sudo lpadmin -x a; {}; tool --pass-file <(echo c)",
+                    pushd(sub)
+                );
+                let kind = format!(" of pushd and substitutions {}", sub.trim_end());
+                (kind, line.clone(), line.len().div_ceil(1024))
+            }));
         for (kind, line, kb) in lines {
             let input = json!({
                 "command": line,
@@ -3561,7 +3639,8 @@ mod privileged {
             let run = || {
                 h.hook("generic", &input);
             };
-            // the budget holds at 128 KB, and for the pushd line (125 KB)
+            // the budget holds at 128 KB, and for the pushd lines (126 and
+            // 165 KB)
             if kb >= 125 {
                 common::assert_within_budget(&what, std::time::Duration::from_millis(60), 21, run);
             } else {
@@ -3569,7 +3648,8 @@ mod privileged {
                 eprintln!("{what}: median {median:?} (no budget)");
             }
         }
-        // a pipe, a `<(` after `--pass-file`: every line is masked whole
+        // a pipe, a `<(` after `--pass-file`, a nest too deep: every line
+        // is masked whole
         let events = h.commands();
         assert!(!events.is_empty());
         assert!(

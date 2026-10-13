@@ -84,9 +84,8 @@ use crate::model::CaseStatus;
 use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, SUBJECT_MAX, Source, Zone, zone_for};
 use crate::model::is_agent;
 use crate::pkgcmd::{
-    Segment, ShellLine, Target, Vars, Word, Workdir, commands_and_vars, globs_overlap,
-    omarchy_route, parse_command, parse_shell, simple_commands, unwrap_command, workdirs,
-    write_targets,
+    Commands, Segment, ShellLine, Target, Vars, Word, Workdir, globs_overlap, omarchy_route,
+    parse_command, parse_shell, read_commands, unwrap_command, workdirs, write_targets,
 };
 use crate::redact::{REDACTED, Redactor};
 use crate::sys;
@@ -428,21 +427,26 @@ pub fn classify(line: &ShellLine, scope: &Scope, cwd: &Path) -> Option<Mutation>
 /// green record that would need a case (ADR-0019: `sudo tee /etc/x`)
 /// gives way to the privileged one, so a command is never recorded twice.
 /// The privileged record is the first in the order the shell runs the
-/// commands ([`simple_commands`]: a substitution's before the command it
-/// stands in), one whose program a substitution names (`sudo $(which x)`)
-/// only when no other has a name (WP-209).
+/// commands ([`crate::pkgcmd::simple_commands`]: a substitution's before
+/// the command it stands in), one whose program is computed (it starts
+/// with `$` or a backtick: `sudo $(which x)`, `` sudo `which x` ``, `sudo
+/// $EDITOR`) only when no other has a name (WP-209).
 pub fn mutations(line: &ShellLine, scope: &Scope, cwd: &Path) -> Vec<Mutation> {
-    let segments = simple_commands(line);
-    let dirs = workdirs(&segments, cwd, &scope.home, |w, d| scope.resolve(w, d));
+    let Commands {
+        segments, parents, ..
+    } = read_commands(line);
+    let dirs = workdirs(&segments, &parents, cwd, &scope.home, |w, d| {
+        scope.resolve(w, d)
+    });
     mutations_of(&segments, &dirs, scope)
 }
 
-/// [`mutations`] of a line's [`simple_commands`] and their [`workdirs`],
-/// read once by the hook (WP-209 round 2).
+/// [`mutations`] of a line's [`crate::pkgcmd::simple_commands`] and their
+/// [`workdirs`], read once by the hook (WP-209 round 2).
 fn mutations_of(segments: &[Segment], dirs: &[Workdir], scope: &Scope) -> Vec<Mutation> {
     let mut found: Option<Mutation> = None;
     let mut privileged: Option<Mutation> = None;
-    // a privileged program named by a substitution (`sudo $(which x)`):
+    // a computed privileged program (`sudo $(which x)`, `sudo $EDITOR`):
     // the record's subject only when no command names its program
     let mut computed: Option<Mutation> = None;
     for (segment, dirs) in segments.iter().zip(dirs) {
@@ -1060,15 +1064,23 @@ fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
     let line = parse_shell(&command);
     // the line read once for every check below (WP-209 round 2)
     let scope = &setup.scope;
-    let (segments, vars) = commands_and_vars(&line);
-    let dirs = workdirs(&segments, cwd, &scope.home, |w, d| scope.resolve(w, d));
+    let Commands {
+        segments,
+        vars,
+        parents,
+    } = read_commands(&line);
+    let dirs = workdirs(&segments, &parents, cwd, &scope.home, |w, d| {
+        scope.resolve(w, d)
+    });
     let found = mutations_of(&segments, &dirs, scope);
     if found.is_empty() {
         return Vec::new();
     }
     // a substitution too deep to read may hold anything, also in an
-    // opened `sh -c` or `eval` script (WP-209, round 2)
-    let skipped = crate::pkgcmd::too_deep(&line)
+    // opened `sh -c` or `eval` script, whose commands carry its flag
+    // (WP-209, rounds 2 and 3)
+    let skipped = line.too_deep
+        || segments.iter().any(|s| s.too_deep)
         || password_on_stdin(&segments)
         || secret_args::secret_in(&segments, &line.text)
         || names_skipped_path(&line, &segments, &dirs, &vars, setup, cwd);

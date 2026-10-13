@@ -476,15 +476,21 @@ pub struct ShellLine {
     /// command's stdin, which is never recorded (SPEC-ENGINE §7).
     pub text: String,
     /// A substitution nests deeper than [`SUBSTITUTION_DEPTH_MAX`]: it was
-    /// skipped unread, its commands, feeds and heredocs unknown, so the
-    /// hook records the line as `<program> ‹redacted›` (WP-209).
+    /// skipped unread, and the rest of the line with it (round 3), their
+    /// commands, feeds and heredocs unknown, so the hook records the line
+    /// as `<program> ‹redacted›` (WP-209).
     pub too_deep: bool,
+    /// The substitution around each one, by its number
+    /// ([`Segment::substitution`]), recorded as the reader opens it, also
+    /// for one without a command of its own (`$(< $(tee q))`; index 0, the
+    /// line, has 0; round 3).
+    pub parents: Vec<usize>,
 }
 
-/// How deep `$(…)`, backticks and `<(…)` are read as commands (WP-209): a
-/// deeper one is skipped to its end without recursion, so a line nested
-/// thousands deep neither overflows the stack nor costs more than this
-/// many copies of its text.
+/// How deep `$(…)`, backticks and `<(…)` are read as commands (WP-209): at
+/// a deeper one the reading stops, and the rest of the line is skipped
+/// unread (round 3), so a line nested thousands deep neither overflows the
+/// stack nor costs more than this many copies of its text.
 pub const SUBSTITUTION_DEPTH_MAX: usize = 16;
 
 /// What the next word is after a redirection operator.
@@ -513,8 +519,8 @@ pub fn parse_shell(line: &str) -> ShellLine {
         line,
         chars: line.char_indices().collect(),
         cuts: Vec::new(),
-        skips: Vec::new(),
-        substitutions: 0,
+        skipped: None,
+        parents: vec![0],
         depth: 0,
         too_deep: false,
     };
@@ -537,6 +543,7 @@ pub fn parse_shell(line: &str) -> ShellLine {
         segments: lexer.segments,
         text: text.trim_end().to_string(),
         too_deep: reader.too_deep,
+        parents: reader.parents,
     }
 }
 
@@ -557,12 +564,13 @@ struct Reader<'a> {
     chars: Vec<(usize, char)>,
     /// Byte ranges of the heredoc bodies, each with its delimiter line.
     cuts: Vec<(usize, usize)>,
-    /// The substitutions skipped unread ([`SUBSTITUTION_DEPTH_MAX`]), in
-    /// the order of the line: from and to which character, and the
-    /// brackets that stand for the text in a word (round 2).
-    skips: Vec<(usize, usize, &'static str)>,
-    /// The substitutions opened so far ([`Segment::substitution`]).
-    substitutions: usize,
+    /// The substitution skipped unread ([`SUBSTITUTION_DEPTH_MAX`]), with
+    /// the rest of the line: from which character, and the brackets that
+    /// stand for it in a word ([`Reader::skip`]; round 3).
+    skipped: Option<(usize, &'static str)>,
+    /// The substitution around each one opened so far, by number
+    /// ([`ShellLine::parents`]).
+    parents: Vec<usize>,
     /// The substitutions being read around the current position.
     depth: usize,
     /// One was nested too deep to read ([`ShellLine::too_deep`]).
@@ -711,10 +719,7 @@ impl Reader<'_> {
                         lexer.current.fed = true;
                         lexer.fed = true;
                         i = if self.depth >= SUBSTITUTION_DEPTH_MAX {
-                            self.too_deep = true;
-                            let end = skip_end(&self.chars, i + 1, Stop::Paren);
-                            self.skips.push((i, end, "(…)"));
-                            end
+                            self.skip(i, "(…)")
                         } else {
                             self.depth += 1;
                             let end = self.read(i + 1, Stop::Paren, &mut inner);
@@ -774,50 +779,45 @@ impl Reader<'_> {
         let mut inner = self.inside(lexer);
         let deep = self.depth >= SUBSTITUTION_DEPTH_MAX;
         self.depth += 1;
-        // a substitution skipped unread leaves only its brackets in the
-        // word, so its text (a secret too) names no program (round 2)
-        let mut skipped = None;
         let end = match (self.at(i), self.at(i + 1), self.at(i + 2)) {
-            (Some('`'), ..) if deep => {
-                self.too_deep = true;
-                skipped = Some("`…`");
-                skip_end(&self.chars, i + 1, Stop::Backtick)
-            }
+            (Some('`'), ..) if deep => self.skip(i, "`…`"),
             (Some('`'), ..) => self.read(i + 1, Stop::Backtick, &mut inner),
             (_, Some('('), Some('(')) => closing(&self.chars, i + 1, '(', ')'),
-            (_, Some('('), _) if deep => {
-                self.too_deep = true;
-                skipped = Some("$(…)");
-                skip_end(&self.chars, i + 2, Stop::Paren)
-            }
+            (_, Some('('), _) if deep => self.skip(i, "$(…)"),
             (_, Some('('), _) => self.read(i + 2, Stop::Paren, &mut inner),
             (_, Some('['), _) => closing(&self.chars, i + 1, '[', ']'),
             _ => closing(&self.chars, i + 1, '{', '}'),
         };
         self.depth -= 1;
         Reader::close(inner, lexer);
-        if let Some(brackets) = skipped {
-            self.skips.push((i, end, brackets));
-        }
-        // the text into the word, a skipped substitution's as its brackets
-        let mut skip = self.skips.partition_point(|&(from, ..)| from < i);
-        let mut k = i;
-        while k < end {
-            if let Some(&(from, to, brackets)) = self.skips.get(skip)
+        // the text into the word, up to a skipped substitution, which
+        // stands as its brackets: what follows them was not read
+        for k in i..end {
+            if let Some((from, brackets)) = self.skipped
                 && from == k
             {
                 brackets.chars().for_each(|c| lexer.push(c));
-                k = to;
-                skip += 1;
-                continue;
+                break;
             }
             let (b, c) = self.chars[k];
             if !self.cuts.iter().any(|&(s, e)| s <= b && b < e) {
                 lexer.push(c);
             }
-            k += 1;
         }
         end
+    }
+
+    /// Skips the substitution at `i`, nested deeper than
+    /// [`SUBSTITUTION_DEPTH_MAX`], and the rest of the line with it: no
+    /// scan finds its end the way the shell does (a `)` in a heredoc
+    /// body, a comment, `$'…'` or a quote of an inner `$( )`), so nothing
+    /// after its start is read as a command or a word, and it stands in
+    /// its word as `brackets` (fail closed; round 3). Returns the end of
+    /// the line.
+    fn skip(&mut self, i: usize, brackets: &'static str) -> usize {
+        self.too_deep = true;
+        self.skipped = Some((i, brackets));
+        self.chars.len()
     }
 
     /// The lexer of a substitution that opens inside `outer`'s current
@@ -827,11 +827,11 @@ impl Reader<'_> {
     /// line feeds that command so far (`echo PW | x $(passwd …)`: the
     /// substitution reads the pipe too).
     fn inside(&mut self, outer: &mut Lexer) -> Lexer {
-        self.substitutions += 1;
+        self.parents.push(outer.substitution);
         Lexer {
             segments: std::mem::take(&mut outer.segments),
             fed: outer.fed,
-            substitution: self.substitutions,
+            substitution: self.parents.len() - 1,
             parent: outer.substitution,
             ..Lexer::default()
         }
@@ -879,38 +879,6 @@ impl Reader<'_> {
         }
         i
     }
-}
-
-/// The index after the end of a substitution skipped unread (deeper than
-/// [`SUBSTITUTION_DEPTH_MAX`]) whose text starts at `at`: the `)` (`stop`
-/// [`Stop::Paren`]) or backtick ([`Stop::Backtick`]) that closes it,
-/// outside quotes, nested parentheses and nested backticks (`` `a $(b
-/// `c`)` ``), else the end. One pass, no recursion; a backslash escapes
-/// the character after it outside single quotes.
-fn skip_end(chars: &[(usize, char)], at: usize, stop: Stop) -> usize {
-    let mut parens = 0usize;
-    let mut backticks = 0usize;
-    let mut quote: Option<char> = None;
-    let mut i = at;
-    while let Some(&(_, c)) = chars.get(i) {
-        i += 1;
-        match (quote, c) {
-            (Some('\''), '\'') => quote = None,
-            (Some('\''), _) => {}
-            (_, '\\') => i += 1,
-            (Some(_), '"') => quote = None,
-            (Some(_), _) => {}
-            (None, '\'' | '"') => quote = Some(c),
-            (None, '(') => parens += 1,
-            (None, ')') if parens > 0 => parens -= 1,
-            (None, ')') if stop == Stop::Paren && backticks == 0 => return i,
-            (None, '`') if stop == Stop::Backtick && parens == 0 => return i,
-            // a backtick substitution nested inside parentheses
-            (None, '`') => backticks ^= 1,
-            _ => {}
-        }
-    }
-    chars.len()
 }
 
 /// The index after the `close` that matches the `open` at `at` (or the
@@ -1380,39 +1348,55 @@ const NESTING_MAX: usize = 3;
 /// sets to a literal (`F=x; … $F`, [`Vars`]) holds that value. Read only:
 /// nothing else is expanded, nothing is run.
 pub fn simple_commands(line: &ShellLine) -> Vec<Segment> {
-    commands_and_vars(line).0
+    read_commands(line).segments
 }
 
-/// [`simple_commands`] and [`line_vars`] from one reading of the line, for
-/// a caller that needs both (the hook; WP-209 round 2).
-pub fn commands_and_vars(line: &ShellLine) -> (Vec<Segment>, Vars) {
-    let opened = opened_commands(line);
+/// A line's [`simple_commands`], [`line_vars`] and the parents of its
+/// substitutions from one reading, for a caller that needs them all (the
+/// hook; WP-209 round 2).
+#[derive(Debug, Clone, Default)]
+pub struct Commands {
+    pub segments: Vec<Segment>,
+    pub vars: Vars,
+    /// [`ShellLine::parents`], those of the opened `sh -c` and `eval`
+    /// scripts numbered on ([`workdirs`]; round 3).
+    pub parents: Vec<usize>,
+}
+
+/// [`Commands`] of `line`.
+pub fn read_commands(line: &ShellLine) -> Commands {
+    let (opened, parents) = opened_commands(line);
     let vars = Vars::of(&opened);
     let segments = opened.into_iter().map(|s| vars.put_in(s)).collect();
-    (segments, vars)
+    Commands {
+        segments,
+        vars,
+        parents,
+    }
 }
 
 /// The variables `line` sets ([`Vars`]), for reading the words of its text.
 pub fn line_vars(line: &ShellLine) -> Vars {
-    Vars::of(&opened_commands(line))
+    Vars::of(&opened_commands(line).0)
 }
 
-/// [`simple_commands`] before the variables are put in. A command opened
-/// from `sudo sh -c '…'` keeps the shell's privilege wrapper
+/// [`simple_commands`] before the variables are put in, and the parents of
+/// their substitutions ([`Commands::parents`]). A command opened from
+/// `sudo sh -c '…'` keeps the shell's privilege wrapper
 /// ([`Segment::privileged_by`]); the outer command's redirection is the
 /// calling shell's own.
-fn opened_commands(line: &ShellLine) -> Vec<Segment> {
-    /// `next` is the highest substitution number given out so far: a
-    /// script's own numbers come after it, and its commands outside a
+fn opened_commands(line: &ShellLine) -> (Vec<Segment>, Vec<usize>) {
+    /// `parents` holds every substitution number given out so far: a
+    /// script's own numbers come after them, and its commands outside a
     /// substitution of its own stay in the one the shell command stands
     /// in (round 2). A script that nests too deep marks every command it
     /// opens, or a command of its own when it has none.
-    fn open(segment: &Segment, depth: usize, next: &mut usize, out: &mut Vec<Segment>) {
+    fn open(segment: &Segment, depth: usize, parents: &mut Vec<usize>, out: &mut Vec<Segment>) {
         match nested_script(segment.argv()).filter(|_| depth < NESTING_MAX) {
             Some(script) => {
                 let privilege = segment.privilege();
                 let parsed = parse_shell(&script);
-                let base = *next;
+                let base = parents.len() - 1;
                 let number = |n: usize| {
                     if n == 0 {
                         segment.substitution
@@ -1420,12 +1404,7 @@ fn opened_commands(line: &ShellLine) -> Vec<Segment> {
                         base + n
                     }
                 };
-                *next += parsed
-                    .segments
-                    .iter()
-                    .map(|s| s.substitution)
-                    .max()
-                    .unwrap_or(0);
+                parents.extend(parsed.parents.iter().skip(1).map(|&p| number(p)));
                 let too_deep = parsed.too_deep || segment.too_deep;
                 if too_deep && parsed.segments.is_empty() {
                     out.push(Segment {
@@ -1448,7 +1427,7 @@ fn opened_commands(line: &ShellLine) -> Vec<Segment> {
                         substitution: number(inner.substitution),
                         ..inner
                     };
-                    open(&inner, depth + 1, next, out);
+                    open(&inner, depth + 1, parents, out);
                 }
                 if !segment.writes.is_empty() {
                     out.push(Segment {
@@ -1463,29 +1442,15 @@ fn opened_commands(line: &ShellLine) -> Vec<Segment> {
             None => out.push(segment.clone()),
         }
     }
-    let mut next = line
-        .segments
-        .iter()
-        .map(|s| s.substitution)
-        .max()
-        .unwrap_or(0);
+    let mut parents = line.parents.clone();
+    if parents.is_empty() {
+        parents.push(0);
+    }
     let mut out = Vec::new();
     for segment in &line.segments {
-        open(segment, 0, &mut next, &mut out);
+        open(segment, 0, &mut parents, &mut out);
     }
-    out
-}
-
-/// Whether a substitution of `line`, or of an `sh -c` or `eval` script it
-/// opens, nests too deep to read ([`ShellLine::too_deep`]): the hook then
-/// records the line as `<program> ‹redacted›` (WP-209 round 2).
-pub fn too_deep(line: &ShellLine) -> bool {
-    line.too_deep
-        || (line
-            .segments
-            .iter()
-            .any(|s| nested_script(s.argv()).is_some())
-            && opened_commands(line).iter().any(|s| s.too_deep))
+    (out, parents)
 }
 
 /// The script of `sh -c '<script>'` (any of `sh`, `bash`, `zsh`, `dash`,
@@ -1736,7 +1701,7 @@ pub struct Workdir {
 }
 
 /// The [`Workdir`] of each of `segments` (a line's [`simple_commands`]), in
-/// order. The shell starts in `cwd` and follows `cd DIR` (`cd` alone goes
+/// order; `parents` are the substitutions' ([`Commands::parents`]). The shell starts in `cwd` and follows `cd DIR` (`cd` alone goes
 /// to `home`, `cd -` back), `pushd DIR` and `popd`; `resolve` makes a
 /// directory word a path against the directory it is read in. One reading
 /// for the hook's write targets and its `skipPaths` check (WP-071). The
@@ -1746,17 +1711,22 @@ pub struct Workdir {
 /// WP-209).
 pub fn workdirs(
     segments: &[Segment],
+    parents: &[usize],
     cwd: &Path,
     home: &Path,
     resolve: impl Fn(&str, &Path) -> PathBuf,
 ) -> Vec<Workdir> {
-    // the substitution around each one (numbers count up from the line's
-    // 0, and one around another has the smaller number)
-    let last = segments.iter().map(|s| s.substitution).max().unwrap_or(0);
-    let mut parents = vec![0; last + 1];
-    for s in segments {
-        parents[s.substitution] = s.parent;
-    }
+    // the substitution around each one, as the reader opened it, also one
+    // without a command of its own (numbers count up from the line's 0,
+    // and one around another has the smaller number; round 3)
+    let last = segments
+        .iter()
+        .map(|s| s.substitution)
+        .max()
+        .unwrap_or(0)
+        .max(parents.len().saturating_sub(1));
+    let mut parents = parents.to_vec();
+    parents.resize(last + 1, 0);
     // the directories each substitution has made its own; one that moved
     // none reads those of the nearest one around it
     let mut states: Vec<Option<Dirs>> = vec![None; last + 1];
@@ -2460,10 +2430,16 @@ mod tests {
     #[test]
     fn working_directories() {
         let dirs = |line: &str| -> Vec<(String, String)> {
-            let segments = simple_commands(&parse_shell(line));
-            workdirs(&segments, Path::new("/w"), Path::new("/h"), |w, d| {
-                d.join(w)
-            })
+            let Commands {
+                segments, parents, ..
+            } = read_commands(&parse_shell(line));
+            workdirs(
+                &segments,
+                &parents,
+                Path::new("/w"),
+                Path::new("/h"),
+                |w, d| d.join(w),
+            )
             .into_iter()
             .map(|d| {
                 (
@@ -2534,6 +2510,20 @@ mod tests {
                 pair("/w", "/w"),
             ]
         );
+        // round 3 (R2-F5): a middle substitution with no command at all,
+        // only a redirection (`tee q` under `/x`), also in an opened script
+        for line in [
+            "$(cd /x; $(< $(tee q)))",
+            "$(cd /x; $(<<<$(tee q) cat))",
+            "sh -c '$(cd /x; $(< $(tee q)))'",
+        ] {
+            let got = dirs(line);
+            let at = simple_commands(&parse_shell(line))
+                .iter()
+                .position(|s| s.argv() == ["tee", "q"])
+                .unwrap();
+            assert_eq!(got[at], pair("/x", "/x"), "{line}");
+        }
         // a `pushd` stack copied into many substitutions, popped in one
         assert_eq!(
             dirs("pushd /p; pushd q; $(popd; tee x); popd; tee y"),
@@ -2751,7 +2741,7 @@ mod tests {
             [(2, 1), (1, 0), (0, 0), (3, 0), (0, 0)]
         );
         // a substitution nested deeper than the limit is skipped, not read,
-        // and the line says so; the commands after it are read
+        // and the line says so; round 3: so is the rest of the line
         let deep = |open: &str, close: &str, n: usize| {
             format!("{}x{} ; pacman -S zed", open.repeat(n), close.repeat(n))
         };
@@ -2766,16 +2756,24 @@ mod tests {
                 let w = s.words.concat();
                 assert!(!w.contains('x'), "{open}: {}", &w[..w.len().min(300)]);
             }
-            assert_eq!(over.segments.last().unwrap().words, ["pacman", "-S", "zed"]);
             assert!(
-                over.segments.len() <= 2 * SUBSTITUTION_DEPTH_MAX + 2,
+                over.segments
+                    .iter()
+                    .all(|s| !s.words.concat().contains("zed")),
                 "{open}"
             );
+            assert_eq!(
+                at_limit.segments.last().unwrap().words,
+                ["pacman", "-S", "zed"]
+            );
+            assert!(over.segments.len() <= 2 * SUBSTITUTION_DEPTH_MAX, "{open}");
         }
         assert!(!parse_shell("a $(b) `c` <(d) $((1)) ${e}").too_deep);
         // round 2 (F1): in an opened `sh -c` or `eval` script too, also two
         // scripts down; one level less is read
         let nest = |n: usize| format!("{}secret{}", "$(".repeat(n), ")".repeat(n));
+        let too_deep =
+            |line: &ShellLine| line.too_deep || simple_commands(line).iter().any(|s| s.too_deep);
         for line in [
             format!("sudo sh -c 'lpadmin -x a {}'", nest(17)),
             format!("eval 'sudo lpadmin -x a {}'", nest(17)),
@@ -2793,8 +2791,8 @@ mod tests {
         // a script of process substitutions only: no command, still marked
         let only = format!("sh -c '{}x{}'", "<(".repeat(17), ")".repeat(17));
         assert!(too_deep(&parse_shell(&only)));
-        // a skipped backtick substitution ends at its own backtick, not at
-        // one nested in `$( )` inside it
+        // nothing after a skipped substitution's start is read, though
+        // its own backtick closes it (round 3)
         let nested = format!("{}`a $(b `qq`) zz`{}", "$(".repeat(16), ")".repeat(16));
         let parsed = parse_shell(&nested);
         assert!(parsed.too_deep);
@@ -2813,6 +2811,28 @@ mod tests {
                 .all(|s| !s.words.concat().contains('x'))
         );
         assert!(too_deep(&parse_shell(&format!("x {}", nest(17)))));
+        // round 3 (R2-F1): no scan can find where a skipped one ends as
+        // the shell does: a `)` in a quote of an inner `$( )`, a heredoc
+        // body, a comment or `$'…'`; so nothing after its start is read
+        for inner in [
+            "echo \"$(echo \")\")\" hunter2)",
+            "chpasswd <<EOF\nalice:pa)ss\nbob:hunter2\nEOF\n)",
+            "echo x # ) \nhunter2 y)",
+            "echo $'\\')' hunter2 )",
+        ] {
+            let skipped = format!("x {}$({inner}{} ; hunter2", "$(".repeat(16), ")".repeat(16));
+            for line in [
+                skipped.clone(),
+                format!("sudo sh -c '{}'", skipped.replace('\'', "'\\''")),
+            ] {
+                let parsed = parse_shell(&line);
+                assert!(too_deep(&parsed), "{line}");
+                for s in simple_commands(&parsed) {
+                    let w = s.words.concat() + &s.writes.concat();
+                    assert!(!w.contains("hunter2"), "{line}: {w}");
+                }
+            }
+        }
         // an unclosed one reads to the end of the line
         assert_eq!(
             read("a $(b c"),
