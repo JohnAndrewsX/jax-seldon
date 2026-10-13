@@ -6,7 +6,9 @@
 //! `nmcli`'s secrets are named by their property and have a §7 rule
 //! (`nmcli-secret`), so a line with them keeps its other words.
 
-use crate::pkgcmd::{Segment, ShellLine, simple_commands};
+use std::collections::HashSet;
+
+use crate::pkgcmd::Segment;
 
 /// A program whose arguments can put a secret on the line.
 struct SecretArgs {
@@ -296,14 +298,14 @@ impl SecretArgs {
     }
 }
 
-/// Whether a command of `line` (`sh -c` scripts opened, after its
-/// wrappers) is one of [`SECRET_ARGS`] that puts its secret on the line,
-/// or the line gives a process substitution as a secret
-/// ([`secret_substitution`]).
-pub(super) fn secret_on_the_line(line: &ShellLine) -> bool {
-    let segments = simple_commands(line);
-    let writes = writes_a_file(&segments);
-    secret_substitution(&line.text)
+/// Whether a command of a line (its [`crate::pkgcmd::simple_commands`]: `sh -c` scripts
+/// opened, after its wrappers) is one of [`SECRET_ARGS`] that puts its
+/// secret on the line, or the line's `text` gives a process substitution
+/// as a secret ([`secret_substitution`]). The hook reads the line once
+/// and hands both (WP-209 round 2).
+pub(super) fn secret_in(segments: &[Segment], text: &str) -> bool {
+    let writes = writes_a_file(segments);
+    secret_substitution(text)
         || segments.iter().any(|segment| {
             let Some((program, args)) = segment.argv().split_first() else {
                 return false;
@@ -348,20 +350,71 @@ const SECRET_WORDS: [&str; 7] = ["pass", "pw", "secret", "token", "key", "cred",
 /// --password-file <(echo PW)`, `--passphrase-file=<(…)`,
 /// `RESTIC_PASSWORD_FILE=<(…)`; WP-157), also after a pass phrase source
 /// (`-passin file:<(…)`: the option before it; round 2): the command inside
-/// it prints the secret, from the line itself. Each `<(` reads back over at
-/// most two words, which stop at the `(` of the one before it: one pass over
-/// the text, no regex.
+/// it prints the secret, from the line itself. Also when the line gives it
+/// to a descriptor (`3< <(echo PW)`, `3<<< PW`; `< <(…)` and `<<<` alone
+/// give stdin, descriptor 0) and such an option names that descriptor's
+/// file (`--password-file /dev/fd/3`, `/proc/self/fd/3`, `/dev/stdin`),
+/// before or after it on the line (WP-209). Each `<(` and each such file
+/// reads back over at most two words, which stop at the `(` of the one
+/// before it; the descriptors are collected first: two passes over the
+/// text, no regex.
 fn secret_substitution(text: &str) -> bool {
+    let mut fds: HashSet<&str> = HashSet::new();
+    for (at, _) in text.match_indices("<(") {
+        let gap = text[..at]
+            .trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '\\' | '\'' | '"'));
+        match gap.strip_suffix('<') {
+            // `3< <(…)`: the descriptor, read below
+            Some(before) => {
+                fds.insert(descriptor(before));
+            }
+            None if names_a_secret(gap) => return true,
+            None => {}
+        }
+    }
+    for (at, _) in text.match_indices("<<<") {
+        fds.insert(descriptor(&text[..at]));
+    }
+    if fds.is_empty() {
+        return false;
+    }
+    ["/dev/fd/", "/proc/self/fd/", "/dev/stdin"]
+        .iter()
+        .flat_map(|file| text.match_indices(file))
+        .any(|(at, file)| {
+            let digits = &text[at + file.len()..];
+            let end = digits
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(digits.len());
+            let fd = if file == "/dev/stdin" {
+                "0"
+            } else {
+                &digits[..end]
+            };
+            !fd.is_empty() && fds.contains(fd) && names_a_secret(&text[..at])
+        })
+}
+
+/// Whether the word at the end of `gap` names a secret, or the word before
+/// a pass phrase source there (`-passin file:`).
+fn names_a_secret(gap: &str) -> bool {
     let names = |word: &str| {
         let word = word.to_ascii_lowercase();
         SECRET_WORDS.iter().any(|w| word.contains(w))
     };
-    text.match_indices("<(").any(|(at, _)| {
-        let gap = text[..at]
-            .trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '\\' | '\'' | '"'));
-        let (word, rest) = word_before(gap);
-        names(word) || (gap.ends_with(':') && names(word_before(rest).0))
-    })
+    let gap = gap.trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '\\' | '\'' | '"'));
+    let (word, rest) = word_before(gap);
+    names(word) || (gap.ends_with(':') && names(word_before(rest).0))
+}
+
+/// The descriptor whose redirection operator follows `before`: the digits
+/// at its end (`3` of `exec 3`), `0` (stdin) without any.
+fn descriptor(before: &str) -> &str {
+    let digits = before.trim_end_matches(|c: char| c.is_ascii_digit());
+    match &before[digits.len()..] {
+        "" => "0",
+        fd => fd,
+    }
 }
 
 /// The word at the end of `text` after white space, `=`, `:`, `\` and
@@ -382,7 +435,11 @@ fn word_before(text: &str) -> (&str, &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pkgcmd::parse_shell;
+    use crate::pkgcmd::{ShellLine, parse_shell, simple_commands};
+
+    fn secret_on_the_line(line: &ShellLine) -> bool {
+        secret_in(&simple_commands(line), &line.text)
+    }
 
     /// Each form puts a secret on the line; the forms next to it do not.
     #[test]
@@ -483,6 +540,25 @@ mod tests {
             "tool \"--password-file\" <(echo pw)",
             // a fed `sh -c`
             "sudo sh -c 'passwd alice' <<< pw",
+            // WP-209: a descriptor the line feeds, named after a secret
+            // option (N2), before or after it
+            "tool --password-file /dev/fd/3 3< <(echo pw)",
+            "exec 4< <(echo pw); tool --passphrase-file=/dev/fd/4",
+            "tool --secret-file /proc/self/fd/5 5<<< pw",
+            "tool --password-file /dev/stdin < <(echo pw)",
+            "tool --token-file /dev/fd/0 <<< tok",
+            "openssl rsa -in k.pem -passin file:/dev/fd/3 3< <(echo pw)",
+            // the commands of `$( )`, backticks and `<( )`
+            "x=$(mkpasswd -m sha-512 pw)",
+            "echo \"`sudo chpasswd <<< alice:pw`\"",
+            "diff <(echo alice:pw | sudo chpasswd) x",
+            "echo pw | tool $(sudo passwd alice)",
+            "sudo tee x <<< \"$(openssl passwd -6 pw)\"",
+            "sudo sh -c 'x=$(wpa_passphrase Home pw)'",
+            // stdbuf and setsid
+            "echo pw | sudo stdbuf -i0 cryptsetup open /dev/x vault",
+            "printf 'pw\\npw' | setsid -w sudo passwd alice",
+            "setsid -f htpasswd -b f alice pw",
         ] {
             assert!(secret_on_the_line(&parse_shell(line)), "{line}");
         }
@@ -536,6 +612,18 @@ mod tests {
             "mkpasswd -P 3 3< pw.txt",
             // xargs running a program that takes no secret
             "find . -name '*.key' | sudo xargs rm",
+            // WP-209: a descriptor from a file, another descriptor, an
+            // option that names no secret
+            "tool --password-file /dev/fd/3 3< pw.txt",
+            "tool --password-file /dev/fd/33 3< <(echo pw)",
+            "tool --password-file /dev/fd/4 3< <(echo pw)",
+            "tool --file /dev/fd/3 3< <(echo x)",
+            "cat /dev/stdin <<< x",
+            // a substitution without a secret
+            "x=$(sudo passwd -S alice)",
+            "echo \"$(id -u)\" `mkpasswd -m help`",
+            "sudo stdbuf -oL cryptsetup status vault",
+            "setsid -f sudo passwd -S alice",
         ] {
             assert!(!secret_on_the_line(&parse_shell(line)), "{line}");
         }

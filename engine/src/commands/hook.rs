@@ -84,8 +84,8 @@ use crate::model::CaseStatus;
 use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, SUBJECT_MAX, Source, Zone, zone_for};
 use crate::model::is_agent;
 use crate::pkgcmd::{
-    ShellLine, Target, Word, Workdir, globs_overlap, line_vars, omarchy_route, parse_command,
-    parse_shell, simple_commands, unwrap_command, workdirs, write_targets,
+    Commands, Segment, ShellLine, Target, Vars, Word, Workdir, globs_overlap, omarchy_route,
+    parse_command, parse_shell, read_commands, unwrap_command, workdirs, write_targets,
 };
 use crate::redact::{REDACTED, Redactor};
 use crate::sys;
@@ -426,12 +426,30 @@ pub fn classify(line: &ShellLine, scope: &Scope, cwd: &Path) -> Option<Mutation>
 /// and a snapshot command always: then there is no privileged record. A
 /// green record that would need a case (ADR-0019: `sudo tee /etc/x`)
 /// gives way to the privileged one, so a command is never recorded twice.
+/// The privileged record is the first in the order the shell runs the
+/// commands ([`crate::pkgcmd::simple_commands`]: a substitution's before
+/// the command it stands in), one whose program is computed (it starts
+/// with `$` or a backtick: `sudo $(which x)`, `` sudo `which x` ``, `sudo
+/// $EDITOR`) only when no other has a name (WP-209).
 pub fn mutations(line: &ShellLine, scope: &Scope, cwd: &Path) -> Vec<Mutation> {
-    let segments = simple_commands(line);
-    let dirs = workdirs(&segments, cwd, &scope.home, |w, d| scope.resolve(w, d));
+    let Commands {
+        segments, parents, ..
+    } = read_commands(line);
+    let dirs = workdirs(&segments, &parents, cwd, &scope.home, |w, d| {
+        scope.resolve(w, d)
+    });
+    mutations_of(&segments, &dirs, scope)
+}
+
+/// [`mutations`] of a line's [`crate::pkgcmd::simple_commands`] and their
+/// [`workdirs`], read once by the hook (WP-209 round 2).
+fn mutations_of(segments: &[Segment], dirs: &[Workdir], scope: &Scope) -> Vec<Mutation> {
     let mut found: Option<Mutation> = None;
     let mut privileged: Option<Mutation> = None;
-    for (segment, dirs) in segments.iter().zip(&dirs) {
+    // a computed privileged program (`sudo $(which x)`, `sudo $EDITOR`):
+    // the record's subject only when no command names its program
+    let mut computed: Option<Mutation> = None;
+    for (segment, dirs) in segments.iter().zip(dirs) {
         let argv = segment.argv();
         let mutation = classify_segment(argv, &segment.writes, scope, dirs);
         let own_class = mutation.as_ref().is_some_and(|m| !m.needs_case)
@@ -443,7 +461,12 @@ pub fn mutations(line: &ShellLine, scope: &Scope, cwd: &Path) -> Vec<Mutation> {
             && let Some(program) = argv.first().map(|w| program_name(w))
             && !PRIVILEGE_PROBES.contains(&program)
         {
-            privileged.get_or_insert_with(|| Mutation {
+            let slot = if program.starts_with(['$', '`']) {
+                &mut computed
+            } else {
+                &mut privileged
+            };
+            slot.get_or_insert_with(|| Mutation {
                 subject: clip(program, SUBJECT_MAX),
                 zone: Some(Zone::Red),
                 needs_case: false,
@@ -457,7 +480,7 @@ pub fn mutations(line: &ShellLine, scope: &Scope, cwd: &Path) -> Vec<Mutation> {
             found = Some(m);
         }
     }
-    found.into_iter().chain(privileged).collect()
+    found.into_iter().chain(privileged.or(computed)).collect()
 }
 
 /// The program of a command word: its last path component.
@@ -1039,13 +1062,28 @@ fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
         ),
     };
     let line = parse_shell(&command);
-    let found = mutations(&line, &setup.scope, cwd);
+    // the line read once for every check below (WP-209 round 2)
+    let scope = &setup.scope;
+    let Commands {
+        segments,
+        vars,
+        parents,
+    } = read_commands(&line);
+    let dirs = workdirs(&segments, &parents, cwd, &scope.home, |w, d| {
+        scope.resolve(w, d)
+    });
+    let found = mutations_of(&segments, &dirs, scope);
     if found.is_empty() {
         return Vec::new();
     }
-    let skipped = password_on_stdin(&line)
-        || secret_args::secret_on_the_line(&line)
-        || names_skipped_path(&line, setup, cwd);
+    // a substitution too deep to read may hold anything, also in an
+    // opened `sh -c` or `eval` script, whose commands carry its flag
+    // (WP-209, rounds 2 and 3)
+    let skipped = line.too_deep
+        || segments.iter().any(|s| s.too_deep)
+        || password_on_stdin(&segments)
+        || secret_args::secret_in(&segments, &line.text)
+        || names_skipped_path(&line, &segments, &dirs, &vars, setup, cwd);
     found
         .into_iter()
         .map(|mutation| Record {
@@ -1062,8 +1100,8 @@ fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
 /// Whether a command of `line` (`sh -c` scripts opened) runs a wrapper that
 /// reads the password from stdin
 /// ([`crate::pkgcmd::Unwrapped::password_on_stdin`]).
-fn password_on_stdin(line: &ShellLine) -> bool {
-    simple_commands(line)
+fn password_on_stdin(segments: &[Segment]) -> bool {
+    segments
         .iter()
         .any(|s| unwrap_command(&s.words).password_on_stdin)
 }
@@ -1083,22 +1121,28 @@ fn password_on_stdin(line: &ShellLine) -> bool {
 /// that starts with an unknown part; one with nothing known but `/` names
 /// no path). It matches more than the shell would
 /// open.
-fn names_skipped_path(line: &ShellLine, setup: &Setup, cwd: &Path) -> bool {
+fn names_skipped_path(
+    line: &ShellLine,
+    segments: &[Segment],
+    workdirs: &[Workdir],
+    vars: &Vars,
+    setup: &Setup,
+    cwd: &Path,
+) -> bool {
     if setup.config.redaction.skip_paths.is_empty() {
         return false;
     }
     let scope = &setup.scope;
-    let segments = simple_commands(line);
     let mut dirs = vec![cwd.to_path_buf()];
-    for d in workdirs(&segments, cwd, &scope.home, |w, d| scope.resolve(w, d)) {
-        dirs.extend([d.shell, d.program]);
+    for d in workdirs {
+        dirs.extend([d.shell.clone(), d.program.clone()]);
     }
     dirs.sort_unstable();
     dirs.dedup();
     let mut words: Vec<String> = Vec::new();
     for segment in segments {
-        words.extend(segment.words);
-        words.extend(segment.writes);
+        words.extend(segment.words.iter().cloned());
+        words.extend(segment.writes.iter().cloned());
     }
     words.extend(
         line.text
@@ -1106,7 +1150,6 @@ fn names_skipped_path(line: &ShellLine, setup: &Setup, cwd: &Path) -> bool {
             .filter(|t| !t.is_empty())
             .map(str::to_string),
     );
-    let vars = line_vars(line);
     let globs = skip_globs(&setup.config.redaction.skip_paths, &scope.home);
     words.iter().any(|word| {
         let after_equals = word.split_once('=').map(|(_, value)| value);

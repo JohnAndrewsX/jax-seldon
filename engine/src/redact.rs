@@ -211,8 +211,10 @@ fn pem_base64() -> String {
 }
 
 /// The key words of `json-secret`: a quoted key that ends in one names a
-/// secret.
-const SECRET_KEY: &str = r"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key)";
+/// secret, also with `key` or `access key` after it (`secret_key`,
+/// `secretKey`, `aws_secret_access_key`; WP-209), not with another word
+/// (`token_type`, `password_hint`).
+const SECRET_KEY: &str = r"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key)(?:[_-]?(?:access[_-]?)?key)?";
 
 /// The shortest value that counts as a credential when it mixes at least
 /// two character classes (lower case, upper case, digits, other).
@@ -234,7 +236,9 @@ pub const CREDENTIAL_LONG: usize = 16;
 /// such a group stands for context that the `regex` crate cannot look
 /// behind or ahead for, so the pattern matches it and the rule then
 /// keeps the match. A group in `unless_followed` does so only for what
-/// follows the match ([`Rule::kept`]).
+/// follows the match ([`Rule::kept`]). A match for which `keep` returns
+/// true is left as it is too, for context a group alone cannot tell
+/// ([`nmcli_field`]).
 #[derive(Debug, Clone)]
 struct Rule {
     name: &'static str,
@@ -246,6 +250,7 @@ struct Rule {
     check: Option<fn(&str) -> bool>,
     unless: &'static [&'static str],
     unless_followed: &'static [&'static str],
+    keep: Option<fn(&Captures) -> bool>,
     triggers: &'static [&'static str],
     again: &'static [&'static str],
 }
@@ -345,7 +350,7 @@ impl Rule {
     /// holds only that `:`, so the next match may start right after it.
     fn kept(&self, found: &Found, text: &str, next: Option<&Found>) -> bool {
         let named = |g: &&str| found.caps.name(g).is_some();
-        if self.unless.iter().any(named) {
+        if self.unless.iter().any(named) || self.keep.is_some_and(|keep| keep(&found.caps)) {
             return true;
         }
         let end = found.range().1;
@@ -654,17 +659,49 @@ pub fn has_value(value: &str) -> bool {
 }
 
 /// Whether a JSON string value (`"…"`, or `\"…\"` inside a shell string)
-/// or a Python one (`'…'`, after a string prefix such as `f`, `rb`) is not
-/// empty.
+/// or a Python one (`'…'`, after a string prefix such as `f`, `rb`, also
+/// in triple quotes) is not empty.
 fn has_json_value(value: &str) -> bool {
     let value = value.trim_start_matches(['r', 'R', 'b', 'B', 'u', 'U', 'f', 'F']);
-    let inner = value
-        .strip_prefix("\\\"")
-        .and_then(|v| v.strip_suffix("\\\""))
-        .or_else(|| value.strip_prefix('"').and_then(|v| v.strip_suffix('"')))
-        .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+    // triple quotes before single ones: `""""""` is empty (WP-209)
+    let inner = ["\\\"\\\"\\\"", "\\\"", "\"\"\"", "'''", "\"", "'"]
+        .iter()
+        .find_map(|q| value.strip_prefix(q).and_then(|v| v.strip_suffix(q)))
         .unwrap_or(value);
     !inner.is_empty()
+}
+
+/// Whether an `nmcli-secret` match names a field to show, not a property
+/// to set: its group `field` (`-f`, `-g`, `--fields`, `--get-values`) is
+/// one of nmcli's global options, so only options and the values of
+/// `--colors`, `--escape`, `--fields`, `--get-values`, `--mode` and
+/// `--wait` (one or two dashes, any prefix nmcli takes) stand between
+/// `nmcli` and it (`nmcli -s -m tabular -g wifi-sec.psk con show`). After
+/// the object word, `-f` is no field option (`nmcli con mod Home -f
+/// wifi-sec.psk PW`, which nmcli rejects, is masked; WP-209), nor in a
+/// match that scans on in the command without the command word.
+fn nmcli_field(caps: &Captures) -> bool {
+    const WITH_VALUE: [&str; 6] = ["colors", "escape", "fields", "get-values", "mode", "wait"];
+    let (Some(cmd), Some(field)) = (caps.name("cmd"), caps.name("field")) else {
+        return false;
+    };
+    let whole = caps.get(0).expect("group 0 is the match");
+    let between = &whole.as_str()[cmd.end() - whole.start()..field.start() - whole.start()];
+    let mut value_next = false;
+    for word in between.split_whitespace().filter(|w| *w != "\\") {
+        if std::mem::take(&mut value_next) {
+            continue;
+        }
+        let Some(name) = word.strip_prefix('-') else {
+            // the object word (`con`, `device`)
+            return false;
+        };
+        let name = name.strip_prefix('-').unwrap_or(name);
+        value_next = !name.is_empty()
+            && !name.contains('=')
+            && WITH_VALUE.iter().any(|o| o.starts_with(name));
+    }
+    true
 }
 
 /// Whether a `mount` option list (`user=bob,pass=PW,vers=3.0`, quoted or
@@ -856,6 +893,22 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
             "api_key'",
             "api-key'",
             "apikey'",
+            // a key word, then `key` and the quote (`secret_key`, WP-209)
+            "password>key\"",
+            "password>key\\\"",
+            "password>key'",
+            "passwd>key\"",
+            "passwd>key\\\"",
+            "passwd>key'",
+            "passphrase>key\"",
+            "passphrase>key\\\"",
+            "passphrase>key'",
+            "secret>key\"",
+            "secret>key\\\"",
+            "secret>key'",
+            "token>key\"",
+            "token>key\\\"",
+            "token>key'",
         ],
         // the name, then `:` or a quote and `:` (`"Authorization":`)
         "authorization-header" => &[
@@ -938,6 +991,7 @@ fn rule(name: &'static str, pattern: &str, replacement: &str) -> Rule {
         check: None,
         unless: &[],
         unless_followed: &[],
+        keep: None,
         triggers: triggers(name),
         again: &[],
     }
@@ -1115,11 +1169,13 @@ fn builtin_rules() -> Vec<Rule> {
         // not `"password_hint"` or `"token_type"`. Also a Python dict's
         // single quotes, on the key, the value or both (`{'x-api-key':
         // 'k'}`), and a Python string prefix before the value (`f'…'`,
-        // WP-157)
+        // WP-157); a triple-quoted value, over lines too, before the
+        // empty `""` at its start is tried (`{'password': """…"""}`, also
+        // `\"\"\"…\"\"\"` inside a shell string; WP-209)
         checked_rule(
             "json-secret",
             &format!(
-                r#"(?i)((?:\\?"{SECRET_KEY}\\?"|'{SECRET_KEY}')\s*:\s*)(?P<v>(?:[rbuf]{{1,2}})?(?:"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|\\"[^"\n]*?\\")"#
+                r#"(?i)((?:\\?"{SECRET_KEY}\\?"|'{SECRET_KEY}')\s*:\s*)(?P<v>(?:[rbuf]{{1,2}})?(?:"""(?:"?"?(?:[^"\\]|\\(?s:.)))*"""|'''(?:'?'?(?:[^'\\]|\\(?s:.)))*'''|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|\\"\\"\\"(?s:.)*?\\"\\"\\"|\\"[^"\n]*?\\")"#
             ),
             has_json_value,
         ),
@@ -1271,9 +1327,10 @@ fn builtin_rules() -> Vec<Rule> {
         // time; not `wifi-sec.key-mgmt wpa-psk` or `…-flags` (WP-140),
         // and not a property named as a field to show (`-g wifi-sec.psk
         // con show`, `--fields`, `--get-values`: group `field`; after `=`
-        // no property is read as one to set; WP-157)
+        // no property is read as one to set; WP-157), a global option
+        // before the object word only ([`nmcli_field`], WP-209)
         Rule {
-            unless: &["field"],
+            keep: Some(nmcli_field),
             ..option_rule(
                 "nmcli-secret",
                 &command(r"(?-u:\b)nmcli(?-u:\b)"),
@@ -1384,6 +1441,7 @@ impl Redactor {
                 check: None,
                 unless: &[],
                 unless_followed: &[],
+                keep: None,
                 triggers: &[],
                 again: &[],
             });

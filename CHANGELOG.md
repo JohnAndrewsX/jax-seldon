@@ -35,6 +35,20 @@ and the package does not exist yet. Update the plugin first:
   Seldon now ends inside ADR-0030's 1 ms as well. Output and exit codes
   are unchanged; `hook session-stop --actor NAME` takes the parser as
   before.
+
+- **Redaction reads more of a command line (WP-209).** A Python value
+  in triple quotes (`{'password': """…"""}`, `'''…'''`) and a key such
+  as `"secret_key"`, `"secretKey"` or `"aws_secret_access_key"` are
+  masked. A hook reads the commands inside `$(…)`, backticks and `<(…)`
+  as commands of the line, so `x=$(sudo mkpasswd …)` is recorded, as
+  `mkpasswd ‹redacted›`; `stdbuf` and `setsid` are read past like
+  `sudo`; `--password-file /dev/fd/3 3< <(echo …)` is masked like
+  `--password-file <(echo …)`. `nmcli con modify Home -f wifi-sec.psk
+  …` is masked (`-f` names fields only before `con`). A line nested
+  more than 16 substitutions deep no longer crashes the hook; it is
+  recorded as `<program> ‹redacted›`, and nothing after that
+  substitution is read, so a command after it is not recorded.
+
 - **`hook session-start` and `hook generic` start faster (WP-218).**
   Like `hook claude-code` since WP-092, the two hooks an agent runs in
   every session no longer build the parser of every command when they
