@@ -2774,6 +2774,15 @@ mod tests {
         // a script of process substitutions only: no command, still marked
         let only = format!("sh -c '{}x{}'", "<(".repeat(17), ")".repeat(17));
         assert!(too_deep(&parse_shell(&only)));
+        // a skipped backtick substitution ends at its own backtick, not at
+        // one nested in `$( )` inside it
+        let nested = format!("{}`a $(b `qq`) zz`{}", "$(".repeat(16), ")".repeat(16));
+        let parsed = parse_shell(&nested);
+        assert!(parsed.too_deep);
+        for s in &parsed.segments {
+            let w = s.words.concat();
+            assert!(!w.contains("qq") && !w.contains("zz"), "{w}");
+        }
         // a `<( )` skipped inside `$( )`: its text is no word's either
         let inside = format!("{}cat <(x){}", "$(".repeat(16), ")".repeat(16));
         let parsed = parse_shell(&inside);
