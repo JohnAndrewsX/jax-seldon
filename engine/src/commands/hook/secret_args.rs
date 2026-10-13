@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-use crate::pkgcmd::{Segment, ShellLine, simple_commands};
+use crate::pkgcmd::Segment;
 
 /// A program whose arguments can put a secret on the line.
 struct SecretArgs {
@@ -298,14 +298,14 @@ impl SecretArgs {
     }
 }
 
-/// Whether a command of `line` (`sh -c` scripts opened, after its
-/// wrappers) is one of [`SECRET_ARGS`] that puts its secret on the line,
-/// or the line gives a process substitution as a secret
-/// ([`secret_substitution`]).
-pub(super) fn secret_on_the_line(line: &ShellLine) -> bool {
-    let segments = simple_commands(line);
-    let writes = writes_a_file(&segments);
-    secret_substitution(&line.text)
+/// Whether a command of a line (its [`crate::pkgcmd::simple_commands`]: `sh -c` scripts
+/// opened, after its wrappers) is one of [`SECRET_ARGS`] that puts its
+/// secret on the line, or the line's `text` gives a process substitution
+/// as a secret ([`secret_substitution`]). The hook reads the line once
+/// and hands both (WP-209 round 2).
+pub(super) fn secret_in(segments: &[Segment], text: &str) -> bool {
+    let writes = writes_a_file(segments);
+    secret_substitution(text)
         || segments.iter().any(|segment| {
             let Some((program, args)) = segment.argv().split_first() else {
                 return false;
@@ -435,7 +435,11 @@ fn word_before(text: &str) -> (&str, &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pkgcmd::parse_shell;
+    use crate::pkgcmd::{ShellLine, parse_shell, simple_commands};
+
+    fn secret_on_the_line(line: &ShellLine) -> bool {
+        secret_in(&simple_commands(line), &line.text)
+    }
 
     /// Each form puts a secret on the line; the forms next to it do not.
     #[test]

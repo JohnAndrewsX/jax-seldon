@@ -9,7 +9,6 @@
 //! attribution read a shell line through the same [`parse_shell`],
 //! [`simple_commands`] and [`command_argv`] (WP-071).
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -1381,9 +1380,16 @@ const NESTING_MAX: usize = 3;
 /// sets to a literal (`F=x; … $F`, [`Vars`]) holds that value. Read only:
 /// nothing else is expanded, nothing is run.
 pub fn simple_commands(line: &ShellLine) -> Vec<Segment> {
+    commands_and_vars(line).0
+}
+
+/// [`simple_commands`] and [`line_vars`] from one reading of the line, for
+/// a caller that needs both (the hook; WP-209 round 2).
+pub fn commands_and_vars(line: &ShellLine) -> (Vec<Segment>, Vars) {
     let opened = opened_commands(line);
     let vars = Vars::of(&opened);
-    opened.into_iter().map(|s| vars.put_in(s)).collect()
+    let segments = opened.into_iter().map(|s| vars.put_in(s)).collect();
+    (segments, vars)
 }
 
 /// The variables `line` sets ([`Vars`]), for reading the words of its text.
@@ -1474,7 +1480,12 @@ fn opened_commands(line: &ShellLine) -> Vec<Segment> {
 /// opens, nests too deep to read ([`ShellLine::too_deep`]): the hook then
 /// records the line as `<program> ‹redacted›` (WP-209 round 2).
 pub fn too_deep(line: &ShellLine) -> bool {
-    line.too_deep || opened_commands(line).iter().any(|s| s.too_deep)
+    line.too_deep
+        || (line
+            .segments
+            .iter()
+            .any(|s| nested_script(s.argv()).is_some())
+            && opened_commands(line).iter().any(|s| s.too_deep))
 }
 
 /// The script of `sh -c '<script>'` (any of `sh`, `bash`, `zsh`, `dash`,
@@ -1739,24 +1750,26 @@ pub fn workdirs(
     home: &Path,
     resolve: impl Fn(&str, &Path) -> PathBuf,
 ) -> Vec<Workdir> {
-    let parents: HashMap<usize, usize> = segments
-        .iter()
-        .map(|s| (s.substitution, s.parent))
-        .collect();
-    let start = Dirs {
+    // the substitution around each one (numbers count up from the line's
+    // 0, and one around another has the smaller number)
+    let last = segments.iter().map(|s| s.substitution).max().unwrap_or(0);
+    let mut parents = vec![0; last + 1];
+    for s in segments {
+        parents[s.substitution] = s.parent;
+    }
+    // the directories each substitution has made its own; one that moved
+    // none reads those of the nearest one around it
+    let mut states: Vec<Option<Dirs>> = vec![None; last + 1];
+    states[0] = Some(Dirs {
         shell: cwd.to_path_buf(),
         previous: cwd.to_path_buf(),
         stack: DirStack::default(),
-    };
-    // each substitution's directories, from the line's (0) down
-    let mut states: HashMap<usize, Dirs> = HashMap::from([(0, start)]);
+    });
     let mut out = Vec::with_capacity(segments.len());
     for segment in segments {
-        let Dirs {
-            shell,
-            previous,
-            stack,
-        } = Dirs::of(&mut states, &parents, segment.substitution);
+        let n = segment.substitution;
+        let owner = Dirs::owner(&states, &parents, n);
+        let shell = &states[owner].as_ref().expect("an owner has them").shell;
         let unwrapped = unwrap_command(&segment.words);
         let argv = unwrapped.argv;
         let mut program = shell.clone();
@@ -1774,14 +1787,33 @@ pub fn workdirs(
             .iter()
             .find(|a| *a == "-" || !a.starts_with('-'))
             .map(String::as_str);
+        let moves = match (name, operand) {
+            (Some("cd"), _) | (Some("popd"), None) => true,
+            // `pushd +N` rotates the stack: not followed
+            (Some("pushd"), Some(dir)) => !dir.starts_with('+'),
+            _ => false,
+        };
+        if !moves {
+            continue;
+        }
+        // a substitution's first move: its own copy of the directories it
+        // started in, which the one around it still has, since none of
+        // that one's commands runs before this substitution ends
+        if owner != n {
+            states[n] = states[owner].clone();
+        }
+        let Dirs {
+            shell,
+            previous,
+            stack,
+        } = states[n].as_mut().expect("copied above");
         match (name, operand) {
             (Some("cd"), Some("-")) => std::mem::swap(shell, previous),
             (Some("cd"), dir) => {
                 let to = dir.map_or_else(|| home.to_path_buf(), |d| resolve(d, shell));
                 *previous = std::mem::replace(shell, to);
             }
-            // `pushd +N` rotates the stack: not followed
-            (Some("pushd"), Some(dir)) if !dir.starts_with('+') => {
+            (Some("pushd"), Some(dir)) => {
                 let to = resolve(dir, shell);
                 *stack = stack.push(std::mem::replace(shell, to));
             }
@@ -1807,31 +1839,18 @@ struct Dirs {
 }
 
 impl Dirs {
-    /// The directories of substitution `n`; on its first command a copy
-    /// of those of the one around it (`parents`), as they are then
-    /// (round 2: `$(cd /x; c $(d))` runs `d` in `/x`). The copy shares
-    /// the `pushd` stack, so a line of many substitutions after many
-    /// `pushd` stays linear.
-    fn of<'s>(
-        states: &'s mut HashMap<usize, Dirs>,
-        parents: &HashMap<usize, usize>,
-        n: usize,
-    ) -> &'s mut Dirs {
-        if !states.contains_key(&n) {
-            // the nearest substitution around `n` with directories; the
-            // line's always has them
-            let mut chain = vec![n];
-            let mut at = n;
-            while !states.contains_key(&at) {
-                at = parents.get(&at).copied().filter(|p| *p != at).unwrap_or(0);
-                chain.push(at);
-            }
-            let seed = states[&at].clone();
-            for id in chain {
-                states.entry(id).or_insert_with(|| seed.clone());
-            }
+    /// The substitution whose directories substitution `n` reads: itself
+    /// once it moved, else the nearest one around it that did, the line's
+    /// at the latest (round 2: `$(cd /x; c $(d))` runs `d` in `/x`). Only a
+    /// move copies them, and the copy shares the `pushd` stack, so a line of
+    /// many substitutions after many `pushd` stays linear (F3).
+    fn owner(states: &[Option<Dirs>], parents: &[usize], n: usize) -> usize {
+        let mut at = n;
+        while states[at].is_none() {
+            // the one around has the smaller number; 0 ends the walk
+            at = parents[at].min(at.saturating_sub(1));
         }
-        states.get_mut(&n).expect("inserted above")
+        at
     }
 }
 
