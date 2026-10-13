@@ -6,8 +6,8 @@
 // another font (or a colour emoji) and breaks the theme's look.
 //
 // The font's charset comes from the installed faces (`fc-list`, under a
-// private HOME, XDG_CACHE_HOME, XDG_CONFIG_HOME and a 0700 XDG_RUNTIME_DIR,
-// all removed afterwards) where fontconfig and the font are there; else
+// private HOME, cache, config and data dirs and a private 0700 runtime
+// dir, all removed afterwards) where fontconfig and the font are there; else
 // from the pinned file tests/plugin/glyphs/jetbrainsmono-nerd-font.charset
 // (CI; its header says how it was made). SELDON_GLYPHS_PINNED=1 reads the
 // pinned file on any host.
@@ -77,14 +77,15 @@ function installedCharsets() {
     const rt = path.join(tmp, "rt")
     fs.mkdirSync(rt, { mode: 0o700 })
     fs.chmodSync(rt, 0o700)
-    const env = {
-      PATH: process.env.PATH || "/usr/bin:/bin",
-      HOME: tmp,
-      XDG_CACHE_HOME: path.join(tmp, "cache"),
-      XDG_CONFIG_HOME: path.join(tmp, "config"),
-      XDG_DATA_HOME: path.join(tmp, "data"),
-      XDG_RUNTIME_DIR: rt
-    }
+    // NAME=value pairs: the process gets these and nothing else
+    const env = Object.fromEntries([
+      "PATH=" + (process.env.PATH || "/usr/bin:/bin"),
+      "HOME=" + tmp,
+      "XDG_CACHE_HOME=" + path.join(tmp, "cache"),
+      "XDG_CONFIG_HOME=" + path.join(tmp, "config"),
+      "XDG_DATA_HOME=" + path.join(tmp, "data"),
+      "XDG_RUNTIME_DIR=" + rt
+    ].map((kv) => [kv.slice(0, kv.indexOf("=")), kv.slice(kv.indexOf("=") + 1)]))
     const r = spawnSync("fc-list", ["--format", "%{charset}\\n", ":family=" + FAMILY], { env, encoding: "utf8", timeout: 20000 })
     if (r.error || r.status !== 0) return []
     return r.stdout.split("\n").filter((l) => l.trim() !== "").map(parseCharset)
