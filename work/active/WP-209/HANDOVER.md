@@ -324,3 +324,107 @@ JUST_TEMPDIR under `gates/dev-209/`,
 - `Reader::substitution` still checks each character of a substitution
   against every heredoc cut (pre-existing, O(text × heredocs); bounded by
   the depth limit), as noted in round 1.
+
+## Round 3
+
+Brief: the orchestrator's round 3 from the Opus round-2 re-check (SEND
+BACK, R2-F1–F6) with its decisions: R2-F1 fail closed; R2-F2 and R2-F5 in
+this round. Code commit b031480f, docs e1000126.
+
+### Findings
+
+- **R2-F1 — fail closed at a skip.** `skip_end` is gone. At the first
+  substitution nested deeper than 16 (`$(`, backticks, `<(`),
+  `Reader::skip` marks the line too deep and returns the end of the line,
+  so nothing after the skipped substitution's start is read as a command
+  or a word, in the line and in an opened `sh -c` or `eval` script alike;
+  the substitution stands in its word as `$(…)`, `` `…` `` or `(…)`
+  (`Reader::skipped`, one entry instead of the list). SPEC §8 and the
+  ADR-0039 note say so. Tests: `pkgcmd::tests::substitutions_are_opened`
+  and `hooks privileged::a_substitution_nested_too_deep_is_masked_whole`
+  add the reviewer's four shapes (`"$(echo ")")" hunter2`, a heredoc
+  `alice:pa)ss` / `bob:hunter2`, `# ) ` then a newline, `$'\')' hunter2`),
+  each plain and under `sudo sh -c`: no `hunter2` in any word or write
+  target, every record `lpadmin ‹redacted›`, no `hunter2` in any event or
+  the ledger; the unit test also puts `; hunter2` after the nest and
+  checks that `pacman -S zed` after a skip is no command. Mutant: `a
+  skipped $( ) ends at its own bracket` (reading goes on after
+  `closing`): killed (lib, hooks). Evidence: *fixture*.
+- **R2-F2 — one parse, deep nests timed.** The hook reads `line.too_deep
+  || segments.iter().any(|s| s.too_deep)`; `pkgcmd::too_deep` is gone
+  (the unit test has the same check as a closure). `Vars::put_in` takes
+  the segment by value and changes only its words and write targets, so
+  the flag stays (the mutant `the hook reads the line's flag only` is
+  killed through the opened-script rows). The reviewer's line (`sudo sh
+  -c 'lpadmin -x a; ` + 17-deep nests) is a row of
+  `a_long_privileged_line_is_read_in_linear_time` at 16/64/128 KB, budget
+  60 ms at 128 KB. With fail closed the first nest ends the reading, so
+  the row is cheap (numbers below). The `opened` row's own nest is now 16
+  deep (at the limit), so that row still reads its whole line. Evidence:
+  *fixture*.
+- **R2-F3 — the computed program.** `privileged::a_computed_program_is_the_subject_only_alone`:
+  `sudo $(which lpadmin) -x a; sudo cupsenable p`, its backtick form and
+  `sudo $EDITOR /etc/cups/x; sudo cupsenable p` are recorded with subject
+  `cupsenable`; `sudo $(which lpadmin) -x a` and its backtick form alone
+  with subject `$(which lpadmin)` and `` `which lpadmin` ``. The reviewer's
+  M4 (`starts_with('$')` only) is in `mutants.py`: killed (hooks).
+  Evidence: *fixture*.
+- **R2-F4 — a move copies.** The `pushd` row has a `$(cd /)` variant (7000
+  `pushd /`, 13 000 `$(cd /)`, 164 KB, budget 60 ms). The reviewer's M3b
+  (the stack copied whole at a substitution's first move) is in
+  `mutants.py` and also runs that timing row (bench profile, under the
+  lock): killed (hooks timing). Evidence: *fixture*.
+- **R2-F5 — parents as the reader opens them.** `ShellLine::parents`
+  holds the substitution around each one, pushed in `Reader::inside`, so
+  one without a command of its own has its entry; `opened_commands` numbers
+  a script's on after the line's (`Commands::parents`, from
+  `read_commands`, which replaces `commands_and_vars`), and `workdirs`
+  takes that table. Tests: `working_directories` adds `$(cd /x; $(< $(tee
+  q)))`, `$(cd /x; $(<<<$(tee q) cat))` and the first inside `sh -c '…'`:
+  `tee q` under `/x`. Mutants: parents from the commands only, a script's
+  parents not numbered on: both killed (lib). Evidence: *fixture*.
+- **R2-F6 — wording.** §8: a skipped substitution stands as `$(…)`,
+  `` `…` `` or `(…)`; the computed-program rule covers any program that
+  starts with `$` or a backtick (`sudo $(which x)`, `` sudo `which x` ``,
+  `sudo $EDITOR`). The ADR-0039 note names the computed-program exception
+  and the fail-closed skip. TESTING.md and the CHANGELOG bullet follow.
+  Evidence: `docs-check` in `just check`.
+
+### How it was verified (round 3)
+
+Same setup as round 2: own HOME, a 0700 runtime dir, TMPDIR and
+JUST_TEMPDIR under `gates/dev-209/`, `CARGO_TARGET_DIR=gates/target-dev-209`,
+each command written literally. No CPU burners this round.
+
+- `cargo fmt --check`: clean. `cargo clippy --all-targets -- -D
+  warnings`: clean. `cargo test` (all binaries, lib included): 56
+  binaries, 1466 passed, 0 failed, 11 ignored (timing) (*fixture*).
+- **Mutants** (`work/active/WP-209/mutants.py`, 49: the skip-scanner one
+  dropped, five added), on a `git archive` copy under the lock: **49/49
+  killed**, none only by a failing compile (log
+  `gates/mutants-dev-209-r3.log`).
+- **Timing, idle** (bench profile, under the lock, b031480f; load average
+  2.3 before; medians of 21; log `gates/perf-dev-209-r3-idle.log`): hook
+  lines 16/64/128 KB 12.2/15.3/19.2 ms, with substitutions
+  13.5/19.3/28.2 ms, nests too deep in `sh -c` 12.6/13.2/**13.7 ms**, the
+  `pushd` line with `$(:)` **29.4 ms** (126 KB), with `$(cd /)` **34.5 ms**
+  (164 KB); budget 60 ms, all green. No budget changed.
+- **`flock /tmp/seldon-check.lock env SELDON_FULL_CHECK=1 just check`**
+  on e1000126: **exit 0, `check: ok`** (log `gates/check-dev-209-r3.log`):
+  112 binaries, 2943 passed, 0 failed, 22 ignored; `docs-check: ok`,
+  `plugin-test: ok`, `ipc-restart` 44 passed, 0 failed (*fixture*,
+  *headless* for the plugin harnesses).
+- shellcheck: only inside `just check` (no shell script changed). *test
+  host*, *desktop*, *CI*: *not run*.
+- `git diff bde78fdc..HEAD`: no home path, user or host name added.
+
+### Open points
+
+- Fail closed has a cost the operator should know: a command after a
+  substitution nested too deep is not seen, so a line whose only
+  privileged or mutating command comes after one (`echo $(…17 deep…);
+  sudo lpadmin -x a`) is not recorded at all. SPEC §8, the ADR note and
+  the CHANGELOG say so. A follow-up could record such a line as a
+  privileged `‹redacted›` record without a subject; not done here.
+- The round-2 points stay (the `single-quoted keys` 64 KB budget under
+  load, heredoc cuts checked per character).
