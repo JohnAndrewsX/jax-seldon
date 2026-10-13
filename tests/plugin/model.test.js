@@ -5047,4 +5047,239 @@ test("deskChip: an urgent notice wins, then the setup card, then the first notic
   same(M.deskChip(null, null), { text: "", count: 0, tone: "", setup: false })
 })
 
+// ---- The word table (ADR-0045 §5–§6, WP-167) --------------------------------
+
+// CONTRACT.md's "Commands the plugin may run": one pattern per line,
+// `seldon` and the comment dropped. Read at test time, so a row added to
+// or removed from the contract is what the table is checked against.
+function contractPatterns(md) {
+  const head = md.indexOf("## Commands the plugin may run")
+  assert.ok(head !== -1, "CONTRACT.md has no command block heading")
+  const open = md.indexOf("```", head)
+  const close = md.indexOf("```", open + 3)
+  assert.ok(open !== -1 && close !== -1, "CONTRACT.md's command block is not fenced")
+  return md.slice(md.indexOf("\n", open) + 1, close).split("\n")
+    .map((l) => l.replace(/\s{2,}#.*$/, "").trim())
+    .filter((l) => l !== "")
+    .map((l) => {
+      assert.ok(l.startsWith("seldon "), "not a seldon command: " + l)
+      return { line: l, nodes: patternNodes(l.slice("seldon ".length).split(/\s+/)) }
+    })
+}
+
+// `<…>` one element (an id or text, never a flag); `a|b` alternatives;
+// `[…]` optional, `[…]…` repeated.
+function patternNodes(tokens) {
+  const nodes = []
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].startsWith("[")) {
+      const inner = []
+      let t = tokens[i].slice(1)
+      while (!/\](…)?$/.test(t)) {
+        inner.push(t)
+        t = tokens[++i]
+        assert.ok(t !== undefined, "unclosed [ in " + tokens.join(" "))
+      }
+      const repeat = t.endsWith("…")
+      inner.push(t.replace(/\](…)?$/, ""))
+      nodes.push({ group: patternNodes(inner.filter((x) => x !== "")), repeat })
+    } else if (/^<.+>$/.test(tokens[i])) {
+      nodes.push({ any: true })
+    } else {
+      nodes.push({ alts: tokens[i].split("|") })
+    }
+  }
+  return nodes
+}
+
+function fitsFrom(nodes, i, argv, j, k) {
+  if (i === nodes.length) return k(j)
+  const n = nodes[i]
+  if (n.group) {
+    return fitsFrom(nodes, i + 1, argv, j, k)
+      || fitsFrom(n.group, 0, argv, j, (e) => e > j && fitsFrom(nodes, n.repeat ? i : i + 1, argv, e, k))
+  }
+  if (j >= argv.length) return false
+  const ok = n.any ? typeof argv[j] === "string" && argv[j] !== "" && !argv[j].startsWith("--") : n.alts.indexOf(argv[j]) !== -1
+  return ok && fitsFrom(nodes, i + 1, argv, j + 1, k)
+}
+
+const fitsPattern = (p, argv) => fitsFrom(p.nodes, 0, argv, 0, (e) => e === argv.length)
+
+// Rule 4: every argv the table names is a row of the contract; returns the
+// keys that are not, with their argv.
+function rule4Violations(words, patterns) {
+  const out = []
+  for (const key of Object.keys(words)) {
+    const argv = words[key].argv
+    if (argv === undefined) continue
+    if (!Array.isArray(argv) || !patterns.some((p) => fitsPattern(p, argv))) out.push(key + " " + JSON.stringify(argv))
+  }
+  return out
+}
+
+const contractMd = fs.readFileSync(path.join(root, "docs/CONTRACT.md"), "utf8")
+const contract = contractPatterns(contractMd)
+const plainWords = () => JSON.parse(JSON.stringify(M.WORDS))
+
+test("rule 4: the contract block parses, and the matcher reads its notation", () => {
+  assert.ok(contract.length >= 20, "only " + contract.length + " command lines")
+  const fits = (argv) => contract.some((p) => fitsPattern(p, argv))
+  for (const argv of [
+    ["status", "--json"], ["log", "--json", "--", "x"], ["log", "--case", "C-2026-001", "--json", "--", "x"],
+    ["plan", "verify", "C-2026-001", "--json"], ["agent", "ask", "case", "C-2026-001", "--json"],
+    ["drift", "explain", EID, "--only", "--zone", "red", "--json", "--", "x"],
+    ["drift", "apply", EID, "--item", EID, "--item", EID, "--json"],
+    ["import", "task", "--json", "--dry-run", "--", "~/tasks.md"]
+  ]) assert.ok(fits(argv), JSON.stringify(argv))
+  for (const argv of [
+    ["status"], ["status", "--json", "--quiet"], ["plan", "finish", "C-2026-001", "--json"],
+    ["agent", "ask", "triage"], ["drift", "explain", EID, "--", "x"], ["drift", "propose", "--json"],
+    ["drift", "explain", "--json", "--json", "--", "x"], ["log", "--json", "--"]
+  ]) assert.ok(!fits(argv), JSON.stringify(argv))
+})
+
+test("rule 4: every argv in the word table is a row of CONTRACT.md's command block", () => {
+  same(rule4Violations(plainWords(), contract), [])
+})
+
+test("rule 4: the check fails on an argv the contract does not list", () => {
+  for (const argv of [
+    ["drift", "apply-all", "--json"],
+    ["agent", "start", "--new", "--", "It was me."],
+    ["drift", "explain", "<eventId>", "--", "It was me."],
+    ["snapshot", "undo", "<id>", "--json"],
+    ["drift", "propose", "--json"]
+  ]) {
+    const w = plainWords()
+    w["action.explain"].argv = argv
+    same(rule4Violations(w, contract), ["action.explain " + JSON.stringify(argv)])
+  }
+  // a row the contract drops fails the table that still names it
+  const without = contract.filter((p) => !p.line.startsWith("seldon capture "))
+  same(rule4Violations(plainWords(), without), ["action.capture " + JSON.stringify(M.WORDS["action.capture"].argv)])
+})
+
+test("rule 4: what the table names is what the desk runs", () => {
+  const CID = "C-2026-001"
+  const fill = (argv, text) => argv.map((a) => a === "<caseId>" ? CID : a === "<eventId>" ? EID
+    : /^<[a-z]+>$/i.test(a) ? text : a.replace("<eventId>", EID))
+  const W = M.WORDS
+  same(M.askArgs("drift", EID).args, fill(W["action.askDrift"].argv))
+  same(M.driftArgs("explain", { eventId: EID, text: "It was me." }).args, fill(W["action.explain"].argv))
+  same(M.agentFocusArgs(CID).args, fill(W["action.focus"].argv))
+  same(M.planArgs("done", CID).args, fill(W["action.done"].argv))
+  same(M.planArgs("start", CID).args, fill(W["action.notDone"].argv))
+  same(M.agentNewArgs("Make the clock 24 h").args, fill(W["action.startAgent"].argv, "Make the clock 24 h"))
+  same(M.agentNewArgs("Finish the interrupted update (event " + EID + ")").args, fill(W["action.finishUpdate"].argv))
+  same(M.logArgs("Zed läuft").args, fill(W["action.note"].argv, "Zed läuft"))
+  same(M.openArgs(CID), fill(W["action.openEditor"].argv))
+  for (const key of Object.keys(W)) {
+    if (W[key].argv === undefined) continue
+    assert.strictEqual(M.validateArgs(fill(W[key].argv, "x")), "", key)
+  }
+  // Service runs these two as literals
+  const service = fs.readFileSync(path.join(root, "plugin/Service.qml"), "utf8")
+  for (const key of ["action.capture", "action.updateRules"])
+    assert.ok(service.indexOf("root.run(" + JSON.stringify(W[key].argv).replace(/,/g, ", ") + ")") !== -1, key)
+})
+
+test("rule 4: scripts and fixed argv are the plugin's own constants", () => {
+  for (const key of Object.keys(M.WORDS)) {
+    const r = M.WORDS[key]
+    const runs = ["argv", "exec", "scripts"].filter((f) => r[f] !== undefined)
+    assert.ok(runs.length <= 1, key + " runs " + runs.join(" and "))
+    if (r.exec !== undefined) {
+      assert.strictEqual(r.exec, "RESTART_SHELL_ARGV", key)
+      same(M[r.exec], ["omarchy-restart-shell"])
+    }
+    if (r.scripts !== undefined) {
+      assert.ok(Array.isArray(r.scripts) && r.scripts.length > 0, key)
+      for (const name of r.scripts) {
+        if (r.pending === true && M[name] === undefined) continue
+        assert.ok(r.pending !== true, key + ": " + name + " exists, drop `pending`")
+        assert.ok(M.isTerminalScript(M[name]), key + ": " + name + " is not one of TERMINAL_SCRIPTS")
+      }
+    }
+    if (r.pending !== undefined) assert.ok(r.pending === true && r.scripts !== undefined, key)
+  }
+})
+
+test("word table: both columns on every row, every ADR-0045 §6 row present", () => {
+  const W = M.WORDS
+  const covered = {}
+  for (const key of Object.keys(W)) {
+    const r = W[key]
+    assert.ok(/^(word|card|action|confirm|help)\.[a-zA-Z0-9]+$/.test(key), key)
+    assert.ok(typeof r.easy === "string" && r.easy.trim() !== "", key + ": no EASY word")
+    assert.ok(typeof r.pro === "string", key + ": no PRO column")
+    if (r.easyOnly === true) assert.strictEqual(r.pro, "", key + ": easyOnly with a PRO word")
+    else assert.ok(r.pro.trim() !== "", key + ": no PRO word")
+    assert.ok(Array.isArray(r.rows), key)
+    for (const n of r.rows) {
+      assert.ok(Number.isInteger(n) && n >= 1 && n <= 12, key + ": row " + n)
+      covered[n] = (covered[n] || []).concat(key)
+    }
+  }
+  for (let n = 1; n <= 12; n++) {
+    assert.ok(covered[n], "ADR-0045 §6 row " + n + " has no key")
+    // every row but none has an action that runs something
+    const runs = covered[n].filter((k) => W[k].argv || W[k].exec || W[k].scripts)
+    assert.ok(runs.length > 0, "ADR-0045 §6 row " + n + " runs nothing")
+  }
+  // §5's vocabulary
+  for (const [key, easy] of [["word.case", "task"], ["word.crisis", "needs your attention now"],
+    ["word.openDrift", "a change nobody explained"], ["word.r3", "needs your OK"],
+    ["word.verification", "waiting for your check"], ["action.explain", "It was me…"]])
+    assert.strictEqual(M.text(key, "easy"), easy, key)
+  same(M.DESK_MODES, ["easy", "pro"])
+})
+
+test("text(key, mode): EASY's column for easy, PRO's for anything else, '' for an unknown key", () => {
+  assert.strictEqual(M.text("action.focus", "easy"), "Show")
+  assert.strictEqual(M.text("action.focus", "pro"), "Focus")
+  for (const mode of [undefined, "", "PRO", "Easy", 1, null]) assert.strictEqual(M.text("action.focus", mode), "Focus", String(mode))
+  for (const key of ["", "action", "nope", "toString", "__proto__", "constructor", undefined])
+    assert.strictEqual(M.text(key, "pro"), "", String(key))
+  assert.strictEqual(M.text("help.wrong", "pro"), "")
+})
+
+test("word table: PRO shows the words it showed before the table (no subtitles)", () => {
+  const pro = {
+    "card.setup": "Set up Seldon", "action.install": "Install", "action.createLogbook": "Create logbook",
+    "action.grant": "Grant", "action.notNow": "Not now", "action.update": "Update", "action.restartShell": "Restart shell",
+    "action.updateRules": "Update rules", "action.capture": "Capture now", "action.askDrift": "Ask agent",
+    "action.explain": "Explain…", "action.focus": "Focus", "action.done": "Complete",
+    "action.startAgent": "Start agent", "action.note": "Note for today's journal", "action.openEditor": "Open in editor"
+  }
+  for (const key of Object.keys(pro)) assert.strictEqual(M.text(key, "pro"), pro[key], key)
+  assert.strictEqual(M.SETUP_TITLE, "Set up Seldon")
+  same(M.eventActions({ open: true, proposedCase: "", cls: "crisis", caseId: "" }, { askAgent: true }).map((a) => a.label),
+    ["Ask agent", "Link to case…", "Explain…", "Dismiss…"])
+  same(M.bannerFor("indexStale", { generatedAt: "2026-10-01T17:05:12+02:00", nowMs: gen }).actions.map((a) => a.label), ["Capture now"])
+  same(M.restartShellNotice("0.3.0", "0.3.1").actions.map((a) => a.label), ["Restart shell"])
+  // every call in plugin/ names a key of the table and reads one column;
+  // one line never reads the same key twice (no PRO subtitle under a word)
+  const dirs = ["plugin", "plugin/components", "plugin/components/desk", "plugin/components/overlay", "plugin/components/graph", "plugin/sections"]
+  let calls = 0
+  for (const dir of dirs) {
+    const abs = path.join(root, dir)
+    if (!fs.existsSync(abs)) continue
+    for (const name of fs.readdirSync(abs).filter((f) => /\.(qml|js)$/.test(f))) {
+      const lines = fs.readFileSync(path.join(abs, name), "utf8").split("\n")
+      lines.forEach((line, i) => {
+        const keys = []
+        for (const m of line.matchAll(/\btext\("([^"]*)",\s*([^)]*)\)/g)) {
+          calls++
+          assert.ok(Object.prototype.hasOwnProperty.call(M.WORDS, m[1]), dir + "/" + name + ":" + (i + 1) + " unknown key " + m[1])
+          if (m[2].trim() === '"pro"') assert.ok(M.WORDS[m[1]].easyOnly !== true, dir + "/" + name + ":" + (i + 1) + " PRO reads an EASY-only key")
+          assert.ok(keys.indexOf(m[1]) === -1, dir + "/" + name + ":" + (i + 1) + " reads " + m[1] + " twice")
+          keys.push(m[1])
+        }
+      })
+    }
+  }
+  assert.ok(calls >= 20, "only " + calls + " text() calls found")
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

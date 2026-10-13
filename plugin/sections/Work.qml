@@ -1019,7 +1019,7 @@ Section {
 
         Button {
           visible: !!root.detailData && root.detailData.actionable
-          text: root.opening ? "Opening…" : "Open in editor"
+          text: root.opening ? "Opening…" : Model.text("action.openEditor", "pro")
           enabled: !root.opening
           tooltipText: "The case file (key e)"
           bordered: true

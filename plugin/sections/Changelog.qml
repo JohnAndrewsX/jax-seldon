@@ -541,7 +541,7 @@ Section {
         id: captureButton
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        text: root.capturing ? "Capturing" : "Capture now"
+        text: root.capturing ? "Capturing" : Model.text("action.capture", "pro")
         iconText: root.capturing ? "󰦖" : ""
         iconSpinning: root.capturing
         iconSize: Style.font.caption
