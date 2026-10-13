@@ -665,7 +665,8 @@ mod claude_code {
     /// ADR-0030 §1 with the hooks user-wide: a session that is neither in
     /// the logbook nor launched by Seldon costs the scope check and
     /// nothing else (< 1 ms, process start included; median of 20, WP-116
-    /// round 2), at 10 000 ledger lines, for each hook it runs.
+    /// round 2), at 10 000 ledger lines, for each hook it runs, the
+    /// session's end included (WP-219).
     #[test]
     #[ignore = "release timing at scale: `just check-perf`"]
     fn fast_enough_for_an_unrelated_session() {
@@ -684,11 +685,16 @@ mod claude_code {
         );
         let generic =
             json!({"command": "yay -S zed", "actor": "agent:codex", "cwd": "/srv/x"}).to_string();
+        let stop = outside(
+            json!({"session_id": "s-1", "hook_event_name": "SessionEnd", "reason": "exit"})
+                .to_string(),
+        );
         const BUDGET: std::time::Duration = std::time::Duration::from_millis(1);
         for (name, input) in [
             ("claude-code", &pre),
             ("session-start", &start),
             ("generic", &generic),
+            ("session-stop", &stop),
         ] {
             common::assert_within_budget(
                 &format!("hook {name}, unrelated session, 10 000 lines"),
@@ -700,6 +706,7 @@ mod claude_code {
             );
         }
         assert!(h.commands().is_empty());
+        assert!(!h.logbook.join("journal/2026/2026-10-01.md").exists());
     }
 
     /// Just below WP-057's threshold, the hook's worst case: every recorded
@@ -3681,24 +3688,33 @@ mod privileged {
     }
 }
 
-/// WP-218: `hook claude-code`, `hook session-start` and `hook generic`
-/// skip the command-line parser (`plain_agent_hook` in `main.rs`); in a
-/// debug build `SELDON_TEST_HOOK_PARSE` sends them through it. The two
-/// paths give the same exit code, stdout, stderr and ledger for every
-/// input the tests above give these hooks.
+/// WP-218, WP-219: `hook claude-code`, `hook session-start`, `hook
+/// session-stop` and `hook generic` skip the command-line parser
+/// (`plain_agent_hook` in `main.rs`); in a debug build
+/// `SELDON_TEST_HOOK_PARSE` sends them through it (`main.rs` tests that it
+/// does). Each call runs in two homes made alike, one per path, and the
+/// two give the same exit code, stdout, stderr, files under the temp dir
+/// and number of commits: for every input the tests above give these hooks,
+/// and for a logbook not initialised, missing or empty, a broken
+/// `config.toml`, a bad `SELDON_NOW` and a held lock.
 mod fast_path {
     use super::*;
+    use std::collections::BTreeMap;
+    use std::sync::LazyLock;
 
     /// A made-up project directory outside the logbook.
     const OTHER: &str = "/srv/made-up-project";
 
-    /// One hook call: the hook, its stdin and the variables the harness
-    /// sets (`FIXTURE_CWD` in the stdin and in `project` stands for the
-    /// logbook).
+    /// The hooks with a fast path.
+    const PLAIN: [&str; 4] = ["claude-code", "session-start", "session-stop", "generic"];
+
+    /// One hook call: the hook, its stdin (`None`: `/dev/null`) and the
+    /// variables the harness sets (`FIXTURE_CWD` in the stdin and in
+    /// `project` stands for the logbook).
     #[derive(Default)]
     struct Call {
         name: &'static str,
-        stdin: String,
+        stdin: Option<String>,
         case: Option<String>,
         actor: Option<&'static str>,
         project: Option<&'static str>,
@@ -3707,10 +3723,13 @@ mod fast_path {
     fn call(name: &'static str, stdin: impl Into<String>) -> Call {
         Call {
             name,
-            stdin: stdin.into(),
+            stdin: Some(stdin.into()),
             ..Call::default()
         }
     }
+
+    /// More variables for the hook processes of a home.
+    type Vars<'a> = &'a dyn Fn(&Hooks) -> Vec<(&'static str, String)>;
 
     /// `v` with `key` set to `value`.
     fn with(v: &str, key: &str, value: Value) -> String {
@@ -3720,8 +3739,8 @@ mod fast_path {
     }
 
     /// The hook test inputs: every fixture as both tool events, inside and
-    /// outside the logbook, the session-start and generic payloads of
-    /// `session_scope`, `generic` and `green`, broken stdin, and the
+    /// outside the logbook, the session payloads of `session_scope`,
+    /// `generic` and `green`, broken stdin and `/dev/null`, and the
     /// variables `SELDON_CASE`, `SELDON_ACTOR` and `CLAUDE_PROJECT_DIR`.
     fn calls(case: &str) -> Vec<Call> {
         let mut calls = Vec::new();
@@ -3827,17 +3846,73 @@ mod fast_path {
             });
         }
 
-        for name in ["claude-code", "session-start", "generic"] {
+        // last: a served session-stop commits
+        let stop = json!({"session_id": "s-1", "hook_event_name": "SessionEnd", "reason": "exit"})
+            .to_string();
+        for cwd in [OTHER, "made-up/relative", ""] {
+            calls.push(call("session-stop", with(&stop, "cwd", json!(cwd))));
+        }
+        for marker in ["", "not-a-case"] {
+            calls.push(Call {
+                case: Some(marker.to_string()),
+                ..call("session-stop", with(&stop, "cwd", json!(OTHER)))
+            });
+        }
+        for name in PLAIN {
+            calls.push(Call {
+                name,
+                ..Call::default()
+            });
             for stdin in ["", "not json", "{}", "[]"] {
                 calls.push(call(name, stdin));
             }
         }
+        calls.push(call("session-stop", with(&stop, "cwd", json!(FIXTURE_CWD))));
+        calls.push(Call {
+            case: Some(case.to_string()),
+            ..call("session-stop", with(&stop, "cwd", json!(OTHER)))
+        });
+        calls.push(Call {
+            project: Some(FIXTURE_CWD),
+            ..call("session-stop", with(&stop, "cwd", json!(OTHER)))
+        });
         calls
     }
 
-    /// `seldon hook <name>` with the call's stdin and variables; through
-    /// the parser when `parse`.
-    fn run(h: &Hooks, c: &Call, parse: bool) -> Output {
+    /// The probes of the WP-218 review: each hook in a session in `cwd`
+    /// (`claude-code` with both tool events) and with stdin `/dev/null`;
+    /// `session-stop` last.
+    fn probes(cwd: &str) -> Vec<Call> {
+        let session =
+            |event: &str| json!({"session_id": "s-1", "hook_event_name": event, "cwd": cwd});
+        let tool = |event: &str| {
+            with(
+                &payload("claude-code-mutating.json", event),
+                "cwd",
+                json!(cwd),
+            )
+        };
+        let mut calls = vec![
+            call("claude-code", tool("PreToolUse")),
+            call("claude-code", tool("PostToolUse")),
+            call("session-start", session("SessionStart").to_string()),
+            call(
+                "generic",
+                json!({"command": "sudo pacman -S --noconfirm ollama", "actor": "agent:codex", "cwd": cwd})
+                    .to_string(),
+            ),
+        ];
+        calls.extend(PLAIN.map(|name| Call {
+            name,
+            ..Call::default()
+        }));
+        calls.push(call("session-stop", session("SessionEnd").to_string()));
+        calls
+    }
+
+    /// `seldon hook <name>` started with the call's stdin and variables,
+    /// then `vars`; through the parser when `parse`.
+    fn start(h: &Hooks, c: &Call, parse: bool, vars: Vars) -> std::process::Child {
         *h.case_env.borrow_mut() = c.case.clone();
         *h.actor_env.borrow_mut() = c.actor.map(String::from);
         *h.project_dir.borrow_mut() = c.project.map(|p| h.at_logbook(p));
@@ -3845,66 +3920,259 @@ mod fast_path {
         if parse {
             cmd.env("SELDON_TEST_HOOK_PARSE", "1");
         }
-        let mut child = cmd
-            .stdin(Stdio::piped())
+        cmd.envs(vars(h))
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .stderr(Stdio::piped());
+        let Some(stdin) = &c.stdin else {
+            return cmd.stdin(Stdio::null()).spawn().unwrap();
+        };
+        let mut child = cmd.stdin(Stdio::piped()).spawn().unwrap();
         child
             .stdin
             .take()
             .unwrap()
-            .write_all(h.at_logbook(&c.stdin).as_bytes())
+            .write_all(h.at_logbook(stdin).as_bytes())
             .unwrap();
-        child.wait_with_output().unwrap()
+        child
     }
 
-    /// `text` with the environment's temp dir (home and logbook) as `<tmp>`.
-    fn neutral(h: &Hooks, text: &str) -> String {
-        let tmp = h.env.tmp.path();
-        let real = tmp.canonicalize().unwrap();
-        text.replace(real.to_str().unwrap(), "<tmp>")
-            .replace(tmp.to_str().unwrap(), "<tmp>")
+    /// What tells two homes made alike apart, taken out of a text: the
+    /// temp dir (`<tmp>`), the logbook's machine id and creation time, ids, its commits,
+    /// made at the real time (the index's `git.head`), and the pacman
+    /// log's inode (its cursor).
+    fn neutral(h: &Hooks) -> impl Fn(&str) -> String {
+        static ULID: LazyLock<regex::Regex> =
+            LazyLock::new(|| regex::Regex::new(r"\b[0-9A-HJKMNP-TV-Z]{26}\b").unwrap());
+        let tmp = h.env.tmp.path().to_str().unwrap().to_string();
+        let real = h.env.tmp.path().canonicalize().unwrap();
+        let real = real.to_str().unwrap().to_string();
+        let made = made(h);
+        let commits = shas(h);
+        let log = std::fs::metadata(h.env.tmp.path().join("pacman.log"))
+            .map(|m| format!("\"inode\": {}", std::os::unix::fs::MetadataExt::ino(&m)));
+        move |text| {
+            let mut text = text.replace(&real, "<tmp>").replace(&tmp, "<tmp>");
+            if let Some((machine, created)) = &made {
+                text = text
+                    .replace(machine, "<machine>")
+                    .replace(created, "<created>");
+            }
+            for commit in &commits {
+                text = text
+                    .replace(commit, "<commit>")
+                    .replace(&commit[..7], "<commit>");
+            }
+            if let Ok(inode) = &log {
+                text = text.replace(inode, "\"inode\": <inode>");
+            }
+            ULID.replace_all(&text, "<id>").into_owned()
+        }
     }
 
-    /// The ledger without the events' ids, [`neutral`].
-    fn ledger(h: &Hooks) -> Vec<String> {
-        h.ledger()
-            .into_iter()
-            .map(|mut e| {
-                e.as_object_mut().unwrap().remove("id");
-                neutral(h, &e.to_string())
-            })
-            .collect()
+    /// The logbook's commits, newest first; none without a repository.
+    fn shas(h: &Hooks) -> Vec<String> {
+        if !h.logbook.join(".git").exists() {
+            return Vec::new();
+        }
+        let out = h.env.git(&h.logbook, &["rev-list", "--all"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        stdout(&out).lines().map(String::from).collect()
+    }
+
+    /// The machine id and the creation time in the logbook's
+    /// `.seldon/logbook.toml` (`init` reads the real clock), if any.
+    fn made(h: &Hooks) -> Option<(String, String)> {
+        let meta = std::fs::read_to_string(h.logbook.join(".seldon/logbook.toml")).ok()?;
+        let meta: toml::Table = meta.parse().ok()?;
+        Some((
+            meta.get("machineId")?.as_str()?.to_string(),
+            meta.get("created")?.as_datetime()?.to_string(),
+        ))
+    }
+
+    /// What a hook call printed and left in its home, [`neutral`].
+    #[derive(Debug, PartialEq)]
+    struct Trace {
+        exit: Option<i32>,
+        stdout: String,
+        stderr: String,
+        /// Every file under the temp dir but `.git/`, by path; a file
+        /// that is not UTF-8 (the stubs' `git`, a link to the host's) as
+        /// it is.
+        files: BTreeMap<String, Vec<u8>>,
+        commits: usize,
+    }
+
+    fn trace(h: &Hooks, out: &Output) -> Trace {
+        let neutral = neutral(h);
+        Trace {
+            exit: out.status.code(),
+            stdout: neutral(&stdout(out)),
+            stderr: neutral(&stderr(out)),
+            files: common::tree(h.env.tmp.path())
+                .into_iter()
+                .map(|(path, bytes)| match String::from_utf8(bytes) {
+                    Ok(text) => (neutral(&path), neutral(&text).into_bytes()),
+                    Err(e) => (neutral(&path), e.into_bytes()),
+                })
+                .collect(),
+            commits: shas(h).len(),
+        }
+    }
+
+    /// The number of the logbook's commits.
+    fn commits(h: &Hooks) -> usize {
+        shas(h).len()
+    }
+
+    /// Runs `c` in `fast` on the fast path and in `full` through the
+    /// parser, at the same time, and asserts that the two agree; returns
+    /// the fast path's trace.
+    fn same(fast: &Hooks, full: &Hooks, c: &Call, vars: Vars, what: &str) -> Trace {
+        let a = start(fast, c, false, vars);
+        let b = start(full, c, true, vars);
+        let (a, b) = (a.wait_with_output().unwrap(), b.wait_with_output().unwrap());
+        let (a, b) = (trace(fast, &a), trace(full, &b));
+        assert_eq!(a.exit, Some(0), "{what}: exit");
+        assert_eq!(a.exit, b.exit, "{what}: exit");
+        assert_eq!(a.stdout, b.stdout, "{what}: stdout");
+        assert_eq!(a.stderr, b.stderr, "{what}: stderr");
+        assert_eq!(
+            a.files.keys().collect::<Vec<_>>(),
+            b.files.keys().collect::<Vec<_>>(),
+            "{what}: files"
+        );
+        for (path, bytes) in &a.files {
+            assert_eq!(
+                String::from_utf8_lossy(bytes),
+                String::from_utf8_lossy(&b.files[path]),
+                "{what}: {path}"
+            );
+            assert_eq!(bytes, &b.files[path], "{what}: {path}");
+        }
+        assert_eq!(a.commits, b.commits, "{what}: commits");
+        a
+    }
+
+    /// [`same`] for each of `calls`.
+    fn all_same(fast: &Hooks, full: &Hooks, calls: &[Call], vars: Vars, tag: &str) {
+        for (n, c) in calls.iter().enumerate() {
+            let what = format!("{tag} {n}: hook {} {:?}", c.name, c.stdin);
+            same(fast, full, c, vars, &what);
+        }
+    }
+
+    fn none(_: &Hooks) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+
+    /// Two homes made alike with a started case; its id.
+    fn two_homes() -> (Hooks, Hooks, String) {
+        let (fast, full) = (Hooks::new(), Hooks::new());
+        let case = fast.active_case();
+        assert_eq!(full.active_case(), case);
+        (fast, full, case)
+    }
+
+    /// A home without a logbook: its path is `<tmp>/logbook`.
+    fn bare() -> Hooks {
+        let env = Env::new(Snapper::NoPermissions);
+        std::fs::write(env.tmp.path().join("pacman.log"), "").unwrap();
+        Hooks {
+            logbook: env.tmp.path().join("logbook"),
+            env,
+            project_dir: std::cell::RefCell::new(None),
+            actor_env: std::cell::RefCell::new(None),
+            case_env: std::cell::RefCell::new(None),
+        }
     }
 
     #[test]
     fn both_paths_give_the_same() {
-        let (fast, full) = (Hooks::new(), Hooks::new());
-        let case = fast.active_case();
-        assert_eq!(full.active_case(), case);
-        let calls = calls(&case);
+        let (fast, full, case) = two_homes();
+        let before = commits(&fast);
         let (mut printed, mut reported) = (0, 0);
-        for (n, c) in calls.iter().enumerate() {
-            let a = run(&fast, c, false);
-            let b = run(&full, c, true);
+        for (n, c) in calls(&case).iter().enumerate() {
             let what = format!("call {n}: hook {} {:?}", c.name, c.stdin);
-            assert_eq!(a.status.code(), Some(0), "{what}");
-            assert_eq!(b.status.code(), Some(0), "{what}");
-            let (out_a, out_b) = (neutral(&fast, &stdout(&a)), neutral(&full, &stdout(&b)));
-            assert_eq!(out_a, out_b, "{what}: stdout");
-            let (err_a, err_b) = (neutral(&fast, &stderr(&a)), neutral(&full, &stderr(&b)));
-            assert_eq!(err_a, err_b, "{what}: stderr");
-            let (led_a, led_b) = (ledger(&fast), ledger(&full));
-            assert_eq!(led_a, led_b, "{what}: ledger");
-            printed += usize::from(!out_a.is_empty());
-            reported += usize::from(!err_a.is_empty());
+            let seen = same(&fast, &full, c, &none, &what);
+            printed += usize::from(!seen.stdout.is_empty());
+            reported += usize::from(!seen.stderr.is_empty());
         }
-        // the inputs reach every outcome: records, context blocks, errors
+        // the inputs reach every outcome: records, context blocks, errors,
+        // ended sessions
         let commands = fast.commands().len();
         assert!(commands >= 8, "{commands} commands recorded");
         assert!(printed >= 4, "{printed} context blocks");
         assert!(reported >= 10, "{reported} reported errors");
+        if fast.env.has_git {
+            assert!(
+                commits(&fast) >= before + 3,
+                "{before} → {}",
+                commits(&fast)
+            );
+        }
+    }
+
+    #[test]
+    fn in_a_session_in_the_logbook() {
+        let (fast, full, _) = two_homes();
+        all_same(&fast, &full, &probes(FIXTURE_CWD), &none, "related");
+        assert!(fast.commands().len() >= 2, "{:?}", fast.commands());
+    }
+
+    #[test]
+    fn in_a_session_seldon_launched() {
+        let (fast, full, case) = two_homes();
+        let calls: Vec<Call> = probes(OTHER)
+            .into_iter()
+            .map(|c| Call {
+                case: Some(case.clone()),
+                ..c
+            })
+            .collect();
+        all_same(&fast, &full, &calls, &none, "SELDON_CASE");
+        assert!(fast.commands().len() >= 2, "{:?}", fast.commands());
+    }
+
+    #[test]
+    fn without_a_logbook() {
+        let (fast, full) = (bare(), bare());
+        all_same(&fast, &full, &probes(FIXTURE_CWD), &none, "not initialised");
+        let named = |h: &Hooks| vec![("SELDON_LOGBOOK", h.logbook.to_str().unwrap().to_string())];
+        all_same(&fast, &full, &probes(FIXTURE_CWD), &named, "missing");
+        std::fs::create_dir(&fast.logbook).unwrap();
+        std::fs::create_dir(&full.logbook).unwrap();
+        all_same(&fast, &full, &probes(FIXTURE_CWD), &named, "empty");
+    }
+
+    #[test]
+    fn with_a_broken_config() {
+        let (fast, full, _) = two_homes();
+        for h in [&fast, &full] {
+            std::fs::write(h.env.config_file(), "not = [toml").unwrap();
+        }
+        all_same(&fast, &full, &probes(FIXTURE_CWD), &none, "broken config");
+    }
+
+    #[test]
+    fn with_a_bad_clock() {
+        let (fast, full, _) = two_homes();
+        let clock = |_: &Hooks| vec![("SELDON_NOW", "yesterday".to_string())];
+        all_same(&fast, &full, &probes(FIXTURE_CWD), &clock, "bad clock");
+    }
+
+    /// Each waits for the lock (`LOCK_PATIENCE`, session-stop twice), so
+    /// one tool event only.
+    #[test]
+    fn while_the_lock_is_held() {
+        let (fast, full, _) = two_homes();
+        let _held =
+            [&fast, &full].map(|h| seldon::logbook::lock::acquire(&h.env.lock_file()).unwrap());
+        let calls: Vec<Call> = probes(FIXTURE_CWD)
+            .into_iter()
+            .filter(|c| !c.stdin.as_ref().is_some_and(|s| s.contains("PostToolUse")))
+            .collect();
+        all_same(&fast, &full, &calls, &none, "lock held");
+        assert!(fast.commands().is_empty());
     }
 }

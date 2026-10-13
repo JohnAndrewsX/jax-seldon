@@ -26,6 +26,14 @@ and the package does not exist yet. Update the plugin first:
 
 ### Engine
 
+- **`hook session-stop` starts faster too (WP-219).** The hook Claude
+  Code runs when a session ends skips the parser of every command like
+  the other three, when it is called with nothing else, as `hook install`
+  writes it. A session that is neither in the logbook nor launched by
+  Seldon now ends inside ADR-0030's 1 ms as well. Output and exit codes
+  are unchanged; `hook session-stop --actor NAME` takes the parser as
+  before.
+
 - **Redaction reads more of a command line (WP-209).** A Python value
   in triple quotes (`{'password': """…"""}`, `'''…'''`) and a key such
   as `"secret_key"`, `"secretKey"` or `"aws_secret_access_key"` are

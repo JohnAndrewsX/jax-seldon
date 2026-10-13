@@ -11,13 +11,13 @@ Normative. Rust crate in `engine/`, binary `seldon`.
    agents and the plugin.
 5. Fast: `status` < 100 ms at 10 000 events; `hook` < 5 ms for a call
    it does not record (about 0.6 ms, WP-092); `hook claude-code`, `hook
-   session-start` and `hook generic` < 1 ms for a session that is neither
-   in the logbook nor launched by Seldon (ADR-0030; about 0.77 ms each:
-   called with nothing else, the three skip the command-line parser,
-   WP-092, WP-218). A recorded command returns only
-   after its ledger line and the updated case file are synced to disk,
-   so the case file survives a crash: about 3 ms on tmpfs and 13 ms on
-   a btrfs disk (release build, measured in WP-064).
+   session-start`, `hook session-stop` and `hook generic` < 1 ms for a
+   session that is neither in the logbook nor launched by Seldon
+   (ADR-0030; about 0.77 ms each: called with nothing else, the four skip
+   the command-line parser, WP-092, WP-218, WP-219). A recorded command
+   returns only after its ledger line and the updated case file are
+   synced to disk, so the case file survives a crash: about 3 ms on
+   tmpfs and 13 ms on a btrfs disk (release build, measured in WP-064).
 6. Never executes system changes. It may *print* commands.
 
 ## 2. Files the engine owns
