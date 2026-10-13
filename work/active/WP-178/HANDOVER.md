@@ -30,7 +30,7 @@ no contract, schema, fixture or engine change; `contractVersion` stays 2.
 - **B7, data states.** `Model.emptyState(section, ctx)` → `{ text,
   action }`: no index ("No index to show"); no match ("Nothing here
   matches “…”." with *Clear search*, beside "or Esc"); Changelog (nothing
-  recorded / the open chip / another chip), Work (*New case*, `n`),
+  recorded / the open chip / another chip), Work (*New case*, `+`; round 1 said `n`, wrong: review F1),
   Decisions (*New decision*, `d`), Memory, Graph; Today and System only
   on no match. A first step that writes is not offered where the desk
   cannot write (dev mode). `ListColumn` shows the action as one
@@ -166,3 +166,98 @@ Mutants:
 4. The new glyphs (U+F0453, U+F0AE3) are Nerd Font icons and sit a little
    wider than the arrows beside them in the transaction list; not looked
    at in a live shell (not run, E38).
+
+The round-1 open questions were answered in review 1; see round 2.
+
+## Round 2 (review 1: SEND BACK)
+
+Commits on top of `8d4fade3`. Still plugin, tests and docs only;
+`contractVersion` 2. Enter behaviour is unchanged.
+
+### Blocking findings
+
+- **F1, the empty Work list's key.** *New case* on the empty Work list
+  takes `+` (`link.newCase`), the key Work's `textKey` opens the sheet
+  with; `n` goes to Today's note field (`Desk.textKey`). Fixed in
+  Model.js, SPEC-PLUGIN §5.4, CHANGELOG and model.test.js. New test
+  "every link.* key does what its button does": for each `link.*` key
+  except *Clear search*, exactly one section's `emptyFirstStep(id)` runs
+  it, and that section's `textKey` branch for the key calls the same
+  function and takes the key (Work `+` → `openSheet`, Decisions `d` →
+  `openForm`); *Clear search*'s Esc is checked against `Desk.escapeKey`
+  and `Desk.clearSearch`. A probe pins the parser (an `n` branch that does
+  not take the key is not a key). New desk-view case `empty-lists`: a
+  live index (the fake engine on the sample with no case and no
+  decision) shows Work's "No cases yet. …" with *New case* and "or +";
+  its click opens the sheet, as `+` does; Decisions shows *New decision*
+  and "or d"; its click opens the form, as `d` does; no overflow, no
+  settings write.
+- **F2, C1.** Text fix only. SPEC-PLUGIN §5.3 names all six steps that
+  keep their Enter without an opposite verb: Work's *Start*, *To
+  verification* and *Complete* (Enter-Enter), *Reopen* (one Enter), and
+  the Changelog's *Apply proposals* and a single crisis (Enter-Enter;
+  `drift apply` has no opposite verb). Whether they keep Enter is decided
+  with WP-179's verification ADR; the SPEC says so. It also says a button
+  the cursor reached (WP-202) is not a list step. New test "C1: no new
+  Enter step anywhere": `ACTIVATE_CALLS` pins what every `activate()` in
+  plugin/ QML calls (nine files); a new `activate()` or a new call in one
+  fails until the SPEC's list names it. The test also checks the SPEC
+  names the six and WP-179's ADR.
+
+### Not blocking
+
+- **N1.** The `ConfirmDialog` check takes a reset only inside an
+  `onOpenedChanged` handler: its `{ … }` block, or its one statement (up
+  to the line's end or a `;` outside parentheses). Probes: the review's
+  one-line mutant and a two-line form fail; a block handler and an
+  `if (opened) { … }` handler pass.
+- **N2.** The glyph scan also reads `\u` escapes in template strings (on
+  one line) and the number literals passed to `String.fromCodePoint` and
+  `String.fromCharCode`. The probe pins the review's mutant (a template
+  `\u{23F0}`, `fromCodePoint(0x23F8)`, `fromCharCode(8635, 65)`).
+- **N3.** Not built here: a note in `work/queued/WP-180.md` (The Plan's
+  zone stripe needs its word).
+- **N4.** Not taken (optional): "No events under “crisis”." stays.
+
+### The review's surviving mutants, and two more
+
+Each applied to the real file after the round-2 commits, run, restored
+from git.
+
+| Mutant | Where | Result |
+|---|---|---|
+| R1 (review): `function activate() { return root.pressAccept() }` in Decisions.qml | fixture | caught: "C1: no new Enter step anywhere" |
+| R2 (review, N1): `ConfirmDialog { selectedIndex: 0; onOpenedChanged: console.log(opened); Component.onCompleted: selectedIndex = 0 }` in Memory.qml | fixture | caught: "C1: …" (`Memory.qml:121 reset`) |
+| R3 (review, N2): `` `\u{23F0} alarm` `` and `String.fromCodePoint(0x23F8)` in Model.js | fixture (pinned charset and fc-list) | caught: `Model.js:7419 U+23F0`, `Model.js:7420 U+23F8` |
+| R4: `link.newCase` key back to `n` | fixture | caught: "emptyState …", "every link.* key …" (`Work.qml textKey takes no "n"`) |
+| R5: Work's `+` opens the import form instead of the sheet | fixture | caught: "every link.* key …" (`"+" runs openImport, the button openSheet`) |
+
+The review's caught mutant (Drop as the queued Enter action) and round
+1's m1–m8 are unchanged tests.
+
+### How it was verified (round 2)
+
+| Check | Where | Result |
+|---|---|---|
+| `node tests/plugin/model.test.js` (private HOME and 0700 XDG_RUNTIME_DIR) | fixture | 246 passed |
+| `node tests/plugin/glyphs.test.js`, also with `SELDON_GLYPHS_PINNED=1` | fixture (fc-list on the installed font; the pinned charset) | 4 passed each |
+| R1–R5 above | fixture | 5 of 5 caught |
+| `omarchy plugin validate plugin/` | fixture (dev host CLI on the tree, no session) | exit 0 |
+| `just qmllint` (incl. `check-tokens.py`) | fixture (against the installed shell tree, no session) | ok, 53 files |
+| `bash tests/plugin/desk-view.sh` (SELDON_FULL_CHECK=1) | headless (offscreen Quickshell, own HOME and runtime dir) | 2756 passed, 0 failed on ea51a1c2 (incl. `empty-lists` 14/0, `data-states` 13/0) |
+| `flock /tmp/seldon-check.lock env SELDON_FULL_CHECK=1 just check` | headless (Quickshell harnesses offscreen, own HOME and runtime dir) + fixture | `check: ok`, exit 0, on ea51a1c2 (the handover commit adds only `work/`): cargo tests ok; check-packaging ok (shellcheck not installed: bash -n only); install 229/0; deploy-test-host 326/0; runtime-dir 45/0; check-upstream ok; docs-check ok; plugin-validate ok; qmllint ok (53 files); model.test.js 246; plaintext ok; glyphs.test.js 4 (fc-list, 4 faces); terminal-scripts 73/0; real-home-guard 79/0; service-states 366/0; desk-view 2755/0 (one check fewer than the run alone: the harness's leftover check counts by what it finds); bar-view 195/0; ipc-restart 43/0 |
+| the desk in a live shell | not run (E38) | |
+
+### Follow-ups (answers to round 1's open questions)
+
+1. C1's six Enter steps: kept as they are; their Enter is decided with
+   WP-179's verification ADR (SPEC §5.3 says so).
+2. The engine's triage skill (`engine/assets/skills/seldon/triage.md`,
+   "*Agent sorts N open changes*"): the next engine WP that touches the
+   skills changes the line; `fixtures/skills/seldon-0.2.0/` stays.
+3. The Changelog screenshots and their alt texts (en/de 03): refreshed
+   with `DESK_SHOTS` in the next docs pass, in one commit.
+4. The width of U+F0453 and U+F0AE3 beside the arrows: WP-180's live pass
+   on the test host.
+5. The Plan's zone stripe without a word (review N3): WP-180 (noted in
+   its file).
