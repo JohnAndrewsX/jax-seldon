@@ -1744,6 +1744,77 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeNm08",
         "-g wifi-sec.psk con show Home && nmcli con mod Home wifi-sec.psk ‹redacted›",
     ),
+    // WP-209: `-f` after the object word is no field option (nmcli
+    // rejects the line; the value is masked)
+    (
+        "nmcli-secret",
+        "nmcli con modify Home -f wifi-sec.psk fakeNm09",
+        "fakeNm09",
+        "nmcli con modify Home -f wifi-sec.psk ‹redacted›",
+    ),
+    (
+        "nmcli-secret",
+        "nmcli -s c m Home --fields 802-1x.password fakeNm10",
+        "fakeNm10",
+        "--fields 802-1x.password ‹redacted›",
+    ),
+    (
+        "nmcli-secret",
+        "nmcli con mod Home wifi-sec.psk fakeNm11 -f 802-1x.password fakeNm12",
+        "fakeNm1",
+        "wifi-sec.psk ‹redacted› -f 802-1x.password ‹redacted›",
+    ),
+    // WP-209: Python's triple-quoted values, over lines too, with a
+    // string prefix
+    (
+        "json-secret",
+        "requests.post(u, json={'password': \"\"\"fakePy07\"\"\", 'user': 'bob'})",
+        "fakePy07",
+        "{'password': ‹redacted›, 'user': 'bob'}",
+    ),
+    (
+        "json-secret",
+        "cfg = {'token': '''fake 'Py08' ok'''}",
+        "Py08",
+        "{'token': ‹redacted›}",
+    ),
+    (
+        "json-secret",
+        "h = {'api_key': rf\"\"\"{x}fake\"Py09\"\"\", \"secret\": \"\"\"fake\nPy10\"\"\"}",
+        "Py",
+        "{'api_key': ‹redacted›, \"secret\": ‹redacted›}",
+    ),
+    (
+        "json-secret",
+        "{'password': \"\"\"a\\\"\"\"fakePy16\"\"\"}",
+        "fakePy16",
+        "{'password': ‹redacted›}",
+    ),
+    (
+        "json-secret",
+        "sudo python3 -c \"x = {'password': \\\"\\\"\\\"fake\nPy17\\\"\\\"\\\", 'n': 1}\"",
+        "Py17",
+        "{'password': ‹redacted›, 'n': 1}",
+    ),
+    // WP-209: a key word with `key` or `access key` after it
+    (
+        "json-secret",
+        "boto3.client('s3', **{'aws_secret_access_key': 'fakePy11', 'region': 'eu'})",
+        "fakePy11",
+        "{'aws_secret_access_key': ‹redacted›, 'region': 'eu'}",
+    ),
+    (
+        "json-secret",
+        "{\"secret_key\": \"fakePy12\", \"secretKey\": \"fakePy13\", \"token-key\": \"fakePy14\"}",
+        "fakePy1",
+        "{\"secret_key\": ‹redacted›, \"secretKey\": ‹redacted›, \"token-key\": ‹redacted›}",
+    ),
+    (
+        "json-secret",
+        "curl -d \"{\\\"SECRET_KEY\\\":\\\"fakePy15\\\"}\" h.example",
+        "fakePy15",
+        "{\\\"SECRET_KEY\\\":‹redacted›}",
+    ),
 ];
 
 /// Text that looks close to a rule and must come out unchanged.
@@ -1892,6 +1963,17 @@ const CLEAR: &[&str] = &[
     // round 2: a cluster without a password, a user without `%`
     "sudo mount -vo rw /dev/sdb1 /m",
     "sudo mount -t cifs //srv/s /mnt -o username=bob,vers=3.0",
+    // WP-209: nmcli's global options before a field, with their values
+    "nmcli -m tabular -c no -g wifi-sec.psk con show Home",
+    "nmcli --mode multiline --escape yes --fields 802-1x.password con show Eap",
+    "nmcli -t -f NAME -g wifi-sec.psk c s Home",
+    // empty triple quotes, another word after the key word, a key that
+    // is only `key`, an unclosed triple quote
+    "{'password': \"\"\"\"\"\"\"\", 'token': ''''''}",
+    "{'secret_name': 'x', 'token_types': 'y', 'secret_key_base': 'z', 'key': 'v'}",
+    "{\"password_key_hint\": \"x\", \"keyboard\": \"de\", \"access_key_id\": \"AKIA\"}",
+    "print({'password': \"\"\"})",
+    "python3 -c \"x = {'password': \\\"\\\"\\\"\\\"\\\"\\\"}\"",
 ];
 
 /// (rule, text with `\n` line ends, secrets): one row for each place where
@@ -2811,6 +2893,24 @@ mod redaction {
                 "h = {",
                 "'token': x, 'password_hint': 'y', 'api_key': '' ",
             ),
+            // WP-209: one triple quote the text never closes, read to the
+            // end once; key words with another word after `key`; nmcli
+            // options before a field
+            (
+                "unclosed triple quote",
+                "h = {'password': \"\"\"",
+                "a'' \"\" \\\" 'token': \"\" x ",
+            ),
+            (
+                "key word near misses",
+                "h = {",
+                "'secret_key_x': 1, \"token_kind\": 2, 'access_key': \"\", ",
+            ),
+            (
+                "nmcli global options",
+                "nmcli -m tabular -g wifi-sec.psk ",
+                "-c no -e yes -s -t con ",
+            ),
             // invisible characters and no secret: the rules read the
             // visible copy, the text comes back whole (WP-159)
             (
@@ -2957,6 +3057,45 @@ mod redaction {
                 "python dicts",
                 "h = {",
                 "'x-api-key': 'a', 'password': f'b', ",
+                Some(20),
+            ),
+            // WP-209: triple-quoted values, each opener closed by the next
+            // one's quotes; key words with `key` after them; nmcli fields
+            // after the object word and before it
+            (
+                "triple-quoted values",
+                "h = {",
+                "'password': \"\"\"a\"b\"\"\", 'token': '''c\nd ''', ",
+                Some(20),
+            ),
+            (
+                "escaped triple quotes",
+                "python3 -c \"",
+                "'token': \\\"\\\"\\\"a\\\"\\\"\\\" 'password': \\\"\\\"\\\"b ",
+                Some(20),
+            ),
+            (
+                "triple quote openers",
+                "h = {",
+                "'password': \"\"\"a '''b ",
+                Some(20),
+            ),
+            (
+                "secret key words",
+                "h = {",
+                "'secret_key': 'a', \"secretKey\": \"b\", \"aws_secret_access_key\": \"c\", ",
+                Some(20),
+            ),
+            (
+                "nmcli fields after the object",
+                "nmcli con mod Home ",
+                "-f wifi-sec.psk a -g 802-1x.password b ",
+                Some(20),
+            ),
+            (
+                "nmcli fields before the object",
+                "nmcli ",
+                "-m tabular -g wifi-sec.psk con ",
                 Some(20),
             ),
             // secrets split by invisible characters, and invisible

@@ -1043,7 +1043,9 @@ fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
     if found.is_empty() {
         return Vec::new();
     }
-    let skipped = password_on_stdin(&line)
+    // a substitution too deep to read may hold anything (WP-209)
+    let skipped = line.too_deep
+        || password_on_stdin(&line)
         || secret_args::secret_on_the_line(&line)
         || names_skipped_path(&line, setup, cwd);
     found

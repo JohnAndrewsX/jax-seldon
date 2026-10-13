@@ -3363,10 +3363,132 @@ mod privileged {
         assert!(!ledger.contains("ZmFrZUI2NGtleUJvZHlG"), "{ledger}");
     }
 
+    /// WP-209: the commands inside `$( )`, backticks and `<( )` are read
+    /// (a privileged one is recorded, its secret masked), `stdbuf` and
+    /// `setsid` are wrappers, a descriptor the line feeds counts after a
+    /// secret option, nmcli's `-f` after the object word is no field, and
+    /// a Python value in triple quotes is masked.
+    #[test]
+    fn substitutions_wrappers_and_descriptors_on_a_privileged_line() {
+        let h = Hooks::new();
+        let lines = [
+            (
+                "x=$(sudo mkpasswd -m sha-512 hunter2); echo \"$x\"",
+                "mkpasswd ‹redacted›",
+            ),
+            (
+                "echo \"`sudo chpasswd <<< alice:hunter2`\"",
+                "chpasswd ‹redacted›",
+            ),
+            (
+                "echo hunter2 | sudo stdbuf -i0 cryptsetup open /dev/x vault",
+                "cryptsetup ‹redacted›",
+            ),
+            (
+                "printf 'hunter2\\nhunter2\\n' | setsid -w sudo passwd alice",
+                "passwd ‹redacted›",
+            ),
+            (
+                "sudo tool --password-file /dev/fd/3 3< <(echo hunter2)",
+                "tool ‹redacted›",
+            ),
+            (
+                "sudo nmcli con modify Home -f wifi-sec.psk hunter2",
+                "sudo nmcli con modify Home -f wifi-sec.psk ‹redacted›",
+            ),
+            (
+                "sudo python3 -c 'x = {\"password\": \"\"\"hunter2\"\"\"}'",
+                "sudo python3 -c 'x = {\"password\": ‹redacted›}'",
+            ),
+            (
+                "sudo python3 -c \"x = {'secret_key': \\\"\\\"\\\"hunter2\\\"\\\"\\\"}\"",
+                "sudo python3 -c \"x = {'secret_key': ‹redacted›}\"",
+            ),
+            // read, and whole: no secret on these lines
+            ("x=$(sudo passwd -S alice)", "x=$(sudo passwd -S alice)"),
+            (
+                "sudo stdbuf -oL cryptsetup status vault",
+                "sudo stdbuf -oL cryptsetup status vault",
+            ),
+            (
+                "sudo nmcli -m tabular -g wifi-sec.psk con show Home",
+                "sudo nmcli -m tabular -g wifi-sec.psk con show Home",
+            ),
+            (
+                "sudo tool --password-file /dev/fd/3 3< /root/pw",
+                "sudo tool --password-file /dev/fd/3 3< /root/pw",
+            ),
+        ];
+        for (n, (line, _)) in lines.iter().enumerate() {
+            bash(&h, line, &format!("toolu_wp209_{n}"));
+        }
+        let events = h.commands();
+        let got: Vec<&str> = events
+            .iter()
+            .map(|e| e["meta"]["command"].as_str().unwrap())
+            .collect();
+        let want: Vec<&str> = lines.iter().map(|(_, c)| *c).collect();
+        assert_eq!(got, want);
+        // the program inside the substitution or after the wrapper is the
+        // subject
+        let subjects: Vec<&str> = events
+            .iter()
+            .map(|e| e["subject"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            subjects,
+            [
+                "mkpasswd",
+                "chpasswd",
+                "cryptsetup",
+                "passwd",
+                "tool",
+                "nmcli",
+                "python3",
+                "python3",
+                "passwd",
+                "cryptsetup",
+                "nmcli",
+                "tool"
+            ]
+        );
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(!ledger.contains("hunter2"), "{ledger}");
+    }
+
+    /// WP-209: a substitution nested deeper than the parser reads is
+    /// skipped unread, so the line is recorded as `<program> ‹redacted›`;
+    /// one level less is read and recorded whole.
+    #[test]
+    fn a_substitution_nested_too_deep_is_masked_whole() {
+        let h = Hooks::new();
+        let nested = |n: usize| {
+            format!(
+                "sudo lpadmin -x a $({}echo hunter2{})",
+                "$(".repeat(n),
+                ")".repeat(n)
+            )
+        };
+        bash(&h, &nested(40), "toolu_deep_1");
+        bash(&h, &nested(2000), "toolu_deep_2");
+        let shallow = nested(seldon::pkgcmd::SUBSTITUTION_DEPTH_MAX - 1).replace("hunter2", "x");
+        bash(&h, &shallow, "toolu_deep_3");
+        let events = h.commands();
+        let got: Vec<&str> = events
+            .iter()
+            .map(|e| e["meta"]["command"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            got,
+            ["lpadmin ‹redacted›", "lpadmin ‹redacted›", shallow.as_str()]
+        );
+    }
+
     /// WP-157: the reading of a long privileged line stays linear: the
     /// pipes and here-strings that feed a command, `xargs` read past, the
     /// process substitutions looked at for a secret, the nmcli fields and
-    /// mount options the redaction reads. Median of 21 calls of `hook
+    /// mount options the redaction reads; WP-209: a line of substitutions,
+    /// wrappers and descriptors (`opened`). Median of 21 calls of `hook
     /// generic` (process start, parse, redaction, the record) at 16, 64
     /// and 128 KB; the budget holds at 128 KB.
     #[test]
@@ -3377,7 +3499,18 @@ mod privileged {
         let part = "echo a | sudo xargs -n1 -I{} lpadmin -x {} <<< b; \
                     tool --pass-file <(echo c) | sudo passwd -S d || \
                     nmcli -g wifi-sec.psk con show e && mount -o ro,f=1 /g /h; ";
-        for kb in [16, 64, 128] {
+        // WP-209: substitutions opened, nested too, stdbuf and setsid, a
+        // descriptor named after a secret option, nmcli's `-f` after the
+        // object word, triple quotes and a key word with `key`
+        let opened = "x=$(echo a | sudo stdbuf -i0 lpadmin -x $(id -u) <<< b); \
+                      setsid -f tool --pass-file /dev/fd/3 3< <(echo c) \"`cd d`\" && \
+                      nmcli con mod e -f wifi-sec.psk f; \
+                      python3 -c 'h = {\"secret_key\": \"\"\"g\"\"\"}'; \
+                      echo $($($($($($($($($($($($($($($($($($($($(h)))))))))))))))))))); ";
+        for (kind, part, kb) in [16, 64, 128]
+            .into_iter()
+            .flat_map(|kb| [("", part, kb), (" with substitutions", opened, kb)])
+        {
             let mut line = String::from("sudo lpadmin -x a; ");
             while line.len() < kb * 1024 {
                 line.push_str(part);
@@ -3388,7 +3521,7 @@ mod privileged {
                 "cwd": FIXTURE_CWD,
             })
             .to_string();
-            let what = format!("hook generic, long privileged line, {kb} KB");
+            let what = format!("hook generic, long privileged line{kind}, {kb} KB");
             let run = || {
                 h.hook("generic", &input);
             };
