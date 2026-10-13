@@ -179,3 +179,148 @@ note (WP-209); TESTING (hooks and redaction rows); CHANGELOG (Engine).
 2. A privileged record's subject is the first privileged command in
    shell order, so `sudo foo $(sudo bar)` is now recorded with subject
    `bar` (it runs first). Fine for the reviewers?
+
+## Round 2
+
+Brief: the orchestrator's round 2 from the Opus stage-1 review (SEND
+BACK, F1–F6) and the decisions on round 1's questions (Q1: the depth
+limit stays here; Q2: the subject is the first privileged command in the
+order the shell runs them). Branch merged with local `next` 63b06112
+first (F6). Code commits 250a65c8, 2355caaa, 7e787fca.
+
+### Findings
+
+- **F1 — an opened script's depth limit.** `opened_commands` now carries
+  a script's `too_deep` onto every command it opens (`Segment::too_deep`;
+  a script with no command at all, only `<( )`, leaves one empty marker
+  command), and `pkgcmd::too_deep(line)` reads the line's flag and those
+  (it opens scripts only when the line has one); the hook ORs it into
+  `skipped`. Found on the way: in `sudo sh -c '…$(×17…'` every opened
+  command carries `sudo`, so the deepest one, whose word held the skipped
+  text, would have become the record's subject with the unread text (a
+  secret too) in it. Now a skipped substitution stands in every word as
+  its brackets only (`$(…)`, `` `…` ``, `(…)`; `Reader::skips`), found
+  with one non-recursive scan (`skip_end`: parentheses, quotes and
+  backticks nested in `$( )`); and a privileged record names a program
+  that a substitution computes (`sudo $(which x)`) only when no command
+  names one. Tests: `hooks privileged::a_substitution_nested_too_deep_is_masked_whole`
+  adds `sudo sh -c '…'` and `eval 'sudo …'` nested 17 deep with
+  `alice:hunter2 | chpasswd` inside: both `lpadmin ‹redacted›`, no
+  `hunter2` in the ledger; `pkgcmd::tests::substitutions_are_opened`:
+  `sh -c`, `eval`, two scripts down, a script of `<( )` only, 16 deep
+  still read, skipped text in no word (also a `<( )` inside `$( )` and
+  `` `a $(b `qq`) zz` ``). Mutants: the carry dropped, the hook reading
+  the line's flag only, no marker, skipped text in the word (two), the
+  scan ending at a nested backtick, a computed program named first — all
+  killed. Evidence: *fixture*.
+- **F2 — directories per substitution.** Substitution numbers are unique
+  on the line, those of opened scripts included (they continue after the
+  highest so far; a script's own commands stay in the substitution its
+  shell command stands in), and every command carries its parent
+  (`Segment::parent`). `workdirs` keeps the directories by substitution
+  number: a substitution reads those of the nearest one around it until
+  it moves (`cd`, `pushd`, `popd`), and then copies them. That copy is
+  what they were when it started: the commands of one substitution come
+  in one block before any later command of the one around it, so the
+  parent cannot move in between. Tests: `working_directories`: `cd a;
+  $(cd /x; tee p $(tee q) r)` → `p`, `q`, `r` under `/x`, the line back in
+  `/w/a`; `$(cd /x; $( $(tee q) )) && tee r` (a middle substitution with
+  no command before its child); a `pushd` stack popped in a substitution
+  and kept outside it; `substitutions_are_opened` checks the numbers and
+  parents across `sh -c` and `eval`. Mutants: seeded from the line not the
+  parent, numbers restarting in a script, a script's own commands with the
+  wrong parent, a `cd` in a substitution moving the line — all killed.
+  Evidence: *fixture*.
+- **F3 — no stack copy per substitution.** The `pushd` stack shares its
+  tails (`DirStack`: a push makes a new head, a copy is one reference
+  count, freed node by node, no recursion), and directories are copied
+  only on a move (F2). The reviewer's line (`pushd /; `×7000, `echo`,
+  `$(:) `×13000, plus a `<(` after `--pass-file` so it is masked; 125 KB)
+  is a row of `a_long_privileged_line_is_read_in_linear_time` with the
+  60 ms budget. First measured at 43.4 ms; the rest was the hook reading
+  the line four or five times, so `bash_records` now reads it once
+  (`commands_and_vars`, `workdirs` once, `mutations_of`, `secret_in`; the
+  public `mutations` and the test helper stay as wrappers): **29.6 ms**
+  idle, 44.4 ms under load (below). Probe (not committed): parse plus
+  `workdirs` at 31/62/125 KB 2.3+2.0 / 3.8+4.2 / 7.3+8.1 ms (before the
+  vector rewrite of `workdirs`), linear. Evidence: *fixture*.
+- **F4 — the unclosed triple quote with key near-misses** is a bench row of
+  its own again (`unclosed triple quote and key near misses`, budget 20 ms
+  at 128 KB): 0.48 / 1.87 / 3.74 ms at 16 / 64 / 128 KB idle; the row
+  without them stays (0.15 / 0.59 ms at 16 / 64 KB, budget 1 / 2 ms).
+  Evidence: *fixture*.
+- **F5 — SPEC.** §8 lists as limits `${…}`, `$((…))` and `$[…]` (a `$(…)`
+  or backticks inside them not read), `$((cmd) )`, which the parser reads
+  as arithmetic, and a backtick substitution nested in backticks by
+  escaping; the claim that `$((…))` runs no command is gone. §7 "masked too
+  much" names a triple-quoted value that never closes, masked up to the
+  next unrelated triple quote. §8 also says how a substitution's
+  directories work (F2) and that the depth limit holds in opened scripts
+  (F1). Evidence: `docs-check` in `just check`.
+- **Q2 — the subject.** SPEC §8 ("One per line, for its first privileged
+  command in the order the shell runs them … `sudo foo $(sudo bar)` is
+  recorded as `bar`; a program named by a substitution only when no other
+  has a name") and the ADR-0039 WP-209 note say so. The note now names
+  §1's **Limits** sentence it narrows ("A privileged command inside
+  `$(…)`, backticks or `env -S` … is not seen") and says which parts of it
+  stay (`env -S` and the others).
+- **F6 — merge.** `git merge 63b06112`: only `CHANGELOG.md` conflicted;
+  both bullets kept (WP-219's first, then WP-209's, then WP-218's).
+
+### How it was verified (round 2)
+
+All in the worktree with its own HOME, a 0700 runtime dir, TMPDIR and
+JUST_TEMPDIR under `gates/dev-209/`,
+`CARGO_TARGET_DIR=gates/target-dev-209`, each command written literally.
+
+- `cargo fmt --check`: clean. `cargo clippy --all-targets -- -D
+  warnings`: clean. `cargo test` (all binaries, lib included): 56
+  binaries, 1465 passed, 0 failed, 11 ignored (timing) (*fixture*).
+- **Mutants** (`work/active/WP-209/mutants.py`, 45 now, ten new), on
+  a `git archive` copy under `flock`: 7e787fca **45/45 killed**, none only
+  by a failing compile (log `gates/mutants-dev-209-r2c.log`). On the way:
+  250a65c8 44/45 — `a backtick inside $( ) ends the skip` survived, the
+  test lacked the case; 2355caaa added it (`` `a $(b `qq`) zz` ``) and
+  45/45 (log `mutants-dev-209-r2b.log`).
+- **Timing, idle** (bench profile, under the lock, 7e787fca; log
+  `gates/perf-dev-209-r2-idle.log`): hook lines 16/64/128 KB
+  12.4/15.2/19.6 ms, with substitutions 13.5/19.2/27.2 ms, the `pushd`
+  line 29.6 ms (budget 60 ms); every redaction row green.
+- **Load run** (8 `yes` loops, each `timeout 480`, all and the tests
+  under `flock -s` on the check lock, so no exclusive check ran beside
+  them; load average 2.7 → 7.6 on 16 cores; ended by their timeout):
+  - hook timing: 16/64/128 KB 12.8/18.6/18.6 ms, with substitutions
+    15.2/18.8/39.2 ms, `pushd` line **44.4 ms**: green (log
+    `gates/perf-dev-209-load-r2.log`). An earlier load run on 2355caaa,
+    before the vector `workdirs` and the single reading, had the `pushd`
+    line at 71.4 ms (fail, log `perf-dev-209-load.log`); that is why both
+    changes are in this round.
+  - redaction timing: **failed** at `single-quoted keys, 64 KB`
+    (2.79 ms against 2 ms), a WP-157 row this WP does not change; the test
+    stops at its first failing row, so the rows after it were not timed
+    under load. Paired idle: base bde78fdc 1.47 ms, head 1.45 ms (logs
+    `perf-dev-209-base-redact.log`, `perf-dev-209-r2-idle.log`). No budget
+    moved.
+  - functional, under the same load: lib 421/0, attribution 20/0, hooks
+    92/0 (4 ignored), redaction 37/0 (1 ignored), shell_parser 5/0
+    (*fixture*).
+- **`flock /tmp/seldon-check.lock env SELDON_FULL_CHECK=1 just check`**
+  on 7e787fca: **exit 0, `check: ok`** (log `gates/check-dev-209-r2.log`):
+  112 test binaries, 2941 passed, 0 failed, 22 ignored (*fixture*);
+  install 230/0, deploy-test-host 327/0 (with shellcheck), qmllint ok (53
+  files), docs-check ok, real-home-guard 79/0; plugin-test ok, desk-view
+  2723/0, bar-view 196/0, ipc-restart 44/0 (*headless*); the real
+  `~/.local/state/seldon` and `~/.config/seldon` untouched, no leftover in
+  either runtime dir.
+- shellcheck: only inside `just check` (no shell script changed). *test
+  host*, *desktop*, *CI*: *not run*.
+- `git diff bde78fdc..HEAD`: no home path, user or host name added.
+
+### Open points
+
+- The `single-quoted keys` 64 KB budget (2 ms) fails under 8 loops on base
+  and head alike (1.47 ms idle); the orchestrator's call whether it gets a
+  budget per medium, as Fable suggested for check-perf in WP-157.
+- `Reader::substitution` still checks each character of a substitution
+  against every heredoc cut (pre-existing, O(text × heredocs); bounded by
+  the depth limit), as noted in round 1.
