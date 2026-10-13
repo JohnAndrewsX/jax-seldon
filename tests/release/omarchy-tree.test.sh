@@ -145,6 +145,10 @@ if [[ $want =~ ^[0-9a-f]{64}$ && $got == "$want" ]]; then
 else
   fail "--digest: checkout '$want', installed '$got'"
 fi
+echo 'accent = "#000000"' > "$installed/themes/rose-pine/colors.toml"
+got=$(bash "$script" --digest "$installed" | cut -d' ' -f1)
+if [[ $got =~ ^[0-9a-f]{64}$ && $got != "$want" ]]; then pass "--digest changes with a theme's colors.toml"; else fail "--digest ignores a changed colors.toml"; fi
+cp "$dest/themes/rose-pine/colors.toml" "$installed/themes/rose-pine/colors.toml"
 echo changed >> "$installed/shell/Ui/Button.qml"
 got=$(bash "$script" --digest "$installed" | cut -d' ' -f1)
 if [[ $got != "$want" ]]; then pass "--digest changes with a shell file"; else fail "--digest ignores a changed shell file"; fi
