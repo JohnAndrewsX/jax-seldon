@@ -113,8 +113,10 @@ const NOT_A_GLYPH = /^[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]$/u
 
 // Every non-ASCII character of the sources: [{ at: "file:line", cp }],
 // once per file and character. Written characters anywhere (comments
-// too); \uXXXX and \u{X…} escapes inside a string literal ("…" or '…'), so
-// a regular expression's escaped range is not taken for a glyph.
+// too); \uXXXX and \u{X…} escapes inside a string literal ("…", '…' or a
+// template `…` on one line), so a regular expression's escaped range is
+// not taken for a glyph; and the number literals String.fromCodePoint and
+// String.fromCharCode are called with (a code point made at run time).
 function glyphsOf(files) {
   const out = []
   for (const { file, src } of files) {
@@ -126,8 +128,10 @@ function glyphsOf(files) {
     }
     src.split("\n").forEach((l, i) => {
       for (const ch of l) add(ch.codePointAt(0), i + 1)
-      for (const s of l.matchAll(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g))
+      for (const s of l.matchAll(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g))
         for (const e of s[0].matchAll(/\\u\{([0-9a-fA-F]{1,6})\}|\\u([0-9a-fA-F]{4})/g)) add(parseInt(e[1] || e[2], 16), i + 1)
+      for (const c of l.matchAll(/\bString\.fromC(?:odePoint|harCode)\s*\(([^)]*)\)/g))
+        for (const n of c[1].matchAll(/\b(0[xX][0-9a-fA-F]+|[0-9]+)\b/g)) add(Number(n[1]), i + 1)
     })
   }
   return out
@@ -162,12 +166,19 @@ test("the check sees a missing glyph, written or escaped, and skips regexes and 
     "var ok = \"\\u{F0453} ↑ − …\"",
     "var re = /[\\u27E1\\u0000-\\u001f]/",
     "if (t.indexOf(\"\\u0000\") !== -1) {}"
+  ].join("\n") }, { file: "plugin/Probe.js", src: [
+    "var fine = `\\u2026 ok` + String.fromCodePoint(0x2191)",
+    "var tpl = `\\u{23F0} alarm ${n}` + String.fromCodePoint(0x23F8) + String.fromCharCode(8635, 65)"
   ].join("\n") }]
   same(uncovered(glyphsOf(probe), [pinned]), [
     "plugin/components/desk/Probe.qml:1 U+21BB ↻",
     "plugin/components/desk/Probe.qml:2 U+23F8 ⏸",
     "plugin/components/desk/Probe.qml:3 U+21BA ↺",
-    "plugin/components/desk/Probe.qml:3 U+23F0 ⏰"])
+    "plugin/components/desk/Probe.qml:3 U+23F0 ⏰",
+    // the review's N2 mutant: a template string and computed code points
+    "plugin/Probe.js:2 U+23F0 ⏰",
+    "plugin/Probe.js:2 U+23F8 ⏸",
+    "plugin/Probe.js:2 U+21BB ↻"])
 })
 
 test("the pinned charset is the font Omarchy ships", () => {
