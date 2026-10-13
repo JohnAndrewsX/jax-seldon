@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 4f566f2c -->
+<!-- source: en/11-update-and-uninstall.md @ e1563b04 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen

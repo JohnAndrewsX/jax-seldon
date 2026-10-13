@@ -1,6 +1,6 @@
 # Konzepte
 
-<!-- source: en/02-concepts.md @ 488725cf -->
+<!-- source: en/02-concepts.md @ e1563b04 -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
 Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory, und wo
