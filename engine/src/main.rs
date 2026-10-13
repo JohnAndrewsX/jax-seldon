@@ -259,9 +259,10 @@ struct InitCmd {
 fn main() -> ExitCode {
     let argv: Vec<OsString> = std::env::args_os().collect();
     // `seldon hook claude-code`, the line `hook install` writes, runs
-    // before every tool call, `hook session-start` and `hook generic` in
-    // every session: they skip building the parser of every command
-    // (about 0.15 to 0.25 ms of the hooks' 1 ms budget, WP-092, WP-218)
+    // before every tool call, `hook session-start`, `hook session-stop`
+    // and `hook generic` in every session: they skip building the parser
+    // of every command (about 0.15 to 0.25 ms of the hooks' 1 ms budget,
+    // WP-092, WP-218, WP-219)
     let cli = match plain_agent_hook(&argv) {
         Some(command) => plain_hook_cli(command),
         None => match Cli::try_parse_from(&argv) {
@@ -331,9 +332,9 @@ fn fail_with(as_json: bool, err: &Error) -> ExitCode {
     }
 }
 
-/// The agent hook of `seldon hook claude-code`, `seldon hook session-start`
-/// or `seldon hook generic`, each with nothing else; `None` for every other
-/// command line, which the parser reads.
+/// The agent hook of `seldon hook claude-code`, `seldon hook session-start`,
+/// `seldon hook session-stop` or `seldon hook generic`, each with nothing
+/// else; `None` for every other command line, which the parser reads.
 fn plain_agent_hook(argv: &[OsString]) -> Option<commands::hook::HookCommand> {
     use commands::hook::HookCommand;
     let [_, hook, name] = argv else {
@@ -350,6 +351,9 @@ fn plain_agent_hook(argv: &[OsString]) -> Option<commands::hook::HookCommand> {
     match name.to_str()? {
         "claude-code" => Some(HookCommand::ClaudeCode),
         "session-start" => Some(HookCommand::SessionStart),
+        "session-stop" => Some(HookCommand::SessionStop {
+            actor: commands::hook::CLAUDE_CODE.to_string(),
+        }),
         "generic" => Some(HookCommand::Generic { case_id: None }),
         _ => None,
     }
@@ -607,9 +611,9 @@ fn detail(err: &clap::Error) -> String {
 mod tests {
     use super::*;
 
-    /// WP-092, WP-218: the fast path of `main` takes exactly `hook
-    /// claude-code`, `hook session-start` and `hook generic`, and gives
-    /// what the parser gives for each.
+    /// WP-092, WP-218, WP-219: the fast path of `main` takes exactly
+    /// `hook claude-code`, `hook session-start`, `hook session-stop` and
+    /// `hook generic`, and gives what the parser gives for each.
     #[test]
     fn a_plain_agent_hook_is_what_the_parser_reads() {
         let argv = |args: &[&str]| -> Vec<OsString> {
@@ -618,7 +622,7 @@ mod tests {
                 .map(OsString::from)
                 .collect()
         };
-        for name in ["claude-code", "session-start", "generic"] {
+        for name in PLAIN {
             let plain = argv(&["hook", name]);
             let command = plain_agent_hook(&plain).unwrap_or_else(|| panic!("{name}"));
             assert_eq!(
@@ -634,7 +638,9 @@ mod tests {
             &["--no-commit", "hook", "session-start"],
             &["hook", "generic", "--case", "C-2026-001"],
             &["hook", "generic", "--case=C-2026-001"],
-            &["hook", "session-stop"],
+            &["hook", "session-stop", "--actor", "agent:codex"],
+            &["hook", "session-stop", "--actor=agent:claude-code"],
+            &["--json", "hook", "session-stop"],
             &["hook", "install"],
             &["hook", "uninstall"],
             &["hook", "--help"],
@@ -647,6 +653,41 @@ mod tests {
         ] {
             assert!(plain_agent_hook(&argv(other)).is_none(), "{other:?}");
         }
+    }
+
+    /// The hooks [`plain_agent_hook`] takes.
+    const PLAIN: [&str; 4] = ["claude-code", "session-start", "session-stop", "generic"];
+
+    /// WP-219: with `SELDON_TEST_HOOK_PARSE` set, every hook goes to the
+    /// parser, so the second run of `hooks.rs`' `fast_path` test is the
+    /// parser's. The variable is set in a second run of this test binary
+    /// (this test alone), never in this process: other tests read the
+    /// environment in parallel threads.
+    #[test]
+    #[cfg(debug_assertions)]
+    fn the_test_switch_sends_every_hook_to_the_parser() {
+        const NAME: &str = "tests::the_test_switch_sends_every_hook_to_the_parser";
+        let plain =
+            |name: &str| -> Vec<OsString> { ["seldon", "hook", name].map(OsString::from).to_vec() };
+        if std::env::var_os("SELDON_TEST_HOOK_PARSE").is_some() {
+            for name in PLAIN {
+                assert!(plain_agent_hook(&plain(name)).is_none(), "{name}");
+            }
+            return;
+        }
+        for name in PLAIN {
+            assert!(plain_agent_hook(&plain(name)).is_some(), "{name}");
+        }
+        // nothing else from this environment: no HOME, no runtime dir
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([NAME, "--exact", "--test-threads=1"])
+            .env_clear()
+            .env("SELDON_TEST_HOOK_PARSE", "1")
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{text}");
+        assert!(text.contains("test result: ok. 1 passed"), "{text}");
     }
 
     fn wants(args: &[&str]) -> bool {
