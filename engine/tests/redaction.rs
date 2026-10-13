@@ -2899,7 +2899,7 @@ mod redaction {
             (
                 "unclosed triple quote",
                 "h = {'password': \"\"\"",
-                "a'' \"\" \\\" 'token': \"\" x ",
+                "a'' \"\" \\\" 'b' x ",
             ),
             (
                 "key word near misses",
