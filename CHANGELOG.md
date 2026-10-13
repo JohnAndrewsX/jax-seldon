@@ -55,7 +55,7 @@ and the package does not exist yet. Update the plugin first:
   `failed` / `interrupted` / `unfinished` as before); routine rows stay
   quiet. A list with no row says what belongs there and offers one action
   (`Model.emptyState`): *Clear search* (or Esc) on a search without a
-  match, *New case* (`n`) in an empty Work, *New decision* (`d`) in an
+  match, *New case* (`+`) in an empty Work, *New decision* (`d`) in an
   empty Decisions. *Agent sorts N open changes* is *Ask agent to sort N
   changes* (the actor stays, E6). After *Complete* the result line says
   "Reopen makes a new case"; no undo. The reinstall mark `↻` and the

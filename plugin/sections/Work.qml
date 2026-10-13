@@ -269,7 +269,7 @@ Section {
     Qt.callLater(function() { intentField.forceActiveFocus() })
   }
 
-  // The empty list's New case (WP-178): what `n` does.
+  // The empty list's New case (WP-178): what `+` does.
   function emptyFirstStep(id) {
     if (id !== "newCase") return false
     root.openSheet()

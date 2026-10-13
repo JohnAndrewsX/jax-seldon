@@ -5573,7 +5573,7 @@ test("emptyState: what belongs in each list, its first step, Clear search on no 
   same(pro("changelog", { shown: 0, chip: "crisis", all: 83 }), { text: "No events under “crisis”.", action: null })
   // Work: New case (n); none while the footer lists groups; none in dev mode
   same(pro("work", { shown: 0 }), { text: "No cases yet. Say what should happen above, or make one by hand with New case.",
-    action: { id: "newCase", label: "New case", key: "n" } })
+    action: { id: "newCase", label: "New case", key: "+" } })
   same(pro("work", { shown: 0, footer: true }), { text: "", action: null })
   same(pro("work", { shown: 0, footer: true, search: "x" }).action, clear)
   same(pro("work", { shown: 0, canWrite: false }).action, null)
@@ -5601,6 +5601,75 @@ test("emptyState: what belongs in each list, its first step, Clear search on no 
   same(M.todayRows({ needs: [], entries: [], yesterday: [] }, false, "").map((r) => r.title), [M.text("empty.journal", "pro")])
 })
 
+// The body of `function <name>(…) { … }` in a QML or JS source (the
+// first one; "" when there is none), comments dropped.
+function functionBody(src, name) {
+  const code = src.split("\n").map((l) => l.replace(/(^|[^:"'])\/\/.*$/, "$1")).join("\n")
+  const m = new RegExp("function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{").exec(code)
+  if (!m) return ""
+  let depth = 0
+  for (let i = m.index + m[0].length - 1; i < code.length; i++) {
+    if (code[i] === "{") depth++
+    else if (code[i] === "}" && --depth === 0) return code.slice(m.index + m[0].length, i)
+  }
+  return ""
+}
+
+// What a `link.*` button does and what its key does, per section file:
+// [{ file, id, step, keys: { <key>: [functions] } }]. `step` is the
+// function emptyFirstStep(id) calls; `keys` the textKey(t) branches.
+function emptyLinkPaths(sources) {
+  const out = []
+  for (const { file, src } of sources.filter((f) => /^plugin\/sections\/.*\.qml$/.test(f.file))) {
+    const first = functionBody(src, "emptyFirstStep")
+    if (first === "") continue
+    const id = /id\s*!==\s*"([A-Za-z]+)"/.exec(first)
+    const step = /root\.([A-Za-z]+)\(\)/.exec(first)
+    const keys = {}
+    const tk = functionBody(src, "textKey")
+    for (const m of tk.matchAll(/if\s*\(([^)]*)\)\s*(\{[^{}]*\}|[^\n]*)/g)) {
+      const calls = [...m[2].matchAll(/root\.([A-Za-z]+)\(/g)].map((c) => c[1])
+      const takes = /return true/.test(m[2]) || /return root\./.test(m[2])
+      for (const k of m[1].matchAll(/t\s*===\s*"([^"]+)"/g)) if (takes) keys[k[1]] = (keys[k[1]] || []).concat(calls)
+    }
+    out.push({ file, id: id ? id[1] : "", step: step ? step[1] : "", keys })
+  }
+  return out
+}
+
+test("every link.* key does what its button does (the section's textKey)", () => {
+  const paths = emptyLinkPaths(pluginSources(plugin))
+  const links = Object.keys(M.WORDS).filter((k) => /^link\./.test(k))
+  assert.ok(links.length >= 3, links.join(","))
+  for (const key of links) {
+    const id = key.replace(/^link\./, "")
+    const want = M.WORDS[key].key
+    if (id === "clearSearch") {
+      // Esc: the desk clears the filter, as Desk.clearSearch does
+      const desk = fs.readFileSync(path.join(plugin, "Desk.qml"), "utf8")
+      assert.strictEqual(want, "Esc")
+      assert.ok(/root\.searchText\s*=\s*""/.test(functionBody(desk, "escapeKey")), "Esc clears the search")
+      assert.ok(/root\.searchText\s*=\s*""/.test(functionBody(desk, "clearSearch")), "clearSearch clears it")
+      continue
+    }
+    const owners = paths.filter((p) => p.id === id)
+    assert.strictEqual(owners.length, 1, key + ": one section's emptyFirstStep runs it, got " + owners.map((p) => p.file).join(","))
+    const p = owners[0]
+    assert.ok(p.step !== "", key + ": emptyFirstStep calls no function")
+    assert.ok(Object.prototype.hasOwnProperty.call(p.keys, want), key + ": " + p.file + " textKey takes no " + JSON.stringify(want))
+    assert.ok(p.keys[want].indexOf(p.step) !== -1, key + ": " + JSON.stringify(want) + " runs " + p.keys[want].join(",") + ", the button " + p.step)
+  }
+  // the two first steps today: Work's + opens the sheet, Decisions' d the form
+  same(paths.map((p) => [p.file, p.id, p.step]).sort(),
+    [["plugin/sections/Decisions.qml", "newDecision", "openForm"], ["plugin/sections/Work.qml", "newCase", "openSheet"]])
+  // the guard sees a key that does something else (`n` in Work is Today's)
+  const probe = [{ file: "plugin/sections/Probe.qml", src: [
+    "function emptyFirstStep(id) {", "  if (id !== \"newCase\") return false", "  root.openSheet()", "  return true", "}",
+    "function textKey(t) {", "  if (t === \"+\") {", "    root.openSheet()", "    return true", "  }",
+    "  if (t === \"n\") root.focusIntent()", "  return false", "}"].join("\n") }]
+  same(emptyLinkPaths(probe), [{ file: "plugin/sections/Probe.qml", id: "newCase", step: "openSheet", keys: { "+": ["openSheet"] } }])
+})
+
 test("QML: every list's empty text comes from Model.emptyState", () => {
   const sources = pluginSources(plugin).filter((f) => /^plugin\/sections\//.test(f.file))
   const bad = []
@@ -5619,6 +5688,33 @@ test("QML: every list's empty text comes from Model.emptyState", () => {
 // from a list; a ConfirmDialog, if ever used, binds selectedIndex: 0 and
 // resets it on open (SPEC-PLUGIN §5.3). The QML blocks of `ConfirmDialog`
 // that break it: [file:line].
+// The bodies of a block's `onOpenedChanged` handlers: a `{ … }` block, or
+// the one statement after the colon (up to the line's end or a `;` outside
+// parentheses), so a reset elsewhere (Component.onCompleted) is no reset.
+function openedHandlers(block) {
+  const out = []
+  for (const m of block.matchAll(/\bonOpenedChanged\s*:\s*/g)) {
+    let i = m.index + m[0].length
+    if (block[i] === "{") {
+      let depth = 0
+      for (let j = i; j < block.length; j++) {
+        if (block[j] === "{") depth++
+        else if (block[j] === "}" && --depth === 0) { out.push(block.slice(i + 1, j)); break }
+      }
+      continue
+    }
+    let paren = 0
+    let j = i
+    for (; j < block.length && block[j] !== "\n"; j++) {
+      if (block[j] === "(") paren++
+      else if (block[j] === ")") paren--
+      else if (block[j] === ";" && paren === 0) break
+    }
+    out.push(block.slice(i, j))
+  }
+  return out
+}
+
 function confirmDialogViolations(sources) {
   const out = []
   for (const { file, src } of sources.filter((f) => f.file.endsWith(".qml"))) {
@@ -5633,7 +5729,7 @@ function confirmDialogViolations(sources) {
       const block = code.slice(m.index, end + 1)
       const line = code.slice(0, m.index).split("\n").length
       if (!/\bselectedIndex\s*:\s*0\b/.test(block)) out.push(file + ":" + line + " selectedIndex")
-      if (!/onOpenedChanged\s*:[^}]*selectedIndex\s*=\s*0\b/.test(block)) out.push(file + ":" + line + " reset")
+      if (!openedHandlers(block).some((h) => /\bselectedIndex\s*=\s*0\b/.test(h))) out.push(file + ":" + line + " reset")
     }
   }
   return out
@@ -5648,6 +5744,13 @@ test("C1: no ConfirmDialog that confirms on Enter; Enter-Enter on a row only whe
   same(confirmDialogViolations(probe("ConfirmDialog {\n  // selectedIndex: 0\n  onOpenedChanged: if (opened) selectedIndex = 0\n}")),
     ["plugin/components/desk/Probe.qml:1 selectedIndex"])
   same(confirmDialogViolations(probe("ConfirmDialog {\n  selectedIndex: 0\n  onOpenedChanged: if (opened) selectedIndex = 0\n  Item { }\n}")), [])
+  // the review's N1 mutant: a reset outside the handler is none
+  same(confirmDialogViolations(probe("ConfirmDialog { selectedIndex: 0; onOpenedChanged: console.log(opened); Component.onCompleted: selectedIndex = 0 }")),
+    ["plugin/components/desk/Probe.qml:1 reset"])
+  same(confirmDialogViolations(probe("ConfirmDialog {\n  selectedIndex: 0\n  onOpenedChanged: console.log(opened)\n  Component.onCompleted: selectedIndex = 0\n}")),
+    ["plugin/components/desk/Probe.qml:1 reset"])
+  same(confirmDialogViolations(probe("ConfirmDialog {\n  selectedIndex: 0\n  onOpenedChanged: {\n    if (opened) {\n      root.selectedIndex = 0\n    }\n  }\n}")), [])
+  same(confirmDialogViolations(probe("ConfirmDialog {\n  selectedIndex: 0\n  onOpenedChanged: if (opened) { selectedIndex = 0 }\n}")), [])
   // the SPEC sentence the guard enforces (wrapped lines read as one)
   const spec = fs.readFileSync(path.join(root, "docs/SPEC-PLUGIN.md"), "utf8").replace(/\s+/g, " ")
   assert.ok(/never completes on Enter-Enter from a list/.test(spec), "SPEC-PLUGIN §5.3 C1 sentence")
@@ -5666,6 +5769,59 @@ test("C1: no ConfirmDialog that confirms on Enter; Enter-Enter on a row only whe
   // the three steps arm (Enter twice); Reopen runs on one (WP-101)
   for (const [status, id] of [["queued", "start"], ["active", "verify"], ["verification", "done"]])
     assert.strictEqual(M.caseEnterAction({ id: "C-2026-001", status: status, actionable: true }).arm, true, id)
+})
+
+// What each `activate()` (Enter on the cursor's place) in plugin/ QML
+// calls: { file: [calls] }, comments dropped, calls as written
+// ("root.press", "Model.caseEnterAction").
+function activateCalls(sources) {
+  const kw = new Set(["if", "for", "while", "switch", "function", "return", "catch"])
+  const out = {}
+  for (const { file, src } of sources.filter((f) => f.file.endsWith(".qml"))) {
+    if (!/function\s+activate\s*\(/.test(src)) continue
+    const body = functionBody(src, "activate")
+    out[file] = [...new Set([...body.matchAll(/([A-Za-z_$][\w$.]*)\s*\(/g)].map((m) => m[1]).filter((c) => !kw.has(c)))].sort()
+  }
+  return out
+}
+
+// SPEC-PLUGIN §5.3 C1: the Enter paths as they are. Every arm-and-run
+// here is one the SPEC names: Work's case steps (root.press with
+// Model.caseEnterAction: Start, To verification, Complete; Reopen at once)
+// and its header buttons (pressHead, WP-215); the Changelog's Apply
+// proposals and single crisis (TriageDetail: arm.press, applyProposal,
+// pressCrisis); Today's setup card (setupAction, WP-202) and Settings'
+// controls (pressControl), buttons the cursor reached. A new call in an
+// activate(), or a new activate(), fails until the SPEC's list names it.
+const ACTIVATE_CALLS = {
+  "plugin/components/desk/EventDetail.qml": ["form.showForm"],
+  "plugin/components/desk/Section.qml": [],
+  "plugin/components/desk/TriageDetail.qml": ["root.arm.press", "root.pressCrisis", "root.section.showTriage", "root.service.applyProposal"],
+  "plugin/sections/Changelog.qml": ["detail.activate", "root.desk.showDetail", "triage.activate"],
+  "plugin/sections/Graph.qml": ["canvas.play"],
+  "plugin/sections/ReadingSection.qml": ["root.desk.showDetail"],
+  "plugin/sections/Settings.qml": ["root.desk.showDetail", "root.enterControl", "root.pressControl"],
+  "plugin/sections/Today.qml": ["Model.keyArmHint", "eventDetail.activate", "root.arm.press", "root.desk.showDetail", "root.setupAction"],
+  "plugin/sections/Work.qml": ["Model.caseEnterAction", "root.desk.showDetail", "root.press", "root.pressHead"]
+}
+
+test("C1: no new Enter step anywhere: every activate() calls what SPEC §5.3 names", () => {
+  same(activateCalls(pluginSources(plugin)), ACTIVATE_CALLS)
+  // the review's mutant: Accept on Enter in Decisions (click only)
+  const decisions = fs.readFileSync(path.join(plugin, "sections/Decisions.qml"), "utf8")
+  const mutant = pluginSources(plugin).map((f) => f.file === "plugin/sections/Decisions.qml"
+    ? { file: f.file, src: decisions.replace(/\n}\s*$/, "\n  function activate() { return root.pressAccept() }\n}\n") } : f)
+  const got = activateCalls(mutant)
+  same(got["plugin/sections/Decisions.qml"], ["root.pressAccept"])
+  assert.notStrictEqual(JSON.stringify(got), JSON.stringify(ACTIVATE_CALLS))
+  // a call added to an existing activate() fails too
+  const work = mutant.map((f) => f.file === "plugin/sections/Work.qml"
+    ? { file: f.file, src: f.src.replace("function activate() {", "function activate() {\n    root.service.plan(\"drop\", root.selectedId)") } : f)
+  assert.notStrictEqual(JSON.stringify(activateCalls(work)["plugin/sections/Work.qml"]), JSON.stringify(ACTIVATE_CALLS["plugin/sections/Work.qml"]))
+  // the six exceptions are named in the SPEC
+  const spec = fs.readFileSync(path.join(root, "docs/SPEC-PLUGIN.md"), "utf8").replace(/\s+/g, " ")
+  for (const step of ["*Start*", "*To verification*", "*Complete*", "*Reopen*", "*Apply proposals*", "a single crisis", "WP-179's verification ADR"])
+    assert.ok(spec.indexOf(step) !== -1, "SPEC §5.3 C1 names " + step)
 })
 
 test("B4: the result line names the real way back, never an undo", () => {

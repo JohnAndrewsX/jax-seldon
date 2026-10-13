@@ -359,7 +359,7 @@ var WORDS = {
   "empty.changelogChip": { easy: "No events under \u201c<chip>\u201d.", pro: "No events under \u201c<chip>\u201d.", rows: [] },
   "empty.work": { easy: "No tasks yet. Say what should happen, and your agent starts on it.",
     pro: "No cases yet. Say what should happen above, or make one by hand with New case.", rows: [] },
-  "link.newCase": { easy: "New task", pro: "New case", rows: [], key: "n" },
+  "link.newCase": { easy: "New task", pro: "New case", rows: [], key: "+" },
   "empty.decisions": { easy: "No decisions yet. A decision records why the machine is the way it is.",
     pro: "No decisions yet. A decision records why the machine is the way it is; New decision writes the first.", rows: [] },
   "link.newDecision": { easy: "New decision", pro: "New decision", rows: [], key: "d" },

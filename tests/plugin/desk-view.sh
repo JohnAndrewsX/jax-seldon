@@ -270,6 +270,30 @@ expect data-states 16 "[.view.search.text, $dsv.empty, ($dsv.rows | length)] | m
 for i in 5 10 15; do expect data-states $i '.overflow | join(" | ")' ""; done
 clean_log data-states
 
+# 3c. The empty lists' first steps (WP-178 round 2): a live index with no
+#     case and no decision; Work's empty list offers New case beside "or +"
+#     and its click opens the sheet, as `+` does; Decisions' offers New
+#     decision beside "or d" and its click opens the form, as `d` does.
+jq '.cases = {queued: [], active: [], verification: [], completed: []} | .decisions = []
+  | .summary.activeCases = 0 | .summary.queuedCases = 0' "$sample" >"$work/no-cases.json"
+run empty-lists "" 1920x1080 \
+  "summon;text:3;clickName:emptyAction;key:Escape;text:+;key:Escape;text:4;clickName:emptyAction;key:Escape;text:d" \
+  HOME="$work/home-empty-lists" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$work/no-cases.json"
+expect empty-lists 2 "[.view.section, ($dsv.ids | length), $dsv.empty, $dsv.emptyAction, $dsv.sheet.open] | map(tostring) | join(\",\")" \
+  "work,0,No cases yet. Say what should happen above, or make one by hand with New case.,newCase,false"
+shows empty-lists 2 "or +"
+expect empty-lists 3 "[$dsv.sheet.open, .view.section] | map(tostring) | join(\",\")" "true,work"
+expect empty-lists 4 "$dsv.sheet.open" false
+expect empty-lists 5 "[$dsv.sheet.open, .view.section] | map(tostring) | join(\",\")" "true,work"
+expect empty-lists 7 "[.view.section, ($dsv.rows | length), $dsv.emptyAction, $dsv.form.open] | map(tostring) | join(\",\")" "decisions,0,newDecision,false"
+shows empty-lists 7 "or d"
+expect empty-lists 8 "[$dsv.form.open, .view.section] | map(tostring) | join(\",\")" "true,decisions"
+expect empty-lists 9 "$dsv.form.open" false
+expect empty-lists 10 "[$dsv.form.open, .view.section] | map(tostring) | join(\",\")" "true,decisions"
+for i in 2 7; do expect empty-lists $i '.overflow | join(" | ")' ""; done
+expect empty-lists 10 '.writes | length' 0
+clean_log empty-lists
+
 # ---------------------------------------------------------------------------
 # 4. Settings › Appearance (ADR-0034 §1): `,` opens it; dragging the slider
 #    from Full to 50 % previews the width on the desk and writes nothing; the

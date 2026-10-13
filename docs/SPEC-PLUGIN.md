@@ -413,17 +413,24 @@ House rules for every key, now and later (WP-183; the checklist
   An action without an opposite verb in CONTRACT.md never completes on
   Enter-Enter from a list: it arms by click or by its own letter pressed
   twice (*Drop* `x`, *Hand to agent* `a`), or by click only (*Accept*, an
-  imported case's *Start*). Work's *Start*, *To verification* and
-  *Complete* predate this rule and still complete on Enter-Enter from
-  their row (WP-122, as in 0.1), and *Reopen* on one Enter (WP-101: it
-  creates a case and destroys nothing), though none has an opposite verb
-  today; whether they keep Enter is open (WP-178's handover). No other
-  case step joins them (`model.test.js` pins `Model.caseEnterAction`). Seldon uses
+  imported case's *Start*). Six steps predate this rule and keep their
+  Enter, though none has an opposite verb today: Work's *Start*, *To
+  verification* and *Complete* complete on Enter-Enter from their row
+  (WP-122, as in 0.1), Work's *Reopen* on one Enter (WP-101: it creates a
+  case and destroys nothing), and the Changelog's *Apply proposals* and a
+  single crisis of the proposal on Enter-Enter (WP-126c, WP-201; `drift
+  apply` has no opposite verb). Whether they keep Enter is decided with
+  WP-179's verification ADR. No other step joins them: `model.test.js`
+  pins `Model.caseEnterAction` and what every `activate()` in `plugin/`
+  calls, so a new Enter step anywhere fails until this list names it. A
+  button the cursor reached (a notice's, the setup card's, Work's header
+  buttons, a Settings control; WP-202) is not a list step: Enter arms it
+  and the second Enter runs what its click runs. Seldon uses
   no `ConfirmDialog`; Omarchy's `Ui/ConfirmDialog.qml` preselects
   *Confirm* (`selectedIndex: 1`), so Enter confirms. If Seldon ever uses
   one, it binds `selectedIndex: 0` and sets it to 0 again on every open
-  (`onOpenedChanged`); a grep test in `model.test.js` fails a
-  `ConfirmDialog` without both.
+  (in its own `onOpenedChanged` handler); a grep test in `model.test.js`
+  fails a `ConfirmDialog` without both.
 - **Copying copies the id.** A key or button that copies a record copies
   its id, never logbook text, as ADR-0036 §1 does for agent prompts.
 - **Every hinted key is a click too**, and a primary action is always a
@@ -520,7 +527,7 @@ Otherwise per section: the Changelog "Every change Seldon records shows
 here: … Capture now (c) records the first." while it holds no event,
 else its chip's line ("Nothing open: every change is in a case or
 routine.", "No events under “crisis”."); Work "No cases yet. …" with
-*New case* (`n`); Decisions "No decisions yet. …" with *New decision*
+*New case* (`+`); Decisions "No decisions yet. …" with *New decision*
 (`d`); Memory "Lessons and memory files your agents write show here.
 None yet."; the Graph "Nothing to draw yet: …". Today and System always
 list something with an index. A first step that writes is offered only
