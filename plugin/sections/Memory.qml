@@ -36,7 +36,7 @@ ReadingSection {
     : root.allRows.length > 0 ? "Nothing matches the search."
     : "No lessons or memory files yet"
   detailTitle: root.memory ? root.memory.heading : ""
-  actions: [{ id: "open", label: "Open in editor", primary: false, enabled: !!root.index }]
+  actions: [{ id: "open", label: Model.text("action.openEditor", "pro"), primary: false, enabled: !!root.index }]
   actionMeta: "memory/"
   rowTitle: function(r) { return r.title }
   rowMeta: function(r) { return r.kind === "lesson" ? "lesson" : r.meta !== "" ? r.meta : "topic" }

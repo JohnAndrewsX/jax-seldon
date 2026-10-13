@@ -359,7 +359,7 @@ Section {
 
         Button {
           id: editButton
-          text: "Open in editor"
+          text: Model.text("action.openEditor", "pro")
           tooltipText: "Today's journal (key e)"
           bordered: true
           foreground: root.foreground
@@ -725,7 +725,7 @@ Section {
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
           readonly property bool running: root.pending && !!root.result
-          text: running ? "Starting" : "Start agent"
+          text: running ? "Starting" : Model.text("action.startAgent", "pro")
           iconText: running ? "󰦖" : ""
           iconSpinning: running
           iconSize: Style.font.caption

@@ -45,7 +45,7 @@ ReadingSection {
   searchFields: ["title", "meta", "lead"]
   emptyText: root.index ? "No tile matches the search." : "No index to show"
   detailTitle: root.current ? root.current.title : ""
-  actions: [{ id: "status", label: "Open in editor", primary: false, enabled: !!root.index }]
+  actions: [{ id: "status", label: Model.text("action.openEditor", "pro"), primary: false, enabled: !!root.index }]
   actionMeta: "STATUS.md"
   rowTitle: function(r) { return r.title }
   rowMeta: function(r) { return r.meta }

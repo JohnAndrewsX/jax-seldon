@@ -102,7 +102,7 @@ FocusScope {
       id: field
       width: parent.width
       enabled: root.enabledHere
-      placeholderText: root.enabledHere ? "Note for today's journal, Enter saves"
+      placeholderText: root.enabledHere ? Model.text("action.note", "pro") + ", Enter saves"
         : root.service ? root.service.writeBlocker : "The Seldon service is not running"
       foreground: root.foreground
       font.family: root.fontFamily

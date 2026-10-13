@@ -360,7 +360,7 @@ DetailPane {
         id: missingButton
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        text: "Open in editor"
+        text: Model.text("action.openEditor", "pro")
         tooltipText: "The case file, if the logbook still has it"
         bordered: true
         foreground: root.foregroundColor

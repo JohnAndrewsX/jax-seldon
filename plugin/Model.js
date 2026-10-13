@@ -236,6 +236,118 @@ function terminalArgv(banner) {
   return isTerminalScript(script) ? ["omarchy-launch-floating-terminal-with-presentation", script] : null
 }
 
+// ---- Words (ADR-0045 §5–§6, WP-167) ------------------------------------------
+//
+// The desk's one word table: EASY and PRO read the same row, nothing
+// scattered (ADR-0045 §5 "Words"). `text(key, mode)` is the seam a later
+// language would use (ADR-0045 §10). PRO shows its own column only: the
+// visible PRO subtitles (EASY's words under PRO's) are struck (prototype
+// debate 2026-10-09, E48–E63), so no surface shows both columns at once.
+//
+// A row: `easy`, `pro` (both always set; `pro` is "" only with `easyOnly`,
+// a sentence EASY shows and PRO has no place for); `rows`, the rows of
+// ADR-0045 §6's table it belongs to (1–12, in its order; [] for §5's
+// vocabulary and PRO's own actions); and what an `action.*` key runs,
+// exactly one of
+//   argv     the engine arguments, `seldon` left out, as CONTRACT.md's
+//            "Commands the plugin may run" lists them; `<…>` stands for an
+//            id or the user's own text (rule 4: model.test.js matches every
+//            argv against that block);
+//   exec     the name of a fixed argv constant of this file;
+//   scripts  the names of SPEC-PLUGIN §5.6's terminal scripts
+//            (TERMINAL_SCRIPTS);
+//   settings the name of the settings key it writes (no process);
+// or `pending`, why it cannot run yet: alone (no runnable argv), or with
+// the `exec`/`scripts` name of a constant not built yet. Rule 4 fails an
+// action with neither.
+// EASY's `argv` is the PRO action's argv with fixed words in place of
+// typed text (ADR-0036 §1).
+//
+// WP-178's STATUS table and `emptyState` join this section; WP-187 builds
+// EASY on it.
+var WORDS = {
+  // §5: Seldon's own jargon; Omarchy's words stay in both modes
+  "word.case": { easy: "task", pro: "case", rows: [] },
+  "word.crisis": { easy: "needs your attention now", pro: "crisis", rows: [4] },
+  "word.openDrift": { easy: "a change nobody explained", pro: "attention", rows: [10] },
+  "word.r3": { easy: "needs your OK", pro: "R3", rows: [] },
+  "word.verification": { easy: "waiting for your check", pro: "verification", rows: [7] },
+
+  // 1: the setup card, the same in both modes (WP-119); 2: the notices,
+  // same fixes (the setup steps' scripts are the banners')
+  "card.setup": { easy: "Set up Seldon", pro: "Set up Seldon", rows: [1] },
+  "action.install": { easy: "Install", pro: "Install", rows: [1, 2], scripts: ["INSTALL_ENGINE_SCRIPT"] },
+  "action.createLogbook": { easy: "Create logbook", pro: "Create logbook", rows: [1, 2], scripts: ["INIT_SCRIPT"] },
+  "action.grant": { easy: "Grant", pro: "Grant", rows: [1, 2], scripts: ["SNAPPER_FIX_SCRIPT"] },
+  // the snapshot step's Not now: a settings write, no process
+  "action.notNow": { easy: "Not now", pro: "Not now", rows: [1], settings: "SETUP_LATER_KEY" },
+  "action.update": { easy: "Update", pro: "Update", rows: [2], scripts: ["UPDATE_ENGINE_SCRIPT", "UPDATE_PLUGIN_SCRIPT"] },
+  "action.restartShell": { easy: "Restart shell", pro: "Restart shell", rows: [2], exec: "RESTART_SHELL_ARGV" },
+  "action.updateRules": { easy: "Update rules", pro: "Update rules", rows: [2], argv: ["rules", "update", "--json"] },
+  "action.capture": { easy: "Capture now", pro: "Capture now", rows: [2, 12], argv: ["capture", "--all", "--json", "--quiet"] },
+  // 3: the engine's refusal "no default agent"; Seldon writes no Omarchy
+  // setting. Omarchy's menu route, not a terminal script (E51); WP-179
+  // fixes the argv and builds the constant
+  "card.pickAgent": { easy: "Pick your agent", pro: "Pick your agent", rows: [3] },
+  "action.pickAgent": { easy: "Pick agent", pro: "Pick agent", rows: [3], exec: "PICK_AGENT_ARGV",
+    pending: "WP-179 builds PICK_AGENT_ARGV (E51: Omarchy's menu route)" },
+  // 4: a crisis; no Later, no dismiss in EASY. PRO's event bar reads these
+  // for every open change, a crisis or not
+  "action.askDrift": { easy: "Ask agent to explain", pro: "Ask agent", rows: [4],
+    argv: ["agent", "ask", "drift", "<eventId>", "--json"] },
+  "action.explain": { easy: "It was me…", pro: "Explain…", rows: [4],
+    argv: ["drift", "explain", "<eventId>", "--json", "--", "It was me."] },
+  "confirm.explain": { easy: "This writes \u2018explained by you\u2019 into the record for good.", pro: "", easyOnly: true, rows: [4, 10] },
+  // 5: a transaction that did not complete (ADR-0043). PRO titles it by
+  // status (TX_STATUS_TITLES) and does not read this word until WP-179's
+  // Needs-you title replaces it; PRO starts the agent from Today's New case
+  "card.txStopped": { easy: "An update stopped halfway", pro: "Transaction did not complete", rows: [5] },
+  "action.finishUpdate": { easy: "Ask agent to finish it", pro: "New case", rows: [5],
+    argv: ["agent", "start", "--new", "--json", "--", "Finish the interrupted update (event <eventId>)"] },
+  // 6: an agent at work
+  "card.agentWorking": { easy: "Your agent works in a terminal window and asks you there before anything that can break boot or login.",
+    pro: "", easyOnly: true, rows: [6] },
+  "action.focus": { easy: "Show", pro: "Focus", rows: [6], argv: ["agent", "focus", "<caseId>", "--json"] },
+  // 7: a case in verification
+  "card.verification": { easy: "Task waiting for your check", pro: "Verification", rows: [7] },
+  "action.done": { easy: "Done", pro: "Complete", rows: [7], argv: ["plan", "done", "<caseId>", "--json"] },
+  // the engine refuses `plan start` on a case in verification (start only
+  // from queued): no way back yet, WP-179's ADR decides it
+  "action.notDone": { easy: "Not done yet", pro: "Back to active", rows: [7],
+    pending: "no engine verb takes a case from verification back to active (WP-179's ADR)" },
+  // 8: Help; a click starts it, never Enter
+  "help.change": { easy: "I want to change something", pro: "", easyOnly: true, rows: [8] },
+  "help.wrong": { easy: "Something is wrong", pro: "", easyOnly: true, rows: [8] },
+  // 5 and 8: the confirm names the agent's powers
+  "confirm.agent": { easy: "Your agent may install, remove and change things on this machine and asks you first only before anything that can break boot or login.",
+    pro: "", easyOnly: true, rows: [5, 8] },
+  "action.startAgent": { easy: "Start agent", pro: "Start agent", rows: [8],
+    argv: ["agent", "start", "--new", "--json", "--", "<sentence>"] },
+  // 9: one line for the journal
+  "action.note": { easy: "Note for later", pro: "Note for today's journal", rows: [9], argv: ["log", "--json", "--", "<text>"] },
+  // 10: a change nobody explained, its Details (ADR-0045 §6's own words)
+  "action.askChange": { easy: "Ask agent", pro: "Ask agent", rows: [10],
+    argv: ["agent", "ask", "drift", "<eventId>", "--json"] },
+  "action.explainChange": { easy: "It was me", pro: "Explain…", rows: [10],
+    argv: ["drift", "explain", "<eventId>", "--json", "--", "It was me."] },
+  // 11: Details › Open in editor (PRO: every Open in editor)
+  "action.openEditor": { easy: "Open in editor", pro: "Open in editor", rows: [11], argv: ["open", "<caseId>", "--editor", "--json"] },
+  // 12: Capture now, the header's: action.capture
+
+  // PRO's own: Ask agent on a case (ADR-0036 §1); EASY's Details may use it
+  "action.askCase": { easy: "Ask agent", pro: "Ask agent", rows: [], argv: ["agent", "ask", "case", "<caseId>", "--json"] }
+}
+
+var DESK_MODES = ["easy", "pro"]
+
+// The word for `key` in `mode` ("easy"; anything else reads PRO, the desk
+// every release before EASY shows); "" for a key the table does not have.
+function text(key, mode) {
+  var row = Object.prototype.hasOwnProperty.call(WORDS, key) ? WORDS[key] : null
+  if (!row) return ""
+  return mode === "easy" ? row.easy : row.pro
+}
+
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
@@ -915,7 +1027,7 @@ function bannerFor(status, ctx) {
       command: INSTALL_ENGINE_COMMAND,
       script: INSTALL_ENGINE_SCRIPT,
       actions: [
-        { id: "terminal", label: "Install" },
+        { id: "terminal", label: text("action.install", "pro") },
         { id: "copy", label: "Copy" },
         { id: "recheck", label: "Check again" }
       ]
@@ -930,7 +1042,7 @@ function bannerFor(status, ctx) {
       command: INIT_COMMAND,
       script: INIT_SCRIPT,
       actions: [
-        { id: "terminal", label: "Create logbook" },
+        { id: "terminal", label: text("action.createLogbook", "pro") },
         { id: "copy", label: "Copy" },
         { id: "recheck", label: "Check again" }
       ]
@@ -958,7 +1070,7 @@ function bannerFor(status, ctx) {
       title: "Index is stale",
       detail: "Last update " + relativeAge(timeMs(ctx.generatedAt), ctx.nowMs) + ". Capture to refresh it.",
       command: "",
-      actions: [{ id: "capture", label: "Capture now" }]
+      actions: [{ id: "capture", label: text("action.capture", "pro") }]
     }
   }
   if (status === "contractMismatch") {
@@ -973,7 +1085,7 @@ function bannerFor(status, ctx) {
       command: pluginOlder ? UPDATE_PLUGIN_COMMAND : UPDATE_ENGINE_COMMAND,
       script: pluginOlder ? UPDATE_PLUGIN_SCRIPT : UPDATE_ENGINE_SCRIPT,
       actions: [
-        { id: "terminal", label: "Update" },
+        { id: "terminal", label: text("action.update", "pro") },
         { id: "copy", label: "Copy" }
       ]
     }
@@ -999,7 +1111,7 @@ function contractNewerNotice(parsed, status) {
     command: UPDATE_PLUGIN_COMMAND,
     script: UPDATE_PLUGIN_SCRIPT,
     actions: [
-      { id: "terminal", label: "Update" },
+      { id: "terminal", label: text("action.update", "pro") },
       { id: "copy", label: "Copy" }
     ]
   }
@@ -1345,7 +1457,7 @@ function snapperBanner(index) {
       command: SNAPPER_FIX_COMMAND,
       script: SNAPPER_FIX_SCRIPT,
       actions: [
-        { id: "terminal", label: "Grant" },
+        { id: "terminal", label: text("action.grant", "pro") },
         { id: "copy", label: "Copy" },
         { id: "capture", label: "Check again" }
       ]
@@ -1365,7 +1477,7 @@ function snapperBanner(index) {
 // mode logic; EASY (ADR-0045 §6) shows the same card, and its open steps
 // are what WP-179's Needs you counts.
 
-var SETUP_TITLE = "Set up Seldon"
+var SETUP_TITLE = text("card.setup", "pro")
 // What `seldon init --defaults` does, in one sentence (the step's detail
 // and the notInitialised banner's).
 var INIT_DETAIL = "Creates your logbook and starts recording; the last 90 days become history \u201cbefore Seldon\u201d. No questions, no password."
@@ -1438,14 +1550,14 @@ function setupCard(s) {
   var steps = [
     { id: "engine", title: "Install the engine", detail: ENGINE_MISSING_DETAIL, done: engineDone,
       hint: "Opens a terminal that shows the installer and runs it", banner: "status", command: INSTALL_ENGINE_COMMAND,
-      actions: [{ id: "terminal", label: "Install" }, { id: "copy", label: "Copy" }] },
+      actions: [{ id: "terminal", label: text("action.install", "pro") }, { id: "copy", label: "Copy" }] },
     logbookStep(engineDone && !before, s.logbookPath, s.logbookBlocked)
   ]
   if (snap !== "none") {
     steps.push({ id: "snapshots", title: "Read snapshots (optional)", optional: true,
       detail: "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it.",
       done: snap === "done", hint: SNAPPER_FIX_GRANTS, banner: "snapper", command: SNAPPER_FIX_COMMAND,
-      actions: [{ id: "terminal", label: "Grant" }, { id: "copy", label: "Copy" }, { id: "later", label: "Not now" }] })
+      actions: [{ id: "terminal", label: text("action.grant", "pro") }, { id: "copy", label: "Copy" }, { id: "later", label: text("action.notNow", "pro") }] })
   }
   var open = 0
   var current = ""
@@ -1511,7 +1623,7 @@ function logbookStep(done, path, blocked) {
   }
   return { id: "logbook", title: "Create the logbook", detail: initDetail(path), done: done, blocked: "",
     hint: "Opens a terminal that creates your logbook and starts recording", banner: "status", command: INIT_COMMAND,
-    actions: [{ id: "terminal", label: "Create logbook" }, { id: "copy", label: "Copy" }] }
+    actions: [{ id: "terminal", label: text("action.createLogbook", "pro") }, { id: "copy", label: "Copy" }] }
 }
 
 // The fix *Choose a folder* runs (Service.fix's "initAsk"): a constant, as
@@ -2432,7 +2544,7 @@ function rulesBanner(doctorText) {
         ? "Agents read AGENTS.md. Update rewrites only Seldon's block; your own rules stay, an edited block is archived first."
         : "Fix in a terminal: " + (fix !== "" ? fix : "seldon doctor"),
       command: "",
-      actions: oneClick ? [{ id: "update", label: "Update rules" }] : [],
+      actions: oneClick ? [{ id: "update", label: text("action.updateRules", "pro") }] : [],
       hint: ""
     }
   }
@@ -2977,7 +3089,7 @@ function decisionDetail(row) {
   if (row.path !== "") rows.push(["File", row.path])
   var actions = []
   if (row.status === "proposed") actions.push({ id: "accept", label: "Accept", primary: true, enabled: row.actionable, write: true })
-  actions.push({ id: "open", label: "Open in editor", primary: false, enabled: row.actionable, write: false })
+  actions.push({ id: "open", label: text("action.openEditor", "pro"), primary: false, enabled: row.actionable, write: false })
   return {
     heading: [row.id, row.status, row.date].filter(function(p) { return p !== "" }).join(" · "),
     rows: rows,
@@ -4193,7 +4305,7 @@ function engineOutdatedBanner(status, engineVersion, engineMin) {
     command: UPDATE_ENGINE_COMMAND,
     script: UPDATE_ENGINE_SCRIPT,
     actions: [
-      { id: "terminal", label: "Update" },
+      { id: "terminal", label: text("action.update", "pro") },
       { id: "copy", label: "Copy" },
       { id: "recheck", label: "Check again" }
     ]
@@ -4228,7 +4340,7 @@ function restartShellNotice(runningVersion, manifestVersion) {
     detail: "Seldon " + manifestVersion + " is installed, but the shell still runs " + runningVersion
       + ". The shell loads new plugin code only when it restarts.",
     command: RESTART_SHELL_ARGV.join(" "),
-    actions: [{ id: "restart", label: "Restart shell" }],
+    actions: [{ id: "restart", label: text("action.restartShell", "pro") }],
     hint: ""
   }
 }
@@ -4885,9 +4997,9 @@ function eventActions(detail, opts) {
   var o = isObject(opts) ? opts : {}
   var out = []
   if (detail.open) {
-    if (o.askAgent === true) out.push({ id: "ask", label: "Ask agent" })
+    if (o.askAgent === true) out.push({ id: "ask", label: text("action.askDrift", "pro") })
     out.push({ id: "link", label: detail.proposedCase !== "" ? "Link to " + detail.proposedCase + "…" : "Link to case…" })
-    out.push({ id: "explain", label: "Explain…" })
+    out.push({ id: "explain", label: text("action.explain", "pro") })
     out.push({ id: "dismiss", label: "Dismiss…" })
     if (detail.cls === "attention") out.push({ id: "hide", label: o.hidden === true ? "Show" : "Hide" })
   } else if (detail.caseId !== "") {
@@ -5403,12 +5515,12 @@ var CASE_DESK_ACTIONS = {
   start: { id: "start", label: "Start", write: true, arm: true, key: "Enter" },
   agent: { id: "agent", label: "Hand to agent", write: true, arm: true, key: "a", launches: true },
   // WP-156: in place of Hand to agent while an agent works on the case
-  focus: { id: "focus", label: "Focus", write: false, arm: false, key: "a", launches: true },
+  focus: { id: "focus", label: text("action.focus", "pro"), write: false, arm: false, key: "a", launches: true },
   verify: { id: "verify", label: "To verification", write: true, arm: true, key: "" },
-  done: { id: "done", label: "Complete", write: true, arm: true, key: "Enter" },
+  done: { id: "done", label: text("action.done", "pro"), write: true, arm: true, key: "Enter" },
   drop: { id: "drop", label: "Drop", write: true, arm: true, key: "x", final: true },
   reopen: { id: "reopen", label: "Reopen", write: true, arm: false, key: "r" },
-  open: { id: "open", label: "Open in editor", write: false, arm: false, key: "e" }
+  open: { id: "open", label: text("action.openEditor", "pro"), write: false, arm: false, key: "e" }
 }
 var CASE_DESK_BY_STATUS = {
   queued: ["start", "drop", "open"],
