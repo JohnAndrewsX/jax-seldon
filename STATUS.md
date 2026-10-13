@@ -701,6 +701,14 @@ compatible addition is a minor release, a fix a patch):
   anyway. The contract-3 release moves from 0.4 to 0.5 (only the number,
   as E86). The tag still needs the operator's go with the acceptance
   output (E88).
+- E92 (2026-10-13) after 0.4.0, a step-back audit of the whole project
+  against Omarchy 4.5's agent skills (`omarchy`, the new `omarchy-app`,
+  `diagnose-crash`); a large rewrite is acceptable. 0.4.0 still ships
+  first, so the redaction fixes are not held back by the audit.
+- E93 (2026-10-13) channels: a release must work on Omarchy **stable**
+  (a fresh install, AGENTS.md §1); the dev host runs **edge** as a preview
+  and Seldon stays forward-compatible with it; the test host's **RC** is the
+  rehearsal before a release.
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:
