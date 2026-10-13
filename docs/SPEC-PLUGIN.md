@@ -501,7 +501,7 @@ inside ADR-0045's word table (`word` is a key of `Model.WORDS`, so EASY
 reads its own column): drift `crisis` (`!` crisis, urgent) and
 `attention` (attention, accent); a case `active` (active, accent); a
 decision `proposed` (proposed, accent); a transaction's `txStatus`
-(`!` failed / interrupted / unfinished, urgent); System's Collectors tile
+(failed / interrupted / unfinished, urgent, the row's `alert` word); System's Collectors tile
 when a collector is not ok (failing, accent). A row's stripe comes from
 its status (`ListRow.mark`, `Model.statusOf`) and the glyph and word
 stand before its meta line in the same tone, so a row never shows a

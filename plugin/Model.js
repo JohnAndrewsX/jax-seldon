@@ -373,7 +373,7 @@ var WORDS = {
 // One status vocabulary (WP-178, SYNTHESIS B3): STATUS[kind][status] =
 // { glyph, word, tone }, `word` a key of WORDS above (both modes read it),
 // `tone` the Tone role a row's stripe and word take ("urgent", "accent").
-// A row that shows a tone shows its word (ListRow `status`); a quiet
+// A row that shows a tone shows its word (ListRow `mark`); a quiet
 // status (routine, in a case, a closed case) has no tone and no word:
 // routine rows stay quiet (ADR-0028 §3). Glyphs only from JetBrainsMono
 // Nerd Font, Omarchy's `monospace` (SPEC-PLUGIN §7; glyphs.test.js).
@@ -397,11 +397,12 @@ var STATUS = {
     accepted: QUIET,
     superseded: QUIET
   },
-  // a pacman transaction that did not complete (ADR-0043, WP-137)
+  // a pacman transaction that did not complete (ADR-0043, WP-137): the
+  // row's `alert`, its word alone in the urgent tone (no stripe of its own)
   tx: {
-    failed: { glyph: "!", word: "status.txFailed", tone: "urgent" },
-    interrupted: { glyph: "!", word: "status.txInterrupted", tone: "urgent" },
-    unfinished: { glyph: "!", word: "status.txUnfinished", tone: "urgent" }
+    failed: { glyph: "", word: "status.txFailed", tone: "urgent" },
+    interrupted: { glyph: "", word: "status.txInterrupted", tone: "urgent" },
+    unfinished: { glyph: "", word: "status.txUnfinished", tone: "urgent" }
   },
   // System's Collectors tile: one enabled collector or more not ok
   collector: {
