@@ -316,3 +316,56 @@ removed with literal paths.
 - **N5** stays with the orchestrator. The guard is unchanged. It did not flake in round 2: the session by-id count was 337 before and after for every harness, in the replay and in the full check.
 - The `docs/TESTING.md` `/usr/bin/qmllint` item from round 1 (open item 4)
   is still open.
+
+## Round 3 (after stage 2: APPROVE with instructions)
+
+Docs only: the two blocking items, nothing else. ADR-0055 is still
+**proposed**. The branch is not pushed; the operator pushes it for the CI
+run (the merge gate: one green `plugin-qml` run with versions in the
+log).
+
+### What changed
+
+- `packaging/README.md`, "The Omarchy pin", step *The package*: the
+  database glob is `'omarchy-[0-9]*/desc'`, so it matches the `omarchy`
+  package only and no other package whose name starts with `omarchy-`
+  (R2-N1).
+- ADR-0055, the three sentences as the stage-2 review wrote them:
+  - §3: the packages are signed by Arch's packagers. The image is an
+    unmodified Arch image, so the default
+    `SigLevel = Required DatabaseOptional` holds. A mirror decides which
+    signed packages CI sees, never their content, and the *Versions*
+    step is the record.
+  - §3: the snapshot is expected to move with a stable release. CI does
+    not check this (an assumption, 2026-10-13), and the *Versions* step
+    shows it.
+  - §5, after the first paragraph: `check-upstream` reads the channel
+    through `omarchy-version-channel`, which greps two files. It is a
+    dev tool, not a collector, and runs no pacman (AGENTS.md §6; R2-N4).
+- Mirroring: neither `docs/TESTING.md` nor the DECISIONS.md row repeats
+  any of the three sentences, so neither changed.
+
+### How it was verified (round 3)
+
+| Check | Where | Result |
+|---|---|---|
+| `flock /tmp/seldon-check.lock just check-packaging` (shellcheck not installed: `bash -n` only) | fixture | `check-packaging: ok`, 0 `FAIL` lines |
+| `flock /tmp/seldon-check.lock just docs-check` | fixture | `docs-check: ok (523 links, 14 translated pages, 61 commands, 704 command lines)` |
+| The new glob against the stable database | — | **not run** (a documentation command; no network fetch this round) |
+| Full gate `just check` | — | **not run**: a docs-only round (no code, test or workflow change). Round 2's full check at `ffcc52cb` stands |
+| The job in CI | CI | **not run** (the operator pushes) |
+
+### Follow-ups (stage-2 instructions 4 to 7, not built)
+
+4. *Versions* asserts that `pacman-conf --repo core SigLevel` and
+   `--repo extra` contain `PackageRequired`, with a `workflow-pins` rule
+   and a mutant.
+5. Record the stable snapshot's `quickshell` and `qt6-declarative`
+   versions (in a pin comment or `assumptions.json`). A moved snapshot
+   is then a notice, not a log line.
+6. The release acceptance record gets the row "pin equals stable's
+   `omarchy` version (pkgs.omarchy.org/stable, by hand)". No host runs
+   stable and `check-upstream` has no network, so nothing else catches a
+   stale pin.
+7. R2-N2, N2 (the hex-literal rule), N3, N4b and the `docs/TESTING.md`
+   qmllint path item (round 2's list above).
