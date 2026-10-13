@@ -197,3 +197,16 @@ sudo xargs <program>` is read as `<program>` (its subject, its class, its
 secret). A mount password (`mount -o pass=…`) is a SPEC-ENGINE §7 rule
 (`mount-password`), as nmcli's secrets are, so a mount line keeps its
 other words (SPEC-ENGINE §7, §8).
+
+## Amendment note (WP-209, 2026-10-13)
+
+The follow-ups of WP-157's reviews, not a new decision. The commands
+inside `$(…)`, backticks and `<(…)` are commands of the line: classified,
+recorded as privileged and read for a secret (`x=$(sudo mkpasswd PW)` is
+recorded as `mkpasswd ‹redacted›`), read before the command they stand in
+and fed when it is; a substitution nested deeper than 16 is skipped
+unread and its line recorded as `<program> ‹redacted›`. `stdbuf` and
+`setsid` are wrappers of the shared parser. A secret option that names a
+descriptor's file (`--password-file /dev/fd/3`) counts when the line gives
+that descriptor its text (`3< <(…)`, `3<<< …`), as a process substitution
+after the option does (SPEC-ENGINE §8).

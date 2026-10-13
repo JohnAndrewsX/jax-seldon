@@ -2915,7 +2915,13 @@ JSON key that ends in `password`, `passwd`, `passphrase`, `secret`,
 a Python dict's single quotes on the key, the value or both, and a
 Python string prefix before the value (`{'x-api-key': 'k'}`,
 `{'password': "pw"}`, `{'token': f'…'}`; WP-157; its triggers add the
-key words with `'`); not `"password_hint"` or `"token_type"`); `Authorization:`, also as a
+key words with `'`); a key word with `key` or `access key` after it
+(`"secret_key"`, `"secretKey"`, `'aws_secret_access_key'`; WP-209; its
+triggers add each key word followed by `key` and a quote); a Python value
+in triple quotes, over lines too, also escaped inside a shell string
+(`{'password': """…"""}`, `'''…'''`, `\"\"\"…\"\"\"`; the triple quotes
+are tried before the empty `""` at their start; WP-209); not
+`"password_hint"`, `"token_type"` or `"secret_key_base"`); `Authorization:`, also as a
 quoted key (`"Authorization": …`, `\"Authorization\": …`,
 `'Authorization': …`); headers whose name ends in
 a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
@@ -2972,7 +2978,12 @@ option that starts with `f` or `g` (`--fields`, `--get-values`; after
 `=` no property is read as one to set): `nmcli -s -g wifi-sec.psk con
 show Home` stays whole (WP-157; the
 rule matches the option with the property and leaves that match as it
-is, `Rule::unless`);
+is, `Rule::keep`), only as one of nmcli's global options, before the
+object word (options and the values of `--colors`, `--escape`,
+`--fields`, `--get-values`, `--mode` and `--wait` before it: `nmcli -m
+tabular -g wifi-sec.psk con show Home` stays whole; after the object
+word `-f` names no field, so `nmcli con modify Home -f wifi-sec.psk PW`,
+which nmcli rejects, is masked; WP-209);
 its triggers are `nmcli` and `pass`, `psk`, `secret`, `key` or `pin`;
 a mount password (`mount-password`, WP-157): the whole option list after
 `-o` (also at the end of a short-option cluster, `-vo`, `-no`; round 2)
@@ -3118,9 +3129,7 @@ no §7 rule reads. Not masked (WP-157): a PEM block in base64 whose
 marker has fewer than 40 base64 characters after it on its line and on
 the next line together (a wrap narrower than 40 columns), and the base64
 lines after a line that also holds other text; a mount password in an
-fstab line or in another program's options; a Python value in triple
-quotes (`{'password': """…"""}`, `'''…'''`: the empty `""` or `''`
-before it is read as the value and is no value; a follow-up WP). Masked too much, by design: an
+fstab line or in another program's options. Masked too much, by design: an
 option word inside a quoted argument that spans lines (`git commit -m
 "…curl…⏎… -U flag"`, as on one line); a stray apostrophe (in the
 command's context, up to the line end; an option value with an unclosed
@@ -3249,10 +3258,12 @@ command parser (`pkgcmd.rs`): package managers via `is_mutating` (query
 sub-commands never, ADR-0017 §5; `pacman -Sy` counts; `-V`, `-h`,
 `--version`, `--help`, yay's `-P` and `-G` never; yay's `-Yc` does) after
 the wrappers `sudo`, `doas`, `pkexec`, `run0`, `env`, `nice`, `timeout`,
-`time`, `nohup`, `command`, `exec`, `xargs` with their options and option
-clusters (`sudo -Eu root`; `command -v`, `sudo -l` run nothing; xargs's
+`time`, `nohup`, `command`, `exec`, `xargs`, `stdbuf`, `setsid` with their
+options and option
+clusters (`sudo -Eu root`; `command -v`, `sudo -l`, `setsid -V` run nothing; xargs's
 `-i`, `-l` and `-e` take their value only in their cluster, and `xargs`
-without a command runs `echo` and is the command itself; WP-157), `omarchy
+without a command runs `echo` and is the command itself; WP-157; `…
+| sudo stdbuf -i0 cryptsetup open …` is `cryptsetup`, WP-209), `omarchy
 (update|pkg add|aur add|drop|remove|install|remove|reinstall|plugin
 add|clone|enable|disable|remove|update|theme set|install|remove|update)`
 and the `omarchy-*` scripts, `systemctl (enable|disable|start|stop|mask|
@@ -3265,9 +3276,18 @@ snapshot create`: green, subject `snapper`, recorded only with a case;
 the capture after it fills the case's `snapshotBefore` when it is empty,
 §5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed; a
 shell reserved word before a command (`do`, `if`, `!`, `{`; also `then`,
-`elif`, `else`, `while`, `until`) is read past. Limits of this reading: the
-commands inside `$(…)`, backticks and `<(…)` are not classified (their
-words count only for `skipPaths`); the string of `env -S` is not opened
+`elif`, `else`, `while`, `until`) is read past. The commands inside
+`$(…)`, backticks and `<(…)` are commands of the line too, read before
+the command they stand in, as the shell runs them, and classified,
+recorded as privileged and read for a secret like any other (WP-209:
+`x=$(sudo mkpasswd PW)`); they run in a subshell, so a `cd` among them
+moves only their own commands. Limits of this reading: `${…}`, `$((…))`
+and `$[…]` run no command and are not opened (a `$(…)` inside them is
+not read); a substitution nested deeper than 16
+(`pkgcmd::SUBSTITUTION_DEPTH_MAX`) is skipped to its end unread, and the hook
+records its line as `<program> ‹redacted›`, as for `skipPaths` below (a
+line nested thousands deep neither overflows the stack nor costs more
+than 16 copies of its text; WP-209); the string of `env -S` is not opened
 as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like
 any other and is not read as commands. A variable the line sets to a
 literal (`F=x; … $F`) is read with its value. Relative paths resolve
@@ -3327,11 +3347,18 @@ case (`restic --password-file <(echo PW)`, `--passphrase-file=<(…)`,
 `RESTIC_PASSWORD_FILE=<(…)`, wg's `private-key <(…)`, also after a pass
 phrase source, `-passin file:<(…)`; WP-157 and round 2), whatever the
 command inside prints; not after a short option (`restic -p <(…)`),
-whose name says nothing. A command is fed when, earlier on the line
+whose name says nothing; also when such an option names a descriptor's
+file (`/dev/fd/N`, `/proc/self/fd/N`, `/dev/stdin` for 0) and the line
+gives that descriptor its text, `N< <(…)` or `N<<< …` (`<` or `<<<`
+alone: 0), before or after the option (`--password-file /dev/fd/3 3<
+<(echo PW)`, `exec 3< <(…); tool --passphrase-file=/dev/fd/3`; WP-209);
+a descriptor opened from a file (`3< pw.txt`) does not count. A command is fed when, earlier on the line
 (before its first word, across line ends, `(`, loops, `if` and `>(…)`)
 or among its own words, the text holds `|` or `|&` (not `||`), `<<<` or
 `<(`, also inside a `$(…)` or backticks (round 3: `--key-file $(printf
-PW | tee k; echo k)`), or a `sh -c` or `eval` it was opened from is fed, or when any
+PW | tee k; echo k)`), or a `sh -c` or `eval` it was opened from is fed,
+or the command a substitution it runs in stands in is fed up to it
+(`echo PW | x $(passwd …)`; WP-209), or when any
 command of the line writes a file (`printf PW > k; cryptsetup … -d k`; a
 write to `/dev/null`, `/dev/stdout` or `/dev/stderr` is none; WP-140
 round 2): `echo PW | (cd / && sudo cryptsetup open …)`, `exec 3< <(echo
