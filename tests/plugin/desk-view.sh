@@ -2492,7 +2492,7 @@ expect decisions 2 '.view.sectionView.rows | join(",")' "ADR-0004,ADR-0003,ADR-0
 expect decisions 2 '[.view.sectionView.cursor, .view.selected] | join(",")' "ADR-0004,ADR-0004"
 expect decisions 2 '.view.sectionView.actions | join(",")' "Open in editor"
 expect decisions 2 '.view.sectionView.cases | length' 0
-for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur als User-Service mit Case" "ADR-0004 · proposed" \
+for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur als User-Service mit Case" "ADR-0004" "proposed" \
   "2026-10-01" "Logbuch-Sprache Deutsch, Struktur Englisch" "ADR-0001 · accepted" "2026-09-01" \
   "ADR-0004 · PROPOSED · 2026-10-01" "Accept" "Open in editor" "decisions/ADR-0004-ollama-user-service.md" \
   "Proposed: it waits for your decision. Accept marks it accepted with today's date and notes it in the ledger; Open in editor shows the whole text." \
@@ -2500,6 +2500,8 @@ for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur a
   "The whole text is in the file; Open in editor shows it."; do
   shows decisions 2 "$text"
 done
+# WP-178: the proposed decision's stripe with its word, the only one
+expect decisions 2 '.marks.statuses | join(",")' "proposed"
 shows decisions 2 "CASES · 0"
 shows decisions 2 "This decision names no case."
 expect decisions 3 '[.view.sectionView.cursor, .view.sectionView.actions[0]] | join(",")' "ADR-0003,Open in editor"
