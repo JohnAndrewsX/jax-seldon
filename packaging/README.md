@@ -20,6 +20,7 @@ publishes both through `.github/workflows/release.yml`.
 | `audit-ignore.sh [FILE [TODAY]]` | checks that list and prints its ids for `cargo audit --ignore`; exit 1 on an expired or malformed entry (`tests/release/`) |
 | `omarchy-pin` | the `omacom/omarchy` commit and the sha256 of its `bin/omarchy-plugin-validate` (WP-190; "The Omarchy pin" below) |
 | `omarchy-validate.sh PLUGIN_DIR` | fetches that validator over HTTPS, refuses it unless the sha256 matches, runs it on `PLUGIN_DIR`: `just plugin-validate` without the omarchy CLI (CI), the release workflow on the plugin split (`tests/release/`) |
+| `omarchy-tree.sh DEST` | a sparse checkout over HTTPS of that commit's `shell/`, `themes/*/colors.toml`, `default/pacman/mirrorlist-*` and `test/shell.d/qml-text-format-scan.py` into `DEST`, refused unless it is that commit and self-contained for the QML checks; prints its digest (`--digest DIR`: the same digest of an installed tree): the `plugin-qml` job of `ci.yml` (WP-191, ADR-0055; `tests/release/`) |
 | `mirror-image.sh [WORKFLOW_DIR]` | the `mirror` job of `ci.yml` and `audit.yml`, on a push to `main` or `next` only: copies the build image's pinned digest from Docker Hub to GHCR when GHCR does not serve it yet, and checks the copy (WP-195; "Pinned actions and image" below; `tests/release/`) |
 | `store/baseline.md` | the plugin store's security baseline predicted for the plugin split: each capability with the README line and the scanner line behind it (WP-042) |
 | `store/submission.md` | the store submission issue, drafted for the operator; filed only on the operator's go (WP-042) |
@@ -273,6 +274,14 @@ validator is not the pinned one. The pin mirrors the validator installed
 on the test host; it never replaces the installed tree as the reference
 (AGENTS.md §1).
 
+The same commit gives CI's `plugin-qml` job its shell tree (WP-191,
+ADR-0055): `omarchy-tree.sh` checks out `shell/`, the theme colours, the
+channel mirrorlists and Omarchy's text-format scan at the pin, and the
+job installs Quickshell and Qt from Omarchy's mirror of the test host's
+channel (`rc`), compared with the pin's `default/pacman/mirrorlist-rc`.
+So the pin stands for the test host's whole shell tree, not only its
+validator.
+
 **Refreshing the pin**, like the action pins, is a manual step in one
 commit:
 
@@ -305,6 +314,21 @@ commit:
   `plugin-validator` entry of `tests/omarchy/assumptions.json` takes the
   new sha256 (`just check-assumptions` requires it to equal the pin;
   docs/TESTING.md, "Omarchy assumptions").
+- *The shell tree* (ADR-0055 §5): the new commit's tree digest must
+  equal the test host's installed one:
+
+  ```
+  bash packaging/omarchy-tree.sh <scratch dir>                          # prints "digest …"
+  ssh <test-host> 'omarchy version channel; cd <deployed clone> && bash packaging/omarchy-tree.sh --digest /usr/share/omarchy'
+  ```
+
+  If they differ, pick the commit whose tree matches, or keep the old pin
+  and record the difference; CI never runs against a tree the test host
+  does not have. If the test host's channel changed, change the
+  `plugin-qml` job's mirror line and the compared `mirrorlist-<channel>`
+  in `ci.yml` in the same commit (`tests/release/workflow-pins.test.sh`
+  requires them to name one channel); the job's *Versions* step then
+  shows the Quickshell and Qt of the new snapshot.
 
 ## One-time setup (operator)
 

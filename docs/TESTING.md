@@ -22,8 +22,8 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | Omarchy's plugin validator on `plugin/`: `omarchy plugin validate plugin/` where the omarchy CLI is installed (a notice when `$OMARCHY_PATH/bin/omarchy-plugin-validate` is not the pinned one); without it `packaging/omarchy-validate.sh plugin/`, the validator at the commit of `packaging/omarchy-pin`, fetched over HTTPS and refused unless its sha256 matches (WP-190; it is bash and jq, no Omarchy install needed) | yes (the pinned validator) |
-| QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/plaintext.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, `bash tests/plugin/check-tokens.test.sh` and `python3 tests/plugin/check-tokens.py --rules` on every plugin QML file (SPEC-PLUGIN §7's house rules, WP-177), `python3 tests/plugin/live-index-wait.py` (every live desk and service case waits for its index or carries an opt-out, WP-205, WP-216), then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | the node and bash parts yes (WP-190; the bench with `SELDON_BENCH_BUDGET_SCALE=3`); the Quickshell harnesses **no** (dev host; WP-191) |
+| QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | not in the `check` job; the `plugin-qml` job runs it against the pinned shell tree (WP-191, ADR-0055) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/plaintext.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/real-home-guard.test.sh`, `bash tests/plugin/check-tokens.test.sh` and `python3 tests/plugin/check-tokens.py --rules` on every plugin QML file (SPEC-PLUGIN §7's house rules, WP-177), `python3 tests/plugin/live-index-wait.py` (every live desk and service case waits for its index or carries an opt-out, WP-205, WP-216), then the Quickshell harnesses `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh`, `bash tests/plugin/ipc-restart.sh` — only when something under `plugin/`, `tests/plugin/`, `schema/`, `fixtures/` or the `justfile` changed against the merge base with `main` (committed, staged, unstaged or untracked), always when `HEAD` is the merge base (on `main`, a detached `main`, a branch without its own commit), and with `SELDON_FULL_CHECK=1`; otherwise a notice says they were skipped, and `deploy-test-host` refuses such a log (see "Plugin") | the node and bash parts yes (WP-190; the bench with `SELDON_BENCH_BUDGET_SCALE=3`); the Quickshell harnesses not in the `check` job; the `plugin-qml` job runs the whole recipe with them against the pinned shell tree (WP-191, ADR-0055) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`; CI measures it after `just bench` without
@@ -416,13 +416,15 @@ CI (`.github/workflows/ci.yml`) runs `just check` in an `archlinux:base-devel`
 container with `SELDON_SKIP_HOST_CHECKS=1`, on every pull request and every
 push to `main` or `next`, then `just bench` and `just check-rss` (measured,
 not gated; a run without any measurement line fails the step with an
-error). The container comes from GHCR, a copy of Docker Hub's image with
+error): the `check` job. Next to it, the `plugin-qml` job runs the
+plugin's QML checks that `check` skips, against a pinned Omarchy shell
+tree (below). The container comes from GHCR, a copy of Docker Hub's image with
 the same digest that the `mirror` job makes once per digest, on a push to
 `main` or `next` only; pull requests only pull by digest (WP-195;
 packaging/README.md, "Pinned actions and image"): Docker Hub's anonymous
 pull limit stopped CI before any step ran.
 
-What CI runs for the plugin (WP-190):
+What the `check` job runs for the plugin (WP-190):
 
 - **Omarchy's plugin validator** on `plugin/`. The validator is 118 lines
   of bash and jq (`$OMARCHY_PATH/bin/omarchy-plugin-validate`) and needs no
@@ -447,20 +449,75 @@ What CI runs for the plugin (WP-190):
   mismatch, also in a dry run, and the `plugin` job pushes only that split
   (packaging/README.md, "The Omarchy pin").
 
-What `SELDON_SKIP_HOST_CHECKS=1` still skips, with a notice and exit 0:
+What `SELDON_SKIP_HOST_CHECKS=1` skips in the `check` job, with a notice
+and exit 0:
 
-- **qmllint against the shell** and its token check need the installed
-  shell tree (`$OMARCHY_PATH/shell`, default `/usr/share/omarchy/shell`)
-  and Quickshell's QML modules (`/usr/lib/qt6/qml/Quickshell`).
+- **qmllint against the shell** and its token check need a shell tree
+  (`$OMARCHY_PATH/shell`, default `/usr/share/omarchy/shell`) and
+  Quickshell's QML modules (`/usr/lib/qt6/qml/Quickshell`).
 - **The Quickshell harnesses** of `plugin-test` (`service-states.sh`,
-  `desk-view.sh`, `bar-view.sh`, `ipc-restart.sh`) need `quickshell` and
-  the installed shell (WP-191 brings them to CI against the same pin).
+  `desk-view.sh`, `bar-view.sh`, `ipc-restart.sh`) need `quickshell` and a
+  shell tree.
 
-They run on the **dev host**: `just check` there runs them, and a missing
-tool is an error, not a skip. The dev host and the test host stay the gate
-for the plugin's behaviour; the pin mirrors the validator installed there
-and never replaces the installed tree as the reference (AGENTS.md §1).
-Never set `SELDON_SKIP_HOST_CHECKS` on the dev host.
+The `plugin-qml` job runs them (stage 2, WP-191; ADR-0055, proposed until
+the operator accepts it), in parallel with `check`, in the same pinned
+container:
+
+- **The tree:** `bash packaging/omarchy-tree.sh "$RUNNER_TEMP/omarchy"`,
+  a sparse, blob-filtered fetch over HTTPS of the commit
+  `packaging/omarchy-pin` names, with only `shell/`,
+  `themes/*/colors.toml`, `default/pacman/mirrorlist-*` and
+  `test/shell.d/qml-text-format-scan.py` (about 3 MB). It refuses a
+  checkout that is not the pinned commit, a `Commons` or `Ui` module whose
+  `qmldir` names a missing file or that imports anything but Qt,
+  `Quickshell*`, `qs.Commons`, `qs.Ui` and files inside those two
+  directories, a missing harness theme (`tokyo-night`,
+  `catppuccin-latte`, `osaka-jade`) and a missing scan, and prints the
+  tree's digest. `omarchy-tree.sh --digest /usr/share/omarchy` prints the
+  same digest for an installed tree (2026-10-13: `637b7166…` for the pin,
+  the dev host and the test host alike, Omarchy 4.0.4).
+- **Quickshell and Qt** from Omarchy's package mirror of the test host's
+  channel (`rc-mirror.omarchy.org`), not Arch's newest: the job writes
+  that mirror line, runs `pacman -Syuu` (the whole container moves to the
+  mirror's snapshot) and fails unless the line equals the pin's
+  `default/pacman/mirrorlist-rc`. The step *Versions* prints `quickshell
+  --version`, `pacman -Q` of `quickshell`, `qt6-base`,
+  `qt6-declarative` and `ttf-jetbrains-mono-nerd`, `qmllint --version`,
+  the mirror line and the pinned commit to the log and the run summary
+  (2026-10-13: Quickshell 0.3.1, Qt 6.11.2, as on both hosts).
+- **The checks**, with `OMARCHY_PATH` set to the tree: `just qmllint`;
+  `just plugin-test` with `SELDON_FULL_CHECK=1` (the harnesses always
+  run; a log line "Quickshell harnesses skipped" fails the step) and
+  `SELDON_BENCH_BUDGET_SCALE=3`; and Omarchy's QML text-format scan
+  (`python3 -I` on a copy of `plugin/` named `shell/`; it prints one line
+  per `Text` with a non-literal binding and no `textFormat`, and any line
+  fails the step). The three run whenever the tree step passed, so a red
+  run shows all of them. Each recipe step makes its own `HOME` and its own
+  `XDG_RUNTIME_DIR` (also `JUST_TEMPDIR`) with `mktemp -d` in
+  `$RUNNER_TEMP`, mode 0700, removed by the step's EXIT trap (AGENTS.md
+  §6); inside, each harness gives its Quickshells their own homes and its
+  own runtime dir as on the dev host (WP-161). Quickshell renders with Qt
+  Quick's software backend under `QT_QPA_PLATFORM=offscreen` (on the dev
+  host too), so the runner needs no GPU.
+- `tests/release/workflow-pins.test.sh` holds the job to this: the mirror
+  line and the compared file name one channel, the tree step, the two
+  recipes with `SELDON_FULL_CHECK=1` and the private dirs, both refusals,
+  and no `SELDON_SKIP_HOST_CHECKS`, `continue-on-error`, `|| true` or
+  `set +e` (each with a mutant).
+
+The evidence word for these results is **CI**, never *test host* or
+*headless* (AGENTS.md §5). What CI never shows (ADR-0055 §6): layer-shell
+geometry, live IPC with the running shell, real monitors and Hyprland,
+the real engine, the user's fonts, and the runtime smoke test; those stay
+with the test host and the operator's desktop.
+
+The **dev host** still runs all of it against the installed tree: `just
+check` there runs qmllint and the harnesses, and a missing tool is an
+error, not a skip. The dev host and the test host stay the gate for the
+plugin's behaviour; the pin mirrors the tree installed there and never
+replaces it as the reference (AGENTS.md §1). Where CI and the test host
+disagree, the test host wins and the pin is refreshed (packaging/README.md,
+"The Omarchy pin"). Never set `SELDON_SKIP_HOST_CHECKS` on the dev host.
 
 ### Dependabot pull requests
 

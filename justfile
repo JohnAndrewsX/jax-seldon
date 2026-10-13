@@ -1,10 +1,12 @@
 # Seldon task runner. `just check` is the gate every WP runs before handover.
 #
 # Host-only steps (qmllint against the installed shell, the Quickshell
-# harnesses of plugin-test) need an Omarchy install. CI sets
-# SELDON_SKIP_HOST_CHECKS=1 to skip them with a notice; everywhere else a
-# missing tool is an error. plugin-validate and the node and bash parts of
-# plugin-test run everywhere (WP-190). See docs/TESTING.md.
+# harnesses of plugin-test) need an Omarchy install. CI's check job sets
+# SELDON_SKIP_HOST_CHECKS=1 to skip them with a notice; its plugin-qml job
+# runs them against the pinned shell tree (OMARCHY_PATH, WP-191,
+# ADR-0055); everywhere else a missing tool is an error. plugin-validate
+# and the node and bash parts of plugin-test run everywhere (WP-190). See
+# docs/TESTING.md.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
@@ -288,7 +290,7 @@ plugin-validate:
     fi
     echo "plugin-validate: ok"
 
-# qmllint every plugin QML file against the installed shell, zero warnings (host only).
+# qmllint every plugin QML file against the installed shell, zero warnings (host only; CI's plugin-qml job: the pinned shell tree).
 qmllint:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -336,7 +338,8 @@ qmllint:
 # Plugin logic: Model.js under node; every Text block plain text (E72, with its mutants); SPEC-PLUGIN §7's token house rules (check-tokens.py --rules and its self-test); the banners' terminal scripts under bash with stubs; Service.qml states, the desk (Desk.qml: width, layout, keys, settings writes, notices, IPC), the pill (BarWidget.qml) and an IPC exit with two pills in a private headless Quickshell (host only).
 # The node and bash parts run everywhere, CI included (WP-190; there the
 # bench's budgets are tripled for a shared runner); SELDON_SKIP_HOST_CHECKS
-# skips only the Quickshell harnesses (WP-191 brings them to CI).
+# skips only the Quickshell harnesses; CI's plugin-qml job runs the whole
+# recipe with them against the pinned shell tree (WP-191, ADR-0055).
 # The Quickshell harnesses run only when plugin/, tests/plugin/, schema/,
 # fixtures/ or this justfile changed against the merge base with main, and
 # always on main itself (HEAD is the merge base) or with SELDON_FULL_CHECK=1
