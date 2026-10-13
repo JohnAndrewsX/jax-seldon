@@ -688,6 +688,13 @@ compatible addition is a minor release, a fix a patch):
   RUSTSEC-2024-0449 (`unsafe-libyaml`, unmaintained, via `serde_yaml`)
   accepted until 2027-01-31 on Fable's advice; WP-217 replaces the parser
   before the expiry.
+- E90 (2026-10-13) no YAML crate swap now: `yaml_serde` (outside §7) is
+  the same c2rust parser under a young single-owner fork, so it removes
+  the notice but adds no safety or speed. The RUSTSEC-2024-0449 ignore
+  stays until 2027-01-31; the operator decides again then. WP-217 is
+  re-scoped to `serde-saphyr` (safe Rust, maintained), on the roadmap
+  before the expiry, and needs the operator's §7 go after its
+  measurements.
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:
