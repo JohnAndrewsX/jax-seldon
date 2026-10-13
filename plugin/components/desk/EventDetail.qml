@@ -13,7 +13,7 @@ import "../../Model.js" as Model
 // A pacman event (WP-137) adds its command and transaction to the
 // key/values, an urgent callout when the transaction did not complete
 // (ADR-0043), and the transaction's packages: ↑ upgraded, ↓ downgraded,
-// + installed, − removed, ↻ reinstalled, old → new.
+// + installed, − removed, Model.TX_REINSTALL_GLYPH reinstalled, old → new.
 //
 // Bar (Model.eventActions): open drift → [Ask agent, WP-124b], Link to
 // case…, Explain…, Dismiss… (attention also Hide / Show); an event with a
@@ -197,7 +197,7 @@ DetailPane {
     width: parent.width
     visible: !root.detail
     textFormat: Text.PlainText
-    text: !root.indexData ? "No index to show" : root.eventId === "" ? "Nothing selected."
+    text: !root.indexData ? Model.text("empty.noIndex", "pro") : root.eventId === "" ? "Nothing selected."
       : "This event is not in the index any more."
     color: root.tone.dim
     wrapMode: Text.Wrap

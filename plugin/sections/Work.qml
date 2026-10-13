@@ -86,6 +86,10 @@ Section {
   readonly property var prepared: root.service ? root.service.deskWork : null
   readonly property var work: Model.workView(root.prepared, root.completedFilter, root.searchText)
   readonly property var rows: root.work.rows
+  // The list's data state (WP-178): what belongs here and New case, or no
+  // match with *Clear search*; none while the footer lists groups.
+  readonly property var listState: Model.emptyState("work", { index: !!root.index, search: root.searchText,
+    shown: root.rows.length, footer: root.work.tail.length > 0, canWrite: root.canWrite, mode: "pro" })
   // While a header button has the keys no row is the cursor.
   readonly property int cursor: root.headFocused ? -1 : root.rowIndex(root.selectedId)
   readonly property var sessions: root.service ? root.service.agentSessions : ({})
@@ -265,6 +269,13 @@ Section {
     Qt.callLater(function() { intentField.forceActiveFocus() })
   }
 
+  // The empty list's New case (WP-178): what `n` does.
+  function emptyFirstStep(id) {
+    if (id !== "newCase") return false
+    root.openSheet()
+    return true
+  }
+
   function openSheet() {
     root.leaveKeys()
     root.disarm()
@@ -393,6 +404,8 @@ Section {
       // the list scrolled to its end: the footer's gaps are in view
       atEnd: list.view.atYEnd,
       ids: root.rows.map(function(r) { return r.id }),
+      empty: root.listState.text,
+      emptyAction: root.listState.action ? root.listState.action.id : "",
       filter: root.completedFilter,
       wip: root.wip.text,
       // the WIP line beside the buttons, not above them (WP-211)
@@ -504,10 +517,9 @@ Section {
     title: "Work"
     model: root.rows
     currentIndex: root.cursor
-    emptyText: !root.index ? "No index to show"
-      : root.searchText !== "" ? "Nothing here matches “" + root.searchText + "”."
-      : root.work.tail.length > 0 ? ""
-      : "No cases yet. Say what should happen above, or make one by hand with New case."
+    emptyText: root.listState.text
+    emptyAction: root.listState.action
+    onEmptyActionTriggered: function(id) { root.runEmptyAction(id) }
     // The groups after the last row the index lists none of (WP-206).
     footer: Column {
       width: list.view.width
@@ -725,7 +737,7 @@ Section {
       meta: modelData.listMeta
       aside: (modelData.status === "active" && !!root.sessions && !!root.sessions[modelData.id] ? "agent working · " : "")
         + modelData.stepsText
-      stripe: modelData.stripe
+      mark: modelData.mark || null
       selected: modelData.id === root.selectedId && !root.formOpen && !root.headFocused
       cursor: list.hoverIndex === index
       onClicked: {
@@ -792,7 +804,7 @@ Section {
       width: parent.width
       visible: !root.formOpen && !root.detailData
       textFormat: Text.PlainText
-      text: root.index ? "Nothing selected." : "No index to show"
+      text: root.index ? "Nothing selected." : Model.text("empty.noIndex", "pro")
       color: root.tone.dim
       wrapMode: Text.Wrap
       font.family: Style.font.family

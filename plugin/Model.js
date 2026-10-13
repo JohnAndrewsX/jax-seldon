@@ -335,7 +335,136 @@ var WORDS = {
   // 12: Capture now, the header's: action.capture
 
   // PRO's own: Ask agent on a case (ADR-0036 §1); EASY's Details may use it
-  "action.askCase": { easy: "Ask agent", pro: "Ask agent", rows: [], argv: ["agent", "ask", "case", "<caseId>", "--json"] }
+  "action.askCase": { easy: "Ask agent", pro: "Ask agent", rows: [], argv: ["agent", "ask", "case", "<caseId>", "--json"] },
+
+  // The status words (WP-178, STATUS below): the word a row shows beside
+  // its stripe or alert, so no state is told by colour alone
+  "status.active": { easy: "in progress", pro: "active", rows: [] },
+  "status.proposed": { easy: "suggested", pro: "proposed", rows: [] },
+  "status.collectorFailing": { easy: "not working", pro: "failing", rows: [] },
+  // a transaction that did not complete (ADR-0043): PRO's words are the
+  // engine's txStatus values, as the rows showed them before (WP-137)
+  "status.txFailed": { easy: "update failed", pro: "failed", rows: [] },
+  "status.txInterrupted": { easy: "update interrupted", pro: "interrupted", rows: [] },
+  "status.txUnfinished": { easy: "update did not finish", pro: "unfinished", rows: [] },
+
+  // The data states (WP-178, emptyState below): what belongs in a list
+  // and its first step; a no-match line and its one action
+  "empty.noIndex": { easy: "No record to show yet: the notice above has the fix.", pro: "No index to show", rows: [] },
+  "empty.noMatch": { easy: "Nothing here matches “<search>”.", pro: "Nothing here matches “<search>”.", rows: [] },
+  "link.clearSearch": { easy: "Clear search", pro: "Clear search", rows: [], key: "Esc" },
+  "empty.changelog": { easy: "Every change Seldon records shows here: packages, settings, snapshots, plugins. Nothing recorded yet; Capture now in the header records the first.",
+    pro: "Every change Seldon records shows here: packages, settings, snapshots, plugins. Nothing recorded yet; Capture now (c) records the first.", rows: [] },
+  "empty.changelogOpen": { easy: "Nothing open: every change is in a task or routine.", pro: "Nothing open: every change is in a case or routine.", rows: [] },
+  "empty.changelogChip": { easy: "No events under \u201c<chip>\u201d.", pro: "No events under \u201c<chip>\u201d.", rows: [] },
+  "empty.work": { easy: "No tasks yet. Say what should happen, and your agent starts on it.",
+    pro: "No cases yet. Say what should happen above, or make one by hand with New case.", rows: [] },
+  "link.newCase": { easy: "New task", pro: "New case", rows: [], key: "n" },
+  "empty.decisions": { easy: "No decisions yet. A decision records why the machine is the way it is.",
+    pro: "No decisions yet. A decision records why the machine is the way it is; New decision writes the first.", rows: [] },
+  "link.newDecision": { easy: "New decision", pro: "New decision", rows: [], key: "d" },
+  "empty.memory": { easy: "Lessons and memory files your agents write show here. None yet.",
+    pro: "Lessons and memory files your agents write show here. None yet.", rows: [] },
+  "empty.graph": { easy: "Nothing to draw yet: no areas, tasks, decisions or changes in the record.",
+    pro: "Nothing to draw yet: no areas, cases, decisions or changes in the index", rows: [] },
+  "empty.journal": { easy: "Nothing in today's journal yet.", pro: "Nothing in today's journal yet.", rows: [] }
+}
+
+// One status vocabulary (WP-178, SYNTHESIS B3): STATUS[kind][status] =
+// { glyph, word, tone }, `word` a key of WORDS above (both modes read it),
+// `tone` the Tone role a row's stripe and word take ("urgent", "accent").
+// A row that shows a tone shows its word (ListRow `status`); a quiet
+// status (routine, in a case, a closed case) has no tone and no word:
+// routine rows stay quiet (ADR-0028 §3). Glyphs only from JetBrainsMono
+// Nerd Font, Omarchy's `monospace` (SPEC-PLUGIN §7; glyphs.test.js).
+var QUIET = { glyph: "", word: "", tone: "" }
+var STATUS = {
+  drift: {
+    crisis: { glyph: "!", word: "word.crisis", tone: "urgent" },
+    attention: { glyph: "", word: "word.openDrift", tone: "accent" },
+    "case": QUIET,
+    routine: QUIET
+  },
+  "case": {
+    active: { glyph: "", word: "status.active", tone: "accent" },
+    verification: QUIET,
+    queued: QUIET,
+    completed: QUIET,
+    dropped: QUIET
+  },
+  decision: {
+    proposed: { glyph: "", word: "status.proposed", tone: "accent" },
+    accepted: QUIET,
+    superseded: QUIET
+  },
+  // a pacman transaction that did not complete (ADR-0043, WP-137)
+  tx: {
+    failed: { glyph: "!", word: "status.txFailed", tone: "urgent" },
+    interrupted: { glyph: "!", word: "status.txInterrupted", tone: "urgent" },
+    unfinished: { glyph: "!", word: "status.txUnfinished", tone: "urgent" }
+  },
+  // System's Collectors tile: one enabled collector or more not ok
+  collector: {
+    failing: { glyph: "", word: "status.collectorFailing", tone: "accent" },
+    ok: QUIET
+  }
+}
+
+// A row's stripe value (ListRow) for a tone: the urgent tone is the
+// crisis stripe, the accent the attention one.
+var STRIPE_OF_TONE = { urgent: "crisis", accent: "attention" }
+
+// { glyph, word, tone, stripe } of STATUS[kind][status] in `mode` (the
+// word read through text()), or null for a quiet or unknown status.
+function statusOf(kind, status, mode) {
+  var byKind = Object.prototype.hasOwnProperty.call(STATUS, kind) ? STATUS[kind] : null
+  var s = byKind && Object.prototype.hasOwnProperty.call(byKind, status) ? byKind[status] : null
+  if (!s || s.tone === "") return null
+  return { glyph: s.glyph, word: text(s.word, mode), tone: s.tone, stripe: STRIPE_OF_TONE[s.tone] }
+}
+
+// The one-action links of the data states, each with the key that does
+// the same (SPEC-PLUGIN §5.3: every hinted key is a click too).
+function emptyLink(key, mode) {
+  return { id: key.replace(/^link\./, ""), label: text(key, mode), key: WORDS[key].key }
+}
+
+// A list's data state (WP-178, SYNTHESIS B7): { text, action } for a list
+// that shows no row, { text: "", action: null } while it shows one. The
+// text says what belongs there and the first step; `action` is null or
+// { id, label, key }: *Clear search* (Esc) on no match, the section's
+// first step where it has one. No freshness line (the header's subline
+// has it), no "paused" (nothing pauses). `ctx`: { index (bool), search,
+// shown (rows listed), chip (the Changelog's), all (the Changelog's
+// events, every chip), footer (Work lists groups after the rows),
+// canWrite, mode }.
+// An empty detail lists the section's keys once WP-181's registry exists.
+function emptyState(section, ctx) {
+  var c = isObject(ctx) ? ctx : {}
+  var mode = c.mode
+  var none = { text: "", action: null }
+  if (!c.index) return { text: text("empty.noIndex", mode), action: null }
+  if (count(c.shown) > 0) return none
+  var search = String(c.search || "").trim()
+  if (search !== "") return { text: text("empty.noMatch", mode).replace("<search>", search), action: emptyLink("link.clearSearch", mode) }
+  if (c.footer === true) return none
+  if (section === "changelog") {
+    // `all`: the events of every chip; a chip of its own says what it
+    // lists (the open one: nothing open is the good news)
+    if (count(c.all) === 0) return { text: text("empty.changelog", mode), action: null }
+    if (c.chip === "open") return { text: text("empty.changelogOpen", mode), action: null }
+    var label = EVENT_CLASS_LABELS[c.chip] !== undefined ? EVENT_CLASS_LABELS[c.chip] : String(c.chip || "")
+    return { text: text("empty.changelogChip", mode).replace("<chip>", label), action: null }
+  }
+  // a first step that writes needs a desk that may write (not dev mode)
+  if (section === "work") return { text: text("empty.work", mode), action: c.canWrite === false ? null : emptyLink("link.newCase", mode) }
+  if (section === "decisions")
+    return { text: text("empty.decisions", mode), action: c.canWrite === false ? null : emptyLink("link.newDecision", mode) }
+  if (section === "memory") return { text: text("empty.memory", mode), action: null }
+  if (section === "graph") return { text: text("empty.graph", mode), action: null }
+  // Today lists its date, tiles and journal, System its tiles: with an
+  // index never empty but for a search (above)
+  return none
 }
 
 var DESK_MODES = ["easy", "pro"]
@@ -823,14 +952,14 @@ function isProposalTarget(id, triageView) {
 
 // ---- The keys' path to the desk's buttons (WP-202, SPEC-PLUGIN §5.3).
 // The cursor reaches a button above the list (the notices, Today's setup
-// row, the Changelog's *Agent sorts*) or in the detail (Settings'
+// row, the Changelog's *Ask agent to sort*) or in the detail (Settings'
 // controls); Enter arms it, a second Enter runs it, as the click does; any
 // other key, a click or another selection drops the arm. An arm's id
 // names what it runs (`key` below), so an arm made for one button never
 // runs another that took its place.
 
 // The arm's hint: "<label>? Press Enter again." (or the key that presses
-// it: `a` on *Agent sorts*, since Enter never starts an agent)
+// it: `a` on *Ask agent to sort*, since Enter never starts an agent)
 function keyArmHint(label, key) {
   return String(label) + "? Press " + (key || "Enter") + " again."
 }
@@ -940,7 +1069,7 @@ function todayMove(s, dy) {
 
 // The Changelog's ↑ at the top of its head (the state changelogMove
 // takes): on the proposal, or on the first row without a proposal, or in
-// an empty list without one. *Agent sorts* is next, then the notices.
+// an empty list without one. *Ask agent to sort* is next, then the notices.
 function changelogAtTop(s) {
   if (s && s.triageShown) return true
   var proposal = !!(s && s.proposal)
@@ -951,7 +1080,7 @@ function changelogAtTop(s) {
   return (cursor >= 0 ? cursor : Number(s.cursorRow) || 0) === 0
 }
 
-// The line under *Agent sorts N open changes*: `a` twice starts it, as on
+// The line under *Ask agent to sort N changes*: `a` twice starts it, as on
 // a case; Enter never starts an agent (operator decision, WP-122).
 function askHint(focused) {
   return focused ? "a twice starts it · ↓ back to the list" : "↑ from the top of the list reaches it"
@@ -1765,7 +1894,9 @@ var SOURCE_GLYPHS = {
   config: "\u{F0493}",   // cog
   agent: "\u{F06A9}",    // robot
   manual: "\u{F03EB}",   // pencil
-  seldon: "\u27E1"     // ⟡, the text glyph of the engine's own events
+  // the engine's own events: a four-pointed star, the Prime Radiant's
+  // shape; U+27E1 (the concave diamond) is not in the font (WP-178)
+  seldon: "\u{F0AE3}"   // star-four-points-outline
 }
 
 function sourceGlyph(source) {
@@ -2343,6 +2474,10 @@ function planArgs(action, input) {
   return { args: ["plan", action, id, "--json"] }
 }
 
+// The way back after `plan done` (B4): Reopen makes a new case and leaves
+// this one completed; it is no undo.
+var PLAN_DONE_WAY_BACK = "Reopen makes a new case"
+
 // `seldon plan … --json` (SPEC-ENGINE §3): new → {"case", "event",
 // "areaCreated", "git"}; a step → {"case", "from", "to", "movedFrom",
 // "activeCase", "journal", "event", "git"}. Returns { ok, text, caseId }.
@@ -2365,6 +2500,11 @@ function planResult(exitCode, stdoutText, stderrText) {
   if (data && typeof data.from === "string" && typeof data.to === "string") {
     var text = name + ": " + data.from + " → " + data.to
     if (typeof data.journal === "string" && data.journal !== "") text += " · journal " + data.journal
+    // No undo key without a true inverse (SPEC-PLUGIN §5.3, WP-178): the
+    // line names the real way back. After done that is Reopen, a new case
+    // (`plan reopen`, plan.rs); after verify none yet: the engine starts a
+    // case only from queued, and WP-179's ADR decides "Not done yet".
+    if (data.to === "completed") text += " · " + PLAN_DONE_WAY_BACK
     return { ok: true, text: text, caseId: id }
   }
   var created = (id !== "" ? "Created " + id : "Case created") + (c && typeof c.title === "string" && c.title !== "" ? " · " + c.title : "")
@@ -2857,8 +2997,10 @@ function decisionRows(index) {
       path: str(d.path),
       lead: str(d.lead),
       tone: status === "proposed" ? "accent" : status === "superseded" ? "muted" : "",
+      mark: statusOf("decision", status, "pro"),
       actionable: DECISION_ID.test(id)
     })
+    out[out.length - 1].stripe = out[out.length - 1].mark ? out[out.length - 1].mark.stripe : ""
   }
   out.sort(function(a, b) {
     if (a.actionable !== b.actionable) return a.actionable ? -1 : 1
@@ -3198,7 +3340,7 @@ function systemTiles(index, nowMs) {
   var areaRows = rowsOf("AREAS").map(function(r) { return ["Area " + r[0], r[1] === "" ? "—" : r[1]] })
   tiles.push({ id: "collectors", title: "Collectors", big: enabled === 0 ? "—" : ok + "/" + enabled, unit: enabled === 0 ? "" : "ok",
     lead: colLead.join(" · "), rows: rowsOf("COLLECTORS").concat(rowsOf("SELDON"), areaRows),
-    stripe: enabled > ok ? "attention" : "" })
+    mark: statusOf("collector", enabled > ok ? "failing" : "ok", "pro") })
 
   // WP-139, ADR-0046: edits the config collector does not see
   var files = recentFiles(index, nowMs)
@@ -3230,7 +3372,8 @@ function systemTiles(index, nowMs) {
     source: "From pacman.conf and the files it includes, read on every capture: the IgnorePkg and IgnoreGroup names only, nothing else of the files." })
 
   for (var t = 0; t < tiles.length; t++) {
-    if (tiles[t].stripe === undefined) tiles[t].stripe = ""
+    if (tiles[t].mark === undefined) tiles[t].mark = null
+    tiles[t].stripe = tiles[t].mark ? tiles[t].mark.stripe : ""
     if (tiles[t].files === undefined) tiles[t].files = []
     if (tiles[t].source === undefined) tiles[t].source = "From the dossier; rebuilt on every capture."
     tiles[t].empty = tiles[t].big === "—"
@@ -4752,11 +4895,15 @@ function deskChangelog(index) {
     row.title = lastSegment(r.subject) + (r.badge !== "" ? " " + r.badge : "")
     row.listMeta = [r.source, r.kind, r.caseId].filter(function(p) { return p !== "" }).join(" · ")
     row.age = rowAge(r.day, r.time, today)
-    row.stripe = row.cls === "crisis" ? "crisis" : row.cls === "attention" ? "attention" : ""
+    // WP-178: the class's status word goes with its stripe (ListRow
+    // `mark`); routine and in-case rows stay quiet
+    row.mark = statusOf("drift", row.cls, "pro")
+    row.stripe = row.mark ? row.mark.stripe : ""
     row.hideKey = hideKey(r)
     // WP-137: the row says in the urgent style that its transaction did
-    // not complete (ListRow `alert`)
-    row.alert = r.txStatus
+    // not complete (ListRow `alert`), STATUS.tx's word
+    var tx = statusOf("tx", r.txStatus, "pro")
+    row.alert = tx ? tx.word : ""
     row.search = [r.subject, row.listMeta, r.detail, r.actor, r.resolution, r.resolutionDetail, r.txStatus].join(" ").toLowerCase()
     if (row.id !== "" && byId[row.id] === undefined) byId[row.id] = rows.length
     rows.push(row)
@@ -5011,7 +5158,7 @@ function eventActions(detail, opts) {
 
 // ---- Triage (WP-124b; ADR-0034 §6, ADR-0036) --------------------------------
 //
-// "Agent sorts N open changes" asks the default agent for a proposal
+// "Ask agent to sort N changes" asks the default agent for a proposal
 // (`agent ask triage --json`); the agent stores it with `drift propose`
 // (never the plugin's call), the index points at it (`index.triage`), and
 // the desk shows it from the file next to the index (CONTRACT.md rule 1:
@@ -5032,7 +5179,7 @@ var TRIAGE_REFS_MAX = 10
 function triageButton(index, canWrite) {
   var c = counts(index)
   var n = c ? c.drift : 0
-  return { visible: canWrite === true && n > 0, count: n, text: "Agent sorts " + plural(n, "open change", "open changes") }
+  return { visible: canWrite === true && n > 0, count: n, text: "Ask agent to sort " + plural(n, "change", "changes") }
 }
 
 // Where the proposal index.triage names lies: `path` is relative to the
@@ -5329,7 +5476,7 @@ function deskToday(index, prepared) {
     var r = rows[i]
     if (r.cls !== "crisis" || r.groupLeader !== "") continue
     needs.push({ id: r.id, type: "crisis", title: r.title, meta: r.kind + " · " + (r.actor !== "" ? r.actor : r.source),
-      aside: r.age, stripe: "crisis", group: "needs", alert: r.alert })
+      aside: r.age, stripe: r.stripe, mark: r.mark, group: "needs", alert: r.alert })
   }
   var cases = []
   var active = index && isObject(index.cases) && Array.isArray(index.cases.active) ? index.cases.active : []
@@ -5361,7 +5508,7 @@ function deskToday(index, prepared) {
     entries: v.entries,
     yesterday: v.yesterday,
     cases: cases,
-    headline: !index ? "No index to show"
+    headline: !index ? text("empty.noIndex", "pro")
       : crises > 0 ? "Seldon is recording. " + plural(crises, "change needs", "changes need") + " you."
       : "Seldon is recording. Nothing needs you.",
     lead: "Routine — updates, the theme, plugin switches — stays quiet in the Changelog. A crisis is a change without a case that can affect boot, login or the shell."
@@ -5387,7 +5534,7 @@ function todayRows(today, yesterdayOpen, search) {
     out.push({ id: "entry:" + i, type: "entry", title: t.entries[i].text, meta: entryMeta(t.entries[i]), aside: "",
       stripe: "", group: "journal" })
   if (t.entries.length === 0)
-    out.push({ id: "empty", type: "empty", title: "Nothing in today's journal yet.", meta: "", aside: "", stripe: "", group: "journal" })
+    out.push({ id: "empty", type: "empty", title: text("empty.journal", "pro"), meta: "", aside: "", stripe: "", group: "journal" })
   if (t.yesterday.length > 0) {
     out.push({ id: "toggle", type: "toggle", title: (yesterdayOpen ? "▾ " : "▸ ") + "Yesterday · "
       + plural(t.yesterday.length, "entry", "entries"), meta: "", aside: "", stripe: "", group: "journal" })
@@ -5427,7 +5574,8 @@ function deskWork(index) {
       c.listMeta = [c.id, c.imported ? "imported" : "", c.risk, c.area, c.status === "dropped" ? "dropped" : "",
         c.closedByAgent ? "closed by agent" : "", c.reopens !== "" ? "reopens " + c.reopens : "",
         c.proposed > 0 ? c.proposed + " proposed" : ""].filter(function(p) { return p !== "" }).join(" · ")
-      c.stripe = group === "active" ? "attention" : ""
+      c.mark = statusOf("case", group, "pro")
+      c.stripe = c.mark ? c.mark.stripe : ""
       c.search = [c.id, c.title, c.area, c.status, c.risk, c.imported ? "imported" : ""].join(" ").toLowerCase()
       rows.push(c)
     }
@@ -6635,8 +6783,13 @@ var TX_STATUSES = ["failed", "interrupted", "unfinished"]
 // libalpm's source, hence "may not have run". They run only for that
 // transaction's targets: a later run that no longer includes a package
 // already changed never runs them for it. Hence the safe step before a
-// reboot, which names only what a reinstall can repair: ↑ and ↻ (WP-137
-// rounds 2 and 3). Text only: the plugin runs nothing (AGENTS.md §8).
+// reboot, which names only what a reinstall can repair: ↑ and the
+// reinstall glyph (WP-137 rounds 2 and 3). Text only: the plugin runs
+// nothing (AGENTS.md §8).
+// The reinstall glyph: Material Design's reload (U+F0453) from
+// JetBrainsMono Nerd Font, Omarchy's monospace; U+21BB is not in that
+// font and fell back to another one (WP-178, SPEC-PLUGIN §7 "Glyphs").
+var TX_REINSTALL_GLYPH = "\u{F0453}"
 var TX_STATUS_TITLES = {
   failed: "Transaction failed",
   interrupted: "Transaction interrupted",
@@ -6647,16 +6800,16 @@ var TX_STATUS_TITLES = {
 // post-transaction hook.
 var TX_STEPS_DID_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
 var TX_STEPS_MAY_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
-var TX_SAFE_STEP = "Before you reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with their names): that runs those steps for them; a plain rerun does not. A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
+var TX_SAFE_STEP = "Before you reboot, reinstall the packages marked ↑ or " + TX_REINSTALL_GLYPH + " below (`pacman -S` with their names): that runs those steps for them; a plain rerun does not. A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
 var TX_STATUS_TEXTS = {
   failed: "pacman reported this transaction as failed: a package could not be installed, upgraded or removed, and pacman's output in the terminal named the error. The packages below may be all it changed. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP,
   interrupted: "pacman was interrupted and stopped after the packages below; the ones it had not reached are unchanged. " + TX_STEPS_MAY_NOT + " " + TX_SAFE_STEP,
   unfinished: "pacman never logged the end of this transaction: it was killed, or the machine went down while it ran. The packages below may be all it changed, the last one possibly half written. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP
 }
-// ↑ upgraded, ↓ downgraded, + installed, − removed, ↻ reinstalled; the
-// list shows the unusual changes first.
+// ↑ upgraded, ↓ downgraded, + installed, − removed, TX_REINSTALL_GLYPH
+// reinstalled; the list shows the unusual changes first.
 var TX_KINDS = ["downgrade", "remove", "install", "upgrade", "reinstall"]
-var TX_GLYPHS = { upgrade: "↑", downgrade: "↓", install: "+", remove: "−", reinstall: "↻" }
+var TX_GLYPHS = { upgrade: "↑", downgrade: "↓", install: "+", remove: "−", reinstall: TX_REINSTALL_GLYPH }
 var TX_VERBS = { upgrade: "upgraded", downgrade: "downgraded", install: "installed", remove: "removed", reinstall: "reinstalled" }
 // CONTRACT.md rule 4: the index lists at most 500 events (ADR-0054).
 var INDEX_EVENTS_MAX = 500

@@ -70,6 +70,8 @@ Section {
   readonly property bool sentenceShown: (!root.setup || root.setup.optionalOnly === true) && !root.firstRun
   readonly property var rows: root.preview ? Model.previewRows(root.preview, root.searchText)
     : Model.todayRows(root.today, root.yesterdayOpen, root.searchText)
+  readonly property var listState: Model.emptyState("today", { index: !!root.index, search: root.searchText,
+    shown: root.rows.length, mode: "pro" })
   readonly property int cursor: root.rowIndex(root.selectedId)
   readonly property var current: root.cursor >= 0 ? root.rows[root.cursor] : null
   // A crisis stays shown once resolved here (it leaves NEEDS YOU), with the
@@ -234,6 +236,8 @@ Section {
       entries: root.today ? root.today.entries.length : 0,
       yesterday: root.today ? root.today.yesterday.length : 0,
       rows: root.rows.length,
+      empty: root.listState.text,
+      emptyAction: root.listState.action ? root.listState.action.id : "",
       cursor: root.cursor,
       selected: root.selectedId,
       shown: root.eventShown ? "event" : "overview",
@@ -314,7 +318,11 @@ Section {
     title: "Today"
     model: root.rows
     currentIndex: root.cursor
-    emptyText: root.preview ? Model.previewSummary(root.preview) : root.index ? "" : "No index to show"
+    // the preview's summary, else the data state (WP-178): no index, or no
+    // match with *Clear search*
+    emptyText: root.preview ? Model.previewSummary(root.preview) : root.listState.text
+    emptyAction: root.preview ? null : root.listState.action
+    onEmptyActionTriggered: function(id) { root.runEmptyAction(id) }
 
     // The date beside the day's state; *Open in editor* follows it on the
     // same line when there is room, else under it. A header row for the
@@ -496,7 +504,7 @@ Section {
       title: modelData.title
       meta: modelData.meta
       aside: modelData.aside
-      stripe: modelData.stripe
+      mark: modelData.mark || null
       alert: modelData.alert || ""
       selected: modelData.id === root.selectedId
       cursor: list.hoverIndex === index

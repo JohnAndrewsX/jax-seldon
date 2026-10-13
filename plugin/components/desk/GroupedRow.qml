@@ -20,7 +20,7 @@ Column {
   property alias title: row.title
   property alias meta: row.meta
   property alias aside: row.aside
-  property alias stripe: row.stripe
+  property alias mark: row.mark
   property alias alert: row.alert
   property alias selected: row.selected
   property alias cursor: row.cursor

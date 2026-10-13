@@ -68,4 +68,15 @@ Item {
   function applyPayload(payload) {}
   // What the section shows, for Desk.view().
   function view() { return ({}) }
+  // The data state's action (Model.emptyState, WP-178, a click on the
+  // empty list's button): *Clear search* in every section, else the
+  // section's first step (emptyFirstStep).
+  function runEmptyAction(id) {
+    if (id === "clearSearch" && root.desk) {
+      root.desk.clearSearch()
+      return true
+    }
+    return root.emptyFirstStep(id)
+  }
+  function emptyFirstStep(id) { return false }
 }

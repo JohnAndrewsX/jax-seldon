@@ -260,7 +260,8 @@ ShellRoot {
     return out
   }
 
-  // The visible list rows with a mark and the visible focus rings (WP-177);
+  // The visible list rows with a mark and the visible focus rings (WP-177),
+  // the visible status words of the rows (WP-178);
   // the square bars of a row (the selection bar, the stripe, the sidebar's
   // bar) and those that are not a clipped slice of their row's own shape
   // (a child of the row's size at the row's origin with Style.cornerRadius),
@@ -284,6 +285,9 @@ ShellRoot {
       if (item.current) out.rows.push("selected:" + title)
     } else if (name === "focusRing") {
       out.rings.push(String(item.border.color) + " " + item.border.width)
+    } else if (name === "rowStatus") {
+      // the status word beside a stripe (WP-178: never colour alone)
+      out.statuses.push(String(item.text))
     }
     var kids = item.children
     for (var i = 0; kids && i < kids.length; i++) marks(kids[i], out)
@@ -533,7 +537,7 @@ ShellRoot {
       deskCalls: root.widget ? root.widget.deskCalls : 0,
       texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined),
       overlap: overlap(win.contentItem, []), headerRows: headerRows(win.contentItem, []),
-      marks: marks(win.contentItem, { rows: [], rings: [], bars: [], barsOutside: [] }),
+      marks: marks(win.contentItem, { rows: [], rings: [], bars: [], barsOutside: [], statuses: [] }),
       tones: root.desk && root.desk.tone ? root.desk.tone.tones : null
     }))
   }

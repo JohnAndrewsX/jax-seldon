@@ -43,13 +43,16 @@ ReadingSection {
 
   allRows: root.index ? Model.systemTiles(root.index, root.service ? root.service.nowMs : Date.now()) : []
   searchFields: ["title", "meta", "lead"]
-  emptyText: root.index ? "No tile matches the search." : "No index to show"
+  readonly property var listState: Model.emptyState("system", { index: !!root.index, search: root.searchText,
+    shown: root.rows.length, mode: "pro" })
+  emptyText: root.listState.text
+  emptyAction: root.listState.action
   detailTitle: root.current ? root.current.title : ""
   actions: [{ id: "status", label: Model.text("action.openEditor", "pro"), primary: false, enabled: !!root.index }]
   actionMeta: "STATUS.md"
   rowTitle: function(r) { return r.title }
   rowMeta: function(r) { return r.meta }
-  rowStripe: function(r) { return r.stripe }
+  rowMark: function(r) { return r.mark }
 
   function openStatus() {
     if (root.service && root.index) root.service.openInEditor("status")

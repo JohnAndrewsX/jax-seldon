@@ -32,9 +32,10 @@ ReadingSection {
     return out
   })
   searchFields: ["title", "meta", "kind"]
-  emptyText: !root.index ? "No index to show"
-    : root.allRows.length > 0 ? "Nothing matches the search."
-    : "No lessons or memory files yet"
+  readonly property var listState: Model.emptyState("memory", { index: !!root.index, search: root.searchText,
+    shown: root.rows.length, mode: "pro" })
+  emptyText: root.listState.text
+  emptyAction: root.listState.action
   detailTitle: root.memory ? root.memory.heading : ""
   actions: [{ id: "open", label: Model.text("action.openEditor", "pro"), primary: false, enabled: !!root.index }]
   actionMeta: "memory/"

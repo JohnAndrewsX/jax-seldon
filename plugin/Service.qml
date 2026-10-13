@@ -176,8 +176,8 @@ Item {
   // Hide in the Changelog (WP-122): the attention items kept out of the
   // open list for this shell session, by Model.hideKey; nothing written.
   property var deskHidden: ({})
-  // Ask agent in an event's or a case's bar, and the Changelog's "Agent
-  // sorts N open changes" (WP-124b, ADR-0036): `agent ask` needs an engine
+  // Ask agent in an event's or a case's bar, and the Changelog's "Ask agent to sort
+  // N changes" (WP-124b, ADR-0036): `agent ask` needs an engine
   // that can run. Whether a default agent exists only the engine knows
   // (the index does not say; the plugin reads nothing else): a refusal
   // names the fix in the result line.
