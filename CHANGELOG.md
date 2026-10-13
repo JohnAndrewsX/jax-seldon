@@ -44,7 +44,8 @@ and the package does not exist yet. Update the plugin first:
   `--password-file <(echo …)`. `nmcli con modify Home -f wifi-sec.psk
   …` is masked (`-f` names fields only before `con`). A line nested
   more than 16 substitutions deep no longer crashes the hook; it is
-  recorded as `<program> ‹redacted›`.
+  recorded as `<program> ‹redacted›`, and nothing after that
+  substitution is read, so a command after it is not recorded.
 
 - **`hook session-start` and `hook generic` start faster (WP-218).**
   Like `hook claude-code` since WP-092, the two hooks an agent runs in

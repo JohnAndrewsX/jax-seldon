@@ -208,10 +208,14 @@ recorded as privileged and read for a secret (`x=$(sudo mkpasswd PW)` is
 recorded as `mkpasswd ‹redacted›`), read before the command they stand in
 and fed when it is; `env -S` and the other forms of that sentence stay
 unseen. A line's record is for its first privileged command in the order
-the shell runs them, so `sudo foo $(sudo bar)` is recorded as `bar`. A
-substitution nested deeper than 16, in the line or in an `sh -c` or
-`eval` script it opens, is skipped unread and the line recorded as
-`<program> ‹redacted›`. `stdbuf` and
+the shell runs them, so `sudo foo $(sudo bar)` is recorded as `bar`;
+a computed program, one that starts with `$` or a backtick (`sudo $(which
+x)`, `sudo $EDITOR`), is the subject only when no privileged command of
+the line names its program. A substitution nested deeper than 16, in the
+line or in an `sh -c` or `eval` script it opens, is skipped unread
+together with the rest of that line or script (fail closed: nothing after
+its start is read, so a privileged command after it is not seen) and the
+line recorded as `<program> ‹redacted›`. `stdbuf` and
 `setsid` are wrappers of the shared parser. A secret option that names a
 descriptor's file (`--password-file /dev/fd/3`) counts when the line gives
 that descriptor its text (`3< <(…)`, `3<<< …`), as a process substitution

@@ -3287,18 +3287,25 @@ recorded as privileged and read for a secret like any other (WP-209:
 directories of the substitution or line around them, as they are then,
 and a `cd`, `pushd` or `popd` among them moves only their own commands
 (`cd a; $(cd /x; tee p $(tee q) r)`: `p`, `q` and `r` under `/x`; round
-2). Limits of this reading: `${…}`, `$((…))` and `$[…]` are not opened,
+2), also through a substitution with no command of its own (`$(cd /x;
+$(< $(tee q)))`: `q` under `/x`; round 3). Limits of this reading: `${…}`, `$((…))` and `$[…]` are not opened,
 so a `$(…)` or backticks inside them are not read (`${x:-$(cmd)}`, `$((
 $(cmd) ))`); nor is `$((cmd) )`, a substitution whose command starts with
 a subshell, which the parser reads as arithmetic, nor a backtick
 substitution nested inside backticks by escaping (`` `a \`b\` c` ``);
 a substitution nested deeper than 16
-(`pkgcmd::SUBSTITUTION_DEPTH_MAX`) is skipped to its end unread, in the
-line and in an `sh -c` or `eval` script it opens (round 2), its text
-stands in its command's word as `$(…)`, and the hook records the line as
-`<program> ‹redacted›`, as for `skipPaths` below (a line nested
-thousands deep neither overflows the stack nor costs more than 16 copies
-of its text; WP-209); the string of `env -S` is not opened
+(`pkgcmd::SUBSTITUTION_DEPTH_MAX`), in the line or in an `sh -c` or
+`eval` script it opens (round 2), is skipped unread together with the
+rest of that line or script: no scan finds its end the way the shell
+does (a `)` in a heredoc body, a comment, `$'…'` or a quote of an inner
+`$( )`), so nothing after its start is read as a command or a word
+(fail closed; round 3). It stands in its word as `$(…)`, `` `…` `` or
+`(…)`, and the hook records the line as `<program> ‹redacted›`, as for
+`skipPaths` below, for the first privileged command before it; a
+command after it is not seen, so a line whose privileged or mutating
+command comes only after such a substitution is not recorded (a line
+nested thousands deep neither overflows the stack nor costs more than 16
+copies of its text; WP-209); the string of `env -S` is not opened
 as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like
 any other and is not read as commands. A variable the line sets to a
 literal (`F=x; … $F`) is read with its value. Relative paths resolve
@@ -3325,8 +3332,9 @@ that needs no case, or a snapshot command); a green record that would
 need a case (`sudo tee /etc/x`) gives way to it. One per line, for its
 first privileged command in the order the shell runs them (a
 substitution's commands before the command they stand in: `sudo foo
-$(sudo bar)` is recorded as `bar`; WP-209; a program named by a
-substitution, `sudo $(which x)`, only when no other has a name; round 2),
+$(sudo bar)` is recorded as `bar`; WP-209; a computed program, any that
+starts with `$` or a backtick (`sudo $(which x)`, `` sudo `which x` ``,
+`sudo $EDITOR`), only when no other has a name; rounds 2 and 3),
 beside the line's class record when another
 command has one (`pkexec pacman -S cups && pkexec lpadmin …`: two events
 of one tool call). The record: `agent/command`, subject the program's
