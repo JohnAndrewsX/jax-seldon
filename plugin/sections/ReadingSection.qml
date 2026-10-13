@@ -15,7 +15,7 @@ import "../Model.js" as Model
 //
 // A section built on this sets `allRows` (each with a unique `id`),
 // `searchFields`, the list `title`, `emptyText` and `rowTitle`/`rowMeta`/
-// `rowAside`/`rowStripe` (functions of a row), and fills `head` (above the
+// `rowAside`/`rowMark` (functions of a row), and fills `head` (above the
 // list) and the detail (the default property) and `actions` / `actionMeta`.
 Section {
   id: root
@@ -24,6 +24,8 @@ Section {
   property var searchFields: ["id"]
   property string listTitle: root.title
   property string emptyText: ""
+  // Model.emptyState's action ({ id, label, key } or null, WP-178)
+  property var emptyAction: null
   property string detailTitle: ""
   property var actions: []
   property string actionMeta: ""
@@ -33,7 +35,8 @@ Section {
   property var rowTitle: function(r) { return String(r.id) }
   property var rowMeta: function(r) { return "" }
   property var rowAside: function(r) { return "" }
-  property var rowStripe: function(r) { return "" }
+  // the row's status (Model.statusOf; ListRow `mark`): its stripe and word
+  property var rowMark: function(r) { return null }
 
   property alias head: list.head
   default property alias detail: pane.content
@@ -93,7 +96,10 @@ Section {
       cursor: root.current ? root.current.id : "",
       filtered: root.rows.length !== root.allRows.length,
       actions: root.actions.filter(function(a) { return a.enabled !== false }).map(function(a) { return a.label }),
-      actionMeta: root.actionMeta
+      actionMeta: root.actionMeta,
+      // the data state (WP-178)
+      empty: root.rows.length === 0 ? root.emptyText : "",
+      emptyAction: root.rows.length === 0 && root.emptyAction ? root.emptyAction.id : ""
     }
   }
 
@@ -112,6 +118,8 @@ Section {
     divider: !root.stacked
     title: root.listTitle
     emptyText: root.emptyText
+    emptyAction: root.emptyAction
+    onEmptyActionTriggered: function(id) { root.runEmptyAction(id) }
     model: root.rows
     currentIndex: root.cursor
 
@@ -122,7 +130,7 @@ Section {
       title: root.rowTitle(modelData)
       meta: root.rowMeta(modelData)
       aside: root.rowAside(modelData)
-      stripe: root.rowStripe(modelData)
+      mark: root.rowMark(modelData)
       selected: !!root.current && root.current.id === modelData.id
       cursor: list.hoverIndex === index
       onClicked: {

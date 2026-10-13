@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ e0df9cca -->
+<!-- source: en/04-working-with-agents.md @ e1563b04 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -484,7 +484,7 @@ Hyprland wird nichts verfolgt: Der Desk behält *Hand to agent*, und
 
 Änderungen ohne Case warten im Changelog. Erklären musst du sie nie,
 aber ein Agent kann sie für dich sortieren, mit Belegen, und du wendest
-das Ergebnis mit einem Klick an. *Agent sorts N open changes*, oben im
+das Ergebnis mit einem Klick an. *Ask agent to sort N changes*, oben im
 Changelog des Desks, solange etwas offen ist, führt aus:
 
 ```sh
@@ -624,8 +624,8 @@ als `<Ordner>/seldon/`. Seldon legt keinen dieser Ordner an; ein Agent,
 den du später installierst, bekommt den Skill, wenn du den Befehl noch
 einmal ausführst. `seldon init` bietet ihn neben den Claude-Code-Hooks an
 (`--harness skills`). Ein Logbuch, das die Einrichtungskarte angelegt hat
-(`seldon init --defaults`), hat noch keinen Skill: Das erste *Agent sorts
-N open changes* verlangt diesen Befehl, und die Zeile unter dem Button
+(`seldon init --defaults`), hat noch keinen Skill: Das erste *Ask agent to sort
+N changes* verlangt diesen Befehl, und die Zeile unter dem Button
 sagt das.
 
 Der Skill ist ein kurzer Kern, `SKILL.md`, mit den Regeln, die jede

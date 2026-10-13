@@ -234,8 +234,8 @@ Prime Radiant overlay (`Overlay.qml`) in WP-121.
 starts would appear under the overlay. After the engine answers a call
 that opened or focused a window — `agent start` (also `--new`), `agent
 focus` (also "starting"), `open … --editor` (launched or focused; also the
-editor a new decision opens), and `agent ask` (*Ask agent*, "Agent sorts
-N open changes") — the service closes the desk through the facade, as Esc
+editor a new decision opens), and `agent ask` (*Ask agent*, "Ask agent to sort
+N changes") — the service closes the desk through the facade, as Esc
 does (`Service.stepAside`, `Model.opensWindow`); a notice's terminal fix
 (*Grant*, a detached launch with no answer) closes it at once, as
 Omarchy's menus close before what they launch. A refusal keeps the desk
@@ -313,7 +313,8 @@ Top to bottom (prototype `prototype-desk-v6`):
   colour (`Model.DESK_SECTIONS[].icon`, `NavIcon.qml`).
 - **The section**: a list column (`ListColumn.qml`; title, the section's
   head — chips, a field —, a `ListView` of `ListRow`s: stripe crisis /
-  attention, title, meta, an age or date at the right) and a detail pane
+  attention with its status word, title, meta, an age or date at the
+  right; with no row the list's data state, §5.4) and a detail pane
   (`DetailPane.qml`: the sticky `ActionBar` — actions, id and risk at the
   right, the arm hint — outside the scrolling content, so it stays while
   the detail scrolls). Solo sections (7 Prime Radiant, 8 Graph) have no
@@ -338,8 +339,8 @@ icons only; the search is then reached by widening it).
 | `,` | Settings |
 | `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
 | `/` | the sidebar search (filters the current section's list); Enter leaves it and keeps the filter, Esc clears it and leaves |
-| `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c), its crises (while its detail is shown) the stops between it and the first row (WP-201), and *Agent sorts N open changes* the row above it, in Today the setup card's row (WP-202), in Work the header's buttons (WP-215); `↑` at the top of a list and its head goes on to the notices' buttons on a fresh press (a held `↑` stops at the top), `↓` on the last notice comes back (WP-202, below) |
-| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c), on one of its crises that crisis arms, then is applied alone (WP-201); on a button the keys reached (a notice's, the setup card's, Work's header buttons, a Settings control) it arms, then runs what the click runs (WP-202, WP-215), on *Agent sorts* it does nothing (`a` twice starts that agent); on a Settings group with controls the cursor goes to its first control; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
+| `↑`/`↓`, `k`/`j` | move in the list; in the Changelog the agent's triage proposal (in the list head) is the row above the first one (WP-126c), its crises (while its detail is shown) the stops between it and the first row (WP-201), and *Ask agent to sort N changes* the row above it, in Today the setup card's row (WP-202), in Work the header's buttons (WP-215); `↑` at the top of a list and its head goes on to the notices' buttons on a fresh press (a held `↑` stops at the top), `↓` on the last notice comes back (WP-202, below) |
+| `Enter`, `Space` | in the stacked layout: show the selected row's detail; otherwise the detail's first action that launches nothing — Work arms, then runs it (on an active case *To verification*, as in 0.1: **Enter never starts an agent**, only `a` or a click on *Hand to agent* does); on open drift (Today, Changelog) the default form opens; on the Changelog's triage proposal *Apply proposals* arms, then applies (WP-126c), on one of its crises that crisis arms, then is applied alone (WP-201); on a button the keys reached (a notice's, the setup card's, Work's header buttons, a Settings control) it arms, then runs what the click runs (WP-202, WP-215), on *Ask agent to sort* it does nothing (`a` twice starts that agent); on a Settings group with controls the cursor goes to its first control; Today's yesterday row opens or closes; Decisions, System and Memory have no such action (theirs open the editor: `e`). ADR-0034 §2's "Enter selects" is moot where the selection is the cursor (WP-122) |
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
@@ -402,19 +403,46 @@ House rules for every key, now and later (WP-183; the checklist
   back is bound only where the contract has the opposite verb. `plan
   reopen` is not one: it makes a new active case "Reopen: <title>"
   (`engine/src/commands/plan.rs`, `reopen`). Where there is no inverse,
-  the action arms (above) and its result line names the real way back.
+  the action arms (above) and its result line names the real way back
+  (WP-178): after *Complete* "… → completed · Reopen makes a new case"
+  (`Model.PLAN_DONE_WAY_BACK`). After *To verification* the line names
+  none: the engine starts a case only from queued, so *Not done yet* (`plan
+  start`, ADR-0045 §6) cannot run; WP-179's ADR decides it. No toast, no
+  `z`.
+- **Enter-Enter only where there is a way back** (WP-178, SYNTHESIS C1).
+  An action without an opposite verb in CONTRACT.md never completes on
+  Enter-Enter from a list: it arms by click or by its own letter pressed
+  twice (*Drop* `x`, *Hand to agent* `a`), or by click only (*Accept*, an
+  imported case's *Start*). Six steps predate this rule and keep their
+  Enter, though none has an opposite verb today: Work's *Start*, *To
+  verification* and *Complete* complete on Enter-Enter from their row
+  (WP-122, as in 0.1), Work's *Reopen* on one Enter (WP-101: it creates a
+  case and destroys nothing), and the Changelog's *Apply proposals* and a
+  single crisis of the proposal on Enter-Enter (WP-126c, WP-201; `drift
+  apply` has no opposite verb). Whether they keep Enter is decided with
+  WP-179's verification ADR. No other step joins them: `model.test.js`
+  pins `Model.caseEnterAction` and what every `activate()` in `plugin/`
+  calls, so a new Enter step anywhere fails until this list names it. A
+  button the cursor reached (a notice's, the setup card's, Work's header
+  buttons, a Settings control; WP-202) is not a list step: Enter arms it
+  and the second Enter runs what its click runs. Seldon uses
+  no `ConfirmDialog`; Omarchy's `Ui/ConfirmDialog.qml` preselects
+  *Confirm* (`selectedIndex: 1`), so Enter confirms. If Seldon ever uses
+  one, it binds `selectedIndex: 0` and sets it to 0 again on every open
+  (in its own `onOpenedChanged` handler); a grep test in `model.test.js`
+  fails a `ConfirmDialog` without both.
 - **Copying copies the id.** A key or button that copies a record copies
   its id, never logbook text, as ADR-0036 §1 does for agent prompts.
 - **Every hinted key is a click too**, and a primary action is always a
   visible button, never only a key.
 - **Every button has a key path** (WP-202), in the pattern of the
   Changelog's proposal row (WP-126c): the cursor reaches the button — a
-  row above the list (the notices, Today's setup row, *Agent sorts*,
+  row above the list (the notices, Today's setup row, *Ask agent to sort*,
   Work's header buttons, WP-215) or a control in the detail (Settings)
   —, the button under it wears the focus ring (Omarchy's panel cursor on
   a `ButtonGroup` chip), and a dim line names the keys. Enter arms, the second Enter runs exactly what the
   click runs (the same function, the same argv); every such button arms,
-  also *Copy* and *Check again*, so one rule holds for all. *Agent sorts*
+  also *Copy* and *Check again*, so one rule holds for all. *Ask agent to sort*
   is pressed with `a`, twice, as *Hand to agent* on a case: Enter never
   starts an agent (operator decision, WP-122). The arm's id names what it
   would run (`notice:<id>:<title>:<script or command>:<action>`,
@@ -441,7 +469,7 @@ a notice's buttons, Enter arms the button under the cursor ("Restart
 shell? Press Enter again.") and the second Enter runs it through
 `Notices.fix` → `Service.fix`, as the click. `↓` on the last notice or Esc
 goes back to the section, onto the top of its list head
-(`Section.enterFromTop`: Today's setup row, the Changelog's *Agent sorts*,
+(`Section.enterFromTop`: Today's setup row, the Changelog's *Ask agent to sort*,
 Work's header buttons, else the first row); any other key leaves the notices first and then does
 what it does. Entering folds the notices out. A dim line under the
 notices says "↑ at the top of a list reaches these buttons", while there
@@ -473,6 +501,40 @@ up (ADR-0034 §3); lists are `ListView`s.
 
 Every section is built (the stubs of WP-121, `SectionStub.qml`, went
 with WP-125).
+
+**Status words** (WP-178, SYNTHESIS B3): no state is told by colour
+alone. One table, `Model.STATUS[kind][status] = { glyph, word, tone }`,
+inside ADR-0045's word table (`word` is a key of `Model.WORDS`, so EASY
+reads its own column): drift `crisis` (`!` crisis, urgent) and
+`attention` (attention, accent); a case `active` (active, accent); a
+decision `proposed` (proposed, accent); a transaction's `txStatus`
+(failed / interrupted / unfinished, urgent, the row's `alert` word); System's Collectors tile
+when a collector is not ok (failing, accent). A row's stripe comes from
+its status (`ListRow.mark`, `Model.statusOf`) and the glyph and word
+stand before its meta line in the same tone, so a row never shows a
+stripe without its word. Routine, in-case and closed rows are quiet: no
+tone, no word (ADR-0028 §3). `model.test.js` checks every tone has a
+word and no row of the sample shows a tone without it; `desk-view.sh`
+counts a visible word for every visible stripe.
+
+**Data states** (WP-178, SYNTHESIS B7): a list with no row says what
+belongs there and offers one action, from `Model.emptyState(section,
+ctx)` → `{ text, action }`, the words in the word table (`empty.*`,
+`link.*`). Without an index: "No index to show" (the notice above has
+the fix). With a sidebar search and no match: "Nothing here matches
+“…”." and *Clear search*, beside "or Esc" (the key that does the same).
+Otherwise per section: the Changelog "Every change Seldon records shows
+here: … Capture now (c) records the first." while it holds no event,
+else its chip's line ("Nothing open: every change is in a case or
+routine.", "No events under “crisis”."); Work "No cases yet. …" with
+*New case* (`+`); Decisions "No decisions yet. …" with *New decision*
+(`d`); Memory "Lessons and memory files your agents write show here.
+None yet."; the Graph "Nothing to draw yet: …". Today and System always
+list something with an index. A first step that writes is offered only
+where the desk may write (not in dev mode). No footer freshness line
+(the header's subline says "captured N ago") and no "paused" (nothing
+pauses). An empty detail lists the section's keys once WP-181's key
+registry exists.
 
 In every section the **selection is the cursor**: ↑/↓ (`k`/`j`) move it
 and the detail follows; it is an id, so it stays on its item when a new
@@ -636,7 +698,7 @@ folds the notices as before.
 #### Changelog (2)
 
 The list: the triage slot (`triageSlot`, WP-124b; ADR-0034 §6,
-ADR-0036) — **Agent sorts N open changes** (N = the open changes, a group
+ADR-0036) — **Ask agent to sort N changes** (N = the open changes, a group
 once) while something is open and the engine can write
 (`Service.triageButton`; whether a default agent exists only the engine
 knows, so a refusal names the fix under the button): `agent ask triage
@@ -659,11 +721,11 @@ crisis under the cursor · ↑/↓ the crises", on a stacked desk showing its
 list "Enter shows it · ↓ back to the list", `Model.proposalHint`). IPC
 `select proposal` (or the proposal's id; `Model.isProposalTarget`), a
 payload's `"select":"proposal"` and the shim's `resolve proposal` open it
-too. *Agent sorts* is the row above the proposal (WP-202): `↑` on the
+too. *Ask agent to sort* is the row above the proposal (WP-202): `↑` on the
 proposal, or on the first row without one (`Model.changelogAtTop`),
 reaches the button while it can be pressed (no list row, no proposal
 selected; on a stacked desk showing a detail the list comes back); `a`
-arms it ("Agent sorts 6 open changes? Press a again." in the dim line
+arms it ("Ask agent to sort 6 changes? Press a again." in the dim line
 under it) and the second `a` starts the agent, the click's `agent ask
 triage --json`, the Work pattern (Enter and Space do nothing there: Enter
 never starts an agent, WP-122); `↓` goes to the proposal (else back to the list), `↑` on
@@ -689,8 +751,8 @@ ADR-0028 §4b), "+N more changes without a case not listed here" (ADR-0020),
 "N changes hidden this session" with *Show*, "Last capture: …". Rows,
 newest first under their day: the subject's last path segment (a group's
 leader with "+N"), "source · kind · case", the time today or "30 Sep
-17:00", a stripe on open drift (crisis urgent, attention accent; nothing
-else is coloured, whatever its zone). A new chip starts at its first row;
+17:00", a stripe on open drift with its word (crisis urgent, attention
+accent; nothing else is coloured, whatever its zone). A new chip starts at its first row;
 when the selected event leaves the chip (it was just linked) it stays shown
 in the detail and the list has no highlighted row; ↑/↓ continue from where
 it was. The shim's `filter <source>` and a payload `filter` that is a
@@ -855,16 +917,16 @@ Omarchy's resume hooks) did not run for this transaction; if
 omarchy-settings was in it, Hyprland's auto-reload may stay paused for
 this session.", for `interrupted` the same with "may not have run for
 every package of this transaction" — and one shared tail: "Before you
-reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with
+reboot, reinstall the packages marked ↑ or 󰑓 below (`pacman -S` with
 their names): that runs those steps for them; a plain rerun does not. A
 package marked − stays removed; for one marked ↓, or when unsure, ask
-your agent in a case." (alpm-hooks(5) CAVEATS: post-transaction hooks do
+your agent in a case." (󰑓 is U+F0453, the reinstall glyph, §7 "Glyphs"; alpm-hooks(5) CAVEATS: post-transaction hooks do
 not run after a failed transaction or a killed pacman, and run only for
 a transaction's targets; for `interrupted` not verified against
 libalpm's source; WP-137 rounds 2 and 3.) Text only: the plugin runs
 nothing — whatever the event's class; then, below the key/values, "N packages: … in this
 transaction" and every package of the transaction the index lists, the
-unusual first (↓ downgraded, − removed, + installed, ↑ upgraded, ↻
+unusual first (↓ downgraded, − removed, + installed, ↑ upgraded, 󰑓
 reinstalled; by name within a kind), "name  old → new" or "name
 version", the selected event's line in bold; shown for two or more
 packages, a status, files left or a partial note (one whole completed
@@ -883,7 +945,7 @@ it had any (that event may be its oldest line). Without `meta.txStatus` nothing 
 claims the transaction completed (an index of an earlier build, or a
 line written before ADR-0043). The Changelog row (and Today's NEEDS YOU row)
 of such an event shows the status as one word in the urgent colour
-before its meta line (`ListRow.alert`), and the sidebar search finds the
+before its meta line (`ListRow.alert`, `Model.STATUS.tx`'s word), and the sidebar search finds the
 word; the class, the stripe and the counts are unchanged. Then a
 group's members (`seldon drift show` for those the index no longer lists;
 hidden when the transaction above lists every open member),
@@ -1095,11 +1157,13 @@ bindings on the index (one evaluation per index change, as the 0.1 tabs);
 the index carries no decision body and no memory text, so the details
 show what it has and the editor shows the rest (AGENTS.md §3: the plugin
 reads only the index). Without an index the lists say "No index to show"
-and no action runs.
+and no action runs; an empty list says what belongs there (§5.4, "Data
+states").
 
 - **Decisions (4).** Rows from `Model.decisionRows` (newest first by id;
   title, "id · status", the date at the right; a proposed one with the
-  accent stripe); above them the count ("4 decisions · 1 proposed") and
+  accent stripe and the word "proposed" in place of the status in its
+  meta); above them the count ("4 decisions · 1 proposed") and
   *New decision*. The detail: "ADR-NNNN · status · date", the title (a
   superseded one struck through), for a proposed one what Accept means,
   the first paragraph of its *Decision* as plain text (`decisions[].lead`,
@@ -1144,7 +1208,7 @@ and no action runs.
   `system.pacmanIgnore`, "ignored"; IgnorePkg and IgnoreGroup). Every
   field of `index.system` is optional: a tile without its data shows "—"
   and "Not in the index"; a failing collector stripes the Collectors tile
-  and its lead says so. The detail: the big value and unit, the lead, the
+  with the word "failing" and its lead says so. The detail: the big value and unit, the lead, the
   key/value rows, where the data comes from (the tile's `source`; "From
   the dossier; rebuilt on every capture." for the first five). Sticky
   bar: *Open in editor* (`seldon open status --editor --json`, the full
@@ -1778,10 +1842,19 @@ whose focus border reaches 3:1.
 `Ui/Button.qml`). The desk has no animation today.
 
 **Glyphs.** Only glyphs that Omarchy's `monospace` font (JetBrainsMono
-Nerd Font) covers, or the plugin's `components/MaskIcon.qml`. `⏸ ↺ ↻ ⏰`
-are not in that font (`fc-list ':charset=23F8'`, and likewise 21BA, 21BB
-and 23F0, lists no JetBrainsMono face) and fall back to another font;
-`↻` in `Model.js` (`TX_GLYPHS`) is replaced in WP-178.
+Nerd Font) covers, or the plugin's `components/MaskIcon.qml`. `⏸ ↺ ↻ ⏰ ⟡`
+are not in that font (`fc-list ':charset=23F8'`, and likewise 21BA, 21BB,
+23F0 and 27E1, lists no JetBrainsMono face) and fall back to another font.
+WP-178 replaced the two the desk used: the reinstall mark `↻` is
+Material Design's reload (U+F0453, `Model.TX_REINSTALL_GLYPH`), the
+engine's own events' `⟡` its four-pointed star outline (U+F0AE3,
+`Model.SOURCE_GLYPHS.seldon`). `tests/plugin/glyphs.test.js` (in `just
+plugin-test`) fails on any non-ASCII character in `plugin/`'s QML, JS
+or manifest — written or as a `\u` escape in a string — that the font
+does not cover: against the installed JetBrainsMono Nerd Font faces
+(`fc-list` under a private HOME) where fontconfig and the font are
+there, else against a pinned charset (`tests/plugin/glyphs/`, how it was
+made is in its header).
 
 ## 8. Keybinding and IPC
 
@@ -1815,7 +1888,7 @@ loaded. Routes the plugin honours:
   / "not found"); for smoke tests it also places the keys' cursor on a
   button, never pressing it (WP-202): `select notices` or `select
   notice:<id>` (the first, or that notice's first button; any section),
-  in Today `select setup`, in the Changelog `select ask` (*Agent sorts*),
+  in Today `select setup`, in the Changelog `select ask` (*Ask agent to sort*),
   in Work `select header` (*By agent*, WP-215),
   in Settings `select width|presets|sidebar|offer`. The Prime Radiant keeps the 0.1 overlay's names:
   `setPeriod <30|90|365|all>` shows section 7 with that period and

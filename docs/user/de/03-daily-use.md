@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ eb182538 -->
+<!-- source: en/03-daily-use.md @ e1563b04 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar und den Desk, den sie öffnet, mit seinen neun
@@ -149,7 +149,7 @@ Die Tasten des Desks gelten, solange der Desk offen ist.
 | `i` | das Feld *New case* in Today, das Feld für den einen Satz in Work |
 | `e` | im Editor öffnen: Today das Journal, Changelog das Ledger des Monats, Work den Case, Decisions die Entscheidung, System `STATUS.md`, Memory das Logbuch |
 | `f` / `F` | Changelog: der nächste / vorherige Chip |
-| ↑ / `k` in der ersten Zeile | Changelog: der Triage-Vorschlag des Agenten, dann *Agent sorts N open changes*; ↓ / `j` zurück zur Liste. Today, solange Seldon nicht eingerichtet ist: die Zeile der Setup-Karte. Work: *By agent*, *Import tasks…* und *New case* |
+| ↑ / `k` in der ersten Zeile | Changelog: der Triage-Vorschlag des Agenten, dann *Ask agent to sort N changes*; ↓ / `j` zurück zur Liste. Today, solange Seldon nicht eingerichtet ist: die Zeile der Setup-Karte. Work: *By agent*, *Import tasks…* und *New case* |
 | ← / →, `h` / `l` auf einem Hinweis | die Knöpfe des Hinweises; ↑ / ↓ die Hinweise, ↓ auf dem letzten oder Esc zurück zur Liste |
 | Enter auf Appearance | Settings: der Schieberegler für die Breite, die Vorgaben, die Seitenleiste; ↑ / ↓ ein Element, ← / → sein Wert, Esc zurück |
 | `a` | Work: den Case einem Agenten übergeben (zweimal drücken); solange ein Agent daran arbeitet, *Focus* (einmal) |
@@ -184,13 +184,13 @@ einen Case hinzu), *Focus*, *Apply proposals*, *Capture now* und *Open in
 editor*.
 
 Jeder Knopf hat einen Weg über die Tasten. Die Knöpfe über der Liste (die
-Hinweise, die Setup-Karte, *Agent sorts N open changes*, in Work *By
+Hinweise, die Setup-Karte, *Ask agent to sort N changes*, in Work *By
 agent*, *Import tasks…* und *New case*) und die
 Elemente in Settings › Appearance erreichst du mit den Pfeilen; der Knopf
 unter dem Cursor hat einen Rahmen, und eine blasse Zeile daneben nennt
 die Tasten. Dort schaltet Enter den Knopf scharf, und das zweite Enter
 führt ihn aus, was immer er tut (auch *Copy*): „Restart shell? Press
-Enter again.“ *Agent sorts* ist die Ausnahme: Enter startet nie einen
+Enter again.“ *Ask agent to sort* ist die Ausnahme: Enter startet nie einen
 Agenten, also schaltet `a` ihn scharf und ein zweites `a` startet den
 Agenten, wie bei einem Case. Jede andere Taste, ein Klick auf den Desk
 oder eine andere Auswahl bricht ab. ← / → wählen einen anderen Knopf
@@ -238,8 +238,9 @@ Enter öffnet ihr Formular. Löst du sie dort auf, verlässt sie NEEDS YOU.
 Der Changelog listet, was geschehen ist, das neueste zuerst, nach Tagen
 gruppiert. Die Chips oben filtern: **open · crisis · attention · routine
 · in case · all**, jeder mit seiner Zahl (`f` / `F`; der Changelog öffnet
-mit *open*). Offene Änderungen tragen einen Streifen, eine Krise in der
-Warnfarbe deines Themes, ein Punkt zur Kenntnis in der Akzentfarbe.
+mit *open*). Offene Änderungen tragen einen Streifen und daneben ein
+Wort, damit die Farbe nie das einzige Zeichen ist: „! crisis“ in der
+Warnfarbe deines Themes, „attention“ in der Akzentfarbe.
 Routine-Änderungen (ein Theme-Wechsel, ein Schalter, ein einfaches
 Upgrade) sind gewöhnliche Zeilen: Geschichte, nichts aufzulösen. Eine
 leise Zeile sagt „N changes without a case“. *Capture now* (`c`) startet
@@ -277,8 +278,8 @@ Blick und hält nichts fest; *Show* holt ihn zurück. Eine Krise hat kein
 
 ![Ein Triage-Vorschlag eines Agenten im Changelog: oben Apply proposals (2) und Discard, die zurückgehaltene Krise unter CRISES — EACH ON ITS OWN mit Apply this crisis, und unter WHAT APPLY TAKES jeder Punkt mit seinen Belegen und wer sie geschrieben hat](../../images/desk-tokyo-night-triage.png)
 
-Solange Änderungen offen sind, bietet der Kopf des Changelogs **Agent
-sorts N open changes** an. Ein Klick startet deinen Agenten mit `seldon
+Solange Änderungen offen sind, bietet der Kopf des Changelogs **Ask agent to sort
+N changes** an. Ein Klick startet deinen Agenten mit `seldon
 agent ask triage`. Der Agent schreibt nichts ins Logbuch. Er legt einen
 Vorschlag ab: für jede Änderung eine Verknüpfung mit einem Case oder eine
 Erklärung, jede mit Belegen, die die Engine geprüft hat. Der Vorschlag
@@ -287,8 +288,8 @@ listet jeden Punkt mit seinen Belegen. Belege, die ein Agent geschrieben
 hat oder deren Autor unbekannt ist, sind mit „Read twice“ markiert. Du
 öffnest ihn mit einem Klick oder mit den Tasten: Der Vorschlag ist die
 Zeile über der Liste, also erreicht ↑ (oder `k`) in der ersten Zeile ihn,
-und ↓ (oder `j`) führt zurück. Ein weiteres ↑ erreicht *Agent sorts N
-open changes*: Zweimal `a` startet den Agenten.
+und ↓ (oder `j`) führt zurück. Ein weiteres ↑ erreicht *Ask agent to sort
+N changes*: Zweimal `a` startet den Agenten.
 
 - *Apply proposals* wendet die Punkte mit einem Klick an, als du. Mit
   der Tastatur schaltet Enter es scharf, ein zweites Enter wendet es an.
@@ -379,7 +380,8 @@ aufgezeichnet wird; die Ergebniszeile sagt das.
 *Beispieldaten.*
 
 Decisions listet deine ADRs, die neueste zuerst: Titel, ID und Status,
-rechts das Datum; eine vorgeschlagene trägt einen Streifen. Das Detail
+rechts das Datum; eine vorgeschlagene trägt einen Streifen und das Wort
+„proposed“. Das Detail
 zeigt den ersten Absatz der Entscheidung und die Cases, die sie nennt;
 ein Klick auf einen Case öffnet ihn in Work. *Open in editor* (`e`)
 öffnet die Entscheidung. *Accept* braucht bei einer vorgeschlagenen
@@ -512,8 +514,8 @@ der Setup-Karte *Not now* gewählt hast.
 Fenster vorne liegt und nicht dahinter. Das geschieht, nachdem die Engine
 geantwortet hat: ein Agent gestartet (*Hand to agent*, *Run*, *New case*)
 oder nach vorn geholt (*Focus*), dein Editor geöffnet (*Open in editor*,
-eine neue Entscheidung), ein Agent gefragt (*Ask agent*, *Agent sorts N
-open changes*). Eine Reparatur im Terminal aus einem Hinweis schließt ihn
+eine neue Entscheidung), ein Agent gefragt (*Ask agent*, *Ask agent to sort
+N changes*). Eine Reparatur im Terminal aus einem Hinweis schließt ihn
 sofort. Verweigert die Engine, bleibt der Desk offen und sagt, warum. Der
 Desk merkt sich Abschnitt und Auswahl, beim nächsten Öffnen siehst du
 also den Case, bei dem du warst.
@@ -537,7 +539,7 @@ Befehle aus, das Ergebnis ist also dasselbe:
 | *Reopen* | `seldon plan reopen <ID>` |
 | *Hand to agent*, *Focus* | `seldon agent start <ID>`, `seldon agent focus <ID>` |
 | *Ask agent* | `seldon agent ask drift <EVENT>`, `seldon agent ask case <ID>` |
-| *Agent sorts N open changes* | `seldon agent ask triage` |
+| *Ask agent to sort N changes* | `seldon agent ask triage` |
 | *Apply proposals*, *Discard* | `seldon drift apply <PROPOSAL>`, `seldon drift discard <PROPOSAL>` |
 | *Link*, *Explain*, *Dismiss* | `seldon drift link`, `explain`, `dismiss` |
 | *New decision*, *Accept* | `seldon decide -- "Titel"`, `seldon decide accept <ID>` |

@@ -136,7 +136,7 @@ DetailPane {
 
   // ↓/↑ inside the shown proposal (Model.crisisMove): true when the key
   // stayed among the crises (or went back to the bar), false when it
-  // leaves them for the list or *Agent sorts*.
+  // leaves them for the list or *Ask agent to sort*.
   function crisisMove(dy, rows) {
     var to = Model.crisisMove({ at: root.crisisAt, count: root.crisisCount, rows: rows }, dy)
     root.crisisAt = to === null ? -1 : to
@@ -347,7 +347,7 @@ DetailPane {
 
     Line {
       visible: root.seenId === ""
-      text: "No proposal. “Agent sorts N open changes” in the list asks for one."
+      text: "No proposal. “Ask agent to sort N changes” in the list asks for one."
       color: root.tone.dim
       font.pixelSize: Style.font.body
     }

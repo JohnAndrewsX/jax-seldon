@@ -250,6 +250,50 @@ expect keys 29 '[.view.section, .view.search.focused, .view.search.text, .view.k
 expect keys 30 .view.section decisions
 clean_log keys
 
+# 3b. Data states (WP-178, Model.emptyState): a search without a match
+#     says so and offers Clear search beside "or Esc"; the click clears
+#     the filter as Esc does and gives the keys back; Work and Decisions
+#     the same.
+dsv='.view.sectionView'
+run data-states "$sample" 1920x1080 \
+  "summon;text:2;text:/;type:zzqx;key:Return;click:Clear search;text:3;text:/;type:zzqx;key:Return;key:Escape;text:4;text:/;type:zzqx;key:Return;clickName:emptyAction"
+expect data-states 5 "[.view.section, .view.search.text, $dsv.rows, $dsv.empty, $dsv.emptyAction] | map(tostring) | join(\",\")" \
+  "changelog,zzqx,0,Nothing here matches “zzqx”.,clearSearch"
+shows data-states 5 "Nothing here matches “zzqx”."
+shows data-states 5 "Clear search"
+shows data-states 5 "or Esc"
+expect data-states 6 "[.view.search.text, $dsv.rows, $dsv.empty, $dsv.emptyAction, .view.keys] | map(tostring) | join(\",\")" ",6,,,true"
+expect data-states 10 "[.view.section, $dsv.empty, $dsv.emptyAction] | join(\",\")" "work,Nothing here matches “zzqx”.,clearSearch"
+expect data-states 11 "[.view.search.text, $dsv.empty] | join(\",\")" ","
+expect data-states 15 "[.view.section, $dsv.empty, $dsv.emptyAction] | join(\",\")" "decisions,Nothing here matches “zzqx”.,clearSearch"
+expect data-states 16 "[.view.search.text, $dsv.empty, ($dsv.rows | length)] | map(tostring) | join(\",\")" ",,4"
+for i in 5 10 15; do expect data-states $i '.overflow | join(" | ")' ""; done
+clean_log data-states
+
+# 3c. The empty lists' first steps (WP-178 round 2): a live index with no
+#     case and no decision; Work's empty list offers New case beside "or +"
+#     and its click opens the sheet, as `+` does; Decisions' offers New
+#     decision beside "or d" and its click opens the form, as `d` does.
+jq '.cases = {queued: [], active: [], verification: [], completed: []} | .decisions = []
+  | .summary.activeCases = 0 | .summary.queuedCases = 0' "$sample" >"$work/no-cases.json"
+run empty-lists "" 1920x1080 \
+  "summon;text:3;clickName:emptyAction;key:Escape;text:+;key:Escape;text:4;clickName:emptyAction;key:Escape;text:d" \
+  HOME="$work/home-empty-lists" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$work/no-cases.json"
+expect empty-lists 2 "[.view.section, ($dsv.ids | length), $dsv.empty, $dsv.emptyAction, $dsv.sheet.open] | map(tostring) | join(\",\")" \
+  "work,0,No cases yet. Say what should happen above, or make one by hand with New case.,newCase,false"
+shows empty-lists 2 "or +"
+expect empty-lists 3 "[$dsv.sheet.open, .view.section] | map(tostring) | join(\",\")" "true,work"
+expect empty-lists 4 "$dsv.sheet.open" false
+expect empty-lists 5 "[$dsv.sheet.open, .view.section] | map(tostring) | join(\",\")" "true,work"
+expect empty-lists 7 "[.view.section, ($dsv.rows | length), $dsv.emptyAction, $dsv.form.open] | map(tostring) | join(\",\")" "decisions,0,newDecision,false"
+shows empty-lists 7 "or d"
+expect empty-lists 8 "[$dsv.form.open, .view.section] | map(tostring) | join(\",\")" "true,decisions"
+expect empty-lists 9 "$dsv.form.open" false
+expect empty-lists 10 "[$dsv.form.open, .view.section] | map(tostring) | join(\",\")" "true,decisions"
+for i in 2 7; do expect empty-lists $i '.overflow | join(" | ")' ""; done
+expect empty-lists 10 '.writes | length' 0
+clean_log empty-lists
+
 # ---------------------------------------------------------------------------
 # 4. Settings › Appearance (ADR-0034 §1): `,` opens it; dragging the slider
 #    from Full to 50 % previews the width on the desk and writes nothing; the
@@ -931,6 +975,10 @@ for text in "6 changes · newest first" "4 changes without a case" "proposed for
   "tokyo-night" "mesa +2" "27 Sep 12:30" "open 6" "in case 38" "Ledger" "Capture now"; do
   shows changelog 1 "$text"
 done
+# WP-178: every stripe has its word beside it (never colour alone);
+# routine rows stay quiet
+expect changelog 1 '.marks.statuses | join(",")' "attention,! crisis,attention,! crisis,attention,attention"
+expect changelog 1 '([.marks.bars[] | select(startswith("rowStripe "))] | length) == (.marks.statuses | length)' true
 expect changelog 2 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "crisis,2,$UNIT"
 expect changelog 3 "$tv.chip" open
 expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,83"
@@ -1198,6 +1246,9 @@ for text in "ACTIVE · 2" "VERIFICATION · 1" "QUEUED · 3" "COMPLETED · 2" "2 
   shows work 1 "$text"
 done
 expect work 2 "[$tc.armed, $tv.result] | join(\",\")" ","
+# WP-178: the active cases' stripe with its word
+expect work 1 '.marks.statuses | join(",")' "active,active"
+expect work 1 '([.marks.bars[] | select(startswith("rowStripe "))] | length) == (.marks.statuses | length)' true
 expect work 3 "$tc.armed" ""
 expect work 4 "$tv.selected" C-2026-004
 expect work 5 "[$tv.selected, $tc.status, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-008,verification,Complete+Drop+Open in editor"
@@ -1370,7 +1421,7 @@ shows work-live 25 "3 / 3 active · at the limit"
 expect work-live 25 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor,Ask agent"
 expect work-live 26 "[$tc.armed, ($tc.actions | join(\"+\"))] | join(\",\")" "verify,Hand to agent+Confirm to verification+Drop+Open in editor+Ask agent"
 expect work-live 29 "$tv.result" "C-2026-005: active → verification"
-expect work-live 33 "[$tv.result, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md,Reopen+Open in editor+Ask agent"
+expect work-live 33 "[$tv.result, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md · Reopen makes a new case,Reopen+Open in editor+Ask agent"
 expect work-live 33 "$tv.groups | join(\",\")" "active 2,verification 1,queued 3,completed 3"
 # the editor opened: the desk steps aside (WP-156); opened again, the case is still selected
 expect work-live 35 "[.view.opened, .service.stepAsides] | map(tostring) | join(\",\")" "false,1"
@@ -2465,7 +2516,7 @@ expect decisions 2 '.view.sectionView.rows | join(",")' "ADR-0004,ADR-0003,ADR-0
 expect decisions 2 '[.view.sectionView.cursor, .view.selected] | join(",")' "ADR-0004,ADR-0004"
 expect decisions 2 '.view.sectionView.actions | join(",")' "Open in editor"
 expect decisions 2 '.view.sectionView.cases | length' 0
-for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur als User-Service mit Case" "ADR-0004 · proposed" \
+for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur als User-Service mit Case" "ADR-0004" "proposed" \
   "2026-10-01" "Logbuch-Sprache Deutsch, Struktur Englisch" "ADR-0001 · accepted" "2026-09-01" \
   "ADR-0004 · PROPOSED · 2026-10-01" "Accept" "Open in editor" "decisions/ADR-0004-ollama-user-service.md" \
   "Proposed: it waits for your decision. Accept marks it accepted with today's date and notes it in the ledger; Open in editor shows the whole text." \
@@ -2473,6 +2524,8 @@ for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur a
   "The whole text is in the file; Open in editor shows it."; do
   shows decisions 2 "$text"
 done
+# WP-178: the proposed decision's stripe with its word, the only one
+expect decisions 2 '.marks.statuses | join(",")' "proposed"
 shows decisions 2 "CASES · 0"
 shows decisions 2 "This decision names no case."
 expect decisions 3 '[.view.sectionView.cursor, .view.sectionView.actions[0]] | join(",")' "ADR-0003,Open in editor"
@@ -3226,7 +3279,7 @@ mkdir -p "$work/home-triage"
 run triage "" 1920x1080 \
   "summon:$cl;view;clickName:triageAsk;settle;summon;hover:6 changes · newest first;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;click:Apply this crisis;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:Apply proposals;wait:sectionView.triage.detail.result=Applied 0 · skipped 3 · refused 0;view" \
   HOME="$work/home-triage" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample"
-expect triage 2 "[$tt.button, $tt.row, $tt.shown] | map(tostring) | join(\",\")" "Agent sorts 6 open changes,Proposal · $head,false"
+expect triage 2 "[$tt.button, $tt.row, $tt.shown] | map(tostring) | join(\",\")" "Ask agent to sort 6 changes,Proposal · $head,false"
 # Ask agent opened the agent's window: the desk steps aside (WP-156)
 expect triage 4 "[.view.opened, .service.stepAsides] | map(tostring) | join(\",\")" "false,1"
 expect triage 5 "[$tt.ask, $tt.askOk] | map(tostring) | join(\",\")" \
@@ -3266,7 +3319,7 @@ run triage-refused "" 1920x1080 \
   "summon:$cl;clickName:triageAsk;settle;view;hover:6 changes · newest first;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 1 · skipped 1 · refused 1;view" \
   HOME="$work/home-triage-refused" HARNESS_WAIT_INDEX=1 FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_DEFAULT_AGENT=1 FAKE_SELDON_APPLY_REFUSED="$THEME"
 refusal='no default agent: Omarchy has none set, so `omarchy agent prompt` cannot start one; nothing was launched. Fix: `omarchy default agent <name>` (e.g. claude), or set `[agent] launcher` in ~/.config/seldon/config.toml'
-expect triage-refused 4 "[$tt.ask, $tt.askOk, $tt.button] | map(tostring) | join(\",\")" "$refusal,false,Agent sorts 6 open changes"
+expect triage-refused 4 "[$tt.ask, $tt.askOk, $tt.button] | map(tostring) | join(\",\")" "$refusal,false,Ask agent to sort 6 changes"
 shows triage-refused 4 "$refusal"
 expect triage-refused 10 "$ttd.regular[0].outcome" \
   'refused: evidence journal `2026-10-01 14:40` no longer resolves (no journal entry at 2026-10-01 14:40)'
@@ -3290,7 +3343,7 @@ expect triage-ask 9 "[$tc.ask, ($tc.actions | join(\"+\"))] | map(tostring) | jo
 expect triage-ask 12 "[($ttd.actions | join(\"+\")), $ttd.hint] | join(\",\")" \
   "Apply proposals (2)+Confirm discard,Discard proposal $PROPOSAL? Click Confirm discard. The logbook does not change."
 expect triage-ask 16 "[$tt.row, $tt.shown, $tt.button, $ttd.seen, $ttd.result] | map(tostring) | join(\",\")" \
-  ",true,Agent sorts 6 open changes,gone,Proposal discarded; nothing in the logbook changed"
+  ",true,Ask agent to sort 6 changes,gone,Proposal discarded; nothing in the logbook changed"
 shows triage-ask 16 "Proposal $PROPOSAL is not there any more: applied and replaced, or discarded."
 argv_check triage-ask "$work/home-triage-ask" "$(printf '%s\n' "$startup" "$(q agent ask drift $UNIT --json)" \
   "$(q agent ask case C-2026-004 --json)" "$(q drift discard $PROPOSAL --json)")"
@@ -3743,7 +3796,7 @@ clean_log tones-tokyo
 # ---------------------------------------------------------------------------
 # WP-202: every desk button has a key path (the pattern of WP-126c's
 # proposal row). The cursor reaches the button — ↑ at the top of a list on
-# to the notices, Today's setup row above its first row, *Agent sorts*
+# to the notices, Today's setup row above its first row, *Ask agent to sort*
 # above the Changelog's proposal, Settings' controls by Enter — Enter arms
 # it and the second Enter runs exactly what its click runs (the records
 # and argv below are compared with the click's); any other key, a click,
@@ -3916,7 +3969,7 @@ check "keys-setup-snap: Grant by key opens what the click opens, once" \
   "$(cat "$work/keys-setup-snap.record" 2>/dev/null || true)" "$(cat "$work/snapper.record" 2>/dev/null || echo none)"
 clean_log keys-setup-snap
 
-# *Agent sorts* (live): ↑ from the first row reaches the proposal, ↑ again
+# *Ask agent to sort* (live): ↑ from the first row reaches the proposal, ↑ again
 # the button (no row, no proposal selected); Enter and Space do nothing
 # there (Enter never starts an agent, WP-122), `a` arms; ↓ (to the proposal), a
 # row click each drop the arm; IPC `select ask` only places the cursor;
@@ -3935,7 +3988,7 @@ expect keys-ask 3 '.marks.rows | join(",")' ""
 shows keys-ask 3 "a twice starts it · ↓ back to the list"
 for i in 4 5 6; do expect keys-ask $i "[($ak), .view.arm.armed, .view.opened] | map(tostring) | join(\"|\")" "true,false,false,-1||true"; done
 expect keys-ask 7 "[($ak), .view.arm.armed] | join(\"|\")" "true,true,false,-1|ask:triage"
-shows keys-ask 7 "Agent sorts 6 open changes? Press a again."
+shows keys-ask 7 "Ask agent to sort 6 changes? Press a again."
 expect keys-ask 8 "[($ak), .view.arm.armed] | join(\"|\")" "false,false,true,-1|"
 expect keys-ask 9 "$ak" "true,false,false,-1"
 expect keys-ask 10 "$tt.askArmed" true

@@ -440,7 +440,7 @@ never refuses.
 
 Changes without a case wait in the Changelog. You never have to explain
 them, but an agent can sort them for you, with evidence, and you apply
-the result in one click. *Agent sorts N open changes*, at the top of the
+the result in one click. *Ask agent to sort N changes*, at the top of the
 desk's Changelog while something is open, runs:
 
 ```sh
@@ -574,7 +574,7 @@ It goes into every agent skill folder that exists — `~/.agents/skills`,
 install later gets the skill when you run the command again. `seldon
 init` offers it next to the Claude Code hooks (`--harness skills`). A
 logbook the setup card created (`seldon init --defaults`) has no skill
-yet: the first *Agent sorts N open changes* asks for this command, and
+yet: the first *Ask agent to sort N changes* asks for this command, and
 the note under the button says so.
 
 The skill is a short core, `SKILL.md`, with the rules every task needs.

@@ -174,7 +174,7 @@ The picture at the top of this page shows the desk on Today.
 | # | Section | Lists | Actions |
 |---|---|---|---|
 | 1 | Today | the day's state, events today and in 7 days, the note field (`n`), NEEDS YOU (the crises), today's journal and yesterday's behind one row; the overview: the setup card until Seldon is set up, then "Seldon is recording. …", the active cases as tiles ("agent working" first in its line while an agent runs on one), *New case* from one sentence (`i`) | write a note; *Open in editor* (`e`, today's journal); resolve a crisis in place |
-| 2 | Changelog | *Agent sorts N open changes* and the agent's proposal; the chips open · crisis · attention · routine · in case · all (`f` / `F`); every event, newest first by day, a stripe on open changes (crisis urgent, attention accent) | resolve a change (*Link*, *Explain*, *Dismiss*); *Apply proposals*, *Discard*; *Ask agent*; *Ledger* (`e`); *Capture now* (`c`) |
+| 2 | Changelog | *Ask agent to sort N changes* and the agent's proposal; the chips open · crisis · attention · routine · in case · all (`f` / `F`); every event, newest first by day, a stripe on open changes (crisis urgent, attention accent) | resolve a change (*Link*, *Explain*, *Dismiss*); *Apply proposals*, *Discard*; *Ask agent*; *Ledger* (`e`); *Capture now* (`c`) |
 | 3 | Work | one sentence to a new case and *Run* (`i`); "2 / 3 active" against your limit; *By agent*; *Import tasks…*; *New case* (`+`); the cases grouped ACTIVE · VERIFICATION · QUEUED · COMPLETED, each header with the whole count when the index lists fewer ("QUEUED · 50 / 450") | by status (below); *Open in editor* (`e`); *Ask agent* |
 | 4 | Decisions | your decisions (ADRs), newest first, proposed ones marked; the detail shows the decision's first paragraph | *Accept* (twice); *New decision* (`d`); *Open in editor* (`e`) |
 | 5 | System | seven tiles: Omarchy, Packages, Snapshots, Deviations, Collectors, Recently edited (files under `~/.config` Seldon does not watch, each with *Watch*), Ignored by pacman; a tile's detail shows its rows and where they come from | *Watch*; *Open in editor* (`e`, the logbook's `STATUS.md`) |
@@ -228,7 +228,7 @@ just the row you opened (`--only`). Your text stays until the engine has
 resolved the change; if the logbook resolved it already, the form says
 "Already resolved: …" and nothing is written.
 
-**Agent sorts N open changes** (the Changelog's head) asks your default
+**Ask agent to sort N changes** (the Changelog's head) asks your default
 agent to sort the open changes. Its proposal shows as a row: every item
 with the change, the link or explanation and its evidence, evidence by an
 agent or of unknown authorship marked. *Apply proposals* applies it as
@@ -236,7 +236,7 @@ you in one click, crises never with the rest: each has its own button.
 *Discard* throws the proposal away. The agent only proposes; you apply
 (ADR-0036). By key: ↑ on the Changelog's first row opens the proposal,
 Enter arms *Apply proposals* and a second Enter applies it; ↑ once more
-reaches *Agent sorts*, and `a` twice starts the agent (Enter never does).
+reaches *Ask agent to sort*, and `a` twice starts the agent (Enter never does).
 
 ### Keys
 
@@ -258,7 +258,7 @@ The desk's keys (the full table with every section's keys:
 | `i` | the one-sentence new case (Today, Work) |
 | `e` | open in the editor: the journal, this month's ledger, the case, the decision, `STATUS.md`, the logbook |
 | `f` / `F` | Changelog: the next / previous chip |
-| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` its crises (Enter twice applies the one under the cursor alone), then back to the list. On it, Enter twice applies it; ↑ again: *Agent sorts*, `a` twice starts it. Today, while Seldon is not set up: the setup card's row; ←/→ a button, Enter twice runs it. Work: the header's buttons (*By agent*, *Import tasks…*, *New case*); ←/→ a button, Enter twice runs it |
+| ↑ / `k` on the first row | Changelog: the agent's triage proposal; ↓ / `j` its crises (Enter twice applies the one under the cursor alone), then back to the list. On it, Enter twice applies it; ↑ again: *Ask agent to sort*, `a` twice starts it. Today, while Seldon is not set up: the setup card's row; ←/→ a button, Enter twice runs it. Work: the header's buttons (*By agent*, *Import tasks…*, *New case*); ←/→ a button, Enter twice runs it |
 | Enter on Appearance | Settings: the width slider, the presets, the sidebar; ↑/↓ a control, ←/→ its value, Enter twice saves it, Esc back |
 | `a` | Work: hand the case to the agent (twice), or *Focus* while one works on it |
 | `x` | Work: drop the case (twice) |

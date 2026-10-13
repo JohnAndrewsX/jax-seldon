@@ -40,7 +40,7 @@ import "Model.js" as Model
 // disarms. A held key repeats only where it moves (keyPressed). Every
 // button has a key path (WP-202): ↑ at the top of a section's list goes
 // on to the notices' buttons (below), the sections reach their own
-// (Today's setup card, the Changelog's Agent sorts, Work's header
+// (Today's setup card, the Changelog's Ask agent to sort, Work's header
 // buttons, Settings' controls);
 // Enter arms, the second Enter runs what the click runs, and a click on
 // the desk, a summon or a selection is a detour that drops the arm.
@@ -366,6 +366,13 @@ Item {
     var kept = memory && memory.selected ? memory.selected[id] : undefined
     if (typeof kept === "string" && kept !== "") item.selectedId = kept
     if (id === root.sectionId) root.currentSection = item
+  }
+
+  // The data state's *Clear search* (WP-178, Model.emptyState): what Esc
+  // does to the filter, by a click.
+  function clearSearch() {
+    root.searchText = ""
+    root.takeKeys()
   }
 
   // ---- Keys

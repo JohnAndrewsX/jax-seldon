@@ -337,7 +337,7 @@ Section {
     visible: !root.hasGraph
     horizontalAlignment: Text.AlignHCenter
     textFormat: Text.PlainText
-    text: !root.index ? "No index to show" : "Nothing to draw yet: no areas, cases, decisions or changes in the index"
+    text: Model.emptyState("graph", { index: !!root.index, mode: "pro" }).text
     color: root.tone.dim
     wrapMode: Text.Wrap
     font.family: root.fontFamily

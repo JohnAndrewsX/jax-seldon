@@ -7,7 +7,7 @@ import "../components/desk"
 import "../Model.js" as Model
 
 // Section 2, Changelog (ADR-0034 §2, SPEC-PLUGIN §5.4; prototype
-// `changelog`). The list: the slot of "Agent sorts N open changes"
+// `changelog`). The list: the slot of "Ask agent to sort N changes"
 // (WP-124b), the chips open · crisis · attention · routine · in case · all
 // with their counts, the count line with *Ledger* and *Capture now*, the
 // quiet "N changes without a case" (ADR-0028 §4b: dim, no colour), "+N
@@ -33,8 +33,8 @@ import "../Model.js" as Model
 // before the list, and Enter twice applies the one under the cursor alone
 // (WP-201, `TriageDetail.crisisMove`), `f` / `F` the next / previous chip, `e` this
 // month's ledger in the editor, Esc hides a shown form (its draft kept).
-// Above the proposal (or the first row without one) ↑ reaches *Agent sorts
-// N open changes* (WP-202): `a` arms it, the second `a` starts the agent as
+// Above the proposal (or the first row without one) ↑ reaches *Ask agent to sort
+// N changes* (WP-202): `a` arms it, the second `a` starts the agent as
 // its click does (Enter never starts an agent, WP-122: Enter and Space do
 // nothing there); ↓ goes back, ↑ on to the notices; a click, another
 // selection, another section or the button going away drops the arm.
@@ -54,8 +54,13 @@ Section {
   readonly property var prepared: root.service ? root.service.deskChangelog : null
   readonly property var hidden: root.service ? root.service.deskHidden : ({})
   readonly property var rows: Model.changelogView(root.prepared, root.chip, root.hidden, root.searchText)
+  // The list's data state (WP-178): what belongs under the chip, or no
+  // match with *Clear search*.
+  readonly property var listState: Model.emptyState("changelog", { index: !!root.index, search: root.searchText,
+    shown: root.rows.length, chip: root.chip, all: root.prepared && root.prepared.rows ? root.prepared.rows.length : 0,
+    mode: "pro" })
   readonly property var chips: Model.changelogChips(root.prepared, root.hidden)
-  // While the proposal or *Agent sorts* has the keys no list row is the
+  // While the proposal or *Ask agent to sort* has the keys no list row is the
   // selection.
   readonly property int cursor: root.triageShown || root.askFocused ? -1 : root.rowIndex(root.selectedId)
   readonly property int hiddenCount: Model.hiddenCount(root.prepared, root.hidden)
@@ -82,7 +87,7 @@ Section {
   readonly property bool triageAskShown: !!root.triageButton && root.triageButton.visible
   readonly property bool askLineShown: !!root.askResult && !root.askResult.pending
   readonly property bool proposalRowShown: !!root.triageView
-  // WP-202: the keys on *Agent sorts* (reachable while it can be pressed).
+  // WP-202: the keys on *Ask agent to sort* (reachable while it can be pressed).
   property bool askFocused: false
   readonly property bool askKeyShown: root.triageAskShown && !(root.askResult && root.askResult.pending)
   readonly property string askKey: "ask:triage"
@@ -119,7 +124,7 @@ Section {
     root.askFocused = false
   }
 
-  // *Agent sorts* has the keys: no row, no proposal is the selection; on a
+  // *Ask agent to sort* has the keys: no row, no proposal is the selection; on a
   // stacked desk showing a detail the list comes back, where the button is.
   function focusAsk() {
     if (!root.askKeyShown) return false
@@ -129,7 +134,7 @@ Section {
     return true
   }
 
-  // A press on the desk (WP-202): the keys' place on *Agent sorts* and on a
+  // A press on the desk (WP-202): the keys' place on *Ask agent to sort* and on a
   // crisis goes, with its arm (WP-201), and so does an armed *Apply
   // proposals*: a click applies it at once, so its arm is always made by
   // a key (round 2, I4). Discard's arm stays: it is made and confirmed by
@@ -174,7 +179,7 @@ Section {
   }
 
   function activate() {
-    // Enter never starts an agent (WP-122): on *Agent sorts* it does
+    // Enter never starts an agent (WP-122): on *Ask agent to sort* it does
     // nothing, `a` presses it (textKey)
     if (root.askFocused) return true
     if (root.stacked && !root.detailShown) {
@@ -200,7 +205,7 @@ Section {
   }
 
   function textKey(t) {
-    // `a` arms *Agent sorts* under the keys, the second `a` starts the
+    // `a` arms *Ask agent to sort* under the keys, the second `a` starts the
     // agent, the click's call (the Work pattern, WP-202)
     if (t === "a" && root.askFocused) {
       if (root.askKeyShown && root.arm && root.arm.press(root.askKey, Model.keyArmHint(triageAsk.text, "a")) && root.service)
@@ -222,7 +227,7 @@ Section {
   // chip when it has it, else under "all".
   function select(id) {
     var target = String(id)
-    // "ask": *Agent sorts* gets the keys (navigation only, WP-202)
+    // "ask": *Ask agent to sort* gets the keys (navigation only, WP-202)
     if (target === "ask") return root.focusAsk()
     root.askFocused = false
     // "proposal" or its id: the proposal's detail (WP-126c)
@@ -267,6 +272,8 @@ Section {
       chip: root.chip,
       chips: root.chips.map(function(c) { return c.id + " " + c.count }),
       rows: root.rows.length,
+      empty: root.listState.text,
+      emptyAction: root.listState.action ? root.listState.action.id : "",
       cursor: root.cursor,
       selected: root.selectedId,
       first: root.rows.slice(0, 12).map(function(r) { return r.title }),
@@ -326,7 +333,7 @@ Section {
   }
   // Another section shown: a shown form gives the keys back (a hidden
   // field keeps Qt's focus otherwise); its draft stays.
-  // The keys' place on *Agent sorts* goes too (WP-202).
+  // The keys' place on *Ask agent to sort* goes too (WP-202).
   onActiveChanged: {
     if (root.active) return
     root.leaveKeys()
@@ -343,12 +350,11 @@ Section {
     title: "Changelog"
     model: root.rows
     currentIndex: root.cursor
-    emptyText: !root.index ? "No index to show"
-      : root.searchText !== "" ? "Nothing here matches “" + root.searchText + "”."
-      : root.chip === "open" ? "Nothing open: every change is in a case or routine."
-      : "No events in " + Model.EVENT_CLASS_LABELS[root.chip === "case" ? "case" : root.chip] + "."
+    emptyText: root.listState.text
+    emptyAction: root.listState.action
+    onEmptyActionTriggered: function(id) { root.runEmptyAction(id) }
 
-    // "Agent sorts N open changes" (ADR-0034 §6, WP-124b): the button
+    // "Ask agent to sort N changes" (ADR-0034 §6, WP-124b): the button
     // (`agent ask triage --json`, fixed argv), the ask's answer or the
     // engine's refusal, and the proposal's row, which opens it in the
     // detail.
@@ -635,7 +641,7 @@ Section {
       title: modelData.title
       meta: modelData.listMeta
       aside: modelData.age
-      stripe: modelData.stripe
+      mark: modelData.mark
       alert: modelData.alert
       selected: !root.triageShown && !root.askFocused && modelData.id === root.selectedId
       cursor: list.hoverIndex === index
