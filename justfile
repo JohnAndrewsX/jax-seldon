@@ -132,7 +132,8 @@ check-perf-dirs:
 # Pinned workflow actions and images, the cargo audit release gate and
 # its list of accepted advisories (WP-072): tests/release/.
 # The plugin's manifest version equals Model.js PLUGIN_VERSION (WP-090).
-# The Omarchy validator pin and its fetch-and-verify script (WP-190).
+# The Omarchy validator pin and its fetch-and-verify script (WP-190), and
+# the sparse checkout of the pinned shell tree for CI (WP-191).
 # The plugin split as the store scans it: no downloader piped to a shell
 # in its README or SECURITY.md, no agent files (WP-042).
 # The release acceptance record checker against a scratch repository
@@ -149,6 +150,7 @@ check-packaging:
       tests/release/workflow-pins.test.sh \
       packaging/plugin-version.sh tests/release/plugin-version.test.sh \
       packaging/omarchy-validate.sh tests/release/omarchy-pin.test.sh \
+      packaging/omarchy-tree.sh tests/release/omarchy-tree.test.sh \
       tests/release/store-readme.test.sh \
       packaging/acceptance-check.sh tests/release/acceptance-check.test.sh \
       scripts/check-no-network.sh tests/release/no-network.test.sh \
@@ -162,6 +164,7 @@ check-packaging:
         tests/release/workflow-pins.test.sh \
         packaging/plugin-version.sh tests/release/plugin-version.test.sh \
         packaging/omarchy-validate.sh tests/release/omarchy-pin.test.sh \
+        packaging/omarchy-tree.sh tests/release/omarchy-tree.test.sh \
         tests/release/store-readme.test.sh \
         packaging/acceptance-check.sh tests/release/acceptance-check.test.sh \
         scripts/check-no-network.sh tests/release/no-network.test.sh \
@@ -181,6 +184,7 @@ check-packaging:
     bash packaging/plugin-version.sh plugin/manifest.json plugin/Model.js
     bash tests/release/plugin-version.test.sh
     bash tests/release/omarchy-pin.test.sh
+    bash tests/release/omarchy-tree.test.sh
     bash tests/release/store-readme.test.sh
     bash tests/release/acceptance-check.test.sh
     bash scripts/check-no-network.sh
