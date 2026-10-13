@@ -11,11 +11,13 @@
 # Quickshell harnesses; the plugin-qml job runs them (WP-191, ADR-0055):
 #   - just qmllint (with check-tokens.py), just plugin-test with the four
 #     harnesses, and Omarchy's QML text-format scan on plugin/, against
-#     Omarchy's shell tree at packaging/omarchy-pin (packaging/omarchy-tree.sh)
-#     with the Quickshell and Qt of Omarchy's package mirror for the test
-#     host's channel. The dev host runs the same recipes against the
-#     installed tree before every handover; where CI and the test host
-#     disagree, the test host wins.
+#     Omarchy's shell tree at packaging/omarchy-pin (packaging/omarchy-tree.sh),
+#     the tree Omarchy stable ships, with the Quickshell and Qt of
+#     Omarchy's stable package mirror (E93: a release must work on
+#     stable). The scan runs only here; the dev host's stricter check is
+#     plaintext.test.js. The hosts run the same recipes against their
+#     installed trees: the test host's rc is the rehearsal, the dev host's
+#     edge a preview (ADR-0055 §4).
 name: ci
 
 on:
@@ -127,23 +129,26 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      # Omarchy's package mirror of the test host's channel (rc): the
-      # Quickshell and Qt the hosts run, not Arch's newest. -Syuu moves the
+      # Omarchy's stable package mirror (E93, ADR-0055 §3): the Quickshell
+      # and Qt Omarchy stable ships, not Arch's newest. -Syuu moves the
       # whole container to that snapshot, downgrades included. "Mirror
       # against the pin" fails when this line is not the pin's.
-      - name: Install from Omarchy's rc mirror
+      - name: Install from Omarchy's stable mirror
         run: |
-          echo 'Server = https://rc-mirror.omarchy.org/$repo/os/$arch' > /etc/pacman.d/mirrorlist
+          echo 'Server = https://stable-mirror.omarchy.org/$repo/os/$arch' > /etc/pacman.d/mirrorlist
           pacman -Syuu --noconfirm --needed git just jq python nodejs quickshell qt6-declarative ttf-jetbrains-mono-nerd
 
+      # Omarchy's scan and the plugin run as root here: no token in .git/config
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: The pinned Omarchy tree
         id: tree
         run: bash packaging/omarchy-tree.sh "$RUNNER_TEMP/omarchy"
 
       - name: Mirror against the pin
-        run: cmp "$RUNNER_TEMP/omarchy/default/pacman/mirrorlist-rc" /etc/pacman.d/mirrorlist
+        run: cmp "$RUNNER_TEMP/omarchy/default/pacman/mirrorlist-stable" /etc/pacman.d/mirrorlist
 
       - name: Versions
         shell: bash
@@ -195,7 +200,8 @@ jobs:
 
       # Omarchy's own scan (test/shell.d at the pin) reads ROOT/shell and
       # prints one line per Text with a non-literal binding and no
-      # textFormat, exit 0; any line fails the step.
+      # textFormat, exit 0; any line fails the step. Only CI runs it: the
+      # Omarchy package installs no test/ (ADR-0055 §2).
       - name: Omarchy's QML text-format scan on plugin/
         if: ${{ !cancelled() && steps.tree.outcome == 'success' }}
         shell: bash

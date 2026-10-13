@@ -42,15 +42,17 @@
 #     release before anything is published; the plugin job refuses the
 #     same way before its push, and the push is `--atomic`;
 #   - ci.yml's plugin-qml job (WP-191, ADR-0055) installs quickshell and
-#     qt6-declarative from Omarchy's mirror of one channel and compares
-#     that line with the pin's mirrorlist of the same channel, checks out
-#     the pinned tree (packaging/omarchy-tree.sh, step id tree), runs
-#     `just qmllint` and `just plugin-test` (SELDON_FULL_CHECK=1, a log
-#     with the harnesses skipped refused) each with a private HOME and a
-#     0700 runtime dir removed by a trap, and Omarchy's text-format scan
-#     on a copy of plugin/ (a finding refused); the three checks run when
-#     the tree is there; no SELDON_SKIP_HOST_CHECKS, continue-on-error,
-#     `|| true` or `set +e` in the job.
+#     qt6-declarative from Omarchy's stable mirror (E93) and compares
+#     that line with the pin's mirrorlist-stable, checks out the repository
+#     without persisted credentials and the pinned tree
+#     (packaging/omarchy-tree.sh, step id tree), runs `just qmllint` and
+#     `just plugin-test` (SELDON_FULL_CHECK=1, a log with the harnesses
+#     skipped refused) each with a private HOME and a 0700 runtime dir
+#     removed by a trap, and Omarchy's text-format scan on a copy of
+#     plugin/ (a finding refused); the three checks run when the tree is
+#     there, each under `shell: bash` (pipefail); no
+#     SELDON_SKIP_HOST_CHECKS, continue-on-error, `|| true` or `set +e` in
+#     the job.
 #
 # Limit: a SHA is not checked against its version comment (that needs
 # the network); the refresh steps in packaging/README.md resolve both.
@@ -184,11 +186,12 @@ refuses_on() {
 }
 
 # plugin_qml CI_YML: the plugin-qml job (WP-191, ADR-0055) installs from
-# Omarchy's mirror of one channel and compares it with the pin's, checks
-# out the pinned tree, runs `just qmllint`, `just plugin-test` (harnesses
-# forced, a skip refused) and Omarchy's text-format scan (a finding
-# refused), each recipe with a private HOME and 0700 runtime dir, never
-# skips the host checks and ignores no failure
+# Omarchy's stable mirror and compares it with the pin's, checks out
+# without persisted credentials and the pinned tree, runs `just qmllint`,
+# `just plugin-test` (harnesses forced, a skip refused) and Omarchy's
+# text-format scan (a finding refused), each under `shell: bash`, each
+# recipe with a private HOME and 0700 runtime dir, never skips the host
+# checks and ignores no failure
 plugin_qml() {
   local f=$1 text channel cmp n
   text=$(job "$f" plugin-qml)
@@ -207,7 +210,24 @@ plugin_qml() {
     cmp="        run: cmp \"\$RUNNER_TEMP/omarchy/default/pacman/mirrorlist-$channel\" /etc/pacman.d/mirrorlist"
     grep -x -q -F "$cmp" <<< "$text" \
       || echo "$f: the plugin-qml job's mirror line and the compared mirrorlist name different channels (or none is compared)"
+    [[ $channel == stable ]] \
+      || echo "$f: the plugin-qml job installs from Omarchy's $channel mirror, not stable (E93, ADR-0055 §3)"
   fi
+  # the checkout keeps no token: Omarchy's scan and the plugin run as root
+  awk '/^      - uses: actions\/checkout@/ { on = 1; next } on && /^      - / { on = 0 }
+    on && $0 == "          persist-credentials: false" { ok = 1 } END { exit !ok }' <<< "$text" \
+    || echo "$f: the plugin-qml job's checkout keeps its credentials (persist-credentials: false)"
+  # every tree-gated check runs under `shell: bash` (bash -eo pipefail):
+  # GitHub's default in a container is `sh -e`, and without pipefail a red
+  # `just plugin-test | tee` or a crashed scan in `$(… | sed …)` passes
+  awk -v want="        if: \${{ !cancelled() && steps.tree.outcome == 'success' }}" '
+    function done_step() { if (gated && !bash) print name; gated = 0; bash = 0 }
+    /^      - / { done_step(); name = $0; sub(/^      - (name: )?/, "", name) }
+    $0 == want { gated = 1 }
+    $0 == "        shell: bash" { bash = 1 }
+    END { done_step() }' <<< "$text" | while IFS= read -r n; do
+    echo "$f: the plugin-qml step '$n' does not run under shell: bash (pipefail)"
+  done
   grep -E -q '^          pacman -Syuu --noconfirm --needed( [a-z0-9-]+)*( quickshell)( [a-z0-9-]+)*( qt6-declarative)( [a-z0-9-]+)*$' <<< "$text" \
     || echo "$f: the plugin-qml job does not install quickshell and qt6-declarative with pacman -Syuu"
   grep -x -q -F '        id: tree' <<< "$text" \
@@ -613,11 +633,19 @@ expect_problem "a recipe step without chmod 700" "chmod 700" \
 expect_problem "a recipe step without its trap" "trap" \
   "0,/^          trap 'rm -rf \"\\\$home\" \"\\\$rt\"' EXIT$/{//d}" ci.yml
 expect_problem "plugin-qml from Arch's mirror" "does not install from Omarchy's mirror" \
-  "s|^          echo 'Server = https://rc-mirror.omarchy.org/|          echo 'Server = https://geo.mirror.pkgbuild.com/|" ci.yml
+  "s|^          echo 'Server = https://stable-mirror.omarchy.org/|          echo 'Server = https://geo.mirror.pkgbuild.com/|" ci.yml
 expect_problem "plugin-qml mirror of another channel" "different channels" \
-  "s|^          echo 'Server = https://rc-mirror.omarchy.org/|          echo 'Server = https://stable-mirror.omarchy.org/|" ci.yml
+  "s|^          echo 'Server = https://stable-mirror.omarchy.org/|          echo 'Server = https://rc-mirror.omarchy.org/|" ci.yml
 expect_problem "plugin-qml without the mirror comparison" "different channels" \
-  '/^        run: cmp "\$RUNNER_TEMP\/omarchy\/default\/pacman\/mirrorlist-rc"/d' ci.yml
+  '/^        run: cmp "\$RUNNER_TEMP\/omarchy\/default\/pacman\/mirrorlist-stable"/d' ci.yml
+expect_problem "plugin-qml on rc, mirror and comparison alike" "not stable (E93" \
+  "s|https://stable-mirror.omarchy.org/|https://rc-mirror.omarchy.org/|; s|/mirrorlist-stable\"|/mirrorlist-rc\"|" ci.yml
+expect_problem "plugin-qml checkout keeps its credentials" "keeps its credentials" \
+  '/^  plugin-qml:/,${/^          persist-credentials: false$/d}' ci.yml
+expect_problem "plugin-test without shell: bash" "'just plugin-test (the four Quickshell harnesses, the pinned shell)' does not run under shell: bash" \
+  '/^      - name: just plugin-test /,/^        run: \|/{/^        shell: bash$/d}' ci.yml
+expect_problem "the scan without shell: bash" "'Omarchy's QML text-format scan on plugin/' does not run under shell: bash" \
+  "/^      - name: Omarchy's QML text-format scan/,/^        run: \\|/{/^        shell: bash\$/d}" ci.yml
 expect_problem "plugin-qml without quickshell" "does not install quickshell" \
   's/^(          pacman -Syuu .*) quickshell /\1 /' ci.yml
 expect_problem "plugin-qml without the pinned tree" "does not check out the pinned tree" \
