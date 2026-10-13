@@ -188,8 +188,8 @@ your words prove why it happened; otherwise it leaves the item open.
 
 ## Triage
 
-When many changes are open, an agent can sort them for you. *Agent sorts
-N open changes* in the desk's Changelog (or `seldon agent ask triage`)
+When many changes are open, an agent can sort them for you. *Ask agent to sort
+N changes* in the desk's Changelog (or `seldon agent ask triage`)
 starts your agent with that one task. The agent writes nothing into the
 logbook. It stores a *proposal*: for each change it can prove, a link to
 a case or an explanation, with the evidence the engine can look up. A
@@ -288,7 +288,7 @@ The desk shows each idea on this page in one place:
 | routine | Changelog (`2`), chip *routine*: history, no stripe; neither the bar nor the header counts it |
 | attention | Changelog, chips *open* and *attention*, with an accent stripe; the header's *attention* figure |
 | crisis | Today (`1`) under NEEDS YOU; Changelog, chip *crisis*, with an urgent stripe and *Why loud?*; the header's *crises* figure |
-| triage | the head of the Changelog: *Agent sorts N open changes*, then the proposal as a row |
+| triage | the head of the Changelog: *Ask agent to sort N changes*, then the proposal as a row |
 | case | Work (`3`), in the groups ACTIVE, VERIFICATION, QUEUED and COMPLETED; Today shows the active cases as tiles |
 | trace | Work, the case's detail: LOG and LINKED CHANGES |
 | decision | Decisions (`4`); a proposed decision has a stripe, and the sidebar counts "N new" |

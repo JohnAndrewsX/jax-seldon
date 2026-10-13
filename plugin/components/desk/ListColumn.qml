@@ -7,7 +7,10 @@ import ".."
 // the section puts above the list (chips, a field: the default property),
 // then a ListView of the section's rows (delegates from Model.js row
 // functions), or `emptyText` when there are none. The cursor row is
-// `currentIndex`; the view keeps it in sight.
+// `currentIndex`; the view keeps it in sight. With no row, `emptyAction`
+// (Model.emptyState's { id, label, key } or null, WP-178) is one button
+// under the text, beside the key that does the same (SPEC-PLUGIN §5.3:
+// every hinted key is a click too); a click emits emptyActionTriggered.
 //
 // One cursor (SPEC-PLUGIN §5.3, WP-177): `hoverIndex` is the row under the
 // pointer, set only when the pointer really moved (Omarchy's
@@ -20,6 +23,7 @@ Item {
 
   property string title: ""
   property string emptyText: ""
+  property var emptyAction: null
   property alias model: list.model
   property alias delegate: list.delegate
   property alias currentIndex: list.currentIndex
@@ -38,6 +42,9 @@ Item {
   // The desk's key count (Section.keyEvents): any key clears the pointer's
   // row, also one that moves nothing (Down on the last row, Enter, a letter).
   property int keyEvents: 0
+
+  // A click on the data state's button (`emptyAction.id`).
+  signal emptyActionTriggered(string id)
 
   onKeyEventsChanged: root.dropPointer()
 
@@ -125,16 +132,48 @@ Item {
     onHoveredChanged: if (!hovered) root.dropPointer()
   }
 
-  Text {
+  Column {
+    objectName: "emptyState"
     visible: list.count === 0 && root.emptyText !== ""
     x: Style.spacing.xxl
     anchors.top: list.top
     width: parent.width - Style.spacing.xxl * 2
-    textFormat: Text.PlainText
-    text: root.emptyText
-    color: root.tone.dim
-    wrapMode: Text.Wrap
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.bodySmall
+    spacing: Style.spacing.md
+
+    Text {
+      width: parent.width
+      textFormat: Text.PlainText
+      text: root.emptyText
+      color: root.tone.dim
+      wrapMode: Text.Wrap
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+
+    Row {
+      visible: !!root.emptyAction
+      spacing: Style.spacing.md
+
+      Button {
+        objectName: "emptyAction"
+        text: root.emptyAction ? root.emptyAction.label : ""
+        bordered: true
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        fontSize: Style.font.caption
+        horizontalPadding: Style.spacing.md
+        verticalPadding: Style.spacing.xs
+        onClicked: if (root.emptyAction) root.emptyActionTriggered(root.emptyAction.id)
+      }
+
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        text: root.emptyAction && root.emptyAction.key ? "or " + root.emptyAction.key : ""
+        color: root.tone.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+    }
   }
 }

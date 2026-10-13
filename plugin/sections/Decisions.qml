@@ -55,9 +55,10 @@ ReadingSection {
 
   allRows: Model.decisionRows(root.index)
   searchFields: ["id", "title", "status", "date"]
-  emptyText: !root.index ? "No index to show"
-    : root.allRows.length > 0 ? "No decision matches the search."
-    : "No decisions yet. New decision (key d) writes the first."
+  readonly property var listState: Model.emptyState("decisions", { index: !!root.index, search: root.searchText,
+    shown: root.rows.length, canWrite: root.canWrite, mode: "pro" })
+  emptyText: root.listState.text
+  emptyAction: root.listState.action
   detailTitle: root.formOpen ? "New decision" : root.decision ? root.decision.heading : ""
   showRow: !root.formOpen
   actions: root.decision ? root.decision.actions.map(function(a) {
@@ -73,9 +74,10 @@ ReadingSection {
   actionMeta: root.current ? root.current.id : ""
   editing: root.formOpen && form.editing
   rowTitle: function(r) { return r.title !== "" ? r.title : r.id }
-  rowMeta: function(r) { return [r.id, r.status].filter(function(p) { return p !== "" }).join(" · ") }
+  // a proposed decision's status is its mark's word (WP-178), not twice
+  rowMeta: function(r) { return [r.id, r.mark ? "" : r.status].filter(function(p) { return p !== "" }).join(" · ") }
   rowAside: function(r) { return r.date }
-  rowStripe: function(r) { return r.status === "proposed" ? "attention" : "" }
+  rowMark: function(r) { return r.mark }
 
   function openCurrent() {
     root.disarm()
@@ -95,6 +97,13 @@ ReadingSection {
     if (!row || row.status !== "proposed" || !row.actionable || !root.canWrite || root.accepting || !root.arm) return false
     if (!root.arm.press(root.armId, Model.acceptArmHint(row.id))) return false
     return root.service.acceptDecision(row.id)
+  }
+
+  // The empty list's New decision (WP-178): what `d` does.
+  function emptyFirstStep(id) {
+    if (id !== "newDecision") return false
+    root.openForm()
+    return true
   }
 
   function openForm() {

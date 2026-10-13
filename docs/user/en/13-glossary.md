@@ -50,7 +50,7 @@ languages.
 | snapshot | Snapshot | a snapper snapshot of the file system |
 | trace | Spur | the events of one case, in order |
 | transaction group | Transaktionsgruppe | the packages of one package transaction, shown and resolved as one drift item |
-| triage | Triage | the agent's proposal for the open changes, "Agent sorts N open changes" in the Changelog; *Apply proposals* applies it as you |
+| triage | Triage | the agent's proposal for the open changes, "Ask agent to sort N changes" in the Changelog; *Apply proposals* applies it as you |
 | verification | Prüfung | the case status between active and completed; the work waits for your check |
 | watched paths | beobachtete Pfade | the files and folders the config collector hashes (`watchPaths`) |
 | zone | Zone | how much a change touches the system: `green`, `yellow`, `red` (grün, gelb, rot) |

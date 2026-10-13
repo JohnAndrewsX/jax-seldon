@@ -105,8 +105,8 @@ you:
 - The desk's buttons have a key path, except Work's *By agent* and
   *Import tasks…*, which still need a click. ↑ at the top of a list
   reaches the notices' buttons, ↑ on Today's first row the setup card,
-  ↑ on the Changelog's first row the agent's proposal or *Agent sorts N
-  open changes* (`a` twice), Enter on Settings › Appearance the width
+  ↑ on the Changelog's first row the agent's proposal or *Ask agent to sort
+  N changes* (`a` twice), Enter on Settings › Appearance the width
   and the sidebar. ←/→ pick a button or a value, Enter arms, a second
   Enter runs. In a shown proposal ↓ walks its crises, and Enter twice
   applies the one under the cursor alone. The table is in

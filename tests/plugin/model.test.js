@@ -1096,7 +1096,7 @@ test("planResult reads the SPEC-ENGINE §3 plan shapes", () => {
     journal: null, event: {}, git: null }, o))
   same(M.planResult(0, step({ from: "queued", to: "active" }), ""), { ok: true, text: "C-2026-005: queued → active", caseId: "C-2026-005" })
   same(M.planResult(0, step({ from: "verification", to: "completed", journal: "journal/2026/2026-10-01.md" }), ""),
-    { ok: true, text: "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md", caseId: "C-2026-005" })
+    { ok: true, text: "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md · Reopen makes a new case", caseId: "C-2026-005" })
   same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009", title: "Zed" }, event: {}, areaCreated: null, git: null }), ""),
     { ok: true, text: "Created C-2026-009 · Zed", caseId: "C-2026-009" })
   same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009", title: "Zed" }, areaCreated: "dev-env" }), ""),
@@ -2755,9 +2755,9 @@ test("transactionDetail: an interrupted transaction in the row and the detail (W
   assert.ok(t.text.startsWith("pacman was interrupted and stopped after the packages below"))
   // rounds 2 and 3: the facts, then the safe step before a reboot; never
   // "run the update again, then reboot" (a rerun skips the hooks of
-  // packages already upgraded). The step names only ↑ and ↻ (a reinstall
+  // packages already upgraded). The step names only ↑ and the reinstall glyph (a reinstall
   // repairs those); − stays removed, ↓ goes to the agent.
-  const tail = "Before you reboot, reinstall the packages marked ↑ or ↻ below (`pacman -S` with their names): "
+  const tail = "Before you reboot, reinstall the packages marked ↑ or " + M.TX_REINSTALL_GLYPH + " below (`pacman -S` with their names): "
     + "that runs those steps for them; a plain rerun does not. "
     + "A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
   const didNot = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; "
@@ -2773,8 +2773,8 @@ test("transactionDetail: an interrupted transaction in the row and the detail (W
     const x = M.TX_STATUS_TEXTS[s]
     assert.ok(x.endsWith(tail), s)
     assert.ok(!/reboot after|finishes it|packages listed here/.test(x), s)
-    // the reinstall names ↑ and ↻ only, never − or ↓
-    assert.ok(/reinstall the packages marked ↑ or ↻ below/.test(x), s)
+    // the reinstall names ↑ and the reinstall glyph only, never − or ↓
+    assert.ok(x.indexOf("reinstall the packages marked ↑ or " + M.TX_REINSTALL_GLYPH + " below") !== -1, s)
     assert.ok(!/reinstall[^.;]*[−↓]/.test(x), s)
   }
   // a mixed transaction (− + ↑ ↑) and the ↓ group carry the same text, and
@@ -3896,7 +3896,7 @@ test("WP-126c: ↑ from the first Changelog row reaches the proposal, ↓ goes b
 test("WP-202: the keys' path to the desk's buttons", () => {
   // the arm's hint and the key line
   assert.strictEqual(M.keyArmHint("Restart shell"), "Restart shell? Press Enter again.")
-  assert.strictEqual(M.keyArmHint("Agent sorts 6 open changes", "a"), "Agent sorts 6 open changes? Press a again.")
+  assert.strictEqual(M.keyArmHint("Ask agent to sort 6 changes", "a"), "Ask agent to sort 6 changes? Press a again.")
   assert.strictEqual(M.noticeHint(false), "↑ at the top of a list reaches these buttons")
   assert.strictEqual(M.noticeHint(true), "←/→ a button · Enter twice runs it · ↓ back to the list")
   // notices: only the ones a click is wired to, only with buttons; the key
@@ -4053,7 +4053,7 @@ test("triage argv: ids only, one --item, never propose (ADR-0036)", () => {
 
 test("triage button: open changes and an engine that can write", () => {
   const ix = M.parseIndex(sample).index
-  same(M.triageButton(ix, true), { visible: true, count: 6, text: "Agent sorts 6 open changes" })
+  same(M.triageButton(ix, true), { visible: true, count: 6, text: "Ask agent to sort 6 changes" })
   assert.strictEqual(M.triageButton(ix, false).visible, false)
   const none = JSON.parse(sample)
   none.summary.openDrift = 0
@@ -5255,7 +5255,7 @@ test("word table: both columns on every row, every ADR-0045 §6 row present", ()
   const covered = {}
   for (const key of Object.keys(W)) {
     const r = W[key]
-    assert.ok(/^(word|card|action|confirm|help)\.[a-zA-Z0-9]+$/.test(key), key)
+    assert.ok(/^(word|card|action|confirm|help|status|empty|link)\.[a-zA-Z0-9]+$/.test(key), key)
     assert.ok(typeof r.easy === "string" && r.easy.trim() !== "", key + ": no EASY word")
     assert.ok(typeof r.pro === "string", key + ": no PRO column")
     if (r.easyOnly === true) assert.strictEqual(r.pro, "", key + ": easyOnly with a PRO word")
@@ -5424,6 +5424,441 @@ test("word table: the guards see a subtitle, an unknown key and a literal label"
     { file: "plugin/Model.js", line: 3, key: null, mode: null }]), ["plugin/Model.js:1 easyOnly", "plugin/Model.js:2 mode"])
   same(literalProWords(probe, new Set(["open in editor", "capture now", "focus", "explain"])),
     ["plugin/components/easy/Probe.qml:7 \"Open in Editor\"", "plugin/components/easy/Probe.qml:9 \"Capture now…\""])
+})
+
+// ---- WP-178: status words, data states, the C1 guard, the way back
+
+test("STATUS: every tone has a word in both modes; a quiet status has neither", () => {
+  const tones = new Set()
+  for (const kind of Object.keys(M.STATUS)) {
+    for (const status of Object.keys(M.STATUS[kind])) {
+      const s = M.STATUS[kind][status]
+      const at = kind + "." + status
+      same(Object.keys(s).sort(), ["glyph", "tone", "word"])
+      assert.ok(["", "urgent", "accent"].indexOf(s.tone) !== -1, at + ": tone " + s.tone)
+      if (s.tone === "") {
+        assert.strictEqual(s.word, "", at + ": a quiet status has no word")
+        assert.strictEqual(s.glyph, "", at + ": a quiet status has no glyph")
+        assert.strictEqual(M.statusOf(kind, status, "pro"), null, at)
+        continue
+      }
+      tones.add(s.tone)
+      assert.ok(Object.prototype.hasOwnProperty.call(M.WORDS, s.word), at + ": " + s.word + " is not a key of the word table")
+      assert.notStrictEqual(M.WORDS[s.word].easyOnly, true, at)
+      for (const mode of ["pro", "easy"]) {
+        const got = M.statusOf(kind, status, mode)
+        assert.ok(got && got.word.trim() !== "", at + ": no " + mode + " word")
+        assert.strictEqual(got.word, M.text(s.word, mode), at)
+        assert.strictEqual(got.tone, s.tone, at)
+        assert.strictEqual(got.stripe, s.tone === "urgent" ? "crisis" : "attention", at)
+      }
+      // ASCII or one Nerd Font glyph (glyphs.test.js checks the font)
+      assert.ok(s.glyph === "" || [...s.glyph].length === 1, at + ": glyph " + JSON.stringify(s.glyph))
+    }
+  }
+  same([...tones].sort(), ["accent", "urgent"])
+  // the kinds the desk shows today, and the quiet ones (ADR-0028 §3)
+  same(Object.keys(M.STATUS).sort(), ["case", "collector", "decision", "drift", "tx"])
+  same(M.CASE_STATUSES.filter((c) => M.STATUS.case[c] === undefined), [])
+  same(M.DECISION_STATUSES.filter((d) => M.STATUS.decision[d] === undefined), [])
+  same(M.TX_STATUSES.filter((t) => M.STATUS.tx[t] === undefined), [])
+  for (const quiet of [["drift", "routine"], ["drift", "case"], ["case", "completed"], ["case", "queued"]])
+    assert.strictEqual(M.statusOf(quiet[0], quiet[1], "pro"), null, quiet.join("."))
+  // the words PRO showed before (the chips, WP-137's alert) and EASY's §5 words
+  assert.strictEqual(M.statusOf("drift", "crisis", "pro").word, "crisis")
+  assert.strictEqual(M.statusOf("drift", "attention", "pro").word, "attention")
+  assert.strictEqual(M.statusOf("drift", "crisis", "easy").word, "needs your attention now")
+  assert.strictEqual(M.statusOf("drift", "attention", "easy").word, "a change nobody explained")
+  for (const t of M.TX_STATUSES) assert.strictEqual(M.statusOf("tx", t, "pro").word, t)
+  for (const [k, st] of [["nope", "crisis"], ["drift", "nope"], ["toString", ""], ["drift", "__proto__"], [undefined, undefined]])
+    assert.strictEqual(M.statusOf(k, st, "pro"), null, String(k) + "." + String(st))
+})
+
+// Every row the desk lists, from the sample and from rows made to carry
+// each tone: [section, row].
+function deskRowsOf(index) {
+  const log = M.deskChangelog(index)
+  const today = M.deskToday(index, log)
+  return [].concat(
+    log.rows.map((r) => ["changelog", r]),
+    M.todayRows(today, true, "").map((r) => ["today", r]),
+    M.deskWork(index).rows.map((r) => ["work", r]),
+    M.systemTiles(index, gen).map((r) => ["system", r]),
+    M.decisionRows(index).map((r) => ["decisions", r]))
+}
+
+// The rows that show a tone without its word ("" when none).
+function toneWithoutWord(rows) {
+  const out = []
+  const txWords = M.TX_STATUSES.map((t) => M.statusOf("tx", t, "pro").word)
+  for (const [section, r] of rows) {
+    const at = section + " " + r.id
+    const stripe = r.stripe === undefined ? "" : r.stripe
+    const mark = r.mark === undefined ? null : r.mark
+    if (stripe !== "" && !(mark && typeof mark.word === "string" && mark.word.trim() !== "")) out.push(at + ": stripe without a word")
+    else if (mark && mark.stripe !== stripe) out.push(at + ": mark " + mark.stripe + " but stripe " + stripe)
+    if (r.alert !== undefined && r.alert !== "" && txWords.indexOf(r.alert) === -1) out.push(at + ": alert " + r.alert + " is no status word")
+  }
+  return out
+}
+
+test("no row shows a tone without its word (the sample and every toned status)", () => {
+  const ix = M.parseIndex(sample).index
+  const rows = deskRowsOf(ix)
+  same(toneWithoutWord(rows), [])
+  // the sample has each tone the lists use: crisis, attention, an active
+  // case, a proposed decision, a transaction that did not complete
+  const words = new Set(rows.filter(([, r]) => r.mark).map(([s, r]) => s + ":" + r.mark.word))
+  for (const w of ["changelog:crisis", "changelog:attention", "today:crisis", "work:active", "decisions:proposed"])
+    assert.ok(words.has(w), w + " not in " + [...words].join(", "))
+  assert.ok(rows.some(([s, r]) => s === "changelog" && r.alert === "interrupted"))
+  // routine and in-case rows stay quiet; a closed case too
+  for (const [s, r] of rows) {
+    if (s === "changelog" && (r.cls === "routine" || r.cls === "case")) assert.strictEqual(r.mark, null, r.id)
+    if (s === "work" && r.group !== "active") assert.strictEqual(r.mark, null, r.id)
+  }
+  // a collector that is not ok: System's tile says so
+  const failing = JSON.parse(sample)
+  const col = (failing.dossier && failing.dossier.sections || []).find((x) => x.title === "COLLECTORS")
+  const tiles = M.systemTiles(failing, gen)
+  const tile = tiles.find((t) => t.id === "collectors")
+  assert.ok(tile, "no collectors tile")
+  same(toneWithoutWord(tiles.map((t) => ["system", t])), [])
+  if (tile.stripe !== "") assert.strictEqual(tile.mark.word, "failing")
+  assert.ok(col !== undefined || tile.stripe === "", "collectors tile")
+})
+
+test("the tone guard sees a stripe without a word and a stray alert", () => {
+  same(toneWithoutWord([["changelog", { id: "a", stripe: "crisis", mark: null, alert: "" }],
+    ["work", { id: "b", stripe: "attention", mark: { word: "", stripe: "attention" } }],
+    ["work", { id: "c", stripe: "", mark: { word: "active", stripe: "attention" } }],
+    ["changelog", { id: "d", stripe: "", mark: null, alert: "broken" }],
+    ["changelog", { id: "e", stripe: "crisis", mark: M.statusOf("drift", "crisis", "pro"), alert: "failed" }]]),
+  ["changelog a: stripe without a word", "work b: stripe without a word", "work c: mark attention but stripe ",
+    "changelog d: alert broken is no status word"])
+})
+
+test("QML: a row's stripe comes only with its word (ListRow `mark`)", () => {
+  const sources = pluginSources(plugin)
+  // no list sets a bare stripe any more: the row draws it from `mark`
+  const bare = []
+  for (const { file, src } of sources.filter((f) => f.file.endsWith(".qml")))
+    src.split("\n").forEach((l, i) => { if (/^\s*stripe\s*:/.test(l)) bare.push(file + ":" + (i + 1)) })
+  same(bare, [])
+  const row = fs.readFileSync(path.join(plugin, "components/desk/ListRow.qml"), "utf8")
+  assert.ok(/property var mark: null/.test(row))
+  assert.ok(/readonly property string stripe: root\.mark && root\.mark\.word \?/.test(row), "the stripe needs the mark's word")
+  assert.ok(/objectName: "rowStatus"\s+visible: root\.stripe !== ""/.test(row), "the word shows with every stripe")
+  assert.ok(!/property string stripe:/.test(row.replace(/readonly property string stripe:/g, "")), "no settable stripe")
+})
+
+test("emptyState: what belongs in each list, its first step, Clear search on no match", () => {
+  const pro = (section, ctx) => M.emptyState(section, Object.assign({ index: true, mode: "pro" }, ctx))
+  const clear = { id: "clearSearch", label: "Clear search", key: "Esc" }
+  // no index: the notices above have the fix; no action of its own
+  for (const s of ["today", "changelog", "work", "decisions", "system", "memory", "graph"]) {
+    same(M.emptyState(s, { index: false, mode: "pro" }), { text: "No index to show", action: null })
+    same(M.emptyState(s, { index: false, mode: "easy" }), { text: "No record to show yet: the notice above has the fix.", action: null })
+    // rows listed: no state
+    same(pro(s, { shown: 3 }), { text: "", action: null })
+    same(pro(s, { shown: 1, search: "zed" }), { text: "", action: null })
+    // no match: the search named, Clear search with Esc beside it
+    same(pro(s, { shown: 0, search: "  zed " }), { text: "Nothing here matches “zed”.", action: clear })
+  }
+  // Changelog: nothing recorded; the open chip's good news; another chip
+  same(pro("changelog", { shown: 0, chip: "open", all: 0 }), { text: M.text("empty.changelog", "pro"), action: null })
+  assert.ok(/^Every change Seldon records shows here/.test(M.text("empty.changelog", "pro")))
+  same(pro("changelog", { shown: 0, chip: "open", all: 83 }), { text: "Nothing open: every change is in a case or routine.", action: null })
+  same(pro("changelog", { shown: 0, chip: "case", all: 83 }), { text: "No events under “in case”.", action: null })
+  same(pro("changelog", { shown: 0, chip: "crisis", all: 83 }), { text: "No events under “crisis”.", action: null })
+  // Work: New case (n); none while the footer lists groups; none in dev mode
+  same(pro("work", { shown: 0 }), { text: "No cases yet. Say what should happen above, or make one by hand with New case.",
+    action: { id: "newCase", label: "New case", key: "+" } })
+  same(pro("work", { shown: 0, footer: true }), { text: "", action: null })
+  same(pro("work", { shown: 0, footer: true, search: "x" }).action, clear)
+  same(pro("work", { shown: 0, canWrite: false }).action, null)
+  // Decisions: New decision (d), not in dev mode
+  same(pro("decisions", { shown: 0 }).action, { id: "newDecision", label: "New decision", key: "d" })
+  assert.ok(/^No decisions yet\. A decision records why/.test(pro("decisions", { shown: 0 }).text))
+  same(pro("decisions", { shown: 0, canWrite: false }).action, null)
+  // Memory, Graph: what belongs there; no action
+  same(pro("memory", { shown: 0 }), { text: "Lessons and memory files your agents write show here. None yet.", action: null })
+  same(pro("graph", {}), { text: "Nothing to draw yet: no areas, cases, decisions or changes in the index", action: null })
+  // Today and System are never empty with an index but for a search
+  same(pro("today", { shown: 0 }), { text: "", action: null })
+  same(pro("system", { shown: 0 }), { text: "", action: null })
+  same(pro("nope", { shown: 0 }), { text: "", action: null })
+  // EASY reads its own column (WP-187 uses it): task, not case
+  assert.ok(/task/.test(M.emptyState("work", { index: true, shown: 0, mode: "easy" }).text))
+  same(M.emptyState("work", { index: true, shown: 0, mode: "easy" }).action.label, "New task")
+  // no freshness line and no "paused": the header's subline has the age,
+  // and nothing pauses (SYNTHESIS B7)
+  for (const key of Object.keys(M.WORDS).filter((k) => /^(empty|link)\./.test(k)))
+    for (const mode of ["pro", "easy"]) assert.ok(!/paus|captured|ago\b|next capture/i.test(M.text(key, mode)), key)
+  // every link names the key that does the same
+  for (const key of Object.keys(M.WORDS).filter((k) => /^link\./.test(k))) assert.ok(typeof M.WORDS[key].key === "string" && M.WORDS[key].key !== "", key)
+  // the today journal's empty row reads the table
+  same(M.todayRows({ needs: [], entries: [], yesterday: [] }, false, "").map((r) => r.title), [M.text("empty.journal", "pro")])
+})
+
+// The body of `function <name>(…) { … }` in a QML or JS source (the
+// first one; "" when there is none), comments dropped.
+function functionBody(src, name) {
+  const code = src.split("\n").map((l) => l.replace(/(^|[^:"'])\/\/.*$/, "$1")).join("\n")
+  const m = new RegExp("function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{").exec(code)
+  if (!m) return ""
+  let depth = 0
+  for (let i = m.index + m[0].length - 1; i < code.length; i++) {
+    if (code[i] === "{") depth++
+    else if (code[i] === "}" && --depth === 0) return code.slice(m.index + m[0].length, i)
+  }
+  return ""
+}
+
+// What a `link.*` button does and what its key does, per section file:
+// [{ file, id, step, keys: { <key>: [functions] } }]. `step` is the
+// function emptyFirstStep(id) calls; `keys` the textKey(t) branches.
+function emptyLinkPaths(sources) {
+  const out = []
+  for (const { file, src } of sources.filter((f) => /^plugin\/sections\/.*\.qml$/.test(f.file))) {
+    const first = functionBody(src, "emptyFirstStep")
+    if (first === "") continue
+    const id = /id\s*!==\s*"([A-Za-z]+)"/.exec(first)
+    const step = /root\.([A-Za-z]+)\(\)/.exec(first)
+    const keys = {}
+    const tk = functionBody(src, "textKey")
+    for (const m of tk.matchAll(/if\s*\(([^)]*)\)\s*(\{[^{}]*\}|[^\n]*)/g)) {
+      const calls = [...m[2].matchAll(/root\.([A-Za-z]+)\(/g)].map((c) => c[1])
+      const takes = /return true/.test(m[2]) || /return root\./.test(m[2])
+      for (const k of m[1].matchAll(/t\s*===\s*"([^"]+)"/g)) if (takes) keys[k[1]] = (keys[k[1]] || []).concat(calls)
+    }
+    out.push({ file, id: id ? id[1] : "", step: step ? step[1] : "", keys })
+  }
+  return out
+}
+
+test("every link.* key does what its button does (the section's textKey)", () => {
+  const paths = emptyLinkPaths(pluginSources(plugin))
+  const links = Object.keys(M.WORDS).filter((k) => /^link\./.test(k))
+  assert.ok(links.length >= 3, links.join(","))
+  for (const key of links) {
+    const id = key.replace(/^link\./, "")
+    const want = M.WORDS[key].key
+    if (id === "clearSearch") {
+      // Esc: the desk clears the filter, as Desk.clearSearch does
+      const desk = fs.readFileSync(path.join(plugin, "Desk.qml"), "utf8")
+      assert.strictEqual(want, "Esc")
+      assert.ok(/root\.searchText\s*=\s*""/.test(functionBody(desk, "escapeKey")), "Esc clears the search")
+      assert.ok(/root\.searchText\s*=\s*""/.test(functionBody(desk, "clearSearch")), "clearSearch clears it")
+      continue
+    }
+    const owners = paths.filter((p) => p.id === id)
+    assert.strictEqual(owners.length, 1, key + ": one section's emptyFirstStep runs it, got " + owners.map((p) => p.file).join(","))
+    const p = owners[0]
+    assert.ok(p.step !== "", key + ": emptyFirstStep calls no function")
+    assert.ok(Object.prototype.hasOwnProperty.call(p.keys, want), key + ": " + p.file + " textKey takes no " + JSON.stringify(want))
+    assert.ok(p.keys[want].indexOf(p.step) !== -1, key + ": " + JSON.stringify(want) + " runs " + p.keys[want].join(",") + ", the button " + p.step)
+  }
+  // the two first steps today: Work's + opens the sheet, Decisions' d the form
+  same(paths.map((p) => [p.file, p.id, p.step]).sort(),
+    [["plugin/sections/Decisions.qml", "newDecision", "openForm"], ["plugin/sections/Work.qml", "newCase", "openSheet"]])
+  // the guard sees a key that does something else (`n` in Work is Today's)
+  const probe = [{ file: "plugin/sections/Probe.qml", src: [
+    "function emptyFirstStep(id) {", "  if (id !== \"newCase\") return false", "  root.openSheet()", "  return true", "}",
+    "function textKey(t) {", "  if (t === \"+\") {", "    root.openSheet()", "    return true", "  }",
+    "  if (t === \"n\") root.focusIntent()", "  return false", "}"].join("\n") }]
+  same(emptyLinkPaths(probe), [{ file: "plugin/sections/Probe.qml", id: "newCase", step: "openSheet", keys: { "+": ["openSheet"] } }])
+})
+
+test("QML: every list's empty text comes from Model.emptyState", () => {
+  const sources = pluginSources(plugin).filter((f) => /^plugin\/sections\//.test(f.file))
+  const bad = []
+  for (const { file, src } of sources) {
+    src.split("\n").forEach((l, i) => {
+      if (/^\s*emptyText\s*:/.test(l) && !/listState\.text|root\.emptyText|previewSummary/.test(l)) bad.push(file + ":" + (i + 1))
+      if (/"(No index to show|Nothing here matches|No cases yet|No decisions yet)/.test(l)) bad.push(file + ":" + (i + 1) + " literal")
+    })
+  }
+  same(bad, [])
+  for (const s of ["Changelog", "Work", "Today", "Decisions", "Memory", "System"])
+    assert.ok(/Model\.emptyState\("/.test(fs.readFileSync(path.join(plugin, "sections", s + ".qml"), "utf8")), s)
+})
+
+// C1: an action without an opposite verb never completes on Enter-Enter
+// from a list; a ConfirmDialog, if ever used, binds selectedIndex: 0 and
+// resets it on open (SPEC-PLUGIN §5.3). The QML blocks of `ConfirmDialog`
+// that break it: [file:line].
+// The bodies of a block's `onOpenedChanged` handlers: a `{ … }` block, or
+// the one statement after the colon (up to the line's end or a `;` outside
+// parentheses), so a reset elsewhere (Component.onCompleted) is no reset.
+function openedHandlers(block) {
+  const out = []
+  for (const m of block.matchAll(/\bonOpenedChanged\s*:\s*/g)) {
+    let i = m.index + m[0].length
+    if (block[i] === "{") {
+      let depth = 0
+      for (let j = i; j < block.length; j++) {
+        if (block[j] === "{") depth++
+        else if (block[j] === "}" && --depth === 0) { out.push(block.slice(i + 1, j)); break }
+      }
+      continue
+    }
+    let paren = 0
+    let j = i
+    for (; j < block.length && block[j] !== "\n"; j++) {
+      if (block[j] === "(") paren++
+      else if (block[j] === ")") paren--
+      else if (block[j] === ";" && paren === 0) break
+    }
+    out.push(block.slice(i, j))
+  }
+  return out
+}
+
+function confirmDialogViolations(sources) {
+  const out = []
+  for (const { file, src } of sources.filter((f) => f.file.endsWith(".qml"))) {
+    const code = src.split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n")
+    for (const m of code.matchAll(/\bConfirmDialog\s*\{/g)) {
+      let depth = 0
+      let end = m.index
+      for (let i = m.index + m[0].length - 1; i < code.length; i++) {
+        if (code[i] === "{") depth++
+        else if (code[i] === "}" && --depth === 0) { end = i; break }
+      }
+      const block = code.slice(m.index, end + 1)
+      const line = code.slice(0, m.index).split("\n").length
+      if (!/\bselectedIndex\s*:\s*0\b/.test(block)) out.push(file + ":" + line + " selectedIndex")
+      if (!openedHandlers(block).some((h) => /\bselectedIndex\s*=\s*0\b/.test(h))) out.push(file + ":" + line + " reset")
+    }
+  }
+  return out
+}
+
+test("C1: no ConfirmDialog that confirms on Enter; Enter-Enter on a row only where the SPEC names it", () => {
+  same(confirmDialogViolations(pluginSources(plugin)), [])
+  const probe = (body) => [{ file: "plugin/components/desk/Probe.qml", src: body }]
+  same(confirmDialogViolations(probe("Item {\n  ConfirmDialog {\n    message: \"Drop?\"\n  }\n}")),
+    ["plugin/components/desk/Probe.qml:2 selectedIndex", "plugin/components/desk/Probe.qml:2 reset"])
+  same(confirmDialogViolations(probe("ConfirmDialog {\n  selectedIndex: 0\n}")), ["plugin/components/desk/Probe.qml:1 reset"])
+  same(confirmDialogViolations(probe("ConfirmDialog {\n  // selectedIndex: 0\n  onOpenedChanged: if (opened) selectedIndex = 0\n}")),
+    ["plugin/components/desk/Probe.qml:1 selectedIndex"])
+  same(confirmDialogViolations(probe("ConfirmDialog {\n  selectedIndex: 0\n  onOpenedChanged: if (opened) selectedIndex = 0\n  Item { }\n}")), [])
+  // the review's N1 mutant: a reset outside the handler is none
+  same(confirmDialogViolations(probe("ConfirmDialog { selectedIndex: 0; onOpenedChanged: console.log(opened); Component.onCompleted: selectedIndex = 0 }")),
+    ["plugin/components/desk/Probe.qml:1 reset"])
+  same(confirmDialogViolations(probe("ConfirmDialog {\n  selectedIndex: 0\n  onOpenedChanged: console.log(opened)\n  Component.onCompleted: selectedIndex = 0\n}")),
+    ["plugin/components/desk/Probe.qml:1 reset"])
+  same(confirmDialogViolations(probe("ConfirmDialog {\n  selectedIndex: 0\n  onOpenedChanged: {\n    if (opened) {\n      root.selectedIndex = 0\n    }\n  }\n}")), [])
+  same(confirmDialogViolations(probe("ConfirmDialog {\n  selectedIndex: 0\n  onOpenedChanged: if (opened) { selectedIndex = 0 }\n}")), [])
+  // the SPEC sentence the guard enforces (wrapped lines read as one)
+  const spec = fs.readFileSync(path.join(root, "docs/SPEC-PLUGIN.md"), "utf8").replace(/\s+/g, " ")
+  assert.ok(/never completes on Enter-Enter from a list/.test(spec), "SPEC-PLUGIN §5.3 C1 sentence")
+  assert.ok(/binds `selectedIndex: 0` and sets it to 0 again on every open/.test(spec), "SPEC-PLUGIN §5.3 ConfirmDialog")
+  // Work: Enter on a row runs only the steps SPEC §5.3 names (WP-122);
+  // Drop (final), Reopen and an agent never; no new step joins them
+  const enter = new Set()
+  for (const status of M.CASE_STATUSES)
+    for (const extra of [{}, { working: true }, { imported: true }]) {
+      const a = M.caseEnterAction(Object.assign({ id: "C-2026-001", status: status, actionable: true }, extra))
+      if (a) enter.add(a.id)
+    }
+  // (Open in editor writes nothing)
+  same([...enter].sort(), ["done", "open", "reopen", "start", "verify"])
+  for (const id of ["drop", "agent", "focus"]) assert.ok(!enter.has(id), id)
+  // the three steps arm (Enter twice); Reopen runs on one (WP-101)
+  for (const [status, id] of [["queued", "start"], ["active", "verify"], ["verification", "done"]])
+    assert.strictEqual(M.caseEnterAction({ id: "C-2026-001", status: status, actionable: true }).arm, true, id)
+})
+
+// What each `activate()` (Enter on the cursor's place) in plugin/ QML
+// calls: { file: [calls] }, comments dropped, calls as written
+// ("root.press", "Model.caseEnterAction").
+function activateCalls(sources) {
+  const kw = new Set(["if", "for", "while", "switch", "function", "return", "catch"])
+  const out = {}
+  for (const { file, src } of sources.filter((f) => f.file.endsWith(".qml"))) {
+    if (!/function\s+activate\s*\(/.test(src)) continue
+    const body = functionBody(src, "activate")
+    out[file] = [...new Set([...body.matchAll(/([A-Za-z_$][\w$.]*)\s*\(/g)].map((m) => m[1]).filter((c) => !kw.has(c)))].sort()
+  }
+  return out
+}
+
+// SPEC-PLUGIN §5.3 C1: the Enter paths as they are. Every arm-and-run
+// here is one the SPEC names: Work's case steps (root.press with
+// Model.caseEnterAction: Start, To verification, Complete; Reopen at once)
+// and its header buttons (pressHead, WP-215); the Changelog's Apply
+// proposals and single crisis (TriageDetail: arm.press, applyProposal,
+// pressCrisis); Today's setup card (setupAction, WP-202) and Settings'
+// controls (pressControl), buttons the cursor reached. A new call in an
+// activate(), or a new activate(), fails until the SPEC's list names it.
+const ACTIVATE_CALLS = {
+  "plugin/components/desk/EventDetail.qml": ["form.showForm"],
+  "plugin/components/desk/Section.qml": [],
+  "plugin/components/desk/TriageDetail.qml": ["root.arm.press", "root.pressCrisis", "root.section.showTriage", "root.service.applyProposal"],
+  "plugin/sections/Changelog.qml": ["detail.activate", "root.desk.showDetail", "triage.activate"],
+  "plugin/sections/Graph.qml": ["canvas.play"],
+  "plugin/sections/ReadingSection.qml": ["root.desk.showDetail"],
+  "plugin/sections/Settings.qml": ["root.desk.showDetail", "root.enterControl", "root.pressControl"],
+  "plugin/sections/Today.qml": ["Model.keyArmHint", "eventDetail.activate", "root.arm.press", "root.desk.showDetail", "root.setupAction"],
+  "plugin/sections/Work.qml": ["Model.caseEnterAction", "root.desk.showDetail", "root.press", "root.pressHead"]
+}
+
+test("C1: no new Enter step anywhere: every activate() calls what SPEC §5.3 names", () => {
+  same(activateCalls(pluginSources(plugin)), ACTIVATE_CALLS)
+  // the review's mutant: Accept on Enter in Decisions (click only)
+  const decisions = fs.readFileSync(path.join(plugin, "sections/Decisions.qml"), "utf8")
+  const mutant = pluginSources(plugin).map((f) => f.file === "plugin/sections/Decisions.qml"
+    ? { file: f.file, src: decisions.replace(/\n}\s*$/, "\n  function activate() { return root.pressAccept() }\n}\n") } : f)
+  const got = activateCalls(mutant)
+  same(got["plugin/sections/Decisions.qml"], ["root.pressAccept"])
+  assert.notStrictEqual(JSON.stringify(got), JSON.stringify(ACTIVATE_CALLS))
+  // a call added to an existing activate() fails too
+  const work = mutant.map((f) => f.file === "plugin/sections/Work.qml"
+    ? { file: f.file, src: f.src.replace("function activate() {", "function activate() {\n    root.service.plan(\"drop\", root.selectedId)") } : f)
+  assert.notStrictEqual(JSON.stringify(activateCalls(work)["plugin/sections/Work.qml"]), JSON.stringify(ACTIVATE_CALLS["plugin/sections/Work.qml"]))
+  // the six exceptions are named in the SPEC
+  const spec = fs.readFileSync(path.join(root, "docs/SPEC-PLUGIN.md"), "utf8").replace(/\s+/g, " ")
+  for (const step of ["*Start*", "*To verification*", "*Complete*", "*Reopen*", "*Apply proposals*", "a single crisis", "WP-179's verification ADR"])
+    assert.ok(spec.indexOf(step) !== -1, "SPEC §5.3 C1 names " + step)
+})
+
+test("B4: the result line names the real way back, never an undo", () => {
+  const step = (o) => JSON.stringify(Object.assign({ case: { id: "C-2026-005" }, journal: null, event: {} }, o))
+  assert.strictEqual(M.PLAN_DONE_WAY_BACK, "Reopen makes a new case")
+  assert.strictEqual(M.planResult(0, step({ from: "verification", to: "completed" }), "").text,
+    "C-2026-005: verification → completed · Reopen makes a new case")
+  // after verify there is no way back yet (WP-179's ADR): the line names none
+  for (const to of ["verification", "active", "dropped"]) {
+    const t = M.planResult(0, step({ from: "x", to: to }), "").text
+    assert.strictEqual(t, "C-2026-005: x → " + to, to)
+    assert.ok(!/undo|not done yet|plan start|reopen/i.test(t), t)
+  }
+  // `plan reopen` keeps its own line
+  assert.ok(/^Reopened C-2026-002 as C-2026-010/.test(M.planResult(0, JSON.stringify({ case: { id: "C-2026-010" }, reopens: "C-2026-002" }), "").text))
+  // no undo anywhere in the plugin's words
+  for (const key of Object.keys(M.WORDS)) assert.ok(!/\bundo\b/i.test(M.WORDS[key].pro + " " + M.WORDS[key].easy), key)
+})
+
+test("C11: Ask agent to sort N changes keeps the actor (E6)", () => {
+  const ix = M.parseIndex(sample).index
+  same(M.triageButton(ix, true).text, "Ask agent to sort 6 changes")
+  const one = JSON.parse(JSON.stringify(ix))
+  one.summary.openDrift = 1
+  one.summary.crisis = 0
+  assert.ok(/^Ask agent to sort 1 change$/.test(M.triageButton(one, true).text), M.triageButton(one, true).text)
+  // the old label is gone from the plugin and the SPEC
+  for (const { file, src } of pluginSources(plugin)) assert.ok(!/Agent sorts/.test(src), file)
+  assert.ok(!/Agent sorts/.test(fs.readFileSync(path.join(root, "docs/SPEC-PLUGIN.md"), "utf8")))
+})
+
+test("glyphs: the two that left the font's gaps (WP-178)", () => {
+  assert.strictEqual(M.TX_REINSTALL_GLYPH, "\u{F0453}")
+  assert.strictEqual(M.TX_GLYPHS.reinstall, M.TX_REINSTALL_GLYPH)
+  assert.strictEqual(M.sourceGlyph("seldon"), "\u{F0AE3}")
+  for (const banned of ["↻", "↺", "⏸", "⏰", "⟡"])
+    for (const { file, src } of pluginSources(plugin)) assert.ok(src.indexOf(banned) === -1, file + " " + banned)
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

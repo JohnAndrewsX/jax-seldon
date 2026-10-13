@@ -688,6 +688,27 @@ compatible addition is a minor release, a fix a patch):
   RUSTSEC-2024-0449 (`unsafe-libyaml`, unmaintained, via `serde_yaml`)
   accepted until 2027-01-31 on Fable's advice; WP-217 replaces the parser
   before the expiry.
+- E90 (2026-10-13) no YAML crate swap now: `yaml_serde` (outside §7) is
+  the same c2rust parser under a young single-owner fork, so it removes
+  the notice but adds no safety or speed. The RUSTSEC-2024-0449 ignore
+  stays until 2027-01-31; the operator decides again then. WP-217 is
+  re-scoped to `serde-saphyr` (safe Rust, maintained), on the roadmap
+  before the expiry, and needs the operator's §7 go after its
+  measurements.
+- E91 (2026-10-13) the next release is 0.4.0 from `next`, cut after
+  WP-209 (redaction) merges, with WP-178 in it: WP-215's header keys are
+  already a compatible addition, so a release from `next` is a minor
+  anyway. The contract-3 release moves from 0.4 to 0.5 (only the number,
+  as E86). The tag still needs the operator's go with the acceptance
+  output (E88).
+- E92 (2026-10-13) after 0.4.0, a step-back audit of the whole project
+  against Omarchy 4.5's agent skills (`omarchy`, the new `omarchy-app`,
+  `diagnose-crash`); a large rewrite is acceptable. 0.4.0 still ships
+  first, so the redaction fixes are not held back by the audit.
+- E93 (2026-10-13) channels: a release must work on Omarchy **stable**
+  (a fresh install, AGENTS.md §1); the dev host runs **edge** as a preview
+  and Seldon stays forward-compatible with it; the test host's **RC** is the
+  rehearsal before a release.
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:

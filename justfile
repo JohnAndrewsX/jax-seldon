@@ -350,6 +350,8 @@ plugin-test: check-runtime-space
     command -v node >/dev/null || { echo "plugin-test: node not found" >&2; exit 1; }
     node tests/plugin/model.test.js
     node tests/plugin/plaintext.test.js
+    # SPEC-PLUGIN §7 "Glyphs" (WP-178): fc-list where the font is, else the pinned charset
+    node tests/plugin/glyphs.test.js
     if [[ -n "{{ skip_host }}" ]]; then
       SELDON_BENCH_BUDGET_SCALE=3 node tests/plugin/model.bench.js
     else
