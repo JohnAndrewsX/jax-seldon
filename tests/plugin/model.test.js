@@ -2761,9 +2761,9 @@ test("transactionDetail: an interrupted transaction in the row and the detail (W
     + "that runs those steps for them; a plain rerun does not. "
     + "A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
   const didNot = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; "
-    + "if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session. "
+    + "if omarchy-settings (omarchy-settings-dev on the edge channel) was in it, Hyprland's auto-reload may stay paused for this session. "
   const mayNot = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; "
-    + "if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session. "
+    + "if omarchy-settings (omarchy-settings-dev on the edge channel) was in it, Hyprland's auto-reload may stay paused for this session. "
   assert.ok(t.text.endsWith(mayNot + tail), t.text)
   assert.ok(M.TX_STATUS_TEXTS.failed.endsWith(didNot + tail))
   assert.ok(M.TX_STATUS_TEXTS.unfinished.endsWith(didNot + tail))
@@ -5794,7 +5794,7 @@ function activateCalls(sources) {
 // controls (pressControl), buttons the cursor reached. A new call in an
 // activate(), or a new activate(), fails until the SPEC's list names it.
 const ACTIVATE_CALLS = {
-  "plugin/components/desk/EventDetail.qml": ["form.showForm"],
+  "plugin/components/desk/EventDetail.qml": ["driftForm.showForm"],
   "plugin/components/desk/Section.qml": [],
   "plugin/components/desk/TriageDetail.qml": ["root.arm.press", "root.pressCrisis", "root.section.showTriage", "root.service.applyProposal"],
   "plugin/sections/Changelog.qml": ["detail.activate", "root.desk.showDetail", "triage.activate"],
