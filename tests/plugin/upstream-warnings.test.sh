@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Self-test of tests/plugin/upstream-warnings.sh (WP-224), on scratch trees
 # (fixture): the harnesses' log check accepts exactly Quickshell's
-# "Unable to find hyprland socket" line, and only while the shell's
+# "Cannot connect to hyprland" warning (its two whole lines), and only while the shell's
 # Commons/Style.qml is its sole importer of Quickshell.Hyprland; a plugin
 # file's warning, any other WARN and a stable tree still fail. Then every
 # harness pipes its log check through the helper. Needs no Quickshell.
@@ -19,6 +19,9 @@ ok() { pass=$((pass + 1)); echo "ok   $1"; }
 bad() { fail=$((fail + 1)); echo "FAIL $1"; }
 
 hypr_line='WARN: Unable to find hyprland socket. Cannot connect to hyprland.'
+# the same warning under env -i (no signature inherited)
+# shellcheck disable=SC2016 # a literal $, not an expansion
+unset_line='WARN: $HYPRLAND_INSTANCE_SIGNATURE is unset. Cannot connect to hyprland.'
 # bad_lines SHELL PLUGIN NOT_LOADED LOG: the WARN lines a harness would
 # report, by the harnesses' own pipeline (colour codes stripped, then the
 # upstream filter); NOT_LOADED is a space-separated list
@@ -54,6 +57,11 @@ expect "edge: another WARN still fails" "$edge" "$plugin" "" fails "$hypr_line" 
 expect "edge: the line with more after it fails" "$edge" "$plugin" "" fails "$hypr_line (retrying)"
 expect "edge: half the line fails" "$edge" "$plugin" "" fails "WARN: Unable to find hyprland socket."
 expect "edge: an ERROR still fails" "$edge" "$plugin" "" fails "$hypr_line" "ERROR: something broke"
+expect "edge: the env -i text of the same warning" "$edge" "$plugin" "" clean "$unset_line"
+expect "edge: the env -i text with more after it fails" "$edge" "$plugin" "" fails "$unset_line (1)"
+# shellcheck disable=SC2016 # a literal $, not an expansion
+expect "edge: another variable named fails" "$edge" "$plugin" "" fails 'WARN: $WAYLAND_DISPLAY is unset. Cannot connect to hyprland.'
+expect "stable: the env -i text fails" "$stable" "$plugin" "" fails "$unset_line"
 expect "stable (no import in Style.qml, a comment does not count): the line fails" "$stable" "$plugin" "" fails "$hypr_line"
 expect "a plugin file imports Quickshell.Hyprland: the line fails" "$edge" "$hyprplugin" "" fails "$hypr_line"
 expect "no plugin dir: the line fails" "$edge" "$work/none" "" fails "$hypr_line"
@@ -103,6 +111,16 @@ for h in desk-view bar-view ipc-restart service-states; do
     ok "$h.sh filters its log through upstream_allowed"
   else
     bad "$h.sh does not filter its log through upstream_allowed"
+  fi
+done
+
+# the env -i harnesses give Quickshell a UTF-8 locale (Qt warns on "C" and
+# switches to C.UTF-8 itself), so no locale warning needs accepting
+for h in desk-view bar-view ipc-restart; do
+  if grep -q 'LANG=C.UTF-8' "$root/tests/plugin/$h.sh"; then
+    ok "$h.sh runs Quickshell with LANG=C.UTF-8"
+  else
+    bad "$h.sh runs Quickshell without a UTF-8 locale"
   fi
 done
 

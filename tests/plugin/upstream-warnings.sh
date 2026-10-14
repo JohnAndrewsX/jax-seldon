@@ -5,8 +5,12 @@
 # Omarchy edge's Commons/Style.qml imports Quickshell.Hyprland and connects
 # to its Hyprland singleton (animation and gap settings). In an offscreen
 # Quickshell with no Hyprland, Quickshell's Hyprland IPC module logs one
-# line, without a file:
+# line, without a file, in one of two exact texts: the first where the
+# harness inherits the session's HYPRLAND_INSTANCE_SIGNATURE (its socket is
+# not in the private runtime dir: service-states), the second under env -i
+# (desk-view, bar-view, ipc-restart):
 #   WARN: Unable to find hyprland socket. Cannot connect to hyprland.
+#   WARN: $HYPRLAND_INSTANCE_SIGNATURE is unset. Cannot connect to hyprland.
 # The line names no QML file, so it is attributed by imports: it is
 # accepted only when the shell tree the harness loads has a Commons/Style.qml
 # that imports Quickshell.Hyprland and every plugin file that imports it is
@@ -19,8 +23,9 @@
 # style-hyprland-warning (tests/omarchy/assumptions.json) records the edge
 # fact.
 
-# The exact line, after the colour codes are stripped: the whole line.
-UPSTREAM_HYPRLAND_WARNING='^[[:space:]]*WARN: Unable to find hyprland socket\. Cannot connect to hyprland\.$'
+# The exact lines, after the colour codes are stripped: the whole line.
+# shellcheck disable=SC2016 # a literal $, not an expansion
+UPSTREAM_HYPRLAND_WARNING='^[[:space:]]*WARN: (Unable to find hyprland socket|\$HYPRLAND_INSTANCE_SIGNATURE is unset)\. Cannot connect to hyprland\.$'
 
 # upstream_allowed SHELL_DIR PLUGIN_DIR [NOT_LOADED...]: prints the ERE of
 # the upstream lines a clean log may hold, or a pattern that matches no

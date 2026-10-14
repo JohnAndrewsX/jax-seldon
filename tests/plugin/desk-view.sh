@@ -93,7 +93,7 @@ run() {
   [[ -z $index && ${SELDON_FULL_CHECK:-} == 1 ]] && late=(FAKE_SELDON_FIRST_WRITE_DELAY=2)
   mkdir -p "$home"
   env -i HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
-    PATH="$work/bin" QT_QPA_PLATFORM=offscreen \
+    PATH="$work/bin" QT_QPA_PLATFORM=offscreen LANG=C.UTF-8 \
     XDG_RUNTIME_DIR="$rt" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_STEPS="$steps" HARNESS_W="${size%x*}" HARNESS_H="${size#*x}" \
     SELDON_INDEX="$index" "${late[@]}" "$@" \

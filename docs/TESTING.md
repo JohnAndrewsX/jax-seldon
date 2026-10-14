@@ -1146,22 +1146,25 @@ likely because the binary could not be found` — expected, and the only log
 line the plugin may cause. The service probes for the engine once at start
 and again only on *Check again*, so it appears once per shell start.
 
-**One upstream line on Omarchy edge** (WP-224). Edge's
+**One upstream warning on Omarchy edge** (WP-224). Edge's
 `Commons/Style.qml` imports Quickshell.Hyprland, and in an offscreen
-Quickshell without Hyprland the Hyprland IPC module logs `WARN: Unable
-to find hyprland socket. Cannot connect to hyprland.` (no file named). The
-four harnesses (desk-view, bar-view, ipc-restart, service-states) accept
-exactly that whole line through `tests/plugin/upstream-warnings.sh`, and
+Quickshell without Hyprland the Hyprland IPC module logs one line that
+names no file, in one of two exact texts: `WARN: Unable to find hyprland
+socket. Cannot connect to hyprland.` where the harness inherits the
+session's `HYPRLAND_INSTANCE_SIGNATURE` (service-states), `WARN:
+$HYPRLAND_INSTANCE_SIGNATURE is unset. Cannot connect to hyprland.` under
+`env -i` (desk-view, bar-view, ipc-restart). The four harnesses accept
+exactly those whole lines through `tests/plugin/upstream-warnings.sh`, and
 only while the loaded tree's `Style.qml` imports Quickshell.Hyprland and
 every plugin importer of it is a file the harness never loads (the
 plugin's `DeskWindow.qml`: desk-view replaces it with a stub, the others
 never load `Desk.qml`). On stable and rc nothing is accepted; every other
 WARN, a plugin file's warning with the same words included, still fails a
 case. No Hyprland socket is faked and `HYPRLAND_INSTANCE_SIGNATURE` is
-not set. `upstream-warnings.test.sh` (in `plugin-test`, everywhere) proves
-it; the ledger's `style-hyprland-warning` records the edge fact. Without a
-signature at all (an `env -i` run) Quickshell prints a different line
-(`$HYPRLAND_INSTANCE_SIGNATURE is unset`), which is not accepted.
+never set. The `env -i` harnesses pass `LANG=C.UTF-8`: Qt 6.12 warns about
+the "C" locale and switches to C.UTF-8 itself, so nothing changes but the
+warning. `upstream-warnings.test.sh` (in `plugin-test`, everywhere) proves
+it; the ledger's `style-hyprland-warning` records the edge fact.
 
 ### 3. The desk (`Desk.qml`) in a private headless Quickshell
 

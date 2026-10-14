@@ -106,7 +106,7 @@ run() {
   printf '[font]\nbase-size = %s\n' "$base" >"$home/.config/omarchy/shell.toml"
   cp "$omarchy/themes/$theme/colors.toml" "$home/.local/state/omarchy/current/theme/colors.toml"
   env -i HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
-    PATH="$work/bin" QT_QPA_PLATFORM=offscreen XDG_RUNTIME_DIR="$rt" \
+    PATH="$work/bin" QT_QPA_PLATFORM=offscreen LANG=C.UTF-8 XDG_RUNTIME_DIR="$rt" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_SHOT="$work/$name.png" SELDON_INDEX="$index" "$@" \
     "$timeout_bin" 60 "$qs_bin" -p "$config/shell.qml" >"$work/$name.log" 2>&1 || true
   sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "HARNESS bar " | sed 's/.*HARNESS bar //' >"$work/$name.json" || true

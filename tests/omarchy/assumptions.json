@@ -183,8 +183,8 @@
       "symbol": "Hyprland",
       "pluginSymbol": "import Quickshell.Hyprland",
       "plugin": "plugin/components/desk/DeskWindow.qml:4",
-      "relies": "Seldon relies on Commons/Style.qml being the only loaded importer of Quickshell.Hyprland in the Quickshell harnesses, so that Quickshell's one line 'WARN: Unable to find hyprland socket. Cannot connect to hyprland.' is Omarchy's (edge's Style.qml imports Quickshell.Hyprland and connects to its Hyprland singleton; stable's does not, and there the line is never accepted; the plugin's own importer is never loaded by a harness), at plugin/components/desk/DeskWindow.qml:4.",
-      "remeasure": "bash tests/plugin/upstream-warnings.test.sh, then the four harnesses (just plugin-test with SELDON_FULL_CHECK=1) on an edge tree: only that line is accepted",
+      "relies": "Seldon relies on Commons/Style.qml being the only loaded importer of Quickshell.Hyprland in the Quickshell harnesses, so that Quickshell's one 'Cannot connect to hyprland' warning (its 'Unable to find hyprland socket' or '$HYPRLAND_INSTANCE_SIGNATURE is unset' text) is Omarchy's (edge's Style.qml imports Quickshell.Hyprland and connects to its Hyprland singleton; stable's does not, and there the line is never accepted; the plugin's own importer is never loaded by a harness), at plugin/components/desk/DeskWindow.qml:4.",
+      "remeasure": "bash tests/plugin/upstream-warnings.test.sh, then the four harnesses (just plugin-test with SELDON_FULL_CHECK=1) on an edge tree: only that warning is accepted",
       "edge": {
         "sha256": "bfc786135e015961b06de9a850b7296fe6bca0de8b1e19e215127be39fbc0111",
         "omarchyVersion": "4.0.0.r7017.g84cfb93-1",

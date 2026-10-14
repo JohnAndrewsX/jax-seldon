@@ -15,7 +15,10 @@ on Omarchy 4.0.4-1, quickshell 0.3.1. Workers append; the Reviewer prunes.
   `Commons.Color` with `import qs.Commons as Commons`; so does the plugin.
 - Edge's `Commons/Style.qml` imports Quickshell.Hyprland; an offscreen
   Quickshell logs `WARN: Unable to find hyprland socket. Cannot connect to
-  hyprland.` (harnesses: TESTING.md, "One upstream line on Omarchy edge").
+  hyprland.`, or under `env -i` `WARN: $HYPRLAND_INSTANCE_SIGNATURE is
+  unset. Cannot connect to hyprland.` (harnesses: TESTING.md, "One
+  upstream warning on Omarchy edge"). Qt 6.12 also warns about a "C"
+  locale; the `env -i` harnesses pass `LANG=C.UTF-8`.
 - qmllint 6.12: `id-shadows-member` (an id named like a property of the
   root type) and `block-scope-var-declaration` (counted, not printed in
   text mode).

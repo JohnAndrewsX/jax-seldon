@@ -138,7 +138,8 @@ run() {
   cp "$omarchy/themes/tokyo-night/colors.toml" "$home/.local/state/omarchy/current/theme/colors.toml"
   rt=$(mktemp -d /tmp/seldon-rt.XXXXXX)
   local envs=(HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config"
-    XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$rt" PATH="$work/bin" QT_QPA_PLATFORM=offscreen)
+    XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$rt" PATH="$work/bin" QT_QPA_PLATFORM=offscreen
+    LANG=C.UTF-8)
 
   # Its own session (setsid execs, so $! is quickshell's PID and its session
   # id): a crash-report window or a restarted instance stays findable.
