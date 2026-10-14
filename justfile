@@ -371,6 +371,8 @@ plugin-test: check-runtime-space
     bash tests/plugin/real-home-guard.test.sh
     # SPEC-PLUGIN §7's house rules (WP-177) need no shell tree: everywhere.
     bash tests/plugin/check-tokens.test.sh
+    # The one upstream warning the harnesses accept (WP-224): no shell tree.
+    bash tests/plugin/upstream-warnings.test.sh
     shopt -s nullglob
     qml=(plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml plugin/components/desk/*.qml plugin/components/graph/*.qml plugin/sections/*.qml)
     python3 tests/plugin/check-tokens.py --rules "${qml[@]}"
