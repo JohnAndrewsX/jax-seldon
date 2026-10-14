@@ -91,8 +91,8 @@ var ENGINE_MISSING_DETAIL = "Downloads seldon from the Seldon release on GitHub 
 // ---- Terminal scripts (WP-117) ---------------------------------------------
 
 // A banner's *Install*, *Create*, *Grant* or *Update* opens Omarchy's
-// presentation terminal (logo, the script, "Done!"; it exports the theme's
-// gum colours) with one of the scripts below, never with anything else
+// presentation terminal (logo, the script, then Omarchy's closing prompt;
+// it exports the theme's gum colours) with one of the scripts below, never with anything else
 // (terminalArgv). Omarchy's own pattern (omarchy-system-factory-reset,
 // omarchy-update-confirm, omarchy-snapshot): a bold line says what
 // happens, one plain paragraph why and whether a password is asked, the
@@ -111,8 +111,11 @@ var ENGINE_MISSING_DETAIL = "Downloads seldon from the Seldon release on GitHub 
 // Ctrl+C (or TERM) is trapped: the trap only notes it, the script skips a
 // command that has not started, prints the `cancelled` line (palette 3)
 // and ends with 130, Omarchy's "cancelled" status, on which the wrapper
-// closes the window without "Done!". Every other ending is status 0 after
-// the result line, so "Done!" follows and the user closes the window.
+// closes the window without its closing prompt. Every other ending follows
+// the result line: status 0 after success, 1 after a failure. The wrapper
+// then waits for a key: "Done!" for 0; since Omarchy edge (WP-225, B12)
+// "Failed (exit code 1)!" in red for 1, on an earlier Omarchy "Done!"
+// for both — the result line above it says what happened either way.
 //
 // `after` runs only on success. With `partial`, its exit status picks the
 // line: `ok` when it succeeded, `partial` when not; without, it is a
@@ -137,7 +140,7 @@ function terminalScript(s) {
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; " + (s.run || s.command) + "); then "
       + success + "; trap - INT TERM"
       + "; elif [ -n \"$seldon_cancelled\" ]; then " + line(3, s.cancelled) + "; trap - INT TERM; (exit 130)"
-      + "; else " + line(1, s.failed) + "; trap - INT TERM; fi"
+      + "; else " + line(1, s.failed) + "; trap - INT TERM; (exit 1); fi"
   ].join("; ")
 }
 

@@ -87,13 +87,15 @@ pub const FILES: [(&str, &str); 8] = [
 
 /// The agent skill folders under the home directory, as Omarchy's
 /// migrations link its own skills into them (`~/.hermes/profiles/*/skills`
-/// comes on top, [`skill_dirs`]).
-pub const SKILL_DIRS: [&str; 5] = [
+/// comes on top, [`skill_dirs`]); `.gemini/config/skills` is Antigravity's
+/// (`omarchy-provision-user`, Omarchy edge; WP-225).
+pub const SKILL_DIRS: [&str; 6] = [
     ".agents/skills",
     ".claude/skills",
     ".codex/skills",
     ".pi/agent/skills",
     ".hermes/skills",
+    ".gemini/config/skills",
 ];
 
 /// The command `hook install skills` records its writes with.

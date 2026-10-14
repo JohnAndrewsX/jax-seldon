@@ -166,6 +166,8 @@ fn installs_only_into_skill_folders_that_exist_and_creates_none() {
     let env = Env::new(Snapper::Missing);
     let claude = mkdir(&env, ".claude/skills");
     let pi = mkdir(&env, ".pi/agent/skills");
+    // Antigravity's folder, where Omarchy edge links its own skills
+    let gemini = mkdir(&env, ".gemini/config/skills");
     // an agent home without a skills folder gets none
     mkdir(&env, ".codex");
     let profile = mkdir(&env, ".hermes/profiles/work/skills");
@@ -176,17 +178,21 @@ fn installs_only_into_skill_folders_that_exist_and_creates_none() {
     assert_eq!(dir_report(&v, "~/.claude/skills")["action"], "installed");
     assert_eq!(dir_report(&v, "~/.pi/agent/skills")["action"], "installed");
     assert_eq!(
+        dir_report(&v, "~/.gemini/config/skills")["action"],
+        "installed"
+    );
+    assert_eq!(
         dir_report(&v, "~/.hermes/profiles/work/skills")["action"],
         "installed"
     );
-    assert_eq!(v["dirs"].as_array().unwrap().len(), 3, "{v}");
+    assert_eq!(v["dirs"].as_array().unwrap().len(), 4, "{v}");
     assert_eq!(
         v["absent"],
         json!(["~/.agents/skills", "~/.codex/skills", "~/.hermes/skills"])
     );
     let written = dir_report(&v, "~/.claude/skills")["written"].clone();
     assert_eq!(written, json!(FILES));
-    for folder in [&claude, &pi, &profile] {
+    for folder in [&claude, &pi, &gemini, &profile] {
         assert_installed(folder);
     }
     for never in [
@@ -216,7 +222,7 @@ fn no_skill_folder_installs_nothing_and_says_so() {
     let before = home_snapshot(&env);
     let v = install(&env);
     assert_eq!(v["dirs"], json!([]));
-    assert_eq!(v["absent"].as_array().unwrap().len(), 5);
+    assert_eq!(v["absent"].as_array().unwrap().len(), 6);
     assert_eq!(home_snapshot(&env), before);
     let out = run(&env, &["hook", "install", "skills"]);
     assert!(

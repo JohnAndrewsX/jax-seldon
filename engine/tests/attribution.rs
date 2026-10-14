@@ -281,6 +281,64 @@ mod rules {
         }
     }
 
+    /// WP-225 (survey B9, B10): Omarchy's commands that write a file by
+    /// their arguments prove its config event — the language and its
+    /// session locale, a crash mute and the crash-capture switch, a toggle
+    /// flag, the default agent and dictation backend. A form that only
+    /// reads proves nothing; neither does another program's mute.
+    #[test]
+    fn omarchy_commands_prove_the_files_they_write() {
+        let lang = "~/.config/omarchy/language";
+        let env_file = "~/.config/uwsm/env.d/50-omarchy-language";
+        let mute = "~/.local/state/omarchy/toggles/crash-ignore/hyprland";
+        let capture_off = "~/.local/state/omarchy/toggles/crash-capture-off";
+        let agent_file = "~/.config/omarchy/defaults/agent";
+        let dictation = "~/.config/omarchy/defaults/dictation";
+        for (command, subject, proves) in [
+            ("omarchy language de", lang, true),
+            ("omarchy language de", env_file, true),
+            ("omarchy-language da", env_file, true),
+            ("omarchy language list", lang, false),
+            ("omarchy language locale de", env_file, false),
+            ("omarchy language", lang, false),
+            ("omarchy crash mute hyprland", mute, true),
+            ("omarchy crash mute /usr/bin/hyprland off", mute, true),
+            ("omarchy-crash-mute -- hyprland", mute, true),
+            ("omarchy crash mute waybar", mute, false),
+            ("omarchy crash mute", mute, false),
+            ("omarchy toggle crash capture", capture_off, true),
+            ("omarchy-toggle-crash-capture", capture_off, true),
+            ("omarchy-toggle crash-capture-off on", capture_off, true),
+            ("omarchy-toggle crash-ignore/hyprland", mute, true),
+            ("omarchy-toggle bar-off", capture_off, false),
+            ("omarchy default agent codex", agent_file, true),
+            ("omarchy default agent", agent_file, false),
+            ("omarchy dictation use voxtype", dictation, true),
+            ("omarchy-dictation-use voxtype", dictation, true),
+            ("omarchy default dictation", dictation, false),
+        ] {
+            let known = [hook(
+                "2026-10-01T15:29:40+02:00",
+                "agent:claude-code",
+                Some("C-2026-004"),
+                command,
+            )];
+            let want = if proves {
+                agent(subject, "agent:claude-code", Some("C-2026-004"))
+            } else {
+                system(subject)
+            };
+            assert_eq!(
+                run(
+                    vec![config_change("2026-10-01T15:30:00+02:00", subject)],
+                    &known
+                ),
+                [want],
+                "{command} → {subject}"
+            );
+        }
+    }
+
     #[test]
     fn plugins_need_the_id() {
         let id = "io.github.example.tyme";

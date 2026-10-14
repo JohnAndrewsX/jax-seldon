@@ -1506,7 +1506,7 @@ figure (urgent while `summary.crisis` > 0) and Today's "Needs you"
 Terminal scripts (WP-117). *Copy* puts the banner's plain command on the
 clipboard; *Install*, *Create*, *Grant* and *Update* open Omarchy's
 presentation terminal (`omarchy-launch-floating-terminal-with-presentation`:
-logo, the script, "Done!", the theme's gum colours) with the banner's
+logo, the script, a closing prompt, the theme's gum colours) with the banner's
 script, one of six constants in `Model.js` (`INSTALL_ENGINE_SCRIPT`,
 `UPDATE_ENGINE_SCRIPT`, `UPDATE_PLUGIN_SCRIPT`, `INIT_SCRIPT`,
 `SNAPPER_FIX_SCRIPT`, and the setup card's `INIT_ASK_SCRIPT`); the service launches nothing else
@@ -1518,10 +1518,14 @@ on success, red (palette 1) on failure. A result line never claims more
 than happened: after a failed install or engine update it says "The
 install (update) did not finish. Run it again; your logbook is
 untouched." (install.sh can stop after it replaced the binary). The
-script then ends with status 0, so the wrapper's "Done!" follows. Ctrl+C
+script then ends with status 0 after success and 1 after a failure, and
+the wrapper waits for a key: "Done!" for 0, and since Omarchy edge
+(`omarchy-show-done <code>`, WP-225) "Failed (exit code 1)!" in red for
+1; an earlier Omarchy prints "Done!" for both, so the result line, not
+the prompt, is the verdict. Ctrl+C
 (or TERM) is trapped: the script skips a command that has not started,
 prints a "Cancelled. …" line (palette 3) and ends with 130, Omarchy's
-"cancelled" status, on which the wrapper prints no "Done!" and the window
+"cancelled" status, on which the wrapper prints no prompt and the window
 closes, as with Omarchy's own scripts. After a successful snapshot grant
 the script runs `seldon capture` (once more if the lock is held), which
 rewrites the index, so the banner goes without a click; only when a

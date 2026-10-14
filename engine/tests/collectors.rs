@@ -98,6 +98,36 @@ mod collectors {
         );
     }
 
+    /// WP-225 (B13): `omarchy pkg add` on Omarchy edge logs `pacman -S
+    /// --noconfirm --needed -- <pkgs>`; the `--` ends the options, the
+    /// names after it are named, a `repo/` prefix included.
+    #[test]
+    fn pacman_reads_omarchy_pkg_adds_double_dash_form() {
+        let mut b = Bench::new("pkg-add");
+        let log = b.scratch.path("pacman.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::copy(fixture("logs/pacman-pkg-add.log"), &log).unwrap();
+        let out = b.run(&Pacman, "2026-10-14T09:30:00+02:00");
+        assert_eq!(
+            subjects(&out.events),
+            ["rnnoise", "localsend", "obs-studio", "btop"]
+        );
+        assert!(out.events.iter().all(|e| e.kind == Kind::Install));
+        let explicit: Vec<_> = out.events.iter().map(|e| e.explicit).collect();
+        assert_eq!(explicit, [Some(false), Some(true), Some(true), Some(true)]);
+        assert_eq!(
+            out.events[1].meta.command.as_deref(),
+            Some("pacman -S --noconfirm --needed -- localsend obs-studio")
+        );
+        let cmd = seldon::pkgcmd::parse_command(&seldon::pkgcmd::split_logged(
+            "pacman -S --noconfirm --needed -- extra/btop",
+        ))
+        .unwrap();
+        assert_eq!(cmd.targets, ["btop"]);
+        assert!(!cmd.sysupgrade && !cmd.query);
+        assert_eq!(b.run(&Pacman, "2026-10-14T09:31:00+02:00").events.len(), 0);
+    }
+
     #[test]
     fn pacman_rotation_restarts_and_dedupes() {
         let mut b = Bench::new("rotation");

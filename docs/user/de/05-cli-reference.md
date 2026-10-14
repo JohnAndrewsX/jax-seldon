@@ -1303,7 +1303,8 @@ zur Warnung macht.
 `seldon hook install skills` legt den Seldon-Agentenskill in jeden
 Skill-Ordner eines Agenten, den es gibt: `~/.agents/skills`,
 `~/.claude/skills`, `~/.codex/skills`, `~/.pi/agent/skills`,
-`~/.hermes/skills` und `~/.hermes/profiles/*/skills`, die Ordner, in die
+`~/.hermes/skills`, `~/.gemini/config/skills` (Antigravity) und
+`~/.hermes/profiles/*/skills`, die Ordner, in die
 Omarchy seine eigenen Skills verlinkt. Es legt keinen davon an. Der Skill
 kommt nach `<Ordner>/seldon/`; ein `seldon` dort, das Seldon nicht
 geschrieben hat, oder eine Datei darin, die du geändert hast, bleibt, wie

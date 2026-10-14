@@ -262,6 +262,12 @@ Markdown table):
   transaction before the window, a `-Syu` across the window's start (one
   line before, one inside), installs, a removal, a 14-package `-Syu` (10
   listed, `count` 14), a failed install of two packages and a downgrade.
+- `pacman-pkg-add.log` — what `omarchy pkg add` logs since Omarchy edge
+  (WP-225, B13): `pacman -S --noconfirm --needed -- <pkgs>`, the `--`
+  before the names. Two transactions on 2026-10-14: `localsend` and
+  `obs-studio` named, `rnnoise` pulled in (`explicit: false`), and a
+  `repo/`-prefixed `extra/btop`. Expected: four installs, the named ones
+  `explicit: true`; a second run emits nothing.
 - `pacman-rotation/` — `pacman.log.1` (old inode, ends after the 09-15
   transaction, 7359 bytes; cursor at its end) and the new `pacman.log`, which
   starts by **repeating the 09-15 transaction** (copytruncate race) and continues
