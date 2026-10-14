@@ -212,3 +212,42 @@ Every change in 0.4.0: [CHANGELOG.md](https://github.com/JohnAndrewsX/jax-seldon
    PreToolUse payload, so nothing is executed and no sudo is needed);
    the guard may block the literal `sudo` in it. That is a live-stage
    decision, not made here.
+
+## Round 2 (review 1: SEND BACK, docs only; part A)
+
+The branch was fast-forwarded to local `next` e7089f3d (it contains
+a088e38b, the merge of round 1, and the WP-222 and E94 bookkeeping).
+Where round 2 changed round 1, this section rules.
+
+| Finding | Fix | Commit |
+|---|---|---|
+| F1 the depth-16 overclaim | The reviewer's split in all five places: from the 17th level on Seldon stops reading the line; a command before that point is recorded masked (`<program> ‹redacted›`); a command inside or after it is not recorded. "No longer crashes" now says "very deep" (the base crashed only at extreme depth). Highlight, the WP-209 Engine entry ("thousands of levels"), guide en 04 and 11 | 5ff4afeb |
+| F1, German | guide de 04 and 11, the same split; source lines at 5ff4afeb | b72f991b |
+| F2 no upgrade scenario | `b` (0.3.0 to 0.4.0, either order) in the record as not run; its limitation: `omarchy plugin update` is the operator's (the guard keeps agents out of it, as for 0.3.0); covered by `engineMin` 0.2.0 and contract 2 unchanged | fa28bf17 |
+| F3 `engine` | no change now; the live stage writes `0.4.0+next.<sha>` | — |
+| F4 Engine order | WP-218, WP-219, WP-209 | 5ff4afeb |
+| tag date | `## [0.4.0] - 2026-10-14`; the release body's anchor follows (`#040---2026-10-14`); the link references hold no date | 5ff4afeb |
+| E93 | a `channel` limitation in the record (below) | fa28bf17 |
+
+**E93, stable and rc** (2026-10-14, about 06:03 UTC; read only, nothing
+installed): `https://pkgs.omarchy.org/stable/x86_64/omarchy.db` and
+`https://pkgs.omarchy.org/rc/x86_64/omarchy.db` downloaded over HTTPS
+into the session scratchpad and read with `bsdtar`. Both list
+`omarchy-4.0.4-1-x86_64.pkg.tar.zst`, sha256
+`78fa778d48180aaf776b44f89ae86780f78e7b47440aa20faeb4a1be9240339c`,
+the same build date; `omarchy-settings` 4.0.4-1 and `quickshell-git`
+0.3.0.r20.g28771c7-3 in both. The package lists differ only in
+`linux-omarchy`, `-bore`, `-headers`, `-bore-headers` (stable 7.2.5-3,
+rc 7.2.5-4) and in `omarchy-dev` and `omarchy-settings-dev`
+4.0.0.r1832.g23dab9e-1, which only stable lists.
+
+**Verified** (under `flock /tmp/seldon-check.lock`, own `HOME`, private
+0700 `XDG_RUNTIME_DIR` removed afterwards):
+
+| Check | Where | Result |
+|---|---|---|
+| `bash scripts/docs-check.sh` | fixture | `docs-check: ok (529 links, 14 translated pages, 61 commands, 704 command lines)` |
+| `bash packaging/release-notes.sh 0.4.0` | fixture | exit 0; the new Highlight 9; the anchor `#040---2026-10-14` |
+| full check | not run | docs only: round 2 changed `CHANGELOG.md`, `docs/user/`, `packaging/acceptance/` and `work/`, nothing under `engine/`, `plugin/`, `schema/` or `scripts/`; the last full check is round 1's on fe4ab148 (`check: ok`, exit 0, after one rerun of the known by-id flake) |
+
+The live stage (part B) follows when origin/next is at a088e38b.
