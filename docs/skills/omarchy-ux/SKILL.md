@@ -17,6 +17,11 @@ no rule yet; say so in the PR when you follow it. Applies to every agent, not on
 4. This checklist.
 5. Generic design skills and other people's skill bundles: read as references, never installed.
 
+> Superseded in part by [ADR-0056](../../../decisions/ADR-0056-seldon-is-an-omarchy-app.md) §10
+> (proposed): shipped Omarchy skills (`omarchy`, `omarchy-app`, `diagnose-crash`) rank above
+> Seldon's own house rules wherever Seldon records no exception; the recorded exceptions are
+> in ADR-0056 §9.
+
 Omarchy first (AGENTS.md §1): read `$OMARCHY_PATH/shell/Commons/`, `Ui/` and `plugins/`, and the
 installed `omarchy` skill (`$OMARCHY_PATH/default/agents/skills/omarchy/`: `plugins.md`,
 `theming.md`); never edit `/usr/share/omarchy` (that skill's `SKILL.md:55`). Omarchy skills not
