@@ -34,7 +34,7 @@ and the package does not exist yet. Update the plugin first:
 - On Omarchy's edge channel, `omarchy-dev`, `omarchy-settings-dev` and Omarchy's other kernels (such as `linux-omarchy-bore`) count exactly like `omarchy`, `omarchy-settings` and `linux-omarchy`.
 - Switching Omarchy's channel, stable to edge or back, is one change, "Omarchy changed channel", instead of a removal, an install and a lower version number.
 - A channel switch outside a case is a crisis with the default crisis list, like any install of `omarchy` by name; plan it in a case to keep it quiet.
-- Omarchy's own settings files are routine: setting Omarchy's language, your default agent or the dictation backend no longer asks you why, and crash mutes stay routine.
+- Omarchy's own settings files are routine: setting Omarchy's language or dictation backend (edge today) or your default agent no longer asks you why, and crash mutes stay routine.
 - A Seldon terminal step that failed ends with Omarchy's red "Failed" prompt instead of "Done!", on Omarchy versions that have it (edge today).
 - The Seldon agent skill also goes into Antigravity's skill folder, `~/.gemini/config/skills`.
 - Update the engine and the plugin in either order: the index format is the same as from 0.2.0 to 0.4.0.
