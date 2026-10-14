@@ -65,3 +65,18 @@ Docs only; no code, schema, fixture, AGENTS.md or PROJECT.md change.
 2. The morning list of the decision (§4: ADRs, AGENTS.md rows, PROJECT.md,
    merging `app`, exit codes, languages, external acts) is unchanged; the
    ROADMAP repeats the operator's acts.
+
+## Review round 1 (Opus: approve with small fixes)
+
+- F5: the pill's left click runs `seldon open --json` (detached, returns at
+  once, `{"started": true}` or an error; the app is never a child of
+  `omarchy-shell`); the `.desktop` file keeps bare `seldon open`. In
+  ADR-0058 §1, ADR-0056 §4, the SPEC-PLUGIN §4 note, CONCEPT, PLAN,
+  APP-PARITY row 5, and one sentence in `work/queued/WP-229.md`.
+- F6: ADR-0056 §9's "C++ owns the logic" row left the exceptions table;
+  it is now a reading of the rule under the table, and listed in PACKET.
+- F7: ADR-0057 §7, ADR-0058 §6 and §7 listed in PACKET as additions.
+- F8: ROADMAP's operator list gains exit codes, languages and the test
+  host's rc versus an edge rehearsal.
+- `flock /tmp/seldon-check.lock just docs-check` again — *desktop* (dev
+  host): ok (529 links, 14 translated pages, 61 commands, 704 command lines).

@@ -30,6 +30,10 @@ view.
 
 **The operator's acts** (never an agent's): accepting the three ADRs and
 the AGENTS.md rows ([AGENTS-PROPOSAL.md](AGENTS-PROPOSAL.md)); PROJECT.md's
-goal and definition of done; merging the branch `app` into `next`; the AUR
-key, the submission to Omarchy's package repository, any repository
-rename; installing a release on the dev host.
+goal and definition of done; merging the branch `app` into `next`; exit
+codes staying 0–4 (ADR-0058 §5; default yes); the languages, `en` and
+`de` in 0.5.0 and the other 48 agent-made in 0.6.0 (ADR-0057 §7; default
+yes); the AUR key, the submission to Omarchy's package repository, any
+repository rename; installing a release on the dev host; whether the
+channel-switch classification is rehearsed on the test host's rc channel
+or on a separate edge profile (a second test host profile or a VM).

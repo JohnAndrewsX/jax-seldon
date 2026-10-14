@@ -186,8 +186,10 @@ plugin/
 
 ## 4. BarWidget.qml
 
-> From 0.5.0 (ADR-0056 §4, proposed): left click runs `seldon open`
-> (the app), right click captures; the middle click and the desk routing
+> From 0.5.0 (ADR-0056 §4, proposed): left click runs `seldon open
+> --json`, which starts the app detached and returns at once (`{"started":
+> true}` or an error; the app is never a child of `omarchy-shell`, ADR-0058
+> §1), right click captures; the middle click and the desk routing
 > go; the counts, the crisis colour and the tooltip stay.
 
 `WidgetButton` showing the bar glyph (A4, the Prime Radiant mark) and the

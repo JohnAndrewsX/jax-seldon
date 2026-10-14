@@ -24,8 +24,24 @@ each is short except CONCEPT and PLAN, where only the new parts matter.
 
 - **ADR-0058 §1, `seldon open --json`:** the decision says "exec". AGENTS.md
   §7 asks `--json` of every command, and an exec cannot print. Written: bare
-  form execs; with `--json` the engine starts the app detached and prints
-  `{launched, program}`, as `edit --editor` already does.
+  form execs; with `--json` the engine starts the app detached, returns at
+  once and prints `{"started": true}` or an error, as `edit --editor`
+  already detaches. Review round 1 (F5): the pill's left click uses the
+  `--json` form, so the window is never a child of `omarchy-shell` (ADR-0056
+  §4, SPEC-PLUGIN §4 note, WP-229's text); the `.desktop` file keeps bare
+  `seldon open`.
+- **ADR-0056 §9, "C++ owns the logic"** (F6): not in the decision's
+  exception list. Worded as a reading of the rule, not an exception: the
+  rule speaks of the app's backend against its QML; the engine is a
+  separate program the app calls through `QProcess`, as the skill's apps
+  call `ffmpeg`. Source: decision §1 attack 4, audit 03 A5.
+- **ADR-0057 §7** (F7): "a language added later is a patch release"
+  (VERSIONING.md's rule for the user guide, applied to catalogs).
+- **ADR-0058 §6** (F7): the Seldon skill tells the diagnosing agent to file
+  its finding with `seldon inbox add` (audit 03, the E28/E32 row; the
+  command exists).
+- **ADR-0058 §7** (F7): help groups `open` under "App" and the rest under
+  "Commands that need no display", as Hype does (audit 02).
 - **ADR-0058 §1, single instance:** a second `seldon open` raises the open
   window (mechanism left to the app).
 - **ADR-0058 §6, `changes --around`:** defaults 2 h / 30 min (from WP-229),

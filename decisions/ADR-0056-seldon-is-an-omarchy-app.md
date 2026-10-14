@@ -113,7 +113,10 @@
    views, progressive disclosure inside them, no mode switch.
 4. **The plugin shrinks to the pill.** Counts, the crisis colour and the
    tooltip; the 15-minute capture timer (ADR-0005 stands: no daemon);
-   left click runs `seldon open`, right click captures. No panel: the
+   left click runs `seldon open --json`, which starts the app detached
+   and returns at once (ADR-0058 §1), so the window is never a child of
+   `omarchy-shell` and a crash of one never takes the other down; right
+   click captures. No panel: the
    app is one key away. The plugin ships read-only under
    `/usr/share/seldon/plugin/` and is copied into the user's plugin
    folder on the user's say-so (Meeting Recorder's split; a copy, never a
@@ -155,12 +158,17 @@
    | Skill rule | Seldon | Why | Precedent |
    |---|---|---|---|
    | "a single binary" | two binaries in one package (`seldon` engine, `seldon-desk` app) | hook latency (Context 6): the hook path must not load Qt | gliff (omacom, Rust); `omarchy-task-manager`, `omatrack` (Rust + Qt); Hype runs a child of itself |
-   | "C++ owns the logic" | the Rust engine owns state and writes; the app's C++ owns the window's state, the index watch and the process calls | the skill's rule is about the app's backend, not about log parsers; the engine is headless and tested | gliff |
    | "exits 0 or 1" | exit codes 0–4 stay (ADR-0058 §5) | 2–4 refine "1"; "non-zero = failure" holds for every agent; the plugin keys on 3 and 4 | — (a stated deviation; revisit at 1.0 only on the operator's word) |
    | "Ctrl+Z / Ctrl+Shift+Z undo and redo" | no undo key | the ledger is append-only; there is no true inverse (`plan reopen` makes a new case); SPEC-PLUGIN §5.3's house rule "no undo key without a true inverse" | — |
    | "static musl release build" (AGENTS.md §7, Seldon's own) | scoped to the engine | no Qt binary links statically; Qt comes from Arch | — |
 
-   Everything else in the skill applies to the app as written.
+   Everything else in the skill applies to the app as written. One rule
+   is read, not excepted: "C++ owns the logic" speaks of the app's
+   backend against its QML, so in `seldon-desk` C++ owns the window's
+   state, the index watch and the engine calls, and QML owns layout and
+   keys. The engine is a separate headless program the app calls through
+   `QProcess`, as the skill's apps call `ffmpeg`; its logic is not the
+   app's logic.
 10. **Precedence of Omarchy's skills.** Shipped Omarchy skills
     (`omarchy`, `omarchy-app`, `diagnose-crash`) rank above Seldon's own
     house rules wherever Seldon records no justified exception (this

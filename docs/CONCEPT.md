@@ -149,7 +149,7 @@ From 0.5.0 (ADR-0056); until then the desk of
 - **The pill** — the Seldon mark, then `2 · 1`: active cases, crises
   (hidden at 0; `driftInBar` shows all changes without a case or none).
   Colour by worst state: accent while cases are active, urgent on a
-  crisis; the tooltip says it in words. Left click → `seldon open`,
+  crisis; the tooltip says it in words. Left click → `seldon open --json` (the app starts detached),
   right click → capture. The pill also runs the 15-minute capture timer
   (ADR-0005: no daemon).
 - **The app** — one window, app id `seldon`, tiling like any other,

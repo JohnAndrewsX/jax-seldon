@@ -44,11 +44,13 @@
    when set, else `/usr/lib/seldon/seldon-desk`. Without `--json` the
    engine `exec`s the app, as a launcher expects. With `--json` it starts
    the app detached (null stdio, its own process group, never waited
-   for; the rule `edit --editor` already follows) and prints
-   `{"launched": true, "program": …}`. A missing app binary is exit 1
-   with one sentence: "The Seldon window is not installed. Install the
-   seldon package." The `.desktop` entry runs `seldon open`; the pill's
-   left click runs `seldon open`; the suggested Hyprland binding becomes
+   for; the rule `edit --editor` already follows), returns at once and
+   prints `{"started": true}`, or the error as JSON with its exit code.
+   A missing app binary is exit 1 with one sentence: "The Seldon window
+   is not installed. Install the seldon package." Two callers, two
+   forms: the `.desktop` entry runs bare `seldon open`; the pill's left
+   click runs `seldon open --json`, so the app is never a child of
+   `omarchy-shell` (ADR-0056 §4). The suggested Hyprland binding becomes
    `{ launch = "seldon" }`. A second `seldon open` while the window is
    open raises that window instead of starting another (the mechanism is
    the app's).
@@ -106,7 +108,7 @@
   install` twice is idempotent; `changes --around` on the sample ledger.
 - SPEC-ENGINE §3 is rewritten for `open`, `edit`, `skill`, `changes` in
   that WP; until then it carries a note pointing here.
-- The plugin 0.5 (the pill) changes two calls: left click `seldon open`,
+- The plugin 0.5 (the pill) changes two calls: left click `seldon open --json`,
   and none of the desk's `open <target>` calls survive (they move to the
   app as `edit`).
 - 0.6.0 removes the alias; its CHANGELOG lists it under **Breaking**.

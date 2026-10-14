@@ -37,7 +37,7 @@ checks the exact argv sent:
 | 3b | Data states: a search without a match | app | Same text and *Clear search* in Changes, Plan, Record |
 | 3c | Empty lists offer their first step | app | Plan's empty list offers *New case*; Record's offers *New decision* |
 | 4 | Settings › Appearance (width slider, sidebar) | drop | No window geometry to set; what is in force stays in `seldon doctor` and `config.toml`. Proposed drop — the app WP may add a settings view if a setting survives |
-| 5 | Open and close as the shell and the pill do; the panel shim | app / drop | App: `seldon open` starts the window, a second one raises it, the pill's left click runs it, `Q` quits. Drop: `shell toggle|summon`, middle click to the Radiant, the `jax.seldon.panel` shim (removed in 0.5.0, ADR-0056 §5) |
+| 5 | Open and close as the shell and the pill do; the panel shim | app / drop | App: `seldon open` starts the window, a second one raises it, the pill's left click runs `seldon open --json` (detached, returns at once), `Q` quits. Drop: `shell toggle|summon`, middle click to the Radiant, the `jax.seldon.panel` shim (removed in 0.5.0, ADR-0056 §5) |
 | 6 | Stacked layout: Enter shows the detail, Esc goes back | app | Same in a narrow window; Esc goes back, never quits |
 | 7 | Notices under the header; the header's chip | app | States |
 | 7a | Snapshots not readable: the setup card's optional step, *Grant* | app | States: the setup card stands in Changes until Seldon is set up |
