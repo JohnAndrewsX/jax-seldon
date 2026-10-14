@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import ".."
 
@@ -18,8 +19,8 @@ BorderSurface {
   readonly property Tone tone: Tone {}
 
   property var summary: null
-  property color foreground: Color.popups.text
-  property color accent: Color.accent
+  property color foreground: Commons.Color.popups.text
+  property color accent: Commons.Color.accent
   property string fontFamily: Style.font.family
   // Off once the slot holds its chart.
   property bool placeholder: true
@@ -34,7 +35,7 @@ BorderSurface {
   readonly property alias chartArea: chartArea
 
   radius: Style.cornerRadius
-  color: Style.normalFillFor(foreground, accent, Color.urgent)
+  color: Style.normalFillFor(foreground, accent, Commons.Color.urgent)
   borderSpec: Border.controlSpec("normal", foreground, accent)
   padding: Style.spacing.panelPadding
 

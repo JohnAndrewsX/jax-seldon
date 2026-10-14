@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../../Model.js" as Model
 
@@ -52,7 +53,7 @@ DetailPane {
   readonly property var transaction: root.detail ? root.detail.transaction : null
   readonly property alias form: driftForm
   readonly property bool editing: driftForm.editing
-  readonly property color foregroundColor: Color.popups.text
+  readonly property color foregroundColor: Commons.Color.popups.text
   // The last Ask agent about this event, or null.
   readonly property var askResult: root.service && root.detail && root.service.askResult
     && root.service.askResult.what === "drift" && root.service.askResult.target === root.detail.id
@@ -254,7 +255,7 @@ DetailPane {
       implicitHeight: calloutColumn.implicitHeight + Style.spacing.lg * 2
       radius: Style.cornerRadius
       color: Style.normalFill
-      borderSpec: Border.flat(Color.urgent, Math.max(1, Style.space(1)))
+      borderSpec: Border.flat(Commons.Color.urgent, Math.max(1, Style.space(1)))
 
       Column {
         id: calloutColumn
@@ -296,7 +297,7 @@ DetailPane {
       implicitHeight: txCalloutColumn.implicitHeight + Style.spacing.lg * 2
       radius: Style.cornerRadius
       color: Style.normalFill
-      borderSpec: Border.flat(Color.urgent, Math.max(1, Style.space(1)))
+      borderSpec: Border.flat(Commons.Color.urgent, Math.max(1, Style.space(1)))
 
       Column {
         id: txCalloutColumn

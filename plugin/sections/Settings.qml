@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../components/desk"
 import "../Model.js" as Model
@@ -261,7 +262,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: "Desk width"
-        color: Color.popups.text
+        color: Commons.Color.popups.text
         font.family: Style.font.family
         font.pixelSize: Style.font.title
         font.bold: true
@@ -283,7 +284,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: root.controlHint
-        color: root.controlArmed ? Color.popups.text : root.tone.dim
+        color: root.controlArmed ? Commons.Color.popups.text : root.tone.dim
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
@@ -303,10 +304,10 @@ Section {
           integer: true
           tickCount: 6
           value: root.sliderIndex
-          trackColor: Style.selectedFillFor(Color.popups.text, Color.accent)
-          fillColor: Color.accent
-          knobColor: Color.accent
-          tickColor: Color.popups.background
+          trackColor: Style.selectedFillFor(Commons.Color.popups.text, Commons.Color.accent)
+          fillColor: Commons.Color.accent
+          knobColor: Commons.Color.accent
+          tickColor: Commons.Color.popups.background
 
           FocusRing {
             shown: root.control === "width"
@@ -336,7 +337,7 @@ Section {
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
           text: (root.desk ? root.desk.widthPct : Model.DESK_WIDTH_DEFAULT) + " %"
-          color: Color.popups.text
+          color: Commons.Color.popups.text
           font.family: Style.font.family
           font.pixelSize: Style.font.subtitle
           font.bold: true
@@ -387,7 +388,7 @@ Section {
           radius: Style.cornerRadius
           color: "transparent"
           border.width: Math.max(1, Style.space(1))
-          border.color: Style.normalBorderFor(Color.popups.text, Color.accent)
+          border.color: Style.normalBorderFor(Commons.Color.popups.text, Commons.Color.accent)
 
           Rectangle {
             readonly property real share: root.desk && root.desk.geometry.avail > 0 ? root.desk.geometry.w / root.desk.geometry.avail : 1
@@ -396,9 +397,9 @@ Section {
             width: parent.width * share
             height: parent.height - Style.spacing.sm * 2
             radius: Style.cornerRadius
-            color: Style.selectedFillFor(Color.accent, Color.accent)
+            color: Style.selectedFillFor(Commons.Color.accent, Commons.Color.accent)
             border.width: Math.max(1, Style.space(1))
-            border.color: Color.accent
+            border.color: Commons.Color.accent
           }
         }
       }
@@ -407,7 +408,7 @@ Section {
         width: parent.width
         textFormat: Text.PlainText
         text: "Sidebar"
-        color: Color.popups.text
+        color: Commons.Color.popups.text
         font.family: Style.font.family
         font.pixelSize: Style.font.title
         font.bold: true
@@ -429,7 +430,7 @@ Section {
         textFormat: Text.PlainText
         text: root.desk && root.desk.settingsNoEntry ? Model.DESK_NO_ENTRY_TEXT
           : "The shell did not take the change. " + Model.DESK_REFUSED_TEXT
-        color: Color.popups.text
+        color: Commons.Color.popups.text
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
@@ -469,7 +470,7 @@ Section {
         text: "Offer again"
         tooltipText: "Brings the snapshot step back to the setup card in Today"
         bordered: true
-        foreground: Color.popups.text
+        foreground: Commons.Color.popups.text
         fontFamily: Style.font.family
         fontSize: Style.font.caption
         verticalPadding: Style.spacing.xs
@@ -486,7 +487,7 @@ Section {
         visible: offerAgain.visible
         textFormat: Text.PlainText
         text: root.controlHint
-        color: root.controlArmed ? Color.popups.text : root.tone.dim
+        color: root.controlArmed ? Commons.Color.popups.text : root.tone.dim
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
@@ -499,7 +500,7 @@ Section {
         visible: !!root.service && root.service.setupResult !== ""
         textFormat: Text.PlainText
         text: root.service ? root.service.setupResult : ""
-        color: Color.popups.text
+        color: Commons.Color.popups.text
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall

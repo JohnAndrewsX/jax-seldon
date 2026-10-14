@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import ".."
 import "../../Model.js" as Model
@@ -29,9 +30,9 @@ Item {
   property int chipCount: 0
   property string chipTone: ""
   property bool noticesFolded: false
-  property color foreground: Color.popups.text
-  property color accent: Color.accent
-  property color urgent: Color.urgent
+  property color foreground: Commons.Color.popups.text
+  property color accent: Commons.Color.accent
+  property color urgent: Commons.Color.urgent
   property string fontFamily: Style.font.family
 
   readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1

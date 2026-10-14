@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import ".."
 
 // A thin progress bar (prototype `.progress`): a track in the divider tone,
@@ -9,8 +10,8 @@ Item {
   id: root
 
   property real value: 0
-  property color foreground: Color.popups.text
-  property color accent: Color.accent
+  property color foreground: Commons.Color.popups.text
+  property color accent: Commons.Color.accent
 
   readonly property Tone tone: Tone {}
 

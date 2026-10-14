@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../components/desk"
 import "../Model.js" as Model
@@ -176,7 +177,7 @@ ReadingSection {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: root.index ? Model.decisionSummary(root.allRows) : ""
-        color: Color.popups.text
+        color: Commons.Color.popups.text
         wrapMode: Text.Wrap
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
@@ -193,7 +194,7 @@ ReadingSection {
         enabled: root.canWrite
         selected: root.formOpen
         bordered: true
-        foreground: Color.popups.text
+        foreground: Commons.Color.popups.text
         fontFamily: Style.font.family
         fontSize: Style.font.caption
         onClicked: root.formOpen ? root.closeForm() : root.openForm()
@@ -258,7 +259,7 @@ ReadingSection {
       width: parent.width
       textFormat: Text.PlainText
       text: root.current ? root.rowTitle(root.current) : ""
-      color: Color.popups.text
+      color: Commons.Color.popups.text
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.title
@@ -284,7 +285,7 @@ ReadingSection {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.decision ? root.decision.text : ""
-      color: Color.popups.text
+      color: Commons.Color.popups.text
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.body

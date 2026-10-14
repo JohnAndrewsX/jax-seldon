@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import ".."
 
 // The desk's detail pane (ADR-0034 §2): in the stacked layout a "back to
@@ -16,7 +17,7 @@ Item {
   property alias actions: bar.actions
   property alias meta: bar.meta
   property alias hint: bar.hint
-  property color foreground: Color.popups.text
+  property color foreground: Commons.Color.popups.text
   property string fontFamily: Style.font.family
   default property alias content: body.data
 
