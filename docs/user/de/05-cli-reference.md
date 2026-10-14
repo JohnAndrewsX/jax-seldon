@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 9533e6f9 -->
+<!-- source: en/05-cli-reference.md @ fe329fd3 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -483,10 +483,12 @@ Options:
 Was das Logbuch um einen Zeitpunkt herum aufgezeichnet hat: ein Absturz,
 ein fehlgeschlagener Start, „um zehn ging es kaputt“. Gib die Zeit als
 `2026-10-01 14:20` (deine Ortszeit), in RFC 3339, als `@<Sekunden seit
-1970>` oder als `now` an; `--before` und `--after` setzen das Fenster
-(Standard zwei Stunden davor, eine halbe Stunde danach; `30m`, `1h30m`,
-`2d`, je höchstens 31 Tage). Es liest nur das Ledger und schreibt nichts.
-Der Seldon-Skill lässt Agenten es nach einer Absturzanalyse aufrufen.
+1970>` oder als `now` an; ein Datum allein reicht nicht. `--before` und
+`--after` setzen das Fenster (Standard zwei Stunden davor, eine halbe
+Stunde danach; `30m`, `1h30m`, `2d`, je höchstens 31 Tage). Jede Änderung
+trägt ihre Klasse (routine, attention, crisis), wie der Changelog sie
+einordnet. Es liest nur das Ledger und schreibt nichts. Der Seldon-Skill
+lässt Agenten es nach einer Absturzanalyse aufrufen.
 
 <!-- help: seldon changes -->
 ```text
@@ -1517,15 +1519,17 @@ Options:
 Examples:
   seldon skill
   seldon skill install --json
+  seldon skill install --replace
 ```
 <!-- /help -->
 
 ### seldon skill install
 
 Legt den Skill in jeden Agenten-Skill-Ordner, den es gibt, genau wie
-`seldon hook install skills`; ein zweiter Aufruf ändert nichts. Um eine
-Kopie zu ersetzen, die du bearbeitet hast, oder den Skill zu entfernen:
-`seldon hook install skills --replace` und `seldon hook uninstall skills`.
+`seldon hook install skills`; ein zweiter Aufruf ändert nichts. Eine
+Kopie, die du bearbeitet hast, bleibt; `--replace` legt sie im Logbuch
+ab und installiert den Skill wie ausgeliefert. Zum Entfernen: `seldon
+hook uninstall skills`.
 
 <!-- help: seldon skill install -->
 ```text
@@ -1534,6 +1538,7 @@ Put the skill into every agent skill folder that exists (as `hook install skills
 Usage: seldon skill install [OPTIONS]
 
 Options:
+      --replace        Where you changed the skill, archive your copy to the logbook's archive/ and install it as shipped
 ```
 <!-- /help -->
 
