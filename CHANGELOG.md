@@ -21,10 +21,25 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
-- A pacman transaction's detail says again when it shows only part of the transaction, also for an old open change of one listed package.
-- Work's *By agent*, *Import tasks…* and *New case* work by key too: ↑ on the first row reaches them, Enter twice runs one. New keys, nothing removed: this ships in the next minor release.
+## [0.4.0] - 2026-10-13
+
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
+and the package does not exist yet. Update the plugin first:
+`omarchy plugin update jax.seldon` (Omarchy shows the changes and asks
+`Update jax.seldon?`; answer yes), then `omarchy-restart-shell`.
+
+### Highlights
+
+- Your agents wait less: in a session that has nothing to do with Seldon, the hooks for session start, session end and other agents now return within a millisecond.
+- Work's *By agent*, *Import tasks…* and *New case* work by key too: ↑ on the first row reaches them, Enter twice runs one.
 - A coloured stripe in a desk list now always has its word beside it (crisis, attention, active, proposed, failing); an empty list says what belongs there, and a search without a match offers *Clear search*.
-- The Changelog's *Agent sorts N open changes* is now *Ask agent to sort N changes*.
+- The Changelog's *Agent sorts N open changes* is now *Ask agent to sort N changes*: a new label, the same action.
+- A pacman transaction's detail says again when it shows only part of the transaction, also for an old open change of one listed package.
+- On a narrow desk the line under the Seldon mark no longer runs under the counts beside it.
+- More secrets stay out of your logbook: passwords in Python triple quotes, keys such as `secret_key` or `aws_secret_access_key`, a password file given as `/dev/fd/3` from `<(…)`.
+- Commands inside `$(…)`, backticks and `<(…)` are read as commands of their line, so `x=$(sudo mkpasswd …)` is recorded with its password masked.
+- A command line with `$(…)` nested more than 16 deep no longer crashes the hook: it is recorded masked, and Seldon stops reading that line there, so a command after it is not recorded.
+- Update the engine and the plugin in either order: the index format is the same as in 0.2.0 and 0.3.0.
 
 ### Engine
 
@@ -108,7 +123,7 @@ and the package does not exist yet. Update the plugin first:
   the engine cannot write, *Import tasks…* and *New case* arm nothing and
   the line says why. `shell call jax.seldon select header` places the
   cursor for scripts, never pressing. A compatible addition (new keys,
-  nothing changed or removed), so it ships in the next minor release.
+  nothing changed or removed), so it ships in 0.4.0, a minor release.
 - **The desk header keeps its subline clear of the KPI strip on a narrow
   desk (WP-215).** On a 740 px desk (a 750 px window) "machine · Omarchy
   version · captured N ago" ran under ACTIVE and VERIFICATION, and with
@@ -2120,7 +2135,8 @@ plugin `jax.seldon` (published from `plugin/` as `jax-seldon-plugin`).
 - Specs (engine, plugin, logbook, contract), 22 ADRs, plugin README with
   security section, keybinding docs, preview image.
 
-[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.4.0
 [0.3.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.3.0
 [0.2.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.2.0
 [0.1.4]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.4

@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ e0df9cca -->
+<!-- source: en/06-configuration.md @ 343d7ac3 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -334,7 +334,11 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   `"client_secret"`, `"access_token"`, `"api_key"`, `"x-api-key"` oder
   `"apiKey"` in
   eingebettetem JSON (`curl -d '{"password": "…"}'`), auch in einem
-  Python-Dict (`{'x-api-key': '…'}`); `"password_hint"` bleibt;
+  Python-Dict (`{'x-api-key': '…'}`) und in Pythons dreifachen
+  Anführungszeichen (`{'password': """…"""}`), und eines
+  Schlüsselworts mit `key` dahinter (`"secret_key"`, `"secretKey"`,
+  `"aws_secret_access_key"`); `"password_hint"` und `"secret_key_base"`
+  bleiben;
 - AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
   `gho_…`, `github_pat_…` und die übrigen `gh…_`-Formen), GitLab-Tokens
   (`glpat-…`), Slack-Tokens (`xoxb-…`), API-Schlüssel (`sk-…`, `sk_…`);
@@ -357,7 +361,9 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
 - Passwörter und Schlüssel von nmcli: der Wert nach `password`,
   `wifi-sec.psk`, `802-1x.password`, `vpn.secrets` und den anderen
   geheimen Eigenschaften (kein Feld, das nur angezeigt wird: `nmcli -g
-  wifi-sec.psk con show`);
+  wifi-sec.psk con show`; `-f` und `-g` nennen Felder nur vor dem
+  Objektwort, deshalb wird `nmcli con modify Home -f wifi-sec.psk …`
+  geschwärzt);
 - ein Mount-Passwort: die Optionsliste mit `pass=` oder `pwd=` nach
   `mount -o`;
 - Benutzer und Passwort in einer URL (`https://user:secret@host`), auch

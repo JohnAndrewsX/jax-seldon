@@ -29,7 +29,7 @@ import "Model.js" as Model
 // The widget has no popup of its own any more, so it offers the bar no
 // open/close: Tab between bar panels passes it by.
 // `jax.seldon.panel`, the 0.1.x panel's IPC target, stays as a shim to
-// the desk (ADR-0034 §7); 0.3.0 keeps it, WP-188 removes it.
+// the desk (ADR-0034 §7); 0.3.0 and 0.4.0 keep it, WP-188 removes it.
 BarWidget {
   id: root
   moduleName: "jax.seldon"

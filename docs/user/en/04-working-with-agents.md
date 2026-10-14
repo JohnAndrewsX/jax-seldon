@@ -304,8 +304,14 @@ command's output or a file's content. Before writing, the engine removes
 passwords and tokens it recognises (see [Configuration](06-configuration.md#redaction)).
 Read-only commands record nothing.
 
-Commands hidden inside `xargs`, `find -exec` or an interpreter
-(`python -c`, `node -e`) are not read. The collectors still see their
+The commands inside `$(…)`, backticks and `<(…)` are commands of the
+line, read before the command they stand in, as the shell runs them:
+`x=$(sudo mkpasswd -m sha-512 …)` is recorded as `mkpasswd ‹redacted›`.
+A line that nests `$(…)` more than 16 deep is recorded as its program
+and `‹redacted›`, and the hook stops reading the line there: a command
+after that substitution is not recorded. Commands hidden inside
+`xargs`, `find -exec`, `${…}` or an interpreter (`python -c`, `node -e`)
+are not read. The collectors still see their
 effect at the next capture, but without the agent's name and the case.
 Tell your agent to run changes as plain commands.
 
