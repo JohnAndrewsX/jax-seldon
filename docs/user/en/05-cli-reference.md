@@ -34,7 +34,10 @@ Commands:
   plan              Plan and track cases: new, start, verify, done, drop, list, show
   decide            Create a decision record (ADR) and open it in the editor; accept a proposed one
   preview           Before the logbook exists: the last days' pacman transactions and the files edited under ~/.config, read-only, nothing written
-  open              Print the path of a logbook file; --editor opens it
+  open              Start the Seldon app (`seldon open <target>` is the old name of `edit`)
+  edit              Print the path of a logbook file; --editor opens it
+  changes           What the ledger recorded around a moment (a crash, a failed boot); read-only
+  skill             Print the Seldon agent skill; `install` puts it into the agent skill folders
   index             Rebuild index.json and the ledger/*.md views; --check validates
   status            Regenerate STATUS.md, the ledger views and index.json; print a summary
   hook              Agent hooks: record commands, print session context, install into or uninstall from a harness
@@ -460,6 +463,38 @@ Options:
 ```
 <!-- /help -->
 
+### seldon changes
+
+What the logbook recorded around a moment: a crash, a failed boot, "it
+broke at ten". Give the time as `2026-10-01 14:20` (your local time), in
+RFC 3339, as `@<seconds since 1970>` or as `now`; `--before` and
+`--after` set the window (default two hours before, half an hour after;
+`30m`, `1h30m`, `2d`, at most 31 days each). It reads the ledger only and
+writes nothing. The Seldon skill has agents run it after a crash
+diagnosis.
+
+<!-- help: seldon changes -->
+```text
+What the ledger recorded around a moment (a crash, a failed boot); read-only
+
+Usage: seldon changes [OPTIONS] --around <TS>
+
+Options:
+      --around <TS>        The moment to look around
+      --before <DURATION>  How far back from it [default: 2h]
+      --after <DURATION>   How far on from it [default: 30m]
+
+TS is an RFC 3339 time, a local `YYYY-MM-DD HH:MM[:SS]` (or with `T`),
+`@<seconds since 1970>`, or `now`. DURATION is a number with s, m, h or d,
+and may be combined: 90m, 1h30m, 2d.
+
+Examples:
+  seldon changes --around '2026-10-01 14:20' --json
+  seldon changes --around 2026-10-01T14:20:00+02:00 --before 6h --after 0m
+  seldon changes --around @1790857200 --json
+```
+<!-- /help -->
+
 ## Cases and decisions
 
 ### seldon plan
@@ -761,23 +796,60 @@ Options:
 
 ### seldon open
 
+Starts the Seldon app. In a terminal or from the app launcher it runs in
+the foreground; with `--json` (what the bar's pill runs) it starts on its
+own and `seldon` answers `{"started": true}` at once. Without the app
+installed it says so: install the `seldon` package.
+
+`seldon open <target>` is the old name of `seldon edit <target>`. It still
+works until 0.6.0 and prints a note.
+
+<!-- help: seldon open -->
+```text
+Start the Seldon app (`seldon open <target>` is the old name of `edit`)
+
+Usage: seldon open [OPTIONS] [WHAT]
+
+Arguments:
+  [WHAT]  Deprecated: use `seldon edit <WHAT>`
+
+Options:
+      --editor         Deprecated: use `seldon edit <WHAT> --editor`
+
+Without a target: the Seldon app (--json: started detached).
+With a target: the old name of `seldon edit <target>`, removed in 0.6.0.
+
+Examples:
+  seldon open
+  seldon open --json
+```
+<!-- /help -->
+
+### seldon edit
+
 Prints the path of a logbook file. `case` is the active case, `journal`
 today's journal, `ledger` this month's ledger view, `status` the
 `STATUS.md`, `logbook` the folder; a case or decision id names that file.
 `--editor` opens it: in a terminal with `$VISUAL` or `$EDITOR`, from the
-plugin with Omarchy's editor launcher.
+plugin or the app with Omarchy's editor launcher. Until 0.5.0 this was
+`seldon open <target>`.
 
-<!-- help: seldon open -->
+<!-- help: seldon edit -->
 ```text
 Print the path of a logbook file; --editor opens it
 
-Usage: seldon open [OPTIONS] <WHAT>
+Usage: seldon edit [OPTIONS] <WHAT>
 
 Arguments:
   <WHAT>  case (the active one), journal (today), ledger (this month), status, logbook, or a case or decision id
 
 Options:
       --editor         Open it in the editor
+
+Examples:
+  seldon edit case
+  seldon edit journal --editor
+  seldon edit ADR-0003 --editor --json
 ```
 <!-- /help -->
 
@@ -1379,6 +1451,45 @@ Usage: seldon hook session-stop [OPTIONS]
 
 Options:
       --actor <ACTOR>  Who ends the session: human or agent:NAME [default: agent:claude-code]
+```
+<!-- /help -->
+
+### seldon skill
+
+Prints the Seldon agent skill (`SKILL.md`) as this engine ships it.
+
+<!-- help: seldon skill -->
+```text
+Print the Seldon agent skill; `install` puts it into the agent skill folders
+
+Usage: seldon skill [OPTIONS] [COMMAND]
+
+Commands:
+  install  Put the skill into every agent skill folder that exists (as `hook install skills`)
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+
+Examples:
+  seldon skill
+  seldon skill install --json
+```
+<!-- /help -->
+
+### seldon skill install
+
+Puts the skill into every agent skill folder that exists, the same as
+`seldon hook install skills`; running it again changes nothing. To replace
+a copy you edited, or to remove the skill, use `seldon hook install skills
+--replace` and `seldon hook uninstall skills`.
+
+<!-- help: seldon skill install -->
+```text
+Put the skill into every agent skill folder that exists (as `hook install skills`)
+
+Usage: seldon skill install [OPTIONS]
+
+Options:
 ```
 <!-- /help -->
 

@@ -599,7 +599,7 @@ seldon hook install claude-code [--settings FILE]
 seldon hook uninstall claude-code [--settings FILE]
                                                # WP-049: the inverse of install (§8); `generic` has
                                                # nothing installed, so nothing to uninstall
-seldon hook install skills | uninstall skills  # WP-094, ADR-0027 §8: the Seldon agent skill
+seldon hook install skills | uninstall skills  # WP-094, ADR-0027 §8 (`seldon skill install`, WP-229): the Seldon agent skill
                                                # (engine/assets/skills/seldon/, compiled in) into every
                                                # agent skill folder that exists: ~/.agents/skills,
                                                # ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills,
@@ -733,8 +733,26 @@ seldon config watch <PATH> [--json]           # ADR-0046, WP-139: appends PATH (
                                                # --json → {added, path, coveredBy (the watch path that
                                                # covers it, else null), config}. The desk's *Watch* runs
                                                # `config watch --json -- <path>` (CONTRACT.md)
+seldon open [--json]
+# WP-229, ADR-0058: the Seldon app — the program `$SELDON_DESK` names (an
+# absolute path, else exit 1; for development) or /usr/lib/seldon/seldon-desk.
+# Without --json it runs in the foreground: the engine replaces itself with it
+# (exec, no arguments), so the `.desktop` file's `Exec=seldon open` and a
+# terminal see the app's own output and exit code. With --json (the bar's
+# pill) it is started detached: setsid(2) (a session and process group of its
+# own, no controlling terminal), stdin, stdout and stderr on /dev/null, never
+# waited for or killed; an exit within 200 ms is an error (exit 1, the error
+# object), otherwise {"started": true} (exit 0). The app never runs under the
+# caller (`omarchy-shell`). A missing app (no regular file there) is exit 1,
+# "the Seldon app is not installed (<path> is missing); install the seldon
+# package". No logbook, lock or config is read: the app shows its own states.
 seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
-# prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
+# deprecated (WP-229): the old name of `seldon edit`, the same command and the
+# same JSON, with one note on stderr (none under --quiet): "`seldon open
+# <target>` is now `seldon edit <target>`; the old form goes in 0.6.0".
+# Kept for the plugins and agents of 0.4 and 0.5; removed in 0.6.0.
+seldon edit <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
+# WP-229: what `open <target>` was until 0.5.0. Prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
 # path as one argument; without a terminal (the plugin) it launches
 # `omarchy-launch-editor <path>` DETACHED (null stdio, own process group, never
 # killed or waited for): a non-zero exit within 200 ms is an error (exit 1),
@@ -747,6 +765,27 @@ seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--jso
 # "program"} (exit 0; the human line says so). A GUI editor's window, no
 # `hyprctl` (not a Hyprland session) or a failed focus: it launches as before.
 # The terminal path is unchanged. `decide`'s editor follows the same rule.
+# --json → {what, path, editor: null | the object above}
+seldon changes --around <TS> [--before DURATION] [--after DURATION] [--json]
+# WP-229: what the ledger recorded around a moment — a crash, a failed boot —
+# the timeline query the skill's crash.md gives an agent after Omarchy's
+# diagnose-crash. TS: RFC 3339, a local `YYYY-MM-DD HH:MM[:SS]` (or with `T`;
+# a time the clock skipped is exit 1, one it passed twice its first), `@<seconds
+# since 1970>` or `now` (`SELDON_NOW` counts). DURATION: one or more
+# `<number><s|m|h|d>` (30m, 1h30m), each side at most 31d; defaults 2h before,
+# 30m after. Ledger only and read-only: no lock, no capture, no index, nothing
+# written; needs the logbook (exit 3). The events are the ledger lines of
+# [around − before, around + after] as they were written (redacted then),
+# every kind, in time order; at most 500: over that the ones nearest the
+# moment are kept and `omitted` counts the rest.
+# --json → {around, from, to, events: [<ledger line>], omitted}
+seldon skill [install] [--json]
+# WP-229: the Hype-shaped front of the agent skill. `seldon skill` prints the
+# skill's SKILL.md as this engine ships it (--json → {skill, file, text,
+# files: [the eight names]}); nothing read or written. `seldon skill install`
+# is `seldon hook install skills` (below), its output and exit codes;
+# replacing an edited copy and uninstalling stay `hook install skills
+# --replace` and `hook uninstall skills`.
 seldon preview [--days N] [--json]
 # WP-138, ADR-0047: before the logbook exists, what the machine remembers on
 # its own. Read-only: no logbook needed (one that exists is not read), no lock,
@@ -1209,7 +1248,7 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
                          1 unknown source or --source with --all; 3 not initialised; 4 lock held
 ```
 
-`log`, `event`, `plan *`, `open` with `--json` return `{"event":
+`log`, `event`, `plan *` with `--json` return `{"event":
 <ledger line>, "git": {...}}` plus, for plan steps, `from`, `to`,
 `movedFrom`, `activeCase`, `journal` (WP-006), `warnings` (a list of
 strings, empty unless `plan start` warned or the capture of `plan
@@ -1231,8 +1270,8 @@ takes the variable after the ledger attribution of a hook-recorded change
 (the agent command found names actor and case, as before) and only while the
 actor is still `system`; `log`'s one-line rule holds for an agent from the
 variable too; `log --tag T` stores `meta.tags`
-(comma-joined) and a `#tag` line in the journal; `open` also takes
-`logbook`, a case id or an ADR id; `seldon log --case` does not add a Log
+(comma-joined) and a `#tag` line in the journal; `edit` (and the
+deprecated `open <target>`) also takes `logbook`, a case id or an ADR id; `seldon log --case` does not add a Log
 line to the case (the fixture agrees). `seldon log` with `--actor agent:…` refuses
 a note that contains a line break (`\n`, `\r`, vertical tab, form feed,
 NEL, U+2028, U+2029; leading and trailing ones are trimmed first) with exit 1 and one

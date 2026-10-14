@@ -57,7 +57,7 @@ only add limits.
    context (status summary, active case and its plan steps, the crises
    and attention items of the last 7 days, the last journal lines, the
    lesson headings). Other agents run it themselves.
-3. Read the active case file (`seldon open case` prints its path) and, if
+3. Read the active case file (`seldon edit case` prints its path) and, if
    it names an area, `areas/<area>/README.md` and `areas/<area>/AGENTS.md`.
 4. Know the open drift (the context lists the last 7 days; `seldon
    drift` lists all). It is not yours to fix unless your evidence covers
@@ -330,7 +330,9 @@ Pass `--actor agent:<name>` wherever a command takes it (`log`, `event`,
 | `seldon plan show <ID>` | one case |
 | `seldon drift [--crisis-only]` | open drift, crises first |
 | `seldon drift show <EVENT> --json` | one drift item and every member of its group |
-| `seldon open <case\|journal\|ledger\|status\|logbook\|C-…\|ADR-…>` | the path of that file (without `--editor`) |
+| `seldon edit <case\|journal\|ledger\|status\|logbook\|C-…\|ADR-…>` | the path of that file (without `--editor`; `seldon open <…>` is its old name, removed in 0.6.0) |
+| `seldon changes --around <time> [--before 2h] [--after 30m] --json` | what the ledger recorded around a moment (a crash, a failed boot) |
+| `seldon skill` | the Seldon agent skill this engine ships |
 | `seldon hook session-start` | the session context block |
 | `seldon --version`, `seldon contract-version` | versions |
 
