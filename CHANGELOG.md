@@ -39,6 +39,16 @@ and the package does not exist yet. Update the plugin first:
 - The Seldon agent skill also goes into Antigravity's skill folder, `~/.gemini/config/skills`.
 - Update the engine and the plugin in either order: the index format is the same as from 0.2.0 to 0.4.0.
 
+### Changed
+
+- **Omarchy edge's packages on your crisis list.** Installing or
+  removing `omarchy-dev` or `omarchy-settings-dev` by name outside a
+  case is now a crisis, as it always was for `omarchy` and
+  `omarchy-settings`; 0.4.0 did not know these edge names and showed
+  them as attention. The same holds for Omarchy's other kernels, such
+  as `linux-omarchy-bore`, against `linux-omarchy`. Every name on the
+  list keeps its meaning for itself.
+
 ### Engine
 
 - **Omarchy's edge packages count as their stable names (WP-224,

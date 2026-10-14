@@ -196,3 +196,107 @@ Every change in 0.4.1: [CHANGELOG.md](https://github.com/JohnAndrewsX/jax-seldon
 4. `written` writes the test host's default-agent file by hand instead
    of running `omarchy default agent` (above). Say if you want the real
    command, with the agent install it brings.
+
+## Answers (orchestrator, 2026-10-15) and round 1b
+
+1. Not Breaking (`omarchy-dev` did not exist on stable; every stable
+   name keeps its meaning). The CHANGELOG has a `### Changed` part
+   after the Highlights: a named `omarchy-dev` / `omarchy-settings-dev`
+   install or removal outside a case is a crisis now, attention in
+   0.4.0, the same for `linux-omarchy-<variant>`. The sentence does
+   not claim "nothing changes on stable": `linux-omarchy-bore` is in
+   stable's repository too. `release-notes.sh 0.4.1` ok, docs-check ok.
+2. The date 2026-10-15 stays.
+3. `written` writes the default-agent file by hand with exactly
+   Omarchy's content, no mise install.
+
+## Live stage (part B, after origin/next reached 1e8f5e8a)
+
+Everything below ran on the **test host** unless it says otherwise. The
+shots, logs and the bundle are in the private gates folder (`dev-226/`).
+
+**The deploy clone.** A fresh clone of GitHub's `next` in the private
+gates folder (`dev-226/next-clone`, HEAD = origin/next = 1e8f5e8a,
+clean), the two git-ignored host files copied from `wt/next`.
+
+| Check | Where | Result |
+|---|---|---|
+| `flock /tmp/seldon-check.lock env SELDON_FULL_CHECK=1 just check` in the clone at 1e8f5e8a | headless (dev host, Omarchy edge, Qt 6.12; own `HOME`, private 0700 `XDG_RUNTIME_DIR` removed afterwards, `TMPDIR`, `JUST_TEMPDIR`, `CARGO_TARGET_DIR=gates/target-dev-226` on disk) | `check: ok`, `exit 0`, first run; log `gates/check-dev-226-next.log` (first line `head 1e8f5e8a4b93…`): 112 cargo test results ok; check-packaging ok; install 229/0; docs-check ok (533 links); plugin-validate ok; qmllint ok (53 files); model.test.js 246; terminal-scripts 78/0; service-states 367/0; desk-view 2756/0; bar-view 196/0; ipc-restart 44/0 |
+
+**Gate first, then the deploy.** A git bundle of `next` to the host,
+cloned as `~/seldon-gate-1e8f5e8a` (HEAD 1e8f5e8a, clean); in it
+`OMARCHY_PATH=/usr/share/omarchy bash scripts/check-omarchy-assumptions.sh
+--gate`: "ok (every assumption's file matches the ledger; 5 edge-only,
+absent here as on stable)", 25 files, exit 0. Then from the clone
+`SELDON_TEST_HOST=<the test host> just deploy-test-host --branch next
+<gates>/check-dev-226-next.log` (a dry run first), exit 0. Summary:
+`commit 1e8f5e8a4b93fab014f2362be789129bfd94ff7d`, the host runs
+`0.4.1+next.1e8f5e8a` (was `0.4.0+next.a088e38b`; no backup, the host
+ran next already), plugin files changed, shell restarted, smoke ok
+(version, doctor, capture, service status, engine version, no restart
+notice). Omarchy 4.0.4-1, channel rc, Qt 6.11.2, one 1920x1080 output.
+
+| Scenario | What ran | Counts | Result |
+|---|---|---|---|
+| **gate** | above | 1 step, 0 passwords | passed |
+| **desk** | summoned at Today (shot); `section decisions`, `d` typed with `wtype`: the New decision form open (`form.open` true, shot; the form whose Tone.qml errors showed the Qt 6.12 bug), `lastError` empty. Pixel histograms of both shots: the theme's background `#1a1b26`, foreground `#a9b1d6` and accent `#7aa2f7` from the theme's `colors.toml`, exactly; the bar's foreground the same. Esc and `hide` closed the desk | 2 steps, 0 passwords | passed |
+| **written** | `~/.config/omarchy/defaults/agent` (`claude\n`) written by hand: `codex\n` → capture: `config-change`, `omarchy-written`, routine; a second capture 0 events in every collector; `notanagent\n` → `config`, attention; `claude\n` → `omarchy-written`, routine. The attention item dismissed with a reason (`--actor agent:claude-code`), open drift back to 4 | 3 steps, 0 passwords | passed |
+| **edge** | not run (no edge host in the yellow zone) | — | not run |
+| **restart** | crashes 0 and "No coredumps found." before; three `omarchy restart shell`, each exit 0, ping after 1 s, then `jax.seldon.service status` | 3 steps, 0 passwords | passed: quickshell pid 1501947 → 1506241 → 1507313 → 1508635, status ok, engine `0.4.1+next.1e8f5e8a`, plugin 0.4.1, no restart notice each time; crashes 0 and "No coredumps found." after |
+
+**The record's base.** The record's `commit` (1e8f5e8a, next's merge of
+part A) was not an ancestor of this branch, so `acceptance-check`
+would refuse it here. I merged origin/next into the branch (762444a1;
+it brings only next's merge commit and its handover copy) and committed
+the record on top. Between 1e8f5e8a and the branch head only
+`CHANGELOG.md` (the Changed part), `packaging/acceptance/` and `work/`
+differ.
+
+### `bash packaging/acceptance-check.sh 0.4.1` (exit 0)
+
+```text
+acceptance-check: v0.4.1 at HEAD (1bbf834a3009)
+  record   packaging/acceptance/v0.4.1.json, 2026-10-15
+  status   partial: 4 passed, 1 not run
+  commit   1e8f5e8a4b93fab014f2362be789129bfd94ff7d, 4 later commit(s), none outside docs and records
+  omarchy  4.0.4-1, channel rc
+  engine   0.4.1+next.1e8f5e8a; plugin 0.4.1
+  scenario gate: passed (test host); 1 human step(s), 0 password prompt(s) — Omarchy assumptions, check-upstream --gate (WP-194), before the live checks
+  scenario desk: passed (test host); 2 human step(s), 0 password prompt(s) — the desk, the pill and a sheet in the theme's colours after Commons.Color, on the test host's Qt (WP-224)
+  scenario written: passed (test host); 3 human step(s), 0 password prompt(s) — a file Omarchy writes itself is routine omarchy-written: omarchy default agent (WP-225, ADR-0059)
+  scenario edge: not run — an omarchy-dev-shaped transaction and a channel switch are one omarchy-channel item, the twins counted as their stable names (WP-224, ADR-0060)
+  scenario restart: passed (test host); 3 human step(s), 0 password prompt(s) — three shell restarts (WP-162)
+  limit    edge: not run (no edge host in the yellow zone); the test host runs Omarchy's rc channel, and switching it to edge is not this release's test. Covered by fixture: the real edge pacman.log lines of a switch in tests/drift.rs (one omarchy-channel item, a second capture 0 events), the twins in nine transaction shapes; and by the full check on the edge dev host (headless)
+  limit    desk: the pill showed no text (0 crises, driftInBar crisis), so its colours were seen only as the bar's foreground; the other sheets are covered headless by service-states on edge (the dev host)
+  limit    restart: one monitor (1920x1080); the two-monitor restart test runs on the dev host after the tag with the release
+  limit    channel: the test host runs Omarchy's rc channel with Qt 6.11.2, not stable (E93); Qt 6.12 (edge) was covered headless on the dev host only
+acceptance-check: ok
+```
+
+### Left in place, not cleaned
+
+Test host: engine and plugin `0.4.1+next.1e8f5e8a` (the plugin dir a
+dev copy), `~/.local/bin/seldon.prev` (`0.4.0+next.a088e38b`), one line
+in `deploy.jsonl`; `~/seldon-next-1e8f5e8a.bundle`,
+`~/seldon-gate-1e8f5e8a/`, `~/live-226-desk-*.png`; the default-agent
+file back at `claude\n`; in the host's logbook the `written` scenario's
+four config events and the dismissal of the attention one;
+`seldon-watch` inactive as before.
+
+Dev host: the clone `gates/dev-226/next-clone` (with the deploy's
+`engine/target`), the bundle, the shots and the logs under the private
+gates folder; `gates/target-dev-226`; `gates/dev-226/home`.
+
+No guard block in part B. No sudo, no `omarchy plugin update`, no mise
+install, nothing on the dev host's live plugin, `~/.config`,
+`~/.local/state/seldon` or `~/Seldon`. The private runtime dirs of both
+full checks were removed.
+
+## Still open
+
+- The release workflow's dry run on `main` (VERSIONING step 4) and the
+  two-monitor restart test after the tag: the orchestrator's and the
+  operator's steps.
+- WP-224's ten ledger files without an edge measurement still NOTICE in
+  `check-upstream` on the edge dev host (not a gate there; the rc gate
+  passed).
