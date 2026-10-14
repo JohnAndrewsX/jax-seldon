@@ -14,7 +14,7 @@ var CONTRACT_VERSION = 2
 // manifest from disk on every rescan but keeps running the plugin code it
 // compiled first (WP-090), so a manifest that says otherwise means the
 // plugin was updated under a running shell (restartShellNotice).
-var PLUGIN_VERSION = "0.4.0"
+var PLUGIN_VERSION = "0.4.1"
 
 // CONTRACT.md rule 5: index.json stays under 1 MB (the engine's
 // SIZE_BUDGET, 1 000 000 bytes). The text is parsed on the shell thread

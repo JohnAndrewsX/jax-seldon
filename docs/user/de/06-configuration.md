@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 343d7ac3 -->
+<!-- source: en/06-configuration.md @ ce4e1c26 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -474,6 +474,14 @@ schreibt diese Schlüssel nur in die Datei, wenn du sie änderst, und
 `seldon doctor` gibt die geltenden Regeln aus und markiert, was nicht
 der Vorgabe entspricht. `seldon drift --all` listet auch die
 Routine-Änderungen.
+
+Auf Omarchys Edge-Kanal zählen `omarchy-dev` und `omarchy-settings-dev`
+als `omarchy` und `omarchy-settings`, und Omarchys andere Kernel (etwa
+`linux-omarchy-bore`, nicht ihre `-headers`, `-docs` oder `-debug`) als
+`linux-omarchy`, auch in einer Liste, die du früher geschrieben hast: Du
+trägst sie nicht ein. Ein Wechsel des Kanals (`omarchy version channel
+edge` oder zurück) ist eine Änderung, *Omarchy changed channel*; ohne
+Case ist er eine Krise, wie eine Installation von `omarchy` beim Namen.
 
 Die Pill zählt nur Krisen. Soll sie jede Änderung ohne Case zählen oder
 gar nichts, setz die Plugin-Einstellung `driftInBar` (siehe

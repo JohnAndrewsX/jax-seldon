@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ 343d7ac3 -->
+<!-- source: en/01-getting-started.md @ ce4e1c26 -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem Rechner, den
 Seldon aufzeichnet. Du fügst das Seldon-Plugin zur Bar hinzu und klickst
@@ -439,7 +439,7 @@ seldon --version
 ```
 
 ```text
-seldon 0.4.0
+seldon 0.4.1
 ```
 
 Meldet deine Shell `command not found`, liegt `~/.local/bin` noch nicht
@@ -504,7 +504,7 @@ seldon doctor
 
 ```text
 seldon doctor · ~/Seldon
-  ok        engine   seldon 0.4.0, contract 2
+  ok        engine   seldon 0.4.1, contract 2
   ok        config   ~/.config/seldon/config.toml
   ok        logbook  ~/Seldon · machine <machine> · de · 0 cases, 0 decisions, 0 journal days
   ok        cases    every case id has one file

@@ -1,0 +1,28 @@
+{
+  "version": "0.4.1",
+  "status": "partial",
+  "commit": "",
+  "date": "",
+  "omarchy": { "version": "", "channel": "" },
+  "engine": "0.4.1",
+  "plugin": "0.4.1",
+  "scenarios": [
+    { "id": "gate", "title": "Omarchy assumptions, check-upstream --gate (WP-194), before the live checks",
+      "where": "not run", "result": "not run" },
+    { "id": "desk", "title": "the desk, the pill and a sheet in the theme's colours after Commons.Color, on the test host's Qt (WP-224)",
+      "where": "not run", "result": "not run" },
+    { "id": "written", "title": "a file Omarchy writes itself is routine omarchy-written: omarchy default agent (WP-225, ADR-0059)",
+      "where": "not run", "result": "not run" },
+    { "id": "edge", "title": "an omarchy-dev-shaped transaction and a channel switch are one omarchy-channel item, the twins counted as their stable names (WP-224, ADR-0060)",
+      "where": "not run", "result": "not run" },
+    { "id": "restart", "title": "three shell restarts (WP-162)",
+      "where": "not run", "result": "not run" }
+  ],
+  "limitations": [
+    "gate: the live stage waits for origin/next to carry the release commit",
+    "desk: the live stage waits for origin/next to carry the release commit",
+    "written: the live stage waits for origin/next to carry the release commit",
+    "edge: not run (no edge host in the yellow zone); the test host runs Omarchy's rc channel, and switching it to edge is not this release's test. Covered by fixture: the real edge pacman.log lines of a switch in tests/drift.rs, the twins in nine transaction shapes, and the full check on an edge dev host (headless)",
+    "restart: the live stage waits for origin/next to carry the release commit"
+  ]
+}
