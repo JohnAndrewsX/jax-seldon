@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
 
-use super::drift::{AlwaysRed, channel_switches};
+use super::drift::{AlwaysRed, OMARCHY_CHANNELS, channel_switches};
 use crate::attribution::OWN_PLUGIN;
 use crate::collectors::pacman_ignore;
 use crate::config::{AttentionMode, DriftConfig};
@@ -623,9 +623,20 @@ impl<'a> Classifier<'a> {
             .and_then(|c| parse_command(&split_logged(c)));
         let mut followed: Option<Verdict> = None;
         let mut best: Option<(Class, bool, Reverse<Ulid>, Verdict)> = None;
+        // a crisis a member outside Omarchy's channel packages makes by its
+        // own name (WP-224: `limine` named beside a channel switch)
+        let mut other_crisis: Option<Verdict> = None;
         for m in members {
             let v = match self.rules.event(m, cmd.as_ref(), &self.history) {
-                Some(v) => v,
+                Some(v) => {
+                    let channel = OMARCHY_CHANNELS
+                        .iter()
+                        .any(|&(a, b)| m.subject == a || m.subject == b);
+                    if v.class == Class::Crisis && !channel && other_crisis.is_none() {
+                        other_crisis = Some(v);
+                    }
+                    v
+                }
                 None => *followed.get_or_insert_with(|| self.follow(m, cmd.as_ref())),
             };
             let key = (v.class, m.id == lead.id, Reverse(m.id));
@@ -635,8 +646,12 @@ impl<'a> Classifier<'a> {
         }
         let v = best.map_or(Verdict::ORPHAN, |b| b.3);
         // WP-224: a channel switch is one change, named as such; its class
-        // is what its members make it (`alwaysRed`: a crisis)
+        // is what its members make it (`alwaysRed`: a crisis). Another
+        // package's crisis in the same transaction keeps its own reason.
         if v.class != Class::Routine && !channel_switches(members.iter().copied()).is_empty() {
+            if let Some(o) = other_crisis.filter(|o| o.class == v.class) {
+                return o;
+            }
             return Verdict::new(v.class, "omarchy-channel");
         }
         v
@@ -1615,6 +1630,26 @@ mod tests {
         assert_eq!(
             verdict(&quiet, &switch(true), &[2, 0, 1, 3]),
             (A, "omarchy-channel")
+        );
+        // another `alwaysRed` package named in the same transaction keeps
+        // its own reason; a dependency beside the switch does not
+        let cmd = "pacman -S omarchy-dev omarchy-settings-dev limine";
+        let mut ledger = switch(true);
+        for e in &mut ledger {
+            e.tx_id = Some(format!("tx-{cmd}"));
+            e.meta.command = Some(cmd.into());
+        }
+        ledger.push(pac(Kind::Install, "limine", Some(true), cmd));
+        ledger.push(pac(Kind::Install, "linux-omarchy-bore", Some(false), cmd));
+        assert_eq!(verdict(&d, &ledger, &[2, 0, 1, 3, 4, 5]), (C, "always-red"));
+        assert_eq!(
+            verdict(&d, &ledger, &[2, 0, 1, 3, 5]),
+            (C, "omarchy-channel")
+        );
+        assert_eq!(
+            verdict(&quiet, &ledger, &[2, 0, 1, 3, 4]),
+            (A, "omarchy-channel"),
+            "an attention member is no second reason"
         );
         // twins side by side (nothing removed) are no switch, and the
         // update row stays attention
