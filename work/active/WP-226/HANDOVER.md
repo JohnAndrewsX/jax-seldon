@@ -255,3 +255,48 @@ differ.
 ### `bash packaging/acceptance-check.sh 0.4.1` (exit 0)
 
 ```text
+acceptance-check: v0.4.1 at HEAD (1bbf834a3009)
+  record   packaging/acceptance/v0.4.1.json, 2026-10-15
+  status   partial: 4 passed, 1 not run
+  commit   1e8f5e8a4b93fab014f2362be789129bfd94ff7d, 4 later commit(s), none outside docs and records
+  omarchy  4.0.4-1, channel rc
+  engine   0.4.1+next.1e8f5e8a; plugin 0.4.1
+  scenario gate: passed (test host); 1 human step(s), 0 password prompt(s) — Omarchy assumptions, check-upstream --gate (WP-194), before the live checks
+  scenario desk: passed (test host); 2 human step(s), 0 password prompt(s) — the desk, the pill and a sheet in the theme's colours after Commons.Color, on the test host's Qt (WP-224)
+  scenario written: passed (test host); 3 human step(s), 0 password prompt(s) — a file Omarchy writes itself is routine omarchy-written: omarchy default agent (WP-225, ADR-0059)
+  scenario edge: not run — an omarchy-dev-shaped transaction and a channel switch are one omarchy-channel item, the twins counted as their stable names (WP-224, ADR-0060)
+  scenario restart: passed (test host); 3 human step(s), 0 password prompt(s) — three shell restarts (WP-162)
+  limit    edge: not run (no edge host in the yellow zone); the test host runs Omarchy's rc channel, and switching it to edge is not this release's test. Covered by fixture: the real edge pacman.log lines of a switch in tests/drift.rs (one omarchy-channel item, a second capture 0 events), the twins in nine transaction shapes; and by the full check on the edge dev host (headless)
+  limit    desk: the pill showed no text (0 crises, driftInBar crisis), so its colours were seen only as the bar's foreground; the other sheets are covered headless by service-states on edge (the dev host)
+  limit    restart: one monitor (1920x1080); the two-monitor restart test runs on the dev host after the tag with the release
+  limit    channel: the test host runs Omarchy's rc channel with Qt 6.11.2, not stable (E93); Qt 6.12 (edge) was covered headless on the dev host only
+acceptance-check: ok
+```
+
+### Left in place, not cleaned
+
+Test host: engine and plugin `0.4.1+next.1e8f5e8a` (the plugin dir a
+dev copy), `~/.local/bin/seldon.prev` (`0.4.0+next.a088e38b`), one line
+in `deploy.jsonl`; `~/seldon-next-1e8f5e8a.bundle`,
+`~/seldon-gate-1e8f5e8a/`, `~/live-226-desk-*.png`; the default-agent
+file back at `claude\n`; in the host's logbook the `written` scenario's
+four config events and the dismissal of the attention one;
+`seldon-watch` inactive as before.
+
+Dev host: the clone `gates/dev-226/next-clone` (with the deploy's
+`engine/target`), the bundle, the shots and the logs under the private
+gates folder; `gates/target-dev-226`; `gates/dev-226/home`.
+
+No guard block in part B. No sudo, no `omarchy plugin update`, no mise
+install, nothing on the dev host's live plugin, `~/.config`,
+`~/.local/state/seldon` or `~/Seldon`. The private runtime dirs of both
+full checks were removed.
+
+## Still open
+
+- The release workflow's dry run on `main` (VERSIONING step 4) and the
+  two-monitor restart test after the tag: the orchestrator's and the
+  operator's steps.
+- WP-224's ten ledger files without an edge measurement still NOTICE in
+  `check-upstream` on the edge dev host (not a gate there; the rc gate
+  passed).
