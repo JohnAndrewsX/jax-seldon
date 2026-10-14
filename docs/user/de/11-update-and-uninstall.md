@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 343d7ac3 -->
+<!-- source: en/11-update-and-uninstall.md @ 5ff4afeb -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -145,10 +145,11 @@ dich ändert:
   ([Konfiguration](06-configuration.md#schwärzung)).
 - Ein Hook liest die Befehle in `$(…)`, in Backticks und in `<(…)` als
   Befehle der Zeile, deshalb wird `x=$(sudo mkpasswd …)` aufgezeichnet,
-  sein Passwort geschwärzt. Eine Zeile mit `$(…)`, das mehr als 16
-  Ebenen tief verschachtelt ist, bringt den Hook nicht mehr zum Absturz:
-  Sie wird geschwärzt aufgezeichnet, und nach dieser Ersetzung liest der
-  Hook nichts mehr, ein Befehl danach wird also nicht aufgezeichnet
+  sein Passwort geschwärzt. Eine Zeile mit sehr tief verschachteltem
+  `$(…)` bringt den Hook nicht mehr zum Absturz: Ab der 17. Ebene liest
+  der Hook die Zeile nicht weiter; ein Befehl vor dieser Stelle wird
+  geschwärzt aufgezeichnet, ein Befehl darin oder danach wird nicht
+  aufgezeichnet
   ([Mit Agenten arbeiten](04-working-with-agents.md#was-ein-hook-aufzeichnet)).
 - `omarchy-shell jax.seldon.panel …` leitet noch an den Desk weiter;
   ein späteres Release entfernt es.
