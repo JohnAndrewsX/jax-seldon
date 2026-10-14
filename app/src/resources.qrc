@@ -1,0 +1,15 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="Main.qml">Main.qml</file>
+        <file alias="StateCard.qml">StateCard.qml</file>
+        <file alias="ChangesView.qml">ChangesView.qml</file>
+        <file alias="ChangeRow.qml">ChangeRow.qml</file>
+        <file alias="ChangeDetail.qml">ChangeDetail.qml</file>
+        <file alias="HelpOverlay.qml">HelpOverlay.qml</file>
+        <file alias="SeldonButton.qml">SeldonButton.qml</file>
+        <file alias="Model.js">../../plugin/Model.js</file>
+        <file alias="Tones.js">../../plugin/Tones.js</file>
+        <file alias="i18n/en.json">i18n/en.json</file>
+        <file alias="i18n/de.json">i18n/de.json</file>
+    </qresource>
+</RCC>
