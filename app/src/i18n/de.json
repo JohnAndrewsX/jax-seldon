@@ -75,5 +75,9 @@
   "Capture now, or the fix of the state shown": "Jetzt erfassen, oder die Behebung des gezeigten Zustands",
   "Leave the form, disarm, close this overlay": "Formular verlassen, entschärfen, diese Übersicht schließen",
   "Show or hide the keys": "Tasten zeigen oder verbergen",
-  "Quit (asks first while a text is not sent)": "Beenden (fragt vorher, solange ein Text nicht gesendet ist)"
+  "Quit (asks first while a text is not sent)": "Beenden (fragt vorher, solange ein Text nicht gesendet ist)",
+  "Pick a case": "Fall wählen",
+  "The form changed after the first press; nothing ran.": "Das Formular hat sich nach dem ersten Druck geändert; nichts wurde ausgeführt.",
+  "The engine writes index v%1; this window reads v%2 — update Seldon.": "Die Engine schreibt Index v%1; dieses Fenster liest v%2 — Seldon aktualisieren.",
+  "Your text is not sent yet. Select another change again to drop it, Esc to keep it.": "Dein Text ist noch nicht gesendet. Noch einmal eine andere Änderung wählen verwirft ihn, Esc behält ihn."
 }

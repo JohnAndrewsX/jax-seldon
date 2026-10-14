@@ -100,19 +100,20 @@ Item {
         }
     }
 
+    // Placed by y, not by anchors that switch between top and centre: an
+    // anchor switch at runtime left the column at the height the two
+    // anchors had stretched it to, over the list below the strip.
     ColumnLayout {
         id: column
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: root.compact ? parent.top : undefined
-        anchors.verticalCenter: root.compact ? undefined : parent.verticalCenter
-        anchors.margins: 16
-        anchors.leftMargin: root.compact ? 16 : Math.max(16, (root.width - 640) / 2)
-        anchors.rightMargin: anchors.leftMargin
+        x: root.compact ? 16 : Math.max(16, (root.width - 640) / 2)
+        y: root.compact ? 16 : Math.max(16, (root.height - column.implicitHeight) / 2)
+        width: root.width - 2 * column.x
+        height: column.implicitHeight
         spacing: 12
 
         Label {
             objectName: "stateTitle"
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: root.words.title
             font.pixelSize: root.compact ? 15 : 22
@@ -123,6 +124,7 @@ Item {
         }
         Label {
             objectName: "stateDetail"
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: root.words.detail
             color: root.compact ? root.tones.accentText : root.tones.dim
@@ -156,6 +158,7 @@ Item {
         }
         Label {
             objectName: "stateAnswer"
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: root.answer
             color: root.tones.dim

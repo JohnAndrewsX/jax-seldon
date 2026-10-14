@@ -34,6 +34,7 @@ Rectangle {
         spacing: 14
 
         Label {
+            textFormat: Text.PlainText
             text: qsTr("Keys")
             font.pixelSize: 20
             font.bold: true
@@ -48,12 +49,14 @@ Rectangle {
                 spacing: 20
 
                 Label {
+                    textFormat: Text.PlainText
                     Layout.preferredWidth: 110
                     text: modelData.key
                     font.bold: true
                     color: root.tones.accentText
                 }
                 Label {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: modelData.what
                     color: theme.foreground

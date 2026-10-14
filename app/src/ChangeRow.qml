@@ -65,6 +65,7 @@ Item {
         spacing: 12
 
         Label {
+            textFormat: Text.PlainText
             Layout.alignment: Qt.AlignTop
             text: root.row.time || ""
             color: root.tones.dim
@@ -88,12 +89,14 @@ Item {
                 spacing: 8
 
                 Label {
+                    textFormat: Text.PlainText
                     visible: !!root.row.mark
                     text: root.row.mark ? qsTr(root.row.mark.word) : ""
                     color: root.stripe === "crisis" ? root.tones.urgentText : root.tones.accentText
                     font.bold: true
                 }
                 Label {
+                    textFormat: Text.PlainText
                     visible: (root.row.alert || "") !== ""
                     text: qsTr(root.row.alert || "")
                     color: root.tones.urgentText

@@ -55,13 +55,15 @@ ApplicationWindow {
 
     Shortcut { sequences: ["?", "Shift+?"]; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.helpVisible = !win.helpVisible }
     Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.quit() }
-    Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: !win.typing && !win.helpVisible; onActivated: win.mainAction() }
+    // The case picker keeps Space for itself (it opens its list).
+    Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: !win.typing && !changes.formFocused && !win.helpVisible; onActivated: win.mainAction() }
     Shortcut {
         sequence: "Esc"
         context: Qt.ApplicationShortcut
         onActivated: {
             if (win.helpVisible) win.helpVisible = false
             else if (win.quitAsked) win.quitAsked = false
+            else if (changes.discardAsked) changes.discardAsked = false
             else changes.leave()
         }
     }
@@ -88,12 +90,14 @@ ApplicationWindow {
                 spacing: 12
 
                 Label {
+                    textFormat: Text.PlainText
                     text: "Seldon"
                     font.pixelSize: 20
                     font.bold: true
                     color: theme.foreground
                 }
                 Label {
+                    textFormat: Text.PlainText
                     text: qsTr("Changes")
                     font.pixelSize: 20
                     color: win.tones.dim
@@ -102,17 +106,20 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
                 Label {
                     objectName: "devModeLine"
+                    textFormat: Text.PlainText
                     visible: backend.devMode
                     text: qsTr("Dev mode: read-only")
                     color: win.tones.accentText
                 }
                 Label {
                     objectName: "staleLine"
+                    textFormat: Text.PlainText
                     visible: backend.status === "indexStale" && win.showsChanges
                     text: qsTr("The index is stale")
                     color: win.tones.accentText
                 }
                 Label {
+                    textFormat: Text.PlainText
                     text: qsTr("? for keys")
                     color: win.tones.dim
                 }
@@ -122,6 +129,21 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 implicitHeight: 1
                 color: win.tones.divider
+            }
+
+            // ADR-0051: an index of a newer contract this window can still
+            // read shows, with a quiet note (CONTRACT.md rule 3).
+            Label {
+                objectName: "contractNotice"
+                Layout.fillWidth: true
+                Layout.margins: 8
+                Layout.leftMargin: 16
+                visible: win.showsChanges && backend.contractNewer
+                text: qsTr("The engine writes index v%1; this window reads v%2 — update Seldon.")
+                    .arg(backend.indexContractVersion).arg(Model.CONTRACT_VERSION)
+                color: win.tones.dim
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
             }
 
             StateCard {
@@ -171,6 +193,7 @@ ApplicationWindow {
 
             Label {
                 id: quitText
+                textFormat: Text.PlainText
                 anchors.centerIn: parent
                 text: qsTr("Your text is not sent yet. Press Q again to quit, Esc to stay.")
                 color: theme.foreground

@@ -22,6 +22,9 @@ Item {
     property string selectedId: ""
     property int cursorRow: 0
     property string captureAnswer: ""
+    // Another change while a typed reason is unsent: the first try asks
+    // (omarchy-app: ask before discarding work), the next one leaves it.
+    property bool discardAsked: false
 
     readonly property var prepared: root.withStatus(Model.deskChangelog(root.index))
     readonly property var rows: Model.changelogView(root.prepared, root.chip, ({}), "")
@@ -41,9 +44,21 @@ Item {
         return -1
     }
 
+    // True when the selection may move away from the selected change: no
+    // typed reason, or this is the second try after the ask.
+    function mayLeave(id) {
+        if (id === root.selectedId || !detail.hasDraft || root.discardAsked) {
+            root.discardAsked = false
+            return true
+        }
+        root.discardAsked = true
+        return false
+    }
+
     function selectRow(i) {
         if (root.rows.length === 0) return
         var at = Math.max(0, Math.min(root.rows.length - 1, i))
+        if (!root.mayLeave(root.rows[at].id)) return
         root.cursorRow = at
         root.selectedId = root.rows[at].id
         list.positionViewAtIndex(at, ListView.Contain)
@@ -81,8 +96,9 @@ Item {
             : qsTr("The engine could not be asked.")
     }
 
-    // A new chip starts at its first row.
-    onChipChanged: Qt.callLater(function() { root.selectRow(0) })
+    // A new chip starts at its first row, unless a typed reason would go:
+    // then the change stays in the detail.
+    onChipChanged: Qt.callLater(function() { if (!detail.hasDraft) root.selectRow(0) })
     onRowsChanged: if (root.selectedId === "" && root.rows.length > 0) root.selectRow(0)
 
     Connections {
@@ -161,6 +177,7 @@ Item {
 
                     Label {
                         id: dayLabel
+                        textFormat: Text.PlainText
                         anchors.left: parent.left
                         anchors.leftMargin: 16
                         anchors.bottom: parent.bottom
@@ -179,6 +196,7 @@ Item {
                     tones: root.tones
                     selected: modelData.id === root.selectedId
                     onClicked: {
+                        if (!root.mayLeave(modelData.id)) return
                         root.cursorRow = index
                         root.selectedId = modelData.id
                     }
@@ -186,6 +204,7 @@ Item {
 
                 Label {
                     objectName: "changesEmpty"
+                    textFormat: Text.PlainText
                     anchors.centerIn: parent
                     width: parent.width - 48
                     horizontalAlignment: Text.AlignHCenter
@@ -211,11 +230,26 @@ Item {
                 index: root.index
                 row: root.selected
                 tones: root.tones
+                // Typing on, or sending, ends the ask.
+                onReasonChanged: root.discardAsked = false
             }
         }
 
         Label {
+            objectName: "discardAsk"
+            Layout.fillWidth: true
+            Layout.margins: 8
+            Layout.leftMargin: 16
+            visible: root.discardAsked
+            text: qsTr("Your text is not sent yet. Select another change again to drop it, Esc to keep it.")
+            color: root.tones.accentText
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+        }
+
+        Label {
             objectName: "captureAnswer"
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             Layout.margins: 8
             Layout.leftMargin: 16

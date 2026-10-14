@@ -23,9 +23,17 @@ Item {
     property string action: "link"
     property string reason: ""
     property bool only: false
-    property int caseAt: 0
+    // The picked case by id, so a new index that adds or removes cases
+    // above it keeps the pick (a position would point at another case).
+    property string caseId: ""
+    readonly property int caseAt: root.caseIndex(root.caseOptions, root.caseId)
     property bool armed: false
+    // The argv the first press armed; the second press runs only this.
+    property var armedArgs: []
     property bool pending: false
+    // The argv the engine is running for this form; its answer is matched
+    // to it, whatever the form shows by then.
+    property var pendingArgs: []
     property string answer: ""
     property string error: ""
 
@@ -34,37 +42,56 @@ Item {
     readonly property bool formFocused: caseBox.activeFocus
     readonly property var form: ({
         eventId: root.row ? root.row.id : "",
-        caseId: root.caseOptions.length > root.caseAt ? root.caseOptions[root.caseAt].value : "",
+        caseId: root.caseAt >= 0 ? root.caseId : "",
         text: root.reason,
         only: root.only,
         itemZone: root.item ? root.item.zone : ""
     })
     readonly property string summary: Model.driftSummary(root.action, root.item, root.form)
+    // What the second press would run now; an armed form whose argv this no
+    // longer is (another index, another form) disarms.
+    readonly property string built: JSON.stringify(Model.driftArgs(root.action, root.form).args || [])
+    onBuiltChanged: if (root.armed && root.built !== JSON.stringify(root.armedArgs)) root.disarm()
+
+    function caseIndex(options, id) {
+        for (var i = 0; i < options.length; i++) if (options[i].value === id) return i
+        return -1
+    }
+
+    function sameArgs(a, b) {
+        return JSON.stringify(a) === JSON.stringify(b)
+    }
 
     function disarm() {
         root.armed = false
+        root.armedArgs = []
         root.error = ""
     }
 
     // The form starts over on another change, not on a new index: the row
     // object is rebuilt with every index, the answer to a resolution stays.
+    // A call still running for the change left is no longer this form's.
     readonly property string rowId: root.row ? root.row.id : ""
     onRowIdChanged: {
         root.disarm()
+        root.pending = false
+        root.pendingArgs = []
         root.answer = ""
         root.only = false
-        root.caseAt = 0
         root.reason = ""
-        root.action = Model.driftDefaultAction(Model.driftItemFor(root.index, root.rowId))
+        var item = Model.driftItemFor(root.index, root.rowId)
+        var options = item ? Model.caseOptionsFor(root.index, item) : []
+        root.caseId = options.length > 0 ? options[0].value : ""
+        root.action = Model.driftDefaultAction(item)
     }
     onActionChanged: root.disarm()
     onReasonChanged: root.disarm()
     onOnlyChanged: root.disarm()
-    onCaseAtChanged: root.disarm()
+    onCaseIdChanged: root.disarm()
 
     // Enter on the list: the form at its default action, its field focused.
     function openForm() {
-        if (!root.item) return
+        if (!root.item || root.pending) return
         root.action = Model.driftDefaultAction(root.item)
         if (root.action === "link") caseBox.forceActiveFocus()
         else reasonField.forceActiveFocus()
@@ -92,34 +119,45 @@ Item {
         }
         var built = Model.driftArgs(root.action, root.form)
         if (built.error) {
+            root.disarm()
             root.error = built.error
             return
         }
         if (!root.armed) {
             root.armed = true
+            root.armedArgs = built.args
             return
         }
-        root.armed = false
+        // The second press runs what the first one armed, or nothing.
+        if (!root.sameArgs(built.args, root.armedArgs)) {
+            root.disarm()
+            root.error = qsTr("The form changed after the first press; nothing ran.")
+            return
+        }
+        root.disarm()
         if (!backend.run(built.args)) {
             root.error = qsTr("The engine could not be asked.")
             return
         }
         root.pending = true
+        root.pendingArgs = built.args
         root.answer = qsTr("Working…")
     }
 
     Connections {
         target: backend
         function onFinished(args, exitCode, output, errorOutput) {
-            if (!root.pending || args[0] !== "drift" || args[1] !== root.action) return
+            if (!root.pending || !root.sameArgs(args, root.pendingArgs)) return
             root.pending = false
-            var result = Model.driftResult(root.action, exitCode, output, errorOutput)
+            root.pendingArgs = []
+            var result = Model.driftResult(args[1], exitCode, output, errorOutput)
             root.answer = result.text
             if (result.ok) root.reason = ""
         }
     }
 
     Label {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: !root.row
         text: qsTr("Select a change to see it here.")
@@ -182,6 +220,7 @@ Item {
                         spacing: 16
 
                         Label {
+                            textFormat: Text.PlainText
                             Layout.preferredWidth: 96
                             text: modelData.label
                             color: root.tones.dim
@@ -226,8 +265,10 @@ Item {
                             text: modelData.label
                             checkable: true
                             checked: root.action === modelData.id
-                            highlighted: checked
-                            flat: !checked
+                            // A tab, underlined when checked, so it does not
+                            // look like the button that resolves.
+                            tab: true
+                            enabled: !root.pending
                             focusPolicy: Qt.NoFocus
                             onClicked: root.action = modelData.id
                         }
@@ -243,8 +284,34 @@ Item {
                     textRole: "label"
                     valueRole: "value"
                     currentIndex: root.caseAt
+                    enabled: !root.pending
                     Material.roundedScale: theme.radius
-                    onActivated: function(at) { root.caseAt = at }
+                    onActivated: function(at) { root.caseId = root.caseOptions[at].value }
+
+                    // Case titles come from the logbook: plain text, elided.
+                    contentItem: Label {
+                        leftPadding: 12
+                        rightPadding: caseBox.indicator ? caseBox.indicator.width : 0
+                        text: caseBox.currentIndex >= 0 ? caseBox.displayText : qsTr("Pick a case")
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                        color: theme.foreground
+                    }
+                    delegate: ItemDelegate {
+                        required property var modelData
+                        required property int index
+                        objectName: "caseOption"
+                        width: ListView.view ? ListView.view.width : implicitWidth
+                        highlighted: caseBox.highlightedIndex === index
+                        contentItem: Label {
+                            text: modelData.label
+                            textFormat: Text.PlainText
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                            color: theme.foreground
+                        }
+                    }
                 }
 
                 TextField {
@@ -254,6 +321,7 @@ Item {
                     visible: root.action !== "link"
                     placeholderText: root.action === "explain" ? qsTr("Why it changed") : qsTr("Why it needs no case")
                     text: root.reason
+                    enabled: !root.pending
                     Material.roundedScale: theme.radius
                     onTextEdited: root.reason = text
                     onAccepted: root.press()
@@ -264,6 +332,7 @@ Item {
                     visible: !!root.item && root.item.grouped
                     text: qsTr("Only this event, not its group")
                     checked: root.only
+                    enabled: !root.pending
                     focusPolicy: Qt.NoFocus
                     onToggled: root.only = checked
                 }
