@@ -639,6 +639,17 @@ check on push.
     sees them as plain `QObject`.
   - `uncreatable-type` — Quickshell's qmltypes register `PanelWindow` with
     `isCreatable: false`; it is created fine at runtime.
+  - `block-scope-var-declaration` (Qt 6.12 and later; the recipe passes it
+    only when `qmllint --help` lists it, so Qt 6.11 runs unchanged) — `var`
+    inside a block, mostly `for (var i …)`. Plugin code could avoid it, but
+    Omarchy's own shell uses `var` there in hundreds of places and never
+    `let`, and SPEC-PLUGIN follows the built-in plugins' idiom. qmllint 6.12
+    counts this warning against `--max-warnings` without printing it in text
+    mode: a bare exit 255 with no `Warning:` line is this category
+    (`--json -` shows it). WP-224.
+- **Qt 6.12's `id-shadows-member`** stays a warning: an id must not share a
+  name with a property of its file's root type (`id: top`, `id: form` were
+  renamed in WP-224).
 - **Token check.** Because `missing-property` is demoted, qmllint cannot see
   a typo such as `Style.font.bodySmal`. `tests/plugin/check-tokens.py` reads
   `Commons/{Style,Color,Border,Util}.qml` of the installed shell and fails on

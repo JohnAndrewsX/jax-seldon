@@ -324,10 +324,20 @@ qmllint:
     #   missing-property  nested token objects (Style.font.*, Color.popups.*)
     #                     are typed QObject in the shell's QML
     #   uncreatable-type  Quickshell's qmltypes mark PanelWindow isCreatable: false
+    # Qt 6.12 adds a third, demoted only where qmllint knows it (WP-224):
+    #   block-scope-var-declaration  `var` inside a block or `for (var …)`,
+    #                     the shell's own idiom (hundreds of sites, no let);
+    #                     6.12 counts it without printing it in text mode
     # Everything else must be warning-free.
+    demote=(--missing-property info --uncreatable-type info)
+    # matched in bash, not with grep -q (an early-closed pipe fails under pipefail)
+    lint_help=$("$lint" --help)
+    if [[ $lint_help == *--block-scope-var-declaration* ]]; then
+      demote+=(--block-scope-var-declaration info)
+    fi
     shopt -s nullglob
     files=(plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml plugin/components/desk/*.qml plugin/components/graph/*.qml plugin/sections/*.qml)
-    "$lint" --max-warnings 0 --missing-property info --uncreatable-type info \
+    "$lint" --max-warnings 0 "${demote[@]}" \
       -I "$root" -I "$shell_dir" "${files[@]}"
     # The demoted missing-property makes qmllint blind to token typos
     # (Style.font.bodySmal); check every Style/Color/Border/Util reference
