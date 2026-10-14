@@ -32,6 +32,9 @@ and the package does not exist yet. Update the plugin first:
   lower edge version number is not shown as a separate change. With the
   default crisis list it is a crisis unless done in a case, like any
   install of `omarchy` by name (ADR-0060).
+- Changing Omarchy's language, default agent or dictation backend, and muting a crash, no longer ask you why.
+- The Seldon agent skill also goes into Antigravity's skill folder, `~/.gemini/config/skills`.
+- A Seldon terminal step that failed now ends with Omarchy's red "Failed" prompt instead of "Done!".
 
 ## [0.4.0] - 2026-10-14
 

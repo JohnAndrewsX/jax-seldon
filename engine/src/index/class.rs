@@ -13,7 +13,8 @@
 //! - **routine**: a plain full upgrade, an upgrade of what is installed,
 //!   the keyrings, Omarchy's own update, a plugin toggle, Seldon's own
 //!   plugin added or enabled, a theme switch,
-//!   Omarchy's own copy of a file (`meta.matches`), a link into `/usr/`,
+//!   Omarchy's own copy of a file or what its commands write there
+//!   (`meta.matches`), a link into `/usr/`,
 //!   the `routinePaths`, a theme's assets.
 //!
 //! The caller groups: a pacman transaction's class is the highest class of
@@ -39,6 +40,10 @@ use crate::pkgcmd::{Op, PacmanCommand, parse_command, split_logged};
 pub const MATCHES_KEY: &str = "matches";
 /// `meta.matches`: the new content equals Omarchy's shipped copy.
 pub const MATCHES_OMARCHY_DEFAULT: &str = "omarchy-default";
+/// `meta.matches`: the new content is what one of Omarchy's commands
+/// writes to a file Omarchy ships no copy of (`omarchy language`, the
+/// defaults; ADR-0059, WP-225).
+pub const MATCHES_OMARCHY_WRITTEN: &str = "omarchy-written";
 /// `meta.matches`: the subject is a symlink resolving under `/usr/`.
 pub const MATCHES_SYSTEM_LINK: &str = "system-link";
 /// `meta.matches`: a file of a theme directory with a `.git` directory
@@ -420,7 +425,11 @@ impl Rules {
             }
         }
         if !removed {
-            for id in [MATCHES_OMARCHY_DEFAULT, MATCHES_SYSTEM_LINK] {
+            for id in [
+                MATCHES_OMARCHY_DEFAULT,
+                MATCHES_OMARCHY_WRITTEN,
+                MATCHES_SYSTEM_LINK,
+            ] {
                 if mark == Some(id)
                     && let Some(v) = self.routine(id)
                 {
@@ -1080,6 +1089,42 @@ mod tests {
                     Some(MATCHES_OMARCHY_DEFAULT),
                 ),
                 (R, "omarchy-default"),
+            ),
+            (
+                "what omarchy language writes",
+                config(
+                    Kind::ConfigChange,
+                    "~/.config/omarchy/language",
+                    Some(MATCHES_OMARCHY_WRITTEN),
+                ),
+                (R, "omarchy-written"),
+            ),
+            (
+                "the session locale omarchy language writes (a persistence path)",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/uwsm/env.d/50-omarchy-language",
+                    Some(MATCHES_OMARCHY_WRITTEN),
+                ),
+                (R, "omarchy-written"),
+            ),
+            (
+                "the session locale without the mark",
+                config(
+                    Kind::ConfigChange,
+                    "~/.config/uwsm/env.d/50-omarchy-language",
+                    None,
+                ),
+                (C, "always-red-paths"),
+            ),
+            (
+                "the language file removed",
+                config(
+                    Kind::ConfigRemove,
+                    "~/.config/omarchy/language",
+                    Some(MATCHES_OMARCHY_WRITTEN),
+                ),
+                (A, "config-remove"),
             ),
             (
                 "a link into /usr",

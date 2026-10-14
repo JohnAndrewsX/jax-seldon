@@ -87,7 +87,8 @@ use super::plugins::Plugins;
 use super::{Collector, Ctx, Lost, Outcome, Tz, to_cursor, typed_cursor};
 use crate::config::{Config, Dirs};
 use crate::index::class::{
-    MATCHES_KEY, MATCHES_OMARCHY_DEFAULT, MATCHES_SYSTEM_LINK, MATCHES_THEME_REPO,
+    MATCHES_KEY, MATCHES_OMARCHY_DEFAULT, MATCHES_OMARCHY_WRITTEN, MATCHES_SYSTEM_LINK,
+    MATCHES_THEME_REPO,
 };
 use crate::logbook::lock::Lock;
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
@@ -1242,7 +1243,9 @@ fn diff(ctx: &Ctx, base: &Generation, scan: &Scan, since: DateTime<FixedOffset>)
 /// whose target lies under `/usr/` (`systemctl --user enable`, Omarchy's
 /// migrations; never a boot file, WP-164),
 /// `omarchy-default` for content equal to Omarchy's shipped copy (its
-/// hash), `theme-repo` for a file of a theme directory with a `.git`
+/// hash), `omarchy-written` for content one of Omarchy's commands writes
+/// to a file no copy is shipped for ([`omarchy_writes`], ADR-0059),
+/// `theme-repo` for a file of a theme directory with a `.git`
 /// directory (`omarchy theme install`, which strips a theme's code).
 fn mark_evidence(ctx: &Ctx, events: &mut [Event]) {
     let owner = trusted_owner();
@@ -1379,6 +1382,14 @@ pub fn evidence(
     {
         return Some(MATCHES_OMARCHY_DEFAULT);
     }
+    if let Some(hash) = hash
+        && let Some((omarchy, owner)) = omarchy
+        && omarchy_writes(dirs, omarchy, owner, &path)
+            .iter()
+            .any(|text| sys::sha256_hex(text.as_bytes()) == hash)
+    {
+        return Some(MATCHES_OMARCHY_WRITTEN);
+    }
     // Omarchy's own test (`theme_came_from_a_repo`): the theme directory is
     // no link and holds a real `.git` directory (not a file, not a link)
     let themes = dirs.home.join(".config/omarchy/themes");
@@ -1402,6 +1413,128 @@ fn is_omarchy_copy(dirs: &Dirs, omarchy: &Path, owner: u32, path: &Path, hash: &
             && hash_any(copy).is_some_and(|h| h == hash)
             && copy_trusted(copy, omarchy, owner)
     })
+}
+
+/// Files Omarchy's commands write under the home directory that no shipped
+/// copy matches (WP-225, ADR-0059), relative to `$HOME`: `omarchy
+/// language <code>` writes the code and the session's locale (uwsm
+/// sources the second at login), `omarchy default agent <agent>` and
+/// `omarchy dictation use <backend>` the chosen default.
+pub const LANGUAGE_FILE: &str = ".config/omarchy/language";
+pub const LANGUAGE_ENV_FILE: &str = ".config/uwsm/env.d/50-omarchy-language";
+pub const DEFAULT_AGENT_FILE: &str = ".config/omarchy/defaults/agent";
+pub const DEFAULT_DICTATION_FILE: &str = ".config/omarchy/defaults/dictation";
+
+/// What `omarchy-language` writes to [`LANGUAGE_ENV_FILE`], `{}` the
+/// locale (its `apply_session_locale`).
+const LANGUAGE_ENV_TEXT: [&str; 2] = [
+    "# The session language, set by omarchy-language (Setup > Language).\nexport LANG=",
+    "\n",
+];
+
+/// Every content Omarchy's commands write to `path` ([`LANGUAGE_FILE`]
+/// and the others), built from the trusted tree `omarchy` alone, never
+/// from the file: a language code or locale of
+/// `default/i18n/locales.json`, an agent of `omarchy-default-agent`'s
+/// `# omarchy:args=[a|b|…]` line, a dictation backend with an
+/// `omarchy-install-dictation-<backend>` installer. Empty for any other
+/// path, and where the source is missing or not trusted ([`copy_trusted`]).
+fn omarchy_writes(dirs: &Dirs, omarchy: &Path, owner: u32, path: &Path) -> Vec<String> {
+    let Ok(rel) = path.strip_prefix(&dirs.home) else {
+        return Vec::new();
+    };
+    let line = |word: &str| format!("{word}\n");
+    if rel == Path::new(LANGUAGE_FILE) {
+        return locales(omarchy, owner)
+            .into_iter()
+            .map(|(code, _)| line(&code))
+            .collect();
+    }
+    if rel == Path::new(LANGUAGE_ENV_FILE) {
+        let [head, tail] = LANGUAGE_ENV_TEXT;
+        return locales(omarchy, owner)
+            .into_iter()
+            .map(|(_, locale)| format!("{head}{locale}{tail}"))
+            .collect();
+    }
+    if rel == Path::new(DEFAULT_AGENT_FILE) {
+        let Some(script) = trusted_text(omarchy, owner, "bin/omarchy-default-agent") else {
+            return Vec::new();
+        };
+        return script
+            .lines()
+            .find_map(|l| l.strip_prefix("# omarchy:args="))
+            .map(|args| args.trim().trim_start_matches('[').trim_end_matches(']'))
+            .into_iter()
+            .flat_map(|args| args.split('|'))
+            .filter(|a| plain_word(a))
+            .map(line)
+            .collect();
+    }
+    if rel == Path::new(DEFAULT_DICTATION_FILE) {
+        let bin = omarchy.join("bin");
+        let Ok(entries) = std::fs::read_dir(&bin) else {
+            return Vec::new();
+        };
+        return entries
+            .filter_map(|e| e.ok())
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                let backend = name.strip_prefix("omarchy-install-dictation-")?.to_string();
+                let file = bin.join(&name);
+                (plain_word(&backend)
+                    && std::fs::metadata(&file).is_ok_and(|m| m.is_file())
+                    && copy_trusted(&file, omarchy, owner))
+                .then(|| line(&backend))
+            })
+            .collect();
+    }
+    Vec::new()
+}
+
+/// A word Omarchy accepts as an agent or a dictation backend
+/// (`omarchy-default-dictation`'s `^[a-z0-9][a-z0-9-]*$`).
+fn plain_word(w: &str) -> bool {
+    w.len() <= 64
+        && w.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && w.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// The language codes and their locales in Omarchy's
+/// `default/i18n/locales.json` (`{code: {locale, …}}`), each a plain
+/// word (a code also with `_` and `.`, a locale as `de_DE.UTF-8`).
+fn locales(omarchy: &Path, owner: u32) -> Vec<(String, String)> {
+    let Some(text) = trusted_text(omarchy, owner, "default/i18n/locales.json") else {
+        return Vec::new();
+    };
+    let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&text) else {
+        return Vec::new();
+    };
+    let word = |w: &str| {
+        !w.is_empty()
+            && w.len() <= 64
+            && w.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'@'))
+    };
+    map.iter()
+        .filter_map(|(code, v)| {
+            let locale = v.get("locale")?.as_str()?;
+            (word(code) && word(locale)).then(|| (code.clone(), locale.to_string()))
+        })
+        .collect()
+}
+
+/// The text of the regular file `rel` of Omarchy's trusted tree, at most
+/// [`MAX_FILE_SIZE`]; `None` when it is missing, larger, not UTF-8 or not
+/// trusted ([`copy_trusted`]).
+fn trusted_text(omarchy: &Path, owner: u32, rel: &str) -> Option<String> {
+    let file = omarchy.join(rel);
+    let meta = std::fs::metadata(&file).ok()?;
+    if !meta.is_file() || meta.len() > MAX_FILE_SIZE || !copy_trusted(&file, omarchy, owner) {
+        return None;
+    }
+    std::fs::read_to_string(&file).ok()
 }
 
 /// Omarchy's toggle state directory relative to `$HOME`

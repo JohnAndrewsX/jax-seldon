@@ -172,7 +172,7 @@ def routine(e):
 # ADR-0028 §2 (WP-109): the class of a drift-eligible event, routine < attention < crisis. Keep in
 # step with engine/src/index/class.rs and the [drift] defaults of engine/src/config.rs.
 ROUTINE_RULES = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "theme",
-                 "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
+                 "omarchy-default", "omarchy-written", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
 ROUTINE_PATHS = ["~/.config/omarchy/shell.json", "**/*.bak.*"]
 ROUTINE_PACKAGES = ["archlinux-keyring", "omarchy-keyring"]
 EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -378,7 +378,7 @@ class Classifier:
                     return ("routine", "toggle-flag")
                 if removed and mark == "omarchy-default":
                     return ("routine", "omarchy-default")
-            if not removed and mark in ("omarchy-default", "system-link"):
+            if not removed and mark in ("omarchy-default", "omarchy-written", "system-link"):
                 return ("routine", mark)
             # the persistence paths right after the evidence rows; a backup there needs evidence
             inert = subject.startswith("~/.config/omarchy/hooks/") and subject.endswith(".sample")
