@@ -21,20 +21,109 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
-- On Omarchy edge (Qt 6.12) the desk, the pill and the sheets take the
-  theme's colours again: Qt 6.12 brought a `Color` of its own that hid
-  Omarchy's.
-- On Omarchy's edge channel, `omarchy-dev`, `omarchy-settings-dev` and
-  Omarchy's other kernels (such as `linux-omarchy-bore`) count exactly
-  like `omarchy`, `omarchy-settings` and `linux-omarchy`.
-- Switching Omarchy's channel (stable to edge or back) is one change,
-  "Omarchy changed channel", instead of a removal plus an install; the
-  lower edge version number is not shown as a separate change. With the
-  default crisis list it is a crisis unless done in a case, like any
-  install of `omarchy` by name (ADR-0060).
-- Changing Omarchy's language, default agent or dictation backend, and muting a crash, no longer ask you why.
+## [0.4.1] - 2026-10-15
+
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
+and the package does not exist yet. Update the plugin first:
+`omarchy plugin update jax.seldon` (Omarchy shows the changes and asks
+`Update jax.seldon?`; answer yes), then `omarchy-restart-shell`.
+
+### Highlights
+
+- Seldon works on Omarchy edge (Qt 6.12) as on stable: the desk, the pill and the sheets take the theme's colours again.
+- On Omarchy's edge channel, `omarchy-dev`, `omarchy-settings-dev` and Omarchy's other kernels (such as `linux-omarchy-bore`) count exactly like `omarchy`, `omarchy-settings` and `linux-omarchy`.
+- Switching Omarchy's channel, stable to edge or back, is one change, "Omarchy changed channel", instead of a removal, an install and a lower version number.
+- A channel switch outside a case is a crisis with the default crisis list, like any install of `omarchy` by name; plan it in a case to keep it quiet.
+- Omarchy's own settings files are routine: setting Omarchy's language, your default agent or the dictation backend no longer asks you why, and crash mutes stay routine.
+- A Seldon terminal step that failed ends with Omarchy's red "Failed" prompt instead of "Done!", on Omarchy versions that have it (edge today).
 - The Seldon agent skill also goes into Antigravity's skill folder, `~/.gemini/config/skills`.
-- A Seldon terminal step that failed now ends with Omarchy's red "Failed" prompt instead of "Done!", on Omarchy versions that report it (edge today).
+- Update the engine and the plugin in either order: the index format is the same as from 0.2.0 to 0.4.0.
+
+### Engine
+
+- **Omarchy's edge packages count as their stable names (WP-224,
+  ADR-0060).** `omarchy-dev` and `omarchy-settings-dev` get exactly the
+  verdict of `omarchy` and `omarchy-settings`, and `linux-omarchy-<variant>`
+  (such as `linux-omarchy-bore`) that of `linux-omarchy`; its
+  `-headers`, `-docs` and `-debug` packages do not count as a kernel. This
+  holds in a `config.toml` that `init` wrote before as well: the
+  `alwaysRed` default list itself is unchanged, and removing `omarchy`
+  from your list also takes `omarchy-dev` off it.
+- **A channel switch is one item (WP-224, ADR-0060).** A pacman
+  transaction that removes `omarchy` or `omarchy-settings` and installs
+  its `-dev` twin, or the other way round, is one drift item with the
+  rule `omarchy-channel`. With the default `alwaysRed` list it is a
+  crisis outside a case, as an install of `omarchy` by name is (ADR-0028
+  §4c); another package on the crisis list in the same transaction keeps
+  its own reason. The Omarchy `update` the switch causes (edge numbers
+  its versions on its own, so the number drops) is routine and no
+  second item.
+- **The Omarchy collector reads `omarchy-dev` (WP-224).** When
+  `omarchy-version` gives no version, it asks pacman for `omarchy`, then
+  for `omarchy-dev`; an Omarchy update takes its actor and case from a
+  pacman event of either package.
+- **Files Omarchy writes are routine (WP-225, ADR-0059).** A new or
+  changed file whose content is exactly one Omarchy's own commands write
+  is routine with the new rule `omarchy-written`:
+  `~/.config/omarchy/language` and
+  `~/.config/uwsm/env.d/50-omarchy-language` (`omarchy language`),
+  `~/.config/omarchy/defaults/agent` (`omarchy default agent`) and
+  `~/.config/omarchy/defaults/dictation` (`omarchy dictation use`). The
+  contents to compare are built from Omarchy's installed tree alone, and
+  only when it is root-owned and writable by root alone. A session file
+  with a line more than Omarchy's stays a crisis (`~/.config/uwsm/**` is
+  on the persistence list). `routine` gains the id; a list you wrote
+  without it keeps those files out. Crash mutes (`omarchy crash mute`,
+  `omarchy toggle crash capture`) were routine `toggle-flag` before and
+  stay so.
+- **An agent's Omarchy command proves the files it writes (WP-225).**
+  `omarchy language <code>`, `omarchy crash mute [--] <program>`,
+  `omarchy toggle crash capture`, `omarchy-toggle <flag>`, `omarchy
+  default agent <agent>` and `omarchy dictation use <backend>`, run by an
+  agent's hook, attribute the change of the file each writes to that
+  agent and its case; a read-only form proves nothing.
+- **The agent skill goes into Antigravity's folder (WP-225).** `seldon
+  hook install skills` also installs into `~/.gemini/config/skills` when
+  it exists; doctor's `skills` row names it.
+
+### Plugin
+
+- **Theme colours on Qt 6.12 (WP-224).** Qt 6.12's QtQuick brings a
+  `Color` of its own that hid Omarchy's in every import order, so on
+  Omarchy edge the desk, the pill and the sheets read undefined colours.
+  The plugin now writes `Commons.Color`, as Omarchy's own shell does; Qt
+  6.11 reads it the same.
+- **A channel switch has its *Why loud?* (WP-224).** "Omarchy changed
+  channel (stable or edge)": the transaction replaced `omarchy`,
+  `omarchy-settings` or both with their `-dev` twins, or the other way
+  round, and a lower number there is no downgrade. An unfinished
+  transaction's text names `omarchy-settings-dev` beside
+  `omarchy-settings`.
+- **A failed terminal step ends with status 1 (WP-225).** The setup
+  card's and banners' terminal scripts end with status 1 after their red
+  result line (was 0), so Omarchy edge's wrapper shows "Failed (exit
+  code 1)!"; an earlier Omarchy shows "Done!" for both, and the result
+  line above it says what happened either way. A cancel still ends with
+  130 and closes the window.
+
+### Packaging and docs
+
+- **CI checks the QML against Omarchy stable's shell tree (WP-191,
+  ADR-0055).** A `plugin-qml` job runs qmllint, the four Quickshell
+  harnesses and Omarchy's QML text-format scan against the shell tree of
+  the pinned Omarchy stable release, fetched from Omarchy's stable
+  mirror.
+- **Development on Qt 6.12 (WP-224).** The `qmllint` recipe demotes Qt
+  6.12's `block-scope-var-declaration` (the shell's own `for (var …)`
+  idiom) when the installed qmllint knows the category; the headless
+  harnesses accept exactly edge `Style.qml`'s Hyprland warning and run
+  under `env -i` in C.UTF-8.
+- **The Omarchy assumption ledger knows edge (WP-224, WP-225).** An
+  assumption may carry an edge measurement beside its stable hash, and an
+  edge-only file is `absent` off edge; `check-upstream --gate` refuses a
+  missing edge-only file on an edge host. The plugin contract is anchored
+  in `shell/services/PluginRegistry.qml`; ADR-0059's files and the
+  Failed prompt have their rows.
 
 ## [0.4.0] - 2026-10-14
 
@@ -2151,7 +2240,8 @@ plugin `jax.seldon` (published from `plugin/` as `jax-seldon-plugin`).
 - Specs (engine, plugin, logbook, contract), 22 ADRs, plugin README with
   security section, keybinding docs, preview image.
 
-[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.4.1
 [0.4.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.4.0
 [0.3.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.3.0
 [0.2.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.2.0

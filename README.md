@@ -233,7 +233,7 @@ Options (with the one-liner: `| bash -s -- --unit`):
   shell to finish the update" with a *Restart shell* button; a plugin
   version without this notice shows nothing, so restart after every
   update. From 0.1.x to 0.2.0, update the engine and the plugin together
-  (index contract 2); from 0.2.x or 0.3.x to 0.4.0 the order does not matter:
+  (index contract 2); from 0.2.x, 0.3.x or 0.4.0 to 0.4.1 the order does not matter:
   [what changed](docs/user/en/11-update-and-uninstall.md).
 - **Remove:** `bash install.sh --uninstall`, or with the one-liner
   `… | bash -s -- --uninstall`. It removes exactly the files it
@@ -271,14 +271,16 @@ an agent working on this repository follows the repository's
 
 ## Project status
 
-v0.4.0: the agent hooks return within a millisecond in a session that
-has nothing to do with Seldon, Work's header buttons work by key, every
-coloured stripe on the desk has its word beside it and an empty list
-says what belongs there, and the redaction reads the commands inside
-`$(…)`, backticks and `<(…)` and masks more secrets. v0.3.0 brought the
-other desk buttons by key, an index that stays under 1 MB on a very
-large logbook, and the short agent skill. The index format is
-still contract 2, as since v0.2.0, which made the desk. Before 1.0.0 a
+v0.4.1: Seldon works on Omarchy's edge channel (Qt 6.12) as on stable;
+edge's own packages and a channel switch are recognised, and the
+settings files Omarchy writes itself are routine. v0.4.0 made the agent
+hooks return within a millisecond in a session that has nothing to do
+with Seldon, put Work's header buttons on keys and a word beside every
+coloured stripe, and taught the redaction to read the commands inside
+`$(…)`, backticks and `<(…)`. v0.3.0 brought the other desk buttons by
+key, an index that stays under 1 MB on a very large logbook, and the
+short agent skill. The index format is still contract 2, as since
+v0.2.0, which made the desk. Before 1.0.0 a
 minor release may still change the CLI, the logbook layout or the
 contract; the [changelog](CHANGELOG.md) then says so under Breaking.
 Next: the AUR package, the listing in the Omarchy plugin directory and

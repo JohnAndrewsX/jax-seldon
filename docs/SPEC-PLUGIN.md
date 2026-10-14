@@ -9,7 +9,7 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
   "schemaVersion": 1,
   "id": "jax.seldon",
   "name": "JAX Seldon",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": "JohnAndrewsX",
   "license": "MIT",
   "description": "The memory of your Omarchy machine, for you and your agents: ledger, journal, cases, drift and the Prime Radiant in one desk.",
@@ -1935,7 +1935,7 @@ with section 8 shown keeps that node's card ("not found" for an unknown
 id).
 - The shim: `IpcHandler` target **`jax.seldon.panel`**, owned by the bar
   widget, kept beyond the one minor release ADR-0034 §7 named: 0.3.0
-  and 0.4.0 still have it (operator decisions E86, E91), and the
+  and 0.4.x still have it (operator decisions E86, E91), and the
   release that removes it announces that in the CHANGELOG under
   Breaking (WP-188). It forwards through the plugin's facade:
   `open`, `show` → `summon jax.seldon {}`; `close`, `hide` → `hide`;

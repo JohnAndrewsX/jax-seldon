@@ -94,6 +94,40 @@ still read it, the plugin keeps working and only asks, in a quiet
 notice, for its own update ("The engine is newer than the plugin").
 After an update, `seldon doctor` should show only `ok`.
 
+## What changed from 0.4.0
+
+0.4.1 keeps the index format of 0.2.0 to 0.4.0 (version 2), so update
+the engine and the plugin in either order, with the commands above, and
+restart the shell after the plugin update. A 0.4.1 plugin works with an
+engine from 0.2.0 on, and an older plugin reads a 0.4.1 engine's index.
+What changes for you:
+
+- Seldon works on Omarchy's edge channel (Qt 6.12) as on stable. On
+  edge, Qt 6.12 hides Omarchy's theme colours from a 0.4.0 plugin; the
+  desk, the pill and the sheets of 0.4.1 take them again.
+- Edge's own packages count like their stable names: `omarchy-dev`,
+  `omarchy-settings-dev` and Omarchy's other kernels such as
+  `linux-omarchy-bore` get exactly the verdict of `omarchy`,
+  `omarchy-settings` and `linux-omarchy`
+  ([Configuration](06-configuration.md#drift)).
+- Switching Omarchy's channel, stable to edge or back, is one change,
+  *Omarchy changed channel*, instead of a removal, an install and a
+  lower version number. Outside a case it is a crisis with the default
+  crisis list, as an install of `omarchy` by name is; plan the switch in
+  a case and it stays quiet. *Why loud?* explains it.
+- The settings files Omarchy writes itself are routine when they hold
+  exactly what Omarchy writes: the language (`omarchy language`, edge),
+  the default agent and the dictation backend. Before, the language's
+  session file under `~/.config/uwsm/` was a crisis. Crash mutes were
+  routine already and stay so.
+- A Seldon terminal step that failed ends with status 1, so Omarchy
+  edge shows its red "Failed (exit code 1)!" instead of "Done!". An
+  earlier Omarchy shows "Done!" either way; the line above it says what
+  happened.
+- `seldon hook install skills` also installs the agent skill into
+  Antigravity's folder, `~/.gemini/config/skills`, when it exists
+  ([Working with agents](04-working-with-agents.md#the-agent-skill)).
+
 ## What changed from 0.3.x
 
 0.4.0 keeps the index format of 0.2.0 and 0.3.0 (version 2), so update
