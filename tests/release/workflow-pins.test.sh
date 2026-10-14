@@ -242,6 +242,7 @@ plugin_qml() {
   done
   grep -x -q -F '          HOME="$home" XDG_RUNTIME_DIR="$rt" JUST_TEMPDIR="$rt" just qmllint' <<< "$text" \
     || echo "$f: the plugin-qml job does not run just qmllint with a private HOME and runtime dir"
+  # shellcheck disable=SC1003  # the workflow line ends in a literal backslash (a line continuation)
   grep -x -q -F '          HOME="$home" XDG_RUNTIME_DIR="$rt" JUST_TEMPDIR="$rt" SELDON_FULL_CHECK=1 SELDON_BENCH_BUDGET_SCALE=3 \' <<< "$text" \
     && grep -x -q -F '            just plugin-test 2>&1 | tee "$RUNNER_TEMP/plugin-test.log"' <<< "$text" \
     || echo "$f: the plugin-qml job does not run just plugin-test with SELDON_FULL_CHECK=1 and a private HOME and runtime dir"

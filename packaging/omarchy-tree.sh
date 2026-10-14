@@ -117,7 +117,7 @@ if ((${#problems[@]} > 0)); then
   fail "the tree at ${commit:0:12} is not what the checks need"
 fi
 
-files=$(find "$dest/shell" -type f | wc -l)
+shell_count=$(find "$dest/shell" -type f | wc -l)
 echo "omarchy-tree: $repo@$commit at $dest"
-echo "omarchy-tree: $files files under shell/, Commons and Ui self-contained, themes ${themes[*]}, $scan"
+echo "omarchy-tree: $shell_count files under shell/, Commons and Ui self-contained, themes ${themes[*]}, $scan"
 echo "omarchy-tree: digest $(digest "$dest")"
