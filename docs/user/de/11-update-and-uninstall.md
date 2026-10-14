@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 5ff4afeb -->
+<!-- source: en/11-update-and-uninstall.md @ ce4e1c26 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -102,6 +102,42 @@ dieses Plugin ihn noch lesen kann, arbeitet das Plugin weiter und bittet
 nur in einem leisen Hinweis um sein eigenes Update („The engine is newer
 than the plugin“). Nach einem Update sollte `seldon doctor` nur `ok`
 zeigen.
+
+## Was sich gegenüber 0.4.0 geändert hat
+
+0.4.1 behält das Index-Format von 0.2.0 bis 0.4.0 (Version 2).
+Aktualisiere Engine und Plugin deshalb in beliebiger Reihenfolge, mit
+den Befehlen oben, und starte nach dem Update des Plugins die Shell neu.
+Ein Plugin 0.4.1 arbeitet mit einer Engine ab 0.2.0, und ein älteres
+Plugin liest den Index einer Engine 0.4.1. Was sich für dich ändert:
+
+- Seldon läuft auf Omarchys Edge-Kanal (Qt 6.12) wie auf Stable. Auf
+  Edge verdeckt Qt 6.12 einem Plugin 0.4.0 die Farben des Omarchy-Themes;
+  Desk, Pill und Sheets von 0.4.1 übernehmen sie wieder.
+- Die eigenen Pakete von Edge zählen wie ihre Stable-Namen:
+  `omarchy-dev`, `omarchy-settings-dev` und Omarchys andere Kernel wie
+  `linux-omarchy-bore` bekommen genau das Urteil von `omarchy`,
+  `omarchy-settings` und `linux-omarchy`
+  ([Konfiguration](06-configuration.md#drift)).
+- Ein Wechsel von Omarchys Kanal, von Stable zu Edge oder zurück, ist
+  eine Änderung, *Omarchy changed channel*, statt einer Entfernung,
+  einer Installation und einer niedrigeren Versionsnummer. Ohne Case ist
+  er mit der vorgegebenen Krisenliste eine Krise, wie eine Installation
+  von `omarchy` beim Namen; plane den Wechsel in einem Case, dann bleibt
+  er still. *Why loud?* erklärt ihn.
+- Die Einstellungsdateien, die Omarchy selbst schreibt, sind Routine,
+  wenn sie genau das enthalten, was Omarchy schreibt: die Sprache
+  (`omarchy language`, Edge), der Standard-Agent und das
+  Diktier-Backend. Bisher war die Sitzungsdatei der Sprache unter
+  `~/.config/uwsm/` eine Krise. Stummgeschaltete Absturzmeldungen waren
+  schon Routine und bleiben es.
+- Ein Terminal-Schritt von Seldon, der fehlschlägt, endet mit Status 1,
+  sodass Omarchy Edge sein rotes „Failed (exit code 1)!“ statt „Done!“
+  zeigt. Ein älteres Omarchy zeigt in beiden Fällen „Done!“; die Zeile
+  darüber sagt, was passiert ist.
+- `seldon hook install skills` installiert den Agentenskill auch in den
+  Ordner von Antigravity, `~/.gemini/config/skills`, wenn es ihn gibt
+  ([Mit Agenten arbeiten](04-working-with-agents.md#der-agentenskill)).
 
 ## Was sich gegenüber 0.3.x geändert hat
 

@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ 343d7ac3 -->
+<!-- source: en/01-getting-started.md @ ce4e1c26 -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem Rechner, den
 Seldon aufzeichnet. Du fügst das Seldon-Plugin zur Bar hinzu und klickst
