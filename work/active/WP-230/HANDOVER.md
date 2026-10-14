@@ -30,3 +30,5 @@
 ## Full check result
 
 `SELDON_FULL_CHECK=1 just check` (*desktop*): every recipe before `qmllint` passed (fmt, clippy, engine tests, watch, check-packaging, install, deploy, guards, schema, docs, plugin-validate). `qmllint` **failed** with exit 255 on `plugin/` files this WP does not touch (`Style.font.family`, `Style.font.caption`: "Member not found on type QObject", e.g. `plugin/sections/Work.qml:1114`). That is the edge Omarchy shell tree on this host against the plugin (the 0.4.1 edge-compatibility work, WP-224/225), not a packaging change. `plugin-test` did not run after it. Reported, not worked around.
+
+After the rebase onto `app` (864d8edc): `app/bin/build` rebuilt, `bin/install --nodeps` rebuilt the package and its file list equals `expected-files.txt`, `just check-packaging` green (*desktop*). `SELDON_FULL_CHECK=1 just check` failed again at `qmllint` with the same plugin errors as above (`Style.font.*` on `plugin/sections/Work.qml`); no WP-230 file is involved.
