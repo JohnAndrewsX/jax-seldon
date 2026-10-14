@@ -196,3 +196,16 @@ Every change in 0.4.1: [CHANGELOG.md](https://github.com/JohnAndrewsX/jax-seldon
 4. `written` writes the test host's default-agent file by hand instead
    of running `omarchy default agent` (above). Say if you want the real
    command, with the agent install it brings.
+
+## Answers (orchestrator, 2026-10-15) and round 1b
+
+1. Not Breaking (`omarchy-dev` did not exist on stable; every stable
+   name keeps its meaning). The CHANGELOG has a `### Changed` part
+   after the Highlights: a named `omarchy-dev` / `omarchy-settings-dev`
+   install or removal outside a case is a crisis now, attention in
+   0.4.0, the same for `linux-omarchy-<variant>`. The sentence does
+   not claim "nothing changes on stable": `linux-omarchy-bore` is in
+   stable's repository too. `release-notes.sh 0.4.1` ok, docs-check ok.
+2. The date 2026-10-15 stays.
+3. `written` writes the default-agent file by hand with exactly
+   Omarchy's content, no mise install.
