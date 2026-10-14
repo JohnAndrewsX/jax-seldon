@@ -709,6 +709,9 @@ compatible addition is a minor release, a fix a patch):
   (a fresh install, AGENTS.md §1); the dev host runs **edge** as a preview
   and Seldon stays forward-compatible with it; the test host's **RC** is the
   rehearsal before a release.
+- E94 (2026-10-14) ADR-0055 accepted: CI checks the plugin against
+  Omarchy stable's pinned shell tree. WP-191 merges after the 0.4.0 tag,
+  once its `plugin-qml` job has run green (a draft PR runs it).
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:
