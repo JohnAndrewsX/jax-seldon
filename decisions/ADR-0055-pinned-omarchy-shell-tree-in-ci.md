@@ -1,6 +1,6 @@
 # ADR-0055 — A pinned Omarchy shell tree in CI
 
-**Status:** proposed
+**Status:** accepted (operator decision 2026-10-14, E94)
 **Date:** 2026-10-13
 
 > Stage 2 of the plugin's checks in CI (operator decision E66; WP-191).
@@ -10,8 +10,8 @@
 > against it. The tree is the one Omarchy **stable** ships (E93: a release
 > must work on stable; the test host's rc is the rehearsal, the dev host's
 > edge a preview). It does not change the contract, the engine or the
-> plugin. It stays *proposed* until the operator accepts it; the CI change
-> does not merge before that.
+> plugin. The CI change merges after the 0.4.0 tag, once the `plugin-qml`
+> job has run green.
 
 ## Context
 
