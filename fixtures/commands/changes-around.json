@@ -1,0 +1,83 @@
+{
+  "around": "2026-10-01T14:20:00+02:00",
+  "events": [
+    {
+      "actor": "agent:codex",
+      "id": "01M3VNF5Z06QEBJEEMHS802D2F",
+      "kind": "command",
+      "meta": {
+        "command": "sudo pacman -S --noconfirm ollama"
+      },
+      "source": "agent",
+      "subject": "pacman",
+      "ts": "2026-10-01T14:01:48+02:00",
+      "zone": "red"
+    },
+    {
+      "actor": "agent:codex",
+      "detail": "0.6.1-1",
+      "explicit": true,
+      "id": "01M3VNFTF8EVHWFFZ687N14Q0C",
+      "kind": "install",
+      "meta": {
+        "command": "pacman -S --noconfirm ollama",
+        "version": "0.6.1-1"
+      },
+      "source": "pacman",
+      "subject": "ollama",
+      "ts": "2026-10-01T14:02:09+02:00",
+      "txId": "tx-20261001T140209",
+      "zone": "red"
+    },
+    {
+      "actor": "agent:codex",
+      "id": "01M3VNHD88HSQHSVJ6ZNCXDK1W",
+      "kind": "command",
+      "meta": {
+        "command": "tee ~/.config/systemd/user/ollama.service"
+      },
+      "source": "agent",
+      "subject": "tee",
+      "ts": "2026-10-01T14:03:01+02:00",
+      "zone": "red"
+    },
+    {
+      "actor": "agent:codex",
+      "detail": "sha256 — → c0243ca5",
+      "id": "01M3VNJ9JGZ9169T01XCW16FT0",
+      "kind": "config-add",
+      "meta": {
+        "hashTo": "c0243ca5c3421df489cb0d4a060f3f4c47490a2a9752c20ce5f6ef84665827bc"
+      },
+      "source": "config",
+      "subject": "~/.config/systemd/user/ollama.service",
+      "ts": "2026-10-01T14:03:30+02:00",
+      "zone": "red"
+    },
+    {
+      "actor": "system",
+      "detail": "pre: ollama",
+      "id": "01M3VQ2TA0HFEWFW5PT72E64FK",
+      "kind": "snapshot",
+      "meta": {
+        "cleanup": "",
+        "type": "single"
+      },
+      "source": "snapper",
+      "subject": "113",
+      "ts": "2026-10-01T14:30:00+02:00"
+    },
+    {
+      "actor": "human",
+      "detail": "Codex hat ollama ohne Case installiert, samt User-Service. Snapshot 113 gemacht; morgen entscheiden, ob es bleibt (Vorschlag ADR-0004).",
+      "id": "01M3VQN4807PWS1QE2RYRV2E4E",
+      "kind": "note",
+      "source": "manual",
+      "subject": "journal",
+      "ts": "2026-10-01T14:40:00+02:00"
+    }
+  ],
+  "from": "2026-10-01T12:20:00+02:00",
+  "omitted": 0,
+  "to": "2026-10-01T14:50:00+02:00"
+}
