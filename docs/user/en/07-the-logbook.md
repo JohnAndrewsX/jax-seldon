@@ -7,7 +7,7 @@ the history, and how to open the logbook in Obsidian.
 ## Where it lives
 
 The logbook is `~/Seldon` unless you chose another place in the wizard.
-`seldon open logbook` prints the path. It is a normal folder: no
+`seldon edit logbook` prints the path. It is a normal folder: no
 database, no hidden format. Everything in it reads well without Seldon.
 
 ## Folders and files
