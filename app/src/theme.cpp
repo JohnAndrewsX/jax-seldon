@@ -38,9 +38,10 @@ QString withAlpha(const QString &colour, double alpha) {
     return c.name(QColor::HexArgb);
 }
 
+// Where Omarchy keeps the current theme: under the home, as the shell
+// (Commons/Color.qml) and the template read it, whatever XDG_STATE_HOME says.
 QString defaultDirectory() {
-    const QString state = qEnvironmentVariable("XDG_STATE_HOME");
-    return (state.isEmpty() ? QDir::homePath() + "/.local/state" : state) + "/omarchy/current";
+    return QDir::homePath() + "/.local/state/omarchy/current";
 }
 
 } // namespace

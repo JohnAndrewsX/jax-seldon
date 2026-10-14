@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJSEngine>
 #include <QJsonDocument>
 #include <QJsonValue>
 #include <QRegularExpression>
@@ -62,23 +63,25 @@ Backend::Backend(const Options &options, QObject *parent) : QObject(parent), m_o
     connect(&m_clock, &QTimer::timeout, this, &Backend::refreshStatus);
     m_clock.start();
 
+    m_probeTimeout.setSingleShot(true);
+    // `seldon --version --json` answers at once; one that hangs is no
+    // usable engine.
+    m_probeTimeout.setInterval(m_options.probeTimeoutMs);
+    connect(&m_probeTimeout, &QTimer::timeout, &m_probe, &QProcess::kill);
     connect(&m_probe, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
+        m_probeTimeout.stop();
         const QJsonObject answer = QJsonDocument::fromJson(m_probe.readAllStandardOutput()).object();
         // A seldon that cannot even report its version is no usable engine.
         const bool present = exitStatus == QProcess::NormalExit && exitCode == 0;
         m_engineState = present ? "present" : "missing";
         m_engineVersion = present ? answer.value("version").toString() : QString();
         refreshStatus();
-        // Without an index, ask the engine once whether a logbook exists:
-        // `status` answers 3 when not, and writes the index when it does.
-        if (present && !m_statusAsked && (m_fileState == "missing" || m_fileState == "invalid")) {
-            m_statusAsked = true;
-            run({"status", "--json"});
-        }
+        askStatusOnce();
     });
     connect(&m_probe, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart)
             return;
+        m_probeTimeout.stop();
         m_engineState = "missing";
         m_engineVersion.clear();
         refreshStatus();
@@ -257,6 +260,18 @@ void Backend::ingest(const Parsed &parsed) {
     if (indexWas != hasIndex() || before != m_parsed.index)
         emit indexChanged();
     refreshStatus();
+    askStatusOnce();
+}
+
+// Without an index, ask the engine once whether a logbook exists: `status`
+// answers 3 when not, and writes the index when it does. Asked from both
+// the probe's answer and the first read, whichever comes last, so "Create
+// your logbook" shows without a click.
+void Backend::askStatusOnce() {
+    if (m_statusAsked || m_engineState != "present" || (m_fileState != "missing" && m_fileState != "invalid"))
+        return;
+    m_statusAsked = true;
+    run({"status", "--json"});
 }
 
 // ---- Status -----------------------------------------------------------------
@@ -386,6 +401,7 @@ void Backend::probe() {
     if (m_probe.state() != QProcess::NotRunning)
         return;
     m_probe.start(m_options.engine, {"--version", "--json"});
+    m_probeTimeout.start();
 }
 
 bool Backend::run(const QStringList &args) {
@@ -443,11 +459,37 @@ bool Backend::fix() {
     return false;
 }
 
+// Model.js's TERMINAL_SCRIPTS, read once from the copy compiled into the app:
+// the scripts the plugin's terminal fixes run, and the only ones this app
+// hands the launcher.
+QStringList Backend::terminalScripts() {
+    static const QStringList scripts = [] {
+        QFile file(":/Model.js");
+        if (!file.open(QIODevice::ReadOnly))
+            return QStringList();
+        QJSEngine js;
+        if (js.evaluate(QString::fromUtf8(file.readAll()), "Model.js").isError())
+            return QStringList();
+        const QJSValue list = js.globalObject().property("TERMINAL_SCRIPTS");
+        QStringList out;
+        const int n = list.property("length").toInt();
+        for (int i = 0; i < n; ++i)
+            if (list.property(i).isString())
+                out << list.property(i).toString();
+        return out;
+    }();
+    return scripts;
+}
+
 bool Backend::openTerminal(const QStringList &argv) {
-    if (m_options.devMode || argv.size() != 2 || argv.first() != TerminalLauncher || argv.last().trimmed().isEmpty())
+    // The launcher runs its argument as a shell command, so only one of
+    // Model.js's fixed scripts goes there, whatever the caller passes.
+    if (m_options.devMode || argv.size() != 2 || argv.first() != TerminalLauncher
+        || !terminalScripts().contains(argv.last())) {
+        qWarning("seldon-desk: refused terminal fix: not one of Model.js's scripts");
         return false;
-    // Opens on the user's click only; the script is one of Model.js's
-    // constants (Model.terminalArgv). Look for the engine for a while after,
+    }
+    // Opens on the user's click only. Look for the engine for a while after,
     // since the install runs in that terminal.
     if (!QProcess::startDetached(m_options.launcher, {argv.last()}))
         return false;

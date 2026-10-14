@@ -54,6 +54,9 @@ public:
         // version, run nothing else. `now` is SELDON_NOW.
         bool devMode = false;
         QString now;
+        // How long `seldon --version --json` may take before the engine
+        // counts as missing.
+        int probeTimeoutMs = 10000;
     };
 
     struct Parsed {
@@ -110,8 +113,11 @@ public:
     // openTerminal.
     Q_INVOKABLE bool fix();
     // A terminal fix: exactly [TerminalLauncher, script], as
-    // Model.terminalArgv returns it for one of Model.js's fixed scripts.
+    // Model.terminalArgv returns it; the script must be one of
+    // terminalScripts(), anything else is refused.
     Q_INVOKABLE bool openTerminal(const QStringList &argv);
+    // Model.js's TERMINAL_SCRIPTS, evaluated once from the compiled-in copy.
+    static QStringList terminalScripts();
     // Probe the engine and read the index again.
     Q_INVOKABLE void recheck();
 
@@ -128,6 +134,7 @@ private:
     void reload();
     void rearm();
     void ingest(const Parsed &parsed);
+    void askStatusOnce();
     void startNext();
     void callFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void refreshStatus();
@@ -150,6 +157,7 @@ private:
     bool m_readAgain = false;
 
     QProcess m_probe;
+    QTimer m_probeTimeout;
     QProcess m_process;
     QTimer m_timeout;
     QTimer m_repoll;

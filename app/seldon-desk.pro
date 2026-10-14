@@ -6,8 +6,9 @@ CONFIG += c++17 release
 TARGET = seldon-desk
 TEMPLATE = app
 
-# Qt 6.9 is the oldest Qt the app builds against (bin/build checks it), so
-# API deprecated or added after it stays out of reach.
+# Qt 6.9 is the oldest Qt the app is meant to build against (bin/build
+# checks it). These turn off the API deprecated up to 6.9 and warn about it;
+# they do not keep out API added after 6.9: only a build against 6.9 does.
 DEFINES += QT_DISABLE_DEPRECATED_UP_TO=0x060900 QT_WARN_DEPRECATED_UP_TO=0x060900
 
 HEADERS += \
