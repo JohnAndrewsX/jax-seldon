@@ -7,6 +7,19 @@ short index; the plugin contract moved to `docs/omarchy-shell.md` in
 Omarchy's git, not installed; WP-224). Verified
 on Omarchy 4.0.4-1, quickshell 0.3.1. Workers append; the Reviewer prunes.
 
+## Qt 6.12 and Omarchy edge (2026-10-14, WP-224)
+
+- Qt 6.12's QtQuick exports a singleton `Color` (`QtQuick/Color 6.12`,
+  `QQuickColor`). It shadows the unqualified `Color` of `qs.Commons` in
+  any import order, so `Color.popups` is undefined. Omarchy edge writes
+  `Commons.Color` with `import qs.Commons as Commons`; so does the plugin.
+- Edge's `Commons/Style.qml` imports Quickshell.Hyprland; an offscreen
+  Quickshell logs `WARN: Unable to find hyprland socket. Cannot connect to
+  hyprland.` (harnesses: TESTING.md, "One upstream line on Omarchy edge").
+- qmllint 6.12: `id-shadows-member` (an id named like a property of the
+  root type) and `block-scope-var-declaration` (counted, not printed in
+  text mode).
+
 ## Assumptions (2026-10-12, Omarchy 4.0.4-1, WP-194)
 
 The installed files these findings rest on are hashed in

@@ -1801,6 +1801,14 @@ theme under `$OMARCHY_PATH/themes/`; `tests/plugin/check-tokens.py`
 fails on `Color.muted` as a Text colour and on a literal
 `Util.alpha(…, <number>)` outside its allow-list: named colour properties
 of the charts and the graph (data colours), each with its alpha.
+Omarchy's colours are always read as `Commons.Color.…` with `import
+qs.Commons as Commons` beside `import qs.Commons` (WP-224): Qt 6.12's
+QtQuick exports a singleton `Color` of its own that shadows the
+unqualified name whatever the import order, so a bare `Color.popups.text`
+is undefined on Omarchy edge. Omarchy's own edge code qualifies it the
+same way; `check-tokens.py` fails a bare `Color.` and a `Commons.Color`
+without the alias import. (`Color.muted` and the like in this spec name
+the token; the code writes `Commons.Color.muted`.)
 
 **Geometry** (B10, Omarchy first). Rows, cards and `qs.Ui` controls take
 `Style.cornerRadius` (Hyprland's `decoration:rounding`, 0 by default), as
