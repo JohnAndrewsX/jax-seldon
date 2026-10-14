@@ -21,6 +21,13 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
+- On Omarchy's edge channel, `omarchy-dev`, `omarchy-settings-dev` and
+  Omarchy's other kernels (such as `linux-omarchy-bore`) count exactly
+  like `omarchy`, `omarchy-settings` and `linux-omarchy`.
+- Switching Omarchy's channel (stable to edge or back) is one change,
+  "Omarchy changed channel", instead of a removal plus an install; the
+  lower edge version number is not shown as a separate change.
+
 ## [0.4.0] - 2026-10-14
 
 **Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,

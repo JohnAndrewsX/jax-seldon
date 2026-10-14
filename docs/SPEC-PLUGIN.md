@@ -874,7 +874,9 @@ its leader) once for a selected crisis and keep the answer while the item
 stays a crisis (`Service.driftRules`). `always-red` → "A
 package on your crisis list ([drift] alwaysRed in
 ~/.config/seldon/config.toml) was installed, removed or downgraded by name
-in this transaction."; `always-red-paths` → "The path matches your crisis
+in this transaction."; `omarchy-channel` → "Omarchy changed channel (stable or edge): this transaction replaced omarchy and omarchy-settings with their -dev twins, or the other way round. Edge
+numbers its versions on its own, so a lower number here is no downgrade."
+(WP-224); `always-red-paths` → "The path matches your crisis
 list ([drift] alwaysRedPaths …)."; `pacnew-red` → "pacman left a .pacnew,
 .pacsave or .pacorig beside a file that boot or login depend on
 (mkinitcpio, Limine, PAM); check it with pacdiff before the next reboot."
@@ -914,7 +916,7 @@ that means (the packages listed may be all it changed; a failed one could
 not be installed, upgraded or removed), then the steps — for `failed`
 and `unfinished` "pacman's after-update steps (boot image, boot menu,
 Omarchy's resume hooks) did not run for this transaction; if
-omarchy-settings was in it, Hyprland's auto-reload may stay paused for
+omarchy-settings (omarchy-settings-dev on the edge channel) was in it, Hyprland's auto-reload may stay paused for
 this session.", for `interrupted` the same with "may not have run for
 every package of this transaction" — and one shared tail: "Before you
 reboot, reinstall the packages marked ↑ or 󰑓 below (`pacman -S` with
