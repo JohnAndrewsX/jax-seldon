@@ -29,7 +29,9 @@ and the package does not exist yet. Update the plugin first:
   like `omarchy`, `omarchy-settings` and `linux-omarchy`.
 - Switching Omarchy's channel (stable to edge or back) is one change,
   "Omarchy changed channel", instead of a removal plus an install; the
-  lower edge version number is not shown as a separate change.
+  lower edge version number is not shown as a separate change. With the
+  default crisis list it is a crisis unless done in a case, like any
+  install of `omarchy` by name (ADR-0060).
 
 ## [0.4.0] - 2026-10-14
 
