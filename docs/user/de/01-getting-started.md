@@ -65,7 +65,8 @@ Beides ist keine Drift.
 
 Jeder Schritt hat einen Knopf. Er öffnet ein schwebendes Terminal, das
 sagt, was es tut, den Befehl zeigt und ausführt und dann sagt, was sich
-geändert hat. Schließ das Terminal, wenn es „Done!“ zeigt. Die Karte geht
+geändert hat. Schließ das Terminal, wenn es „Done!“ zeigt (oder nach
+einem Schritt, der fehlschlug, „Failed“; die Zeile darüber sagt, warum). Die Karte geht
 von selbst weiter: Nachdem ihr Terminal aufgegangen ist, schaut sie alle
 paar Sekunden nach.
 

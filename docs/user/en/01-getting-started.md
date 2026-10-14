@@ -60,7 +60,8 @@ not drift.
 
 Each step has one button. It opens a floating terminal that says what it
 does, shows the command and runs it, then says what changed. Close the
-terminal when it says "Done!". The card moves on by itself: it looks
+terminal when it says "Done!" (or, after a step that failed, "Failed";
+the line above it says why). The card moves on by itself: it looks
 again every few seconds after its terminal opened.
 
 1. **Install the engine.** *Install* downloads the engine, one program
