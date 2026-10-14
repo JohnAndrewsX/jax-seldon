@@ -1,7 +1,10 @@
 # Omarchy shell findings (QML API, plugin contract)
 
-Source of truth: `/usr/share/omarchy/shell/README.md`, `shell/plugins/README.md`,
-`shell/services/PluginRegistry.qml`, `bin/omarchy-plugin-validate`. Verified
+Source of truth: `shell/services/PluginRegistry.qml`, `shell/plugins/README.md`,
+`bin/omarchy-plugin-validate` under `/usr/share/omarchy`, and up to
+Omarchy 4.0.4 `shell/README.md` (on edge, 2026-10-14, that README is a
+short index; the plugin contract moved to `docs/omarchy-shell.md` in
+Omarchy's git, not installed; WP-224). Verified
 on Omarchy 4.0.4-1, quickshell 0.3.1. Workers append; the Reviewer prunes.
 
 ## Assumptions (2026-10-12, Omarchy 4.0.4-1, WP-194)
@@ -153,9 +156,10 @@ manageIpc: false }`, colours from `bar.foreground`, `bar.urgent`,
 - `bin/omarchy-plugin-validate` is plain bash + jq (118 lines) and prints
   nothing on success. It would run in CI if fetched from a pinned Omarchy
   tag; today CI skips it.
-- SPEC-PLUGIN §1 points at `~/.local/share/omarchy/shell/README.md`; on a
+- SPEC-PLUGIN §1 pointed at `~/.local/share/omarchy/shell/README.md`; on a
   package install the README is at `$OMARCHY_PATH/shell/README.md`
-  (`/usr/share/omarchy`).
+  (`/usr/share/omarchy`). Since WP-224 it points at
+  `shell/services/PluginRegistry.qml`: edge cut the README to an index.
 
 ## WP-010 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1)
 

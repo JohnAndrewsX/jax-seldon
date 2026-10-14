@@ -24,9 +24,12 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
 }
 ```
 
-Verify the exact manifest keys against `$OMARCHY_PATH/shell/README.md`
-(`/usr/share/omarchy` on a package install) before committing (WP-010 does
-this); the shell is the source of truth. Do **not** add `panel` to `kinds`:
+Verify the exact manifest keys against
+`$OMARCHY_PATH/shell/services/PluginRegistry.qml` (`/usr/share/omarchy` on
+a package install) before committing (WP-010 did this against
+`shell/README.md`, which since edge is only an index of docs that are not
+installed: `docs/omarchy-shell.md` in Omarchy's git; WP-224); the shell is
+the source of truth. Do **not** add `panel` to `kinds`:
 the shell's panel loader picks one UI kind per plugin id (`panel` before
 `overlay` before `menu`), and `overlay` is what makes `omarchy-shell shell
 toggle jax.seldon` open the desk (§5, §8; ADR-0034 §1).
