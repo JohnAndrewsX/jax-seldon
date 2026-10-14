@@ -609,7 +609,12 @@ harness or live step its `remeasure` names), then update `sha256`,
 `omarchyVersion`, `measured` and the sentence in the same commit, and the
 pin with it when the validator changed (packaging/README.md, "The Omarchy
 pin"); what stays open at a release goes into the acceptance record's
-`limitations`. `check-assumptions` fails when a `pluginSymbol` is gone
+`limitations`. An entry may also carry `edge` (`sha256`, `omarchyVersion`,
+`measured`): the same assumption re-measured on Omarchy's edge channel
+(WP-224). A file that matches either hash is unchanged, so the rc test
+host's gate and the edge dev host both pass, and the ok line counts the
+files that matched as measured on edge; entries of one file share both
+hashes. The stable `sha256` stays the one the pin's tree has (ADR-0055). `check-assumptions` fails when a `pluginSymbol` is gone
 from its plugin file or left only in comments: `//` line comments,
 trailing ` // …` comments, and lines that start with `/*` or `*`. A
 `/* … */` span is not parsed, so an unstarred line inside one or an
