@@ -20,6 +20,7 @@ publishes both through `.github/workflows/release.yml`.
 | `audit-ignore.sh [FILE [TODAY]]` | checks that list and prints its ids for `cargo audit --ignore`; exit 1 on an expired or malformed entry (`tests/release/`) |
 | `omarchy-pin` | the `omacom/omarchy` commit and the sha256 of its `bin/omarchy-plugin-validate` (WP-190; "The Omarchy pin" below) |
 | `omarchy-validate.sh PLUGIN_DIR` | fetches that validator over HTTPS, refuses it unless the sha256 matches, runs it on `PLUGIN_DIR`: `just plugin-validate` without the omarchy CLI (CI), the release workflow on the plugin split (`tests/release/`) |
+| `omarchy-tree.sh DEST` | a sparse checkout over HTTPS of that commit's `shell/`, `themes/*/colors.toml`, `default/pacman/mirrorlist-*` and `test/shell.d/qml-text-format-scan.py` into `DEST`, refused unless it is that commit and self-contained for the QML checks; prints its digest (`--digest DIR`: the same digest of an installed tree): the `plugin-qml` job of `ci.yml` (WP-191, ADR-0055; `tests/release/`) |
 | `mirror-image.sh [WORKFLOW_DIR]` | the `mirror` job of `ci.yml` and `audit.yml`, on a push to `main` or `next` only: copies the build image's pinned digest from Docker Hub to GHCR when GHCR does not serve it yet, and checks the copy (WP-195; "Pinned actions and image" below; `tests/release/`) |
 | `store/baseline.md` | the plugin store's security baseline predicted for the plugin split: each capability with the README line and the scanner line behind it (WP-042) |
 | `store/submission.md` | the store submission issue, drafted for the operator; filed only on the operator's go (WP-042) |
@@ -269,42 +270,82 @@ and runs it on a plugin folder. It runs where the omarchy CLI is absent:
 `just plugin-validate` in CI, and the release workflow on the extracted
 plugin split. On the dev host `just plugin-validate` keeps the installed
 `omarchy plugin validate` and prints a notice when the installed
-validator is not the pinned one. The pin mirrors the validator installed
-on the test host; it never replaces the installed tree as the reference
-(AGENTS.md §1).
+validator is not the pinned one. The pin is Omarchy **stable**'s release
+(E93: a release must work on stable; ADR-0055 §1): its validator and its
+shell tree are the ones the stable `omarchy` package installs. It never
+replaces an installed tree as the reference (AGENTS.md §1). The test
+host's rc is the rehearsal; the dev host's edge is a preview and is never
+compared with the pin.
+
+The same commit gives CI's `plugin-qml` job its shell tree (WP-191,
+ADR-0055): `omarchy-tree.sh` checks out `shell/`, the theme colours, the
+channel mirrorlists and Omarchy's text-format scan at the pin, and the
+job installs Quickshell and Qt from Omarchy's stable mirror, compared
+with the pin's `default/pacman/mirrorlist-stable`. So the pin stands for
+stable's whole shell tree, not only its validator.
 
 **Refreshing the pin**, like the action pins, is a manual step in one
 commit:
 
-- *When:* after the test host moves to a new Omarchy release, or when
-  `just plugin-validate` on the dev host (or `just check-upstream`,
-  "CI validates with another validator") prints the notice.
-- *The commit:* the release tag of the version `omarchy version` prints
-  on the test host (lightweight tags point at the commit; an annotated
-  one at a tag object, resolve it once more as for the actions):
+- *When:* after Omarchy releases to stable (a new `omarchy` in
+  `pkgs.omarchy.org/stable`), or when `just plugin-validate` or `just
+  check-upstream` ("CI validates with another validator") prints the
+  notice on a stable or rc host. On an edge host `check-upstream` reports
+  the difference as information ("edge preview"), never as a reason to
+  refresh.
+- *The package:* stable's `omarchy` entry in the channel database, and
+  the package itself, checked against the database's sha256 (into a
+  scratch directory; nothing is installed):
+
+  ```
+  curl -fsS --proto =https -o <scratch>/omarchy.db https://pkgs.omarchy.org/stable/x86_64/omarchy.db
+  bsdtar -xOf <scratch>/omarchy.db 'omarchy-[0-9]*/desc' | grep -A1 -E '^%(VERSION|FILENAME|SHA256SUM)%'
+  curl -fsS --proto =https -o <scratch>/<filename> https://pkgs.omarchy.org/stable/x86_64/<filename>
+  sha256sum <scratch>/<filename>                                        # must equal %SHA256SUM%
+  bsdtar -xf <scratch>/<filename> -C <scratch>/x usr/share/omarchy/shell usr/share/omarchy/themes usr/share/omarchy/bin/omarchy-plugin-validate
+  ```
+
+- *The commit:* the release tag of that version (lightweight tags point
+  at the commit; an annotated one at a tag object, resolve it once more
+  as for the actions):
 
   ```
   gh api repos/omacom/omarchy/git/ref/tags/v4.0.4 --jq '.object.type + " " + .object.sha'
   ```
 
-- *The sha256:* of the file at that commit, which must equal the test
-  host's installed validator:
+- *The sha256:* of the validator at that commit, which must equal the
+  stable package's:
 
   ```
   curl -fsSL --proto '=https' https://raw.githubusercontent.com/omacom/omarchy/<commit>/bin/omarchy-plugin-validate | sha256sum
-  ssh <test-host> 'omarchy version; sha256sum /usr/share/omarchy/bin/omarchy-plugin-validate'
+  sha256sum <scratch>/x/usr/share/omarchy/bin/omarchy-plugin-validate
   ```
 
-  If they differ, the test host runs a build between tags: pick the
-  commit whose file matches, and say so in the comment. Read the
-  validator's diff between the old and the new commit before you change
-  the pin.
+  If they differ, stable ships a build between tags: pick the commit
+  whose file matches, and say so in the comment. Read the validator's
+  diff between the old and the new commit before you change the pin.
+- *The shell tree* (ADR-0055 §5): the new commit's tree digest must
+  equal the stable package's:
+
+  ```
+  bash packaging/omarchy-tree.sh <scratch dir>                          # prints "digest …"
+  bash packaging/omarchy-tree.sh --digest <scratch>/x/usr/share/omarchy
+  ```
+
+  If they differ, pick the commit whose tree matches, or keep the old pin
+  and record the difference; CI never runs against a tree stable does not
+  ship. The mirror stays `stable` (`tests/release/workflow-pins.test.sh`
+  refuses another); the job's *Versions* step shows the Quickshell and Qt
+  of the new snapshot. If rc ever needs a different pin than stable, the
+  next step is a stable+rc matrix with a second pin (ADR-0055 §1), a
+  decision of its own.
 - *Then:* `just check-packaging` (`tests/release/omarchy-pin.test.sh`
   runs the installed validator through the pin where they match), and
-  CI on the pull request runs the fetched one. In the same commit the
-  `plugin-validator` entry of `tests/omarchy/assumptions.json` takes the
-  new sha256 (`just check-assumptions` requires it to equal the pin;
-  docs/TESTING.md, "Omarchy assumptions").
+  CI on the pull request runs the fetched validator and the new tree. In
+  the same commit the `plugin-validator` entry of
+  `tests/omarchy/assumptions.json` takes the new sha256 (`just
+  check-assumptions` requires it to equal the pin; docs/TESTING.md,
+  "Omarchy assumptions").
 
 ## One-time setup (operator)
 

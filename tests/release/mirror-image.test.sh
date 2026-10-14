@@ -152,9 +152,13 @@ else
   fail "no token (exit $code): $out"
 fi
 
-# the real workflows pin exactly one mirror digest, the one ci.yml names,
-# and the copy asks for it (the fake GHCR cannot serve it: exit 2)
-real=$(sed -n -E 's|^ *image: ghcr\.io/johnandrewsx/jax-seldon/archlinux@sha256:([0-9a-f]{64}) # (.*)|\1 \2|p' "$root/.github/workflows/ci.yml")
+# the real workflows pin exactly one mirror digest, the one ci.yml names
+# (in each job that uses it: check and plugin-qml), and the copy asks for it
+# (the fake GHCR cannot serve it: exit 2)
+real=$(sed -n -E 's|^ *image: ghcr\.io/johnandrewsx/jax-seldon/archlinux@sha256:([0-9a-f]{64}) # (.*)|\1 \2|p' "$root/.github/workflows/ci.yml" | sort -u)
+if [[ $real == *$'\n'* ]]; then
+  fail "ci.yml names more than one mirror digest or tag: $real"
+fi
 PRESENT='' run real "$root/.github/workflows"
 if [[ -n $real && $out == *"mirror-image: $mirror@sha256:${real% *} (${real#* })"* \
   && $calls == *" docker://docker.io/library/archlinux@sha256:${real% *} docker://$mirror:${real#* }"* ]]; then

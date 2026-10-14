@@ -37,8 +37,10 @@ is in [docs/TESTING.md](docs/TESTING.md). You need:
   `qt6-declarative` and Quickshell.
 
 Without an Omarchy host, run `SELDON_SKIP_HOST_CHECKS=1 just check` —
-the same set CI runs — and say in the pull request that the host steps
-did not run; the maintainer runs them before merging a plugin change.
+the same set CI's `check` job runs — and say in the pull request that the
+host steps did not run on an Omarchy host. CI's `plugin-qml` job runs them
+against a pinned copy of Omarchy's shell tree (ADR-0055); the maintainer
+still runs them on an Omarchy host before merging a plugin change.
 
 Tests never touch your real home, config, state or logbook: the engine
 tests use temporary homes and a test guard. A manual run of the engine

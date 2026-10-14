@@ -7,10 +7,17 @@
 #     sha256 matches (packaging/omarchy-validate.sh)
 #   - node tests/plugin/model.test.js, model.bench.js (budgets x3),
 #     terminal-scripts.sh, real-home-guard.test.sh
-# What does NOT run here; SELDON_SKIP_HOST_CHECKS=1 skips it with a notice,
-# the dev host runs it with `just check` before every handover:
-#   - qmllint against the shell          needs $OMARCHY_PATH/shell and Quickshell's QML modules
-#   - the Quickshell harnesses           need quickshell and the installed shell (WP-191)
+# The check job's SELDON_SKIP_HOST_CHECKS=1 skips qmllint and the
+# Quickshell harnesses; the plugin-qml job runs them (WP-191, ADR-0055):
+#   - just qmllint (with check-tokens.py), just plugin-test with the four
+#     harnesses, and Omarchy's QML text-format scan on plugin/, against
+#     Omarchy's shell tree at packaging/omarchy-pin (packaging/omarchy-tree.sh),
+#     the tree Omarchy stable ships, with the Quickshell and Qt of
+#     Omarchy's stable package mirror (E93: a release must work on
+#     stable). The scan runs only here; the dev host's stricter check is
+#     plaintext.test.js. The hosts run the same recipes against their
+#     installed trees: the test host's rc is the rehearsal, the dev host's
+#     edge a preview (ADR-0055 §4).
 name: ci
 
 on:
@@ -104,3 +111,108 @@ jobs:
           if ((failed > 0)); then
             echo "::warning title=check-rss::$failed of 5 runs failed or were over the limit (see the run summary; docs/TESTING.md, Memory bound)"
           fi
+
+  # Stage 2 of the plugin's checks (WP-191, ADR-0055): the QML checks the
+  # dev host runs, against the pinned shell tree. A job of its own, so
+  # `check` stays as fast as it is; never SELDON_SKIP_HOST_CHECKS here.
+  plugin-qml:
+    needs: mirror
+    # also when mirror was skipped (no push); never after it failed
+    if: ${{ !cancelled() && (needs.mirror.result == 'success' || needs.mirror.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/johnandrewsx/jax-seldon/archlinux@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Omarchy's stable package mirror (E93, ADR-0055 §3): the Quickshell
+      # and Qt Omarchy stable ships, not Arch's newest. -Syuu moves the
+      # whole container to that snapshot, downgrades included. "Mirror
+      # against the pin" fails when this line is not the pin's.
+      - name: Install from Omarchy's stable mirror
+        run: |
+          echo 'Server = https://stable-mirror.omarchy.org/$repo/os/$arch' > /etc/pacman.d/mirrorlist
+          pacman -Syuu --noconfirm --needed git just jq python nodejs quickshell qt6-declarative ttf-jetbrains-mono-nerd
+
+      # Omarchy's scan and the plugin run as root here: no token in .git/config
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: The pinned Omarchy tree
+        id: tree
+        run: bash packaging/omarchy-tree.sh "$RUNNER_TEMP/omarchy"
+
+      - name: Mirror against the pin
+        run: cmp "$RUNNER_TEMP/omarchy/default/pacman/mirrorlist-stable" /etc/pacman.d/mirrorlist
+
+      - name: Versions
+        shell: bash
+        run: |
+          {
+            echo '## plugin-qml: Quickshell, Qt and the Omarchy tree'
+            echo '```'
+            quickshell --version
+            pacman -Q quickshell qt6-base qt6-declarative ttf-jetbrains-mono-nerd
+            /usr/lib/qt6/bin/qmllint --version
+            cat /etc/pacman.d/mirrorlist
+            echo "omacom/omarchy $(git -C "$RUNNER_TEMP/omarchy" rev-parse HEAD)"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Each recipe with its own HOME and its own 0700 XDG_RUNTIME_DIR and
+      # JUST_TEMPDIR, removed afterwards (AGENTS.md §6); each Quickshell a
+      # harness starts gets its own on top (WP-161). The QML checks run
+      # even when one before them failed, so a red run shows all three.
+      - name: just qmllint (the pinned shell)
+        if: ${{ !cancelled() && steps.tree.outcome == 'success' }}
+        shell: bash
+        run: |
+          export OMARCHY_PATH=$RUNNER_TEMP/omarchy
+          home=$(mktemp -d -p "$RUNNER_TEMP" home.XXXXXX)
+          rt=$(mktemp -d -p "$RUNNER_TEMP" rt.XXXXXX)
+          chmod 700 "$home" "$rt"
+          trap 'rm -rf "$home" "$rt"' EXIT
+          HOME="$home" XDG_RUNTIME_DIR="$rt" JUST_TEMPDIR="$rt" just qmllint
+
+      # The harnesses always run here (SELDON_FULL_CHECK=1: no merge-base
+      # skip), and a log that says they were skipped fails the step. The
+      # node bench's budgets are tripled, as in the check job.
+      - name: just plugin-test (the four Quickshell harnesses, the pinned shell)
+        if: ${{ !cancelled() && steps.tree.outcome == 'success' }}
+        shell: bash
+        run: |
+          export OMARCHY_PATH=$RUNNER_TEMP/omarchy
+          home=$(mktemp -d -p "$RUNNER_TEMP" home.XXXXXX)
+          rt=$(mktemp -d -p "$RUNNER_TEMP" rt.XXXXXX)
+          chmod 700 "$home" "$rt"
+          trap 'rm -rf "$home" "$rt"' EXIT
+          HOME="$home" XDG_RUNTIME_DIR="$rt" JUST_TEMPDIR="$rt" SELDON_FULL_CHECK=1 SELDON_BENCH_BUDGET_SCALE=3 \
+            just plugin-test 2>&1 | tee "$RUNNER_TEMP/plugin-test.log"
+          if grep -q 'Quickshell harnesses skipped' "$RUNNER_TEMP/plugin-test.log"; then
+            echo "::error title=plugin-test::the Quickshell harnesses were skipped; this job must run them (ADR-0055)"
+            exit 1
+          fi
+
+      # Omarchy's own scan (test/shell.d at the pin) reads ROOT/shell and
+      # prints one line per Text with a non-literal binding and no
+      # textFormat, exit 0; any line fails the step. Only CI runs it: the
+      # Omarchy package installs no test/ (ADR-0055 §2).
+      - name: Omarchy's QML text-format scan on plugin/
+        if: ${{ !cancelled() && steps.tree.outcome == 'success' }}
+        shell: bash
+        run: |
+          scan_root=$(mktemp -d -p "$RUNNER_TEMP" scan.XXXXXX)
+          trap 'rm -rf "$scan_root"' EXIT
+          cp -r plugin "$scan_root/shell"
+          found=$(python3 -I "$RUNNER_TEMP/omarchy/test/shell.d/qml-text-format-scan.py" "$scan_root" | sed 's|^shell/|plugin/|')
+          if [[ -n $found ]]; then
+            echo "$found"
+            echo "::error title=text-format scan::$(wc -l <<< "$found") Text element(s) in plugin/ without textFormat (Omarchy's scan at the pin)"
+            exit 1
+          fi
+          echo "text-format scan: ok ($(find plugin -name '*.qml' | wc -l) QML files)"
