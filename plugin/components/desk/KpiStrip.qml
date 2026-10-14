@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import ".."
 
 // The header's KPI strip (ADR-0034 §2): active · verification · queued ·
@@ -14,9 +15,9 @@ Row {
   readonly property Tone tone: Tone {}
 
   property var kpis: []
-  property color foreground: Color.popups.text
-  property color accent: Color.accent
-  property color urgent: Color.urgent
+  property color foreground: Commons.Color.popups.text
+  property color accent: Commons.Color.accent
+  property color urgent: Commons.Color.urgent
   property string fontFamily: Style.font.family
 
   signal picked(string id)

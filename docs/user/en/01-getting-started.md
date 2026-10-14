@@ -60,7 +60,8 @@ not drift.
 
 Each step has one button. It opens a floating terminal that says what it
 does, shows the command and runs it, then says what changed. Close the
-terminal when it says "Done!". The card moves on by itself: it looks
+terminal when it says "Done!" (or, after a step that failed, "Failed";
+the line above it says why). The card moves on by itself: it looks
 again every few seconds after its terminal opened.
 
 1. **Install the engine.** *Install* downloads the engine, one program
@@ -494,7 +495,7 @@ seldon doctor · ~/Seldon
                      fix: sudo setfacl -m u:$USER:rx /.snapshots
   ok        layout   no linked folders or files where Seldon writes
   ok        state    ~/.local/state/seldon: cursors.json, manifest.json readable
-  ok        skills   no agent skill folder (~/.agents/skills, ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills, ~/.hermes/skills); nothing to install
+  ok        skills   no agent skill folder (~/.agents/skills, ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills, ~/.hermes/skills, ~/.gemini/config/skills); nothing to install
   ok        hooks    none: no Claude Code harness is configured
   ok        omarchy  Omarchy 4.0.4-1
   degraded  snapper  No permissions. Snapshots are not recorded until you grant your user read access to the snapshot directory once (ADR-0026). The fix grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion.
@@ -502,7 +503,7 @@ seldon doctor · ~/Seldon
   ok        pacman   no db.lck: pacman is not running
   ok        git      git version 2.55.0; logbook is a repository; autocommit on
   ok        watch    watchPaths: 13 path(s), every default included
-  ok        drift    attention normal · routine: sysupgrade, upgrade, keyring, omarchy-update, plugin-toggle, seldon-self, theme, omarchy-default, system-link, routine-paths, theme-assets, theme-repo, toggle-flag · routinePaths 2 · routinePackages 2 · alwaysRedPaths 9 · alwaysRed 20; all defaults; Omarchy's copies count as evidence (/usr/share/omarchy)
+  ok        drift    attention normal · routine: sysupgrade, upgrade, keyring, omarchy-update, plugin-toggle, seldon-self, theme, omarchy-default, omarchy-written, system-link, routine-paths, theme-assets, theme-repo, toggle-flag · routinePaths 2 · routinePackages 2 · alwaysRedPaths 9 · alwaysRed 20; all defaults; Omarchy's copies count as evidence (/usr/share/omarchy)
 doctor: ok
 ```
 

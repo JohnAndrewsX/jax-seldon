@@ -8,7 +8,10 @@
 # still names the symbol, notes a validator other than the pin and a pin
 # it cannot read, refuses both with --gate, reports a validator other than
 # the pin on an edge host as information only (E93, ADR-0055: the pin is
-# stable's; never "refresh", never refused), prints "skipped" (never "ok")
+# stable's; never "refresh", never refused), takes a file that matches an
+# entry's edge measurement as unchanged (WP-224), takes an edge-only file
+# (sha256 "absent") absent off edge as measured and missing on edge as a
+# notice (WP-225), prints "skipped" (never "ok")
 # without a tree and writes nothing. Where Omarchy is installed: every
 # symbol is in its file where the hash matches; a scratch copy of the
 # ledger's files checks as the tree does; a change to shell.qml alone
@@ -51,13 +54,21 @@ lint() {
     .assumptions as $a
     | ($a | map(.id) | group_by(.) | map(select(length > 1) | "duplicate id \(.[0])")[]),
       ($a | group_by(.path) | map(select((map(.sha256) | unique | length) > 1) | "two sha256 for \(.[0].path)")[]),
+      ($a | group_by(.path) | map(select((map(.edge.sha256?) | unique | length) > 1) | "two edge sha256 for \(.[0].path)")[]),
       ($a[] | . as $e
         | (["id", "path", "sha256", "omarchyVersion", "measured", "symbol", "pluginSymbol", "plugin", "relies", "remeasure"][]
             | select(($e[.] | type) != "string" or $e[.] == "") | "\($e.id // "?"): no \(.)"),
           (select((.path | type) == "string" and (.path | test("^/|\\.\\.")) ) | "\(.id): path not relative"),
-          (select((.sha256 | type) == "string" and (.sha256 | test("^[0-9a-f]{64}$") | not)) | "\(.id): sha256 not 64 hex"),
+          (select((.sha256 | type) == "string" and .sha256 != "absent" and (.sha256 | test("^[0-9a-f]{64}$") | not)) | "\(.id): sha256 not 64 hex"),
+          (select(.sha256 == "absent" and (has("edge") | not)) | "\(.id): sha256 absent without an edge measurement"),
           (select((.measured | type) == "string" and (.measured | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not)) | "\(.id): measured not a date"),
-          (select((.plugin | type) == "string" and (.plugin | test("^plugin/[^:]+:[1-9][0-9]*$") | not)) | "\(.id): plugin not plugin/<file>:<line>"),
+          (select(has("edge")) | .edge as $g
+            | if ($g | type) != "object" then "\($e.id): edge not an object"
+              else (["sha256", "omarchyVersion", "measured"][] | select(($g[.] | type) != "string" or $g[.] == "") | "\($e.id): edge has no \(.)"),
+                (select(($g.sha256 | type) == "string" and ($g.sha256 | test("^[0-9a-f]{64}$") | not)) | "\($e.id): edge sha256 not 64 hex"),
+                (select(($g.measured | type) == "string" and ($g.measured | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not)) | "\($e.id): edge measured not a date")
+              end),
+          (select((.plugin | type) == "string" and (.plugin | test("^(plugin|engine/src)/[^:]+:[1-9][0-9]*$") | not)) | "\(.id): plugin not plugin/<file>:<line> or engine/src/<file>:<line>"),
           (select((.relies | type) == "string" and (.plugin | type) == "string")
             | .plugin as $p | select((.relies | startswith("Seldon relies on ") and endswith(" at " + $p + ".")) | not)
             | "\(.id): relies is not \"Seldon relies on … at \(.plugin).\""))
@@ -130,7 +141,7 @@ plugin_copy() {
 # hint LEDGER ID REF: LEDGER with ID's hint (plugin and sentence) at REF
 hint() {
   # shellcheck disable=SC2016 # $id and $ref are jq's, not the shell's
-  jq --arg id "$2" --arg ref "$3" '(.assumptions[] | select(.id == $id)) |= (.plugin = $ref | .relies |= sub(" at plugin/[^ ]+$"; " at " + $ref + "."))' "$1"
+  jq --arg id "$2" --arg ref "$3" '(.assumptions[] | select(.id == $id)) |= (.plugin = $ref | .relies |= sub(" at (plugin|engine)/[^ ]+$"; " at " + $ref + "."))' "$1"
 }
 # fresh OUT: the real ledger, each stale hint moved to the first code line
 # of the scratch copy that holds its pluginSymbol
@@ -212,6 +223,13 @@ mutate "two hashes for one file" '(.assumptions | map(.path) | index("shell/shel
 mutate "a validator hash other than the pin" '(.assumptions[] | select(.path == "bin/omarchy-plugin-validate") | .sha256) = ("1" * 64)' "packaging/omarchy-pin"
 mutate "an absolute path" '.assumptions[0].path = "/etc/passwd"' "path not relative"
 mutate "a duplicate id" '.assumptions[1].id = .assumptions[0].id' "duplicate id"
+mutate "an edge hash not 64 hex" '.assumptions[0].edge = {sha256: "abc", omarchyVersion: "4.0.0.r1-1", measured: "2026-10-14"}' "edge sha256 not 64 hex"
+mutate "an edge without its version" '.assumptions[0].edge = {sha256: ("2" * 64), measured: "2026-10-14"}' "edge has no omarchyVersion"
+mutate "absent without an edge measurement" '.assumptions[0].sha256 = "absent" | del(.assumptions[0].edge)' "sha256 absent without"
+mutate "an engine line outside engine/src" '.assumptions[0].plugin = "engine/tests/x.rs:1"' "plugin not plugin/"
+mutate "an edge that is no object" '.assumptions[0].edge = ("2" * 64)' "edge not an object"
+# shellcheck disable=SC2016 # $i is jq's, not the shell's
+mutate "two edge hashes for one file" '(.assumptions | map(.path) | index("shell/shell.qml")) as $i | .assumptions[$i].edge = {sha256: ("3" * 64), omarchyVersion: "4.0.0.r1-1", measured: "2026-10-14"}' "two edge sha256"
 
 # --- the check on a synthetic tree ---
 
@@ -297,6 +315,52 @@ expect "a missing file: named as missing" 0 "$tree" "$tmp/ledger.json" -- \
 printf 'function alpha() {}\nfunction beta() {}\n' > "$tree/shell/Api.qml"
 printf 'Item { property int gamma: 1 }\n' > "$tree/shell/Ui/Widget.qml"
 expect "the tree restored: ok again" 0 "$tree" "$tmp/ledger.json" -- "ok (every assumption" NOT:NOTICE
+
+# an edge measurement (WP-224): the file as edge ships it is unchanged too,
+# also under --gate, and the stable one still is; another one names both
+printf 'function alpha() {}\nfunction beta() {}\n// edge\n' > "$tmp/Api.edge.qml"
+jq --arg e "$(sha "$tmp/Api.edge.qml")" '(.assumptions[] | select(.path == "shell/Api.qml")) += {edge: {sha256: $e, omarchyVersion: "9.9.9.r1-1", measured: "2026-10-14"}}' \
+  "$tmp/ledger.json" > "$tmp/edge.json"
+expect "an edge measurement, the stable file: ok" 0 "$tree" "$tmp/edge.json" --gate -- \
+  "check-upstream: ok (every assumption's file matches the ledger)" NOT:NOTICE NOT:"as measured on edge"
+cp "$tmp/Api.edge.qml" "$tree/shell/Api.qml"
+expect "an edge measurement, the edge file: ok, said so" 0 "$tree" "$tmp/edge.json" -- \
+  "ok (every assumption's file matches the ledger; 1 as measured on edge)" NOT:NOTICE
+expect "an edge measurement, the edge file, --gate: ok" 0 "$tree" "$tmp/edge.json" --gate -- "1 as measured on edge" NOT:refused
+expect "the edge file without an edge measurement: a notice" 0 "$tree" "$tmp/ledger.json" -- "NOTICE: shell/Api.qml changed" NOT:"as measured on edge"
+printf '// a third\n' >> "$tree/shell/Api.qml"
+expect "a third file: a notice naming the edge hash too" 0 "$tree" "$tmp/edge.json" -- \
+  "NOTICE: shell/Api.qml changed" ", edge $(sha "$tmp/Api.edge.qml" | cut -c1-12), measured on Omarchy 9.9.9-1" "api-alpha" "1 of 3 files differ"
+expect "a third file, --gate: refused" 1 "$tree" "$tmp/edge.json" --gate -- "refused (--gate)"
+printf 'function alpha() {}\nfunction beta() {}\n' > "$tree/shell/Api.qml"
+jq '(.assumptions[0]) += {edge: {sha256: "nothex", omarchyVersion: "x", measured: "2026-10-14"}}' "$tmp/ledger.json" > "$tmp/badedge.json"
+expect "an edge hash not 64 hex: exit 2" 2 "$tree" "$tmp/badedge.json" -- "malformed ledger entry"
+
+# an edge-only file (WP-225): sha256 "absent", the measurement in edge;
+# absent off edge is as measured, also under --gate; on edge it is missing
+printf '#!/bin/bash\necho delta\n' > "$tmp/omarchy-delta"
+jq --arg e "$(sha "$tmp/omarchy-delta")" '.assumptions += [{id: "delta-only", path: "bin/omarchy-delta", sha256: "absent",
+  omarchyVersion: "9.9.9-1", measured: "2026-10-14", symbol: "delta", plugin: "plugin/X.qml:1",
+  relies: "Seldon relies on delta at plugin/X.qml:1.", remeasure: "re-measure delta-only",
+  edge: {sha256: $e, omarchyVersion: "9.9.9.r1-1", measured: "2026-10-14"}}]' "$tmp/ledger.json" > "$tmp/only.json"
+expect "an edge-only file absent off edge: ok, said so" 0 "$tree" "$tmp/only.json" -- \
+  "check-upstream: 4 files" "ok (every assumption's file matches the ledger; 1 edge-only, absent here as on stable)" NOT:NOTICE
+expect "an edge-only file absent off edge, --gate: ok" 0 "$tree" "$tmp/only.json" --gate -- "1 edge-only" NOT:refused
+host_channel=edge
+expect "an edge-only file absent on edge: missing, a notice" 0 "$tree" "$tmp/only.json" -- \
+  "NOTICE: bin/omarchy-delta is missing on edge (edge-only, measured on Omarchy 9.9.9.r1-1)" "delta-only (gone with the file)" "1 of 4 files differ"
+expect "an edge-only file absent on edge, --gate: refused" 1 "$tree" "$tmp/only.json" --gate -- "refused (--gate): 1 of 4 files differ"
+cp "$tmp/omarchy-delta" "$tree/bin/omarchy-delta"
+expect "an edge-only file as measured on edge: ok" 0 "$tree" "$tmp/only.json" --gate -- \
+  "ok (every assumption's file matches the ledger; 1 as measured on edge)" NOT:NOTICE NOT:"edge-only"
+host_channel=rc
+printf '# changed\n' >> "$tree/bin/omarchy-delta"
+expect "an edge-only file changed: a notice naming the edge hash" 0 "$tree" "$tmp/only.json" -- \
+  "NOTICE: bin/omarchy-delta changed" "edge-only, ledger edge $(sha "$tmp/omarchy-delta" | cut -c1-12), measured on Omarchy 9.9.9.r1-1" \
+  "delta-only (still names 'delta')" "1 of 4 files differ"
+rm "$tree/bin/omarchy-delta"
+jq '.assumptions[0].sha256 = "absent"' "$tmp/ledger.json" > "$tmp/absentnoedge.json"
+expect "absent without an edge measurement: exit 2" 2 "$tree" "$tmp/absentnoedge.json" -- "malformed ledger entry"
 
 printf '#!/bin/bash\necho validate v2\n' > "$tree/bin/omarchy-plugin-validate"
 expect "a new validator: its assumption and the pin notice" 0 "$tree" "$tmp/ledger.json" -- \
@@ -393,11 +457,14 @@ else
     fail "the scratch copy checks differently: $(diff "$tmp/want" "$tmp/got")"
   fi
   # each symbol is found in its file wherever the file is the one measured
+  # (on stable or, for an entry with one, on edge)
   sym_problems=''
-  while IFS=$'\t' read -r id path want symbol; do
-    [[ -f $installed/$path && $(sha "$installed/$path") == "$want" ]] || continue
+  while IFS=$'\t' read -r id path want edge symbol; do
+    [[ -f $installed/$path ]] || continue
+    got=$(sha "$installed/$path")
+    [[ $got == "$want" || $got == "$edge" ]] || continue
     grep -qF -- "$symbol" "$installed/$path" || sym_problems+=" $id ('$symbol' not in $path)"
-  done < <(jq -r '.assumptions[] | [.id, .path, .sha256, .symbol] | @tsv' "$ledger")
+  done < <(jq -r '.assumptions[] | [.id, .path, .sha256, (.edge.sha256 // "-"), .symbol] | @tsv' "$ledger")
   if [[ -z $sym_problems ]]; then
     pass "every symbol is in its Omarchy file where the hash matches"
   else
@@ -422,7 +489,7 @@ else
     printf '\n// scratch change\n' >> "$copy/$target"
     expect "a changed shell.qml: the notice names shell-settings-write and shell-service-lookup" 0 "$copy" "$ledger" -- \
       "NOTICE: $target changed" "shell-settings-write (still names 'updateEntryInline')" \
-      "shell-service-lookup (still names 'serviceFor')" "shell-overlay-routing" "1 of 17 files differ" \
+      "shell-service-lookup (still names 'serviceFor')" "shell-overlay-routing" "1 of $files files differ" \
       NOT:"facade-settings-write" NOT:"no longer names"
     cp "$tmp/shell.qml.kept" "$copy/$target"
   else

@@ -21,6 +21,21 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
+- On Omarchy edge (Qt 6.12) the desk, the pill and the sheets take the
+  theme's colours again: Qt 6.12 brought a `Color` of its own that hid
+  Omarchy's.
+- On Omarchy's edge channel, `omarchy-dev`, `omarchy-settings-dev` and
+  Omarchy's other kernels (such as `linux-omarchy-bore`) count exactly
+  like `omarchy`, `omarchy-settings` and `linux-omarchy`.
+- Switching Omarchy's channel (stable to edge or back) is one change,
+  "Omarchy changed channel", instead of a removal plus an install; the
+  lower edge version number is not shown as a separate change. With the
+  default crisis list it is a crisis unless done in a case, like any
+  install of `omarchy` by name (ADR-0060).
+- Changing Omarchy's language, default agent or dictation backend, and muting a crash, no longer ask you why.
+- The Seldon agent skill also goes into Antigravity's skill folder, `~/.gemini/config/skills`.
+- A Seldon terminal step that failed now ends with Omarchy's red "Failed" prompt instead of "Done!", on Omarchy versions that report it (edge today).
+
 ## [0.4.0] - 2026-10-14
 
 **Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,

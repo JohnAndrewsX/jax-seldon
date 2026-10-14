@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import ".."
 
 // A desk list delegate with an optional group header above its row (the
@@ -24,7 +25,7 @@ Column {
   property alias alert: row.alert
   property alias selected: row.selected
   property alias cursor: row.cursor
-  property color foreground: Color.popups.text
+  property color foreground: Commons.Color.popups.text
   property string fontFamily: Style.font.family
 
   signal clicked()

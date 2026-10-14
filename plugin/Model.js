@@ -91,8 +91,8 @@ var ENGINE_MISSING_DETAIL = "Downloads seldon from the Seldon release on GitHub 
 // ---- Terminal scripts (WP-117) ---------------------------------------------
 
 // A banner's *Install*, *Create*, *Grant* or *Update* opens Omarchy's
-// presentation terminal (logo, the script, "Done!"; it exports the theme's
-// gum colours) with one of the scripts below, never with anything else
+// presentation terminal (logo, the script, then Omarchy's closing prompt;
+// it exports the theme's gum colours) with one of the scripts below, never with anything else
 // (terminalArgv). Omarchy's own pattern (omarchy-system-factory-reset,
 // omarchy-update-confirm, omarchy-snapshot): a bold line says what
 // happens, one plain paragraph why and whether a password is asked, the
@@ -111,8 +111,11 @@ var ENGINE_MISSING_DETAIL = "Downloads seldon from the Seldon release on GitHub 
 // Ctrl+C (or TERM) is trapped: the trap only notes it, the script skips a
 // command that has not started, prints the `cancelled` line (palette 3)
 // and ends with 130, Omarchy's "cancelled" status, on which the wrapper
-// closes the window without "Done!". Every other ending is status 0 after
-// the result line, so "Done!" follows and the user closes the window.
+// closes the window without its closing prompt. Every other ending follows
+// the result line: status 0 after success, 1 after a failure. The wrapper
+// then waits for a key: "Done!" for 0; since Omarchy edge (WP-225, B12)
+// "Failed (exit code 1)!" in red for 1, on an earlier Omarchy "Done!"
+// for both — the result line above it says what happened either way.
 //
 // `after` runs only on success. With `partial`, its exit status picks the
 // line: `ok` when it succeeded, `partial` when not; without, it is a
@@ -137,7 +140,7 @@ function terminalScript(s) {
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; " + (s.run || s.command) + "); then "
       + success + "; trap - INT TERM"
       + "; elif [ -n \"$seldon_cancelled\" ]; then " + line(3, s.cancelled) + "; trap - INT TERM; (exit 130)"
-      + "; else " + line(1, s.failed) + "; trap - INT TERM; fi"
+      + "; else " + line(1, s.failed) + "; trap - INT TERM; (exit 1); fi"
   ].join("; ")
 }
 
@@ -5032,6 +5035,7 @@ function keptDriftRules(rules, index) {
 // says, naming the user's lists rather than what they are meant to hold.
 var CRISIS_RULE_TEXTS = {
   "always-red": "A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml) was installed, removed or downgraded by name in this transaction.",
+  "omarchy-channel": "Omarchy changed channel (stable or edge): this transaction replaced omarchy, omarchy-settings or both with their -dev twins, or the other way round. Edge numbers its versions on its own, so a lower number here is no downgrade.",
   "always-red-paths": "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml).",
   "pacnew-red": "pacman left a .pacnew, .pacsave or .pacorig beside a file that boot or login depend on (mkinitcpio, Limine, PAM); check it with pacdiff before the next reboot.",
   "attention-all": "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."
@@ -6799,8 +6803,8 @@ var TX_STATUS_TITLES = {
 // Omarchy's 10-omarchy-hyprland-reload-pause hook pauses the auto-reload
 // before an omarchy-settings update; its 90-…-resume twin is a
 // post-transaction hook.
-var TX_STEPS_DID_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
-var TX_STEPS_MAY_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_STEPS_DID_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; if omarchy-settings (omarchy-settings-dev on the edge channel) was in it, Hyprland's auto-reload may stay paused for this session."
+var TX_STEPS_MAY_NOT = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; if omarchy-settings (omarchy-settings-dev on the edge channel) was in it, Hyprland's auto-reload may stay paused for this session."
 var TX_SAFE_STEP = "Before you reboot, reinstall the packages marked ↑ or " + TX_REINSTALL_GLYPH + " below (`pacman -S` with their names): that runs those steps for them; a plain rerun does not. A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
 var TX_STATUS_TEXTS = {
   failed: "pacman reported this transaction as failed: a package could not be installed, upgraded or removed, and pacman's output in the terminal named the error. The packages below may be all it changed. " + TX_STEPS_DID_NOT + " " + TX_SAFE_STEP,

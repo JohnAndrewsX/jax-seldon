@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import ".."
 
 // Key/value rows of a detail (prototype `.kv`): the key muted in a fixed
@@ -15,7 +16,7 @@ Column {
 
   property var rows: []
   property real keyWidth: Style.space(160)
-  property color foreground: Color.popups.text
+  property color foreground: Commons.Color.popups.text
   property string fontFamily: Style.font.family
 
   spacing: Style.spacing.md

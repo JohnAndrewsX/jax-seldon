@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../components/desk"
 import "../Model.js" as Model
@@ -105,7 +106,7 @@ Section {
   readonly property string armPrefix: root.current ? "case:" + root.current.id + ":" : "case:"
   readonly property string armed: root.arm && root.arm.armedId.indexOf(root.armPrefix) === 0
     ? root.arm.armedId.slice(root.armPrefix.length) : ""
-  readonly property color foreground: Color.popups.text
+  readonly property color foreground: Commons.Color.popups.text
   readonly property color dim: root.tone.dim
   // WP-102b: the whole Intent of the selected imported case, as the engine
   // gave it; Start waits for it.
@@ -918,7 +919,7 @@ Section {
           implicitHeight: intentText.implicitHeight + Style.spacing.lg * 2
           radius: Style.cornerRadius
           color: Style.normalFill
-          borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+          borderSpec: Border.controlSpec("normal", root.foreground, Commons.Color.accent)
 
           Text {
             id: intentText

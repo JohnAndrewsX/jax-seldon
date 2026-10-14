@@ -2148,6 +2148,20 @@ mod tests {
             .collect()
     }
 
+    /// WP-225 (B13, review F4): `omarchy pkg add` logs `pacman -S
+    /// --noconfirm --needed -- <pkgs>`; after `--` a word that starts with
+    /// `-` is a package name, not an option.
+    #[test]
+    fn double_dash_ends_the_options() {
+        let cmd = parse_command(&split_logged(
+            "pacman -S --noconfirm --needed -- -dash-pkg extra/btop",
+        ))
+        .unwrap();
+        assert_eq!(cmd.op, Some(Op::Sync));
+        assert_eq!(cmd.targets, ["-dash-pkg", "btop"]);
+        assert!(!cmd.sysupgrade && !cmd.query);
+    }
+
     #[test]
     fn quotes_operators_and_comments() {
         assert_eq!(

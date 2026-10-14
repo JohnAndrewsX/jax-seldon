@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "../../Model.js" as Model
 import ".."
 
@@ -23,9 +24,9 @@ Item {
 
   property string chartId: ""
   property var chart: null
-  property color foreground: Color.popups.text
-  property color accent: Color.accent
-  property color urgent: Color.urgent
+  property color foreground: Commons.Color.popups.text
+  property color accent: Commons.Color.accent
+  property color urgent: Commons.Color.urgent
   property string fontFamily: Style.font.family
 
   // The hovered item's read-out, "" when nothing is hovered (`call view`).

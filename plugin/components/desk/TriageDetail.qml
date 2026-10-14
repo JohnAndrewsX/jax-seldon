@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../../Model.js" as Model
 
@@ -74,7 +75,7 @@ DetailPane {
   readonly property string crisisState: Model.crisisState(root.keyedCrisis, root.canWrite && !root.pending && root.current)
   readonly property bool crisisArmed: root.current && !!root.keyedCrisis && !!root.arm
     && root.arm.armedId === Model.crisisKey(root.seenId, root.keyedCrisis)
-  readonly property color foregroundColor: Color.popups.text
+  readonly property color foregroundColor: Commons.Color.popups.text
 
   title: "Proposal"
   meta: root.seenId
@@ -451,7 +452,7 @@ DetailPane {
               tooltipText: "Only this item: drift apply --item " + crisis.modelData.eventId
               bordered: true
               enabled: root.canWrite && !root.pending && crisis.modelData.open && root.current
-              foreground: Color.urgent
+              foreground: Commons.Color.urgent
               fontFamily: root.fontFamily
               fontSize: Style.font.caption
               verticalPadding: Style.spacing.xs

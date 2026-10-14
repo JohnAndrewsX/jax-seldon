@@ -2,7 +2,8 @@
 //!
 //! The version comes from `omarchy-version` (prints e.g. `4.0.4-1`).
 //! `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
-//! stale. The fallback is `pacman -Q omarchy`. Omarchy is a package install,
+//! stale. The fallback is `pacman -Q omarchy`, then `pacman -Q omarchy-dev`
+//! (the edge channel's package, WP-224). Omarchy is a package install,
 //! not a git checkout, so nothing here looks at git.
 //!
 //! A version change becomes an `update` event (`subject: omarchy`,
@@ -10,8 +11,9 @@
 //! recorded and no event is written.
 //!
 //! Attribution (ADR-0014 §1): the event takes `actor` and `case` from the
-//! pacman event that moved the `omarchy` package to the new version (same
-//! capture or the ledger). Without such an event, it takes them from a hook
+//! pacman event that moved the `omarchy` or `omarchy-dev` package to the
+//! new version (same capture or the ledger). Without such an event, it
+//! takes them from a hook
 //! command that ran a full upgrade at most 10 minutes before the capture.
 
 use chrono::Duration;
@@ -97,7 +99,7 @@ fn already_recorded(ctx: &Ctx, from: &str, to: &str) -> anyhow::Result<bool> {
 
 /// `omarchy-version` (with `OMARCHY_PATH` defaulted,
 /// [`sys::omarchy_command`]), else the version column of the package query
-/// (also read by `seldon dossier`).
+/// of either channel's package (also read by `seldon dossier`).
 pub fn current_version(sources: &Sources) -> Option<String> {
     let ok = |run: Run| match run {
         Run::Exited {
@@ -119,19 +121,24 @@ pub fn current_version(sources: &Sources) -> Option<String> {
             return Some(v.to_string());
         }
     }
-    let out = ok(sys::run(
-        &sources.pacman,
-        &["-Q", "omarchy"],
-        None,
-        RUN_TIMEOUT,
-        sys::OUTPUT_MAX,
-    ))?;
-    let mut words = out.split_whitespace();
-    match (words.next(), words.next()) {
-        (Some("omarchy"), Some(v)) if valid(v) => Some(v.to_string()),
-        _ => None,
-    }
+    OMARCHY_PACKAGES.iter().find_map(|&name| {
+        let out = ok(sys::run(
+            &sources.pacman,
+            &["-Q", name],
+            None,
+            RUN_TIMEOUT,
+            sys::OUTPUT_MAX,
+        ))?;
+        let mut words = out.split_whitespace();
+        match (words.next(), words.next()) {
+            (Some(n), Some(v)) if n == name && valid(v) => Some(v.to_string()),
+            _ => None,
+        }
+    })
 }
+
+/// Omarchy's package on the stable and on the edge channel (WP-224).
+const OMARCHY_PACKAGES: [&str; 2] = ["omarchy", "omarchy-dev"];
 
 /// Actor and case of what caused the update, if anything did.
 fn attribution(ctx: &Ctx, version: &str) -> anyhow::Result<Option<(String, Option<String>)>> {
@@ -141,7 +148,7 @@ fn attribution(ctx: &Ctx, version: &str) -> anyhow::Result<Option<(String, Optio
         .iter()
         .filter(|e| {
             e.source == Source::Pacman
-                && e.subject == "omarchy"
+                && OMARCHY_PACKAGES.contains(&e.subject.as_str())
                 && matches!(e.kind, Kind::Install | Kind::Upgrade | Kind::Downgrade)
                 && e.version_key() == Some(version)
         })

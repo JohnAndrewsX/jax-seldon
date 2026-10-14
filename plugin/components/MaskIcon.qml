@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import "../Model.js" as Model
 
 // One Prime Radiant mask from plugin/assets/ (the bar glyph, the header
@@ -23,7 +24,7 @@ Item {
 
   // A file name in plugin/assets/, e.g. "a4-bar-glyph-16.svg"; "" draws nothing.
   property string file: ""
-  property color color: Color.foreground
+  property color color: Commons.Color.foreground
   property bool crisp: false
 
   property string svgText: ""

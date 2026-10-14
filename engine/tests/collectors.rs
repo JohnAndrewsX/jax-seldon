@@ -98,6 +98,36 @@ mod collectors {
         );
     }
 
+    /// WP-225 (B13): `omarchy pkg add` on Omarchy edge logs `pacman -S
+    /// --noconfirm --needed -- <pkgs>`; the `--` ends the options, the
+    /// names after it are named, a `repo/` prefix included.
+    #[test]
+    fn pacman_reads_omarchy_pkg_adds_double_dash_form() {
+        let mut b = Bench::new("pkg-add");
+        let log = b.scratch.path("pacman.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::copy(fixture("logs/pacman-pkg-add.log"), &log).unwrap();
+        let out = b.run(&Pacman, "2026-10-14T09:30:00+02:00");
+        assert_eq!(
+            subjects(&out.events),
+            ["rnnoise", "localsend", "obs-studio", "btop"]
+        );
+        assert!(out.events.iter().all(|e| e.kind == Kind::Install));
+        let explicit: Vec<_> = out.events.iter().map(|e| e.explicit).collect();
+        assert_eq!(explicit, [Some(false), Some(true), Some(true), Some(true)]);
+        assert_eq!(
+            out.events[1].meta.command.as_deref(),
+            Some("pacman -S --noconfirm --needed -- localsend obs-studio")
+        );
+        let cmd = seldon::pkgcmd::parse_command(&seldon::pkgcmd::split_logged(
+            "pacman -S --noconfirm --needed -- extra/btop",
+        ))
+        .unwrap();
+        assert_eq!(cmd.targets, ["btop"]);
+        assert!(!cmd.sysupgrade && !cmd.query);
+        assert_eq!(b.run(&Pacman, "2026-10-14T09:31:00+02:00").events.len(), 0);
+    }
+
     #[test]
     fn pacman_rotation_restarts_and_dedupes() {
         let mut b = Bench::new("rotation");
@@ -1501,6 +1531,55 @@ mod collectors {
         let out = b.run(&Omarchy, "2026-10-01T10:00:00+02:00");
         assert!(!out.ok);
         assert!(out.events.is_empty());
+    }
+
+    /// WP-224: on the edge channel only `omarchy-dev` is installed, and a
+    /// query naming one package answers for that package only.
+    #[test]
+    fn omarchy_falls_back_to_the_edge_package() {
+        let mut b = Bench::new("omarchy-edge");
+        b.sources.omarchy_version = b.scratch.path("bin/missing").to_string_lossy().into_owned();
+        b.sources.pacman = b.scratch.stub(
+            "pkgquery",
+            "case \"$2\" in omarchy-dev) echo 'omarchy-dev 4.0.0.r7017.g84cfb93-1' ;; \
+             *) echo \"error: package '$2' was not found\" >&2; exit 1 ;; esac",
+        );
+        let out = b.run(&Omarchy, "2026-10-14T17:10:00+02:00");
+        assert!(out.ok);
+        assert_eq!(out.cursor.unwrap()["version"], "4.0.0.r7017.g84cfb93-1");
+        // another package's line is no answer
+        b.sources.pacman = b.scratch.stub("pkgquery", "echo 'omarchy-nvim 1.0-1'");
+        assert!(!b.run(&Omarchy, "2026-10-14T17:10:00+02:00").ok);
+    }
+
+    /// WP-224: the channel switch's pacman install of `omarchy-dev` hands
+    /// the update its actor and case, as `omarchy`'s upgrade does.
+    #[test]
+    fn omarchy_update_takes_the_edge_package_install() {
+        let mut b = Bench::new("omarchy-switch");
+        let mut e = Event::new(
+            support::ts("2026-10-14T17:05:25+02:00"),
+            Source::Pacman,
+            Kind::Install,
+            "omarchy-dev",
+        )
+        .actor("agent:claude-code")
+        .case(Some("C-2026-011".into()));
+        e.meta.to = Some("4.0.0.r7017.g84cfb93-1".into());
+        append(&b, vec![e]);
+        b.sources.omarchy_version = b.scratch.stub("omarchy-version", "echo 4.0.4-2");
+        b.run(&Omarchy, "2026-10-14T17:00:00+02:00");
+        b.sources.omarchy_version = b
+            .scratch
+            .stub("omarchy-version", "echo 4.0.0.r7017.g84cfb93-1");
+        let out = b.run(&Omarchy, "2026-10-14T17:06:00+02:00");
+        assert_eq!(out.events.len(), 1);
+        assert_eq!(out.events[0].actor, "agent:claude-code");
+        assert_eq!(out.events[0].case.as_deref(), Some("C-2026-011"));
+        assert_eq!(
+            out.events[0].detail.as_deref(),
+            Some("4.0.4-2 → 4.0.0.r7017.g84cfb93-1")
+        );
     }
 
     #[test]

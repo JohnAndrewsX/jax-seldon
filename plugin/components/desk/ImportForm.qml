@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../../Model.js" as Model
 import ".."
@@ -31,9 +32,9 @@ FocusScope {
   readonly property Tone tone: Tone {}
 
   property var service: null
-  property color foreground: Color.foreground
-  property color accent: Color.accent
-  property color urgent: Color.urgent
+  property color foreground: Commons.Color.foreground
+  property color accent: Commons.Color.accent
+  property color urgent: Commons.Color.urgent
   property string fontFamily: Style.font.family
   // Why the last call did not go out although the form was fine: another
   // import was pending (Service.busyRefusal).

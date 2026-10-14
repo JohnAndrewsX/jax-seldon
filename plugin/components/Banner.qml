@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "desk"
 import "../Model.js" as Model
@@ -27,9 +28,9 @@ BorderSurface {
   readonly property Tone tone: Tone {}
 
   property var banner: null
-  property color foreground: Color.foreground
-  property color accent: Color.accent
-  property color urgent: Color.urgent
+  property color foreground: Commons.Color.foreground
+  property color accent: Commons.Color.accent
+  property color urgent: Commons.Color.urgent
   property string fontFamily: Style.font.family
   property real pictogramSize: Style.space(48)
   property string cursorAction: ""

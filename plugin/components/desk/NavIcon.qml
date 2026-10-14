@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Shapes
 import qs.Commons
+import qs.Commons as Commons
 
 // A section icon: one 24-unit SVG path (Model.DESK_SECTIONS[].icon, from the
 // approved prototype) stroked in `color`, scaled to the item's size. No font
@@ -9,7 +10,7 @@ Item {
   id: root
 
   property string path: ""
-  property color color: Color.foreground
+  property color color: Commons.Color.foreground
 
   implicitWidth: Style.space(16)
   implicitHeight: Style.space(16)

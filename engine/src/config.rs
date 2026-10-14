@@ -648,9 +648,9 @@ impl AttentionMode {
 }
 
 /// The routine rule ids of ADR-0028 §2 (and WP-109's theme rules,
-/// ADR-0037's `toggle-flag`, ADR-0050's `seldon-self`), the default of
-/// `[drift] routine`.
-pub const ROUTINE_RULES: [&str; 13] = [
+/// ADR-0037's `toggle-flag`, ADR-0050's `seldon-self`, ADR-0059's
+/// `omarchy-written`), the default of `[drift] routine`.
+pub const ROUTINE_RULES: [&str; 14] = [
     "sysupgrade",
     "upgrade",
     "keyring",
@@ -659,6 +659,7 @@ pub const ROUTINE_RULES: [&str; 13] = [
     "seldon-self",
     "theme",
     "omarchy-default",
+    "omarchy-written",
     "system-link",
     "routine-paths",
     "theme-assets",
@@ -754,6 +755,9 @@ impl Default for DriftConfig {
     /// Omarchy itself, the shell, the boot loader and initramfs, the login
     /// path (`pam`, `sddm`, `uwsm`); `/etc` through `omarchy-settings`
     /// (Omarchy's `/etc` layer) and `filesystem` (the base `/etc` files).
+    /// `omarchy`, `omarchy-settings` and `linux-omarchy` also stand for the
+    /// edge channel's `-dev` twins and Omarchy's other kernels
+    /// (`index::drift::family`, WP-224), in a config `init` wrote before too.
     /// The rest: ADR-0028 §2.
     fn default() -> Self {
         DriftConfig {

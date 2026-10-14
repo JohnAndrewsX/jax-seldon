@@ -430,7 +430,7 @@ const SCRIPTS = {
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then gum style --padding '1 0 0 0' --foreground 2 'The engine is installed. The Seldon desk finds it by itself.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The install did not finish. Run it again; your logbook is untouched.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'The install did not finish. Run it again; your logbook is untouched.'; " +
-    "trap - INT TERM; fi",
+    "trap - INT TERM; (exit 1); fi",
   UPDATE_ENGINE_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: update the engine'; " +
     "gum style --width 72 'Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.'; " +
@@ -439,7 +439,7 @@ const SCRIPTS = {
     "gum style --padding '1 0 0 0' --foreground 2 'The engine is updated. In the Seldon desk, press Check again.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The update did not finish. Run it again; your logbook is untouched.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'The update did not finish. Run it again; your logbook is untouched.'; " +
-    "trap - INT TERM; fi",
+    "trap - INT TERM; (exit 1); fi",
   UPDATE_PLUGIN_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: update the plugin'; " +
     "gum style --width 72 'Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.'; " +
@@ -447,7 +447,7 @@ const SCRIPTS = {
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; omarchy plugin update jax.seldon); then gum style --padding '1 0 0 0' --foreground 2 'If the plugin was updated, the Seldon desk offers Restart shell to load it.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The plugin update did not finish.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The plugin stays at its version.'; " +
-    "trap - INT TERM; fi",
+    "trap - INT TERM; (exit 1); fi",
   INIT_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: create your logbook'; " +
     "gum style --width 72 'Creates your logbook (in ~/Seldon unless your config names another folder) and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No questions, no password.'; " +
@@ -455,7 +455,7 @@ const SCRIPTS = {
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init --defaults); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The desk updates by itself.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Create logbook in the desk to start again.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. When the folder is in use, the desk offers Choose a folder; else press Create logbook to try again.'; " +
-    "trap - INT TERM; fi",
+    "trap - INT TERM; (exit 1); fi",
   SNAPPER_FIX_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: let your user read the snapshot list'; " +
     "gum style --width 72 'Grants read access to /.snapshots: the listing and the snapshot info files, nothing else. No snapshot is created, changed or deleted. Asks for your password once.'; " +
@@ -464,7 +464,7 @@ const SCRIPTS = {
     "else gum style --padding '1 0 0 0' --foreground 2 'Read access granted. The snapshots were not recorded yet; Seldon tries again at its next capture.'; fi; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Nothing changed.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. Snapshots stay off; Seldon works without them.'; " +
-    "trap - INT TERM; fi",
+    "trap - INT TERM; (exit 1); fi",
   INIT_ASK_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
     "gum style --bold 'Seldon: choose where your logbook goes'; " +
     "gum style --width 72 'Asks where the logbook should live, then creates it there and starts recording; the last 90 days of the package log and snapshots become history \"before Seldon\". No password.'; " +
@@ -472,7 +472,7 @@ const SCRIPTS = {
     "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The desk updates by itself.'; trap - INT TERM; " +
     "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Choose a folder in the desk to start again.'; trap - INT TERM; (exit 130); " +
     "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Choose a folder in the desk to try again.'; " +
-    "trap - INT TERM; fi"
+    "trap - INT TERM; (exit 1); fi"
 }
 
 test("terminal scripts: verbatim, fixed, each shows and runs its command (WP-117, AGENTS.md §8)", () => {
@@ -502,7 +502,8 @@ test("terminal scripts: verbatim, fixed, each shows and runs its command (WP-117
     // wrapper's "cancelled": no Done, the window closes
     assert.ok(script.indexOf("--foreground 2 '") !== -1 && script.indexOf("--foreground 1 '") !== -1, name)
     assert.ok(/--foreground 3 'Cancelled\. [^']*'; trap - INT TERM; \(exit 130\); else /.test(script), name)
-    assert.ok(/'; trap - INT TERM; fi$/.test(script), name)
+    // a failure ends with 1: Omarchy edge's wrapper says "Failed" (B12)
+    assert.ok(/--foreground 1 '[^']*'; trap - INT TERM; \(exit 1\); fi$/.test(script), name)
     assert.ok(M.isTerminalScript(script), name)
   }
   // no result line claims that nothing changed after install.sh may have
@@ -2663,6 +2664,11 @@ test("eventDetail: heading, class, the key/values; why loud from the engine's ru
   assert.strictEqual(known("always-red-paths").whyLoud,
     "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked.")
   assert.ok(known("always-red").whyLoud.startsWith("A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml)"))
+  // a channel switch: one pair or both (WP-224, ADR-0060)
+  assert.strictEqual(known("omarchy-channel").whyLoud,
+    "Omarchy changed channel (stable or edge): this transaction replaced omarchy, omarchy-settings or both with their -dev twins, or the other way round. "
+    + "Edge numbers its versions on its own, so a lower number here is no downgrade. No open case plans it, and no case is linked.")
+  same(known("omarchy-channel").kv[4], ["Rule", "crisis · rule omarchy-channel · no case"])
   assert.ok(known("attention-all").whyLoud.startsWith("[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."))
   assert.ok(known("future-rule").whyLoud.startsWith("The engine's rule: future-rule."))
   assert.ok(known("pacnew-red").whyLoud.startsWith("pacman left a .pacnew, .pacsave or .pacorig beside a file that boot or login depend on (mkinitcpio, Limine, PAM)"))
@@ -2761,9 +2767,9 @@ test("transactionDetail: an interrupted transaction in the row and the detail (W
     + "that runs those steps for them; a plain rerun does not. "
     + "A package marked − stays removed; for one marked ↓, or when unsure, ask your agent in a case."
   const didNot = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) did not run for this transaction; "
-    + "if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session. "
+    + "if omarchy-settings (omarchy-settings-dev on the edge channel) was in it, Hyprland's auto-reload may stay paused for this session. "
   const mayNot = "pacman's after-update steps (boot image, boot menu, Omarchy's resume hooks) may not have run for every package of this transaction; "
-    + "if omarchy-settings was in it, Hyprland's auto-reload may stay paused for this session. "
+    + "if omarchy-settings (omarchy-settings-dev on the edge channel) was in it, Hyprland's auto-reload may stay paused for this session. "
   assert.ok(t.text.endsWith(mayNot + tail), t.text)
   assert.ok(M.TX_STATUS_TEXTS.failed.endsWith(didNot + tail))
   assert.ok(M.TX_STATUS_TEXTS.unfinished.endsWith(didNot + tail))
@@ -5794,7 +5800,7 @@ function activateCalls(sources) {
 // controls (pressControl), buttons the cursor reached. A new call in an
 // activate(), or a new activate(), fails until the SPEC's list names it.
 const ACTIVATE_CALLS = {
-  "plugin/components/desk/EventDetail.qml": ["form.showForm"],
+  "plugin/components/desk/EventDetail.qml": ["driftForm.showForm"],
   "plugin/components/desk/Section.qml": [],
   "plugin/components/desk/TriageDetail.qml": ["root.arm.press", "root.pressCrisis", "root.section.showTriage", "root.service.applyProposal"],
   "plugin/sections/Changelog.qml": ["detail.activate", "root.desk.showDetail", "triage.activate"],

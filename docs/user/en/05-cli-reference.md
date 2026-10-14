@@ -1338,8 +1338,8 @@ which sessions Seldon records: those in the logbook folder and those
 
 `seldon hook install skills` puts the Seldon agent skill into every agent
 skill folder that exists: `~/.agents/skills`, `~/.claude/skills`,
-`~/.codex/skills`, `~/.pi/agent/skills`, `~/.hermes/skills` and
-`~/.hermes/profiles/*/skills`, the folders Omarchy links its own skills
+`~/.codex/skills`, `~/.pi/agent/skills`, `~/.hermes/skills`,
+`~/.gemini/config/skills` (Antigravity) and `~/.hermes/profiles/*/skills`, the folders Omarchy links its own skills
 into. It creates none of them. The skill lands in `<folder>/seldon/`; a
 `seldon` there that Seldon did not write, or a file in it you changed, is
 left as it is and named in the report. An older skill is updated (a

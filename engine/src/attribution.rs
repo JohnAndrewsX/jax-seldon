@@ -25,8 +25,11 @@
 //!     ([`write_targets`]: a redirection, `tee`, `sed -i`, the destination
 //!     of `cp|mv|install|ln` or a file directly in it, an `mv` source,
 //!     `rm|truncate` operands, an `Edit`/`Write` hook event's path), written
-//!     `~/…`, `$HOME/…`, absolute, or relative to the home directory. A path
-//!     the command only reads (`cat x && pacman -S y`) is no proof;
+//!     `~/…`, `$HOME/…`, absolute, or relative to the home directory, or a
+//!     file an Omarchy command writes by its arguments ([`omarchy_writes`]:
+//!     `omarchy language`, `omarchy crash mute`, the toggles, the
+//!     defaults; WP-225). A path the command only reads (`cat x && pacman
+//!     -S y`) is no proof;
 //!   - theme: `omarchy theme set <name>` or `omarchy-theme-set <name>`,
 //!     where `<name>` becomes the slug the way `omarchy-theme-set` makes it;
 //!   - plugins: `omarchy plugin <verb> <id>` (or the
@@ -289,10 +292,12 @@ fn proves(cause: &Cause, event: &Event, home: &Path) -> bool {
     match event.source {
         Source::Config => {
             let path = normalise(Path::new(&home_path(&event.subject, home)));
+            let at = |word: &str| normalise(Path::new(&home_path(word, home)));
             cause.segments.iter().any(|(argv, writes)| {
                 write_targets(argv, writes)
                     .iter()
-                    .any(|t| t.covers(&normalise(Path::new(&home_path(t.word(), home))), &path))
+                    .any(|t| t.covers(&at(t.word()), &path))
+                    || omarchy_writes(argv).iter().any(|w| at(w) == path)
             })
         }
         Source::Theme => cause.segments.iter().any(|(argv, _)| {
@@ -307,6 +312,82 @@ fn proves(cause: &Cause, event: &Event, home: &Path) -> bool {
         }),
         _ => false,
     }
+}
+
+/// Omarchy's toggle flags, written `~/…` (`omarchy-toggle`).
+const TOGGLES: &str = "~/.local/state/omarchy/toggles/";
+
+/// The files the Omarchy command `argv` writes, by its arguments, as
+/// `~/…` words (WP-225): `omarchy language <code>` the language file and
+/// the session's locale; `omarchy crash mute [--] <program> [on|off|toggle]`
+/// the program's mute flag (by the executable's base name, as
+/// `omarchy-crash-mute` keys it); `omarchy toggle crash capture` its
+/// switch `crash-capture-off`; `omarchy-toggle <flag>` the flag;
+/// `omarchy default agent <agent>` and `omarchy dictation use <backend>`
+/// the default. Each also as its script (`omarchy-language <code>`).
+/// Nothing for a form that only reads (`omarchy language list`, `omarchy
+/// crash mute` without a program).
+pub fn omarchy_writes(argv: &[String]) -> Vec<String> {
+    let word = |args: &[String]| -> Option<String> {
+        args.iter()
+            .find(|a| !a.starts_with('-'))
+            .filter(|a| !a.is_empty())
+            .cloned()
+    };
+    if let Some(args) = omarchy_command(argv, &["language"]) {
+        return match word(args).as_deref() {
+            None | Some("list" | "locale") => Vec::new(),
+            Some(_) => vec![
+                "~/.config/omarchy/language".into(),
+                "~/.config/uwsm/env.d/50-omarchy-language".into(),
+            ],
+        };
+    }
+    if let Some(args) = omarchy_command(argv, &["crash", "mute"]) {
+        let args = args.strip_prefix(&["--".to_string()]).unwrap_or(args);
+        let Some(program) = args.first() else {
+            return Vec::new();
+        };
+        let name = program.rsplit('/').next().unwrap_or(program);
+        if name.is_empty() || name == "." || name == ".." {
+            return Vec::new();
+        }
+        return vec![format!("{TOGGLES}crash-ignore/{name}")];
+    }
+    if omarchy_command(argv, &["toggle", "crash", "capture"]).is_some() {
+        return vec![format!("{TOGGLES}crash-capture-off")];
+    }
+    if let Some((program, args)) = argv.split_first()
+        && program.rsplit('/').next() == Some("omarchy-toggle")
+        && let Some(flag) = args
+            .first()
+            .filter(|f| !f.is_empty() && !f.starts_with('-'))
+    {
+        return vec![format!("{TOGGLES}{flag}")];
+    }
+    if let Some(args) = omarchy_command(argv, &["default", "agent"])
+        && word(args).is_some()
+    {
+        return vec!["~/.config/omarchy/defaults/agent".into()];
+    }
+    if let Some(args) = omarchy_command(argv, &["dictation", "use"])
+        && word(args).is_some()
+    {
+        return vec!["~/.config/omarchy/defaults/dictation".into()];
+    }
+    Vec::new()
+}
+
+/// The arguments after the Omarchy command `route` (`omarchy crash mute`
+/// or its script `omarchy-crash-mute`).
+fn omarchy_command<'a>(argv: &'a [String], route: &[&str]) -> Option<&'a [String]> {
+    let (program, rest) = argv.split_first()?;
+    let program = program.rsplit('/').next().unwrap_or(program);
+    if program == "omarchy" {
+        let named = rest.len() >= route.len() && rest.iter().zip(route).all(|(a, r)| a == r);
+        return named.then(|| &rest[route.len()..]);
+    }
+    (program.strip_prefix("omarchy-")? == route.join("-")).then_some(rest)
 }
 
 /// The `omarchy plugin` verbs that prove a plugins event of `kind`: its

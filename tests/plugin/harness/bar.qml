@@ -3,6 +3,7 @@ import QtQuick.Window
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // Headless harness for plugin/BarWidget.qml, the pill (docs/TESTING.md,
@@ -129,10 +130,10 @@ ShellRoot {
     pluginId: "jax.seldon"
     moduleName: "jax.seldon"
     shell: shellFacade
-    foreground: Color.bar.text
-    barForeground: Color.bar.text
-    background: Color.bar.background
-    urgent: Color.bar.active
+    foreground: Commons.Color.bar.text
+    barForeground: Commons.Color.bar.text
+    background: Commons.Color.bar.background
+    urgent: Commons.Color.bar.active
     fontFamily: Style.font.family
     barSize: Style.bar.sizeHorizontal
     foregroundAnimationEnabled: false
@@ -161,7 +162,7 @@ ShellRoot {
     // window colour).
     Rectangle {
       anchors.fill: parent
-      color: Color.bar.background
+      color: Commons.Color.bar.background
     }
 
     Item {

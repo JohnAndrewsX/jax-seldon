@@ -627,7 +627,8 @@ seldon hook install skills
 
 Er kommt in jeden Skill-Ordner eines Agenten, den es gibt —
 `~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`,
-`~/.pi/agent/skills`, `~/.hermes/skills`, `~/.hermes/profiles/*/skills` —
+`~/.pi/agent/skills`, `~/.hermes/skills`, `~/.gemini/config/skills`
+(Antigravity), `~/.hermes/profiles/*/skills` —
 als `<Ordner>/seldon/`. Seldon legt keinen dieser Ordner an; ein Agent,
 den du später installierst, bekommt den Skill, wenn du den Befehl noch
 einmal ausführst. `seldon init` bietet ihn neben den Claude-Code-Hooks an

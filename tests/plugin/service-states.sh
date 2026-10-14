@@ -7,6 +7,9 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
+# The one upstream warning a clean log may hold (WP-224).
+# shellcheck source=tests/plugin/upstream-warnings.sh
+source "$root/tests/plugin/upstream-warnings.sh"
 plugin="$root/plugin"
 harness="$root/tests/plugin/harness/shell.qml"
 fx="$root/fixtures"
@@ -95,10 +98,11 @@ expect() {
 # clean_log <case> [regex] — also allow the warnings the regex matches (the
 # one-line journal warning of an engine call the case expects to fail).
 clean_log() {
-  local bad
+  local bad upstream_re
+  upstream_re=$(upstream_allowed "${OMARCHY_PATH:-/usr/share/omarchy}/shell" "$plugin" components/desk/DeskWindow.qml)
   bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN" \
     | grep -a -v -E "Process failed to start|WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" \
-    | grep -a -v -E "${2:-^$}" || true)
+    | grep -a -v -E "${2:-^$}" | grep -a -v -E "$upstream_re" || true)
   if [[ -z $bad ]]; then
     pass=$((pass + 1))
     echo "ok   $1: log clean"

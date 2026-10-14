@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../components/desk"
 import "../Model.js" as Model
@@ -68,7 +69,7 @@ Section {
   readonly property string moreText: Model.moreDriftText(root.index)
   readonly property bool capturing: !!root.service && root.service.capturing
   readonly property var captureResult: root.service ? root.service.captureResult : null
-  readonly property color foreground: Color.popups.text
+  readonly property color foreground: Commons.Color.popups.text
   readonly property color dim: root.tone.dim
   // Bulk triage (WP-124b): the button, the last ask, the proposal.
   readonly property var triageButton: root.service ? root.service.triageButton : null
@@ -425,10 +426,10 @@ Section {
         visible: root.proposalRowShown
         implicitHeight: proposalColumn.implicitHeight + Style.spacing.md * 2
         radius: Style.cornerRadius
-        color: root.triageShown ? Style.selectedFillFor(Color.accent, Color.accent) : "transparent"
+        color: root.triageShown ? Style.selectedFillFor(Commons.Color.accent, Commons.Color.accent) : "transparent"
         border.width: Math.max(1, Style.space(1))
         // shown: the accent tint plus a border of at least 3:1 (WP-177)
-        border.color: root.triageShown ? root.tone.accentUi : Style.normalBorderFor(Color.accent, Color.accent)
+        border.color: root.triageShown ? root.tone.accentUi : Style.normalBorderFor(Commons.Color.accent, Commons.Color.accent)
 
         Column {
           id: proposalColumn

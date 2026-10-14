@@ -18,7 +18,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Dev-host guard | `check-guard` | The PreToolUse guard hook `scripts/guard.sh` (WP-130; it runs `scripts/guard.py`, a bash parser that decides on the command position): `bash scripts/guard-test.sh`, the expectation table (one row per allowed or blocked case, a fixed fake `HOME` and working directory, nothing is executed), then `python3 scripts/guard-mutants.py`: each mutant drops one rule of `guard.py` and the table must fail for every one; `shellcheck` when installed | yes |
 | Runtime dir | `check-runtime-dir` | `bash tests/plugin/runtime-dir.test.sh` (WP-161): under `tests/` and `scripts/`, outside comments, no mention of the name `XDG_RUNTIME_DIR` other than an assignment (no expansion with or without a default, no `printenv XDG_RUNTIME_DIR`, no `v=XDG_RUNTIME_DIR` for a `${!v}`) and no `/run/user` path unless the line carries `# live runtime dir: <reason>`; every Quickshell (`"$qs_bin"`, `${qs_bin}`, `$qs_bin`, `quickshell`, `qs`) started with `-p`, `--path` or `--path=` sets `XDG_RUNTIME_DIR` in the same command, itself or through an array it expands (`"${envs[@]}"`) whose definition sets it; every file that makes `rt=$(mktemp …)` removes `"$rt"` in an EXIT trap, itself or in the function the trap calls (`trap cleanup EXIT`); no `*.rs` under `engine/` names `XDG_RUNTIME_DIR`. Then mutants of the harnesses, `e2e.sh`, `deploy-test-host.sh` and the leak guard (the old `${XDG_RUNTIME_DIR:-…}` back, `:=`, the session's dir passed on directly, through `printenv` or `${!v}`, the setting dropped under each start spelling, the trap without `"$rt"`, a marker dropped) must each be caught for the right reason; `shellcheck` when installed | yes |
 | check-perf directory | `check-perf-dirs` | `bash tests/perf/check-perf.test.sh` (WP-216): `just check-perf` with a stub `cargo` and a scratch parent for its tmpfs directory (`SELDON_PERF_SHM` instead of `/dev/shm`): the directory is removed after a run and after SIGINT or SIGTERM to the run's process group (exit 130 or 143), stays after SIGKILL, and the next run sweeps this user's `seldon-perf.*` directories older than a day and nothing else (a younger one, another name, a file); `shellcheck` when installed | yes |
-| Omarchy assumptions | `check-assumptions` | `bash tests/omarchy/assumptions.test.sh` (WP-194): `tests/omarchy/assumptions.json` well-formed (an id, a relative path, a 64-hex sha256 per file, the Omarchy version and date measured, a `symbol` for the Omarchy file, a `pluginSymbol` found in the code (not only the comments) of the cited plugin file, `plugin/<file>:<line>` with the line as a hint for the reader, never a condition (a stale hint is a `warn` line, not a failure), the sentence "Seldon relies on … at `plugin/<file>:<line>`.", what to re-measure), its validator hash equal to `packaging/omarchy-pin`, with one mutant per rule, and on a scratch copy of the cited plugin files a plugin edit that moves every cited line passing with one warning per stale hint (on a ledger refreshed against that copy, so the real ledger's hints being fresh is never asserted), while a `pluginSymbol` gone from its file or left only in comments (`//` lines, trailing `//`, lines starting with `/*` or `*`) fails; the check on a synthetic tree (ok; a changed, a missing file and a lost symbol named with each of their assumptions; the pin notice; a pin it cannot read named, never "ok"; `--gate` refusing each; "skipped" without a tree; usage and ledger errors exit 2; nothing written) and, where Omarchy is installed, each `symbol` found in its file where the hash matches (with a mutant) and a scratch copy of the ledger's files (the same verdict as the tree; a change to `shell/shell.qml` alone names `shell-settings-write` and `shell-service-lookup`, one to `PluginShellApi.qml` names `facade-settings-write`); then `scripts/check-omarchy-assumptions.sh` on the installed tree in notice mode (see "Omarchy assumptions"); `shellcheck` when installed | the fixture parts yes; the installed tree "skipped" |
+| Omarchy assumptions | `check-assumptions` | `bash tests/omarchy/assumptions.test.sh` (WP-194): `tests/omarchy/assumptions.json` well-formed (an id, a relative path, a 64-hex sha256 per file, the Omarchy version and date measured, a `symbol` for the Omarchy file, a `pluginSymbol` found in the code (not only the comments) of the cited plugin file, `plugin/<file>:<line>` (or `engine/src/<file>:<line>`) with the line as a hint for the reader, never a condition (a stale hint is a `warn` line, not a failure), the sentence "Seldon relies on … at `plugin/<file>:<line>`.", what to re-measure, a `sha256` of `absent` only with an `edge` measurement), its validator hash equal to `packaging/omarchy-pin`, with one mutant per rule, and on a scratch copy of the cited plugin files a plugin edit that moves every cited line passing with one warning per stale hint (on a ledger refreshed against that copy, so the real ledger's hints being fresh is never asserted), while a `pluginSymbol` gone from its file or left only in comments (`//` lines, trailing `//`, lines starting with `/*` or `*`) fails; the check on a synthetic tree (ok; a changed, a missing file and a lost symbol named with each of their assumptions; the pin notice; a pin it cannot read named, never "ok"; `--gate` refusing each; "skipped" without a tree; usage and ledger errors exit 2; nothing written) and, where Omarchy is installed, each `symbol` found in its file where the hash matches (with a mutant) and a scratch copy of the ledger's files (the same verdict as the tree; a change to `shell/shell.qml` alone names `shell-settings-write` and `shell-service-lookup`, one to `PluginShellApi.qml` names `facade-settings-write`); then `scripts/check-omarchy-assumptions.sh` on the installed tree in notice mode (see "Omarchy assumptions"); `shellcheck` when installed | the fixture parts yes; the installed tree "skipped" |
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | Omarchy's plugin validator on `plugin/`: `omarchy plugin validate plugin/` where the omarchy CLI is installed (a notice when `$OMARCHY_PATH/bin/omarchy-plugin-validate` is not the pinned one); without it `packaging/omarchy-validate.sh plugin/`, the validator at the commit of `packaging/omarchy-pin`, fetched over HTTPS and refused unless its sha256 matches (WP-190; it is bash and jq, no Omarchy install needed) | yes (the pinned validator) |
@@ -609,7 +609,20 @@ harness or live step its `remeasure` names), then update `sha256`,
 `omarchyVersion`, `measured` and the sentence in the same commit, and the
 pin with it when the validator changed (packaging/README.md, "The Omarchy
 pin"); what stays open at a release goes into the acceptance record's
-`limitations`. `check-assumptions` fails when a `pluginSymbol` is gone
+`limitations`. An entry may also carry `edge` (`sha256`, `omarchyVersion`,
+`measured`): the same assumption re-measured on Omarchy's edge channel
+(WP-224). A file that matches either hash is unchanged, so the rc test
+host's gate and the edge dev host both pass, and the ok line counts the
+files that matched as measured on edge; entries of one file share both
+hashes. The stable `sha256` stays the one the pin's tree has (ADR-0055).
+A file Omarchy stable does not ship has `sha256` `absent` and its
+measurement in `edge` (WP-225, the files ADR-0059's `omarchy-written`
+evidence and the terminal steps' Failed prompt read): absent is as
+measured on a host whose channel is not edge (the ok line counts it as
+"edge-only, absent here as on stable"); on an edge host a missing one is
+a notice, and `--gate` refuses it. An assumption the engine relies on cites
+`engine/src/<file>:<line>` instead of a plugin line, with the same rules
+for its `pluginSymbol`. `check-assumptions` fails when a `pluginSymbol` is gone
 from its plugin file or left only in comments: `//` line comments,
 trailing ` // …` comments, and lines that start with `/*` or `*`. A
 `/* … */` span is not parsed, so an unstarred line inside one or an
@@ -639,6 +652,17 @@ check on push.
     sees them as plain `QObject`.
   - `uncreatable-type` — Quickshell's qmltypes register `PanelWindow` with
     `isCreatable: false`; it is created fine at runtime.
+  - `block-scope-var-declaration` (Qt 6.12 and later; the recipe passes it
+    only when `qmllint --help` lists it, so Qt 6.11 runs unchanged) — `var`
+    inside a block, mostly `for (var i …)`. Plugin code could avoid it, but
+    Omarchy's own shell uses `var` there in hundreds of places and never
+    `let`, and SPEC-PLUGIN follows the built-in plugins' idiom. qmllint 6.12
+    counts this warning against `--max-warnings` without printing it in text
+    mode: a bare exit 255 with no `Warning:` line is this category
+    (`--json -` shows it). WP-224.
+- **Qt 6.12's `id-shadows-member`** stays a warning: an id must not share a
+  name with a property of its file's root type (`id: top`, `id: form` were
+  renamed in WP-224).
 - **Token check.** Because `missing-property` is demoted, qmllint cannot see
   a typo such as `Style.font.bodySmal`. `tests/plugin/check-tokens.py` reads
   `Commons/{Style,Color,Border,Util}.qml` of the installed shell and fails on
@@ -756,14 +780,20 @@ focus border. The banners' terminal scripts
 runs it, bash parses each, and a hostile index (quotes, `$(…)`, `rm -rf`
 in the snapper message and the contract version) changes none of them.
 `bash tests/plugin/terminal-scripts.sh` runs every script inside the
-presentation launcher's own `omarchy-show-logo; …; omarchy-show-done` line,
-in a session of its own (`setsid`), with stub `sudo`, `curl`, `seldon`,
+presentation launcher's own line, in both forms: Omarchy edge's
+`omarchy-show-logo; …; code=$?; if (( code != 130 )); then
+omarchy-show-done $code; fi` (the stub prints DONE for 0, FAILED <code>
+otherwise; WP-225) and the earlier `…; if (( $? != 130 )); then
+omarchy-show-done; fi` (DONE always; one success, one failure and one
+Ctrl+C case), in a session of its own (`setsid`), with stub `sudo`, `curl`, `seldon`,
 `omarchy` and `gum` (and the real gum, for its flags), scratch HOME: the
 green line and the follow-up `seldon capture` or `seldon status` only on
 success, the red line on a refused password, a failed download
 (pipefail), a failed installer or an empty USER (no `sudo` call), one more
 capture when the lock is held, "Read access granted" instead of
-"recorded" when both captures fail, and "Done" after each; Ctrl+C (a stub
+"recorded" when both captures fail, and on the edge wrapper "Done" after
+each success and "Failed 1" after each failure (the script ends with 1
+after its red line), on the earlier one "Done" after both; Ctrl+C (a stub
 sends SIGINT to the process group and dies of it, or catches it and
 exits 1, or it comes during the announce lines) gives the "Cancelled"
 line as the last output, no follow-up, no command started after it, and
@@ -1129,6 +1159,26 @@ A missing engine makes Quickshell log `WARN: Process failed to start,
 likely because the binary could not be found` — expected, and the only log
 line the plugin may cause. The service probes for the engine once at start
 and again only on *Check again*, so it appears once per shell start.
+
+**One upstream warning on Omarchy edge** (WP-224). Edge's
+`Commons/Style.qml` imports Quickshell.Hyprland, and in an offscreen
+Quickshell without Hyprland the Hyprland IPC module logs one line that
+names no file, in one of two exact texts: `WARN: Unable to find hyprland
+socket. Cannot connect to hyprland.` where the harness inherits the
+session's `HYPRLAND_INSTANCE_SIGNATURE` (service-states), `WARN:
+$HYPRLAND_INSTANCE_SIGNATURE is unset. Cannot connect to hyprland.` under
+`env -i` (desk-view, bar-view, ipc-restart). The four harnesses accept
+exactly those whole lines through `tests/plugin/upstream-warnings.sh`, and
+only while the loaded tree's `Style.qml` imports Quickshell.Hyprland and
+every plugin importer of it is a file the harness never loads (the
+plugin's `DeskWindow.qml`: desk-view replaces it with a stub, the others
+never load `Desk.qml`). On stable and rc nothing is accepted; every other
+WARN, a plugin file's warning with the same words included, still fails a
+case. No Hyprland socket is faked and `HYPRLAND_INSTANCE_SIGNATURE` is
+never set. The `env -i` harnesses pass `LANG=C.UTF-8`: Qt 6.12 warns about
+the "C" locale and switches to C.UTF-8 itself, so nothing changes but the
+warning. `upstream-warnings.test.sh` (in `plugin-test`, everywhere) proves
+it; the ledger's `style-hyprland-warning` records the edge fact.
 
 ### 3. The desk (`Desk.qml`) in a private headless Quickshell
 

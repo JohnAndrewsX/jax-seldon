@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # The terminal scripts behind the banners' Install, Create, Grant and Update
 # (plugin/Model.js, WP-117), run the way Omarchy's presentation launcher runs
-# them: `omarchy-show-logo; <script>; if (( $? != 130 )); then
-# omarchy-show-done; fi` under `bash -c`, in a session of its own (setsid),
+# them: on Omarchy edge `omarchy-show-logo; <script>; code=$?; if (( code !=
+# 130 )); then omarchy-show-done $code; fi` (WP-225, B12: "Done!" for 0,
+# "Failed (exit code N)!" else), before it the same without the code (one
+# case per outcome, "stable"), under `bash -c`, in a session of its own (setsid),
 # so a stub can send SIGINT to the whole process group as ^C in a terminal
 # does without reaching this test. sudo, curl, seldon and omarchy are stubs
 # that record their argv; gum is a stub that prints its colour and text,
@@ -13,7 +15,8 @@
 # `$USER` expanded only where it runs), the result line matches the
 # outcome (green on success, red on failure, a failed download in
 # `curl … | bash` included), the follow-up engine call runs only on
-# success, and the wrapper prints Done. The grant says "recorded" only
+# success, and the wrapper prints Done after a success and Failed after a
+# failure (on stable Omarchy, Done after both). The grant says "recorded" only
 # after a capture that succeeded, and stops before sudo with an empty
 # USER. ^C (the stub dying of SIGINT, as sudo re-raises it, or exiting 1
 # after catching it; or ^C during the announce lines) prints the
@@ -84,8 +87,14 @@ done
 printf '[%s] %s\n' "$fg" "$1"
 EOF
 printf '#!/usr/bin/env bash\necho LOGO\n' >"$stubs/omarchy-show-logo"
-printf '#!/usr/bin/env bash\necho DONE\n' >"$stubs/omarchy-show-done"
+# omarchy-show-done [code]: DONE for 0 (or no code, the stable wrapper)
+printf '#!/usr/bin/env bash\nif [[ ${1:-0} == 0 ]]; then echo DONE; else echo "FAILED $1"; fi\n' >"$stubs/omarchy-show-done"
 chmod +x "$stubs"/*
+
+# The two wrappers: Omarchy edge passes the exit code on, stable does not.
+edge_wrapper() { echo "omarchy-show-logo; $1; code=\$?; if (( code != 130 )); then omarchy-show-done \$code; fi"; }
+stable_wrapper() { echo "omarchy-show-logo; $1; if (( \$? != 130 )); then omarchy-show-done; fi"; }
+wrapper=edge_wrapper
 
 # run <case> <script name> [VAR=value …]: output in $work/<case>.out, calls in .log
 run() {
@@ -94,7 +103,7 @@ run() {
   shift 2
   : >"$work/$name.log"
   env -i PATH="$stubs:/usr/bin:/bin" HOME="$work/home" USER=tester STUB_LOG="$work/$name.log" "$@" \
-    setsid -w bash -c "omarchy-show-logo; $script; if (( \$? != 130 )); then omarchy-show-done; fi" >"$work/$name.out" 2>&1 || true
+    setsid -w bash -c "$($wrapper "$script")" >"$work/$name.out" 2>&1 || true
 }
 has() { # has <case> <out|log> <line>
   if grep -qxF -- "$3" "$work/$1.$2"; then
@@ -159,12 +168,12 @@ log_is grant-uncaptured "$(printf '%s\n' "$grant" "seldon capture" "seldon captu
 run grant-refused SNAPPER_FIX_SCRIPT STUB_SUDO_EXITS=1
 has grant-refused out "$grant_failed"
 lacks grant-refused out "now recorded"
-has grant-refused out "DONE"
+has grant-refused out "FAILED 1"
 log_is grant-refused "$grant"
 # an empty USER: stops before sudo instead of granting u::rx
 run grant-no-user SNAPPER_FIX_SCRIPT USER=
 has grant-no-user out "$grant_failed"
-has grant-no-user out "DONE"
+has grant-no-user out "FAILED 1"
 log_is grant-no-user ""
 # ^C at the password prompt, both ways sudo can end
 run grant-ctrl-c SNAPPER_FIX_SCRIPT STUB_SUDO_SIGINT=die
@@ -189,7 +198,7 @@ log_is install-ok "$install_url"
 run install-404 INSTALL_ENGINE_SCRIPT STUB_CURL_EXITS=22
 has install-404 out "$install_failed"
 lacks install-404 out "is installed"
-has install-404 out "DONE"
+has install-404 out "FAILED 1"
 run install-failed INSTALL_ENGINE_SCRIPT STUB_INSTALLER_EXIT=1
 has install-failed out "$install_failed"
 run install-ctrl-c INSTALL_ENGINE_SCRIPT STUB_CURL_SIGINT=die
@@ -219,7 +228,7 @@ has init-ok out "[2] Your logbook is ready. The desk updates by itself."
 log_is init-ok "seldon init --defaults"
 run init-failed INIT_SCRIPT STUB_SELDON_EXITS=1
 has init-failed out "[1] No logbook was created; the message above says why. When the folder is in use, the desk offers Choose a folder; else press Create logbook to try again."
-has init-failed out "DONE"
+has init-failed out "FAILED 1"
 run init-ctrl-c INIT_SCRIPT STUB_SELDON_SIGINT=die
 cancelled init-ctrl-c "Cancelled. Press Create logbook in the desk to start again."
 
@@ -232,9 +241,21 @@ has init-ask-ok out "[2] Your logbook is ready. The desk updates by itself."
 log_is init-ask-ok "seldon init"
 run init-ask-failed INIT_ASK_SCRIPT STUB_SELDON_EXITS=1
 has init-ask-failed out "[1] No logbook was created; the message above says why. Press Choose a folder in the desk to try again."
-has init-ask-failed out "DONE"
+has init-ask-failed out "FAILED 1"
 run init-ask-ctrl-c INIT_ASK_SCRIPT STUB_SELDON_SIGINT=die
 cancelled init-ask-ctrl-c "Cancelled. Press Choose a folder in the desk to start again."
+
+# Before Omarchy edge the wrapper prints Done whatever the status; the
+# result line is the verdict (B12).
+wrapper=stable_wrapper
+run stable-ok INIT_SCRIPT
+has stable-ok out "DONE"
+run stable-failed INIT_SCRIPT STUB_SELDON_EXITS=1
+has stable-failed out "[1] No logbook was created; the message above says why. When the folder is in use, the desk offers Choose a folder; else press Create logbook to try again."
+has stable-failed out "DONE"
+run stable-ctrl-c INIT_SCRIPT STUB_SELDON_SIGINT=die
+cancelled stable-ctrl-c "Cancelled. Press Create logbook in the desk to start again."
+wrapper=edge_wrapper
 
 # The real gum takes every flag the scripts use (it exits non-zero on an
 # unknown one, and the text would be missing).

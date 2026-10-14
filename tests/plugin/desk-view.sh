@@ -27,6 +27,9 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
+# The one upstream warning a clean log may hold (WP-224).
+# shellcheck source=tests/plugin/upstream-warnings.sh
+source "$root/tests/plugin/upstream-warnings.sh"
 fx="$root/fixtures"
 omarchy="${OMARCHY_PATH:-/usr/share/omarchy}"
 shell_dir="$omarchy/shell"
@@ -90,7 +93,7 @@ run() {
   [[ -z $index && ${SELDON_FULL_CHECK:-} == 1 ]] && late=(FAKE_SELDON_FIRST_WRITE_DELAY=2)
   mkdir -p "$home"
   env -i HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
-    PATH="$work/bin" QT_QPA_PLATFORM=offscreen \
+    PATH="$work/bin" QT_QPA_PLATFORM=offscreen LANG=C.UTF-8 \
     XDG_RUNTIME_DIR="$rt" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_STEPS="$steps" HARNESS_W="${size%x*}" HARNESS_H="${size#*x}" \
     SELDON_INDEX="$index" "${late[@]}" "$@" \
@@ -136,10 +139,11 @@ expected_warnings='jax\.seldon: seldon (rules exit 1: AGENTS\.md is not UTF-8 te
 # clean_log <case> [regex] — no error, warning or binding loop in the log
 # (also allow the warnings the regex matches).
 clean_log() {
-  local bad
+  local bad upstream_re
+  upstream_re=$(upstream_allowed "$config" "$plugin")
   bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop|HARNESS error|nothing to (click|drag|hover|wheel|repeat|focus)|wait timed out" \
     | grep -a -v -E "WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" \
-    | grep -a -v -E "$expected_warnings" | grep -a -v -E "${2:-^$}" || true)
+    | grep -a -v -E "$expected_warnings" | grep -a -v -E "${2:-^$}" | grep -a -v -E "$upstream_re" || true)
   if [[ -z $bad ]]; then
     pass=$((pass + 1))
     echo "ok   $1: log clean"

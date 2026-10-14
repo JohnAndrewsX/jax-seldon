@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "../../Model.js" as Model
 
 // The Plan (SPEC-PLUGIN §6, the sixth slot): the active cases
@@ -28,7 +29,7 @@ ChartCanvas {
 
   // The card's zone stripe: raw role colours, as every stripe (WP-177).
   function toneColor(tone) {
-    return tone === "urgent" ? root.urgent : tone === "accent" ? root.accent : Color.muted
+    return tone === "urgent" ? root.urgent : tone === "accent" ? root.accent : Commons.Color.muted
   }
 
   // Items: the cards in order (only the shown ones).

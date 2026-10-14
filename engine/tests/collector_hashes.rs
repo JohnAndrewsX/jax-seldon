@@ -759,6 +759,226 @@ fn toggles_are_routine_both_ways() {
     assert_eq!(config_events(&env).len(), n, "idempotent");
 }
 
+/// WP-225 (survey B9, B10, ADR-0059): Omarchy edge writes files of its own
+/// that no shipped copy matches. Content one of its commands writes, built
+/// from Omarchy's trusted tree, is routine `omarchy-written` — also the
+/// session locale under the persistence path `~/.config/uwsm/**` — and
+/// anything else there keeps its class. The crash mutes and the capture
+/// switch are empty flags: routine `toggle-flag` both ways. Nothing of it
+/// is drift; a second capture writes nothing.
+#[test]
+fn omarchy_written_files_are_routine() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let home = &env.home;
+    let omarchy = env.tmp.path().join("omarchy");
+    write(
+        omarchy.join("default/i18n/locales.json"),
+        r#"{"en": {"name": "English", "locale": "en_US.UTF-8"},
+            "de": {"name": "Deutsch", "locale": "de_DE.UTF-8"},
+            "bad word": {"locale": "x"}}"#,
+    );
+    write(
+        omarchy.join("bin/omarchy-default-agent"),
+        "#!/bin/bash\n\n# omarchy:summary=Set and launch the default coding agent\n\
+         # omarchy:args=[pi|claude|codex|agy]\n",
+    );
+    write(
+        omarchy.join("bin/omarchy-install-dictation-voxtype"),
+        "#!/bin/bash\n",
+    );
+    write(
+        omarchy.join("config/omarchy/defaults/dictation"),
+        "superwhisper\n",
+    );
+    trust(&omarchy, 0o755);
+    let toggles = home.join(".local/state/omarchy/toggles");
+    write(toggles.join("bar-off"), "");
+    capture_config(&env); // baseline
+
+    let language = home.join(".config/omarchy/language");
+    let session = home.join(".config/uwsm/env.d/50-omarchy-language");
+    let agent = home.join(".config/omarchy/defaults/agent");
+    let dictation = home.join(".config/omarchy/defaults/dictation");
+    let session_text = |locale: &str| {
+        format!(
+            "# The session language, set by omarchy-language (Setup > Language).\n\
+             export LANG={locale}\n"
+        )
+    };
+    // `omarchy language de`, `omarchy default agent agy`, the migration's
+    // `voxtype`, two crash mutes and the capture switch
+    write(&language, "de\n");
+    write(&session, session_text("de_DE.UTF-8"));
+    write(&agent, "agy\n");
+    write(&dictation, "voxtype\n");
+    write(toggles.join("crash-ignore/hyprland"), "");
+    write(toggles.join("crash-ignore/waybar"), "");
+    write(toggles.join("crash-capture-off"), "");
+    capture_config(&env);
+    let config = |rel: &str| format!("~/.config/{rel}");
+    let toggle = |rel: &str| format!("~/.local/state/omarchy/toggles/{rel}");
+    for subject in [
+        config("omarchy/language"),
+        config("uwsm/env.d/50-omarchy-language"),
+        config("omarchy/defaults/agent"),
+        config("omarchy/defaults/dictation"),
+    ] {
+        assert_eq!(
+            class_of(&env, &subject, "config-add"),
+            "routine omarchy-written",
+            "{subject}"
+        );
+    }
+    for rel in [
+        "crash-ignore/hyprland",
+        "crash-ignore/waybar",
+        "crash-capture-off",
+    ] {
+        assert_eq!(
+            class_of(&env, &toggle(rel), "config-add"),
+            "routine toggle-flag",
+            "{rel}"
+        );
+    }
+    let marks: Vec<_> = config_events(&env)
+        .into_iter()
+        .filter(|e| e.2.get("matches").is_some())
+        .map(|e| (e.1, e.2["matches"].as_str().unwrap().to_string()))
+        .collect();
+    assert_eq!(marks.len(), 4, "{marks:?}");
+    assert!(open_items(&env).is_empty(), "{:?}", open_items(&env));
+    let n = config_events(&env).len();
+    capture_config(&env);
+    assert_eq!(config_events(&env).len(), n, "idempotent");
+
+    // `omarchy language en`, the shipped dictation copy, a mute lifted
+    std::fs::write(&language, "en\n").unwrap();
+    std::fs::write(&session, session_text("en_US.UTF-8")).unwrap();
+    std::fs::write(&dictation, "superwhisper\n").unwrap();
+    std::fs::remove_file(toggles.join("crash-ignore/waybar")).unwrap();
+    capture_config(&env);
+    assert_eq!(
+        class_of(&env, &config("omarchy/language"), "config-change"),
+        "routine omarchy-written"
+    );
+    assert_eq!(
+        class_of(
+            &env,
+            &config("uwsm/env.d/50-omarchy-language"),
+            "config-change"
+        ),
+        "routine omarchy-written"
+    );
+    assert_eq!(
+        class_of(&env, &config("omarchy/defaults/dictation"), "config-change"),
+        "routine omarchy-default"
+    );
+    assert_eq!(
+        class_of(&env, &toggle("crash-ignore/waybar"), "config-remove"),
+        "routine toggle-flag"
+    );
+    assert!(open_items(&env).is_empty(), "{:?}", open_items(&env));
+
+    // what Omarchy never writes keeps its class: a line more in the
+    // session file is a crisis, a code or agent Omarchy does not know is
+    // attention
+    std::fs::write(
+        &session,
+        format!(
+            "{}export LD_PRELOAD=/tmp/x.so\n",
+            session_text("en_US.UTF-8")
+        ),
+    )
+    .unwrap();
+    std::fs::write(&language, "bad word\n").unwrap();
+    std::fs::write(&agent, "evil\n").unwrap();
+    capture_config(&env);
+    assert_eq!(
+        class_of(
+            &env,
+            &config("uwsm/env.d/50-omarchy-language"),
+            "config-change"
+        ),
+        "crisis always-red-paths"
+    );
+    assert_eq!(
+        class_of(&env, &config("omarchy/language"), "config-change"),
+        "attention config"
+    );
+    assert_eq!(
+        class_of(&env, &config("omarchy/defaults/agent"), "config-change"),
+        "attention config"
+    );
+    assert_eq!(open_items(&env).len(), 3, "{:?}", open_items(&env));
+
+    // Omarchy's tree writable by others is no evidence (ADR-0028, WP-109)
+    if !root() {
+        trust(&omarchy, 0o775);
+        std::fs::write(&session, session_text("de_DE.UTF-8")).unwrap();
+        capture_config(&env);
+        trust(&omarchy, 0o755);
+        let last = config_events(&env).pop().unwrap();
+        assert_eq!(last.1, config("uwsm/env.d/50-omarchy-language"));
+        assert!(last.2.get("matches").is_none(), "{last:?}");
+
+        // and so is any file read for it, or a directory on the way
+        // (review F1): each change below is a content Omarchy writes,
+        // marked with the tree trusted
+        let mode = |p: &Path, m: u32| {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap();
+        };
+        let unmarked = |subject: &str| {
+            let e = config_events(&env)
+                .into_iter()
+                .rfind(|e| e.1 == subject)
+                .unwrap();
+            assert_eq!(e.0, "config-change", "{e:?}");
+            assert!(e.2.get("matches").is_none(), "{e:?}");
+        };
+        let i18n = omarchy.join("default/i18n");
+        mode(&i18n, 0o775);
+        std::fs::write(&language, "de\n").unwrap();
+        capture_config(&env);
+        mode(&i18n, 0o755);
+        unmarked(&config("omarchy/language"));
+
+        let locales = i18n.join("locales.json");
+        mode(&locales, 0o664);
+        std::fs::write(&session, session_text("en_US.UTF-8")).unwrap();
+        capture_config(&env);
+        mode(&locales, 0o644);
+        unmarked(&config("uwsm/env.d/50-omarchy-language"));
+
+        let launcher = omarchy.join("bin/omarchy-default-agent");
+        mode(&launcher, 0o664);
+        std::fs::write(&agent, "claude\n").unwrap();
+        capture_config(&env);
+        mode(&launcher, 0o644);
+        unmarked(&config("omarchy/defaults/agent"));
+
+        let installer = omarchy.join("bin/omarchy-install-dictation-voxtype");
+        mode(&installer, 0o664);
+        std::fs::write(&dictation, "voxtype\n").unwrap();
+        capture_config(&env);
+        mode(&installer, 0o644);
+        unmarked(&config("omarchy/defaults/dictation"));
+
+        // trusted again: the same contents are marked
+        std::fs::write(&language, "en\n").unwrap();
+        std::fs::write(&agent, "codex\n").unwrap();
+        capture_config(&env);
+        for subject in [config("omarchy/language"), config("omarchy/defaults/agent")] {
+            let e = config_events(&env)
+                .into_iter()
+                .rfind(|e| e.1 == subject)
+                .unwrap();
+            assert_eq!(e.2["matches"], "omarchy-written", "{e:?}");
+        }
+    }
+}
+
 /// `~/.ssh/authorized_keys` is no default watch path; once the user adds
 /// it to `watchPaths` (the opt-in), a change is a crisis by the default
 /// `alwaysRedPaths`, and only its hash is recorded.
