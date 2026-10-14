@@ -25,6 +25,41 @@ publishes both through `.github/workflows/release.yml`.
 | `store/baseline.md` | the plugin store's security baseline predicted for the plugin split: each capability with the README line and the scanner line behind it (WP-042) |
 | `store/submission.md` | the store submission issue, drafted for the operator; filed only on the operator's go (WP-042) |
 
+## The seldon package (app era, WP-230)
+
+From 0.5.0 Seldon is an Omarchy app (E96): the package **`seldon`** holds
+the engine, the window and the bar plugin's copy, and replaces
+`jax-seldon`. Its files sit beside the old package's, which stays the only
+route until then:
+
+| File | What |
+|---|---|
+| `seldon/PKGBUILD` | the recipe: builds the engine with cargo and `seldon-desk` with `app/bin/build` (qmake6 and make) from the release tarball; `provides`, `conflicts` and `replaces` `jax-seldon`; Qt 6.9 or newer, `qt6-svg`, `qt6-wayland`, `hicolor-icon-theme` |
+| `seldon/seldon.desktop` | `Exec=seldon open`, `StartupWMClass=seldon`, `Name[de]` and `Comment[de]` |
+| `seldon/seldon.svg` | the hicolor icon: `assets/a2-icon-brand-on-dark-container.svg`, unchanged |
+| `seldon/seldon.install` | refreshes the desktop database and the icon cache; it never runs `seldon` (`tests/release/seldon-package.test.sh`) |
+| `seldon/expected-files.txt` | the exact file list of the built package |
+| `opr/.omarchy/package.json` | the omarchy-pkgs recipe draft (`source: local`, `auto_merge`, `upstream.watch`); **not submitted**: the operator opens that pull request with `seldon/PKGBUILD`, `seldon.install`, `seldon.desktop` and `seldon.svg` beside it |
+| `app-era.sh VERSION` | exit 0 from 0.5.0 on: the gate the release workflow reads |
+
+The package installs `/usr/bin/seldon` (and the `jax-seldon` symlink), the
+window as `/usr/lib/seldon/seldon-desk`, the watcher unit, man page and
+completions as before, the desktop entry and icon, and the plugin's files
+under `/usr/share/seldon/plugin/`. Nothing is written to a home directory.
+
+`release.yml` builds it in the `build` job, after the `jax-seldon` package,
+only when `packaging/app-era.sh` accepts the version (step `App era`, output
+`app_era`): a 0.4.x tag skips the step and the old route is untouched. The
+source is the same `git archive` tarball, copied to `seldon-X.Y.Z.tar.gz`;
+`makepkg -f` builds both binaries, the file list is diffed against
+`seldon/expected-files.txt`, and the package lands in the `package`
+artifact. At 0.5.0 the `jax-seldon` route (AUR push, `packaging/PKGBUILD`)
+is retired in a change of its own.
+
+Locally, `bin/install` builds the package from the committed tree into
+`build/pkg` (`makepkg -f`) and installs only with `--install`; the
+development host does not use it (released packages only).
+
 ## What the package contains
 
 - `/usr/bin/seldon`, built with `cargo build --frozen --release --features

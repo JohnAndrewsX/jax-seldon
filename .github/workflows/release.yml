@@ -93,7 +93,7 @@ jobs:
       # `just check-deploy` needs and nodejs what `just plugin-test` needs
       # (as in ci.yml).
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq shellcheck cargo-audit rsync nodejs
+        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq shellcheck cargo-audit rsync nodejs qt6-base qt6-declarative qt6-svg qt6-wayland hicolor-icon-theme
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -211,6 +211,47 @@ jobs:
           bash -n "$root/usr/share/bash-completion/completions/seldon"
           zcat "$root/usr/share/man/man1/seldon.1.gz" | grep '^\.TH SELDON 1 ' > /dev/null  # reads it all: no SIGPIPE under pipefail
           mkdir package
+          cp "$pkg" package/
+
+      # The app-era package (WP-230): `seldon`, from packaging/seldon/, built
+      # beside `jax-seldon` and only for a release from 0.5.0 on
+      # (packaging/app-era.sh); a 0.4.x tag skips every step below. At 0.5.0
+      # the jax-seldon route above is retired in its own change.
+      - name: App era
+        id: era
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if bash packaging/app-era.sh "$VERSION"; then
+            echo "app_era=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app_era=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "app era: $(grep app_era "$GITHUB_OUTPUT")"
+
+      # the source is the local tarball under the name the recipe expects,
+      # so this builds exactly what omarchy-pkgs will download
+      - name: Build the seldon package
+        if: steps.era.outputs.app_era == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sum=$(sha256sum "dist/jax-seldon-$VERSION.tar.gz" | cut -d' ' -f1)
+          install -d -o builder /tmp/seldon-pkg
+          sed -e "s/^pkgver=.*/pkgver=$VERSION/" -e "s/^pkgrel=.*/pkgrel=1/" \
+            -e "s/^sha256sums=.*/sha256sums=('$sum')/" packaging/seldon/PKGBUILD > /tmp/seldon-pkg/PKGBUILD
+          install -o builder -m644 packaging/seldon/seldon.install packaging/seldon/seldon.desktop \
+            packaging/seldon/seldon.svg "dist/jax-seldon-$VERSION.tar.gz" /tmp/seldon-pkg/
+          mv "/tmp/seldon-pkg/jax-seldon-$VERSION.tar.gz" "/tmp/seldon-pkg/seldon-$VERSION.tar.gz"
+          runuser -u builder -- bash -c 'cd /tmp/seldon-pkg && makepkg -f --noconfirm'
+          pkg="/tmp/seldon-pkg/seldon-$VERSION-1-x86_64.pkg.tar.zst"
+          diff -u packaging/seldon/expected-files.txt <(tar tf "$pkg" | grep -v '^\.' | LC_ALL=C sort)
+          root=$(mktemp -d)
+          tar xf "$pkg" -C "$root"
+          "$root/usr/bin/seldon" --version --json | jq -e --arg v "$VERSION" '.version == $v'
+          "$root/usr/bin/jax-seldon" --version
+          test -x "$root/usr/lib/seldon/seldon-desk"
+          bash -n "$root/usr/share/bash-completion/completions/seldon"
           cp "$pkg" package/
 
       - name: Plugin split

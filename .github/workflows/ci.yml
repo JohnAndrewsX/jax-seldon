@@ -75,7 +75,7 @@ jobs:
       # Arch's `rust` package ships cargo, clippy and rustfmt; `nodejs` runs
       # the plugin's node tests.
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed git rust just jq shellcheck rsync nodejs
+        run: pacman -Syu --noconfirm --needed git rust just jq shellcheck rsync nodejs qt6-base qt6-declarative qt6-svg qt6-wayland
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
