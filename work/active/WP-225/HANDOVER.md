@@ -141,3 +141,52 @@ CHANGELOG `[Unreleased]` Highlights: three bullets.
 - Verified: engine tests, clippy, fmt (**fixture**, dev host); qmllint
   and `service-states` not rerun (unchanged, red on edge before this
   branch).
+
+## Round 2 (rebase onto next, the assumption ledger, 2026-10-14)
+
+- Rebased onto `next` 0d7031d7 (WP-224 merged). Conflicts in
+  CHANGELOG.md (both sets of Highlights kept), DECISIONS.md (ADR-0059
+  and ADR-0060 rows both kept) and SPEC-ENGINE (WP-224's `alwaysRed`
+  text kept, `omarchy-written` added to the routine list).
+- `tests/omarchy/assumptions.json`: nine rows over eight files, each
+  with a `symbol` in the Omarchy file and a `pluginSymbol` at the line
+  that relies on it:
+  - `bin/omarchy-language`: `language-session-text`, `language-file-code`
+  - `default/i18n/locales.json`: `i18n-locales-shape`
+  - `bin/omarchy-default-agent`: `default-agent-args`
+  - `bin/omarchy-dictation-use`: `dictation-use-write`
+  - `bin/omarchy-install-dictation-voxtype` and `-superwhisper`:
+    `dictation-installer-*`
+  - `bin/omarchy-show-done`: `show-done-exit-code`
+  - `bin/omarchy-launch-floating-terminal-with-presentation`:
+    `presentation-passes-code`
+
+  The default agent, show-done and the launcher exist on stable. Their
+  stable `sha256` was taken from the stable 4.0.4-1 tree, the one whose
+  validator equals `packaging/omarchy-pin`'s; their edge hash and
+  version come from this host. The other five files are edge-only.
+- Edge-only is new in the ledger: `sha256: "absent"` plus an `edge`
+  measurement. `scripts/check-omarchy-assumptions.sh` treats a missing
+  file as matching the ledger off edge; on an edge host a missing file is
+  a notice, and `--gate` refuses it. The lint accepts `absent` only with
+  an `edge` measurement.
+- Engine anchors: the lint now also accepts `engine/src/<file>:<line>`
+  as the cited line, under the same rules. New mutants and
+  synthetic-tree cases cover both changes.
+- Three stale Model.js hints (`bar-instances`, `bar-drawn-slot`,
+  `restart-shell`) were refreshed. B12 had moved those lines by three.
+- Docs updated: docs/TESTING.md (the section and the table row), the
+  script header, the test header, and the ledger's `about` text.
+- Verified on the dev host (Omarchy edge 4.0.0.r7017.g84cfb93-1):
+  - `bash tests/omarchy/assumptions.test.sh`: ok. The synthetic-tree
+    cases (**fixture**) include an rc and an edge channel stub.
+  - `just check-upstream`: exit 0, and none of the eight new files
+    raises a notice. The ten notices it still prints are shell and
+    validator files from before this round that have no edge
+    measurement; they belong to WP-224's rows and were not touched.
+  - The rc test host's `--gate` with the new rows: **not run**.
+  - `flock /tmp/seldon-check.lock env SELDON_FULL_CHECK=1 just check`
+    on the dev host (Omarchy edge): **green**, exit 0, `check: ok`. This
+    covers qmllint and every plugin harness (**headless**) and the engine
+    tests (**fixture**). The edge failures from round 0 are gone after
+    WP-224's merge.

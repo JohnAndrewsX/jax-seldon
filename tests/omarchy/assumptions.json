@@ -1,5 +1,5 @@
 {
-  "about": "What Seldon assumes about Omarchy (WP-194): installed files under $OMARCHY_PATH, each hashed read-only, each assumption naming the plugin line that relies on it. `symbol` is found in the Omarchy file, `pluginSymbol` in the code (not a comment) of the cited plugin file; the line number is a hint, not a condition. scripts/check-omarchy-assumptions.sh (`just check-upstream`) compares the hashes; on a mismatch, re-measure the assumption and update sha256, omarchyVersion, measured and the sentence in the same commit, never silence it. docs/TESTING.md, \"Omarchy assumptions\".",
+  "about": "What Seldon assumes about Omarchy (WP-194): installed files under $OMARCHY_PATH, each hashed read-only, each assumption naming the plugin (or engine) line that relies on it. `symbol` is found in the Omarchy file, `pluginSymbol` in the code (not a comment) of the cited plugin file; the line number is a hint, not a condition. scripts/check-omarchy-assumptions.sh (`just check-upstream`) compares the hashes; a file Omarchy stable does not ship has sha256 \"absent\" and its measurement in `edge`; on a mismatch, re-measure the assumption and update sha256, omarchyVersion, measured and the sentence in the same commit, never silence it. docs/TESTING.md, \"Omarchy assumptions\".",
   "assumptions": [
     {
       "id": "facade-settings-write",
@@ -129,8 +129,8 @@
       "measured": "2026-10-12",
       "symbol": "centerAnchor",
       "pluginSymbol": "isDrawnWidget",
-      "plugin": "plugin/Model.js:4498",
-      "relies": "Seldon relies on the bar building the widget once per monitor plus a zero-size, hidden placeholder in the centre section, all listed by moduleWidgets, at plugin/Model.js:4498.",
+      "plugin": "plugin/Model.js:4501",
+      "relies": "Seldon relies on the bar building the widget once per monitor plus a zero-size, hidden placeholder in the centre section, all listed by moduleWidgets, at plugin/Model.js:4501.",
       "remeasure": "tests/plugin/bar-view.sh, and on the test host `omarchy-shell jax.seldon.panel pill` answers once with one handler"
     },
     {
@@ -141,8 +141,8 @@
       "measured": "2026-10-12",
       "symbol": "pickDrawnSlot",
       "pluginSymbol": "pickDrawnWidget",
-      "plugin": "plugin/Model.js:4507",
-      "relies": "Seldon relies on the shell's pickDrawnSlot choosing the first visible, non-zero-size slot, which Model.pickDrawnWidget mirrors, at plugin/Model.js:4507.",
+      "plugin": "plugin/Model.js:4510",
+      "relies": "Seldon relies on the shell's pickDrawnSlot choosing the first visible, non-zero-size slot, which Model.pickDrawnWidget mirrors, at plugin/Model.js:4510.",
       "remeasure": "the shell's pickDrawnSlot and isDrawnSlot against Model.pickDrawnWidget and isDrawnWidget (node tests/plugin/model.test.js), then tests/plugin/bar-view.sh"
     },
     {
@@ -288,8 +288,8 @@
       "measured": "2026-10-12",
       "symbol": "secure",
       "pluginSymbol": "omarchy-restart-shell",
-      "plugin": "plugin/Model.js:4466",
-      "relies": "Seldon relies on omarchy-restart-shell, run without arguments from a detached process, restarting the shell and refusing while a secure lock is up (on edge it waits up to 30 s for the old shell and 60 s for the new one, then for the notification service, and exits 1 when the shell does not come back), at plugin/Model.js:4466.",
+      "plugin": "plugin/Model.js:4469",
+      "relies": "Seldon relies on omarchy-restart-shell, run without arguments from a detached process, restarting the shell and refusing while a secure lock is up (on edge it waits up to 30 s for the old shell and 60 s for the new one, then for the notification service, and exits 1 when the shell does not come back), at plugin/Model.js:4469.",
       "remeasure": "the notice's Restart shell on the test host gives one new shell, within seconds on stable and within about a minute on edge (memory/omarchy-shell.md, WP-090)",
       "edge": {
         "sha256": "1cf1b182141c6b07388a7ca0737fc932df50746fcfb56808eca94118a2b84d6e",
@@ -322,6 +322,159 @@
       "remeasure": "read PluginRegistry.qml's diff against SPEC-PLUGIN §1, §8 and memory/omarchy-shell.md, then `omarchy plugin validate plugin/`",
       "edge": {
         "sha256": "76283b1dbb4cd71001f5f85b5ec6670d164de8725d127482d56dd561feb68c3a",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "language-session-text",
+      "path": "bin/omarchy-language",
+      "sha256": "absent",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-14",
+      "symbol": "set by omarchy-language (Setup > Language).",
+      "pluginSymbol": "set by omarchy-language (Setup > Language).",
+      "plugin": "engine/src/collectors/config.rs:1431",
+      "relies": "Seldon relies on `omarchy language <code>` writing exactly \"# The session language, set by omarchy-language (Setup > Language).\" and \"export LANG=<locale>\" to ~/.config/uwsm/env.d/50-omarchy-language, which the engine rebuilds as routine `omarchy-written` evidence (edge only; stable has no omarchy-language, ADR-0059), at engine/src/collectors/config.rs:1431.",
+      "remeasure": "compare omarchy-language's printf with LANGUAGE_ENV_TEXT, then `cargo test --test collector_hashes omarchy_written`; on a test host with edge, `omarchy language <code>` leaves `seldon drift` without an open item",
+      "edge": {
+        "sha256": "4daecaf115c6b359aa2dd65760c8ceba08019c42ab8677aa01403bafd5527c09",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "language-file-code",
+      "path": "bin/omarchy-language",
+      "sha256": "absent",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-14",
+      "symbol": "echo \"$code\" >\"$language_file\"",
+      "pluginSymbol": "line(&code)",
+      "plugin": "engine/src/collectors/config.rs:1450",
+      "relies": "Seldon relies on `omarchy language <code>` writing the code and a newline to ~/.config/omarchy/language, a code being a key of default/i18n/locales.json (edge only, ADR-0059), at engine/src/collectors/config.rs:1450.",
+      "remeasure": "read omarchy-language's set_language, then `cargo test --test collector_hashes omarchy_written`",
+      "edge": {
+        "sha256": "4daecaf115c6b359aa2dd65760c8ceba08019c42ab8677aa01403bafd5527c09",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "i18n-locales-shape",
+      "path": "default/i18n/locales.json",
+      "sha256": "absent",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-14",
+      "symbol": "\"locale\":",
+      "pluginSymbol": "get(\"locale\")",
+      "plugin": "engine/src/collectors/config.rs:1522",
+      "relies": "Seldon relies on default/i18n/locales.json being one object keyed by language code, each value an object whose `locale` string is the LANG that omarchy-language writes (edge only, ADR-0059), at engine/src/collectors/config.rs:1522.",
+      "remeasure": "`jq 'to_entries[0]' $OMARCHY_PATH/default/i18n/locales.json` against the engine's `locales`, then `cargo test --test collector_hashes omarchy_written`",
+      "edge": {
+        "sha256": "dbe622637c2ee6acb320c0ba6f02cc2eb6338642ae71aa2a8e10e93a5f3beace",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "default-agent-args",
+      "path": "bin/omarchy-default-agent",
+      "sha256": "a408c3bd7b3210df8c8ee834d85d0b137588b1324c735f51bbac3330d91c48a5",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-14",
+      "symbol": "# omarchy:args=[",
+      "pluginSymbol": "\"# omarchy:args=\"",
+      "plugin": "engine/src/collectors/config.rs:1466",
+      "relies": "Seldon relies on omarchy-default-agent listing every agent `omarchy default agent` accepts in one `# omarchy:args=[a|b|…]` line and writing the chosen one and a newline to ~/.config/omarchy/defaults/agent (on stable and edge; the lists differ, edge's has `agy` for `gemini`), at engine/src/collectors/config.rs:1466.",
+      "remeasure": "read the args line and the write in omarchy-default-agent, then `cargo test --test collector_hashes omarchy_written`",
+      "edge": {
+        "sha256": "59aa33ce94d154a59612c7113f4f7571a02eeec3122f08e4c4c0acb8aa653433",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "dictation-use-write",
+      "path": "bin/omarchy-dictation-use",
+      "sha256": "absent",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-14",
+      "symbol": "\"$1\" > \"$temporary\"",
+      "pluginSymbol": "line(&backend)",
+      "plugin": "engine/src/collectors/config.rs:1488",
+      "relies": "Seldon relies on `omarchy dictation use <backend>` writing the backend and a newline to ~/.config/omarchy/defaults/dictation (edge only, ADR-0059), at engine/src/collectors/config.rs:1488.",
+      "remeasure": "read omarchy-dictation-use's write, then `cargo test --test collector_hashes omarchy_written`",
+      "edge": {
+        "sha256": "0c2d0904106d7de7801df2801b27cb1970c2101fef2b100c268bb8b94214c5bd",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "dictation-installer-voxtype",
+      "path": "bin/omarchy-install-dictation-voxtype",
+      "sha256": "absent",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-14",
+      "symbol": "omarchy-dictation-use voxtype",
+      "pluginSymbol": "\"omarchy-install-dictation-\"",
+      "plugin": "engine/src/collectors/config.rs:1483",
+      "relies": "Seldon relies on each dictation backend having an installer named omarchy-install-dictation-<backend> that selects that backend, here voxtype (edge only, ADR-0059), at engine/src/collectors/config.rs:1483.",
+      "remeasure": "`ls $OMARCHY_PATH/bin/omarchy-install-dictation-*` and each one's `omarchy-dictation-use` line, then `cargo test --test collector_hashes omarchy_written`",
+      "edge": {
+        "sha256": "2c2bd735f18a2b3e3976cb95e0e87ff25fc5b3a7ad1e88783738994d715b3f5b",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "dictation-installer-superwhisper",
+      "path": "bin/omarchy-install-dictation-superwhisper",
+      "sha256": "absent",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-14",
+      "symbol": "omarchy-dictation-use superwhisper",
+      "pluginSymbol": "\"omarchy-install-dictation-\"",
+      "plugin": "engine/src/collectors/config.rs:1483",
+      "relies": "Seldon relies on each dictation backend having an installer named omarchy-install-dictation-<backend> that selects that backend, here superwhisper (edge only, ADR-0059), at engine/src/collectors/config.rs:1483.",
+      "remeasure": "`ls $OMARCHY_PATH/bin/omarchy-install-dictation-*` and each one's `omarchy-dictation-use` line, then `cargo test --test collector_hashes omarchy_written`",
+      "edge": {
+        "sha256": "112a6434fb50c3e7581e34edd9329cf804f63ad99cdd27a228d2e10435f831f1",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "show-done-exit-code",
+      "path": "bin/omarchy-show-done",
+      "sha256": "b9c975cbbc1a3d5170b57a1a37c49e7acaf2df314791936366cf87cc7609d267",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-14",
+      "symbol": "Display a \"Done!\"",
+      "pluginSymbol": "(exit 1)",
+      "plugin": "plugin/Model.js:143",
+      "relies": "Seldon relies on omarchy-show-done <code> printing Omarchy's \"Failed (exit code <code>)!\" for a non-zero code and \"Done!\" for 0 on edge, and \"Done!\" for every status on stable, whose omarchy-show-done takes no code, so a failed terminal step ends with status 1 after its red line, at plugin/Model.js:143.",
+      "remeasure": "tests/plugin/terminal-scripts.sh (its edge and stable wrappers) against the new omarchy-show-done, then one failed terminal step on the test host",
+      "edge": {
+        "sha256": "5b258cb5cf80389fa7f1aacb5bdf2614dde71253928c635cb1c71b47de84a9ab",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "presentation-passes-code",
+      "path": "bin/omarchy-launch-floating-terminal-with-presentation",
+      "sha256": "01c6af7dcc7d76c23b5f95f594516195d569ede9f0f8f48f932ec5ff3531a08f",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-14",
+      "symbol": "omarchy-show-done",
+      "pluginSymbol": "\"omarchy-launch-floating-terminal-with-presentation\"",
+      "plugin": "plugin/Model.js:239",
+      "relies": "Seldon relies on the presentation launcher running a terminal script and then omarchy-show-done unless the script ended with 130 (Ctrl+C), passing the script's status as the code on edge and no code on stable, at plugin/Model.js:239.",
+      "remeasure": "read the launcher's presentation_script against tests/plugin/terminal-scripts.sh's edge_wrapper and stable_wrapper, then one failed and one cancelled terminal step on the test host",
+      "edge": {
+        "sha256": "e84d6a47e397f473f06d5f62a9f69f1b441599333a80cb1ff6a798ce9eb10b3d",
         "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
         "measured": "2026-10-14"
       }
