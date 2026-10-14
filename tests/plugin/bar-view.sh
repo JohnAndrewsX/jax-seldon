@@ -18,6 +18,9 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
+# The one upstream warning a clean log may hold (WP-224).
+# shellcheck source=tests/plugin/upstream-warnings.sh
+source "$root/tests/plugin/upstream-warnings.sh"
 plugin="$root/plugin"
 fx="$root/fixtures"
 omarchy="${OMARCHY_PATH:-/usr/share/omarchy}"
@@ -79,9 +82,11 @@ within() { # within <label> <a> <b> <tolerance>
 }
 
 clean_log() {
-  local bad
+  local bad upstream_re
+  upstream_re=$(upstream_allowed "$config" "$plugin" components/desk/DeskWindow.qml)
   bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop" \
-    | grep -a -v -E "WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken|Failed to start IPC server" || true)
+    | grep -a -v -E "WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken|Failed to start IPC server" \
+    | grep -a -v -E "$upstream_re" || true)
   if [[ -z $bad ]]; then
     pass=$((pass + 1))
     echo "ok   $1: log clean"
