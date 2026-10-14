@@ -5,19 +5,28 @@
 //!
 //! Ledger only and read-only: no lock, no capture, no index, nothing
 //! written. The events are the ledger lines as they were written (redacted
-//! then), every kind, in time order. At most [`MAX_EVENTS`]: over that the
-//! ones nearest the moment are kept and `omitted` counts the rest.
+//! then), every kind, in time order, each with its `class` ([`class_of`]).
+//! At most [`MAX_EVENTS`]: over that the ones nearest the moment are kept
+//! and `omitted` counts the rest.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use chrono::{DateTime, Duration, FixedOffset, Local, NaiveDateTime, TimeZone as _};
+use chrono::{
+    DateTime, Datelike as _, Duration, FixedOffset, Local, NaiveDateTime, Offset as _,
+    TimeZone as _,
+};
 use clap::Args;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::{Context, Output, event_json};
+use crate::config::AttentionMode;
 use crate::error::{Error, Result};
 use crate::frontmatter::printable;
+use crate::index::class::{Class, Classifier, Rules};
+use crate::index::drift::is_routine;
 use crate::ledger::Ledger;
+use crate::model::event::{Event, Source};
 use crate::redact::Redactor;
 
 /// The most events one answer lists.
@@ -55,10 +64,13 @@ pub fn run(ctx: &Context, args: ChangesArgs) -> Result<Output> {
     let around = parse_moment(&args.around, ctx.now)?;
     let before = parse_span("--before", &args.before)?;
     let after = parse_span("--after", &args.after)?;
-    let (from, to) = (around - before, around + after);
-    let (_, logbook) = ctx.open_logbook()?;
+    let (from, to) = window(&args.around, around, before, after)?;
+    let (config, logbook) = ctx.open_logbook()?;
     let ledger = Ledger::new(&logbook, Redactor::builtin());
-    let mut events = ledger.read_range(from, to)?;
+    // the class needs the ledger around the window too (a transaction's
+    // explicit members, Omarchy's package history), as an index build
+    let all = ledger.read_all()?;
+    let mut events: Vec<&Event> = all.iter().filter(|e| e.ts >= from && e.ts <= to).collect();
     let omitted = events.len().saturating_sub(MAX_EVENTS);
     if omitted > 0 {
         events.sort_by_key(|e| (e.ts - around).num_milliseconds().abs());
@@ -66,6 +78,8 @@ pub fn run(ctx: &Context, args: ChangesArgs) -> Result<Output> {
     }
     // stable: events of one instant keep the ledger's order
     events.sort_by_key(|e| e.ts);
+    let rules = Rules::new(&config.drift);
+    let classes = Classes::new(&rules, &all);
 
     let mut human = format!(
         "{} event(s) from {} to {} (around {})",
@@ -77,11 +91,14 @@ pub fn run(ctx: &Context, args: ChangesArgs) -> Result<Output> {
     if omitted > 0 {
         let _ = write!(human, "; {omitted} more further away not shown");
     }
-    for e in &events {
+    let mut listed = Vec::with_capacity(events.len());
+    for e in events {
+        let class = classes.of(e);
         let _ = write!(
             human,
-            "\n  {}  {}/{}  {}  {}{}",
+            "\n  {}  {:<9}  {}/{}  {}  {}{}",
             short(&e.ts),
+            class.map_or("-", Class::as_str),
             e.source,
             e.kind,
             printable(&e.subject),
@@ -91,6 +108,9 @@ pub fn run(ctx: &Context, args: ChangesArgs) -> Result<Output> {
                 .map(|c| format!(" · {c}"))
                 .unwrap_or_default()
         );
+        let mut v = event_json(e);
+        v["class"] = class.map_or(Value::Null, |c| c.as_str().into());
+        listed.push(v);
     }
     Ok(Output::ok(
         human,
@@ -98,10 +118,93 @@ pub fn run(ctx: &Context, args: ChangesArgs) -> Result<Output> {
             "around": around.to_rfc3339(),
             "from": from.to_rfc3339(),
             "to": to.to_rfc3339(),
-            "events": events.iter().map(event_json).collect::<Vec<_>>(),
+            "events": listed,
             "omitted": omitted,
         }),
     ))
+}
+
+/// `[around − before, around + after]`, inside the years RFC 3339 writes
+/// (0001 to 9999): past them is exit 1, never an overflow.
+fn window(
+    text: &str,
+    around: DateTime<FixedOffset>,
+    before: Duration,
+    after: Duration,
+) -> Result<(DateTime<FixedOffset>, DateTime<FixedOffset>)> {
+    let readable = |t: Option<DateTime<FixedOffset>>| t.filter(|t| (1..=9999).contains(&t.year()));
+    match (
+        readable(around.checked_sub_signed(before)),
+        readable(around.checked_add_signed(after)),
+    ) {
+        (Some(from), Some(to)) => Ok((from, to)),
+        _ => Err(Error::user(format!(
+            "--around {}: the window leaves the years 0001 to 9999",
+            printable(text.trim())
+        ))),
+    }
+}
+
+/// The class of a machine change (ADR-0058 §6): ADR-0028's verdict, as an
+/// index build gives it to the change's drift item — a pacman
+/// transaction's members together, `attention = "all"` by zone — but
+/// without the lift to attention an open case's Plan gives a routine item
+/// (that is the case's state, not the change's), and whether or not the
+/// change is resolved. `None` for what is no machine change: case events,
+/// notes, snapshots, sessions, resolutions.
+struct Classes<'a> {
+    classifier: Classifier<'a>,
+    transactions: HashMap<&'a str, Vec<&'a Event>>,
+}
+
+impl<'a> Classes<'a> {
+    fn new(rules: &'a Rules, events: &'a [Event]) -> Self {
+        let mut transactions: HashMap<&str, Vec<&Event>> = HashMap::new();
+        for e in events.iter().filter(|e| changes_machine(e)) {
+            if let Some(tx) = tx_of(e) {
+                transactions.entry(tx).or_default().push(e);
+            }
+        }
+        Classes {
+            classifier: Classifier::new(rules, events),
+            transactions,
+        }
+    }
+
+    fn of(&self, e: &Event) -> Option<Class> {
+        if !changes_machine(e) {
+            return None;
+        }
+        let one = [e];
+        let members: &[&Event] = tx_of(e)
+            .and_then(|tx| self.transactions.get(tx))
+            .map_or(&one, Vec::as_slice);
+        let rules = self.classifier.rules;
+        if rules.attention == AttentionMode::All {
+            let red = if e.source == Source::Pacman {
+                !members.iter().all(|m| is_routine(m, &rules.always_red))
+            } else {
+                e.zone.is_some_and(|z| z.as_str() == "red")
+            };
+            return Some(if red { Class::Crisis } else { Class::Attention });
+        }
+        let lead = members
+            .iter()
+            .copied()
+            .filter(|m| m.explicit == Some(true))
+            .min_by_key(|m| m.id)
+            .or_else(|| members.iter().copied().min_by_key(|m| m.id))
+            .unwrap_or(e);
+        Some(self.classifier.group(members, lead).class)
+    }
+}
+
+fn changes_machine(e: &Event) -> bool {
+    e.source.is_drift_eligible() && e.resolution.is_none()
+}
+
+fn tx_of(e: &Event) -> Option<&str> {
+    e.tx_id.as_deref().filter(|_| e.source == Source::Pacman)
 }
 
 fn short(ts: &DateTime<FixedOffset>) -> String {
@@ -139,22 +242,54 @@ pub fn parse_moment(text: &str, now: DateTime<FixedOffset>) -> Result<DateTime<F
         "%Y-%m-%dT%H:%M",
     ] {
         if let Ok(naive) = NaiveDateTime::parse_from_str(text, format) {
-            // a time the clock skipped (the spring change) is no moment;
-            // one it passed twice is its first
-            return Local
-                .from_local_datetime(&naive)
-                .earliest()
-                .map(|t| t.fixed_offset())
-                .ok_or_else(|| {
-                    Error::user(format!(
-                        "--around {}: that local time does not exist (a clock change); \
-                         give it with its offset",
-                        printable(text)
-                    ))
-                });
+            return first_instant(naive).ok_or_else(|| {
+                Error::user(format!(
+                    "--around {}: that local time does not exist (a clock change); \
+                     give it with its offset",
+                    printable(text)
+                ))
+            });
         }
     }
+    if chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d").is_ok() {
+        return Err(Error::user(format!(
+            "--around {}: give a time with the date ({} 14:20); the forms are RFC 3339 \
+             (2026-10-01T14:20:00+02:00), a local `2026-10-01 14:20`, \
+             `@<seconds since 1970>` or `now`",
+            printable(text),
+            printable(text)
+        )));
+    }
     Err(refused())
+}
+
+/// The first instant the local clock showed `naive`: in the autumn
+/// overlap the earlier of the two (still summer time), in the spring gap
+/// none. Found from the offsets in force a day either side, not from
+/// chrono's ambiguity report, which names the later one for some zones.
+fn first_instant(naive: NaiveDateTime) -> Option<DateTime<FixedOffset>> {
+    let as_utc = naive.and_utc();
+    let mut found: Option<DateTime<FixedOffset>> = None;
+    for probe in [
+        as_utc.checked_sub_signed(Duration::days(1)),
+        Some(as_utc),
+        as_utc.checked_add_signed(Duration::days(1)),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let offset = Local.offset_from_utc_datetime(&probe.naive_utc()).fix();
+        let Some(t) = offset.from_local_datetime(&naive).single() else {
+            continue;
+        };
+        // the offset holds at that instant: the clock showed `naive` then
+        if Local.offset_from_utc_datetime(&t.naive_utc()).fix() == offset
+            && found.is_none_or(|f| t < f)
+        {
+            found = Some(t);
+        }
+    }
+    found
 }
 
 /// `--before` / `--after`: one or more `<number><s|m|h|d>`, at most
