@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QGuiApplication>
 #include <QJSEngine>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QQmlApplicationEngine>
@@ -78,6 +79,29 @@ Backend::Options options(const QTemporaryDir &dir, const QString &index, bool de
     return o;
 }
 
+// A constant of Model.js, as the plugin evaluates it.
+QJSValue modelJs(const char *name) {
+    static QJSEngine js;
+    static const bool loaded = !js.evaluate(QString::fromUtf8(read(":/Model.js")), "Model.js").isError();
+    return loaded ? js.globalObject().property(name) : QJSValue();
+}
+
+// The fixture with `edit` applied, written to `path`.
+template <typename Edit> bool writeFixture(const QString &path, Edit edit) {
+    QJsonObject index = QJsonDocument::fromJson(read(Fixture)).object();
+    edit(index);
+    return write(path, QJsonDocument(index).toJson(QJsonDocument::Compact));
+}
+
+// The fixture's open cases without the first one.
+void dropFirstCase(QJsonObject &index) {
+    QJsonObject cases = index["cases"].toObject();
+    QJsonArray active = cases["active"].toArray();
+    active.removeAt(0);
+    cases["active"] = active;
+    index["cases"] = cases;
+}
+
 QByteArray indexWith(const QString &generatedAt, const QString &state = "ok", int contract = 2) {
     QJsonObject index{{"contractVersion", contract},
                       {"generatedAt", generatedAt},
@@ -139,6 +163,27 @@ private slots:
         QVERIFY(QFile::remove(dir.path() + "/theme/colors.toml"));
         QVERIFY(QFile::rename(dir.path() + "/theme/colors.next", dir.path() + "/theme/colors.toml"));
         QTRY_COMPARE(theme.accent(), QString("#445566"));
+    }
+
+    // The shell reads the theme under the home, not under XDG_STATE_HOME
+    // (Commons/Color.qml), and so does the window.
+    void themeIgnoresXdgStateHome() {
+        QTemporaryDir home, state;
+        QDir(home.path()).mkpath(".local/state/omarchy/current/theme");
+        QDir(state.path()).mkpath("omarchy/current/theme");
+        QVERIFY(write(home.path() + "/.local/state/omarchy/current/theme/colors.toml", "accent = \"#112233\"\n"));
+        QVERIFY(write(state.path() + "/omarchy/current/theme/colors.toml", "accent = \"#445566\"\n"));
+        const QByteArray oldHome = qgetenv("HOME"), oldState = qgetenv("XDG_STATE_HOME"),
+                         oldHypr = qgetenv("HYPRLAND_INSTANCE_SIGNATURE");
+        qputenv("HOME", home.path().toUtf8());
+        qputenv("XDG_STATE_HOME", state.path().toUtf8());
+        qunsetenv("HYPRLAND_INSTANCE_SIGNATURE");
+        const QString accent = Theme().accent();
+        qputenv("HOME", oldHome);
+        qputenv("XDG_STATE_HOME", oldState);
+        if (!oldHypr.isEmpty())
+            qputenv("HYPRLAND_INSTANCE_SIGNATURE", oldHypr);
+        QCOMPARE(accent, QString("#112233"));
     }
 
     void themeFollowsHyprlandRounding() {
@@ -371,6 +416,16 @@ private slots:
         QVERIFY(!backend.run({"status", "--json"}));
     }
 
+    // A `seldon` that does not answer its version in time is no engine.
+    void aHangingEngineCountsAsMissing() {
+        QTemporaryDir dir;
+        auto o = options(dir, Fixture, true);
+        QVERIFY(write(o.engine, "#!/bin/sh\nexec sleep 30\n"));
+        o.probeTimeoutMs = 300;
+        Backend backend(o);
+        QTRY_COMPARE(backend.status(), QString("engineMissing"));
+    }
+
     // Exit 3 from `status` is a logbook not initialised yet; an index written
     // after it ends that.
     void notInitialisedFromExitThree() {
@@ -412,18 +467,31 @@ private slots:
         QCOMPARE(calls(dir), QStringList{"--version --json"});
     }
 
-    // A terminal fix starts only the launcher, with one script.
+    // A terminal fix starts only the launcher, and only with one of
+    // Model.js's TERMINAL_SCRIPTS: the launcher runs its argument as shell.
     void terminalFixStartsTheLauncherOnly() {
         QTemporaryDir dir;
         auto o = options(dir, dir.filePath("index.json"));
         QVERIFY(write(o.launcher, "#!/bin/sh\nprintf '%s' \"$1\" > '" + dir.filePath("launched").toUtf8() + "'\n"));
         QVERIFY(QFile::setPermissions(o.launcher, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+
+        const QJSValue scripts = modelJs("TERMINAL_SCRIPTS");
+        QCOMPARE(Backend::terminalScripts().size(), scripts.property("length").toInt());
+        QVERIFY(Backend::terminalScripts().size() >= 2);
+        const QString init = modelJs("INIT_SCRIPT").toString();
+        QVERIFY(Backend::terminalScripts().contains(init));
+
         Backend backend(o);
         QVERIFY(!backend.openTerminal({"sh", "-c", "true"}));
         QVERIFY(!backend.openTerminal({"bash", "true"}));
         QVERIFY(!backend.openTerminal({Backend::TerminalLauncher, "  "}));
-        QVERIFY(backend.openTerminal({Backend::TerminalLauncher, "seldon init --defaults"}));
-        QTRY_COMPARE(read(dir.filePath("launched")), QByteArray("seldon init --defaults"));
+        QVERIFY(!backend.openTerminal({Backend::TerminalLauncher, "seldon init --defaults"}));
+        QVERIFY(!backend.openTerminal({Backend::TerminalLauncher, init + "; rm -rf ~"}));
+        QVERIFY(!backend.openTerminal({Backend::TerminalLauncher, init, "x"}));
+        QTest::qWait(200);
+        QVERIFY(!QFile::exists(dir.filePath("launched")));
+        QVERIFY(backend.openTerminal({Backend::TerminalLauncher, init}));
+        QTRY_COMPARE(QString::fromUtf8(read(dir.filePath("launched"))), init);
     }
 
     // ---- The window -----------------------------------------------------
@@ -571,6 +639,308 @@ private slots:
         QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
     }
 
+    // ---- The window: review round 1 (the reviewer's reproductions) ------
+
+    // The pick is a case id: a new index that drops a case above it keeps
+    // the form armed for the same case, and the second press runs exactly
+    // the armed argv.
+    void reviewCaseShiftsWhileArmed() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("index.json");
+        QVERIFY(write(path, read(Fixture)));
+        auto window = load(dir, options(dir, path), "en");
+        QVERIFY(window->window);
+        QTRY_VERIFY(find(window.get(), "changesList")->property("count").toInt() > 0);
+        QTRY_COMPARE(window->backend->engineState(), QString("present"));
+        find(window.get(), "changesView")->setProperty("selectedId", "01M3VTGNY0NZG4AY80814WSKGR");
+        QQuickItem *detail = find(window.get(), "changeDetail");
+        QTRY_VERIFY(find(window.get(), "resolveButton")->isVisible());
+        detail->setProperty("caseId", "C-2026-004");
+        QCOMPARE(detail->property("caseAt").toInt(), 2);
+        const QString before = detail->property("summary").toString();
+        QMetaObject::invokeMethod(detail, "press");
+        QTRY_VERIFY(detail->property("armed").toBool());
+
+        QVERIFY(writeFixture(path + ".tmp", dropFirstCase));
+        QVERIFY(QFile::remove(path));
+        QVERIFY(QFile::rename(path + ".tmp", path));
+        QTRY_COMPARE(window->backend->index()["cases"].toObject()["active"].toArray().size(), 1);
+        QTRY_COMPARE(detail->property("caseAt").toInt(), 1);
+        QVERIFY(detail->property("armed").toBool());
+        QCOMPARE(detail->property("summary").toString(), before);
+        QMetaObject::invokeMethod(detail, "press");
+        QTRY_VERIFY(calls(dir).contains("drift link 01M3VTGNY0NZG4AY80814WSKGR C-2026-004 --json"));
+        QCOMPARE(calls(dir).filter("drift link").size(), 1);
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // The armed case leaves the index before the second press: the form
+    // disarms and the second press runs nothing.
+    void armedCaseLeavingDisarms() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("index.json");
+        QVERIFY(write(path, read(Fixture)));
+        auto window = load(dir, options(dir, path), "en");
+        QVERIFY(window->window);
+        QTRY_VERIFY(find(window.get(), "changesList")->property("count").toInt() > 0);
+        QTRY_COMPARE(window->backend->engineState(), QString("present"));
+        find(window.get(), "changesView")->setProperty("selectedId", "01M3VTGNY0NZG4AY80814WSKGR");
+        QQuickItem *detail = find(window.get(), "changeDetail");
+        QTRY_VERIFY(find(window.get(), "resolveButton")->isVisible());
+        detail->setProperty("caseId", "C-2026-003");
+        QMetaObject::invokeMethod(detail, "press");
+        QTRY_VERIFY(detail->property("armed").toBool());
+
+        QVERIFY(writeFixture(path + ".tmp", dropFirstCase));
+        QVERIFY(QFile::remove(path));
+        QVERIFY(QFile::rename(path + ".tmp", path));
+        QTRY_VERIFY(!detail->property("armed").toBool());
+        QMetaObject::invokeMethod(detail, "press");
+        QTest::qWait(500);
+        QVERIFY(!calls(dir).join('\n').contains("drift link"));
+        QVERIFY(!detail->property("armed").toBool());
+        QVERIFY(!detail->property("error").toString().isEmpty());
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // The action changes while a resolution runs: the answer still ends
+    // `pending` (it is matched to the argv that ran), and another selection
+    // clears it as well.
+    void reviewPendingSticks() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("index.json");
+        QVERIFY(write(path, read(Fixture)));
+        auto o = options(dir, path);
+        QByteArray script = read(o.engine);
+        script.replace("drift) echo", "drift) sleep 1; echo");
+        QVERIFY(write(o.engine, script));
+        auto window = load(dir, o, "en");
+        QVERIFY(window->window);
+        QTRY_VERIFY(find(window.get(), "changesList")->property("count").toInt() > 0);
+        QTRY_COMPARE(window->backend->engineState(), QString("present"));
+        QQuickItem *view = find(window.get(), "changesView");
+        view->setProperty("selectedId", "01M3VTGNY0NZG4AY80814WSKGR");
+        QQuickItem *detail = find(window.get(), "changeDetail");
+        QQuickItem *button = find(window.get(), "resolveButton");
+        QTRY_VERIFY(button->isVisible());
+        QMetaObject::invokeMethod(detail, "press");
+        QMetaObject::invokeMethod(detail, "press");
+        QTRY_VERIFY(detail->property("pending").toBool());
+        // The form is locked while the engine works.
+        QVERIFY(!button->isEnabled());
+        QVERIFY(!find(window.get(), "action-explain")->isEnabled());
+        QVERIFY(!find(window.get(), "caseBox")->isEnabled());
+        detail->setProperty("action", "explain");
+        QTRY_VERIFY_WITH_TIMEOUT(!detail->property("pending").toBool(), 5000);
+        QCOMPARE(find(window.get(), "formAnswer")->property("text").toString(), QString("Linked 1 event to C-2026-005"));
+        QVERIFY(button->isEnabled());
+
+        // A second run, and another change selected before it answers.
+        detail->setProperty("action", "link");
+        QMetaObject::invokeMethod(detail, "press");
+        QMetaObject::invokeMethod(detail, "press");
+        QTRY_VERIFY(detail->property("pending").toBool());
+        view->setProperty("selectedId", "01M3VNJ9JGZ9169T01XCW16FT0");
+        QTRY_VERIFY(!detail->property("pending").toBool());
+        QTRY_VERIFY(button->isEnabled());
+        QTRY_VERIFY(!window->backend->busy());
+        QCOMPARE(find(window.get(), "formAnswer")->property("text").toString(), QString());
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // Markup in a case title (the Link picker) and in an engine error shows
+    // as the characters it is; every text item of the window is plain.
+    void reviewRichText() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("index.json");
+        const QString markup = "<font color=\"#ff00ff\" size=\"7\">RICH</font><img src=\"x.png\">";
+        QVERIFY(writeFixture(path, [&](QJsonObject &index) {
+            QJsonObject cases = index["cases"].toObject();
+            QJsonArray active = cases["active"].toArray();
+            QJsonObject first = active[0].toObject();
+            first["title"] = markup;
+            active[0] = first;
+            cases["active"] = active;
+            index["cases"] = cases;
+        }));
+        auto o = options(dir, path);
+        QByteArray script = read(o.engine);
+        script.replace("capture) echo '{\"written\":0,\"collectors\":[]}' ;;",
+                       "capture) echo '<font color=\"#00ff00\" size=\"7\">ERR</font>' >&2; exit 2 ;;");
+        QVERIFY(write(o.engine, script));
+        auto window = load(dir, o, "en");
+        QVERIFY(window->window);
+        QTRY_VERIFY(find(window.get(), "changesList")->property("count").toInt() > 0);
+        QTRY_COMPARE(window->backend->engineState(), QString("present"));
+        find(window.get(), "changesView")->setProperty("selectedId", "01M3VTGNY0NZG4AY80814WSKGR");
+        QTRY_VERIFY(find(window.get(), "resolveButton")->isVisible());
+        QTest::keyClick(window->window, Qt::Key_Space);
+        QTRY_VERIFY_WITH_TIMEOUT(find(window.get(), "captureAnswer")->property("text").toString().contains("ERR"), 3000);
+        QQuickItem *caseBox = find(window.get(), "caseBox");
+        caseBox->setProperty("currentIndex", 1);
+        QObject *popup = caseBox->property("popup").value<QObject *>();
+        popup->setProperty("visible", true);
+        QTRY_VERIFY(find(window.get(), "caseOption"));
+        QTest::qWait(300);
+
+        // Every text but the window's own fixed words (the catalog's keys,
+        // e.g. a placeholder or the check box Material draws) is plain.
+        const QJsonObject fixed = QJsonDocument::fromJson(read(":/i18n/de.json")).object();
+        QStringList rich, literal;
+        for (QQuickItem *item : allItems(window.get())) {
+            if (!item->inherits("QQuickText"))
+                continue;
+            const QString text = item->property("text").toString();
+            if (text.isEmpty() || fixed.contains(text))
+                continue;
+            if (item->property("textFormat").toInt() != Qt::PlainText)
+                rich << QString::fromUtf8(item->metaObject()->className()) + ": " + text;
+            else if (text.contains("<font"))
+                literal << text;
+        }
+        QVERIFY2(rich.isEmpty(), qPrintable(rich.join('\n')));
+        // The capture error, the picker's own text and its popup's item.
+        QVERIFY2(literal.size() >= 3, qPrintable(literal.join('\n')));
+        QVERIFY(literal.filter("ERR").size() >= 1);
+        QVERIFY(literal.filter("RICH").size() >= 2);
+        popup->setProperty("visible", false);
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // The stale strip sits above the list, its fix inside it.
+    void reviewStaleLayout() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("index.json");
+        QVERIFY(write(path, read(Fixture)));
+        auto window = load(dir, options(dir, path), "en");
+        QVERIFY(window->window);
+        QTRY_COMPARE(window->backend->status(), QString("indexStale"));
+        QTest::qWait(300);
+        QQuickItem *fix = find(window.get(), "stateFix");
+        QQuickItem *card = find(window.get(), "stateCard");
+        QQuickItem *view = find(window.get(), "changesView");
+        QVERIFY(fix->isVisible() && card->isVisible() && view->isVisible());
+        const QRectF f = fix->mapRectToScene(QRectF(0, 0, fix->width(), fix->height()));
+        const QRectF c = card->mapRectToScene(QRectF(0, 0, card->width(), card->height()));
+        const QRectF v = view->mapRectToScene(QRectF(0, 0, view->width(), view->height()));
+        const QString where = QString("card %1+%2, fix %3+%4, view %5").arg(c.y()).arg(c.height()).arg(f.y()).arg(f.height()).arg(v.y());
+        QVERIFY2(c.contains(f), qPrintable(where));
+        QVERIFY2(f.bottom() <= v.top(), qPrintable(where));
+        QVERIFY2(c.bottom() <= v.top(), qPrintable(where));
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // Any change to an armed form disarms it: the text, the action, the
+    // case, "only this event". Space in the case picker is the picker's.
+    void formChangesDisarm() {
+        QTemporaryDir dir;
+        QVERIFY(write(dir.filePath("index.json"), read(Fixture)));
+        auto window = load(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window->window);
+        QTRY_VERIFY(find(window.get(), "changesList")->property("count").toInt() > 0);
+        QTRY_COMPARE(window->backend->engineState(), QString("present"));
+        QQuickItem *view = find(window.get(), "changesView");
+        QQuickItem *detail = find(window.get(), "changeDetail");
+        view->setProperty("selectedId", "01M3VNJ9JGZ9169T01XCW16FT0");
+        QTRY_VERIFY(find(window.get(), "resolveButton")->isVisible());
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_VERIFY(find(window.get(), "reasonField")->hasActiveFocus());
+        for (const char c : QByteArray("abc"))
+            QTest::keyClick(window->window, c);
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_VERIFY(detail->property("armed").toBool());
+        QTest::keyClick(window->window, 'd');
+        QTRY_VERIFY(!detail->property("armed").toBool());
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_VERIFY(detail->property("armed").toBool());
+        QQuickItem *dismiss = find(window.get(), "action-dismiss");
+        QTest::mouseClick(window->window, Qt::LeftButton, {}, dismiss->mapToScene(QPointF(dismiss->width() / 2, dismiss->height() / 2)).toPoint());
+        QTRY_COMPARE(detail->property("action").toString(), QString("dismiss"));
+        QVERIFY(!detail->property("armed").toBool());
+        QMetaObject::invokeMethod(detail, "press");
+        QTRY_VERIFY(detail->property("armed").toBool());
+        detail->setProperty("only", true);
+        QVERIFY(!detail->property("armed").toBool());
+
+        view->setProperty("selectedId", "01M3VTGNY0NZG4AY80814WSKGR");
+        QTRY_COMPARE(detail->property("action").toString(), QString("link"));
+        QMetaObject::invokeMethod(detail, "press");
+        QTRY_VERIFY(detail->property("armed").toBool());
+        detail->setProperty("caseId", "C-2026-004");
+        QVERIFY(!detail->property("armed").toBool());
+
+        QQuickItem *caseBox = find(window.get(), "caseBox");
+        caseBox->forceActiveFocus();
+        QTRY_VERIFY(caseBox->hasActiveFocus());
+        QTest::keyClick(window->window, Qt::Key_Space);
+        QTest::qWait(300);
+        QVERIFY(!calls(dir).join('\n').contains("capture"));
+        QVERIFY(!calls(dir).join('\n').contains("drift"));
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // Another change while a typed reason is unsent asks first; Esc keeps
+    // the text, a second try drops it.
+    void anotherChangeAsksBeforeDroppingText() {
+        QTemporaryDir dir;
+        QVERIFY(write(dir.filePath("index.json"), read(Fixture)));
+        auto window = load(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window->window);
+        QTRY_VERIFY(find(window.get(), "changesList")->property("count").toInt() > 0);
+        QQuickItem *view = find(window.get(), "changesView");
+        QQuickItem *detail = find(window.get(), "changeDetail");
+        QQuickItem *ask = find(window.get(), "discardAsk");
+        const QString id = "01M3VNJ9JGZ9169T01XCW16FT0";
+        view->setProperty("selectedId", id);
+        QTRY_VERIFY(find(window.get(), "resolveButton")->isVisible());
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_VERIFY(find(window.get(), "reasonField")->hasActiveFocus());
+        for (const char c : QByteArray("mine"))
+            QTest::keyClick(window->window, c);
+        QTest::keyClick(window->window, Qt::Key_Escape);
+        QTRY_VERIFY(!find(window.get(), "reasonField")->hasActiveFocus());
+
+        QTest::keyClick(window->window, 'j');
+        QTRY_VERIFY(ask->isVisible());
+        QCOMPARE(view->property("selectedId").toString(), id);
+        QCOMPARE(detail->property("reason").toString(), QString("mine"));
+        QTest::keyClick(window->window, Qt::Key_Escape);
+        QTRY_VERIFY(!ask->isVisible());
+        QCOMPARE(detail->property("reason").toString(), QString("mine"));
+
+        QTest::keyClick(window->window, 'j');
+        QTRY_VERIFY(ask->isVisible());
+        QTest::keyClick(window->window, 'j');
+        QTRY_VERIFY(view->property("selectedId").toString() != id);
+        QVERIFY(!ask->isVisible());
+        QCOMPARE(detail->property("reason").toString(), QString());
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // ADR-0051: an index of a newer contract that this window can read
+    // shows, with the quiet note to update.
+    void newerContractShowsTheNotice() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("index.json");
+        QVERIFY(writeFixture(path, [](QJsonObject &index) {
+            index["contractVersion"] = 3;
+            index["contractReadableFrom"] = 2;
+        }));
+        auto window = load(dir, options(dir, path, true), "en");
+        QVERIFY(window->window);
+        QTRY_VERIFY(find(window.get(), "changesList")->property("count").toInt() > 0);
+        QQuickItem *notice = find(window.get(), "contractNotice");
+        QTRY_VERIFY(notice->isVisible());
+        QCOMPARE(notice->property("text").toString(),
+                 QString("The engine writes index v3; this window reads v2 — update Seldon."));
+
+        QVERIFY(write(path + ".tmp", read(Fixture)));
+        QVERIFY(QFile::remove(path));
+        QVERIFY(QFile::rename(path + ".tmp", path));
+        QTRY_VERIFY(!notice->isVisible());
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
     void init() { messages.clear(); }
 
 private:
@@ -613,8 +983,38 @@ private:
         return w;
     }
 
+    // By objectName: through the object tree, then through the visual one
+    // (a Repeater's delegates are only in the latter).
     static QQuickItem *find(Window *w, const char *name) {
-        return w && w->window ? w->window->findChild<QQuickItem *>(name) : nullptr;
+        if (!w || !w->window)
+            return nullptr;
+        if (QQuickItem *item = w->window->findChild<QQuickItem *>(name))
+            return item;
+        return findItem(w->window->contentItem(), QString::fromUtf8(name));
+    }
+
+    // Every item of the window, the open popups' included.
+    static QList<QQuickItem *> allItems(Window *w) {
+        QList<QQuickItem *> out = w->window->findChildren<QQuickItem *>();
+        QList<QQuickItem *> todo{w->window->contentItem()};
+        while (!todo.isEmpty()) {
+            QQuickItem *item = todo.takeLast();
+            if (!out.contains(item))
+                out << item;
+            todo << item->childItems();
+        }
+        return out;
+    }
+
+    static QQuickItem *findItem(QQuickItem *item, const QString &name) {
+        if (!item)
+            return nullptr;
+        if (item->objectName() == name)
+            return item;
+        for (QQuickItem *child : item->childItems())
+            if (QQuickItem *found = findItem(child, name))
+                return found;
+        return nullptr;
     }
 };
 
