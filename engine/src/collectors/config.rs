@@ -1526,15 +1526,15 @@ fn locales(omarchy: &Path, owner: u32) -> Vec<(String, String)> {
 }
 
 /// The text of the regular file `rel` of Omarchy's trusted tree, at most
-/// [`MAX_FILE_SIZE`]; `None` when it is missing, larger, not UTF-8 or not
-/// trusted ([`copy_trusted`]).
+/// [`MAX_FILE_SIZE`] ([`sys::read_regular_string`]); `None` when it is
+/// missing, larger, no regular file, not UTF-8 or not trusted
+/// ([`copy_trusted`]).
 fn trusted_text(omarchy: &Path, owner: u32, rel: &str) -> Option<String> {
     let file = omarchy.join(rel);
-    let meta = std::fs::metadata(&file).ok()?;
-    if !meta.is_file() || meta.len() > MAX_FILE_SIZE || !copy_trusted(&file, omarchy, owner) {
+    if !copy_trusted(&file, omarchy, owner) {
         return None;
     }
-    std::fs::read_to_string(&file).ok()
+    sys::read_regular_string(&file, MAX_FILE_SIZE).ok()
 }
 
 /// Omarchy's toggle state directory relative to `$HOME`
