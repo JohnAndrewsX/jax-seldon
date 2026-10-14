@@ -251,3 +251,91 @@ rc 7.2.5-4) and in `omarchy-dev` and `omarchy-settings-dev`
 | full check | not run | docs only: round 2 changed `CHANGELOG.md`, `docs/user/`, `packaging/acceptance/` and `work/`, nothing under `engine/`, `plugin/`, `schema/` or `scripts/`; the last full check is round 1's on fe4ab148 (`check: ok`, exit 0, after one rerun of the known by-id flake) |
 
 The live stage (part B) follows when origin/next is at a088e38b.
+
+## Live stage (part B, after origin/next reached a088e38b)
+
+Everything below ran on the **test host** unless it says otherwise. The
+screenshots are in the private gates folder (`dev-221/live-221-*.png`).
+
+**The deploy clone.** `wt/next` stands at local `next` e7089f3d, one
+commit ahead of origin/next (E94), so the deploy would refuse it; I did
+not touch it. A fresh clone of GitHub's `next` in the private gates
+folder (`dev-221/next-clone`, HEAD = origin/next = a088e38b, clean),
+with the two git-ignored host files copied from `wt/next`.
+
+**The check log.** next's gate `gate-n034a.log` ends in `check: ok`,
+`exit 0`, but its first line is not `head <full sha>` (its first three
+lines repeat its end), so `deploy-test-host --dry-run` refused it ("the
+check log does not start with 'head <full sha>'"). Reported; on the
+orchestrator's word I ran the full check myself in the clone, the
+script unchanged:
+
+| Check | Where | Result |
+|---|---|---|
+| `flock /tmp/seldon-check.lock env SELDON_FULL_CHECK=1 just check` in the clone at a088e38b | headless (dev host; own `HOME`, private 0700 `XDG_RUNTIME_DIR` removed afterwards, `TMPDIR`, `JUST_TEMPDIR`, `CARGO_TARGET_DIR=gates/target-dev-221`) | `check: ok`, `exit 0`, first run, no flake; log `gates/check-dev-221-next.log` (first line `head a088e38b90d0…`): check-packaging ok; install 229/0; deploy-test-host 326/0; check-upstream ok (17 files); docs-check ok (529 links); qmllint ok (53 files); model.test.js 246; real-home-guard 79/0; service-states 367/0; desk-view 2756/0; bar-view 196/0; ipc-restart 44/0 |
+
+**Deploy.** From the clone: `SELDON_TEST_HOST=<the test host> just
+deploy-test-host --branch next <gates>/check-dev-221-next.log` (a dry
+run first), exit 0. Summary: `commit
+a088e38b90d037bb046a9453dd7a9afebdd1fcdb`, the host runs
+`0.4.0+next.a088e38b` (was release 0.3.0, plugin a git clone, moved
+aside), the backup before next with RESTORE.txt, shell restarted, smoke
+ok. Omarchy 4.0.4-1, channel rc, one 1920x1080 output at scale 1.
+
+| Scenario | What ran | Counts | Result |
+|---|---|---|---|
+| **gate** | a git bundle of `next` to the host, cloned as `~/seldon-gate-a088e38b` (HEAD a088e38b, clean); in it `OMARCHY_PATH=/usr/share/omarchy bash scripts/check-omarchy-assumptions.sh --gate` | 1 step, 0 passwords | passed: "check-upstream: ok (every assumption's file matches the ledger)", 17 files, exit 0 |
+| **b** | not tried (`omarchy plugin update` is the operator's; the guard blocked it for 0.3.0) | — | not run |
+| **status** | `summon jax.seldon '{"section":"changelog","filter":"open"}'`: both open changes with `attention` beside the stripe, *Ask agent to sort 2 changes* (view and shot); Decisions (empty): the empty line and *New decision* or d (view and shot); `/` and `zzqxnomatch` typed with `wtype`: "Nothing here matches “zzqxnomatch”." with *Clear search* or Esc (view and shot) | 3 steps, 0 passwords | passed; only `attention` live (the host has no crisis, active case, proposal or failing collector), the record says so |
+| **header** | real keys (`wtype -k`) on the open desk at Work, one key per call with the view read after each: Up → *By agent* (cursor −1, the hint "←/→ a button · Enter twice runs it · ↓ back to the list"); Right → *Import tasks…*; Right → *New case*; Enter → armed, "New case? Press Enter again."; Left → disarmed, *Import tasks…*; Left → *By agent*; Down → first row. On *By agent* Enter twice turned the filter on (COMPLETED 7 → 1) and Enter twice off again. Shot with the focus ring on *Import tasks…* | 3 steps, 0 passwords | passed |
+| **redact** | a PreToolUse payload (Bash, `cwd` the host's logbook) piped into `seldon hook claude-code` over ssh, the command `x=$(sudo mkpasswd -m sha-512 <made-up secret>); echo "$x"`; nothing executed. The guard did not block it | 1 step, 0 passwords | passed: exit 0; one new ledger line (132 → 133), zone red, actor `agent:claude-code`, subject `mkpasswd`, text "asked to run: mkpasswd ‹redacted›"; the secret in no file under the logbook or `~/.local/state/seldon` |
+| **restart** | crashes 0 and "No coredumps found." before; three `omarchy restart shell`, each waited for `omarchy-shell shell ping` (1 s), then `jax.seldon.service status` | 3 steps, 0 passwords | passed: pid 565862 → 569227 → 570097 → 570955, status ok, engine `0.4.0+next.a088e38b`, plugin 0.4.0, no restart notice each time; crashes 0 and "No coredumps found." after |
+
+Two slips on the way, both without effect on the results: my first
+header walk ran in one remote shell function that printed nothing (the
+keys did run: the read afterwards found *By agent* on; I turned it off
+by keys and walked again step by step, above); and one call without
+`OMARCHY_PATH` failed its section switch, so the no-match search was
+typed in Decisions instead of Work (recorded as such). Esc at the end
+closed the desk.
+
+### `bash packaging/acceptance-check.sh 0.4.0` (exit 0)
+
+```text
+acceptance-check: v0.4.0 at HEAD (96012a6f6668)
+  record   packaging/acceptance/v0.4.0.json, 2026-10-14
+  status   partial: 5 passed, 1 not run
+  commit   a088e38b90d037bb046a9453dd7a9afebdd1fcdb, 6 later commit(s), none outside docs and records
+  omarchy  4.0.4-1, channel rc
+  engine   0.4.0+next.a088e38b; plugin 0.4.0
+  scenario gate: passed (test host); 1 human step(s), 0 password prompt(s) — Omarchy assumptions, check-upstream --gate (WP-194), before the live checks
+  scenario b: not run — 0.3.0 to 0.4.0: engine and plugin updated in either order, restart notice once, settings kept
+  scenario status: passed (test host); 3 human step(s), 0 password prompt(s) — status words beside every stripe (crisis, attention, active, proposed, failing) and the empty lists' line and action, Clear search on a search without a match (WP-178)
+  scenario header: passed (test host); 3 human step(s), 0 password prompt(s) — Work's header buttons by key: up from the first row reaches By agent, left/right walk the three, Enter twice runs one, down back to the list (WP-215)
+  scenario redact: passed (test host); 1 human step(s), 0 password prompt(s) — a privileged command with a secret inside a command substitution, recorded masked (WP-209)
+  scenario restart: passed (test host); 3 human step(s), 0 password prompt(s) — three shell restarts (WP-162)
+  limit    b: not run; omarchy plugin update is the operator's (the guard keeps agents out of it, as for 0.3.0). The mixed install is covered by engineMin 0.2.0 (no new argv or index field) and contract 2 unchanged
+  limit    status: the host's logbook has no crisis, active case, proposed decision or failing collector, so only the word attention was seen live; the other words are covered headless by WP-178's desk-view cases
+  limit    restart: one monitor; the two-monitor restart test runs on the dev host after the tag with the release
+  limit    channel: the test host runs Omarchy's rc channel, not stable (E93). On 2026-10-14 the stable and rc package databases (pkgs.omarchy.org/stable and /rc, read over HTTPS, nothing installed) list omarchy 4.0.4-1 with the same sha256, omarchy-settings 4.0.4-1 and quickshell-git 0.3.0.r20.g28771c7-3 in both; they differ only in linux-omarchy (stable 7.2.5-3, rc 7.2.5-4) and two -dev packages only stable lists
+acceptance-check: ok
+```
+
+### Left in place, not cleaned
+
+Test host: engine and plugin `0.4.0+next.a088e38b` (the plugin dir a dev
+copy), monitor and `shell.json` unchanged, `seldon-watch` inactive as
+before. `~/seldon-next-a088e38b.bundle`, `~/seldon-gate-a088e38b/`,
+`~/live-221-*.png` and `~/live-221-search-*.json`; from the deploy
+`~/.local/state/seldon-dev/backup-before-next-20261014T073024Z/` (with
+RESTORE.txt), `plugin-git-20261014T073209Z/`, one line in
+`deploy.jsonl`, `~/.local/bin/seldon.prev` (0.3.0); in the host's
+logbook the redact scenario's red ledger line (masked).
+
+Dev host: the clone `gates/dev-221/next-clone` (with the deploy's
+`engine/target`), the bundle, the shots and the logs under the private
+gates folder; `gates/target-dev-221`.
+
+No guard block in part B. No sudo, no `omarchy plugin update`, nothing
+on the dev host's live plugin, `~/.config`, `~/.local/state/seldon` or
+`~/Seldon`.
