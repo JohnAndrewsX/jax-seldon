@@ -179,6 +179,67 @@ mod open_app {
         assert_eq!(v["error"]["code"], 1);
         let message = v["error"]["message"].as_str().unwrap();
         assert!(message.contains("exited with 3"), "{message}");
+        let app = desk(&env, "kill -9 $$");
+        let out = open(&env, &app, &["open", "--json"]);
+        assert_eq!(out.status.code(), Some(1));
+        let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+        assert!(message.contains("exited with a signal"), "{message}");
+    }
+
+    /// An exit 0 within the 200 ms is a start: a second `seldon open`
+    /// hands over to the window that is open (ADR-0058 §1).
+    #[test]
+    fn an_app_that_exits_0_at_once_has_started() {
+        let env = Env::new(Snapper::Missing);
+        let app = desk(&env, "exit 0");
+        let out = open(&env, &app, &["open", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+        assert_eq!(json(&out), serde_json::json!({ "started": true }));
+    }
+
+    /// A descriptor the caller passes without close-on-exec stays with
+    /// the engine: the app gets only its /dev/null stdio.
+    #[test]
+    fn an_inherited_descriptor_does_not_reach_the_app() {
+        use std::os::fd::AsRawFd as _;
+        use std::os::unix::process::CommandExt as _;
+        unsafe extern "C" {
+            fn dup2(old: i32, new: i32) -> i32;
+        }
+        let env = Env::new(Snapper::Missing);
+        let record = env.tmp.path().join("desk-fds");
+        let pid_file = env.tmp.path().join("desk-pid");
+        let app = desk(
+            &env,
+            &format!(
+                "echo $$ > '{}'\n\
+                 if [ -e /proc/$$/fd/7 ]; then echo fd7; else echo none; fi > '{}'\n\
+                 exec '{}' 10",
+                pid_file.display(),
+                record.display(),
+                host_sleep().display()
+            ),
+        );
+        let passed = std::fs::File::create(env.tmp.path().join("passed")).unwrap();
+        let fd = passed.as_raw_fd();
+        let mut cmd = env.command(&["open", "--json"]);
+        cmd.env("SELDON_DESK", &app);
+        // SAFETY: dup2(2) only, in the forked child; the copy at 7 has no
+        // close-on-exec flag, as a shell's `7>file` leaves it
+        unsafe {
+            cmd.pre_exec(move || {
+                if dup2(fd, 7) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let out = cmd.output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+        assert_eq!(line_of(&record), "none");
+        let _ = std::process::Command::new("kill")
+            .args(["--", &format!("-{}", line_of(&pid_file))])
+            .status();
     }
 
     #[test]
@@ -193,13 +254,56 @@ mod open_app {
             } else {
                 stderr(&out)
             };
-            assert!(text.contains("install the seldon package"), "{text}");
+            assert!(
+                text.contains("The Seldon window is not installed"),
+                "{text}"
+            );
+            assert!(text.contains("Install the seldon package."), "{text}");
             assert!(text.contains(missing.to_str().unwrap()), "{text}");
         }
-        // a directory is no app either
-        let dir = env.tmp.path().join("nowhere");
+    }
+
+    /// There, but no regular executable file: said so, not "missing".
+    #[test]
+    fn a_path_that_is_no_executable_is_said_so() {
+        let env = Env::new(Snapper::Missing);
+        let dir = env.tmp.path().join("desk-dir");
         std::fs::create_dir_all(&dir).unwrap();
-        assert_eq!(open(&env, &dir, &["open", "--json"]).status.code(), Some(1));
+        let plain = env.tmp.path().join("desk-plain");
+        std::fs::write(&plain, "#!/bin/sh\nexit 0\n").unwrap();
+        for path in [&dir, &plain] {
+            for args in [&["open"][..], &["open", "--json"]] {
+                let out = open(&env, path, args);
+                assert_eq!(out.status.code(), Some(1), "{path:?} {args:?}");
+                let text = if args.len() == 2 {
+                    json(&out)["error"]["message"].as_str().unwrap().to_string()
+                } else {
+                    stderr(&out)
+                };
+                assert!(text.contains("is not a regular executable file"), "{text}");
+                assert!(!text.contains("missing"), "{text}");
+            }
+        }
+    }
+
+    /// A script whose interpreter is gone: the app's sentence, not the
+    /// editor's advice.
+    #[test]
+    fn a_missing_interpreter_is_the_apps_error() {
+        let env = Env::new(Snapper::Missing);
+        let app = env.tmp.path().join("desk/seldon-desk");
+        write_executable(&app, "#!/nonexistent/interpreter\n");
+        for args in [&["open"][..], &["open", "--json"]] {
+            let out = open(&env, &app, args);
+            assert_eq!(out.status.code(), Some(1), "{args:?}");
+            let text = if args.len() == 2 {
+                json(&out)["error"]["message"].as_str().unwrap().to_string()
+            } else {
+                stderr(&out)
+            };
+            assert!(text.contains("interpreter or loader"), "{text}");
+            assert!(!text.contains("EDITOR"), "{text}");
+        }
     }
 
     /// `SELDON_DESK` names a file, never a program to look up on PATH.
@@ -381,12 +485,50 @@ mod skill {
         assert_eq!(json(&long), second);
     }
 
+    /// `skill install --replace` is `hook install skills --replace`: the
+    /// same report from the same start, and a logbook needed (exit 3).
+    #[test]
+    fn skill_install_replace_is_hook_install_skills_replace() {
+        let run = |args: &[&str]| -> Value {
+            let env = Env::new(Snapper::Missing);
+            env.init_logbook();
+            let claude = env.home.join(".claude/skills");
+            std::fs::create_dir_all(&claude).unwrap();
+            let out = env.seldon(&["skill", "install"]);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            std::fs::write(claude.join("seldon/SKILL.md"), "my notes\n").unwrap();
+            let out = env
+                .command(args)
+                .env("SELDON_NOW", "2026-10-06T10:00:00+02:00")
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+            assert_eq!(read(&claude.join("seldon/SKILL.md")), SKILL_MD, "{args:?}");
+            let mut dirs = json(&out)["dirs"].clone();
+            // the temp home differs between the two runs
+            for d in dirs.as_array_mut().unwrap() {
+                d.as_object_mut().unwrap().remove("path");
+            }
+            dirs
+        };
+        let front = run(&["--json", "skill", "install", "--replace"]);
+        assert_eq!(front[0]["action"], "replaced", "{front}");
+        assert_eq!(
+            front,
+            run(&["--json", "hook", "install", "skills", "--replace"])
+        );
+        let env = Env::new(Snapper::Missing);
+        std::fs::create_dir_all(env.home.join(".claude/skills")).unwrap();
+        let out = env.seldon(&["skill", "install", "--replace", "--json"]);
+        assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
+    }
+
     #[test]
     fn skill_takes_only_install() {
         let env = Env::new(Snapper::Missing);
         for args in [
             &["skill", "uninstall"][..],
-            &["skill", "install", "--replace"],
+            &["skill", "--replace"],
             &["skill", "x"],
         ] {
             assert_eq!(env.seldon(args).status.code(), Some(1), "{args:?}");
@@ -435,6 +577,43 @@ mod changes {
         assert_eq!(v["from"], "2026-10-01T12:20:00+02:00");
         assert_eq!(v["to"], "2026-10-01T14:50:00+02:00");
         assert_eq!(v["omitted"], 0);
+        let events = v["events"].as_array().unwrap();
+        let classes: Vec<(&str, &str, &Value)> = events
+            .iter()
+            .map(|e| {
+                (
+                    e["source"].as_str().unwrap(),
+                    e["subject"].as_str().unwrap(),
+                    &e["class"],
+                )
+            })
+            .collect();
+        // the machine changes by ADR-0028's table; commands, the snapshot
+        // and the note are none
+        assert_eq!(
+            classes,
+            [
+                ("agent", "pacman", &Value::Null),
+                ("pacman", "ollama", &Value::from("attention")),
+                ("agent", "tee", &Value::Null),
+                (
+                    "config",
+                    "~/.config/systemd/user/ollama.service",
+                    &Value::from("crisis")
+                ),
+                ("snapper", "113", &Value::Null),
+                ("manual", "journal", &Value::Null),
+            ]
+        );
+        // the ledger lines, each with its class
+        let lines: Vec<Value> = events
+            .iter()
+            .map(|e| {
+                let mut e = e.clone();
+                e.as_object_mut().unwrap().remove("class");
+                e
+            })
+            .collect();
         let mut expected: Vec<Value> = ledger(&lb)
             .into_iter()
             .filter(|e| {
@@ -443,7 +622,7 @@ mod changes {
             })
             .collect();
         expected.sort_by(|a, b| a["ts"].as_str().cmp(&b["ts"].as_str()));
-        assert_eq!(v["events"], Value::Array(expected));
+        assert_eq!(lines, expected);
         let subjects: Vec<&str> = v["events"]
             .as_array()
             .unwrap()
@@ -465,7 +644,7 @@ mod changes {
             "{text}"
         );
         assert!(
-            text.contains("2026-10-01 14:02:09  pacman/install  ollama"),
+            text.contains("2026-10-01 14:02:09  attention  pacman/install  ollama"),
             "{text}"
         );
     }
@@ -531,11 +710,121 @@ mod changes {
             &["--around", "now", "--after", "32d"],
             &["--around", "now", "--before", "-1h"],
             &[],
+            // past what a time can hold or RFC 3339 can write: exit 1, no panic
+            &["--around", "@8210266876799", "--after", "31d"],
+            &["--around", "@8210266800000", "--after", "0s"],
+            &["--around", "@253402300799", "--after", "1d"],
+            &["--around", "0001-01-01T00:30:00+00:00", "--before", "1h"],
         ] {
             let out = changes(&env, &lb, &[args, &["--json"]].concat());
             assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stdout(&out));
             assert!(json(&out)["error"]["message"].is_string(), "{args:?}");
         }
+        // a date alone: the message asks for a time and names the forms
+        let out = changes(&env, &lb, &["--around", "2026-10-01", "--json"]);
+        let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+        assert!(message.contains("give a time"), "{message}");
+        for form in [
+            "RFC 3339",
+            "2026-10-01 14:20",
+            "@<seconds since 1970>",
+            "now",
+        ] {
+            assert!(message.contains(form), "{form}: {message}");
+        }
+        // the ends themselves still read
+        let out = changes(
+            &env,
+            &lb,
+            &[
+                "--around",
+                "9999-12-30T00:00:00+00:00",
+                "--after",
+                "1d",
+                "--json",
+            ],
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    }
+
+    /// Local times follow the engine's zone (`TZ`). In the autumn overlap
+    /// the first pass (still summer time); in the spring gap, exit 1.
+    #[test]
+    fn local_times_across_the_clock_changes() {
+        let env = Env::new(Snapper::Missing);
+        let lb = fixture_copy(&env);
+        let around = |tz: &str, local: &str| -> Option<String> {
+            let out = env
+                .command(&[
+                    "--logbook",
+                    lb.to_str().unwrap(),
+                    "changes",
+                    "--around",
+                    local,
+                    "--json",
+                ])
+                .env("SELDON_NOW", T0)
+                .env("TZ", tz)
+                .output()
+                .unwrap();
+            match out.status.code() {
+                Some(0) => Some(json(&out)["around"].as_str().unwrap().to_string()),
+                Some(1) => None,
+                c => panic!("{tz} {local}: exit {c:?}: {}", stdout(&out)),
+            }
+        };
+        // the zone file, and the same rules as a POSIX TZ string (no
+        // zone data needed)
+        for tz in ["Europe/Berlin", "CET-1CEST,M3.5.0,M10.5.0/3"] {
+            let at = |local: &str| around(tz, local);
+            assert_eq!(
+                at("2026-10-25 01:59").as_deref(),
+                Some("2026-10-25T01:59:00+02:00"),
+                "{tz}"
+            );
+            assert_eq!(
+                at("2026-10-25 02:30").as_deref(),
+                Some("2026-10-25T02:30:00+02:00"),
+                "{tz}: the first 02:30"
+            );
+            assert_eq!(
+                at("2026-10-25 02:59:59").as_deref(),
+                Some("2026-10-25T02:59:59+02:00"),
+                "{tz}"
+            );
+            assert_eq!(
+                at("2026-10-25 03:00").as_deref(),
+                Some("2026-10-25T03:00:00+01:00"),
+                "{tz}"
+            );
+            assert_eq!(at("2026-03-29 02:30"), None, "{tz}: skipped");
+            assert_eq!(
+                at("2026-03-29 01:59").as_deref(),
+                Some("2026-03-29T01:59:00+01:00"),
+                "{tz}"
+            );
+            assert_eq!(
+                at("2026-03-29 03:00").as_deref(),
+                Some("2026-03-29T03:00:00+02:00"),
+                "{tz}"
+            );
+        }
+        // the exit 1 says why
+        let out = env
+            .command(&[
+                "--logbook",
+                lb.to_str().unwrap(),
+                "changes",
+                "--around",
+                "2026-03-29 02:30",
+                "--json",
+            ])
+            .env("SELDON_NOW", T0)
+            .env("TZ", "Europe/Berlin")
+            .output()
+            .unwrap();
+        let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+        assert!(message.contains("does not exist"), "{message}");
     }
 
     #[test]
@@ -567,13 +856,14 @@ mod changes {
             lines.push('\n');
         }
         std::fs::write(lb.join("ledger/2026-10.jsonl"), lines).unwrap();
-        // the moment at n100: the 20 farthest are n500…n519
+        // the moment at n419: the 20 farthest are n0…n19, not the last 20
+        // (first-500 would keep n0…n499)
         let v = ok(
             &env,
             &lb,
             &[
                 "--around",
-                "2026-10-01T10:01:40+02:00",
+                "2026-10-01T10:06:59+02:00",
                 "--before",
                 "1h",
                 "--after",
@@ -584,7 +874,9 @@ mod changes {
         let events = v["events"].as_array().unwrap();
         assert_eq!(events.len(), 500);
         assert_eq!(v["omitted"], 20);
-        assert_eq!(events[0]["subject"], "n0");
-        assert_eq!(events[499]["subject"], "n499");
+        assert_eq!(events[0]["subject"], "n20");
+        assert_eq!(events[499]["subject"], "n519");
+        // a note is no machine change: no class
+        assert!(events.iter().all(|e| e["class"].is_null()));
     }
 }

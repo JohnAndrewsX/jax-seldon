@@ -3,6 +3,7 @@
   "events": [
     {
       "actor": "agent:codex",
+      "class": null,
       "id": "01M3VNF5Z06QEBJEEMHS802D2F",
       "kind": "command",
       "meta": {
@@ -15,6 +16,7 @@
     },
     {
       "actor": "agent:codex",
+      "class": "attention",
       "detail": "0.6.1-1",
       "explicit": true,
       "id": "01M3VNFTF8EVHWFFZ687N14Q0C",
@@ -31,6 +33,7 @@
     },
     {
       "actor": "agent:codex",
+      "class": null,
       "id": "01M3VNHD88HSQHSVJ6ZNCXDK1W",
       "kind": "command",
       "meta": {
@@ -43,6 +46,7 @@
     },
     {
       "actor": "agent:codex",
+      "class": "crisis",
       "detail": "sha256 — → c0243ca5",
       "id": "01M3VNJ9JGZ9169T01XCW16FT0",
       "kind": "config-add",
@@ -56,6 +60,7 @@
     },
     {
       "actor": "system",
+      "class": null,
       "detail": "pre: ollama",
       "id": "01M3VQ2TA0HFEWFW5PT72E64FK",
       "kind": "snapshot",
@@ -69,6 +74,7 @@
     },
     {
       "actor": "human",
+      "class": null,
       "detail": "Codex hat ollama ohne Case installiert, samt User-Service. Snapshot 113 gemacht; morgen entscheiden, ob es bleibt (Vorschlag ADR-0004).",
       "id": "01M3VQN4807PWS1QE2RYRV2E4E",
       "kind": "note",
