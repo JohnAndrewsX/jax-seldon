@@ -1,6 +1,6 @@
 # Das Logbuch
 
-<!-- source: en/07-the-logbook.md @ 4d58d386 -->
+<!-- source: en/07-the-logbook.md @ ff2f0f8d -->
 
 Diese Seite geht durch den Ordner des Logbuchs: was jeder Ordner und
 jede Datei enthält, welche Teile der Engine gehören und welche dir, wie
@@ -9,7 +9,7 @@ git die Geschichte bewahrt und wie du das Logbuch in Obsidian öffnest.
 ## Wo es liegt
 
 Das Logbuch ist `~/Seldon`, wenn du im Assistenten keinen anderen Ort
-gewählt hast. `seldon open logbook` gibt den Pfad aus. Es ist ein
+gewählt hast. `seldon edit logbook` gibt den Pfad aus. Es ist ein
 gewöhnlicher Ordner: keine Datenbank, kein verstecktes Format. Alles
 darin ist auch ohne Seldon gut lesbar.
 

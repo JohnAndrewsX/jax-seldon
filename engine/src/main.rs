@@ -116,8 +116,17 @@ enum Command {
     /// files edited under ~/.config, read-only, nothing written
     Preview(commands::preview::PreviewArgs),
 
-    /// Print the path of a logbook file; --editor opens it
+    /// Start the Seldon app (`seldon open <target>` is the old name of `edit`)
     Open(commands::open::OpenArgs),
+
+    /// Print the path of a logbook file; --editor opens it
+    Edit(commands::open::EditArgs),
+
+    /// What the ledger recorded around a moment (a crash, a failed boot); read-only
+    Changes(commands::changes::ChangesArgs),
+
+    /// Print the Seldon agent skill; `install` puts it into the agent skill folders
+    Skill(commands::skill::SkillArgs),
 
     /// Rebuild index.json and the ledger/*.md views; --check validates
     Index(commands::index::IndexArgs),
@@ -455,7 +464,10 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Event(a) => commands::event::run(&ctx, a),
         Command::Plan(a) => commands::plan::run(&ctx, a),
         Command::Decide(a) => commands::decide::run(&ctx, a),
-        Command::Open(a) => commands::open::run(&ctx, a),
+        Command::Open(a) => commands::open::run_open(&ctx, a),
+        Command::Edit(a) => commands::open::run(&ctx, a),
+        Command::Changes(a) => commands::changes::run(&ctx, a),
+        Command::Skill(a) => commands::skill::run(&ctx, a),
         Command::Preview(a) => commands::preview::run(&ctx, a),
         Command::Index(a) => commands::index::run(&ctx, a),
         Command::Status(a) => commands::status::run(&ctx, a),
