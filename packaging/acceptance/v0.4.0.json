@@ -9,6 +9,8 @@
   "scenarios": [
     { "id": "gate", "title": "Omarchy assumptions, check-upstream --gate (WP-194), before the live checks",
       "where": "not run", "result": "not run" },
+    { "id": "b", "title": "0.3.0 to 0.4.0: engine and plugin updated in either order, restart notice once, settings kept",
+      "where": "not run", "result": "not run" },
     { "id": "status", "title": "status words beside every stripe (crisis, attention, active, proposed, failing) and the empty lists' line and action, Clear search on a search without a match (WP-178)",
       "where": "not run", "result": "not run" },
     { "id": "header", "title": "Work's header buttons by key: up from the first row reaches By agent, left/right walk the three, Enter twice runs one, down back to the list (WP-215)",
@@ -19,10 +21,12 @@
       "where": "not run", "result": "not run" }
   ],
   "limitations": [
+    "b: not run; omarchy plugin update is the operator's (the guard keeps agents out of it, as for 0.3.0). The mixed install is covered by engineMin 0.2.0 (no new argv or index field) and contract 2 unchanged",
     "gate: not run; the deploy refused this branch (deploy-test-host --branch next deploys only next at origin/next), so the live test waits for the merge into next",
     "status: not run; the deploy refused this branch (deploy-test-host --branch next deploys only next at origin/next), so the live test waits for the merge into next",
     "header: not run; the deploy refused this branch (deploy-test-host --branch next deploys only next at origin/next), so the live test waits for the merge into next",
     "redact: not run; the deploy refused this branch (deploy-test-host --branch next deploys only next at origin/next), so the live test waits for the merge into next",
-    "restart: not run; the deploy refused this branch (deploy-test-host --branch next deploys only next at origin/next), so the live test waits for the merge into next"
+    "restart: not run; the deploy refused this branch (deploy-test-host --branch next deploys only next at origin/next), so the live test waits for the merge into next",
+    "channel: the test host runs Omarchy's rc channel, not stable (E93). On 2026-10-14 the stable and rc package databases (pkgs.omarchy.org/stable and /rc, read over HTTPS, nothing installed) list omarchy 4.0.4-1 with the same sha256, omarchy-settings 4.0.4-1 and quickshell-git 0.3.0.r20.g28771c7-3 in both; they differ only in linux-omarchy (stable 7.2.5-3, rc 7.2.5-4) and two -dev packages only stable lists"
   ]
 }
