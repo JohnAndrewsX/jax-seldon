@@ -47,7 +47,11 @@ Each state that keeps the changes from showing has one fix: the engine
 missing (Install, in Omarchy's terminal), no logbook (Create logbook, in
 Omarchy's terminal), no index (Build index: `seldon status`), a stale index
 (Capture now: `seldon capture`). An index of a contract the window cannot
-read says so and checks again.
+read says so and checks again; a newer one it can still read (ADR-0051)
+shows, with a quiet note to update Seldon.
+
+A typed reason is not lost by accident: Q, or selecting another change,
+asks first; the second try goes ahead, Esc stays.
 
 ## Storage and settings
 
