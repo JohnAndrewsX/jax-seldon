@@ -2,6 +2,15 @@
 
 Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldon`.
 
+> **Superseded in part by [ADR-0056](../decisions/ADR-0056-seldon-is-an-omarchy-app.md)
+> (proposed; E96 delegation, the operator accepts).** From 0.5.0 the
+> plugin is the pill (§4) and the capture timer (§3); the desk (§5, §6),
+> its keys and the `jax.seldon.panel` shim (§8) move to the app
+> `seldon-desk` or are dropped ([APP-PARITY.md](APP-PARITY.md)), and UI
+> strings go through catalogs ([ADR-0057](../decisions/ADR-0057-ui-strings-through-catalogs.md)).
+> This file stays normative for every 0.4.x release; it is rewritten for
+> the pill in the 0.5.0 work, not before.
+
 ## 1. Manifest
 
 ```json
@@ -177,6 +186,10 @@ plugin/
 
 ## 4. BarWidget.qml
 
+> From 0.5.0 (ADR-0056 §4, proposed): left click runs `seldon open`
+> (the app), right click captures; the middle click and the desk routing
+> go; the counts, the crisis colour and the tooltip stay.
+
 `WidgetButton` showing the bar glyph (A4, the Prime Radiant mark) and the
 counts `A · D`, where A = active cases and D is set by the bar-widget
 setting `driftInBar` (ADR-0028 §4a; manifest `enum`, options `crisis`,
@@ -223,6 +236,10 @@ which the headless harness's software renderer does not paint; the root
 colour gives the same result in both.
 
 ## 5. Desk.qml — the desk
+
+> Ends with 0.5.0 (ADR-0056 §5, proposed): the desk is replaced by the
+> app window; each scenario of its harness maps to an app acceptance or
+> a recorded drop in [APP-PARITY.md](APP-PARITY.md). Normative until then.
 
 ADR-0034. One surface for everything the plugin shows: the manifest's
 `overlay` entry point, opened by the pill, by `omarchy-shell shell
@@ -1857,6 +1874,10 @@ there, else against a pinned charset (`tests/plugin/glyphs/`, how it was
 made is in its header).
 
 ## 8. Keybinding and IPC
+
+> From 0.5.0 (ADR-0056, ADR-0058, proposed): the suggested binding is
+> `{ launch = "seldon" }`, the `jax.seldon.panel` shim and the desk's
+> shell routing are removed (WP-188's part moves into 0.5.0).
 
 Suggested user binding (documented, not installed): `o.bind("SUPER + SHIFT
 + L", "Seldon", "omarchy-shell shell toggle jax.seldon")` (L for logbook;

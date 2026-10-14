@@ -5,6 +5,8 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 ## 1. Principles
 
 1. Single static binary, no runtime deps, no network, no async.
+   (From 0.5.0 the package also carries the app `seldon-desk`, a dynamic
+   Qt binary; this rule stays the engine's, ADR-0056 §9, proposed.)
 2. Only writer of the logbook and the index. Everything else reads.
 3. Idempotent collectors with persistent cursors.
 4. Every command has `--json`; human output is for terminals, JSON is for
@@ -40,6 +42,13 @@ File modes (WP-064): a directory the engine creates (the logbook and its folders
 Linked folders and files (WP-168, WP-171, ADR-0049): every folder of the logbook the engine creates or writes a file in (`decisions/`, `work/queued|active|completed/`, `journal/` and its year folders, `ledger/`, `areas/<area>/`, `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/` and `.seldon/imports/`, the harness kit's `.claude/` folders) must be a real directory inside the logbook (`logbook::checked_dir`). Each part below the root is checked without following links; a part that is a symbolic link (a write would land wherever it points) or no directory is refused with exit 1, "`<folder>` is a symbolic link | no directory, not a folder of the logbook; make it a folder and run the command again", and nothing is written. A part that does not exist yet is created (0700). Every file of the logbook the engine writes, replaced or appended (the journal days, the case files from and to, `.seldon/active-case` and `.seldon/imports/*`, `areas/<area>/README.md`, `ledger/*.jsonl` and the views `ledger/*.md`, `STATUS.md`, `DECISIONS.md`, `AGENTS.md`, `system/*.md`, `outputs/*.md`, the kit's files), must be a regular file or not exist yet (`logbook::checked_file`: its folder first, then the file without following a link): a symbolic link there (a dangling one too) is refused with exit 1, "`<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again", and anything else in a file's place (a directory, FIFO, socket, device) with "is no regular file"; nothing is written, and the file is not read first (a FIFO is never opened). The write primitives of the logbook refuse the same and never resolve a link: one that appears after the check is replaced by the rename, never its target, and the ledger's append opens the month file with `O_NOFOLLOW` and takes only a regular file (ADR-0049 §4). A generated view is skipped, not refused: when `STATUS.md`, `DECISIONS.md` or a month view `ledger/<month>.md` is a link or no regular file, `status` and `index` leave it as it is, warn "`<file>` not updated: `<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again" (human and `--json` `warnings`), exit 0 and still write `index.json`; a linked `ledger/` folder is still refused. A capture's silent upgrade of the rules block warns instead ("AGENTS.md: Seldon's agent rules were not updated: …") and goes on; `decide`'s fill of `DECISIONS.md` after the decision is written is a warning too. Writers that create a file with `O_EXCL` (`write_new`, `init`, the archives) never follow a final link; their path is checked as well, so a link gives the reason. The setup kit's copy refuses a link where a file goes (it used to count an existing one as kept) and makes each file with `O_CREAT|O_EXCL` and the kit file's mode (a file made since the check is kept). `write_atomic` and `write_generated` are called only for files outside the logbook; `tests/linked_files.rs` lists every call site. An omarchy-agent import whose marker is a link is refused, not taken as "already imported". The root itself may be a link: a logbook kept on another disk goes there whole (the logbook folder itself may be a link, or a bind mount). A command checks before its first write and before the ledger: a command that writes a case checks all three case folders (a case moves between them; the next id is read from all three), `drift link|explain|dismiss|apply` (the ledger, and the case folders but for a dismissal) and `import --apply` check their folders before they read them, so a file in a folder's place is refused with the reason, not failed as an unreadable listing. A `.seldon` that is no directory is no logbook (exit 3). Reading through a linked folder or file is unchanged (the index still shows a linked journal day), but only a regular file is read, and at most a cap of it (§3, "Bounded reads"); `doctor`'s `layout` row names every linked folder and file where the engine writes (§3); `proposals/` in the state directory has its own check (WP-124). `hook install|uninstall claude-code --settings <file>` writes the file the user names where it is, also through a linked `.claude/` of the logbook: the user chose the path, so it is not checked.
 
 ## 3. Commands
+
+> [ADR-0058](../decisions/ADR-0058-seldon-open-is-the-app.md) (proposed;
+> E96 delegation, the operator accepts) changes this section in 0.5.0:
+> bare `seldon open` starts the app; `seldon open <target>` becomes
+> `seldon edit <target>` (the old form a deprecated alias until 0.6.0);
+> new `seldon skill [install]` and `seldon changes --around`. The
+> synopsis below stays normative for 0.4.x; WP-229 rewrites it.
 
 ```
 seldon init [--path DIR] [--defaults | --ask | --non-interactive] [--language de|en]
@@ -734,6 +743,7 @@ seldon config watch <PATH> [--json]           # ADR-0046, WP-139: appends PATH (
                                                # covers it, else null), config}. The desk's *Watch* runs
                                                # `config watch --json -- <path>` (CONTRACT.md)
 seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
+# ADR-0058 (proposed): `seldon edit …` from 0.5.0; this form an alias until 0.6.0.
 # prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
 # path as one argument; without a terminal (the plugin) it launches
 # `omarchy-launch-editor <path>` DETACHED (null stdio, own process group, never
