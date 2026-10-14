@@ -130,7 +130,9 @@ if [[ -f $validator ]]; then
 fi
 
 if ((changed == 0)) && [[ -z $pin_note || $pin_note == edge ]]; then
-  echo "$me: ok (every assumption's file matches the ledger${pin_note:+; the validator is edge's, not the pin's: information})"
+  edge_text=''
+  [[ $pin_note != edge ]] || edge_text="; the validator is edge's, not the pin's: information"
+  echo "$me: ok (every assumption's file matches the ledger$edge_text)"
   exit 0
 fi
 case $pin_note in

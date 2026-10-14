@@ -369,3 +369,41 @@ log).
    stale pin.
 7. R2-N2, N2 (the hex-literal rule), N3, N4b and the `docs/TESTING.md`
    qmllint path item (round 2's list above).
+
+## Rounds 4 and 5 (shellcheck findings from CI on the draft PR)
+
+CI's `check` job runs shellcheck; the dev host had none, so `check-packaging`
+and `check-assumptions` ran `bash -n` only through round 3.
+
+- Round 4 (`ef19414a`): `packaging/omarchy-tree.sh` counted the shell files
+  into `files`, which is an array earlier (SC2178, SC2128); the count is
+  `shell_count`. `tests/release/workflow-pins.test.sh` disables SC1003 on
+  the `grep -F` line whose trailing backslash is literal.
+- Round 5: `scripts/check-omarchy-assumptions.sh` built the edge note inside
+  `${pin_note:+…}` within double quotes, with apostrophes in the word
+  (SC1011). The note is now a variable, `edge_text`. The edge case asserts the
+  full note, and a new case asserts that the ok line off edge has no note.
+  A mutant that changes the note turns one case red.
+  `tests/omarchy/assumptions.test.sh` disables SC2016 on the stub's `printf`:
+  the stub expands `$STUB_CHANNEL` when it runs.
+
+### Shellcheck used locally (round 5)
+
+The official static release, downloaded over HTTPS into the private gates
+folder. It is not installed and not on PATH; it was called by its full path.
+
+- `koalaman/shellcheck` v0.11.0, `shellcheck-v0.11.0.linux.x86_64.tar.xz`.
+- Archive sha256 `8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198`,
+  equal to the digest GitHub's release API lists for the asset.
+- Binary sha256 `4da528ddb3a4d1b7b24a59d4e16eb2f5fd960f4bd9a3708a15baddbdf1d5a55b`.
+
+### How it was verified (round 5)
+
+| Check | Where | Result |
+|---|---|---|
+| shellcheck 0.11.0 on the six shell files this branch changes | fixture | 2 findings before the fix (SC1011 warning, SC2016 info), none after |
+| shellcheck 0.11.0 with the recipes' exact options and file lists (`check-packaging`, including `-s bash -e SC2034,SC2154,SC2164 packaging/PKGBUILD`; `check-assumptions`) | fixture | no findings |
+| `flock /tmp/seldon-check.lock just check-packaging` (`bash -n` path; shellcheck is not on PATH) | fixture | `check-packaging: ok`, 0 `FAIL` |
+| `flock /tmp/seldon-check.lock just check-assumptions` | fixture | `assumptions.test: ok` (56 cases), `check-upstream: ok`, 0 `FAIL` |
+| Full gate `just check` | — | **not run**: a shellcheck-only change to two scripts and their tests, covered by the two recipes above |
+| The `check` job in CI with shellcheck | CI | **not run** (the operator pushes) |

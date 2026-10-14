@@ -237,6 +237,7 @@ pin_file() {
 pin_file "$(sha "$tree/bin/omarchy-plugin-validate")"
 # Omarchy's `omarchy version channel`, stubbed: prints $STUB_CHANNEL
 mkdir -p "$tmp/stub"
+# shellcheck disable=SC2016  # the stub expands $STUB_CHANNEL when it runs, not here
 printf '#!/bin/bash\necho "$STUB_CHANNEL"\n' > "$tmp/stub/omarchy-version-channel"
 chmod +x "$tmp/stub/omarchy-version-channel"
 host_channel=rc
@@ -277,6 +278,8 @@ expect() {
 
 before=$(cd "$tree" && find . -type f -exec sha256sum {} + | sort)
 expect "a matching tree: ok, exit 0" 0 "$tree" "$tmp/ledger.json" -- "check-upstream: 3 files" "ok (every assumption" NOT:NOTICE
+expect "a matching tree off edge: the ok line has no edge note" 0 "$tree" "$tmp/ledger.json" -- \
+  "check-upstream: ok (every assumption's file matches the ledger)" NOT:"edge's"
 expect "a matching tree with --gate: ok, exit 0" 0 "$tree" "$tmp/ledger.json" --gate -- "ok (every assumption"
 
 printf '// changed\n' >> "$tree/shell/Api.qml"
@@ -310,7 +313,7 @@ expect "a ledger updated, the pin not: refresh from stable" 0 "$tree" "$tmp/ledg
 host_channel=edge
 expect "edge, the validator not the pin's: information, ok, exit 0" 0 "$tree" "$tmp/ledger2.json" -- \
   "check-upstream: edge preview: bin/omarchy-plugin-validate is" "packaging/omarchy-pin (Omarchy stable, ADR-0055)" \
-  "information only, the pin follows stable (E93)" "ok (every assumption's file matches the ledger; the validator is edge's" \
+  "information only, the pin follows stable (E93)" "ok (every assumption's file matches the ledger; the validator is edge's, not the pin's: information)" \
   NOT:NOTICE NOT:"refresh packaging/omarchy-pin"
 expect "edge with --gate: not refused for the pin" 0 "$tree" "$tmp/ledger2.json" --gate -- \
   "edge preview" "ok (every assumption" NOT:"refused" NOT:"refresh packaging/omarchy-pin"
