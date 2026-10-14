@@ -30,4 +30,7 @@ cd "$PKG"
 # the local tarball is the source; no checksum for a tree that is not a release
 # shellcheck disable=SC2086
 makepkg -f $install_flag "$@"
-ls -1 "$PKG"/*.pkg.tar.zst
+pkg=$(ls -1 "$PKG"/*.pkg.tar.zst)
+tar tf "$pkg" | grep -v '^\.' | LC_ALL=C sort | diff -u "$ROOT/packaging/seldon/expected-files.txt" -
+echo "file list matches packaging/seldon/expected-files.txt"
+echo "$pkg"

@@ -4,7 +4,8 @@
 # (seldon-desk, C++ and Qt Quick) and the bar plugin in one package. It sits
 # beside packaging/PKGBUILD (`jax-seldon`, the engine alone); only a release
 # from 0.5.0 on builds this one (packaging/README.md, "The seldon package").
-# The recipe for omarchy-pkgs is a copy of this file (packaging/opr/).
+# The recipe for omarchy-pkgs is a copy of this file and seldon.install
+# (packaging/opr/); seldon.desktop and seldon.svg are read from the tarball.
 #
 # The engine is a glibc build, not musl (ADR-0022); the desk binary is
 # compiled by the app's own bin/build (qmake6 and make).
@@ -28,13 +29,15 @@ depends=(
 )
 makedepends=('cargo' 'gcc' 'make')
 optdepends=('snapper: snapshot events (needs read access to /.snapshots)')
-provides=('jax-seldon')
+provides=("jax-seldon=$pkgver")
 conflicts=('jax-seldon')
 replaces=('jax-seldon')
 install='seldon.install'
 # Cargo's release profile strips the engine; a debug package would be empty
 options=('!debug')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+# the attested release asset (SHA256SUMS lists it), not GitHub's generated
+# archive: the release workflow writes this file's sha256
+source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/jax-seldon-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 # the repository's name, not the package's, names the tarball's folder
@@ -115,5 +118,8 @@ package() {
   done < <(cd plugin && find . -type f -printf '%P\0' | LC_ALL=C sort -z)
 
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  # the desk compiles code from the omarchy-app templates (MIT, David
+  # Heinemeier Hansson); their notice ships with it
+  install -Dm644 app/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE.app"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

@@ -34,23 +34,25 @@ route until then:
 
 | File | What |
 |---|---|
-| `seldon/PKGBUILD` | the recipe: builds the engine with cargo and `seldon-desk` with `app/bin/build` (qmake6 and make) from the release tarball; `provides`, `conflicts` and `replaces` `jax-seldon`; Qt 6.9 or newer, `qt6-svg`, `qt6-wayland`, `hicolor-icon-theme` |
+| `seldon/PKGBUILD` | the recipe: builds the engine with cargo and `seldon-desk` with `app/bin/build` (qmake6 and make) from the release asset `jax-seldon-X.Y.Z.tar.gz` (the attested one, with the sha256 the workflow writes); `provides=(jax-seldon=VERSION)`, `conflicts` and `replaces` `jax-seldon`; Qt 6.9 or newer, `qt6-svg`, `qt6-wayland`, `hicolor-icon-theme` |
 | `seldon/seldon.desktop` | `Exec=seldon open`, `StartupWMClass=seldon`, `Name[de]` and `Comment[de]` |
 | `seldon/seldon.svg` | the hicolor icon: `assets/a2-icon-brand-on-dark-container.svg`, unchanged |
-| `seldon/seldon.install` | refreshes the desktop database and the icon cache; it never runs `seldon` (`tests/release/seldon-package.test.sh`) |
+| `seldon/seldon.install` | refreshes the desktop database and the icon cache; it never runs `seldon` and never fails the transaction; the test compares it with the fixed text |
 | `seldon/expected-files.txt` | the exact file list of the built package |
-| `opr/.omarchy/package.json` | the omarchy-pkgs recipe draft (`source: local`, `auto_merge`, `upstream.watch`); **not submitted**: the operator opens that pull request with `seldon/PKGBUILD`, `seldon.install`, `seldon.desktop` and `seldon.svg` beside it |
+| `opr/.omarchy/package.json` | the omarchy-pkgs recipe draft (`source: local`, `auto_merge`, `upstream.watch`); **not submitted**: the operator opens that pull request after 0.5.0 with `seldon/PKGBUILD` and `seldon.install` beside it |
 | `app-era.sh VERSION` | exit 0 from 0.5.0 on: the gate the release workflow reads |
 
 The package installs `/usr/bin/seldon` (and the `jax-seldon` symlink), the
 window as `/usr/lib/seldon/seldon-desk`, the watcher unit, man page and
 completions as before, the desktop entry and icon, and the plugin's files
-under `/usr/share/seldon/plugin/`. Nothing is written to a home directory.
+under `/usr/share/seldon/plugin/`, and `app/LICENSE` (the omarchy-app templates' MIT notice) as `LICENSE.app`. Nothing is written to a home directory.
 
 `release.yml` builds it in the `build` job, after the `jax-seldon` package,
 only when `packaging/app-era.sh` accepts the version (step `App era`, output
-`app_era`): a 0.4.x tag skips the step and the old route is untouched. The
-source is the same `git archive` tarball, copied to `seldon-X.Y.Z.tar.gz`;
+`app_era`, itself skipped for 0.4.x): a 0.4.x tag runs exactly the old steps, the
+Qt toolchain is installed in a gated step. The
+source is the same release asset, copied to `seldon-X.Y.Z.tar.gz`;
+`ci.yml`'s job `seldon-package` runs the same `makepkg -f` and file-list diff on every pull request and push;
 `makepkg -f` builds both binaries, the file list is diffed against
 `seldon/expected-files.txt`, and the package lands in the `package`
 artifact. At 0.5.0 the `jax-seldon` route (AUR push, `packaging/PKGBUILD`)

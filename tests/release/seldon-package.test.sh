@@ -36,7 +36,9 @@ recipe() ( # prints "key=value" lines of the arrays and names
 r=$(recipe)
 check "pkgname is seldon" grep -qx 'pkgname=seldon' <<<"$r"
 check "install script is seldon.install" grep -qx 'install=seldon.install' <<<"$r"
-check "provides jax-seldon" grep -qx 'provides=jax-seldon' <<<"$r"
+check "provides jax-seldon, versioned" grep -Eqx 'provides=jax-seldon=[0-9]+\.[0-9]+\.[0-9]+' <<<"$r"
+check "source is the attested release asset" grep -Fq 'releases/download/v$pkgver/jax-seldon-$pkgver.tar.gz")' "$pkg/PKGBUILD"
+absent "source is not GitHub's generated archive" grep -q 'archive/refs' "$pkg/PKGBUILD"
 check "conflicts jax-seldon" grep -qx 'conflicts=jax-seldon' <<<"$r"
 check "replaces jax-seldon" grep -qx 'replaces=jax-seldon' <<<"$r"
 for dep in qt6-base qt6-declarative qt6-svg qt6-wayland hicolor-icon-theme; do
@@ -48,6 +50,7 @@ check "makedepends cargo" grep -Eq '^makedepends=.*cargo' <<<"$r"
 check "no debug package" grep -q '^options=.*!debug' <<<"$r"
 check "desk binary in /usr/lib/seldon" grep -q '"\$pkgdir/usr/lib/seldon/seldon-desk"' "$pkg/PKGBUILD"
 check "plugin copy in /usr/share/seldon/plugin" grep -q '"\$pkgdir/usr/share/seldon/plugin/' "$pkg/PKGBUILD"
+check "app LICENSE (templates' MIT notice) installed" grep -Fq 'install -Dm644 app/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE.app"' "$pkg/PKGBUILD"
 check "LICENSE installed" grep -q 'usr/share/licenses/\$pkgname/LICENSE' "$pkg/PKGBUILD"
 absent "no sudo or pacman in the recipe" grep -Eq '(^|[^a-z-])(sudo|pacman) ' "$pkg/PKGBUILD"
 
@@ -65,6 +68,7 @@ fi
 check "icon is an SVG" grep -q '<svg ' "$pkg/seldon.svg"
 absent "icon has no script" grep -qi '<script' "$pkg/seldon.svg"
 absent "icon has no external reference" grep -Eqi 'href=|xlink:|url\(http' "$pkg/seldon.svg"
+absent "icon has no event handler" grep -Eqi '[[:space:]]on[a-z]+[[:space:]]*=' "$pkg/seldon.svg"
 if command -v xmllint >/dev/null; then
   check "icon is well-formed XML" xmllint --noout "$pkg/seldon.svg"
 fi
@@ -72,10 +76,25 @@ fi
 # --- the install script: cache refreshes only -----------------------------
 i=$pkg/seldon.install
 check "install: bash syntax" bash -n "$i"
-absent "install: does not run seldon" grep -Eq '(^|[;&|[:space:]])(/usr/bin/)?(seldon|jax-seldon)[[:space:]]' "$i"
-absent "install: no sudo, systemctl or pacman" grep -Eq '(sudo|systemctl|pacman|rm |chmod|chown)' "$i"
-check "install: refreshes the desktop database" grep -q 'update-desktop-database' "$i"
-check "install: refreshes the icon cache" grep -q 'gtk-update-icon-cache' "$i"
+# the whole file, not a denylist: omacom's cache refreshes, ending in `:` so a
+# missing tool never fails the transaction
+expected_install='post_install() {
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q
+  command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t -f usr/share/icons/hicolor
+  # a missing tool never fails the transaction
+  :
+}
+
+post_upgrade() {
+  post_install
+}
+
+post_remove() {
+  post_install
+}'
+check "install: is exactly the fixed text" test "$(cat "$i")" = "$expected_install"
+# with only one tool on PATH the scriptlet still succeeds
+check "install: post_install succeeds without its tools" bash -c 'source "$1"; PATH=/nonexistent post_install' _ "$i"
 
 # --- hex colours live in the icon file only -------------------------------
 absent "no hex colour outside the icon" grep -Eq '#[0-9a-fA-F]{6}\b' \
@@ -110,15 +129,29 @@ absent "gate: refuses a tag" bash "$gate" v0.5.0
 # --- the workflows ---------------------------------------------------------
 rel=$root/.github/workflows/release.yml
 ci=$root/.github/workflows/ci.yml
-check "release.yml: jax-seldon build is not gated" grep -q 'Build the package$' "$rel"
-check "release.yml: app-era output" grep -q 'app_era' "$rel"
-# every step that builds or checks the seldon package is gated on the output
-gated=$(grep -c "if: steps.era.outputs.app_era == 'true'" "$rel")
-check "release.yml: gated steps present" test "$gated" -ge 1
-for f in "$rel" "$ci"; do
-  for q in qt6-base qt6-declarative qt6-svg qt6-wayland; do
-    check "$(basename "$f") installs $q" grep -Eq "pacman -Syu.* $q( |\$)" "$f"
-  done
+step() { # FILE NAME: the step's block (from its "- name:" line to the next step)
+  awk -v n="      - name: $2" '
+    $0 == n { on = 1; print; next }
+    on && /^      - / { exit }
+    on && /^  [a-z]/ { exit }
+    on { print }' "$1"
+}
+for name in "Install toolchain" "Build the package"; do
+  b=$(step "$rel" "$name")
+  check "release.yml: '$name' exists" test -n "$b"
+  absent "release.yml: '$name' has no if:" grep -q '^        if:' <<<"$b"
 done
+absent "release.yml: the shared toolchain has no Qt or hicolor" grep -Eq 'qt6|hicolor' <<<"$(step "$rel" "Install toolchain")"
+check "release.yml: App era skips 0.4.x" grep -Fq "if: \${{ !startsWith(steps.version.outputs.version, '0.4.') }}" <<<"$(step "$rel" "App era")"
+for name in "Install the seldon package toolchain" "Build the seldon package"; do
+  check "release.yml: '$name' is gated on the app era" grep -Fqx "        if: steps.era.outputs.app_era == 'true'" <<<"$(step "$rel" "$name")"
+done
+check "release.yml: the seldon toolchain has the Qt packages" grep -Eq 'qt6-base.*qt6-declarative.*qt6-svg.*qt6-wayland' <<<"$(step "$rel" "Install the seldon package toolchain")"
+# nothing after the first app-era step runs unconditionally from the seldon recipe
+absent "release.yml: the jax-seldon build step does not touch packaging/seldon" \
+  bash -c 'grep -v "^[[:space:]]*#" | grep -q "packaging/seldon"' <<<"$(step "$rel" "Build the package")"
+check "ci.yml: seldon-package job runs makepkg and diffs the list" grep -Fq 'diff -u packaging/seldon/expected-files.txt' "$ci"
+check "ci.yml: seldon-package job installs the Qt packages" grep -Eq 'pacman -Syu.*qt6-base.*qt6-declarative.*qt6-svg.*qt6-wayland' "$ci"
+absent "ci.yml: the check job's toolchain has no Qt" grep -Eq 'pacman -Syu.* nodejs qt6' "$ci"
 
 exit "$fail"

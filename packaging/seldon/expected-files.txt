@@ -28,6 +28,7 @@ usr/share/icons/hicolor/scalable/apps/seldon.svg
 usr/share/licenses/
 usr/share/licenses/seldon/
 usr/share/licenses/seldon/LICENSE
+usr/share/licenses/seldon/LICENSE.app
 usr/share/man/
 usr/share/man/man1/
 usr/share/man/man1/seldon.1.gz

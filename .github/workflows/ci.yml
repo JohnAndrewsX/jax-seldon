@@ -75,7 +75,7 @@ jobs:
       # Arch's `rust` package ships cargo, clippy and rustfmt; `nodejs` runs
       # the plugin's node tests.
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed git rust just jq shellcheck rsync nodejs qt6-base qt6-declarative qt6-svg qt6-wayland
+        run: pacman -Syu --noconfirm --needed git rust just jq shellcheck rsync nodejs
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -216,3 +216,50 @@ jobs:
             exit 1
           fi
           echo "text-format scan: ok ($(find plugin -name '*.qml' | wc -l) QML files)"
+
+  # The seldon package (WP-230): the recipe's own build in the Arch container
+  # on every pull request and push, so the first makepkg of packaging/seldon/
+  # is not the release's. The source is a git archive of this commit under
+  # the release asset's name; the file list is diffed against
+  # packaging/seldon/expected-files.txt.
+  seldon-package:
+    needs: mirror
+    # also when mirror was skipped (no push); never after it failed
+    if: ${{ !cancelled() && (needs.mirror.result == 'success' || needs.mirror.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/johnandrewsx/jax-seldon/archlinux@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # base-devel brings gcc and make; makepkg refuses to run as root
+      - name: Install toolchain
+        run: pacman -Syu --noconfirm --needed git rust qt6-base qt6-declarative qt6-svg qt6-wayland hicolor-icon-theme
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: makepkg -f and the file list
+        run: |
+          version=$(sed -n 's/^pkgver=//p' packaging/seldon/PKGBUILD)
+          useradd -m builder
+          install -d -o builder /tmp/seldon-pkg
+          git archive --format=tar.gz --prefix="jax-seldon-$version/" \
+            -o "/tmp/seldon-pkg/seldon-$version.tar.gz" HEAD
+          chown builder "/tmp/seldon-pkg/seldon-$version.tar.gz"
+          install -o builder -m644 packaging/seldon/PKGBUILD packaging/seldon/seldon.install /tmp/seldon-pkg/
+          runuser -u builder -- bash -c 'cd /tmp/seldon-pkg && makepkg -f --noconfirm'
+          pkg="/tmp/seldon-pkg/seldon-$version-1-x86_64.pkg.tar.zst"
+          diff -u packaging/seldon/expected-files.txt <(tar tf "$pkg" | grep -v '^\.' | LC_ALL=C sort)
+          root=$(mktemp -d)
+          tar xf "$pkg" -C "$root"
+          test -x "$root/usr/lib/seldon/seldon-desk"
+          "$root/usr/bin/seldon" --version
