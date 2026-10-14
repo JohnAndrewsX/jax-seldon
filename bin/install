@@ -1,0 +1,36 @@
+#!/bin/sh
+# Build the `seldon` package from the committed tree (git archive of HEAD,
+# packaging/seldon/PKGBUILD) into build/pkg and print the package file.
+# It installs only when you pass --install (makepkg -i, which asks for sudo);
+# the development host runs released packages only, so there it stays off.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+PKG="$ROOT/build/pkg"
+
+if ! command -v makepkg >/dev/null 2>&1; then
+    echo "makepkg is required to build the Arch package." >&2
+    exit 1
+fi
+
+install_flag=
+if [ "${1:-}" = "--install" ]; then
+    install_flag=-i
+    shift
+fi
+
+pkgver=$(sed -n 's/^pkgver=//p' "$ROOT/packaging/seldon/PKGBUILD")
+rm -rf "$PKG"
+mkdir -p "$PKG"
+git -C "$ROOT" archive --format=tar.gz --prefix="jax-seldon-$pkgver/" \
+    -o "$PKG/seldon-$pkgver.tar.gz" HEAD
+cp "$ROOT/packaging/seldon/PKGBUILD" "$ROOT/packaging/seldon/seldon.install" "$PKG/"
+
+cd "$PKG"
+# the local tarball is the source; no checksum for a tree that is not a release
+# shellcheck disable=SC2086
+makepkg -f $install_flag "$@"
+pkg=$(ls -1 "$PKG"/*.pkg.tar.zst)
+tar tf "$pkg" | grep -v '^\.' | LC_ALL=C sort | diff -u "$ROOT/packaging/seldon/expected-files.txt" -
+echo "file list matches packaging/seldon/expected-files.txt"
+echo "$pkg"

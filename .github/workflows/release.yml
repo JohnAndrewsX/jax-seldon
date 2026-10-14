@@ -213,6 +213,52 @@ jobs:
           mkdir package
           cp "$pkg" package/
 
+      # The app-era package (WP-230): `seldon`, from packaging/seldon/, built
+      # beside `jax-seldon` and only for a release from 0.5.0 on
+      # (packaging/app-era.sh); a 0.4.x tag skips every step below. At 0.5.0
+      # the jax-seldon route above is retired in its own change.
+      - name: App era
+        id: era
+        if: ${{ !startsWith(steps.version.outputs.version, '0.4.') }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if bash packaging/app-era.sh "$VERSION"; then
+            echo "app_era=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app_era=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "app era: $(grep app_era "$GITHUB_OUTPUT")"
+
+      # the Qt toolchain only an app-era build needs
+      - name: Install the seldon package toolchain
+        if: steps.era.outputs.app_era == 'true'
+        run: pacman -Syu --noconfirm --needed qt6-base qt6-declarative qt6-svg qt6-wayland hicolor-icon-theme
+
+      # the source is the release asset itself, copied in under the name the
+      # recipe expects, so makepkg checks the sum the release lists
+      - name: Build the seldon package
+        if: steps.era.outputs.app_era == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sum=$(sha256sum "dist/jax-seldon-$VERSION.tar.gz" | cut -d' ' -f1)
+          install -d -o builder /tmp/seldon-pkg
+          sed -e "s/^pkgver=.*/pkgver=$VERSION/" -e "s/^pkgrel=.*/pkgrel=1/" \
+            -e "s/^sha256sums=.*/sha256sums=('$sum')/" packaging/seldon/PKGBUILD > /tmp/seldon-pkg/PKGBUILD
+          install -o builder -m644 packaging/seldon/seldon.install "dist/jax-seldon-$VERSION.tar.gz" /tmp/seldon-pkg/
+          mv "/tmp/seldon-pkg/jax-seldon-$VERSION.tar.gz" "/tmp/seldon-pkg/seldon-$VERSION.tar.gz"
+          runuser -u builder -- bash -c 'cd /tmp/seldon-pkg && makepkg -f --noconfirm'
+          pkg="/tmp/seldon-pkg/seldon-$VERSION-1-x86_64.pkg.tar.zst"
+          diff -u packaging/seldon/expected-files.txt <(tar tf "$pkg" | grep -v '^\.' | LC_ALL=C sort)
+          root=$(mktemp -d)
+          tar xf "$pkg" -C "$root"
+          "$root/usr/bin/seldon" --version --json | jq -e --arg v "$VERSION" '.version == $v'
+          "$root/usr/bin/jax-seldon" --version
+          test -x "$root/usr/lib/seldon/seldon-desk"
+          bash -n "$root/usr/share/bash-completion/completions/seldon"
+          cp "$pkg" package/
+
       - name: Plugin split
         id: split
         env:
