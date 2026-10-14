@@ -2,11 +2,12 @@
 //! (ADR-0015 §4), the `[drift] alwaysRed` globs and the routine class of a
 //! pacman group member (ADR-0013 §3).
 
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use regex::Regex;
 
-use crate::model::event::{Event, Kind};
+use crate::model::event::{Event, Kind, Source};
 use crate::pkgcmd::{parse_command, split_logged};
 
 /// Word characters of the token rule: `[A-Za-z0-9._+-]`.
@@ -42,8 +43,63 @@ pub fn names_token(text: &str, subject: &str) -> bool {
     false
 }
 
+/// Omarchy's channel packages (WP-224): the stable channel's name and its
+/// edge twin. Each pair is one package to `alwaysRed`, the stable name
+/// standing for both.
+pub const OMARCHY_CHANNELS: [(&str, &str); 2] = [
+    ("omarchy", "omarchy-dev"),
+    ("omarchy-settings", "omarchy-settings-dev"),
+];
+
+/// The name that stands for `subject` in `alwaysRed` (WP-224): an Omarchy
+/// channel package's stable name ([`OMARCHY_CHANNELS`]), `linux-omarchy`
+/// for any of Omarchy's kernels (`linux-omarchy-bore`; not their
+/// `-headers`, `-docs` or `-debug`), else `subject` itself.
+pub fn family(subject: &str) -> &str {
+    if let Some(&(stable, _)) = OMARCHY_CHANNELS.iter().find(|(_, edge)| *edge == subject) {
+        return stable;
+    }
+    let kernel = subject
+        .strip_prefix("linux-omarchy-")
+        .is_some_and(|variant| !variant.is_empty())
+        && !subject.ends_with("-headers")
+        && !subject.ends_with("-docs")
+        && !subject.ends_with("-debug");
+    if kernel { "linux-omarchy" } else { subject }
+}
+
+/// The pacman transactions among `events` that switched Omarchy's channel
+/// (WP-224): each removed a channel package and installed its twin
+/// ([`OMARCHY_CHANNELS`]), in either direction. Omarchy's channel command
+/// does that in one `pacman -S`, the old package going as a conflict.
+pub fn channel_switches<'a>(events: impl IntoIterator<Item = &'a Event>) -> HashSet<&'a str> {
+    let mut seen: HashMap<&str, (HashSet<&str>, HashSet<&str>)> = HashMap::new();
+    for e in events {
+        let Some(tx) = e.tx_id.as_deref().filter(|_| e.source == Source::Pacman) else {
+            continue;
+        };
+        let (removed, installed) = seen.entry(tx).or_default();
+        match e.kind {
+            Kind::Remove => removed.insert(e.subject.as_str()),
+            Kind::Install => installed.insert(e.subject.as_str()),
+            _ => false,
+        };
+    }
+    seen.into_iter()
+        .filter(|(_, (removed, installed))| {
+            OMARCHY_CHANNELS.iter().any(|&(a, b)| {
+                (removed.contains(a) && installed.contains(b))
+                    || (removed.contains(b) && installed.contains(a))
+            })
+        })
+        .map(|(tx, _)| tx)
+        .collect()
+}
+
 /// `config.toml [drift] alwaysRed`, compiled: fnmatch-style globs (`*`,
-/// `?`, `[…]`), case-sensitive, matched against the whole subject.
+/// `?`, `[…]`), case-sensitive, matched against the whole subject, and
+/// against the name that stands for it ([`family`]): `omarchy` covers
+/// `omarchy-dev`, `linux-omarchy` every Omarchy kernel.
 ///
 /// A glob is compiled on its first use, and only for a subject that starts
 /// with the glob's literal head (the part before its first `*`, `?` or
@@ -77,6 +133,11 @@ impl AlwaysRed {
     }
 
     pub fn matches(&self, subject: &str) -> bool {
+        let stands_for = family(subject);
+        self.matches_name(subject) || (stands_for != subject && self.matches_name(stands_for))
+    }
+
+    fn matches_name(&self, subject: &str) -> bool {
         self.0.iter().any(|g| {
             if g.head == g.pattern.len() {
                 return subject == g.pattern;
@@ -206,6 +267,11 @@ mod tests {
             "pam",
             "sddm",
             "uwsm",
+            // WP-224: the edge channel's twins and Omarchy's other kernels
+            "omarchy-dev",
+            "omarchy-settings-dev",
+            "linux-omarchy-bore",
+            "linux-omarchy-ptl-novrr-mm",
         ] {
             assert!(red.matches(s), "{s}");
         }
@@ -222,6 +288,11 @@ mod tests {
             "linux-firmware-amdgpu",
             "linux-api-headers",
             "linux-omarchy-headers",
+            "linux-omarchy-bore-headers",
+            "linux-omarchy-docs",
+            "linux-omarchy-",
+            "omarchy-dev-tools",
+            "omarchy-nvim-dev",
             "linux-headers",
             "pambase",
             "sddm-kcm",
@@ -240,6 +311,48 @@ mod tests {
         assert!(!odd.matches("x"));
         assert!(odd.matches("ya"));
         assert!(!odd.matches("y1"));
+    }
+
+    /// WP-224: a twin is red through the name that stands for it, and only
+    /// that one; the user's list decides, the twin's own name still counts.
+    #[test]
+    fn family_names_stand_for_their_twins() {
+        let cases = [
+            ("omarchy-dev", "omarchy"),
+            ("omarchy-settings-dev", "omarchy-settings"),
+            ("linux-omarchy-bore", "linux-omarchy"),
+            ("linux-omarchy-bore-headers", "linux-omarchy-bore-headers"),
+            ("linux-omarchy-headers", "linux-omarchy-headers"),
+            ("linux-omarchy-bore-debug", "linux-omarchy-bore-debug"),
+            ("linux-omarchy-debug", "linux-omarchy-debug"),
+            ("linux-omarchy-bore-docs", "linux-omarchy-bore-docs"),
+            ("linux-omarchy", "linux-omarchy"),
+            ("omarchy", "omarchy"),
+            ("omarchy-nvim", "omarchy-nvim"),
+            ("linux-zen", "linux-zen"),
+        ];
+        for (subject, want) in cases {
+            assert_eq!(family(subject), want, "{subject}");
+        }
+        let only = AlwaysRed::new(&["omarchy".into()]);
+        assert!(only.matches("omarchy-dev"));
+        assert!(!only.matches("omarchy-settings-dev"));
+        assert!(!only.matches("linux-omarchy-bore"));
+        let settings = AlwaysRed::new(&["omarchy-settings".into()]);
+        assert!(settings.matches("omarchy-settings-dev"));
+        assert!(!settings.matches("omarchy-dev"));
+        let kernel = AlwaysRed::new(&["linux-omarchy".into()]);
+        assert!(kernel.matches("linux-omarchy-bore"));
+        assert!(!kernel.matches("linux-omarchy-bore-headers"));
+        assert!(!kernel.matches("linux-omarchy-bore-debug"));
+        let twin = AlwaysRed::new(&["omarchy-dev".into()]);
+        assert!(twin.matches("omarchy-dev"));
+        assert!(
+            !twin.matches("omarchy"),
+            "the stable name never stands in for the twin"
+        );
+        let none = AlwaysRed::new(&["systemd".into()]);
+        assert!(!none.matches("omarchy-dev") && !none.matches("linux-omarchy-bore"));
     }
 
     /// WP-092: a glob compiles only for a subject that starts with its

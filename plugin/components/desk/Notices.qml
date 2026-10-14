@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import ".."
 import "../../Model.js" as Model
 
@@ -22,8 +23,8 @@ Column {
 
   property var service: null
   property bool folded: false
-  property color foreground: Color.popups.text
-  property color urgent: Color.urgent
+  property color foreground: Commons.Color.popups.text
+  property color urgent: Commons.Color.urgent
   property string fontFamily: Style.font.family
   // The keys' cursor (Desk.noticeId / noticeAction): "" none.
   property string cursorId: ""

@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import ".."
 
@@ -14,7 +15,7 @@ BorderSurface {
 
   // { id, risk, title, progress, text, working } from Model.todayCaseTiles
   property var caseData: null
-  property color foreground: Color.popups.text
+  property color foreground: Commons.Color.popups.text
   property string fontFamily: Style.font.family
 
   signal clicked()

@@ -3,6 +3,7 @@ import QtQuick.Window
 import QtTest
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // Headless harness for plugin/Desk.qml, the desk (docs/TESTING.md, "Plugin").
@@ -771,10 +772,10 @@ ShellRoot {
     pluginId: "jax.seldon"
     moduleName: "jax.seldon"
     shell: fakeShell
-    foreground: Color.bar.text
-    barForeground: Color.bar.text
-    background: Color.bar.background
-    urgent: Color.bar.active
+    foreground: Commons.Color.bar.text
+    barForeground: Commons.Color.bar.text
+    background: Commons.Color.bar.background
+    urgent: Commons.Color.bar.active
     fontFamily: Style.font.family
     barSize: Style.bar.sizeHorizontal
     foregroundAnimationEnabled: false
@@ -791,7 +792,7 @@ ShellRoot {
     // window colour).
     Rectangle {
       anchors.fill: parent
-      color: Color.background
+      color: Commons.Color.background
     }
 
     // The pill, in a strip off the desk's way (bottom left).

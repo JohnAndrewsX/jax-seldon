@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "components"
 import "components/desk"
@@ -133,7 +134,7 @@ Item {
   onNoticeKeyChanged: root.disarmPrefix("notice:")
   onNoticeTargetChanged: if (root.noticeId !== "" && !root.noticeTarget) root.leaveNotices()
 
-  readonly property color foreground: Color.popups.text
+  readonly property color foreground: Commons.Color.popups.text
   readonly property string fontFamily: Style.font.family
 
   // ---- Lifecycle
@@ -710,8 +711,8 @@ Item {
         width: root.geometry.w
         height: root.geometry.h
         radius: Style.cornerRadius
-        color: Color.popups.background
-        borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
+        color: Commons.Color.popups.background
+        borderSpec: Border.surfaceSpec("popups", "border", Commons.Color.popups.border, Math.max(1, Style.space(2)))
 
         // Clicks on the desk stay on the desk.
         MouseArea {

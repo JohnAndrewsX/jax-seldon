@@ -9,8 +9,8 @@
       "measured": "2026-10-12",
       "symbol": "updateEntryInline",
       "pluginSymbol": "updateEntryInline",
-      "plugin": "plugin/Desk.qml:527",
-      "relies": "Seldon relies on the scoped facade's updateEntryInline(id, settings) replacing the plugin's own shell.json entry and returning true only when something changed, at plugin/Desk.qml:527.",
+      "plugin": "plugin/Desk.qml:536",
+      "relies": "Seldon relies on the scoped facade's updateEntryInline(id, settings) replacing the plugin's own shell.json entry and returning true only when something changed, at plugin/Desk.qml:536.",
       "remeasure": "the desk's settings writes (tests/plugin/desk-view.sh, settings scenarios) and one width change on the test host, read back from the shell.json entry"
     },
     {
@@ -21,8 +21,8 @@
       "measured": "2026-10-12",
       "symbol": "serviceFor",
       "pluginSymbol": "serviceFor",
-      "plugin": "plugin/BarWidget.qml:55",
-      "relies": "Seldon relies on the facade's serviceFor(own id) handing the bar widget the plugin's own Service.qml instance, at plugin/BarWidget.qml:55.",
+      "plugin": "plugin/BarWidget.qml:56",
+      "relies": "Seldon relies on the facade's serviceFor(own id) handing the bar widget the plugin's own Service.qml instance, at plugin/BarWidget.qml:56.",
       "remeasure": "the pill finds its service (tests/plugin/bar-view.sh) and shows counts on the test host after a shell restart"
     },
     {
@@ -33,8 +33,8 @@
       "measured": "2026-10-12",
       "symbol": "summon",
       "pluginSymbol": "shell[method]",
-      "plugin": "plugin/BarWidget.qml:75",
-      "relies": "Seldon relies on the facade's summon, hide and toggle taking the plugin's own id and returning true when they act, at plugin/BarWidget.qml:75.",
+      "plugin": "plugin/BarWidget.qml:74",
+      "relies": "Seldon relies on the facade's summon, hide and toggle taking the plugin's own id and returning true when they act, at plugin/BarWidget.qml:74.",
       "remeasure": "a left click on the pill and `omarchy-shell jax.seldon.panel toggle` open and close the desk on the test host"
     },
     {
@@ -45,8 +45,8 @@
       "measured": "2026-10-12",
       "symbol": "isBarWidgetPanelPlugin",
       "pluginSymbol": "root.shell.hide",
-      "plugin": "plugin/Desk.qml:175",
-      "relies": "Seldon relies on a manifest with `overlay` and `bar-widget` being owned by the panel loader, so `shell summon|hide|toggle jax.seldon` reaches Desk.qml and hide() unloads it, at plugin/Desk.qml:175.",
+      "plugin": "plugin/Desk.qml:177",
+      "relies": "Seldon relies on a manifest with `overlay` and `bar-widget` being owned by the panel loader, so `shell summon|hide|toggle jax.seldon` reaches Desk.qml and hide() unloads it, at plugin/Desk.qml:177.",
       "remeasure": "`omarchy-shell shell toggle jax.seldon` and `shell call jax.seldon view \"\"` on the test host (SPEC-PLUGIN §8)"
     },
     {
@@ -57,8 +57,8 @@
       "measured": "2026-10-12",
       "symbol": "item.service",
       "pluginSymbol": "property var service",
-      "plugin": "plugin/Desk.qml:66",
-      "relies": "Seldon relies on the overlay loader assigning shell, manifest and service (the plugin's own Service.qml) after the desk is created, each starting as null, at plugin/Desk.qml:66.",
+      "plugin": "plugin/Desk.qml:68",
+      "relies": "Seldon relies on the overlay loader assigning shell, manifest and service (the plugin's own Service.qml) after the desk is created, each starting as null, at plugin/Desk.qml:68.",
       "remeasure": "the desk opens with its service bound (tests/plugin/desk-view.sh creates it bare and assigns in the shell's order) and `view` on the test host"
     },
     {
@@ -93,8 +93,8 @@
       "measured": "2026-10-12",
       "symbol": "updateEntryInline",
       "pluginSymbol": "updateEntryInline",
-      "plugin": "plugin/Desk.qml:527",
-      "relies": "Seldon relies on the shell's updateEntryInline, behind the facade, replacing only the caller's own shell.json entry with { id } and the settings and returning true only when something changed, at plugin/Desk.qml:527.",
+      "plugin": "plugin/Desk.qml:536",
+      "relies": "Seldon relies on the shell's updateEntryInline, behind the facade, replacing only the caller's own shell.json entry with { id } and the settings and returning true only when something changed, at plugin/Desk.qml:536.",
       "remeasure": "the desk's settings writes (tests/plugin/desk-view.sh, settings scenarios) and one width change on the test host, read back from the shell.json entry"
     },
     {
@@ -105,8 +105,8 @@
       "measured": "2026-10-12",
       "symbol": "serviceFor",
       "pluginSymbol": "serviceFor",
-      "plugin": "plugin/BarWidget.qml:55",
-      "relies": "Seldon relies on the shell's serviceFor, behind the facade, returning the plugin's own service instance (and null before it mounts), at plugin/BarWidget.qml:55.",
+      "plugin": "plugin/BarWidget.qml:56",
+      "relies": "Seldon relies on the shell's serviceFor, behind the facade, returning the plugin's own service instance (and null before it mounts), at plugin/BarWidget.qml:56.",
       "remeasure": "the pill finds its service (tests/plugin/bar-view.sh) and shows counts on the test host after a shell restart"
     },
     {
@@ -117,8 +117,8 @@
       "measured": "2026-10-12",
       "symbol": "moduleWidgets",
       "pluginSymbol": "moduleWidgets",
-      "plugin": "plugin/BarWidget.qml:138",
-      "relies": "Seldon relies on the third-party bar facade offering moduleWidgets(id) and a scoped shell, so one pill instance owns the `jax.seldon.panel` IPC target, at plugin/BarWidget.qml:138.",
+      "plugin": "plugin/BarWidget.qml:139",
+      "relies": "Seldon relies on the third-party bar facade offering moduleWidgets(id) and a scoped shell, so one pill instance owns the `jax.seldon.panel` IPC target, at plugin/BarWidget.qml:139.",
       "remeasure": "tests/plugin/bar-view.sh and tests/plugin/ipc-restart.sh, and no \"another handler is registered\" line in the test host's shell log"
     },
     {
@@ -129,8 +129,8 @@
       "measured": "2026-10-12",
       "symbol": "centerAnchor",
       "pluginSymbol": "isDrawnWidget",
-      "plugin": "plugin/Model.js:4222",
-      "relies": "Seldon relies on the bar building the widget once per monitor plus a zero-size, hidden placeholder in the centre section, all listed by moduleWidgets, at plugin/Model.js:4222.",
+      "plugin": "plugin/Model.js:4498",
+      "relies": "Seldon relies on the bar building the widget once per monitor plus a zero-size, hidden placeholder in the centre section, all listed by moduleWidgets, at plugin/Model.js:4498.",
       "remeasure": "tests/plugin/bar-view.sh, and on the test host `omarchy-shell jax.seldon.panel pill` answers once with one handler"
     },
     {
@@ -141,8 +141,8 @@
       "measured": "2026-10-12",
       "symbol": "pickDrawnSlot",
       "pluginSymbol": "pickDrawnWidget",
-      "plugin": "plugin/Model.js:4231",
-      "relies": "Seldon relies on the shell's pickDrawnSlot choosing the first visible, non-zero-size slot, which Model.pickDrawnWidget mirrors, at plugin/Model.js:4231.",
+      "plugin": "plugin/Model.js:4507",
+      "relies": "Seldon relies on the shell's pickDrawnSlot choosing the first visible, non-zero-size slot, which Model.pickDrawnWidget mirrors, at plugin/Model.js:4507.",
       "remeasure": "the shell's pickDrawnSlot and isDrawnSlot against Model.pickDrawnWidget and isDrawnWidget (node tests/plugin/model.test.js), then tests/plugin/bar-view.sh"
     },
     {
@@ -153,8 +153,8 @@
       "measured": "2026-10-12",
       "symbol": "setting(",
       "pluginSymbol": "setting(",
-      "plugin": "plugin/BarWidget.qml:46",
-      "relies": "Seldon relies on the BarWidget base exposing the inline shell.json entry as settings and setting(name, fallback), at plugin/BarWidget.qml:46.",
+      "plugin": "plugin/BarWidget.qml:47",
+      "relies": "Seldon relies on the BarWidget base exposing the inline shell.json entry as settings and setting(name, fallback), at plugin/BarWidget.qml:47.",
       "remeasure": "`omarchy bar set jax.seldon captureIntervalMin 30 --json` on the test host reaches the service (`omarchy-shell jax.seldon.service status`)"
     },
     {
@@ -165,9 +165,31 @@
       "measured": "2026-10-12",
       "symbol": "iconCanvas",
       "pluginSymbol": "Style.bar.iconCanvas",
-      "plugin": "plugin/BarWidget.qml:249",
-      "relies": "Seldon relies on the Style tokens, among them Style.bar.iconCanvas (16 px at scale 1.0) sizing the pill's glyph box, at plugin/BarWidget.qml:249.",
-      "remeasure": "`just qmllint` (the token check against Commons) and the pill's glyph at scale 1.0 and 1.25 (tests/plugin/bar-view.sh)"
+      "plugin": "plugin/BarWidget.qml:250",
+      "relies": "Seldon relies on the Style tokens, among them Style.bar.iconCanvas (16 px at scale 1.0) sizing the pill's glyph box, at plugin/BarWidget.qml:250.",
+      "remeasure": "`just qmllint` (the token check against Commons) and the pill's glyph at scale 1.0 and 1.25 (tests/plugin/bar-view.sh)",
+      "edge": {
+        "sha256": "bfc786135e015961b06de9a850b7296fe6bca0de8b1e19e215127be39fbc0111",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
+    },
+    {
+      "id": "style-hyprland-warning",
+      "path": "shell/Commons/Style.qml",
+      "sha256": "f5901092617ae62645597199270afd4dfb0644d596bdfff16e1834fca6ad7243",
+      "omarchyVersion": "4.0.4-1",
+      "measured": "2026-10-12",
+      "symbol": "Hyprland",
+      "pluginSymbol": "import Quickshell.Hyprland",
+      "plugin": "plugin/components/desk/DeskWindow.qml:4",
+      "relies": "Seldon relies on Commons/Style.qml being the only loaded importer of Quickshell.Hyprland in the Quickshell harnesses, so that Quickshell's one 'Cannot connect to hyprland' warning (its 'Unable to find hyprland socket' or '$HYPRLAND_INSTANCE_SIGNATURE is unset' text) is Omarchy's (edge's Style.qml imports Quickshell.Hyprland and connects to its Hyprland singleton; stable's does not, and there the line is never accepted; the plugin's own importer is never loaded by a harness), at plugin/components/desk/DeskWindow.qml:4.",
+      "remeasure": "bash tests/plugin/upstream-warnings.test.sh, then the four harnesses (just plugin-test with SELDON_FULL_CHECK=1) on an edge tree: only that warning is accepted",
+      "edge": {
+        "sha256": "bfc786135e015961b06de9a850b7296fe6bca0de8b1e19e215127be39fbc0111",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
     },
     {
       "id": "color-popups",
@@ -177,8 +199,8 @@
       "measured": "2026-10-12",
       "symbol": "popups",
       "pluginSymbol": "Color.popups.text",
-      "plugin": "plugin/Desk.qml:135",
-      "relies": "Seldon relies on the Color tokens following the active theme, among them Color.popups.text as the desk's foreground, at plugin/Desk.qml:135.",
+      "plugin": "plugin/Desk.qml:137",
+      "relies": "Seldon relies on the Color tokens following the active theme, among them Commons.Color.popups.text as the desk's foreground, read through `import qs.Commons as Commons` because Qt 6.12's QtQuick has a Color singleton of its own that shadows the unqualified name (Omarchy edge, WP-224), at plugin/Desk.qml:137.",
       "remeasure": "`just qmllint` (the token check) and the desk in two themes, one light (docs/TESTING.md, theme renders)"
     },
     {
@@ -189,8 +211,8 @@
       "measured": "2026-10-12",
       "symbol": "surfaceSpec",
       "pluginSymbol": "Border.surfaceSpec",
-      "plugin": "plugin/Desk.qml:706",
-      "relies": "Seldon relies on Border.surfaceSpec(section, token, colour, width) giving the desk card the theme's popup border, at plugin/Desk.qml:706.",
+      "plugin": "plugin/Desk.qml:715",
+      "relies": "Seldon relies on Border.surfaceSpec(section, token, colour, width) giving the desk card the theme's popup border, at plugin/Desk.qml:715.",
       "remeasure": "the desk card's border in tests/plugin/desk-view.sh renders and in two themes on the test host"
     },
     {
@@ -201,8 +223,8 @@
       "measured": "2026-10-12",
       "symbol": "borderSpec",
       "pluginSymbol": "BorderSurface",
-      "plugin": "plugin/Desk.qml:697",
-      "relies": "Seldon relies on the qs.Ui BorderSurface drawing the desk card with its colour and borderSpec, at plugin/Desk.qml:697.",
+      "plugin": "plugin/Desk.qml:706",
+      "relies": "Seldon relies on the qs.Ui BorderSurface drawing the desk card with its colour and borderSpec, at plugin/Desk.qml:706.",
       "remeasure": "tests/plugin/desk-view.sh renders and the desk card on the test host"
     },
     {
@@ -213,9 +235,14 @@
       "measured": "2026-10-12",
       "symbol": "Keys.onReturnPressed",
       "pluginSymbol": "focusable: true",
-      "plugin": "plugin/components/desk/NewCaseSheet.qml:276",
-      "relies": "Seldon relies on qs.Ui Button with focusable: true being a Tab stop that Enter and Space click, and on its label never eliding, at plugin/components/desk/NewCaseSheet.qml:276.",
-      "remeasure": "the desk's key paths (tests/plugin/desk-view.sh, Tab and Enter scenarios) and the label-fit probe"
+      "plugin": "plugin/components/desk/NewCaseSheet.qml:277",
+      "relies": "Seldon relies on qs.Ui Button with focusable: true being a Tab stop that Enter and Space click, and on its label never eliding at the width the desk gives it (on edge a Button held narrower than its label shrinks the label to 75 % and then elides it), at plugin/components/desk/NewCaseSheet.qml:277.",
+      "remeasure": "the desk's key paths (tests/plugin/desk-view.sh, Tab and Enter scenarios) and the label-fit probe",
+      "edge": {
+        "sha256": "cecce7dc01a79be8ebcf52817914233daab8d9b87a4a7b6dc1ec780fcb716e09",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
     },
     {
       "id": "button-group-value",
@@ -225,8 +252,8 @@
       "measured": "2026-10-12",
       "symbol": "signal changed",
       "pluginSymbol": "onChanged: function(v)",
-      "plugin": "plugin/components/desk/NewCaseSheet.qml:179",
-      "relies": "Seldon relies on qs.Ui ButtonGroup emitting changed(value) without assigning value itself, so a binding on value survives, at plugin/components/desk/NewCaseSheet.qml:179.",
+      "plugin": "plugin/components/desk/NewCaseSheet.qml:180",
+      "relies": "Seldon relies on qs.Ui ButtonGroup emitting changed(value) without assigning value itself, so a binding on value survives, at plugin/components/desk/NewCaseSheet.qml:180.",
       "remeasure": "the new-case sheet's chips (tests/plugin/desk-view.sh) and a reset after submit"
     },
     {
@@ -237,8 +264,8 @@
       "measured": "2026-10-12",
       "symbol": "popupOpen",
       "pluginSymbol": "popupOpen",
-      "plugin": "plugin/components/desk/JournalField.qml:35",
-      "relies": "Seldon relies on qs.Ui Dropdown exposing popupOpen and taking focus on an inner trigger, so the field counts as editing while its popup is open, at plugin/components/desk/JournalField.qml:35.",
+      "plugin": "plugin/components/desk/JournalField.qml:36",
+      "relies": "Seldon relies on qs.Ui Dropdown exposing popupOpen and taking focus on an inner trigger, so the field counts as editing while its popup is open, at plugin/components/desk/JournalField.qml:36.",
       "remeasure": "the journal field's keys (tests/plugin/desk-view.sh: Tab to the trigger, Down opens, Enter picks) with the desk's key catcher blocked meanwhile"
     },
     {
@@ -261,9 +288,14 @@
       "measured": "2026-10-12",
       "symbol": "secure",
       "pluginSymbol": "omarchy-restart-shell",
-      "plugin": "plugin/Model.js:4190",
-      "relies": "Seldon relies on omarchy-restart-shell, run without arguments from a detached process, restarting the shell and refusing while a secure lock is up, at plugin/Model.js:4190.",
-      "remeasure": "the notice's Restart shell on the test host gives one new shell within seconds (memory/omarchy-shell.md, WP-090)"
+      "plugin": "plugin/Model.js:4466",
+      "relies": "Seldon relies on omarchy-restart-shell, run without arguments from a detached process, restarting the shell and refusing while a secure lock is up (on edge it waits up to 30 s for the old shell and 60 s for the new one, then for the notification service, and exits 1 when the shell does not come back), at plugin/Model.js:4466.",
+      "remeasure": "the notice's Restart shell on the test host gives one new shell, within seconds on stable and within about a minute on edge (memory/omarchy-shell.md, WP-090)",
+      "edge": {
+        "sha256": "1cf1b182141c6b07388a7ca0737fc932df50746fcfb56808eca94118a2b84d6e",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
     },
     {
       "id": "plugin-validator",
@@ -278,16 +310,21 @@
       "remeasure": "`omarchy plugin validate plugin/`, then refresh packaging/omarchy-pin to the new validator (packaging/README.md, \"The Omarchy pin\")"
     },
     {
-      "id": "shell-readme-contract",
-      "path": "shell/README.md",
-      "sha256": "86680c50254992cdb1c8453847f9d7be845e6b5350346738ee95245ae6b8013d",
+      "id": "plugin-registry-contract",
+      "path": "shell/services/PluginRegistry.qml",
+      "sha256": "8466127c53037b80b582544610b0bdf78a86764e4f037a3b9ce360d107359803",
       "omarchyVersion": "4.0.4-1",
-      "measured": "2026-10-12",
+      "measured": "2026-10-14",
       "symbol": "entryPoints",
       "pluginSymbol": "entryPoints",
       "plugin": "plugin/manifest.json:10",
-      "relies": "Seldon relies on the shell README's plugin contract (manifest keys, entry points per kind, the injected properties), at plugin/manifest.json:10.",
-      "remeasure": "read the README's diff against SPEC-PLUGIN §1, §8 and memory/omarchy-shell.md"
+      "relies": "Seldon relies on the shell's plugin registry reading the manifest's keys and entry points per kind (the schema Omarchy's docs/omarchy-shell.md names in git since edge cut the installed shell README to an index of uninstalled docs), at plugin/manifest.json:10.",
+      "remeasure": "read PluginRegistry.qml's diff against SPEC-PLUGIN §1, §8 and memory/omarchy-shell.md, then `omarchy plugin validate plugin/`",
+      "edge": {
+        "sha256": "76283b1dbb4cd71001f5f85b5ec6670d164de8725d127482d56dd561feb68c3a",
+        "omarchyVersion": "4.0.0.r7017.g84cfb93-1",
+        "measured": "2026-10-14"
+      }
     }
   ]
 }

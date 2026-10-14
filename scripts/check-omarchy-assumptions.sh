@@ -3,7 +3,11 @@
 # installed files that tests/omarchy/assumptions.json lists, read-only, and
 # compares them with the ledger. On a mismatch it prints each affected
 # assumption and what to re-measure; it also says when the installed
-# validator is not the one packaging/omarchy-pin fetches for CI. The pin
+# validator is not the one packaging/omarchy-pin fetches for CI. An entry
+# may carry a second measurement, `edge` (sha256, omarchyVersion,
+# measured: the same assumption re-measured on Omarchy's edge channel,
+# WP-224); a file that matches either is unchanged, so the rc test host's
+# gate and the edge dev host both pass. The pin
 # is Omarchy stable's tree (E93, ADR-0055): on a host whose channel is
 # edge (`omarchy-version-channel`), a validator other than the pin's is
 # information (an edge preview), never "refresh the pin" and never a
@@ -48,17 +52,18 @@ fi
 
 command -v jq >/dev/null || { echo "$me: jq not found" >&2; exit 2; }
 [[ -f $ledger ]] || { echo "$me: ledger not found: $ledger" >&2; exit 2; }
-# One line per assumption: path, sha256, id, version, symbol, relies, remeasure
+# One line per assumption: path, sha256, edge sha256 ("-" without an edge
+# measurement), id, version, symbol, relies, remeasure
 rows=$(jq -er '
   .assumptions | if type == "array" and length > 0 then . else error("no assumptions") end
-  | .[] | [.path, .sha256, .id, .omarchyVersion, .symbol, .relies, .remeasure]
+  | .[] | [.path, .sha256, (if has("edge") then .edge.sha256 else "-" end), .id, .omarchyVersion, .symbol, .relies, .remeasure]
   | if all(type == "string" and length > 0) then @tsv else error("an entry lacks a field") end
 ' "$ledger" 2>/dev/null) || { echo "$me: malformed ledger: $ledger" >&2; exit 2; }
 
 declare -A seen=() actual=()
 paths=()
-while IFS=$'\t' read -r path want _; do
-  [[ $path != /* && $path != *..* && $want =~ ^[0-9a-f]{64}$ ]] \
+while IFS=$'\t' read -r path want edge _; do
+  [[ $path != /* && $path != *..* && $want =~ ^[0-9a-f]{64}$ && ($edge == - || $edge =~ ^[0-9a-f]{64}$) ]] \
     || { echo "$me: malformed ledger entry for '$path': $ledger" >&2; exit 2; }
   [[ -n ${seen[$path]:-} ]] && continue
   seen[$path]=1
@@ -72,18 +77,28 @@ done <<< "$rows"
 
 echo "$me: ${#paths[@]} files under $tree against ${ledger#"$root"/}"
 changed=0
+as_edge=0
 for path in "${paths[@]}"; do
   got=${actual[$path]}
   first=1
-  while IFS=$'\t' read -r p want id version symbol relies remeasure; do
+  while IFS=$'\t' read -r p want edge id version symbol relies remeasure; do
     [[ $p == "$path" && $got != "$want" ]] || continue
+    if [[ $got == "$edge" ]]; then
+      if ((first)); then
+        as_edge=$((as_edge + 1))
+        first=0
+      fi
+      continue
+    fi
     if ((first)); then
       first=0
       changed=$((changed + 1))
       if [[ $got == missing ]]; then
         echo "$me: NOTICE: $path is missing (measured on Omarchy $version)"
       else
-        echo "$me: NOTICE: $path changed (sha256 ${got:0:12}, ledger ${want:0:12}, measured on Omarchy $version)"
+        edge_was=''
+        [[ $edge == - ]] || edge_was=", edge ${edge:0:12}"
+        echo "$me: NOTICE: $path changed (sha256 ${got:0:12}, ledger ${want:0:12}$edge_was, measured on Omarchy $version)"
       fi
     fi
     if [[ $got == missing ]]; then
@@ -131,7 +146,8 @@ fi
 
 if ((changed == 0)) && [[ -z $pin_note || $pin_note == edge ]]; then
   edge_text=''
-  [[ $pin_note != edge ]] || edge_text="; the validator is edge's, not the pin's: information"
+  ((as_edge == 0)) || edge_text="; $as_edge as measured on edge"
+  [[ $pin_note != edge ]] || edge_text+="; the validator is edge's, not the pin's: information"
   echo "$me: ok (every assumption's file matches the ledger$edge_text)"
   exit 0
 fi

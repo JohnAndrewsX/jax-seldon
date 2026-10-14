@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../components/desk"
 import "../components/overlay"
@@ -40,7 +41,7 @@ Section {
   readonly property real pad: Style.spacing.huge
   readonly property var grid: Model.overlayGrid(gridArea.width, gridArea.height, Style.spacing.panelGap,
     Style.space(240), Style.space(120))
-  readonly property color foreground: Color.popups.text
+  readonly property color foreground: Commons.Color.popups.text
   // the Timeline legend's snapshot marker, Timeline.qml's snapshotColor
   readonly property color snapshotMarker: Util.alpha(root.foreground, 0.7)
   readonly property string fontFamily: Style.font.family
@@ -50,7 +51,7 @@ Section {
     return {
       files: e.markers.map(function(k) { return Model.markerFile(k, Style.space(12)) }),
       label: e.label,
-      color: e.tone === "urgent" ? Color.urgent : e.tone === "snapshot" ? root.snapshotMarker : Color.accent
+      color: e.tone === "urgent" ? Commons.Color.urgent : e.tone === "snapshot" ? root.snapshotMarker : Commons.Color.accent
     }
   })
 

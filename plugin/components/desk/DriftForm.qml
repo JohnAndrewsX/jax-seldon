@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../../Model.js" as Model
 import ".."
@@ -47,9 +48,9 @@ FocusScope {
 
   property var service: null
   property var indexData: null
-  property color foreground: Color.foreground
-  property color accent: Color.accent
-  property color urgent: Color.urgent
+  property color foreground: Commons.Color.foreground
+  property color accent: Commons.Color.accent
+  property color urgent: Commons.Color.urgent
   property string fontFamily: Style.font.family
 
   // The event the sheet resolves (a row's id); set through openFor().
@@ -303,7 +304,7 @@ FocusScope {
 
     property string label: ""
     property real labelWidth: 0
-    property color labelColor: Color.foreground
+    property color labelColor: Commons.Color.foreground
     property string fontFamily: Style.font.family
     default property alias control: holder.data
 

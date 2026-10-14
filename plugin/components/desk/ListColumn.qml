@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import ".."
 
@@ -31,7 +32,7 @@ Item {
   // index lists no row of, WP-206); the cursor on the last row scrolls it
   // into view.
   property alias footer: list.footer
-  property color foreground: Color.popups.text
+  property color foreground: Commons.Color.popups.text
   property string fontFamily: Style.font.family
   // Draw the hairline at the right (not in the stacked layout).
   property bool divider: true
@@ -78,7 +79,7 @@ Item {
   }
 
   Column {
-    id: top
+    id: topColumn
     x: Style.spacing.xxl
     y: Style.spacing.xxl
     width: parent.width - Style.spacing.xxl * 2
@@ -106,7 +107,7 @@ Item {
   ListView {
     id: list
     x: Style.spacing.xxl
-    anchors.top: top.bottom
+    anchors.top: topColumn.bottom
     anchors.topMargin: Style.spacing.lg
     anchors.bottom: parent.bottom
     anchors.bottomMargin: Style.spacing.xxl

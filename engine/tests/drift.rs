@@ -1264,3 +1264,140 @@ fn an_agents_explain_tags_the_completed_case() {
     );
     assert_eq!(v["case"]["tags"], json!([]));
 }
+
+/// WP-224: a channel switch (stable → edge) in the shape pacman logged
+/// it on an edge host (2026-10-14): Omarchy's `pacman -S` names the edge
+/// packages, which replace the stable ones as conflicts in one
+/// transaction, and `omarchy-version` drops from 4.0.4-2 to the edge's
+/// 4.0.0.rN. One open item, `omarchy-channel` (a crisis, as an `alwaysRed`
+/// install by name is); the Omarchy `update` is history beside it.
+/// Capturing again writes nothing.
+#[test]
+fn an_omarchy_channel_switch_is_one_item() {
+    let env = Env::new(Snapper::Missing);
+    let t0 = "2026-10-14T17:00:00+02:00";
+    let t1 = "2026-10-14T17:06:00+02:00";
+    let lb = env.tmp.path().join("logbook");
+    env.stub("omarchy-version", "echo 4.0.4-2");
+    let out = env.at(
+        t0,
+        &[
+            "init",
+            "--non-interactive",
+            "--no-capture",
+            "--no-git",
+            "--path",
+            lb.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let log = env.tmp.path().join("pacman.log");
+    std::fs::write(
+        &log,
+        "[2026-10-14T17:05:03+0200] [ALPM] running 'update-desktop-database.hook'...\n\
+         [2026-10-14T17:05:03+0200] [PACMAN] Running 'pacman -S --needed --noconfirm --ask 4 omarchy-dev omarchy-settings-dev'\n\
+         [2026-10-14T17:05:25+0200] [ALPM] running '10-limine-snapper-lock.hook'...\n\
+         [2026-10-14T17:05:25+0200] [ALPM] running '10-omarchy-hyprland-reload-pause.hook'...\n\
+         [2026-10-14T17:05:25+0200] [ALPM] transaction started\n\
+         [2026-10-14T17:05:25+0200] [ALPM] removed omarchy (4.0.4-2)\n\
+         [2026-10-14T17:05:25+0200] [ALPM] removed omarchy-settings (4.0.4-6)\n\
+         [2026-10-14T17:05:25+0200] [ALPM] installed omarchy-settings-dev (4.0.0.r7017.g84cfb93-1)\n\
+         [2026-10-14T17:05:25+0200] [ALPM-SCRIPTLET] Applying Omarchy etc-overrides...\n\
+         [2026-10-14T17:05:25+0200] [ALPM] installed omarchy-dev (4.0.0.r7017.g84cfb93-1)\n\
+         [2026-10-14T17:05:25+0200] [ALPM] transaction completed\n\
+         [2026-10-14T17:05:25+0200] [ALPM] running '30-systemd-daemon-reload-system.hook'...\n\
+         [2026-10-14T17:05:26+0200] [ALPM] running '90-omarchy-hyprland-reload-resume.hook'...\n",
+    )
+    .unwrap();
+    let capture = |now: &str, source: &str| -> Value {
+        let out = env
+            .command(&["capture", "--source", source, "--since", t0, "--json"])
+            .env("SELDON_NOW", now)
+            .env("SELDON_PACMAN_LOG", &log)
+            .env("SELDON_PACMAN_DB_LOCK", env.tmp.path().join("no-db.lck"))
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{source}: {}", stderr(&out));
+        json(&out)
+    };
+    // the version before the switch is the omarchy collector's baseline
+    assert_eq!(capture(t0, "omarchy")["written"], 0);
+    env.stub("omarchy-version", "echo 4.0.0.r7017.g84cfb93-1");
+    assert_eq!(capture(t1, "pacman")["written"], 4);
+    assert_eq!(capture(t1, "omarchy")["written"], 1);
+
+    let v = run(&env, &lb, &["drift"], 0);
+    assert_eq!(
+        (v["openDrift"].clone(), v["crisis"].clone()),
+        (json!(1), json!(1))
+    );
+    let item = &v["drift"][0];
+    assert_eq!(
+        [
+            &item["source"],
+            &item["members"],
+            &item["class"],
+            &item["rule"]
+        ],
+        [
+            &json!("pacman"),
+            &json!(4),
+            &json!("crisis"),
+            &json!("omarchy-channel")
+        ]
+    );
+    let show = run(
+        &env,
+        &lb,
+        &["drift", "show", item["eventId"].as_str().unwrap()],
+        0,
+    );
+    let mut members: Vec<String> = show["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            format!(
+                "{} {}",
+                m["kind"].as_str().unwrap(),
+                m["subject"].as_str().unwrap()
+            )
+        })
+        .collect();
+    members.sort();
+    assert_eq!(
+        members,
+        [
+            "install omarchy-dev",
+            "install omarchy-settings-dev",
+            "remove omarchy",
+            "remove omarchy-settings"
+        ]
+    );
+    // the version drop is history, not a second item
+    let update = common::ledger(&lb)
+        .into_iter()
+        .find(|e| e["source"] == "omarchy")
+        .unwrap();
+    assert_eq!(update["detail"], "4.0.4-2 → 4.0.0.r7017.g84cfb93-1");
+    let all = run(&env, &lb, &["drift", "--all"], 0);
+    let row = all["drift"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["eventId"] == update["id"])
+        .unwrap_or_else(|| panic!("{all}"));
+    assert_eq!(
+        (row["class"].clone(), row["rule"].clone()),
+        (json!("routine"), json!("omarchy-update"))
+    );
+    assert_valid_index(&index_file(&env));
+
+    // idempotent: the same log and version again write nothing
+    let before = common::ledger(&lb).len();
+    let t2 = "2026-10-14T17:07:00+02:00";
+    assert_eq!(capture(t2, "pacman")["written"], 0);
+    assert_eq!(capture(t2, "omarchy")["written"], 0);
+    assert_eq!(common::ledger(&lb).len(), before);
+    assert_eq!(run(&env, &lb, &["drift"], 0)["openDrift"], 1);
+}

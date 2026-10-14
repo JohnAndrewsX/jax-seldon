@@ -24,9 +24,12 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
 }
 ```
 
-Verify the exact manifest keys against `$OMARCHY_PATH/shell/README.md`
-(`/usr/share/omarchy` on a package install) before committing (WP-010 does
-this); the shell is the source of truth. Do **not** add `panel` to `kinds`:
+Verify the exact manifest keys against
+`$OMARCHY_PATH/shell/services/PluginRegistry.qml` (`/usr/share/omarchy` on
+a package install) before committing (WP-010 did this against
+`shell/README.md`, which since edge is only an index of docs that are not
+installed: `docs/omarchy-shell.md` in Omarchy's git; WP-224); the shell is
+the source of truth. Do **not** add `panel` to `kinds`:
 the shell's panel loader picks one UI kind per plugin id (`panel` before
 `overlay` before `menu`), and `overlay` is what makes `omarchy-shell shell
 toggle jax.seldon` open the desk (§5, §8; ADR-0034 §1).
@@ -874,7 +877,11 @@ its leader) once for a selected crisis and keep the answer while the item
 stays a crisis (`Service.driftRules`). `always-red` → "A
 package on your crisis list ([drift] alwaysRed in
 ~/.config/seldon/config.toml) was installed, removed or downgraded by name
-in this transaction."; `always-red-paths` → "The path matches your crisis
+in this transaction."; `omarchy-channel` → "Omarchy changed channel
+(stable or edge): this transaction replaced omarchy, omarchy-settings or
+both with their -dev twins, or the other way round. Edge numbers its
+versions on its own, so a lower number here is no downgrade." (WP-224,
+ADR-0060); `always-red-paths` → "The path matches your crisis
 list ([drift] alwaysRedPaths …)."; `pacnew-red` → "pacman left a .pacnew,
 .pacsave or .pacorig beside a file that boot or login depend on
 (mkinitcpio, Limine, PAM); check it with pacdiff before the next reboot."
@@ -914,7 +921,7 @@ that means (the packages listed may be all it changed; a failed one could
 not be installed, upgraded or removed), then the steps — for `failed`
 and `unfinished` "pacman's after-update steps (boot image, boot menu,
 Omarchy's resume hooks) did not run for this transaction; if
-omarchy-settings was in it, Hyprland's auto-reload may stay paused for
+omarchy-settings (omarchy-settings-dev on the edge channel) was in it, Hyprland's auto-reload may stay paused for
 this session.", for `interrupted` the same with "may not have run for
 every package of this transaction" — and one shared tail: "Before you
 reboot, reinstall the packages marked ↑ or 󰑓 below (`pacman -S` with
@@ -1796,6 +1803,14 @@ theme under `$OMARCHY_PATH/themes/`; `tests/plugin/check-tokens.py`
 fails on `Color.muted` as a Text colour and on a literal
 `Util.alpha(…, <number>)` outside its allow-list: named colour properties
 of the charts and the graph (data colours), each with its alpha.
+Omarchy's colours are always read as `Commons.Color.…` with `import
+qs.Commons as Commons` beside `import qs.Commons` (WP-224): Qt 6.12's
+QtQuick exports a singleton `Color` of its own that shadows the
+unqualified name whatever the import order, so a bare `Color.popups.text`
+is undefined on Omarchy edge. Omarchy's own edge code qualifies it the
+same way; `check-tokens.py` fails a bare `Color.` and a `Commons.Color`
+without the alias import. (`Color.muted` and the like in this spec name
+the token; the code writes `Commons.Color.muted`.)
 
 **Geometry** (B10, Omarchy first). Rows, cards and `qs.Ui` controls take
 `Style.cornerRadius` (Hyprland's `decoration:rounding`, 0 by default), as

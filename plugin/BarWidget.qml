@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "components"
 import "Model.js" as Model
@@ -229,7 +230,7 @@ BarWidget {
     hasVisualContent: true
     fixedWidth: root.vertical ? -1 : pill.width + button.scaledHorizontalMargin * 2
     fixedHeight: root.vertical ? pill.height + button.scaledVerticalPadding * 2 : -1
-    foreground: root.tone === "accent" ? Color.accent : (root.bar ? root.bar.barForeground : Color.foreground)
+    foreground: root.tone === "accent" ? Commons.Color.accent : (root.bar ? root.bar.barForeground : Commons.Color.foreground)
     active: root.tone === "urgent"
     dimmed: root.dimmed
     tooltipText: root.tooltip

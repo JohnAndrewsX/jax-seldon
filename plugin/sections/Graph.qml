@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../components/desk"
 import "../components/graph"
@@ -27,7 +28,7 @@ Section {
   readonly property var build: root.service ? root.service.graph : null
   readonly property bool hasGraph: !!root.build && !root.build.empty
   readonly property real pad: Style.spacing.huge
-  readonly property color foreground: Color.popups.text
+  readonly property color foreground: Commons.Color.popups.text
   readonly property string fontFamily: Style.font.family
   readonly property var legend: Model.GRAPH_LEGEND.filter(function(e) {
     return e.kind !== "cluster" || (!!root.build && root.build.numbers.clusters > 0)
@@ -180,7 +181,7 @@ Section {
         text: canvas.playing ? "Pause" : "Play growth"
         bordered: true
         foreground: root.foreground
-        accent: Color.accent
+        accent: Commons.Color.accent
         fontFamily: root.fontFamily
         fontSize: Style.font.bodySmall
         onClicked: {
@@ -200,9 +201,9 @@ Section {
         step: 1
         integer: true
         value: canvas.cut
-        trackColor: Style.selectedFillFor(root.foreground, Color.accent)
-        fillColor: Color.accent
-        knobColor: Color.accent
+        trackColor: Style.selectedFillFor(root.foreground, Commons.Color.accent)
+        fillColor: Commons.Color.accent
+        knobColor: Commons.Color.accent
         // No knob animation while the replay moves it: a running QML
         // animation throttles the shell thread to the display's frames
         // (gaps of a frame, ~17 ms, measured on the test host; WP-125).

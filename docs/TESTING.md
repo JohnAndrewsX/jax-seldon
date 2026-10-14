@@ -609,7 +609,12 @@ harness or live step its `remeasure` names), then update `sha256`,
 `omarchyVersion`, `measured` and the sentence in the same commit, and the
 pin with it when the validator changed (packaging/README.md, "The Omarchy
 pin"); what stays open at a release goes into the acceptance record's
-`limitations`. `check-assumptions` fails when a `pluginSymbol` is gone
+`limitations`. An entry may also carry `edge` (`sha256`, `omarchyVersion`,
+`measured`): the same assumption re-measured on Omarchy's edge channel
+(WP-224). A file that matches either hash is unchanged, so the rc test
+host's gate and the edge dev host both pass, and the ok line counts the
+files that matched as measured on edge; entries of one file share both
+hashes. The stable `sha256` stays the one the pin's tree has (ADR-0055). `check-assumptions` fails when a `pluginSymbol` is gone
 from its plugin file or left only in comments: `//` line comments,
 trailing ` // …` comments, and lines that start with `/*` or `*`. A
 `/* … */` span is not parsed, so an unstarred line inside one or an
@@ -639,6 +644,17 @@ check on push.
     sees them as plain `QObject`.
   - `uncreatable-type` — Quickshell's qmltypes register `PanelWindow` with
     `isCreatable: false`; it is created fine at runtime.
+  - `block-scope-var-declaration` (Qt 6.12 and later; the recipe passes it
+    only when `qmllint --help` lists it, so Qt 6.11 runs unchanged) — `var`
+    inside a block, mostly `for (var i …)`. Plugin code could avoid it, but
+    Omarchy's own shell uses `var` there in hundreds of places and never
+    `let`, and SPEC-PLUGIN follows the built-in plugins' idiom. qmllint 6.12
+    counts this warning against `--max-warnings` without printing it in text
+    mode: a bare exit 255 with no `Warning:` line is this category
+    (`--json -` shows it). WP-224.
+- **Qt 6.12's `id-shadows-member`** stays a warning: an id must not share a
+  name with a property of its file's root type (`id: top`, `id: form` were
+  renamed in WP-224).
 - **Token check.** Because `missing-property` is demoted, qmllint cannot see
   a typo such as `Style.font.bodySmal`. `tests/plugin/check-tokens.py` reads
   `Commons/{Style,Color,Border,Util}.qml` of the installed shell and fails on
@@ -1129,6 +1145,26 @@ A missing engine makes Quickshell log `WARN: Process failed to start,
 likely because the binary could not be found` — expected, and the only log
 line the plugin may cause. The service probes for the engine once at start
 and again only on *Check again*, so it appears once per shell start.
+
+**One upstream warning on Omarchy edge** (WP-224). Edge's
+`Commons/Style.qml` imports Quickshell.Hyprland, and in an offscreen
+Quickshell without Hyprland the Hyprland IPC module logs one line that
+names no file, in one of two exact texts: `WARN: Unable to find hyprland
+socket. Cannot connect to hyprland.` where the harness inherits the
+session's `HYPRLAND_INSTANCE_SIGNATURE` (service-states), `WARN:
+$HYPRLAND_INSTANCE_SIGNATURE is unset. Cannot connect to hyprland.` under
+`env -i` (desk-view, bar-view, ipc-restart). The four harnesses accept
+exactly those whole lines through `tests/plugin/upstream-warnings.sh`, and
+only while the loaded tree's `Style.qml` imports Quickshell.Hyprland and
+every plugin importer of it is a file the harness never loads (the
+plugin's `DeskWindow.qml`: desk-view replaces it with a stub, the others
+never load `Desk.qml`). On stable and rc nothing is accepted; every other
+WARN, a plugin file's warning with the same words included, still fails a
+case. No Hyprland socket is faked and `HYPRLAND_INSTANCE_SIGNATURE` is
+never set. The `env -i` harnesses pass `LANG=C.UTF-8`: Qt 6.12 warns about
+the "C" locale and switches to C.UTF-8 itself, so nothing changes but the
+warning. `upstream-warnings.test.sh` (in `plugin-test`, everywhere) proves
+it; the ledger's `style-hyprland-warning` records the edge fact.
 
 ### 3. The desk (`Desk.qml`) in a private headless Quickshell
 

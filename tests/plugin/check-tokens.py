@@ -7,9 +7,14 @@ cannot see a typo like `Style.font.bodySmal` (SPEC-PLUGIN §9). This reads the
 singletons in $OMARCHY_PATH/shell/Commons and fails on any reference to a
 member they do not declare.
 
-Two house rules of SPEC-PLUGIN §7 (WP-177) need no shell and run with
+Three house rules of SPEC-PLUGIN §7 need no shell and run with
 `--rules` everywhere (`just plugin-test`, CI included), and with the shell
 check on the dev host:
+  - Omarchy's colours only as `Commons.Color.…` with
+    `import qs.Commons as Commons` (WP-224): Qt 6.12's QtQuick exports a
+    singleton `Color` of its own that shadows the unqualified name, so a bare
+    `Color.popups.text` is undefined on Omarchy edge; Omarchy's own code
+    qualifies it the same way;
   - no `Color.muted` as the colour of a Text (also not through a colour
     property set to it): text takes Tone's `dim` (components/Tone.qml);
   - `Util.alpha(…, <number>)` only on a colour property ALPHA_ALLOWED lists
@@ -52,7 +57,9 @@ DECLARED = re.compile(r"\bproperty\s+[\w<>.]+\s+(\w+)\s*:")
 TEXT_TYPES = {"Text"}
 INLINE = re.compile(r"\bcomponent\s+(\w+)\s*:\s*(\w+)\s*\{")
 TOKEN = re.compile(r"(?:\bcomponent\s+\w+\s*:\s*)?\b(?P<element>[A-Z]\w*)\s*\{|(?P<key>(?<![.\w])color\s*:)|\{|\}")
-MUTED_PROPERTY = re.compile(r"\bproperty\s+color\s+(\w+)\s*:\s*Color\.muted\b")
+BARE_COLOR = re.compile(r"(?<![.\w])Color\.")
+COMMONS_ALIAS = re.compile(r"^\s*import\s+qs\.Commons\s+as\s+Commons\s*$", re.M)
+MUTED_PROPERTY = re.compile(r"\bproperty\s+color\s+(\w+)\s*:\s*(?:Commons\.)?Color\.muted\b")
 ALPHA = "Util.alpha("
 
 
@@ -80,13 +87,20 @@ def alpha_literals(line):
 
 
 def house_rules(path, plugin_root):
-    """Errors of the two SPEC-PLUGIN §7 rules in one QML file."""
+    """Errors of the SPEC-PLUGIN §7 house rules in one QML file."""
     errors = []
     try:
         rel = path.resolve().relative_to(plugin_root.resolve()).as_posix()
     except ValueError:
         rel = path.as_posix()
-    lines = [strip_comment(l) for l in path.read_text(encoding="utf-8").splitlines()]
+    source = path.read_text(encoding="utf-8")
+    lines = [strip_comment(l) for l in source.splitlines()]
+    for number, line in enumerate(lines, 1):
+        if BARE_COLOR.search(line):
+            errors.append(f"{path}:{number}: an unqualified Color is QtQuick's own singleton on Qt 6.12; "
+                          "write Commons.Color with `import qs.Commons as Commons` (SPEC-PLUGIN §7)")
+    if any("Commons.Color." in line for line in lines) and not COMMONS_ALIAS.search(source):
+        errors.append(f"{path}: Commons.Color without `import qs.Commons as Commons` (SPEC-PLUGIN §7)")
     text_types = set(TEXT_TYPES)
     for line in lines:
         for m in INLINE.finditer(line):

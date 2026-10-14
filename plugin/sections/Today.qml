@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../components"
 import "../components/desk"
@@ -82,7 +83,7 @@ Section {
     ? root.service.planResult : null
   readonly property bool pending: !!root.service && !!root.service.planResult && root.service.planResult.pending
   readonly property bool canWrite: !!root.service && root.service.canWrite
-  readonly property color foreground: Color.popups.text
+  readonly property color foreground: Commons.Color.popups.text
   // WP-202: the setup row as the selection, the button the keys are on,
   // and the arm id it presses (it names the step, its banner and the
   // action, so an arm never runs a button that took its place).
@@ -340,7 +341,7 @@ Section {
         visible: !!root.today && root.today.state !== null
         file: root.today && root.today.state ? Model.pictogramFile(root.today.state.id, width) : ""
         color: !root.today || !root.today.state || root.today.state.tone === "default" ? root.foreground
-          : root.today.state.tone === "urgent" ? Color.urgent : Color.accent
+          : root.today.state.tone === "urgent" ? Commons.Color.urgent : Commons.Color.accent
       }
 
       Flow {
@@ -437,7 +438,7 @@ Section {
       service: root.service
       indexData: root.index
       foreground: root.foreground
-      urgent: Color.urgent
+      urgent: Commons.Color.urgent
       fontFamily: Style.font.family
       onLeaveRequested: if (root.desk) root.desk.takeKeys()
     }
@@ -451,10 +452,10 @@ Section {
       visible: root.setupRowShown
       implicitHeight: setupRowColumn.implicitHeight + Style.spacing.md * 2
       radius: Style.cornerRadius
-      color: root.setupFocused ? Style.selectedFillFor(Color.accent, Color.accent) : "transparent"
+      color: root.setupFocused ? Style.selectedFillFor(Commons.Color.accent, Commons.Color.accent) : "transparent"
       border.width: Math.max(1, Style.space(1))
       // selected: the accent tint plus a border of at least 3:1 (WP-177)
-      border.color: root.setupFocused ? root.tone.accentUi : Style.normalBorderFor(Color.accent, Color.accent)
+      border.color: root.setupFocused ? root.tone.accentUi : Style.normalBorderFor(Commons.Color.accent, Commons.Color.accent)
 
       Column {
         id: setupRowColumn
@@ -573,7 +574,7 @@ Section {
       implicitHeight: visible ? firstRunColumn.implicitHeight + contentTopInset + contentBottomInset : 0
       radius: Style.cornerRadius
       // a notice's frame on the normal fill, never the cursor's selected fill
-      color: Style.normalFillFor(root.foreground, Color.accent)
+      color: Style.normalFillFor(root.foreground, Commons.Color.accent)
       borderSpec: Border.controlSpec("normal", root.tone.accentUi, root.tone.accentUi)
       padding: Style.spacing.xl
 

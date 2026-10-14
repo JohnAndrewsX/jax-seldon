@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../../Model.js" as Model
 import ".."
@@ -35,9 +36,9 @@ Item {
   property var build: null
   property var service: null
   property bool running: false
-  property color foreground: Color.popups.text
-  property color accent: Color.accent
-  property color urgent: Color.urgent
+  property color foreground: Commons.Color.popups.text
+  property color accent: Commons.Color.accent
+  property color urgent: Commons.Color.urgent
   property string fontFamily: Style.font.family
 
   // The layout (Model.graphState); mutated in place, so nothing binds to it.
@@ -659,7 +660,7 @@ Item {
     width: Math.min(Style.space(320), root.width * 0.4)
     height: cardColumn.implicitHeight + Style.spacing.md * 2
     radius: Style.cornerRadius
-    color: Color.popups.background
+    color: Commons.Color.popups.background
     border.color: Style.normalBorderFor(root.foreground, root.accent)
     border.width: Math.max(1, Style.space(1))
 

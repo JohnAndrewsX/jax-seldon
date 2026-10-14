@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../components/desk"
 import "../Model.js" as Model
@@ -101,7 +102,7 @@ ReadingSection {
         id: big
         textFormat: Text.PlainText
         text: root.current ? root.current.big : ""
-        color: root.current && root.current.empty ? root.tone.dim : Color.popups.text
+        color: root.current && root.current.empty ? root.tone.dim : Commons.Color.popups.text
         font.family: Style.font.family
         font.pixelSize: Style.font.display
         font.bold: true
@@ -175,7 +176,7 @@ ReadingSection {
               width: parent.width
               textFormat: Text.PlainText
               text: fileRow.modelData.path
-              color: Color.popups.text
+              color: Commons.Color.popups.text
               elide: Text.ElideMiddle
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
@@ -200,7 +201,7 @@ ReadingSection {
               : (root.service ? root.service.writeBlocker : "")
             enabled: root.canWrite && !root.watching
             bordered: true
-            foreground: Color.popups.text
+            foreground: Commons.Color.popups.text
             fontFamily: Style.font.family
             fontSize: Style.font.caption
             onClicked: root.watch(fileRow.modelData.path)

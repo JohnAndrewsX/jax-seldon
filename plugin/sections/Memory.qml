@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "../components/desk"
 import "../Model.js" as Model
 
@@ -68,7 +69,7 @@ ReadingSection {
       visible: text !== ""
       textFormat: Text.PlainText
       text: Model.memorySummary(root.allRows)
-      color: Color.popups.text
+      color: Commons.Color.popups.text
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall
@@ -95,7 +96,7 @@ ReadingSection {
       width: parent.width
       textFormat: Text.PlainText
       text: root.current ? root.current.title : ""
-      color: Color.popups.text
+      color: Commons.Color.popups.text
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.title
