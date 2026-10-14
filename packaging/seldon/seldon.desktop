@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Seldon
+Name[de]=Seldon
+Comment=What changed on your machine, who changed it, and why
+Comment[de]=Was sich auf deinem Rechner geändert hat, wer es war und warum
+Exec=seldon open
+Icon=seldon
+Terminal=false
+StartupWMClass=seldon
+Categories=System;Utility;
+Keywords=logbook;changes;snapshots;agents;

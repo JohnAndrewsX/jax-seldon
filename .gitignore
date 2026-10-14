@@ -15,3 +15,5 @@ target/
 .vscode/
 # qmllint / qmlls local config
 .qmlls.ini
+/build/
+*.pkg.tar.*
