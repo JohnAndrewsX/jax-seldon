@@ -2663,6 +2663,11 @@ test("eventDetail: heading, class, the key/values; why loud from the engine's ru
   assert.strictEqual(known("always-red-paths").whyLoud,
     "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked.")
   assert.ok(known("always-red").whyLoud.startsWith("A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml)"))
+  // a channel switch: one pair or both (WP-224, ADR-0060)
+  assert.strictEqual(known("omarchy-channel").whyLoud,
+    "Omarchy changed channel (stable or edge): this transaction replaced omarchy, omarchy-settings or both with their -dev twins, or the other way round. "
+    + "Edge numbers its versions on its own, so a lower number here is no downgrade. No open case plans it, and no case is linked.")
+  same(known("omarchy-channel").kv[4], ["Rule", "crisis · rule omarchy-channel · no case"])
   assert.ok(known("attention-all").whyLoud.startsWith("[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."))
   assert.ok(known("future-rule").whyLoud.startsWith("The engine's rule: future-rule."))
   assert.ok(known("pacnew-red").whyLoud.startsWith("pacman left a .pacnew, .pacsave or .pacorig beside a file that boot or login depend on (mkinitcpio, Limine, PAM)"))
