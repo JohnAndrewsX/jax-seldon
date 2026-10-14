@@ -2,9 +2,9 @@
 //! the Seldon agent skill. `seldon skill` prints the skill's `SKILL.md`
 //! as this engine ships it; `seldon skill install` is `seldon hook install
 //! skills` ([`super::skills::install`]): every agent skill folder that
-//! exists, idempotent, files changed by hand kept. Replacing an edited
-//! copy and uninstalling stay `hook install skills --replace` and `hook
-//! uninstall skills`.
+//! exists, idempotent, files changed by hand kept; `--replace` archives
+//! such a copy and installs the skill as shipped, the same code as `hook
+//! install skills --replace`. Uninstalling stays `hook uninstall skills`.
 
 use clap::{Args, Subcommand};
 use serde_json::json;
@@ -16,7 +16,8 @@ use crate::error::Result;
 #[derive(Debug, Clone, Args)]
 #[command(after_help = "Examples:
   seldon skill
-  seldon skill install --json")]
+  seldon skill install --json
+  seldon skill install --replace")]
 pub struct SkillArgs {
     #[command(subcommand)]
     pub command: Option<SkillCommand>,
@@ -25,12 +26,17 @@ pub struct SkillArgs {
 #[derive(Debug, Clone, Subcommand)]
 pub enum SkillCommand {
     /// Put the skill into every agent skill folder that exists (as `hook install skills`)
-    Install,
+    Install {
+        /// Where you changed the skill, archive your copy to the logbook's
+        /// archive/ and install it as shipped
+        #[arg(long)]
+        replace: bool,
+    },
 }
 
 pub fn run(ctx: &Context, args: SkillArgs) -> Result<Output> {
     match args.command {
-        Some(SkillCommand::Install) => skills::install(ctx, false),
+        Some(SkillCommand::Install { replace }) => skills::install(ctx, replace),
         None => Ok(print()),
     }
 }
