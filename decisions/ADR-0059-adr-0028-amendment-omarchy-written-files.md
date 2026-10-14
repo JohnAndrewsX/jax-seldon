@@ -1,8 +1,13 @@
 # ADR-0059 — ADR-0028 amended: what Omarchy's commands write to files it ships no copy of is routine `omarchy-written`
 
-**Status:** proposed (WP-225, from the E92 edge survey, rows B9 and B10);
-implemented on `wp/225-edge-files`, waiting for the operator's decision.
-The number follows WP-227's ADR-0056 to ADR-0058.
+**Status:** accepted (E96 delegation, orchestrator 2026-10-14; operator
+confirms; stage 2 with the 0.4.1 release). WP-225, from the E92 edge
+survey, rows B9 and B10. Condition: the trust rule of §1 stays pinned by
+`engine/tests/collector_hashes.rs` `omarchy_written_files_are_routine`
+(a group-writable `default/i18n`, `locales.json`,
+`bin/omarchy-default-agent` or `bin/omarchy-install-dictation-<backend>`
+gives no mark; review F1). The number follows WP-227's ADR-0056 to
+ADR-0058.
 **Date:** 2026-10-14
 
 > Amends [ADR-0028](ADR-0028-attention-by-consequence.md) §2 and §5 by
@@ -61,7 +66,10 @@ built from Omarchy's own data.
    file itself. The trust rule of `omarchy-default` (WP-109 round 1b)
    applies to every file read for it: owned by root, neither group- nor
    world-writable, and every directory on the way. Only the fact is
-   recorded.
+   recorded. The mark states content equality, not who wrote the file:
+   a hand edit to exactly Omarchy's content carries it too, which is
+   right by consequence (it equals the menu action), and anything else
+   there keeps its class.
 
    In ADR-0028 §2, next to the `omarchy-default` row and before the
    persistence paths:

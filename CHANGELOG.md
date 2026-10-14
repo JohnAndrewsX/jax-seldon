@@ -34,7 +34,7 @@ and the package does not exist yet. Update the plugin first:
   install of `omarchy` by name (ADR-0060).
 - Changing Omarchy's language, default agent or dictation backend, and muting a crash, no longer ask you why.
 - The Seldon agent skill also goes into Antigravity's skill folder, `~/.gemini/config/skills`.
-- A Seldon terminal step that failed now ends with Omarchy's red "Failed" prompt instead of "Done!".
+- A Seldon terminal step that failed now ends with Omarchy's red "Failed" prompt instead of "Done!", on Omarchy versions that report it (edge today).
 
 ## [0.4.0] - 2026-10-14
 

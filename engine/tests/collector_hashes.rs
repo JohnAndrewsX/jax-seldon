@@ -921,6 +921,61 @@ fn omarchy_written_files_are_routine() {
         let last = config_events(&env).pop().unwrap();
         assert_eq!(last.1, config("uwsm/env.d/50-omarchy-language"));
         assert!(last.2.get("matches").is_none(), "{last:?}");
+
+        // and so is any file read for it, or a directory on the way
+        // (review F1): each change below is a content Omarchy writes,
+        // marked with the tree trusted
+        let mode = |p: &Path, m: u32| {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap();
+        };
+        let unmarked = |subject: &str| {
+            let e = config_events(&env)
+                .into_iter()
+                .rfind(|e| e.1 == subject)
+                .unwrap();
+            assert_eq!(e.0, "config-change", "{e:?}");
+            assert!(e.2.get("matches").is_none(), "{e:?}");
+        };
+        let i18n = omarchy.join("default/i18n");
+        mode(&i18n, 0o775);
+        std::fs::write(&language, "de\n").unwrap();
+        capture_config(&env);
+        mode(&i18n, 0o755);
+        unmarked(&config("omarchy/language"));
+
+        let locales = i18n.join("locales.json");
+        mode(&locales, 0o664);
+        std::fs::write(&session, session_text("en_US.UTF-8")).unwrap();
+        capture_config(&env);
+        mode(&locales, 0o644);
+        unmarked(&config("uwsm/env.d/50-omarchy-language"));
+
+        let launcher = omarchy.join("bin/omarchy-default-agent");
+        mode(&launcher, 0o664);
+        std::fs::write(&agent, "claude\n").unwrap();
+        capture_config(&env);
+        mode(&launcher, 0o644);
+        unmarked(&config("omarchy/defaults/agent"));
+
+        let installer = omarchy.join("bin/omarchy-install-dictation-voxtype");
+        mode(&installer, 0o664);
+        std::fs::write(&dictation, "voxtype\n").unwrap();
+        capture_config(&env);
+        mode(&installer, 0o644);
+        unmarked(&config("omarchy/defaults/dictation"));
+
+        // trusted again: the same contents are marked
+        std::fs::write(&language, "en\n").unwrap();
+        std::fs::write(&agent, "codex\n").unwrap();
+        capture_config(&env);
+        for subject in [config("omarchy/language"), config("omarchy/defaults/agent")] {
+            let e = config_events(&env)
+                .into_iter()
+                .rfind(|e| e.1 == subject)
+                .unwrap();
+            assert_eq!(e.2["matches"], "omarchy-written", "{e:?}");
+        }
     }
 }
 

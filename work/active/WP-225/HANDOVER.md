@@ -118,3 +118,26 @@ CHANGELOG `[Unreleased]` Highlights: three bullets.
 4. The edge-only `service-states` failures above (pre-existing on `next`).
 3. `engine/src/config.rs` changed only at `ROUTINE_RULES`, a few lines
    above WP-224's always-red family; expect a nearby-hunk merge.
+
+## Round 1 (review SEND BACK, 2026-10-14)
+
+- **F1:** `omarchy_written_files_are_routine` now makes `default/i18n`,
+  `locales.json`, `bin/omarchy-default-agent` and
+  `bin/omarchy-install-dictation-voxtype` group-writable in turn and
+  expects no mark on a content Omarchy writes; trusted again, the mark
+  returns. Mutants M4 (no trust check in `trusted_text`) and M10 (none
+  for the installers) now fail the test (**fixture**, dev host).
+- **F2:** CHANGELOG: the Failed prompt "on Omarchy versions that report
+  it (edge today)".
+- **F3:** `docs/TESTING.md` names both wrappers and what each prints.
+- **F4:** `pkgcmd::tests::double_dash_ends_the_options` (a `-dash-pkg`
+  target after `--`); mutant M8 (`"--"` → `"--x"`) now fails it.
+- ADR-0059: §1 states that the mark is content equality, not
+  authorship; status accepted (E96 delegation) with the F1 test as its
+  condition; DECISIONS.md row updated.
+- B12's exit 1 kept, as the reviewer asked.
+- Still open: the five Omarchy assumptions go into WP-224's ledger after
+  WP-224 merges and this branch is rebased (on the orchestrator's word).
+- Verified: engine tests, clippy, fmt (**fixture**, dev host); qmllint
+  and `service-states` not rerun (unchanged, red on edge before this
+  branch).

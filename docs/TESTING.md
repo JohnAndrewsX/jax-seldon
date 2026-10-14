@@ -772,14 +772,20 @@ focus border. The banners' terminal scripts
 runs it, bash parses each, and a hostile index (quotes, `$(…)`, `rm -rf`
 in the snapper message and the contract version) changes none of them.
 `bash tests/plugin/terminal-scripts.sh` runs every script inside the
-presentation launcher's own `omarchy-show-logo; …; omarchy-show-done` line,
-in a session of its own (`setsid`), with stub `sudo`, `curl`, `seldon`,
+presentation launcher's own line, in both forms: Omarchy edge's
+`omarchy-show-logo; …; code=$?; if (( code != 130 )); then
+omarchy-show-done $code; fi` (the stub prints DONE for 0, FAILED <code>
+otherwise; WP-225) and the earlier `…; if (( $? != 130 )); then
+omarchy-show-done; fi` (DONE always; one success, one failure and one
+Ctrl+C case), in a session of its own (`setsid`), with stub `sudo`, `curl`, `seldon`,
 `omarchy` and `gum` (and the real gum, for its flags), scratch HOME: the
 green line and the follow-up `seldon capture` or `seldon status` only on
 success, the red line on a refused password, a failed download
 (pipefail), a failed installer or an empty USER (no `sudo` call), one more
 capture when the lock is held, "Read access granted" instead of
-"recorded" when both captures fail, and "Done" after each; Ctrl+C (a stub
+"recorded" when both captures fail, and on the edge wrapper "Done" after
+each success and "Failed 1" after each failure (the script ends with 1
+after its red line), on the earlier one "Done" after both; Ctrl+C (a stub
 sends SIGINT to the process group and dies of it, or catches it and
 exits 1, or it comes during the announce lines) gives the "Cancelled"
 line as the last output, no follow-up, no command started after it, and
