@@ -55,6 +55,8 @@ expect "edge: a plugin file's TypeError still fails" "$edge" "$plugin" "" fails 
   "$hypr_line" "WARN scene: file://$plugin/components/Tone.qml[33:-1]: TypeError: Cannot read property 'divider' of undefined"
 expect "edge: another WARN still fails" "$edge" "$plugin" "" fails "$hypr_line" "WARN: Unable to find sway socket."
 expect "edge: the line with more after it fails" "$edge" "$plugin" "" fails "$hypr_line (retrying)"
+expect "edge: the line after a prefix fails (anchored at the start)" "$edge" "$plugin" "" fails \
+  "WARN scene: file://$plugin/components/Tone.qml: $hypr_line"
 expect "edge: half the line fails" "$edge" "$plugin" "" fails "WARN: Unable to find hyprland socket."
 expect "edge: an ERROR still fails" "$edge" "$plugin" "" fails "$hypr_line" "ERROR: something broke"
 expect "edge: the env -i text of the same warning" "$edge" "$plugin" "" clean "$unset_line"
