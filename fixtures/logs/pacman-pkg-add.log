@@ -1,0 +1,13 @@
+[2026-10-14T09:12:30+0200] [PACMAN] Running 'pacman -S --noconfirm --needed -- localsend obs-studio'
+[2026-10-14T09:12:33+0200] [ALPM] running '10-limine-snapper-lock.hook'...
+[2026-10-14T09:12:33+0200] [ALPM] transaction started
+[2026-10-14T09:12:33+0200] [ALPM] installed rnnoise (0.2-1)
+[2026-10-14T09:12:34+0200] [ALPM] installed localsend (1.17.0-1)
+[2026-10-14T09:12:34+0200] [ALPM] installed obs-studio (32.0.1-1)
+[2026-10-14T09:12:34+0200] [ALPM] transaction completed
+[2026-10-14T09:12:34+0200] [ALPM] running 'update-desktop-database.hook'...
+[2026-10-14T09:20:02+0200] [PACMAN] Running 'pacman -S --noconfirm --needed -- extra/btop'
+[2026-10-14T09:20:03+0200] [ALPM] running '10-limine-snapper-lock.hook'...
+[2026-10-14T09:20:03+0200] [ALPM] transaction started
+[2026-10-14T09:20:03+0200] [ALPM] installed btop (1.4.5-1)
+[2026-10-14T09:20:03+0200] [ALPM] transaction completed
