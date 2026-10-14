@@ -1,17 +1,19 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
-**Release:** v0.3.0 on GitHub (tag 2026-10-12 on `4c9f563a`, operator
-decisions E85/E89; acceptance record partial: gate, wip, restart passed on
-the test host, b and c not run because the guard keeps agents out of
-`omarchy plugin update` and red-zone files; acceptance-check ok, E88);
-release, plugin split and bump jobs green, build provenance verified; the
-AUR push is skipped (no AUR key yet, the package is not published).
-Earlier: v0.2.0 (2026-10-12), v0.1.0 (2026-10-02) … v0.1.4.
-**Branches:** `main` = v0.3.0 plus the release bump; `next` carries the
-0.3.0 work (E86); the queue's release plan is below.
+**Release:** v0.4.0 on GitHub (tag 2026-10-14 on `992529af`, operator
+decision E95; acceptance record partial: gate, status, header, redact,
+restart passed on the test host (Omarchy rc), b not run because the guard
+keeps agents out of `omarchy plugin update`; acceptance-check ok, E88);
+dry run on `main` green, release, plugin split and bump jobs green, build
+provenance verified (`refs/tags/v0.4.0`, digest `992529af`); the AUR push
+is skipped (no AUR key yet). Earlier: v0.3.0 (2026-10-12), v0.2.0
+(2026-10-12), v0.1.0 (2026-10-02) … v0.1.4.
+**Branches:** `main` = v0.4.0 plus the release bump; `next` carries the
+0.4.x work; WP-191 waits in draft PR #13 (merge after its CI is green,
+E94); then the step-back audit (E92).
 **Contract version:** 2
-**Last updated:** 2026-10-12
+**Last updated:** 2026-10-14
 
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
@@ -712,6 +714,9 @@ compatible addition is a minor release, a fix a patch):
 - E94 (2026-10-14) ADR-0055 accepted: CI checks the plugin against
   Omarchy stable's pinned shell tree. WP-191 merges after the 0.4.0 tag,
   once its `plugin-qml` job has run green (a draft PR runs it).
+- E95 (2026-10-14) the operator's go for tag v0.4.0 (on `992529af`,
+  after a green dry run on `main`, quoting `acceptance-check.sh 0.4.0`),
+  and for pushing the WP-191 branch for its draft PR.
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:
