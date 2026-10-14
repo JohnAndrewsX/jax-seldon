@@ -21,6 +21,9 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
+- On Omarchy edge (Qt 6.12) the desk, the pill and the sheets take the
+  theme's colours again: Qt 6.12 brought a `Color` of its own that hid
+  Omarchy's.
 - On Omarchy's edge channel, `omarchy-dev`, `omarchy-settings-dev` and
   Omarchy's other kernels (such as `linux-omarchy-bore`) count exactly
   like `omarchy`, `omarchy-settings` and `linux-omarchy`.
