@@ -54,7 +54,7 @@ pub const OMARCHY_CHANNELS: [(&str, &str); 2] = [
 /// The name that stands for `subject` in `alwaysRed` (WP-224): an Omarchy
 /// channel package's stable name ([`OMARCHY_CHANNELS`]), `linux-omarchy`
 /// for any of Omarchy's kernels (`linux-omarchy-bore`; not their
-/// `-headers` or `-docs`), else `subject` itself.
+/// `-headers`, `-docs` or `-debug`), else `subject` itself.
 pub fn family(subject: &str) -> &str {
     if let Some(&(stable, _)) = OMARCHY_CHANNELS.iter().find(|(_, edge)| *edge == subject) {
         return stable;
@@ -63,7 +63,8 @@ pub fn family(subject: &str) -> &str {
         .strip_prefix("linux-omarchy-")
         .is_some_and(|variant| !variant.is_empty())
         && !subject.ends_with("-headers")
-        && !subject.ends_with("-docs");
+        && !subject.ends_with("-docs")
+        && !subject.ends_with("-debug");
     if kernel { "linux-omarchy" } else { subject }
 }
 
@@ -322,6 +323,9 @@ mod tests {
             ("linux-omarchy-bore", "linux-omarchy"),
             ("linux-omarchy-bore-headers", "linux-omarchy-bore-headers"),
             ("linux-omarchy-headers", "linux-omarchy-headers"),
+            ("linux-omarchy-bore-debug", "linux-omarchy-bore-debug"),
+            ("linux-omarchy-debug", "linux-omarchy-debug"),
+            ("linux-omarchy-bore-docs", "linux-omarchy-bore-docs"),
             ("linux-omarchy", "linux-omarchy"),
             ("omarchy", "omarchy"),
             ("omarchy-nvim", "omarchy-nvim"),
@@ -340,6 +344,7 @@ mod tests {
         let kernel = AlwaysRed::new(&["linux-omarchy".into()]);
         assert!(kernel.matches("linux-omarchy-bore"));
         assert!(!kernel.matches("linux-omarchy-bore-headers"));
+        assert!(!kernel.matches("linux-omarchy-bore-debug"));
         let twin = AlwaysRed::new(&["omarchy-dev".into()]);
         assert!(twin.matches("omarchy-dev"));
         assert!(
