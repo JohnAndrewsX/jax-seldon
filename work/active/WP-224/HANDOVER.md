@@ -148,15 +148,62 @@ touched (WP-225 owns them).
 - SPEC-PLUGIN §1 and `memory/omarchy-shell.md` now name `PluginRegistry.qml`
   as the contract source instead of `shell/README.md`.
 
+### 4. Review round 1 (packet `WP-224-review-1.md`)
+
+- **F1:** `upstream-warnings.test.sh` has a row where the upstream text
+  follows a plugin file's prefix and must fail. The start-anchor mutant
+  (S4) now fails that row (34 passed, 1 failed; restored from git).
+- **F2:** `family()` leaves out `linux-omarchy-…-debug` like `-headers`
+  and `-docs`. Rows in `family_names_stand_for_their_twins` cover
+  `linux-omarchy-bore-debug`, `linux-omarchy-debug` and
+  `linux-omarchy-bore-docs`; `linux-omarchy` does not match
+  `linux-omarchy-bore-debug`.
+- **F3:** done in code. `Classifier::group` keeps the reason of another
+  package that makes the transaction a crisis by its own rule, e.g. a
+  `limine` named beside the switch stays `always-red`. Dependencies follow
+  and are no second reason, and an attention member is not one either. The
+  new rows are in `a_channel_switch_is_one_omarchy_channel_item`. It costs
+  one check per member, and the class never changes.
+- **F4:** the *Why loud?* text now reads "replaced omarchy,
+  omarchy-settings or both with their -dev twins, or the other way round"
+  (Model.js and SPEC-PLUGIN). A model.test.js row pins the whole callout
+  and the Rule row.
+- **F5:** the CHANGELOG says that with the default crisis list a switch
+  is a crisis unless done in a case (ADR-0060).
+- **F6:** the SPEC-ENGINE sentence about the twins now comes after
+  "WP-050." and no longer sits inside the R3 list. It also names `-debug`
+  and ADR-0060.
+- **Q1:** `decisions/ADR-0060-adr-0028-amendment-omarchy-channels.md`
+  amends ADR-0028 §2 and §4c and has a DECISIONS.md row. Its status is
+  "accepted (E96 delegation, orchestrator 2026-10-14; operator confirms;
+  stage 2 with the 0.4.1 release)". ADR-0059 is left to WP-225.
+- **Q4:** the demotion is kept. It covers 133 sites in 20 files, not
+  "few". The justfile comment now names the count and that the sites stay
+  in the shell's idiom.
+
 ## How it was verified
 
 All on the dev host (Omarchy edge `4.0.0.r7017.g84cfb93-1`, Qt 6.12.0,
 Quickshell 0.3.2), worktree `wt/WP-224`, `CARGO_TARGET_DIR` = the
 worktree's `engine/target`.
 
+- **Review round 1, full check at `6bf9957b`** (every later commit only
+  touches this HANDOVER): `flock /tmp/seldon-check.lock env
+  SELDON_FULL_CHECK=1 just check` gave `check: ok`, exit 0. Results:
+  `qmllint: ok (53 files)`, `tokens: ok (1042 references)`,
+  `model.test.js: 246 passed` (the new channel row sits in an existing
+  test), `upstream-warnings.test: 35 passed`, `assumptions.test: ok`,
+  `service-states: 366`, `desk-view: 2755`, `bar-view: 195`,
+  `ipc-restart: 43`, each with 0 failed. The harnesses ran *headless*
+  against the edge tree; everything else is *fixture*. The guard lines
+  for service-states and desk-view said "changed by the operator's live
+  engine (not a leak)"; for bar-view and ipc-restart, "untouched".
+  `just check-upstream`: exit 0, the same "10 of 17 files differ" NOTICE
+  as before, none for the re-measured files. Engine fmt and clippy
+  `-D warnings` are clean.
 - **`flock /tmp/seldon-check.lock env SELDON_FULL_CHECK=1 just check`:
-  `check: ok`, exit 0, at `ffee1a42`** (every later commit only touches
-  this HANDOVER). *headless* for the Quickshell harnesses, *fixture* for
+  `check: ok`, exit 0, at `ffee1a42`** (round 0; until round 1 every later commit touched
+  only this HANDOVER). *headless* for the Quickshell harnesses, *fixture* for
   the rest: engine fmt, clippy `-D warnings`, all engine tests,
   check-packaging, check-guard, schema-validate, docs-check,
   plugin-validate, `qmllint: ok (53 files)` with
@@ -236,11 +283,11 @@ worktree's `engine/target`.
   session). The dev host runs releases (E38), so the operator's desk there
   is likely affected until a release carries this fix: a release question
   for the orchestrator.
-- **Crisis or attention for a channel switch?** I kept the existing rule
-  (a named `alwaysRed` install outside a case is a crisis), so `omarchy
-  version channel edge` without a case is red. If the operator wants the
-  switch Omarchy itself performs to be attention, that is an ADR-0028
-  change, not this WP's.
+- **Crisis or attention for a channel switch?** ADR-0060 §3 keeps the
+  existing rule (a named `alwaysRed` install outside a case is a crisis),
+  so `omarchy version channel edge` without a case is red. Making a
+  switch that Omarchy runs itself attention would be a further amendment;
+  that is the operator's call (review Q3).
 - The item's lead (subject) is the lowest-id explicit member, i.e.
   `omarchy-settings-dev` (installed first). The rule and *Why loud?* name
   the channel change; `drift show` lists all four members. I did not
