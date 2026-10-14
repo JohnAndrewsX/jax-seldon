@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
 
-use super::drift::AlwaysRed;
+use super::drift::{AlwaysRed, channel_switches};
 use crate::attribution::OWN_PLUGIN;
 use crate::collectors::pacman_ignore;
 use crate::config::{AttentionMode, DriftConfig};
@@ -501,7 +501,8 @@ pub fn package_shaped(v: &str) -> bool {
 
 /// What the omarchy `update` row needs from the rest of the ledger: the
 /// pacman installs and upgrades of `omarchy`/`omarchy-dev` inside a plain
-/// full upgrade.
+/// full upgrade, and their installs by a channel switch (WP-224: that
+/// transaction is the drift item, `omarchy-channel`).
 #[derive(Debug, Default)]
 pub struct History<'a> {
     omarchy: Vec<(&'a str, DateTime<FixedOffset>)>,
@@ -512,17 +513,20 @@ pub struct History<'a> {
 
 impl<'a> History<'a> {
     pub fn new(events: &'a [Event]) -> Self {
+        let switches = channel_switches(events);
         let omarchy = events
             .iter()
             .filter(|e| {
                 e.source == Source::Pacman
                     && matches!(e.subject.as_str(), "omarchy" | "omarchy-dev")
                     && matches!(e.kind, Kind::Install | Kind::Upgrade)
-                    && e.meta
-                        .command
-                        .as_deref()
-                        .and_then(|c| parse_command(&split_logged(c)))
-                        .is_some_and(|c| c.is_plain_full_upgrade())
+                    && (e.kind == Kind::Install
+                        && e.tx_id.as_deref().is_some_and(|tx| switches.contains(tx))
+                        || e.meta
+                            .command
+                            .as_deref()
+                            .and_then(|c| parse_command(&split_logged(c)))
+                            .is_some_and(|c| c.is_plain_full_upgrade()))
             })
             .filter_map(|e| Some((e.version_key()?, e.ts)))
             .collect();
@@ -629,7 +633,13 @@ impl<'a> Classifier<'a> {
                 best = Some((key.0, key.1, key.2, v));
             }
         }
-        best.map_or(Verdict::ORPHAN, |b| b.3)
+        let v = best.map_or(Verdict::ORPHAN, |b| b.3);
+        // WP-224: a channel switch is one change, named as such; its class
+        // is what its members make it (`alwaysRed`: a crisis)
+        if v.class != Class::Routine && !channel_switches(members.iter().copied()).is_empty() {
+            return Verdict::new(v.class, "omarchy-channel");
+        }
+        v
     }
 
     /// The highest verdict of the explicit members of `dep`'s transaction.
@@ -1468,6 +1478,156 @@ mod tests {
             }
         }
         assert!(failed.is_empty(), "{}", failed.join("\n"));
+    }
+
+    /// WP-224: the edge channel's twins and Omarchy's other kernels get
+    /// exactly the verdict their stable name gets, in every transaction
+    /// shape: a routine `omarchy-dev` upgrade is as routine as `omarchy`'s.
+    #[test]
+    fn twins_get_their_stable_names_verdict() {
+        let omarchy_line = "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*";
+        let shapes = [
+            (Kind::Upgrade, Some(false), omarchy_line),
+            (Kind::Install, Some(false), "pacman -Syu"),
+            (Kind::Remove, Some(false), "pacman -Syu"),
+            (Kind::Downgrade, Some(false), "pacman -Syyuu"),
+            (Kind::Upgrade, Some(true), "pacman -S pkg"),
+            (Kind::Reinstall, Some(true), "pacman -S pkg"),
+            (Kind::Install, Some(true), "pacman -S pkg"),
+            (Kind::Remove, Some(true), "pacman -R pkg"),
+            (
+                Kind::Downgrade,
+                Some(true),
+                "pacman -U /tmp/pkg.pkg.tar.zst",
+            ),
+        ];
+        let d = DriftConfig::default();
+        let pairs = [
+            ("omarchy", "omarchy-dev"),
+            ("omarchy-settings", "omarchy-settings-dev"),
+            ("linux-omarchy", "linux-omarchy-bore"),
+            ("linux-omarchy", "linux-omarchy-ptl-novrr-mm"),
+            ("linux-omarchy-headers", "linux-omarchy-bore-headers"),
+        ];
+        for (stable, twin) in pairs {
+            for (kind, explicit, cmd) in shapes {
+                let want = verdict(&d, &[pac(kind, stable, explicit, cmd)], &[0]);
+                let got = verdict(&d, &[pac(kind, twin, explicit, cmd)], &[0]);
+                assert_eq!(got, want, "{twin} vs {stable}: {kind:?} {explicit:?} {cmd}");
+            }
+        }
+        // the colours themselves, so that a twin outside the list fails too
+        let one =
+            |kind, subject, explicit, cmd| verdict(&d, &[pac(kind, subject, explicit, cmd)], &[0]);
+        assert_eq!(
+            one(Kind::Upgrade, "omarchy-dev", Some(false), omarchy_line),
+            (R, "sysupgrade")
+        );
+        assert_eq!(
+            one(
+                Kind::Upgrade,
+                "omarchy-settings-dev",
+                Some(true),
+                "pacman -S pkg"
+            ),
+            (A, "upgrade-red")
+        );
+        assert_eq!(
+            one(
+                Kind::Install,
+                "linux-omarchy-bore",
+                Some(true),
+                "pacman -S pkg"
+            ),
+            (C, "always-red")
+        );
+        assert_eq!(
+            one(Kind::Remove, "omarchy-dev", Some(false), "pacman -Syu"),
+            (A, "sysupgrade-red")
+        );
+        assert_eq!(
+            one(
+                Kind::Upgrade,
+                "linux-omarchy-bore-headers",
+                Some(true),
+                "pacman -S pkg"
+            ),
+            (R, "upgrade")
+        );
+    }
+
+    /// WP-224: a channel switch (Omarchy's `pacman -S … omarchy-dev
+    /// omarchy-settings-dev`, the stable packages going as conflicts) is
+    /// one item, `omarchy-channel`, as red as an `alwaysRed` install by
+    /// name; the Omarchy `update` row it causes, a version drop included,
+    /// is history beside it. Back to stable likewise.
+    #[test]
+    fn a_channel_switch_is_one_omarchy_channel_item() {
+        let d = DriftConfig::default();
+        let switch = |to_edge: bool| -> Vec<Event> {
+            let (new, old, version) = if to_edge {
+                ("-dev", "", "4.0.0.r7017.g84cfb93-1")
+            } else {
+                ("", "-dev", "4.0.4-2")
+            };
+            let cmd = format!(
+                "pacman -S --needed --noconfirm --ask 4 omarchy{new} omarchy-settings{new}"
+            );
+            let installed = |name: &str| {
+                let mut e = pac(Kind::Install, name, Some(true), &cmd);
+                e.meta.to = Some(version.into());
+                e
+            };
+            vec![
+                pac(Kind::Remove, &format!("omarchy{old}"), Some(false), &cmd),
+                pac(
+                    Kind::Remove,
+                    &format!("omarchy-settings{old}"),
+                    Some(false),
+                    &cmd,
+                ),
+                installed(&format!("omarchy-settings{new}")),
+                installed(&format!("omarchy{new}")),
+            ]
+        };
+        for (to_edge, from, to) in [
+            (true, "4.0.4-2", "4.0.0.r7017.g84cfb93-1"),
+            (false, "4.0.0.r7017.g84cfb93-1", "4.0.4-2"),
+        ] {
+            let mut ledger = switch(to_edge);
+            ledger.push(update(from, to));
+            assert_eq!(
+                verdict(&d, &ledger, &[2, 0, 1, 3]),
+                (C, "omarchy-channel"),
+                "to edge: {to_edge}"
+            );
+            assert_eq!(
+                verdict(&d, &ledger, &[4]),
+                (R, "omarchy-update"),
+                "to edge: {to_edge}"
+            );
+        }
+        // the class is what the members make it: off the list, attention
+        let quiet = DriftConfig {
+            always_red: vec!["linux".into()],
+            ..DriftConfig::default()
+        };
+        assert_eq!(
+            verdict(&quiet, &switch(true), &[2, 0, 1, 3]),
+            (A, "omarchy-channel")
+        );
+        // twins side by side (nothing removed) are no switch, and the
+        // update row stays attention
+        let cmd = "pacman -S omarchy-dev";
+        let mut beside = pac(Kind::Install, "omarchy-dev", Some(true), cmd);
+        beside.meta.to = Some("4.0.0.r7017.g84cfb93-1".into());
+        let ledger = [
+            beside,
+            pac(Kind::Remove, "omarchy-settings", Some(false), cmd),
+            update("4.0.4-2", "4.0.0.r7017.g84cfb93-1"),
+        ];
+        assert_eq!(verdict(&d, &ledger, &[0, 1]), (C, "always-red"));
+        assert_eq!(verdict(&d, &ledger, &[2]), (A, "omarchy-other"));
     }
 
     /// The omarchy `update` row: routine only with package-shaped versions
