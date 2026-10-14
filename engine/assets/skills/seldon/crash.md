@@ -3,6 +3,19 @@
 Read this when you have diagnosed a crash with Omarchy's `diagnose-crash`
 skill and there is a logbook.
 
+Before you write the report, ask the logbook what changed on the machine
+before the crash, with the crash's time (coredumpctl's, or the journal's):
+
+```bash
+seldon changes --around "<time>" --json
+```
+
+It lists the ledger's events of the two hours before and the half hour
+after (`--before 6h`, `--after 0m` widen or narrow it): packages, config
+files, plugins, themes, snapshots, who made each and in which case. Name the
+ones that could be the cause in the report, by event id; read-only, nothing
+is written.
+
 File your report in the logbook's inbox, then ask the user in one line
 whether it becomes a case (in an unattended session, file it and ask
 nothing):

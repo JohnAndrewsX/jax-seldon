@@ -4,8 +4,8 @@ Read this before the first change of a task, and before you close it.
 
 A case is the unit of work in the logbook: a Markdown file with an *Intent*
 (what the user wants), a *Plan* (your running note), a *Log* (dated lines)
-and a *Result* (the evidence). `seldon open <ID>` prints a case's path;
-`seldon open case` the active case's.
+and a *Result* (the evidence). `seldon edit <ID>` prints a case's path;
+`seldon edit case` the active case's.
 
 ## Find the Case
 
