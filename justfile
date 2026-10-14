@@ -326,7 +326,8 @@ qmllint:
     #   uncreatable-type  Quickshell's qmltypes mark PanelWindow isCreatable: false
     # Qt 6.12 adds a third, demoted only where qmllint knows it (WP-224):
     #   block-scope-var-declaration  `var` inside a block or `for (var …)`,
-    #                     the shell's own idiom (hundreds of sites, no let);
+    #                     the shell's own idiom (hundreds of sites, no let;
+    #                     133 in plugin/, kept in that idiom, not rewritten);
     #                     6.12 counts it without printing it in text mode
     # Everything else must be warning-free.
     demote=(--missing-property info --uncreatable-type info)
