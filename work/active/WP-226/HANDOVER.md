@@ -209,3 +209,49 @@ Every change in 0.4.1: [CHANGELOG.md](https://github.com/JohnAndrewsX/jax-seldon
 2. The date 2026-10-15 stays.
 3. `written` writes the default-agent file by hand with exactly
    Omarchy's content, no mise install.
+
+## Live stage (part B, after origin/next reached 1e8f5e8a)
+
+Everything below ran on the **test host** unless it says otherwise. The
+shots, logs and the bundle are in the private gates folder (`dev-226/`).
+
+**The deploy clone.** A fresh clone of GitHub's `next` in the private
+gates folder (`dev-226/next-clone`, HEAD = origin/next = 1e8f5e8a,
+clean), the two git-ignored host files copied from `wt/next`.
+
+| Check | Where | Result |
+|---|---|---|
+| `flock /tmp/seldon-check.lock env SELDON_FULL_CHECK=1 just check` in the clone at 1e8f5e8a | headless (dev host, Omarchy edge, Qt 6.12; own `HOME`, private 0700 `XDG_RUNTIME_DIR` removed afterwards, `TMPDIR`, `JUST_TEMPDIR`, `CARGO_TARGET_DIR=gates/target-dev-226` on disk) | `check: ok`, `exit 0`, first run; log `gates/check-dev-226-next.log` (first line `head 1e8f5e8a4b93…`): 112 cargo test results ok; check-packaging ok; install 229/0; docs-check ok (533 links); plugin-validate ok; qmllint ok (53 files); model.test.js 246; terminal-scripts 78/0; service-states 367/0; desk-view 2756/0; bar-view 196/0; ipc-restart 44/0 |
+
+**Gate first, then the deploy.** A git bundle of `next` to the host,
+cloned as `~/seldon-gate-1e8f5e8a` (HEAD 1e8f5e8a, clean); in it
+`OMARCHY_PATH=/usr/share/omarchy bash scripts/check-omarchy-assumptions.sh
+--gate`: "ok (every assumption's file matches the ledger; 5 edge-only,
+absent here as on stable)", 25 files, exit 0. Then from the clone
+`SELDON_TEST_HOST=<the test host> just deploy-test-host --branch next
+<gates>/check-dev-226-next.log` (a dry run first), exit 0. Summary:
+`commit 1e8f5e8a4b93fab014f2362be789129bfd94ff7d`, the host runs
+`0.4.1+next.1e8f5e8a` (was `0.4.0+next.a088e38b`; no backup, the host
+ran next already), plugin files changed, shell restarted, smoke ok
+(version, doctor, capture, service status, engine version, no restart
+notice). Omarchy 4.0.4-1, channel rc, Qt 6.11.2, one 1920x1080 output.
+
+| Scenario | What ran | Counts | Result |
+|---|---|---|---|
+| **gate** | above | 1 step, 0 passwords | passed |
+| **desk** | summoned at Today (shot); `section decisions`, `d` typed with `wtype`: the New decision form open (`form.open` true, shot; the form whose Tone.qml errors showed the Qt 6.12 bug), `lastError` empty. Pixel histograms of both shots: the theme's background `#1a1b26`, foreground `#a9b1d6` and accent `#7aa2f7` from the theme's `colors.toml`, exactly; the bar's foreground the same. Esc and `hide` closed the desk | 2 steps, 0 passwords | passed |
+| **written** | `~/.config/omarchy/defaults/agent` (`claude\n`) written by hand: `codex\n` → capture: `config-change`, `omarchy-written`, routine; a second capture 0 events in every collector; `notanagent\n` → `config`, attention; `claude\n` → `omarchy-written`, routine. The attention item dismissed with a reason (`--actor agent:claude-code`), open drift back to 4 | 3 steps, 0 passwords | passed |
+| **edge** | not run (no edge host in the yellow zone) | — | not run |
+| **restart** | crashes 0 and "No coredumps found." before; three `omarchy restart shell`, each exit 0, ping after 1 s, then `jax.seldon.service status` | 3 steps, 0 passwords | passed: quickshell pid 1501947 → 1506241 → 1507313 → 1508635, status ok, engine `0.4.1+next.1e8f5e8a`, plugin 0.4.1, no restart notice each time; crashes 0 and "No coredumps found." after |
+
+**The record's base.** The record's `commit` (1e8f5e8a, next's merge of
+part A) was not an ancestor of this branch, so `acceptance-check`
+would refuse it here. I merged origin/next into the branch (762444a1;
+it brings only next's merge commit and its handover copy) and committed
+the record on top. Between 1e8f5e8a and the branch head only
+`CHANGELOG.md` (the Changed part), `packaging/acceptance/` and `work/`
+differ.
+
+### `bash packaging/acceptance-check.sh 0.4.1` (exit 0)
+
+```text

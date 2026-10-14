@@ -28,7 +28,7 @@
   ],
   "limitations": [
     "edge: not run (no edge host in the yellow zone); the test host runs Omarchy's rc channel, and switching it to edge is not this release's test. Covered by fixture: the real edge pacman.log lines of a switch in tests/drift.rs (one omarchy-channel item, a second capture 0 events), the twins in nine transaction shapes; and by the full check on the edge dev host (headless)",
-    "desk: the pill showed no text (0 crises, driftInBar crisis), so its colours were seen only as the bar's foreground; the sheets are covered headless by service-states on edge and rc",
+    "desk: the pill showed no text (0 crises, driftInBar crisis), so its colours were seen only as the bar's foreground; the other sheets are covered headless by service-states on edge (the dev host)",
     "restart: one monitor (1920x1080); the two-monitor restart test runs on the dev host after the tag with the release",
     "channel: the test host runs Omarchy's rc channel with Qt 6.11.2, not stable (E93); Qt 6.12 (edge) was covered headless on the dev host only"
   ]
