@@ -4,7 +4,7 @@
 # bin/{build,test,install}; Seldon has two toolchains behind it (ADR-0002).
 set -eu
 
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 
 cargo build --manifest-path "$ROOT/engine/Cargo.toml" --locked --release --features watch
 "$ROOT/app/bin/build"

@@ -3,7 +3,7 @@
 # unit tests. The full gate is `just check`.
 set -eu
 
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 
 "$ROOT/app/bin/test" "$@"
 cargo test --manifest-path "$ROOT/engine/Cargo.toml" --locked --features watch --lib --bins

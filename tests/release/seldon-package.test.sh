@@ -6,6 +6,9 @@
 # workflow's and `bin/install`'s.
 #
 # Usage: bash tests/release/seldon-package.test.sh
+# Single quotes are meant in this file: literal $ in patterns and the
+# scripts handed to bash -c.
+# shellcheck disable=SC2016
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -21,6 +24,8 @@ absent() { # NAME COMMAND...: the command must fail
 }
 
 # --- the recipe ---------------------------------------------------------
+# The names come from the sourced PKGBUILD.
+# shellcheck disable=SC2154
 recipe() ( # prints "key=value" lines of the arrays and names
   # shellcheck disable=SC1091
   source "$pkg/PKGBUILD"

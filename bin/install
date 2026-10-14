@@ -5,7 +5,7 @@
 # the development host runs released packages only, so there it stays off.
 set -eu
 
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 PKG="$ROOT/build/pkg"
 
 if ! command -v makepkg >/dev/null 2>&1; then
