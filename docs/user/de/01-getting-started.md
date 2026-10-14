@@ -516,7 +516,7 @@ seldon doctor · ~/Seldon
                      fix: sudo setfacl -m u:$USER:rx /.snapshots
   ok        layout   no linked folders or files where Seldon writes
   ok        state    ~/.local/state/seldon: cursors.json, manifest.json readable
-  ok        skills   no agent skill folder (~/.agents/skills, ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills, ~/.hermes/skills); nothing to install
+  ok        skills   no agent skill folder (~/.agents/skills, ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills, ~/.hermes/skills, ~/.gemini/config/skills); nothing to install
   ok        hooks    none: no Claude Code harness is configured
   ok        omarchy  Omarchy 4.0.4-1
   degraded  snapper  No permissions. Snapshots are not recorded until you grant your user read access to the snapshot directory once (ADR-0026). The fix grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion.

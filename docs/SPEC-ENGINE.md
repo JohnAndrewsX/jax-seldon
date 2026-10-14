@@ -603,7 +603,8 @@ seldon hook install skills | uninstall skills  # WP-094, ADR-0027 §8: the Seldo
                                                # (engine/assets/skills/seldon/, compiled in) into every
                                                # agent skill folder that exists: ~/.agents/skills,
                                                # ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills,
-                                               # ~/.hermes/skills, ~/.hermes/profiles/*/skills (Omarchy's
+                                               # ~/.hermes/skills, ~/.gemini/config/skills (Antigravity,
+                                               # WP-225), ~/.hermes/profiles/*/skills (Omarchy's
                                                # list); none is created. Target <folder>/seldon/; the
                                                # manifest .seldon-skill.json (sha256 per file as written)
                                                # marks it as Seldon's. States: missing, current, outdated,
