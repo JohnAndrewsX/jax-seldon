@@ -467,11 +467,12 @@ Options:
 
 What the logbook recorded around a moment: a crash, a failed boot, "it
 broke at ten". Give the time as `2026-10-01 14:20` (your local time), in
-RFC 3339, as `@<seconds since 1970>` or as `now`; `--before` and
-`--after` set the window (default two hours before, half an hour after;
-`30m`, `1h30m`, `2d`, at most 31 days each). It reads the ledger only and
-writes nothing. The Seldon skill has agents run it after a crash
-diagnosis.
+RFC 3339, as `@<seconds since 1970>` or as `now`; a date alone is not
+enough. `--before` and `--after` set the window (default two hours before,
+half an hour after; `30m`, `1h30m`, `2d`, at most 31 days each). Each
+change carries its class (routine, attention, crisis), as the Changelog
+sorts it. It reads the ledger only and writes nothing. The Seldon skill
+has agents run it after a crash diagnosis.
 
 <!-- help: seldon changes -->
 ```text
@@ -1473,15 +1474,16 @@ Options:
 Examples:
   seldon skill
   seldon skill install --json
+  seldon skill install --replace
 ```
 <!-- /help -->
 
 ### seldon skill install
 
 Puts the skill into every agent skill folder that exists, the same as
-`seldon hook install skills`; running it again changes nothing. To replace
-a copy you edited, or to remove the skill, use `seldon hook install skills
---replace` and `seldon hook uninstall skills`.
+`seldon hook install skills`; running it again changes nothing. A copy you
+edited stays; `--replace` archives it to the logbook and installs the skill
+as shipped. To remove the skill, use `seldon hook uninstall skills`.
 
 <!-- help: seldon skill install -->
 ```text
@@ -1490,6 +1492,7 @@ Put the skill into every agent skill folder that exists (as `hook install skills
 Usage: seldon skill install [OPTIONS]
 
 Options:
+      --replace        Where you changed the skill, archive your copy to the logbook's archive/ and install it as shipped
 ```
 <!-- /help -->
 

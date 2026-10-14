@@ -740,12 +740,16 @@ seldon open [--json]
 # (exec, no arguments), so the `.desktop` file's `Exec=seldon open` and a
 # terminal see the app's own output and exit code. With --json (the bar's
 # pill) it is started detached: setsid(2) (a session and process group of its
-# own, no controlling terminal), stdin, stdout and stderr on /dev/null, never
-# waited for or killed; an exit within 200 ms is an error (exit 1, the error
-# object), otherwise {"started": true} (exit 0). The app never runs under the
-# caller (`omarchy-shell`). A missing app (no regular file there) is exit 1,
-# "the Seldon app is not installed (<path> is missing); install the seldon
-# package". No logbook, lock or config is read: the app shows its own states.
+# own, no controlling terminal), stdin, stdout and stderr on /dev/null, every
+# other descriptor close-on-exec (close_range(2), else one by one), never
+# waited for or killed; a non-zero exit or a signal within 200 ms is an error
+# (exit 1, the error object), otherwise {"started": true} (exit 0) — an exit 0
+# in that time too: a second `seldon open` hands over to the open window. The
+# app never runs under the caller (`omarchy-shell`). A missing app is exit 1,
+# "The Seldon window is not installed (<path> is missing). Install the seldon
+# package."; a path that is no regular executable file, or one whose
+# interpreter or loader is missing, is exit 1 with its own sentence. No
+# logbook, lock or config is read: the app shows its own states.
 seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
 # deprecated (WP-229): the old name of `seldon edit`, the same command and the
 # same JSON, with one note on stderr (none under --quiet): "`seldon open
@@ -770,22 +774,29 @@ seldon changes --around <TS> [--before DURATION] [--after DURATION] [--json]
 # WP-229: what the ledger recorded around a moment — a crash, a failed boot —
 # the timeline query the skill's crash.md gives an agent after Omarchy's
 # diagnose-crash. TS: RFC 3339, a local `YYYY-MM-DD HH:MM[:SS]` (or with `T`;
-# a time the clock skipped is exit 1, one it passed twice its first), `@<seconds
-# since 1970>` or `now` (`SELDON_NOW` counts). DURATION: one or more
-# `<number><s|m|h|d>` (30m, 1h30m), each side at most 31d; defaults 2h before,
-# 30m after. Ledger only and read-only: no lock, no capture, no index, nothing
+# a time the clock skipped is exit 1, one it passed twice its first, still in
+# summer time), `@<seconds since 1970>` or `now` (`SELDON_NOW` counts); a date
+# alone is exit 1 (a time is needed; the message names the forms). DURATION:
+# one or more `<number><s|m|h|d>` (30m, 1h30m), each side at most 31d;
+# defaults 2h before, 30m after; a window that leaves the years 0001–9999 is
+# exit 1. Ledger only and read-only: no lock, no capture, no index, nothing
 # written; needs the logbook (exit 3). The events are the ledger lines of
 # [around − before, around + after] as they were written (redacted then),
 # every kind, in time order; at most 500: over that the ones nearest the
-# moment are kept and `omitted` counts the rest.
-# --json → {around, from, to, events: [<ledger line>], omitted}
-seldon skill [install] [--json]
+# moment are kept and `omitted` counts the rest. Each carries `class`
+# (ADR-0058 §6): routine, attention or crisis, ADR-0028's verdict as the index
+# gives it to the change's drift item (a pacman transaction's members
+# together; `attention = "all"` by zone), resolved or not, without the lift an
+# open case's Plan gives a routine item; null for what is no machine change
+# (cases, notes, snapshots, sessions, resolutions).
+# --json → {around, from, to, events: [<ledger line> + class], omitted}
+seldon skill [install [--replace]] [--json]
 # WP-229: the Hype-shaped front of the agent skill. `seldon skill` prints the
 # skill's SKILL.md as this engine ships it (--json → {skill, file, text,
 # files: [the eight names]}); nothing read or written. `seldon skill install`
-# is `seldon hook install skills` (below), its output and exit codes;
-# replacing an edited copy and uninstalling stay `hook install skills
-# --replace` and `hook uninstall skills`.
+# is `seldon hook install skills` (below), its output and exit codes, and
+# `--replace` is its `--replace` (the same code); uninstalling stays `hook
+# uninstall skills`.
 seldon preview [--days N] [--json]
 # WP-138, ADR-0047: before the logbook exists, what the machine remembers on
 # its own. Read-only: no logbook needed (one that exists is not read), no lock,
