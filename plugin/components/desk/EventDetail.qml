@@ -37,7 +37,7 @@ DetailPane {
   // contract-2 engine) asks `seldon drift show` for a selected crisis,
   // once per index; until it answers the callout says only what the index
   // proves.
-  readonly property string ruleId: form.item ? form.item.leaderId : root.eventId
+  readonly property string ruleId: driftForm.item ? driftForm.item.leaderId : root.eventId
   readonly property var ruleInfo: Model.driftRuleInfo(root.service ? root.service.driftRules : null,
     root.service ? root.service.driftShown : null, root.ruleId, root.indexData)
   property string ruleAsked: ""
@@ -50,8 +50,8 @@ DetailPane {
   readonly property bool hidden: !!root.detail && !!root.service && root.service.deskHidden[root.detail.hideKey] === true
   // The event's pacman transaction (Model.transactionDetail), or null.
   readonly property var transaction: root.detail ? root.detail.transaction : null
-  readonly property alias form: form
-  readonly property bool editing: form.editing
+  readonly property alias form: driftForm
+  readonly property bool editing: driftForm.editing
   readonly property color foregroundColor: Color.popups.text
   // The last Ask agent about this event, or null.
   readonly property var askResult: root.service && root.detail && root.service.askResult
@@ -63,22 +63,22 @@ DetailPane {
 
   title: root.detail ? root.detail.heading : ""
   meta: root.detail ? root.detail.classLabel : ""
-  hint: form.formShown && form.armed ? form.hint : ""
+  hint: driftForm.formShown && driftForm.armed ? driftForm.hint : ""
   actions: Model.eventActions(root.detail, {
     askAgent: !!root.service && root.service.askAgentAvailable,
     hidden: root.hidden
   })
 
-  // Enter on the event's row: open drift → its default form.
+  // Enter on the event's row: open drift → its default driftForm.
   function activate() {
     if (!root.detail || !root.detail.open) return false
-    return form.showForm("")
+    return driftForm.showForm("")
   }
 
   // Esc: a shown form hides (draft kept).
   function back() {
-    if (!form.formShown) return false
-    form.hideForm()
+    if (!driftForm.formShown) return false
+    driftForm.hideForm()
     return true
   }
 
@@ -94,7 +94,7 @@ DetailPane {
       // Ask agent (WP-124b, ADR-0036 §1): `agent ask drift <id> --json`
       if (root.service && root.detail) root.service.askAgent("drift", root.detail.id)
     } else if (id === "link" || id === "explain" || id === "dismiss") {
-      form.showForm(id)
+      driftForm.showForm(id)
     } else if (id === "hide") {
       if (!root.service || !root.detail) return
       var next = ({})
@@ -145,42 +145,42 @@ DetailPane {
         h: Math.round(root.actionBar.height), visible: root.actionBar.visible },
       scroll: { y: Math.round(root.flickable.contentY), h: Math.round(root.flickable.contentHeight), view: Math.round(root.flickable.height) },
       form: {
-        shown: form.formShown && form.isOpen,
-        editing: form.editing,
-        eventId: form.eventId,
-        isOpen: form.isOpen,
-        action: form.action,
-        caseId: form.caseId,
-        cases: form.options.map(function(o) { return o.value }),
-        only: form.only,
-        intent: form.intent,
-        reason: form.reason,
-        zone: form.shown ? form.shown.zone : "",
-        explainZone: form.zone,
-        risk: form.risk,
-        area: form.area,
-        armed: form.armed,
-        hint: form.hint,
-        result: form.resultText,
-        resultOk: form.resultOk,
-        already: !!form.result && form.result.already === true,
-        resolution: form.resolution,
-        members: form.memberLines,
-        membersShown: form.memberLines.length > 0 && !form.membersShownAbove,
-        subject: form.shown ? form.shown.subject : "",
-        badge: form.shown ? form.shown.badge : "",
-        crisis: !!form.shown && form.shown.crisis
+        shown: driftForm.formShown && driftForm.isOpen,
+        editing: driftForm.editing,
+        eventId: driftForm.eventId,
+        isOpen: driftForm.isOpen,
+        action: driftForm.action,
+        caseId: driftForm.caseId,
+        cases: driftForm.options.map(function(o) { return o.value }),
+        only: driftForm.only,
+        intent: driftForm.intent,
+        reason: driftForm.reason,
+        zone: driftForm.shown ? driftForm.shown.zone : "",
+        explainZone: driftForm.zone,
+        risk: driftForm.risk,
+        area: driftForm.area,
+        armed: driftForm.armed,
+        hint: driftForm.hint,
+        result: driftForm.resultText,
+        resultOk: driftForm.resultOk,
+        already: !!driftForm.result && driftForm.result.already === true,
+        resolution: driftForm.resolution,
+        members: driftForm.memberLines,
+        membersShown: driftForm.memberLines.length > 0 && !driftForm.membersShownAbove,
+        subject: driftForm.shown ? driftForm.shown.subject : "",
+        badge: driftForm.shown ? driftForm.shown.badge : "",
+        crisis: !!driftForm.shown && driftForm.shown.crisis
       }
     }
   }
 
   onEventIdChanged: {
     root.caseMissing = ""
-    form.openFor(root.eventId)
+    driftForm.openFor(root.eventId)
     Qt.callLater(root.askRule)
   }
   Component.onCompleted: {
-    form.openFor(root.eventId)
+    driftForm.openFor(root.eventId)
     Qt.callLater(root.askRule)
   }
 
@@ -473,11 +473,11 @@ DetailPane {
     }
 
     DriftForm {
-      id: form
+      id: driftForm
       width: parent.width
       // the list above holds every member of the open group already
       membersShownAbove: !!root.transaction && transactionList.visible && root.transaction.partial === ""
-        && !!form.shown && form.shown.grouped && root.transaction.packages.length === form.shown.members
+        && !!driftForm.shown && driftForm.shown.grouped && root.transaction.packages.length === driftForm.shown.members
       service: root.service
       indexData: root.indexData
       foreground: root.foregroundColor

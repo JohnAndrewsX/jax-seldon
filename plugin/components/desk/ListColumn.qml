@@ -78,7 +78,7 @@ Item {
   }
 
   Column {
-    id: top
+    id: topColumn
     x: Style.spacing.xxl
     y: Style.spacing.xxl
     width: parent.width - Style.spacing.xxl * 2
@@ -106,7 +106,7 @@ Item {
   ListView {
     id: list
     x: Style.spacing.xxl
-    anchors.top: top.bottom
+    anchors.top: topColumn.bottom
     anchors.topMargin: Style.spacing.lg
     anchors.bottom: parent.bottom
     anchors.bottomMargin: Style.spacing.xxl
