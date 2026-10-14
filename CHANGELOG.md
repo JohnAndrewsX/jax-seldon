@@ -21,7 +21,7 @@ and the package does not exist yet. Update the plugin first:
 
 ### Highlights
 
-## [0.4.0] - 2026-10-13
+## [0.4.0] - 2026-10-14
 
 **Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
 and the package does not exist yet. Update the plugin first:
@@ -38,10 +38,19 @@ and the package does not exist yet. Update the plugin first:
 - On a narrow desk the line under the Seldon mark no longer runs under the counts beside it.
 - More secrets stay out of your logbook: passwords in Python triple quotes, keys such as `secret_key` or `aws_secret_access_key`, a password file given as `/dev/fd/3` from `<(…)`.
 - Commands inside `$(…)`, backticks and `<(…)` are read as commands of their line, so `x=$(sudo mkpasswd …)` is recorded with its password masked.
-- A command line with `$(…)` nested more than 16 deep no longer crashes the hook: it is recorded masked, and Seldon stops reading that line there, so a command after it is not recorded.
+- A command line with `$(…)` nested very deep no longer crashes the hook: from the 17th level on Seldon stops reading the line, a command before that point is recorded masked, and a command inside or after it is not recorded.
 - Update the engine and the plugin in either order: the index format is the same as in 0.2.0 and 0.3.0.
 
 ### Engine
+
+- **`hook session-start` and `hook generic` start faster (WP-218).**
+  Like `hook claude-code` since WP-092, the two hooks an agent runs in
+  every session no longer build the parser of every command when they
+  are called with nothing else, as the hooks `hook install` writes are.
+  A session that is neither in the logbook nor launched by Seldon now
+  costs them about as much as `hook claude-code`, inside ADR-0030's
+  1 ms. Output and exit codes are unchanged; `hook generic --case ID`
+  takes the parser as before.
 
 - **`hook session-stop` starts faster too (WP-219).** The hook Claude
   Code runs when a session ends skips the parser of every command like
@@ -59,19 +68,11 @@ and the package does not exist yet. Update the plugin first:
   `mkpasswd ‹redacted›`; `stdbuf` and `setsid` are read past like
   `sudo`; `--password-file /dev/fd/3 3< <(echo …)` is masked like
   `--password-file <(echo …)`. `nmcli con modify Home -f wifi-sec.psk
-  …` is masked (`-f` names fields only before `con`). A line nested
-  more than 16 substitutions deep no longer crashes the hook; it is
-  recorded as `<program> ‹redacted›`, and nothing after that
-  substitution is read, so a command after it is not recorded.
-
-- **`hook session-start` and `hook generic` start faster (WP-218).**
-  Like `hook claude-code` since WP-092, the two hooks an agent runs in
-  every session no longer build the parser of every command when they
-  are called with nothing else, as the hooks `hook install` writes are.
-  A session that is neither in the logbook nor launched by Seldon now
-  costs them about as much as `hook claude-code`, inside ADR-0030's
-  1 ms. Output and exit codes are unchanged; `hook generic --case ID`
-  takes the parser as before.
+  …` is masked (`-f` names fields only before `con`). A line with
+  `$(…)` nested very deep (thousands of levels) no longer crashes the
+  hook. From the 17th level on the hook stops reading the line: a
+  command before that point is recorded as `<program> ‹redacted›`, and
+  a command inside or after it is not recorded.
 
 ### Plugin
 

@@ -307,9 +307,9 @@ Read-only commands record nothing.
 The commands inside `$(…)`, backticks and `<(…)` are commands of the
 line, read before the command they stand in, as the shell runs them:
 `x=$(sudo mkpasswd -m sha-512 …)` is recorded as `mkpasswd ‹redacted›`.
-A line that nests `$(…)` more than 16 deep is recorded as its program
-and `‹redacted›`, and the hook stops reading the line there: a command
-after that substitution is not recorded. Commands hidden inside
+From the 17th level of nested `$(…)` on, the hook stops reading the
+line: a command before that point is recorded as its program and
+`‹redacted›`, and a command inside or after it is not recorded. Commands hidden inside
 `xargs`, `find -exec`, `${…}` or an interpreter (`python -c`, `node -e`)
 are not read. The collectors still see their
 effect at the next capture, but without the agent's name and the case.

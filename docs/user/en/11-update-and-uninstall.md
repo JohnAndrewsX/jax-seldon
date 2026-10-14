@@ -130,9 +130,10 @@ engine. What changes for you:
   wifi-sec.psk` ([Configuration](06-configuration.md#redaction)).
 - A hook reads the commands inside `$(…)`, backticks and `<(…)` as
   commands of the line, so `x=$(sudo mkpasswd …)` is recorded, its
-  password masked. A line with `$(…)` nested more than 16 deep no longer
-  crashes the hook: it is recorded masked, and nothing after that
-  substitution is read, so a command after it is not recorded
+  password masked. A line with `$(…)` nested very deep no longer
+  crashes the hook: from the 17th level on, the hook stops reading the
+  line; a command before that point is recorded masked, and a command
+  inside or after it is not recorded
   ([Working with agents](04-working-with-agents.md#what-a-hook-records)).
 - `omarchy-shell jax.seldon.panel …` still forwards to the desk; a later
   release removes it.
