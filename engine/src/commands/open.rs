@@ -29,6 +29,7 @@
 //! another (WP-156, ADR-0041). A GUI editor launches as before.
 
 use std::io::IsTerminal as _;
+use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -134,45 +135,124 @@ fn desk_path() -> Result<PathBuf> {
 /// in its own session with it.
 fn desk(ctx: &Context) -> Result<Output> {
     let path = desk_path()?;
-    if !path.is_file() {
-        return Err(Error::user(format!(
-            "the Seldon app is not installed ({} is missing); install the seldon package",
-            path.display()
-        )));
+    let shown = path.display();
+    match std::fs::metadata(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(Error::user(format!(
+                "The Seldon window is not installed ({shown} is missing). \
+                 Install the seldon package."
+            )));
+        }
+        Err(e) => return Err(Error::user(format!("cannot read {shown}: {e}"))),
+        Ok(m) if !m.is_file() || m.permissions().mode() & 0o111 == 0 => {
+            return Err(Error::user(format!(
+                "{shown} is not a regular executable file, so the Seldon window cannot start. \
+                 Reinstall the seldon package."
+            )));
+        }
+        Ok(_) => {}
     }
-    let program = path.display().to_string();
     let mut cmd = Command::new(&path);
     if !ctx.json {
         // returns only when the exec failed
         let e = cmd.exec();
-        return Err(Error::user(format!("cannot start {program}: {e}")));
+        return Err(Error::user(if e.kind() == std::io::ErrorKind::NotFound {
+            no_loader(&path)
+        } else {
+            format!("The Seldon window cannot start ({shown}): {e}.")
+        }));
     }
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    new_session(&mut cmd);
-    outcome(&program, watch_start(cmd)).map_err(Error::user)?;
-    Ok(Output::ok(
-        format!("Started {program}"),
-        json!({ "started": true }),
-    ))
+    detach(&mut cmd);
+    match watch_start(cmd) {
+        // an exit 0 at once is a start too: a second `seldon open` hands
+        // over to the window that is open (ADR-0058 §1)
+        Run::Exited { code: Some(0), .. } => Ok(Output::ok(
+            format!("Started {shown}"),
+            json!({ "started": true }),
+        )),
+        Run::Exited { code, .. } => Err(Error::user(format!(
+            "The Seldon window stopped at once: {shown} exited with {}.",
+            code.map_or("a signal".to_string(), |c| c.to_string())
+        ))),
+        Run::NotFound => Err(Error::user(no_loader(&path))),
+        other => {
+            let e = outcome(&shown.to_string(), other).err().unwrap_or_default();
+            Err(Error::user(format!(
+                "The Seldon window cannot start ({shown}): {e}."
+            )))
+        }
+    }
+}
+
+/// ENOENT from the exec of an executable file that is there: its
+/// interpreter (`#!`) or its loader is missing.
+fn no_loader(path: &Path) -> String {
+    format!(
+        "The Seldon window cannot start: {} needs an interpreter or loader that is missing. \
+         Reinstall the seldon package.",
+        path.display()
+    )
+}
+
+/// The highest descriptor this process has open (`/proc/self/fd`), for the
+/// fallback of [`detach`]; 1023 when it cannot be read.
+fn highest_fd() -> i32 {
+    std::fs::read_dir("/proc/self/fd")
+        .ok()
+        .and_then(|dir| {
+            dir.filter_map(|e| e.ok()?.file_name().to_str()?.parse::<i32>().ok())
+                .max()
+        })
+        .unwrap_or(1023)
 }
 
 /// The child calls `setsid(2)` before it runs its program: a session and
 /// process group of its own, no controlling terminal, so neither a signal
-/// to the caller's group nor the end of its terminal reaches it.
-fn new_session(cmd: &mut Command) {
+/// to the caller's group nor the end of its terminal reaches it. And every
+/// descriptor from 3 up is marked close-on-exec: one the caller passed
+/// without the flag never reaches the long-lived app.
+fn detach(cmd: &mut Command) {
     unsafe extern "C" {
         fn setsid() -> i32;
+        fn syscall(number: std::ffi::c_long, ...) -> std::ffi::c_long;
+        fn fcntl(fd: i32, cmd: i32, ...) -> i32;
     }
+    // close_range(2) is 436 on every Linux architecture (the unified table)
+    const SYS_CLOSE_RANGE: std::ffi::c_long = 436;
+    const CLOSE_RANGE_CLOEXEC: std::ffi::c_uint = 1 << 2;
+    const F_GETFD: i32 = 1;
+    const F_SETFD: i32 = 2;
+    const FD_CLOEXEC: i32 = 1;
+    let highest = highest_fd();
     // SAFETY: the closure runs in the forked child before exec and calls
-    // only setsid(2), which is async-signal-safe and allocates nothing;
-    // the child is never a group leader here (no `process_group`), so it
-    // cannot fail with EPERM
+    // only setsid(2), close_range(2) and fcntl(2), which are
+    // async-signal-safe and allocate nothing; the child is never a group
+    // leader here (no `process_group`), so setsid cannot fail with EPERM.
+    // Marking descriptors close-on-exec closes none before the exec, so
+    // the standard library's own exec-error pipe keeps working.
     unsafe {
-        cmd.pre_exec(|| {
+        cmd.pre_exec(move || {
             if setsid() < 0 {
                 return Err(std::io::Error::last_os_error());
+            }
+            // kernels before 5.11 lack the flag (EINVAL) or the call
+            // (ENOSYS): the descriptors one by one
+            if syscall(
+                SYS_CLOSE_RANGE,
+                3 as std::ffi::c_uint,
+                !0 as std::ffi::c_uint,
+                CLOSE_RANGE_CLOEXEC,
+            ) != 0
+            {
+                for fd in 3..=highest {
+                    let flags = fcntl(fd, F_GETFD);
+                    if flags >= 0 {
+                        fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+                    }
+                }
             }
             Ok(())
         });
