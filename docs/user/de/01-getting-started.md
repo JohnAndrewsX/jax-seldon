@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ 343d7ac3 -->
+<!-- source: en/01-getting-started.md @ ff2f0f8d -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem Rechner, den
 Seldon aufzeichnet. Du fügst das Seldon-Plugin zur Bar hinzu und klickst
@@ -319,7 +319,7 @@ Linked 1 event(s) to C-2026-002
 
 Nenn die Datei beim nächsten Mal im *Plan* des Case, bevor du sie
 änderst, zum Beispiel `- Affected paths: ~/.bashrc` in der Case-Datei
-(`seldon open case` gibt ihren Pfad aus). Solange der Case aktiv ist,
+(`seldon edit case` gibt ihren Pfad aus). Solange der Case aktiv ist,
 verknüpft die Erfassung die Änderung dann von selbst und meldet
 `note: 1 event(s) linked to the one case that planned them while it was open`.
 
