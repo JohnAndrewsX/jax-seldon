@@ -5,9 +5,11 @@ import QtQuick.Layouts
 import "Model.js" as Model
 import "Tones.js" as Tones
 
-// The window: a header, then either the state that keeps the index from
-// being shown (each with its one fix) or the Changes view. Keys live here;
-// the views only lay out what Model.js derives from the index.
+// The window: a header with the views, then either the state that keeps
+// the index from being shown (each with its one fix) or the view: Changes
+// (1) or Plan (2). Keys live here and go to the view shown; the views only
+// lay out what Model.js derives from the index. Both views stay loaded, so
+// a view change keeps their drafts; it disarms what was armed.
 ApplicationWindow {
     id: win
     width: 1120
@@ -29,24 +31,40 @@ ApplicationWindow {
     readonly property var tones: Tones.of(theme.foreground, theme.background, theme.accent, theme.urgent, theme.muted,
         theme.normalFill, theme.hoverFill, theme.selectedFill, theme.focusBorder, theme.focusBorderWidth)
     readonly property var index: backend.hasIndex ? backend.index : null
-    readonly property bool showsChanges: !!win.index && (backend.status === "ok" || backend.status === "indexStale")
+    readonly property bool showsViews: !!win.index && (backend.status === "ok" || backend.status === "indexStale")
+    // "changes" or "plan".
+    property string view: "changes"
+    readonly property bool inChanges: win.showsViews && win.view === "changes"
+    readonly property bool inPlan: win.showsViews && win.view === "plan"
+    // The view's own keys are off while a field or a picker has them.
+    readonly property bool viewKeys: !win.typing && !win.helpVisible
+        && (win.inChanges ? !changes.formFocused : win.inPlan ? !plan.formFocused : false)
     // A key typed into a field is text, not a shortcut.
     readonly property bool typing: !!win.activeFocusItem && win.activeFocusItem.cursorPosition !== undefined
     property bool helpVisible: false
     property bool quitAsked: false
 
-    // Space: the main action. The state's fix while one is shown, else a
-    // capture (what changed since the last one).
+    // Space: the main action. The state's fix while one is shown; in
+    // Changes a capture (what changed since the last one), in Plan the
+    // selected case's first action (as Enter).
     function mainAction() {
-        if (backend.status === "indexStale" || !win.showsChanges)
+        if (backend.status === "indexStale" || !win.showsViews)
             stateCard.fix()
+        else if (win.view === "plan")
+            plan.activate()
         else
             changes.capture()
     }
 
+    function showView(view) {
+        if (win.view === view) return
+        win.view = view
+        changes.discardAsked = false
+    }
+
     // Q asks first while a typed text would be lost.
     function quit() {
-        if (changes.hasDraft && !win.quitAsked) {
+        if ((changes.hasDraft || plan.hasDraft) && !win.quitAsked) {
             win.quitAsked = true
             return
         }
@@ -55,6 +73,8 @@ ApplicationWindow {
 
     Shortcut { sequences: ["?", "Shift+?"]; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.helpVisible = !win.helpVisible }
     Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.quit() }
+    Shortcut { sequence: "1"; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsViews; onActivated: win.showView("changes") }
+    Shortcut { sequence: "2"; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsViews; onActivated: win.showView("plan") }
     // The case picker keeps Space for itself (it opens its list).
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: !win.typing && !changes.formFocused && !win.helpVisible; onActivated: win.mainAction() }
     Shortcut {
@@ -63,15 +83,25 @@ ApplicationWindow {
         onActivated: {
             if (win.helpVisible) win.helpVisible = false
             else if (win.quitAsked) win.quitAsked = false
+            else if (win.inPlan) plan.leave()
             else if (changes.discardAsked) changes.discardAsked = false
             else changes.leave()
         }
     }
-    Shortcut { sequences: ["Down", "J"]; context: Qt.ApplicationShortcut; enabled: !win.typing && !changes.formFocused && win.showsChanges; onActivated: changes.move(1) }
-    Shortcut { sequences: ["Up", "K"]; context: Qt.ApplicationShortcut; enabled: !win.typing && !changes.formFocused && win.showsChanges; onActivated: changes.move(-1) }
-    Shortcut { sequence: "F"; context: Qt.ApplicationShortcut; enabled: !win.typing && !changes.formFocused && win.showsChanges; onActivated: changes.cycleChip(1) }
-    Shortcut { sequence: "Shift+F"; context: Qt.ApplicationShortcut; enabled: !win.typing && !changes.formFocused && win.showsChanges; onActivated: changes.cycleChip(-1) }
-    Shortcut { sequences: ["Return", "Enter"]; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsChanges; onActivated: changes.activate() }
+    Shortcut { sequences: ["Down", "J"]; context: Qt.ApplicationShortcut; enabled: win.viewKeys; onActivated: win.inPlan ? plan.move(1) : changes.move(1) }
+    Shortcut { sequences: ["Up", "K"]; context: Qt.ApplicationShortcut; enabled: win.viewKeys; onActivated: win.inPlan ? plan.move(-1) : changes.move(-1) }
+    Shortcut { sequence: "F"; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inChanges; onActivated: changes.cycleChip(1) }
+    Shortcut { sequence: "Shift+F"; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inChanges; onActivated: changes.cycleChip(-1) }
+    Shortcut { sequences: ["Return", "Enter"]; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsViews; onActivated: win.inPlan ? plan.activate() : changes.activate() }
+    // Plan's letters (HelpOverlay lists them).
+    Repeater {
+        model: ["A", "X", "R", "E", "I", "N", "B"]
+        delegate: Item {
+            required property string modelData
+            Shortcut { sequence: modelData; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inPlan; onActivated: plan.key(modelData.toLowerCase()) }
+        }
+    }
+    Shortcut { sequences: ["/", "Shift+/"]; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inPlan; onActivated: plan.key("/") }
 
     // Right-to-left languages mirror the window; the Translator sets the
     // application's layout direction.
@@ -96,12 +126,20 @@ ApplicationWindow {
                     font.bold: true
                     color: theme.foreground
                 }
-                Label {
-                    textFormat: Text.PlainText
-                    text: qsTr("Changes")
-                    font.pixelSize: 20
-                    color: win.tones.dim
-                    visible: win.showsChanges
+                // The views, as tabs; 1 and 2 reach them too.
+                Repeater {
+                    model: [{ id: "changes", label: qsTr("Changes") }, { id: "plan", label: qsTr("Plan") }]
+                    delegate: SeldonButton {
+                        required property var modelData
+                        objectName: "view-" + modelData.id
+                        visible: win.showsViews
+                        text: modelData.label
+                        tab: true
+                        checkable: true
+                        checked: win.view === modelData.id
+                        focusPolicy: Qt.NoFocus
+                        onClicked: win.showView(modelData.id)
+                    }
                 }
                 Item { Layout.fillWidth: true }
                 Label {
@@ -114,7 +152,7 @@ ApplicationWindow {
                 Label {
                     objectName: "staleLine"
                     textFormat: Text.PlainText
-                    visible: backend.status === "indexStale" && win.showsChanges
+                    visible: backend.status === "indexStale" && win.showsViews
                     text: qsTr("The index is stale")
                     color: win.tones.accentText
                 }
@@ -138,7 +176,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.margins: 8
                 Layout.leftMargin: 16
-                visible: win.showsChanges && backend.contractNewer
+                visible: win.showsViews && backend.contractNewer
                 text: qsTr("The engine writes index v%1; this window reads v%2 — update Seldon.")
                     .arg(backend.indexContractVersion).arg(Model.CONTRACT_VERSION)
                 color: win.tones.dim
@@ -150,12 +188,12 @@ ApplicationWindow {
                 id: stateCard
                 objectName: "stateCard"
                 Layout.fillWidth: true
-                Layout.fillHeight: !win.showsChanges
-                Layout.preferredHeight: win.showsChanges ? implicitHeight : -1
+                Layout.fillHeight: !win.showsViews
+                Layout.preferredHeight: win.showsViews ? implicitHeight : -1
                 tones: win.tones
                 status: backend.status
-                compact: win.showsChanges
-                visible: !win.showsChanges || backend.status === "indexStale"
+                compact: win.showsViews
+                visible: !win.showsViews || backend.status === "indexStale"
             }
 
             ChangesView {
@@ -163,8 +201,19 @@ ApplicationWindow {
                 objectName: "changesView"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                visible: win.showsChanges
-                index: win.showsChanges ? win.index : null
+                visible: win.inChanges
+                index: win.showsViews ? win.index : null
+                tones: win.tones
+            }
+
+            PlanView {
+                id: plan
+                objectName: "planView"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: win.inPlan
+                active: win.inPlan
+                index: win.showsViews ? win.index : null
                 tones: win.tones
             }
         }
@@ -173,6 +222,7 @@ ApplicationWindow {
             objectName: "helpOverlay"
             anchors.fill: parent
             visible: win.helpVisible
+            view: win.view
             tones: win.tones
             onClosed: win.helpVisible = false
         }

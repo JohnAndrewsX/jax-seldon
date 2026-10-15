@@ -5,6 +5,12 @@
         <file alias="ChangesView.qml">ChangesView.qml</file>
         <file alias="ChangeRow.qml">ChangeRow.qml</file>
         <file alias="ChangeDetail.qml">ChangeDetail.qml</file>
+        <file alias="PlanView.qml">PlanView.qml</file>
+        <file alias="CaseRow.qml">CaseRow.qml</file>
+        <file alias="GroupGap.qml">GroupGap.qml</file>
+        <file alias="CaseDetail.qml">CaseDetail.qml</file>
+        <file alias="KeyValueRow.qml">KeyValueRow.qml</file>
+        <file alias="NewCaseForm.qml">NewCaseForm.qml</file>
         <file alias="HelpOverlay.qml">HelpOverlay.qml</file>
         <file alias="SeldonButton.qml">SeldonButton.qml</file>
         <file alias="Model.js">../../plugin/Model.js</file>
