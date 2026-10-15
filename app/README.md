@@ -84,7 +84,11 @@ Plan:
 | b | By agent |
 | Esc | Leave the field, disarm, close the form, clear the search |
 
-Enter never starts an agent; only `a` or a click does.
+Enter never starts an agent; only `a` or a click does. The filled button
+on a case is the act Enter takes. A held key acts once: its repeat never
+confirms what its first press armed. While the New case form is open,
+`a x r e` do nothing (the case is behind the form); while the key overlay
+or the quit question shows, no key acts.
 
 ## States
 

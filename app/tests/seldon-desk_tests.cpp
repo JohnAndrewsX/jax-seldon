@@ -1509,6 +1509,11 @@ private slots:
         QCOMPARE(acts(dir), QStringList{"plan new --zone yellow --risk R1 --json -- Snapshots weekly"});
         QVERIFY(plan->property("formOpen").toBool());
         QCOMPARE(find(window.get(), "newCaseTitle")->property("text").toString(), QString("Snapshots weekly"));
+        // The field kept the keys through the call: typing on goes on into it.
+        QVERIFY(area->hasActiveFocus());
+        QTest::keyClick(window->window, 'z');
+        QCOMPARE(area->property("text").toString(), QString("z"));
+        QTest::keyClick(window->window, Qt::Key_Backspace);
 
         QTest::keyClick(window->window, Qt::Key_Escape);
         QTest::keyClick(window->window, Qt::Key_Escape);
@@ -1521,6 +1526,7 @@ private slots:
         QTest::keyClick(window->window, Qt::Key_Return);
         QTRY_COMPARE(find(window.get(), "planResult")->property("text").toString(), QString("no default agent"));
         QCOMPARE(find(window.get(), "intentField")->property("text").toString(), QString("Fix it"));
+        QVERIFY(find(window.get(), "intentField")->hasActiveFocus());
         // The form's draft is still there.
         QTest::keyClick(window->window, Qt::Key_Escape);
         QTest::keyClick(window->window, 'n');

@@ -68,16 +68,65 @@ Branch `wp/232-app-plan` (off `app`). Not pushed.
   header now has the tabs): fixture, dev mode, default accent, empty theme.
 - `app/README.md`: the Plan view, a keys table per view, the screenshot.
 
+## Review round 1 (SEND BACK) — what changed
+
+1. **B1, a held key never confirms** (SPEC-PLUGIN §5.3, WP-173), in both
+   views since `Main.qml` is shared: every Shortcut that presses has
+   `autoRepeat: false` (Return/Enter, Space, `a x r e i n b`, `/`, `1`,
+   `2`, `?`, `Q`); only moving keys (↑/↓, j/k, f/F) repeat. No field acts on
+   `accepted`: the New case title and area, the sentence field and
+   Changes' reason field press from `Keys.onReturnPressed`/`onEnterPressed`
+   only when `!event.isAutoRepeat` (the search field moves focus the same
+   way). Tests: the reviewer's `reviewAutoRepeatDrop` and
+   `reviewAutoRepeatEnterCreate`, plus `planHeldKeyNeverConfirms` (Space,
+   `r`, Return in the sentence) and `changesHeldKeyNeverConfirms` (Return
+   held on the case picker and in the reason field; a second press of its
+   own still runs).
+2. **B2a, no case keys behind the form.** While the New case form is open,
+   `a x r e` do nothing (`PlanView.key`). Test `reviewKeysBehindTheForm`.
+3. **B2b, no act under an ask.** `win.asking` (the `?` overlay or the quit
+   question) turns off Enter, Space and every view key. Tests
+   `reviewEnterUnderHelp`, `noActWhileTheQuitAskShows`.
+4. **N1, an arriving index never closes a form.** A first index with cases
+   selects its first case without touching `formOpen`; a form that closes
+   gives its keys back to the list (no hidden field keeps typing). The
+   Plan fields are read-only, not disabled, while a call runs, so they keep
+   the keys through it. Tests `reviewFormClosesOnFirstIndex`,
+   `reviewFocusLostAfterRefusal`, and `refusalsKeepTheTitle` now checks
+   that the area field and the sentence field keep the focus after a
+   refusal.
+5. **N2, the missing tests.** `reviewViewSwitchDisarms` (Plan, outside dev
+   mode) and `changesViewSwitchDisarms` (Changes: an armed link is
+   disarmed by a view change, and the next press arms again, nothing
+   runs); `engineErrorsArePlainText` feeds engine refusals with `<font …>`
+   into `planResult` and `newCaseError` and checks both are plain.
+6. **N4, the filled button is the act Enter takes** (`modelData.enter`):
+   To verification on an active case, never Hand to agent;
+   `startVerifyComplete` checks it. `docs/images/app-plan.png` refreshed.
+
+Decisions taken from the orchestrator: the wider arming stays (Reopen, New
+case and Run press twice); `--again` stays terminal-only (WP-231's list).
+
+Mutants on the round-1 code, each reverted: letters repeating →
+`reviewAutoRepeatDrop` fails; Enter without `asking` →
+`reviewEnterUnderHelp` and `noActWhileTheQuitAskShows` fail; no form guard
+→ `reviewKeysBehindTheForm` fails; the reason field pressing on a repeat →
+`changesHeldKeyNeverConfirms` fails; the filled button by `primary` →
+`startVerifyComplete` fails. Survived: `enabled: !pending` in place of
+`readOnly: pending` on the Plan fields — equivalent on Qt 6.12, where a
+field disabled for the call keeps its active focus; `readOnly` stays as
+the form that does not depend on that.
+
 ## How it was verified
 
 | Check | Where | Result |
 |---|---|---|
-| `flock /tmp/seldon-check.lock app/bin/build`, clean rebuild (`app/build` removed first), Qt 6.12.0, `-Wall -Wextra` | headless (dev host; no window) | passed, 0 warnings |
-| `flock /tmp/seldon-check.lock app/bin/test`: 64 Qt Test cases (44 before + 20), offscreen, own `HOME`, private `XDG_RUNTIME_DIR` 0700, temp dirs on disk, a fake engine that records argv | headless | 64 passed |
+| `flock /tmp/seldon-check.lock app/bin/build`, clean rebuild (`app/build` removed first), Qt 6.12.0, `-Wall -Wextra`, round 1 | headless (dev host; no window) | passed, 0 warnings |
+| `flock /tmp/seldon-check.lock app/bin/test`, round 1: 76 Qt Test cases (44 of WP-228 + 20 of round 0 + the reviewer's 7 `review*` + 5 new), offscreen, own `HOME`, private `XDG_RUNTIME_DIR` 0700, temp dirs on disk, a fake engine that records argv | headless | 76 passed |
 | The new cases: `sessionsRunBesideTheQueue`, `germanCoversThePlanWords`, `planShowsTheFixture`, `planInGerman`, `viewSwitchAndKeys`, `startVerifyComplete` (exact argv of start, verify, done), `armedCaseFollowsTheIndex` (a case above leaves: still armed, runs the armed case; the armed case moves on: disarmed, nothing ran; another selection disarms), `dropAndHandToAgent` (`x x`; `a` then Enter arms To verification, never the agent; `a a`), `focusTheWorkingAgent`, `byAgentAndReopen`, `openInEditor`, `newCaseFromOneSentence`, `newCaseByHand` (exact `plan new` argv from the keys), `refusalsKeepTheTitle` (blank title, bad area, exit 4, agent refusal), `emptyListAndSearch`, `importedCaseStartIsOff`, `answerMatchesTheCall`, `devModePlanWritesNothing`, `planRichText`, `planGeometry` (720×480 in German: header parts inside the list column without overlap, the bar inside the detail, the form's choices inside the form, the `?` overlay's last key reachable); `allowsOnlyTheContractForms` extended (12 allowed, 23 refused forms) | headless | passed |
 | Every window test fails on any QML warning (the message handler), in `en` and `de` (`planInGerman`, `planGeometry`) | headless | none |
 | Mutants on the new code, each reverted: no `built` watch → `armedCaseFollowsTheIndex` fails; answer not matched to its argv → `answerMatchesTheCall` fails; a refused New case closes and resets → `refusalsKeepTheTitle` fails; Enter takes the first act (the agent) → `dropAndHandToAgent` fails; the imported-case guard removed → `importedCaseStartIsOff` fails; a row title not plain → `planRichText` fails; the list column filling (Qt's layout default) → `planGeometry` fails. Survived: resetting the form even when the title changed meanwhile — equivalent, the fields are disabled while the call runs | headless | 7 killed, 1 equivalent |
-| `QT_FORCE_STDERR_LOGGING=1` offscreen runs of `app/build/seldon-desk` (`env -i`, `PATH=/usr/bin` without `seldon`, private `HOME` and `XDG_RUNTIME_DIR` 0700 under `app/build/smoke/`, removed after): fixture dev mode `en`, fixture dev mode `de`, no index and no engine | headless | no output on stderr in any run. These start on Changes; Plan is loaded beside it, and shown it is covered by the window tests above |
+| `QT_FORCE_STDERR_LOGGING=1` offscreen runs of `app/build/seldon-desk`, again in round 1 (`env -i`, `PATH=/usr/bin` without `seldon`, private `HOME` and `XDG_RUNTIME_DIR` 0700 under `app/build/smoke/`, removed after): fixture dev mode `en`, fixture dev mode `de`, no index and no engine | headless | no output on stderr in any run. These start on Changes; Plan is loaded beside it, and shown it is covered by the window tests above |
 | `docs/images/app-plan.png`, `app-changes.png` from the test harness | fixture | — |
 | No symlink under `app/`, no `qs.*` import, no hex colour in `app/src`, `app/bin`, the `.pro` outside `theme.cpp`'s fallbacks | fixture (grep, find) | passed |
 | Shell scripts | not run | none added or changed (`bin/build`, `bin/test` untouched; the fake engine lives in the C++ test), so no shellcheck run |
@@ -90,7 +139,8 @@ were never read or written; the real engine was never started.
 
 ## What was not done / open points
 
-1. **`--again` (APP-PARITY 8g).** The row names `agent start`, `agent
+1. **`--again` (APP-PARITY 8g)** — decided in round 1: terminal-only for
+   now, on WP-231's list. Round 0's note: The row names `agent start`, `agent
    focus`, `--again`. `agent start <id> --again --json` is not in
    CONTRACT.md's command table, and the desk never ran it (it shows Focus
    instead). The app does the same: Focus while an agent works; the
@@ -99,7 +149,8 @@ were never read or written; the real engine was never started.
    case from the window needs a CONTRACT.md row and a fixture first. —
    Question for the orchestrator: add the row (and a key, e.g. `A`), or
    record 8g's `--again` as "terminal only"?
-2. **Arming is wider than the desk's.** The WP says arm-twice for acts that
+2. **Arming is wider than the desk's** — decided in round 1: it stays.
+   Round 0's note: The WP says arm-twice for acts that
    write, so Reopen, New case and Run arm too (the desk ran Reopen at once
    and New case / Run on one Enter). — Confirm, or name the acts that
    should run on one press.
