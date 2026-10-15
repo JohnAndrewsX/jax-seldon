@@ -1594,32 +1594,41 @@ private slots:
         QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
     }
 
-    // A call's answer is matched to the argv that ran: another selection
-    // while it runs keeps it pending, the answer ends it; nothing else runs
-    // meanwhile.
+    // A call's answer is matched to the argv that ran: a capture that ends
+    // first does not end it, another selection while it runs keeps it
+    // pending, its own answer ends it; nothing else runs meanwhile.
     void answerMatchesTheCall() {
         QTemporaryDir dir;
         QVERIFY(writeFreshFixture(dir.filePath("index.json")));
         auto o = options(dir, dir.filePath("index.json"));
         QByteArray script = read(o.engine);
         script.replace("  plan)\n", "  plan) sleep 1\n");
+        script.replace("  capture) echo", "  capture) sleep 1; echo");
         QVERIFY(write(o.engine, script));
         auto window = loadPlan(dir, o, "en");
         QVERIFY(window && window->window);
         QQuickItem *plan = find(window.get(), "planView");
+        // A capture from Changes, still running when the case's start goes in.
+        QTest::keyClick(window->window, '1');
+        QTest::keyClick(window->window, Qt::Key_Space);
+        QTRY_VERIFY(calls(dir).contains("capture --all --json --quiet"));
+        QTest::keyClick(window->window, '2');
         plan->setProperty("selectedId", "C-2026-005");
         QTRY_VERIFY(find(window.get(), "caseAction-start"));
         QMetaObject::invokeMethod(plan, "activate");
         QMetaObject::invokeMethod(plan, "activate");
         QTRY_VERIFY(plan->property("pending").toBool());
         QVERIFY(!find(window.get(), "caseAction-start")->isEnabled());
+        QTRY_VERIFY_WITH_TIMEOUT(calls(dir).contains("plan start C-2026-005 --json"), 5000);
+        // The capture has answered; the start has not.
+        QVERIFY(plan->property("pending").toBool());
         plan->setProperty("selectedId", "C-2026-006");
         QMetaObject::invokeMethod(plan, "activate");
         QMetaObject::invokeMethod(plan, "activate");
         QVERIFY(plan->property("pending").toBool());
         QTRY_VERIFY_WITH_TIMEOUT(!plan->property("pending").toBool(), 5000);
         QCOMPARE(find(window.get(), "planResult")->property("text").toString(), QString("C-2026-005: before → after"));
-        QCOMPARE(acts(dir), QStringList{"plan start C-2026-005 --json"});
+        QCOMPARE(acts(dir), (QStringList{"capture --all --json --quiet", "plan start C-2026-005 --json"}));
         QVERIFY(find(window.get(), "caseAction-start")->isEnabled());
         QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
     }
