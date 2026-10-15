@@ -1181,6 +1181,11 @@ private slots:
                 keys << item->property("text").toString();
         for (const char *key : {"a", "x", "r", "e", "i", "n", "/", "b", "1  2", "Enter  Space"})
             QVERIFY2(keys.contains(key), qPrintable(keys.join(" | ")));
+        // At the window's default size every key shows without scrolling.
+        const QRectF whole(0, 0, window->window->width(), window->window->height());
+        for (QQuickItem *item : allItems(window.get()))
+            if (item->objectName() == "helpKey" && item->isVisible())
+                QVERIFY2(whole.contains(rectOf(item)), qPrintable(item->property("text").toString()));
         QTest::keyClick(window->window, Qt::Key_Escape);
         QTRY_VERIFY(!help->isVisible());
 
@@ -1681,6 +1686,7 @@ private slots:
         QVERIFY(writeFreshFixture(dir.filePath("index.json")));
         auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "de");
         QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
         window->window->resize(720, 480);
         QTRY_COMPARE(window->window->width(), 720);
         QTest::qWait(300);
@@ -1711,6 +1717,26 @@ private slots:
         const QString target = qEnvironmentVariable("SELDON_DESK_NARROW_SCREENSHOT");
         if (!target.isEmpty())
             QVERIFY(window->window->grabWindow().save(target));
+        // The ? overlay scrolls in a short window: ↓ brings its last key in.
+        QTest::keyClick(window->window, '?', Qt::ShiftModifier);
+        QTRY_VERIFY(find(window.get(), "helpOverlay")->isVisible());
+        QTest::qWait(200);
+        const QRectF whole(0, 0, window->window->width(), window->window->height());
+        QQuickItem *last = nullptr;
+        for (QQuickItem *item : allItems(window.get()))
+            if (item->objectName() == "helpKey" && item->isVisible() && item->property("text").toString() == "Q")
+                last = item;
+        QVERIFY(last);
+        for (int i = 0; i < 12; ++i)
+            QTest::keyClick(window->window, Qt::Key_Down);
+        QTest::qWait(100);
+        const QString help = qEnvironmentVariable("SELDON_DESK_HELP_SCREENSHOT");
+        if (!help.isEmpty())
+            QVERIFY(window->window->grabWindow().save(help));
+        QVERIFY2(whole.contains(rectOf(last)), qPrintable(QString("Q at %1").arg(rectOf(last).y())));
+        QCOMPARE(plan->property("selectedId").toString(), QString("C-2026-003"));
+        QTest::keyClick(window->window, Qt::Key_Escape);
+        QTRY_VERIFY(!find(window.get(), "helpOverlay")->isVisible());
         // The New case form's choices, too.
         QTest::keyClick(window->window, 'n');
         QTRY_VERIFY(find(window.get(), "newCaseForm")->isVisible());

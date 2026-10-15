@@ -88,8 +88,8 @@ ApplicationWindow {
             else changes.leave()
         }
     }
-    Shortcut { sequences: ["Down", "J"]; context: Qt.ApplicationShortcut; enabled: win.viewKeys; onActivated: win.inPlan ? plan.move(1) : changes.move(1) }
-    Shortcut { sequences: ["Up", "K"]; context: Qt.ApplicationShortcut; enabled: win.viewKeys; onActivated: win.inPlan ? plan.move(-1) : changes.move(-1) }
+    Shortcut { sequences: ["Down", "J"]; context: Qt.ApplicationShortcut; enabled: win.viewKeys || win.helpVisible; onActivated: win.helpVisible ? help.scroll(1) : win.inPlan ? plan.move(1) : changes.move(1) }
+    Shortcut { sequences: ["Up", "K"]; context: Qt.ApplicationShortcut; enabled: win.viewKeys || win.helpVisible; onActivated: win.helpVisible ? help.scroll(-1) : win.inPlan ? plan.move(-1) : changes.move(-1) }
     Shortcut { sequence: "F"; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inChanges; onActivated: changes.cycleChip(1) }
     Shortcut { sequence: "Shift+F"; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inChanges; onActivated: changes.cycleChip(-1) }
     Shortcut { sequences: ["Return", "Enter"]; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsViews; onActivated: win.inPlan ? plan.activate() : changes.activate() }
@@ -219,6 +219,7 @@ ApplicationWindow {
         }
 
         HelpOverlay {
+            id: help
             objectName: "helpOverlay"
             anchors.fill: parent
             visible: win.helpVisible

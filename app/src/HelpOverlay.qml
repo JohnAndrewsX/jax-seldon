@@ -43,46 +43,69 @@ Rectangle {
     ]
     readonly property var keys: (root.view === "plan" ? root.planKeys : root.changesKeys).concat(root.windowKeys)
 
-    MouseArea {
-        anchors.fill: parent
-        onClicked: root.closed()
+    // ↑/↓ while the overlay shows: a short window scrolls it.
+    function scroll(dy) {
+        flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, flick.contentY + dy * 48))
     }
 
-    ColumnLayout {
-        anchors.centerIn: parent
-        width: Math.min(parent.width - 48, 560)
-        spacing: 14
+    // Scrolls when the window is shorter than the keys; a click anywhere
+    // closes it.
+    Flickable {
+        id: flick
+        objectName: "helpFlick"
+        anchors.fill: parent
+        anchors.margins: 24
+        contentWidth: width
+        contentHeight: Math.max(column.implicitHeight, height)
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar {}
 
-        Label {
-            objectName: "helpTitle"
-            textFormat: Text.PlainText
-            text: root.view === "plan" ? qsTr("Keys · Plan") : qsTr("Keys · Changes")
-            font.pixelSize: 20
-            font.bold: true
-            color: theme.foreground
+        MouseArea {
+            width: flick.contentWidth
+            height: flick.contentHeight
+            onClicked: root.closed()
         }
 
-        Repeater {
-            model: root.keys
-            delegate: RowLayout {
-                required property var modelData
-                Layout.fillWidth: true
-                spacing: 20
+        ColumnLayout {
+            id: column
+            x: Math.max(0, (flick.width - column.width) / 2)
+            y: Math.max(0, (flick.height - column.implicitHeight) / 2)
+            width: Math.min(flick.width, 560)
+            spacing: 10
 
-                Label {
-                    objectName: "helpKey"
-                    textFormat: Text.PlainText
-                    Layout.preferredWidth: 110
-                    text: modelData.key
-                    font.bold: true
-                    color: root.tones.accentText
-                }
-                Label {
-                    textFormat: Text.PlainText
+            Label {
+                objectName: "helpTitle"
+                textFormat: Text.PlainText
+                text: root.view === "plan" ? qsTr("Keys · Plan") : qsTr("Keys · Changes")
+                font.pixelSize: 20
+                font.bold: true
+                color: theme.foreground
+            }
+
+            Repeater {
+                model: root.keys
+                delegate: RowLayout {
+                    required property var modelData
                     Layout.fillWidth: true
-                    text: modelData.what
-                    color: theme.foreground
-                    wrapMode: Text.Wrap
+                    spacing: 20
+
+                    Label {
+                        objectName: "helpKey"
+                        textFormat: Text.PlainText
+                        Layout.preferredWidth: 110
+                        Layout.alignment: Qt.AlignTop
+                        text: modelData.key
+                        font.bold: true
+                        color: root.tones.accentText
+                    }
+                    Label {
+                        textFormat: Text.PlainText
+                        Layout.fillWidth: true
+                        text: modelData.what
+                        color: theme.foreground
+                        wrapMode: Text.Wrap
+                    }
                 }
             }
         }
