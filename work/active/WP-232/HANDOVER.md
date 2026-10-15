@@ -117,6 +117,14 @@ Mutants on the round-1 code, each reverted: letters repeating →
 field disabled for the call keeps its active focus; `readOnly` stays as
 the form that does not depend on that.
 
+## Before merge (round 2 APPROVE)
+
+The reviewer's `reviewClosedFormGivesKeysBack` (a form closed by Create or
+by Close leaves no hidden field with the keys) and `heldQAsksAndStays` (a
+held Q asks once; its repeat never quits while a text is unsent; killed by
+a Q Shortcut that repeats) are added. `app/bin/test` under the lock: 78
+passed (headless).
+
 ## How it was verified
 
 | Check | Where | Result |

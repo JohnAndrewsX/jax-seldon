@@ -2078,6 +2078,58 @@ private slots:
         QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
     }
 
+    void reviewClosedFormGivesKeysBack() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        QTest::keyClick(window->window, 'n');
+        QTRY_VERIFY(find(window.get(), "newCaseTitle")->hasActiveFocus());
+        for (const char c : QByteArray("Made"))
+            QTest::keyClick(window->window, c);
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_VERIFY(!plan->property("formOpen").toBool());
+        QTest::qWait(100);
+        QQuickItem *focus = window->window->activeFocusItem();
+        qInfo().noquote() << "REVIEW after-create activeFocus=" << (focus ? focus->objectName() : "none");
+        QVERIFY(!find(window.get(), "newCaseTitle")->hasActiveFocus());
+        QTest::keyClick(window->window, 'n');
+        QTRY_VERIFY(find(window.get(), "newCaseTitle")->hasActiveFocus());
+        click(window.get(), find(window.get(), "newCaseClose"));
+        QTRY_VERIFY(!plan->property("formOpen").toBool());
+        focus = window->window->activeFocusItem();
+        qInfo().noquote() << "REVIEW after-close activeFocus=" << (focus ? focus->objectName() : "none");
+        QVERIFY(!find(window.get(), "newCaseTitle")->hasActiveFocus());
+    }
+
+    // A held Q asks once: its repeat never quits while a text is unsent.
+    void heldQAsksAndStays() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QSignalSpy quit(window->engine.get(), &QQmlEngine::quit);
+        QTest::keyClick(window->window, 'i');
+        QTRY_VERIFY(find(window.get(), "intentField")->hasActiveFocus());
+        QTest::keyClick(window->window, 'z');
+        QTest::keyClick(window->window, Qt::Key_Escape);
+        QTRY_VERIFY(!find(window.get(), "intentField")->hasActiveFocus());
+        QTest::simulateEvent(window->window, true, Qt::Key_Q, Qt::NoModifier, "q", false);
+        QTRY_VERIFY(find(window.get(), "quitAsk")->isVisible());
+        QTest::simulateEvent(window->window, true, Qt::Key_Q, Qt::NoModifier, "q", true);
+        QTest::simulateEvent(window->window, true, Qt::Key_Q, Qt::NoModifier, "q", true);
+        QTest::simulateEvent(window->window, false, Qt::Key_Q, Qt::NoModifier, "q", false);
+        QTest::qWait(300);
+        QCOMPARE(quit.count(), 0);
+        QVERIFY(find(window.get(), "quitAsk")->isVisible());
+        QTest::keyClick(window->window, Qt::Key_Escape);
+        QTRY_VERIFY(!find(window.get(), "quitAsk")->isVisible());
+        QCOMPARE(find(window.get(), "intentField")->property("text").toString(), QString("z"));
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
     void init() { messages.clear(); }
 
 private:
