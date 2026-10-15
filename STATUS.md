@@ -6,7 +6,9 @@ operator's delegation E96 after the Fable release audit's GO; Omarchy edge
 compatibility: WP-224, WP-225, ADR-0059, ADR-0060; acceptance record
 partial: gate, desk, written, restart passed on the test host (Omarchy rc,
 Qt 6.11.2); edge and update not run; acceptance-check ok); dry run on
-`main` green. Earlier: v0.4.0 (2026-10-14), v0.3.0 (2026-10-12), v0.2.0
+`main` green; release workflow green in all jobs (build, split, release,
+aur, plugin, bump); build provenance verified (`refs/tags/v0.4.1`, digest
+`81acb272`). Earlier: v0.4.0 (2026-10-14), v0.3.0 (2026-10-12), v0.2.0
 (2026-10-12), v0.1.0 (2026-10-02) … v0.1.4.
 **Branches:** `main` = v0.4.1 plus the release bump; `next` carries the
 0.4.x work; `app` carries the 0.5.0 track (Seldon as an Omarchy app,
