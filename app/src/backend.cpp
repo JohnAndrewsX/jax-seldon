@@ -15,12 +15,13 @@ namespace {
 
 // CONTRACT.md's ids and words, as schema/event.schema.json and
 // schema/case.schema.json write them (Model.js EVENT_ID, CASE_ID, ZONES,
-// RISKS, AREA).
+// RISKS, PRIORITIES, AREA).
 const QRegularExpression EventId(QStringLiteral("^[0-7][0-9A-HJKMNP-TV-Z]{25}$"));
 const QRegularExpression CaseId(QStringLiteral("^C-[0-9]{4}-[0-9]{3,}$"));
 const QRegularExpression Area(QStringLiteral("^[a-z0-9][a-z0-9-]*$"));
 const QStringList Zones{"green", "yellow", "red"};
 const QStringList Risks{"R0", "R1", "R2", "R3"};
+const QStringList Priorities{"high", "normal", "low"};
 
 // An engine call that has not answered in two minutes is stuck; capture is
 // the slowest call and takes seconds.
@@ -29,12 +30,50 @@ constexpr int CallTimeoutMs = 120000;
 // runs in that terminal), so look for it every few seconds for a while.
 constexpr int RepollMs = 5000;
 constexpr int RepollTries = 120;
+// `agent sessions` reads Hyprland's clients and a few /proc entries; one
+// that has not answered in this time is stuck.
+constexpr int SessionsTimeoutMs = 10000;
 
 qint64 timeMs(const QString &text) {
     if (text.isEmpty())
         return -1;
     const QDateTime at = QDateTime::fromString(text, Qt::ISODateWithMs);
     return at.isValid() ? at.toMSecsSinceEpoch() : -1;
+}
+
+// `plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] -- <title>`
+// and `plan start|verify|done|drop|reopen <caseId>`, as Model.planArgs
+// builds them; `words` without the final --json.
+QString validatePlan(const QStringList &words, bool withText) {
+    const qsizetype n = words.size();
+    if (n >= 2 && words[1] == "new") {
+        const QString form = "plan new must be: plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] --json -- <title>";
+        if (!withText || n < 6 || words[2] != "--zone" || !Zones.contains(words[3]) || words[4] != "--risk"
+            || !Risks.contains(words[5]))
+            return form;
+        qsizetype k = 6;
+        if (k + 1 < n && words[k] == "--area" && Area.match(words[k + 1]).hasMatch())
+            k += 2;
+        if (k + 1 < n && words[k] == "--priority" && Priorities.contains(words[k + 1]))
+            k += 2;
+        return k == n ? QString() : form;
+    }
+    static const QStringList steps{"start", "verify", "done", "drop", "reopen"};
+    return n == 3 && !withText && steps.contains(words[1]) && CaseId.match(words[2]).hasMatch()
+        ? QString() : "plan must be: plan start|verify|done|drop|reopen <caseId> --json";
+}
+
+// `agent start <caseId>`, `agent start --new -- <intent>`, `agent focus
+// <caseId>`, `agent sessions`; `words` without the final --json.
+QString validateAgent(const QStringList &words, bool withText) {
+    const qsizetype n = words.size();
+    if (n == 2 && words[1] == "sessions" && !withText)
+        return QString();
+    if (n == 3 && words[1] == "start" && words[2] == "--new" && withText)
+        return QString();
+    if (n == 3 && (words[1] == "start" || words[1] == "focus") && !withText && CaseId.match(words[2]).hasMatch())
+        return QString();
+    return "agent must be: agent start <caseId>|--new, agent focus <caseId> or agent sessions, then --json";
 }
 
 bool isInteger(const QJsonValue &value) {
@@ -103,6 +142,29 @@ Backend::Backend(const Options &options, QObject *parent) : QObject(parent), m_o
         startNext();
     });
 
+    // `agent sessions --json` runs in its own process beside the queue
+    // (CONTRACT.md), read-only; a request while one runs asks once more
+    // after it.
+    m_sessionsTimeout.setSingleShot(true);
+    m_sessionsTimeout.setInterval(SessionsTimeoutMs);
+    connect(&m_sessionsTimeout, &QTimer::timeout, &m_sessions, &QProcess::kill);
+    connect(&m_sessions, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
+        m_sessionsTimeout.stop();
+        const int code = exitStatus == QProcess::NormalExit ? exitCode : -1;
+        emit sessionsFinished(code, QString::fromUtf8(m_sessions.readAllStandardOutput()));
+        if (m_sessionsAgain) {
+            m_sessionsAgain = false;
+            askSessions();
+        }
+    });
+    connect(&m_sessions, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return;
+        m_sessionsTimeout.stop();
+        m_sessionsAgain = false;
+        emit sessionsFinished(-1, QString());
+    });
+
     m_repoll.setInterval(RepollMs);
     connect(&m_repoll, &QTimer::timeout, this, [this] {
         if (m_engineState != "missing" || --m_repollLeft <= 0)
@@ -116,7 +178,7 @@ Backend::Backend(const Options &options, QObject *parent) : QObject(parent), m_o
 }
 
 Backend::~Backend() {
-    for (QProcess *process : {&m_probe, &m_process}) {
+    for (QProcess *process : {&m_probe, &m_process, &m_sessions}) {
         if (process->state() != QProcess::NotRunning) {
             process->kill();
             process->waitForFinished(1000);
@@ -327,7 +389,9 @@ void Backend::refreshStatus() {
 // ---- Engine calls -----------------------------------------------------------
 
 // The forms of CONTRACT.md's "Commands the plugin may run" that this window
-// uses, word for word as Model.js builds them (driftArgs and the constants).
+// uses, word for word as Model.js builds them (driftArgs, planArgs,
+// agentArgs, agentNewArgs, agentFocusArgs and the constants; `edit` is the
+// row ADR-0058 renamed `open <target>` to).
 // Free text is one argument after `--`, one line, and never part of a
 // command string: QProcess passes every word as it is.
 QString Backend::validateArgs(const QStringList &args) {
@@ -361,6 +425,14 @@ QString Backend::validateArgs(const QStringList &args) {
 
     if (head == "--version" || head == "status")
         return n == 1 && !withText ? QString() : head + " takes no arguments";
+    if (head == "plan")
+        return validatePlan(words, withText);
+    if (head == "agent")
+        return validateAgent(words, withText);
+    // Open in editor; this window opens cases only.
+    if (head == "edit")
+        return n == 3 && !withText && CaseId.match(words[1]).hasMatch() && words[2] == "--editor"
+            ? QString() : "edit must be: edit <caseId> --editor --json";
     if (head != "drift" || n < 3 || !EventId.match(words[2]).hasMatch())
         return "command not allowed: " + head;
 
@@ -447,6 +519,19 @@ void Backend::callFinished(int exitCode, QProcess::ExitStatus exitStatus) {
     // it again anyway, the status may have changed without a new file.
     reload();
     startNext();
+}
+
+bool Backend::askSessions() {
+    static const QStringList args{"agent", "sessions", "--json"};
+    if (m_options.devMode || m_engineState != "present" || !validateArgs(args).isEmpty())
+        return false;
+    if (m_sessions.state() != QProcess::NotRunning) {
+        m_sessionsAgain = true;
+        return false;
+    }
+    m_sessions.start(m_options.engine, args);
+    m_sessionsTimeout.start();
+    return true;
 }
 
 bool Backend::fix() {
