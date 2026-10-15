@@ -100,6 +100,8 @@ Item {
     // then the change stays in the detail.
     onChipChanged: Qt.callLater(function() { if (!detail.hasDraft) root.selectRow(0) })
     onRowsChanged: if (root.selectedId === "" && root.rows.length > 0) root.selectRow(0)
+    // Another view shown: what was armed is disarmed; a typed reason stays.
+    onVisibleChanged: if (!root.visible) detail.disarm()
 
     Connections {
         target: backend

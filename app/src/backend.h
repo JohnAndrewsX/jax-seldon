@@ -120,6 +120,10 @@ public:
     static QStringList terminalScripts();
     // Probe the engine and read the index again.
     Q_INVOKABLE void recheck();
+    // `agent sessions --json` in its own process beside the queue
+    // (read-only); the answer comes as sessionsFinished. False in dev mode,
+    // without an engine, or while one runs (it asks again after that one).
+    Q_INVOKABLE bool askSessions();
 
 signals:
     void stateChanged();
@@ -128,6 +132,9 @@ signals:
     // Every engine call's answer, for the view's result line
     // (Model.driftResult and friends read it).
     void finished(const QStringList &args, int exitCode, const QString &output, const QString &errorOutput);
+    // The answer of askSessions (Model.sessionsResult reads it); exit -1
+    // when it did not start or was killed.
+    void sessionsFinished(int exitCode, const QString &output);
 
 private:
     void probe();
@@ -162,6 +169,9 @@ private:
     QTimer m_timeout;
     QTimer m_repoll;
     int m_repollLeft = 0;
+    QProcess m_sessions;
+    QTimer m_sessionsTimeout;
+    bool m_sessionsAgain = false;
     QList<QStringList> m_queue;
     QStringList m_running;
 };

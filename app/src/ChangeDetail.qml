@@ -324,7 +324,10 @@ Item {
                     enabled: !root.pending
                     Material.roundedScale: theme.radius
                     onTextEdited: root.reason = text
-                    onAccepted: root.press()
+                    // Once per press: a held Enter's repeat never confirms
+                    // what its first press armed (SPEC-PLUGIN §5.3).
+                    Keys.onReturnPressed: function(event) { event.accepted = true; if (!event.isAutoRepeat) root.press() }
+                    Keys.onEnterPressed: function(event) { event.accepted = true; if (!event.isAutoRepeat) root.press() }
                 }
 
                 CheckBox {

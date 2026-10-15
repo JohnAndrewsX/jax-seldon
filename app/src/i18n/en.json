@@ -1,1 +1,6 @@
-{}
+{
+  "%n older change(s) the index no longer lists": {
+    "one": "%n older change the index no longer lists",
+    "other": "%n older changes the index no longer lists"
+  }
+}
