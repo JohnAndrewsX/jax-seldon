@@ -681,7 +681,7 @@ ledger view; each line names the time, the source, the case and, for
 an agent, its name:
 
 ```sh
-seldon open ledger --editor
+seldon edit ledger --editor
 ```
 
 In the desk:

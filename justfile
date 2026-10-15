@@ -146,7 +146,7 @@ check-perf-dirs:
 check-packaging:
     #!/usr/bin/env bash
     set -euo pipefail
-    bash -n packaging/PKGBUILD packaging/set-version.sh packaging/check-srcinfo.sh \
+    bash -n packaging/PKGBUILD packaging/seldon/PKGBUILD tests/release/seldon-package.test.sh packaging/set-version.sh packaging/check-srcinfo.sh \
       packaging/release-notes.sh tests/release/release-notes.test.sh \
       packaging/audit-ignore.sh tests/release/audit-ignore.test.sh \
       tests/release/workflow-pins.test.sh \
@@ -159,7 +159,8 @@ check-packaging:
       packaging/mirror-image.sh tests/release/mirror-image.test.sh
     if command -v shellcheck >/dev/null; then
       # PKGBUILD variables are read by makepkg, $srcdir/$pkgdir set by it
-      shellcheck -s bash -e SC2034,SC2154,SC2164 packaging/PKGBUILD
+      shellcheck -s bash -e SC2034,SC2154,SC2164 packaging/PKGBUILD packaging/seldon/PKGBUILD
+      shellcheck bin/build bin/test bin/install tests/release/seldon-package.test.sh
       shellcheck packaging/set-version.sh packaging/check-srcinfo.sh \
         packaging/release-notes.sh tests/release/release-notes.test.sh \
         packaging/audit-ignore.sh tests/release/audit-ignore.test.sh \
@@ -180,6 +181,9 @@ check-packaging:
     if grep -Eq '^[[:space:]]*install=' packaging/PKGBUILD || compgen -G 'packaging/*.install' >/dev/null; then
       echo "check-packaging: PKGBUILD must not have an install script (upgrades run as the user)"; exit 1
     fi
+    # WP-230: the seldon package's install script only refreshes the desktop
+    # and icon caches; tests/release/seldon-package.test.sh holds it to that
+    bash tests/release/seldon-package.test.sh
     bash tests/release/release-notes.test.sh
     bash tests/release/audit-ignore.test.sh
     bash tests/release/workflow-pins.test.sh

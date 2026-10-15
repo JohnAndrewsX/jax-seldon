@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ ce4e1c26 -->
+<!-- source: en/04-working-with-agents.md @ 25b84b54 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -741,7 +741,7 @@ der Ledger-Ansicht des Monats; jede Zeile nennt Uhrzeit, Quelle, Case
 und bei einem Agenten seinen Namen:
 
 ```sh
-seldon open ledger --editor
+seldon edit ledger --editor
 ```
 
 Im Desk:

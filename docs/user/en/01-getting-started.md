@@ -306,7 +306,7 @@ Linked 1 event(s) to C-2026-002
 
 Next time, name the file in the case's *Plan* before you change it, for
 example `- Affected paths: ~/.bashrc` in the case file
-(`seldon open case` prints its path). While the case is active, the
+(`seldon edit case` prints its path). While the case is active, the
 capture then links the change by itself and says
 `note: 1 event(s) linked to the one case that planned them while it was open`.
 

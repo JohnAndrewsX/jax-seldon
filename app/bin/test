@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/tests"
+cd "$ROOT/build/tests"
+
+qmake6 "$ROOT/tests/seldon-desk_tests.pro"
+make -j8
+
+# Every run gets its own HOME and a private XDG_RUNTIME_DIR, so nothing the
+# tests start can reach the user's session or their Seldon state
+# (AGENTS.md §6), and its temp directories on disk, not in /tmp; all go
+# when the run ends.
+SANDBOX=$(mktemp -d "$ROOT/build/tests/run.XXXXXX")
+trap 'rm -rf "$SANDBOX"' EXIT INT TERM
+mkdir -m 0700 "$SANDBOX/home" "$SANDBOX/runtime" "$SANDBOX/tmp"
+
+HOME="$SANDBOX/home" XDG_RUNTIME_DIR="$SANDBOX/runtime" TMPDIR="$SANDBOX/tmp" \
+    XDG_STATE_HOME="$SANDBOX/home/.local/state" XDG_CONFIG_HOME="$SANDBOX/home/.config" \
+    QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 \
+    ./seldon-desk_tests "$@"

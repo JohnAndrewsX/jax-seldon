@@ -2473,6 +2473,11 @@ def collect_instances():
             # a command's `--json` error the plugin reads (CONTRACT.md rule 10, WP-119): held equal
             # to the engine's output by engine/tests/init.rs and read by tests/plugin/model.test.js
             continue
+        elif re.fullmatch(r"commands/[a-z0-9-]+\.json", r):
+            # a command's `--json` output (CONTRACT.md's command rows, WP-229): held equal to the
+            # engine's output by engine/tests/app_commands.rs; the events of changes-around are
+            # ledger lines, checked against the event schema there
+            continue
         elif r == "themes/roles.json":
             # theme roles for the plugin's tone tests (WP-177), not contract: its shape (three
             # themes, the five roles each) is checked by tests/plugin/model.test.js

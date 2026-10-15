@@ -3,6 +3,7 @@
 
 pub mod agent;
 pub mod capture;
+pub mod changes;
 pub mod config_cmd;
 pub mod decide;
 pub mod doctor;
@@ -22,6 +23,7 @@ pub mod preview;
 pub mod rebuild;
 pub mod rules;
 pub mod setup;
+pub mod skill;
 pub mod skills;
 pub mod status;
 pub mod triage;

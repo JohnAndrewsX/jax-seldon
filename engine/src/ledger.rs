@@ -172,8 +172,14 @@ impl Ledger {
         from: DateTime<FixedOffset>,
         to: DateTime<FixedOffset>,
     ) -> anyhow::Result<Vec<Event>> {
-        let first = (from - Duration::days(1)).format("%Y-%m").to_string();
-        let last = (to + Duration::days(1)).format("%Y-%m").to_string();
+        // at the ends of chrono's range the slack stops there, never overflows
+        let slack = Duration::days(1);
+        let first = from.checked_sub_signed(slack).unwrap_or(from);
+        let last = to.checked_add_signed(slack).unwrap_or(to);
+        let (first, last) = (
+            first.format("%Y-%m").to_string(),
+            last.format("%Y-%m").to_string(),
+        );
         let mut out = Vec::new();
         for m in self.months()? {
             if m >= first && m <= last {

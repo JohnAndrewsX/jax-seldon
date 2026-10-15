@@ -1,5 +1,20 @@
-//! `seldon open <case|journal|ledger|status|logbook|ID> [--editor]`
-//! (SPEC-ENGINE §3): prints the path; `--editor` opens it.
+//! `seldon open` (the app) and `seldon edit <case|journal|ledger|status|logbook|ID>
+//! [--editor]` (SPEC-ENGINE §3; WP-229, ADR-0058).
+//!
+//! **The app.** `seldon open` with no target starts the Seldon app, the
+//! program `$SELDON_DESK` names (an absolute path, for development) or
+//! [`DESK`]. Without `--json` it runs in the foreground: the engine
+//! replaces itself with it (`exec`), so the `.desktop` file's `Exec=seldon
+//! open` and a terminal see the app. With `--json` (the bar's pill) it is
+//! started detached in a session of its own, stdio on `/dev/null`, and the
+//! engine answers `{"started": true}` and exits: the app never lives under
+//! the caller (`omarchy-shell`). A missing app is exit 1, "install the
+//! seldon package". No logbook is needed: the app shows its own states.
+//!
+//! **The editor.** `seldon edit <target>` prints the path; `--editor`
+//! opens it. `seldon open <target>` is the same command under its old
+//! name, kept for the 0.5.x plugins and agents (same JSON, a note on
+//! stderr) and removed in 0.6.0.
 //!
 //! The editor gets the path as one argument, never through a shell
 //! (AGENTS.md §8). On a terminal it is `$VISUAL`, else `$EDITOR` (split at
@@ -14,6 +29,7 @@
 //! another (WP-156, ADR-0041). A GUI editor launches as before.
 
 use std::io::IsTerminal as _;
+use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -35,8 +51,41 @@ pub const OMARCHY_EDITOR: &str = "omarchy-launch-editor";
 /// How long a detached launcher is watched for a start-up failure.
 const LAUNCH_GRACE: Duration = Duration::from_millis(200);
 
+/// The Seldon app's binary, as the `seldon` package installs it.
+pub const DESK: &str = "/usr/lib/seldon/seldon-desk";
+
+/// Another app binary in its place (development): an absolute path.
+pub const DESK_ENV: &str = "SELDON_DESK";
+
+/// The note `open <target>` prints on stderr.
+pub const OPEN_DEPRECATED: &str = "`seldon open <target>` is now `seldon edit <target>`; \
+     the old form goes in 0.6.0";
+
 #[derive(Debug, Clone, Args)]
+#[command(
+    after_help = "Without a target: the Seldon app (--json: started detached).
+With a target: the old name of `seldon edit <target>`, removed in 0.6.0.
+
+Examples:
+  seldon open
+  seldon open --json"
+)]
 pub struct OpenArgs {
+    /// Deprecated: use `seldon edit <WHAT>`
+    #[arg(value_name = "WHAT")]
+    pub what: Option<String>,
+
+    /// Deprecated: use `seldon edit <WHAT> --editor`
+    #[arg(long, requires = "what")]
+    pub editor: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+#[command(after_help = "Examples:
+  seldon edit case
+  seldon edit journal --editor
+  seldon edit ADR-0003 --editor --json")]
+pub struct EditArgs {
     /// case (the active one), journal (today), ledger (this month), status,
     /// logbook, or a case or decision id
     #[arg(value_name = "WHAT")]
@@ -47,7 +96,170 @@ pub struct OpenArgs {
     pub editor: bool,
 }
 
-pub fn run(ctx: &Context, args: OpenArgs) -> Result<Output> {
+/// `seldon open [<target>]`: the app, or the deprecated `edit`.
+pub fn run_open(ctx: &Context, args: OpenArgs) -> Result<Output> {
+    let Some(what) = args.what else {
+        return desk(ctx);
+    };
+    if !ctx.quiet {
+        eprintln!("seldon: note: {OPEN_DEPRECATED}");
+    }
+    run(
+        ctx,
+        EditArgs {
+            what,
+            editor: args.editor,
+        },
+    )
+}
+
+/// The app binary: `$SELDON_DESK` when set (not empty), else [`DESK`].
+fn desk_path() -> Result<PathBuf> {
+    match std::env::var_os(DESK_ENV).filter(|v| !v.is_empty()) {
+        Some(v) => {
+            let path = PathBuf::from(v);
+            if path.is_absolute() {
+                Ok(path)
+            } else {
+                Err(Error::user(format!(
+                    "{DESK_ENV}={} is not an absolute path; name the app binary by its full path",
+                    path.display()
+                )))
+            }
+        }
+        None => Ok(PathBuf::from(DESK)),
+    }
+}
+
+/// Starts the app (the module comment): `exec` without `--json`, detached
+/// in its own session with it.
+fn desk(ctx: &Context) -> Result<Output> {
+    let path = desk_path()?;
+    let shown = path.display();
+    match std::fs::metadata(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(Error::user(format!(
+                "The Seldon window is not installed ({shown} is missing). \
+                 Install the seldon package."
+            )));
+        }
+        Err(e) => return Err(Error::user(format!("cannot read {shown}: {e}"))),
+        Ok(m) if !m.is_file() || m.permissions().mode() & 0o111 == 0 => {
+            return Err(Error::user(format!(
+                "{shown} is not a regular executable file, so the Seldon window cannot start. \
+                 Reinstall the seldon package."
+            )));
+        }
+        Ok(_) => {}
+    }
+    let mut cmd = Command::new(&path);
+    if !ctx.json {
+        // returns only when the exec failed
+        let e = cmd.exec();
+        return Err(Error::user(if e.kind() == std::io::ErrorKind::NotFound {
+            no_loader(&path)
+        } else {
+            format!("The Seldon window cannot start ({shown}): {e}.")
+        }));
+    }
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    detach(&mut cmd);
+    match watch_start(cmd) {
+        // an exit 0 at once is a start too: a second `seldon open` hands
+        // over to the window that is open (ADR-0058 §1)
+        Run::Exited { code: Some(0), .. } => Ok(Output::ok(
+            format!("Started {shown}"),
+            json!({ "started": true }),
+        )),
+        Run::Exited { code, .. } => Err(Error::user(format!(
+            "The Seldon window stopped at once: {shown} exited with {}.",
+            code.map_or("a signal".to_string(), |c| c.to_string())
+        ))),
+        Run::NotFound => Err(Error::user(no_loader(&path))),
+        other => {
+            let e = outcome(&shown.to_string(), other).err().unwrap_or_default();
+            Err(Error::user(format!(
+                "The Seldon window cannot start ({shown}): {e}."
+            )))
+        }
+    }
+}
+
+/// ENOENT from the exec of an executable file that is there: its
+/// interpreter (`#!`) or its loader is missing.
+fn no_loader(path: &Path) -> String {
+    format!(
+        "The Seldon window cannot start: {} needs an interpreter or loader that is missing. \
+         Reinstall the seldon package.",
+        path.display()
+    )
+}
+
+/// The highest descriptor this process has open (`/proc/self/fd`), for the
+/// fallback of [`detach`]; 1023 when it cannot be read.
+fn highest_fd() -> i32 {
+    std::fs::read_dir("/proc/self/fd")
+        .ok()
+        .and_then(|dir| {
+            dir.filter_map(|e| e.ok()?.file_name().to_str()?.parse::<i32>().ok())
+                .max()
+        })
+        .unwrap_or(1023)
+}
+
+/// The child calls `setsid(2)` before it runs its program: a session and
+/// process group of its own, no controlling terminal, so neither a signal
+/// to the caller's group nor the end of its terminal reaches it. And every
+/// descriptor from 3 up is marked close-on-exec: one the caller passed
+/// without the flag never reaches the long-lived app.
+fn detach(cmd: &mut Command) {
+    unsafe extern "C" {
+        fn setsid() -> i32;
+        fn syscall(number: std::ffi::c_long, ...) -> std::ffi::c_long;
+        fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+    }
+    // close_range(2) is 436 on every Linux architecture (the unified table)
+    const SYS_CLOSE_RANGE: std::ffi::c_long = 436;
+    const CLOSE_RANGE_CLOEXEC: std::ffi::c_uint = 1 << 2;
+    const F_GETFD: i32 = 1;
+    const F_SETFD: i32 = 2;
+    const FD_CLOEXEC: i32 = 1;
+    let highest = highest_fd();
+    // SAFETY: the closure runs in the forked child before exec and calls
+    // only setsid(2), close_range(2) and fcntl(2), which are
+    // async-signal-safe and allocate nothing; the child is never a group
+    // leader here (no `process_group`), so setsid cannot fail with EPERM.
+    // Marking descriptors close-on-exec closes none before the exec, so
+    // the standard library's own exec-error pipe keeps working.
+    unsafe {
+        cmd.pre_exec(move || {
+            if setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            // kernels before 5.11 lack the flag (EINVAL) or the call
+            // (ENOSYS): the descriptors one by one
+            if syscall(
+                SYS_CLOSE_RANGE,
+                3 as std::ffi::c_uint,
+                !0 as std::ffi::c_uint,
+                CLOSE_RANGE_CLOEXEC,
+            ) != 0
+            {
+                for fd in 3..=highest {
+                    let flags = fcntl(fd, F_GETFD);
+                    if flags >= 0 {
+                        fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+                    }
+                }
+            }
+            Ok(())
+        });
+    }
+}
+
+pub fn run(ctx: &Context, args: EditArgs) -> Result<Output> {
     let (_, logbook) = ctx.open_logbook()?;
     let path = resolve(ctx, &logbook, &args.what, args.editor)?;
     let editor = if args.editor {
@@ -81,7 +293,7 @@ fn resolve(ctx: &Context, logbook: &Logbook, what: &str, editor: bool) -> Result
     Ok(match what {
         "case" => {
             let id = cases::active_case(logbook)
-                .ok_or_else(|| Error::user("no active case; name one: `seldon open C-YYYY-NNN`"))?;
+                .ok_or_else(|| Error::user("no active case; name one: `seldon edit C-YYYY-NNN`"))?;
             cases::find(logbook, &id)?.path
         }
         "journal" => {
@@ -111,7 +323,7 @@ fn resolve(ctx: &Context, logbook: &Logbook, what: &str, editor: bool) -> Result
             .ok_or_else(|| Error::user(format!("unknown decision {id}")))?,
         other => {
             return Err(Error::user(format!(
-                "cannot open `{other}`: use case, journal, ledger, status, logbook, C-YYYY-NNN or ADR-NNNN"
+                "cannot edit `{other}`: use case, journal, ledger, status, logbook, C-YYYY-NNN or ADR-NNNN"
             )));
         }
     })
@@ -206,6 +418,12 @@ pub(crate) fn launch_detached(mut cmd: Command, stderr: Stdio) -> Run {
         .stdout(Stdio::null())
         .stderr(stderr)
         .process_group(0);
+    watch_start(cmd)
+}
+
+/// Spawns `cmd` as the caller set it up and watches it for
+/// [`LAUNCH_GRACE`] ([`launch_detached`]); never kills or reaps it later.
+fn watch_start(mut cmd: Command) -> Run {
     // ETXTBSY (as in `sys::run`): a just-written program still open for
     // writing in another thread's forked child; brief, retry
     let mut spawned = cmd.spawn();

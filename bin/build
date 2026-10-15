@@ -1,0 +1,12 @@
+#!/bin/sh
+# Build both binaries: the engine (cargo, release, with the watcher) and the
+# window (app/bin/build: qmake6 and make). The omarchy-app loop reads
+# bin/{build,test,install}; Seldon has two toolchains behind it (ADR-0002).
+set -eu
+
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+
+cargo build --manifest-path "$ROOT/engine/Cargo.toml" --locked --release --features watch
+"$ROOT/app/bin/build"
+
+echo "Built $ROOT/engine/target/release/seldon and $ROOT/app/build/seldon-desk"

@@ -16,7 +16,7 @@ seldon drift --json
 seldon drift show <EVENT> --json
 seldon plan list --json
 seldon plan show <ID>
-seldon open logbook
+seldon edit logbook
 ```
 
 Then, in the logbook folder, the journal of the days around each change

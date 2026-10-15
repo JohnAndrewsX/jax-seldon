@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ ce4e1c26 -->
+<!-- source: en/05-cli-reference.md @ 25b84b54 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -36,7 +36,10 @@ Commands:
   plan              Plan and track cases: new, start, verify, done, drop, list, show
   decide            Create a decision record (ADR) and open it in the editor; accept a proposed one
   preview           Before the logbook exists: the last days' pacman transactions and the files edited under ~/.config, read-only, nothing written
-  open              Print the path of a logbook file; --editor opens it
+  open              Start the Seldon app (`seldon open <target>` is the old name of `edit`)
+  edit              Print the path of a logbook file; --editor opens it
+  changes           What the ledger recorded around a moment (a crash, a failed boot); read-only
+  skill             Print the Seldon agent skill; `install` puts it into the agent skill folders
   index             Rebuild index.json and the ledger/*.md views; --check validates
   status            Regenerate STATUS.md, the ledger views and index.json; print a summary
   hook              Agent hooks: record commands, print session context, install into or uninstall from a harness
@@ -475,6 +478,40 @@ Options:
 ```
 <!-- /help -->
 
+### seldon changes
+
+Was das Logbuch um einen Zeitpunkt herum aufgezeichnet hat: ein Absturz,
+ein fehlgeschlagener Start, „um zehn ging es kaputt“. Gib die Zeit als
+`2026-10-01 14:20` (deine Ortszeit), in RFC 3339, als `@<Sekunden seit
+1970>` oder als `now` an; ein Datum allein reicht nicht. `--before` und
+`--after` setzen das Fenster (Standard zwei Stunden davor, eine halbe
+Stunde danach; `30m`, `1h30m`, `2d`, je höchstens 31 Tage). Jede Änderung
+trägt ihre Klasse (routine, attention, crisis), wie der Changelog sie
+einordnet. Es liest nur das Ledger und schreibt nichts. Der Seldon-Skill
+lässt Agenten es nach einer Absturzanalyse aufrufen.
+
+<!-- help: seldon changes -->
+```text
+What the ledger recorded around a moment (a crash, a failed boot); read-only
+
+Usage: seldon changes [OPTIONS] --around <TS>
+
+Options:
+      --around <TS>        The moment to look around
+      --before <DURATION>  How far back from it [default: 2h]
+      --after <DURATION>   How far on from it [default: 30m]
+
+TS is an RFC 3339 time, a local `YYYY-MM-DD HH:MM[:SS]` (or with `T`),
+`@<seconds since 1970>`, or `now`. DURATION is a number with s, m, h or d,
+and may be combined: 90m, 1h30m, 2d.
+
+Examples:
+  seldon changes --around '2026-10-01 14:20' --json
+  seldon changes --around 2026-10-01T14:20:00+02:00 --before 6h --after 0m
+  seldon changes --around @1790857200 --json
+```
+<!-- /help -->
+
 ## Cases und Entscheidungen
 
 ### seldon plan
@@ -788,23 +825,60 @@ Options:
 
 ### seldon open
 
+Startet die Seldon-App. Im Terminal oder aus dem App-Starter läuft sie im
+Vordergrund; mit `--json` (das ruft die Pille in der Leiste auf) startet
+sie für sich, und `seldon` antwortet sofort mit `{"started": true}`. Ist
+die App nicht installiert, sagt es das: installiere das Paket `seldon`.
+
+`seldon open <Ziel>` ist der alte Name von `seldon edit <Ziel>`. Er geht
+bis 0.6.0 weiter und gibt einen Hinweis aus.
+
+<!-- help: seldon open -->
+```text
+Start the Seldon app (`seldon open <target>` is the old name of `edit`)
+
+Usage: seldon open [OPTIONS] [WHAT]
+
+Arguments:
+  [WHAT]  Deprecated: use `seldon edit <WHAT>`
+
+Options:
+      --editor         Deprecated: use `seldon edit <WHAT> --editor`
+
+Without a target: the Seldon app (--json: started detached).
+With a target: the old name of `seldon edit <target>`, removed in 0.6.0.
+
+Examples:
+  seldon open
+  seldon open --json
+```
+<!-- /help -->
+
+### seldon edit
+
 Gibt den Pfad einer Datei des Logbuchs aus. `case` ist der aktive Case,
 `journal` das heutige Journal, `ledger` die Ledger-Ansicht des Monats,
 `status` die `STATUS.md`, `logbook` der Ordner; eine Case- oder
 Entscheidungs-ID nennt diese Datei. `--editor` öffnet sie: im Terminal
-mit `$VISUAL` oder `$EDITOR`, aus dem Plugin mit Omarchys Editor-Starter.
+mit `$VISUAL` oder `$EDITOR`, aus dem Plugin oder der App mit Omarchys
+Editor-Starter. Bis 0.5.0 hieß das `seldon open <Ziel>`.
 
-<!-- help: seldon open -->
+<!-- help: seldon edit -->
 ```text
 Print the path of a logbook file; --editor opens it
 
-Usage: seldon open [OPTIONS] <WHAT>
+Usage: seldon edit [OPTIONS] <WHAT>
 
 Arguments:
   <WHAT>  case (the active one), journal (today), ledger (this month), status, logbook, or a case or decision id
 
 Options:
       --editor         Open it in the editor
+
+Examples:
+  seldon edit case
+  seldon edit journal --editor
+  seldon edit ADR-0003 --editor --json
 ```
 <!-- /help -->
 
@@ -1423,6 +1497,49 @@ Usage: seldon hook session-stop [OPTIONS]
 
 Options:
       --actor <ACTOR>  Who ends the session: human or agent:NAME [default: agent:claude-code]
+```
+<!-- /help -->
+
+### seldon skill
+
+Gibt den Seldon-Agenten-Skill (`SKILL.md`) aus, so wie diese Engine ihn
+mitbringt.
+
+<!-- help: seldon skill -->
+```text
+Print the Seldon agent skill; `install` puts it into the agent skill folders
+
+Usage: seldon skill [OPTIONS] [COMMAND]
+
+Commands:
+  install  Put the skill into every agent skill folder that exists (as `hook install skills`)
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+
+Examples:
+  seldon skill
+  seldon skill install --json
+  seldon skill install --replace
+```
+<!-- /help -->
+
+### seldon skill install
+
+Legt den Skill in jeden Agenten-Skill-Ordner, den es gibt, genau wie
+`seldon hook install skills`; ein zweiter Aufruf ändert nichts. Eine
+Kopie, die du bearbeitet hast, bleibt; `--replace` legt sie im Logbuch
+ab und installiert den Skill wie ausgeliefert. Zum Entfernen: `seldon
+hook uninstall skills`.
+
+<!-- help: seldon skill install -->
+```text
+Put the skill into every agent skill folder that exists (as `hook install skills`)
+
+Usage: seldon skill install [OPTIONS]
+
+Options:
+      --replace        Where you changed the skill, archive your copy to the logbook's archive/ and install it as shipped
 ```
 <!-- /help -->
 

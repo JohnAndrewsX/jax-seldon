@@ -1139,9 +1139,10 @@ fn every_command_in_the_skill_is_one_this_engine_has() {
 fn every_read_only_command_in_the_skill_runs_as_written() {
     // the words and flags exist (above); the values must too: `open
     // logbok --help` exits 0, `open logbok` does not
-    const READ_ONLY: [&[&str]; 6] = [
+    const READ_ONLY: [&[&str]; 7] = [
         &["plan", "list"],
         &["open"],
+        &["edit"],
         &["drift"],
         &["hook", "session-start"],
         &["doctor"],
@@ -1174,8 +1175,8 @@ fn every_read_only_command_in_the_skill_runs_as_written() {
     }
     for must in [
         "seldon plan list --status active --json",
-        "seldon open logbook",
-        "seldon open case",
+        "seldon edit logbook",
+        "seldon edit case",
         "seldon drift --crisis-only",
         "seldon hook session-start",
     ] {
@@ -1931,8 +1932,9 @@ fn an_update_stopped_half_way_leaves_a_core_whose_links_resolve() {
     let old_core = std::fs::read(Path::new(V020).join("SKILL.md")).unwrap();
     let mut saw_old = false;
     let mut saw_new = false;
-    // the update writes the changed and the new files, then the manifest
-    for n in 1..=5 {
+    // the update writes the changed and the new files (six since WP-229's
+    // `seldon edit` in triage.md), then the manifest
+    for n in 1..=6 {
         if target.exists() {
             std::fs::remove_dir_all(&target).unwrap();
         }

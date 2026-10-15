@@ -18,7 +18,8 @@ An agent started inside a logbook follows the logbook's own `AGENTS.md`; the lon
 - [`seldon doctor`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): engine, config, logbook, rules, Omarchy, snapper and git checks
 - [`seldon plan list` / `plan show <ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): the cases and one case
 - [`seldon drift` / `drift show <EVENT> --json`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#5-reconciliation-drift): open drift, crises first; one item and its group members
-- [`seldon open <case|journal|ledger|status|logbook|ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): prints the path of that file (without `--editor`)
+- [`seldon edit <case|journal|ledger|status|logbook|ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): prints the path of that file (without `--editor`)
+- [`seldon changes --around <time> --json`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): what the ledger recorded around a moment (a crash, a failed boot), read-only
 - [`seldon hook session-start`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#8-hooks): the session context — status, active case, last journal lines, lessons
 - [`seldon --version` / `contract-version`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): versions
 

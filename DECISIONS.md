@@ -2,13 +2,13 @@
 
 | ID | Title | Status |
 |---|---|---|
-| ADR-0001 | Name, identifiers and binary name | accepted |
-| ADR-0002 | Engine in Rust, plugin in QML, JSON contract between them | accepted |
+| ADR-0001 | Name, identifiers and binary name | accepted; package name, app id and the `jax-seldon` symlink superseded in part by ADR-0056 (proposed) |
+| ADR-0002 | Engine in Rust, plugin in QML, JSON contract between them | accepted; superseded in part by ADR-0056 (proposed): an app in C++/Qt Quick joins, the contract couples all three |
 | ADR-0003 | Markdown is the record; the ledger's JSONL is the machine source | accepted |
-| ADR-0004 | Engine ships via AUR, plugin stays thin | accepted |
+| ADR-0004 | Engine ships via AUR, plugin stays thin | accepted; install route superseded in part by ADR-0056 (proposed): the package `seldon` |
 | ADR-0005 | No daemon by default; shell-timer driven capture | accepted |
 | ADR-0006 | Logbook follows the Hermes project layout | accepted |
-| ADR-0007 | Language policy | accepted |
+| ADR-0007 | Language policy | accepted; consequence "UI i18n deferred" superseded in part by ADR-0057 (proposed) |
 | ADR-0008 | Drift is a first-class object | accepted; meaning of Crisis superseded in part by ADR-0028 |
 | ADR-0009 | Monorepo for development, `jax-seldon-plugin` for the installable plugin | accepted |
 | ADR-0010 | Default logbook path and the wizard's path options | accepted |
@@ -17,15 +17,15 @@
 | ADR-0013 | Drift is grouped per pacman transaction; routine upgrades are yellow | accepted; §3 superseded in part by ADR-0028; §5 absent read as absent or stale (WP-160; rule in SPEC-ENGINE §4 pacman, "Stale lock") |
 | ADR-0014 | Event attribution, zones, plugin version source, agent file edits | accepted; §2 superseded in part by ADR-0028 |
 | ADR-0015 | Drift-group schema rules and the proposal token rule (supersedes ADR-0012 §13) | accepted |
-| ADR-0016 | Engine install and update commands go through the AUR helper (supersedes ADR-0004 on the install command) | accepted |
+| ADR-0016 | Engine install and update commands go through the AUR helper (supersedes ADR-0004 on the install command) | accepted; superseded in part by ADR-0056 (proposed): `omarchy pkg add seldon` |
 | ADR-0017 | Hook command events carry the start time; attribution rules sharpened (clarifies ADR-0014 §1) | accepted |
 | ADR-0018 | No `plugin-update` events for first-party plugins (clarifies ADR-0014 §3) | accepted |
 | ADR-0019 | Green zone for agent commands no collector tracks (clarifies ADR-0014 §2) | accepted |
 | ADR-0020 | The index lists at most 200 open drift items, crises first | accepted |
 | ADR-0021 | The index folds `case` from any resolution that carries one (clarifies ADR-0012 §8) | accepted |
-| ADR-0022 | The AUR package builds against glibc; the static musl binary is a release asset | accepted |
+| ADR-0022 | The AUR package builds against glibc; the static musl binary is a release asset | accepted; superseded in part by ADR-0056 (proposed): the package `seldon` carries the engine and the app |
 | ADR-0023 | An agent verifies, the human closes; risk levels R0–R3 defined, enforced by advice only | accepted; §1 superseded in part by ADR-0027 |
-| ADR-0024 | While the AUR package does not exist, the plugin's one-click engine install runs the verified GitHub installer | accepted |
+| ADR-0024 | While the AUR package does not exist, the plugin's one-click engine install runs the verified GitHub installer | accepted; superseded in part by ADR-0056 (proposed): the installer ships both binaries until the package exists, then the curl constant goes |
 | ADR-0025 | The index clips long texts of events and drift items with a visible marker (extends ADR-0020); the reference clip followed in WP-077 | accepted |
 | ADR-0026 | Snapper access by a read grant on the snapshot directory; doctor prints the revert of the old opt-in (supersedes ADR-0011) | accepted |
 | ADR-0027 | Act, then account: a case the user started authorises the agent; the agent verifies and closes; only steps that can make the machine unbootable need the user's go | accepted; H2 amended in part by ADR-0029, §1 prompt target by ADR-0031 |
@@ -35,18 +35,18 @@
 | ADR-0031 | Password prompts follow Omarchy: as few as the route allows; snapshot `root` only | accepted |
 | ADR-0032 | The launch marker serves a session only while its case is open; existing installs' hooks go user-wide once | accepted |
 | ADR-0033 | A new logbook looks back 90 days and marks that history "before Seldon", without asking | accepted |
-| ADR-0034 | The plugin is a desk: one wide panel with sidebar, list and detail; Prime Radiant and the graph live inside | accepted |
+| ADR-0034 | The plugin is a desk: one wide panel with sidebar, list and detail; Prime Radiant and the graph live inside | accepted; superseded in part by ADR-0056 (proposed): the desk becomes the app window in 0.5.0, the pill stays, §7's shim removal lands in 0.5.0 |
 | ADR-0035 | Contract v2: the case's risk in the ledger (`case-updated`, `meta.risk`), the autocommit result, `meta.truncated`, the `state-loss` kind, `decisions[].cases`, the triage proposal | accepted |
 | ADR-0036 | Agent prompts carry identifiers, never logbook text; proposals are evidence or nothing (`agent ask`, `drift propose|apply|discard`) | accepted |
 | ADR-0037 | ADR-0028 amended: toggles are routine both ways, `system-link` narrowed, the `authorized_keys` files default persistence paths | accepted |
 | ADR-0038 | The index carries what the desk's details show: `drift[].rule`, `cases[].intent`/`result`/`source`, `decisions[].lead` (optional, contract 2) | accepted; §2/§3 amended by ADR-0048 |
 | ADR-0039 | The hook records an agent's privileged commands (`sudo`, `doas`, `pkexec`, `run0`); events, not drift, in contract 2 | accepted |
 | ADR-0040 | Accepting a decision is the user's act: `seldon decide accept`, one click in the desk | accepted |
-| ADR-0041 | One agent per case: a session is a window; `agent focus`, `agent sessions`, `--again`, `open --editor` focuses its window | accepted |
+| ADR-0041 | One agent per case: a session is a window; `agent focus`, `agent sessions`, `--again`, `open --editor` focuses its window | accepted; stands, its `open --editor` becomes `edit --editor` under ADR-0058 (proposed) |
 | ADR-0042 | ADR-0028 amended: a file pacman left is attention, a crisis beside the boot and login files (mkinitcpio, Limine, PAM) | accepted |
 | ADR-0043 | A pacman transaction that did not complete says so: `meta.txStatus` `failed`/`interrupted`/`unfinished` (optional, contract 2) | accepted; its Consequence on a stale lock is resolved by WP-160 (rule in SPEC-ENGINE §4 pacman, "Stale lock") |
 | ADR-0044 | The desk reads a case's whole Intent (`plan show --json` `intent {text, lines, truncated, hidden}`) and imports task files (`import task`): two plugin-command rows; an imported Intent fits the desk, nothing invisible reaches it | accepted |
-| ADR-0045 | EASY \| PRO: one desk, two views; the mode is the plugin setting `deskMode`, a fresh install starts in EASY | accepted |
+| ADR-0045 | EASY \| PRO: one desk, two views; the mode is the plugin setting `deskMode`, a fresh install starts in EASY | accepted; superseded in part by ADR-0056 (proposed): EASY \| PRO retired |
 | ADR-0046 | Recently edited files under `~/.config` outside the watch paths in the index (`system.recentConfig`, optional, contract 2); `seldon config watch` adds one to `watchPaths` (the desk's *Watch*); amends ADR-0047 §3 (one walker: root `~/.config`, file links inside it) | accepted |
 | ADR-0047 | Before the logbook exists, the desk shows what the machine remembers on its own: `seldon preview --json` (pacman transactions, files edited under `~/.config`, 7 days, read-only), one plugin-command row and `preview.schema.json` (§3 amended by ADR-0046) | accepted |
 | ADR-0048 | ADR-0038 amended: the invisible set is every default-ignorable code point; redaction reads the text without invisible and control characters and as given | accepted |
@@ -57,6 +57,9 @@
 | ADR-0053 | The engine keeps `index.json` under its 1 MB budget: over it, the lists lose their oldest rows in a fixed order (history first, crisis rows last), `summary` keeps the counts of the whole index, an oversized index is never written; no schema change (amends CONTRACT.md rule 5) | accepted; §2 (rung 24), §5 and consequences (a)/(b) amended by ADR-0054 |
 | ADR-0054 | ADR-0053 amended: `index.events` holds the event of every listed drift item, however old, and the newest of the rest (500, the schema's cap); the cut keeps the open changes an unapplied triage proposal names until a rung right before the crisis rows; no schema change | accepted |
 | ADR-0055 | A pinned Omarchy shell tree in CI: `packaging/omarchy-pin` is Omarchy stable's tree (E93; its digest equals the stable `omarchy` package's at each refresh) and is never a second reference; a separate CI job runs qmllint and the four Quickshell harnesses, as the hosts do, against a sparse checkout of the pin, with Quickshell and Qt from Omarchy's stable mirror; Omarchy's text-format scan runs only in CI (the package installs no `test/`; the dev host's stricter check is `plaintext.test.js`); red in CI blocks a release, red on the test host (rc) is a failed rehearsal, red on the dev host (edge) a forward-compatibility finding; a stable+rc matrix only if the two pins ever differ; what CI never claims | accepted (E94) |
+| ADR-0056 | Seldon is an Omarchy app: the Rust engine stays, a C++/Qt Quick app `seldon-desk` started by `seldon open` replaces the desk (0.5.0), the plugin becomes the pill and the capture timer, one package `seldon`; the one job; four views (Changes, Plan, Record, Radiant); EASY \| PRO retired; recorded exceptions to the omarchy-app skill (two binaries, exit codes 0–4, no undo); supersedes in part ADR-0001, 0002, 0004, 0016, 0022, 0024, 0034, 0045 | proposed (E96 delegation; operator accepts) |
+| ADR-0057 | UI strings through catalogs: English is the source; `Commons.Translations` in the pill, the template `Translator` in the app; `en` and `de` in 0.5.0, the other 48 in 0.6.0; the language-file read is display, not collection; supersedes in part ADR-0007's consequence | proposed (E96 delegation; operator accepts) |
+| ADR-0058 | `seldon open` is the app; `seldon edit` opens a logbook file (`open <target>` a deprecated alias until 0.6.0); `seldon skill [install]`; `seldon changes --around`; exit codes stay 0–4; one CONTRACT.md row renamed, no `contractVersion` bump | proposed (E96 delegation; operator accepts) |
 | ADR-0059 | ADR-0028 amended: a config change whose content is what one of Omarchy's commands writes to a file Omarchy ships no copy of (`omarchy language`, the default agent and dictation backend; built from `$OMARCHY_PATH` alone) is routine `omarchy-written`, also the session locale under `~/.config/uwsm/**`; those commands prove their files for attribution | accepted (E96 delegation, orchestrator 2026-10-14; operator confirms; stage 2 with the 0.4.1 release) |
 | ADR-0060 | ADR-0028 amended: `alwaysRed`'s `omarchy`, `omarchy-settings` and `linux-omarchy` also match the edge twins `omarchy-dev`, `omarchy-settings-dev` and Omarchy's other kernels (not `-headers`, `-docs`, `-debug`), lists `init` wrote included; a channel switch is one item, rule `omarchy-channel`, a crisis outside a case like any named `alwaysRed` change; its Omarchy `update` row is routine `omarchy-update` | accepted (E96 delegation, orchestrator 2026-10-14; operator confirms; stage 2 with the 0.4.1 release) |
 

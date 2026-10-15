@@ -1,6 +1,8 @@
 # PLAN.md — Phases and work packages
 
-Five phases. Each phase ends with something the operator can use. Work packages
+Eight phases (0–7). Phases 5–7 are proposed with ADR-0056–0058 (E96
+delegation; the operator accepts) and summarised on one page in
+[ROADMAP.md](ROADMAP.md). Each phase ends with something the operator can use. Work packages
 (WP) are the unit the orchestrator assigns; each has acceptance tests the
 orchestrator can run without a human. Roles: see ORCHESTRATION.md.
 
@@ -69,13 +71,65 @@ trace, and resolves drift without a terminal.
 | WP-042 | Store submission preparation for the plugin (`work/*/WP-042.md`, `packaging/store/`) | Docs | — | README without `curl … \| bash` fences, privilege wording in the store's form; predicted baseline without findings, capabilities `privilege` and `package-manager`; submission body for the operator. Filing after `v0.2.0` on the operator's go |
 | WP-043 | The operator's own logbook migration from `~/Omarchy-Agent` (optional) | Engine | WP-024 | importer maps kit cases/journal into Seldon layout; dry-run report first |
 
+## Phase 5 — Seldon is an Omarchy app (0.5.0)
+
+Proposed (ADR-0056, ADR-0057, ADR-0058). Works on the branch `app`, which
+merges into `next` only after the operator accepts the ADRs. The gate is
+[APP-PARITY.md](APP-PARITY.md), not a date. Rows marked — are queued by
+the orchestrator when their dependencies land.
+
+| WP | Title | Role | Depends on | Done when |
+|---|---|---|---|---|
+| WP-227 | The app decided: ADR-0056–0058, CONCEPT v2, this phase, ROADMAP, the parity list, the proposed AGENTS.md rows | Architect | — | docs check green; every superseded ADR named in DECISIONS.md; no AGENTS.md or PROJECT.md edit |
+| WP-228 | App skeleton: `app/` (qmake6), `main.cpp`, `Theme`, `Translator`, `Backend` (index watch, off-thread parse, fixed-argv `QProcess`), `Main.qml` with `?`, `Q`, Space, the four states, and the *Changes* view reusing `Model.js`/`Tones.js` | App | — | `app/bin/build` and `app/bin/test` green; no 6.12-only API; no symlink, no `qs.Ui`, no hex colour outside the `Theme` fallback; no QML warning; a fixture screenshot |
+| WP-229 | Engine: `open` (the app), `edit`, the `open <target>` alias, `skill`, `changes --around`; CONTRACT.md row `edit` | Engine | — | the existing `open` tests pass through the alias; a test per command; `skill install` twice is idempotent; `just check` green |
+| WP-230 | Packaging as `seldon`: PKGBUILD with both binaries, `.desktop`, icon, `.install`, the plugin under `/usr/share/seldon/plugin/`; CI and release builds with Qt from Omarchy stable's mirror; an OPR recipe draft (not submitted); root `bin/` wrappers | Scaffold | WP-228's `bin/build` | `just check-packaging` green; `makepkg -f` in the CI container builds both binaries; the file list matches |
+| — | *Plan* view: cases by status, the case detail, start/verify/complete/drop/reopen, new case, one agent per case, import tasks through the portal picker | App | WP-228, WP-229 | the APP-PARITY rows for Work (8d, 8g, 3c, 10d) pass offscreen |
+| — | *Record* view: journal and note, decisions (accept, new), dossier, memory, as documents | App | WP-228, WP-229 | the APP-PARITY rows 10a–10i pass offscreen |
+| — | *Radiant* view: the charts and the graph (WP-163's scope moves here) | App | WP-228 | the APP-PARITY rows 9 and 11 pass offscreen |
+| — | The pill: plugin cut to pill and capture timer, left click `seldon open --json` (detached, ADR-0058 §1), catalogs `en`/`de` (ADR-0057), the desk and the `jax.seldon.panel` shim removed (WP-188's part), binding `{ launch = "seldon" }` | Plugin | WP-229, the three views | validate, qmllint, `bar-view.sh`, `service-states.sh` green in `en` and `de`; no desk file left |
+| — | App catalogs: `de.json` for every string, the language look (`en`, `de`, `ar` mirrored), the bare-literal check | App | the three views | no bare visible literal; labels fit in `de` |
+| — | README in the omacom shape (screenshot first, `omarchy pkg add seldon`, keys table, command line), user guide en/de, CHANGELOG **Breaking** | Docs | the pill | docs check green |
+| — | Release 0.5.0: the parity run, acceptance record, test host smoke, stage-2 review | Orchestrator | all above | every APP-PARITY row app or drop; the daily acts pass; CI green on stable |
+
+**Phase 5 exit:** the operator opens Seldon from the launcher, resolves a
+change, works a case, and the desk is gone without a missing act.
+
+## Phase 6 — Contract 3 (0.6.0)
+
+| WP | Title | Role | Depends on | Done when |
+|---|---|---|---|---|
+| — | Contract 3 ADR (advisor-written): crash metadata, the `changes --around` fields in the index, reports as records; `contractReadableFrom` per ADR-0051 | Architect | Phase 5 | accepted by the operator; schema, fixtures, both readers in one PR |
+| WP-185 | Crashes in the record, re-scoped to "record and answer": `COREDUMP_*` metadata as events (E27); no Seldon crash UI | Engine | contract 3 ADR | fixtures → events; idempotent; the skill points `diagnose-crash` at `changes --around` |
+| WP-186 | Reports remembered, re-scoped: a report the user files through Omarchy's flow is recorded, never drafted by Seldon | Engine | contract 3 ADR | as its WP, re-scoped |
+| — | The other 48 languages, agent-made and sample-reviewed (ADR-0057 §7) | App + Plugin | Phase 5 | every registry code has a catalog; the sampling review recorded |
+| — | Capture hooks `post-update.d` and `post-boot.d` through `omarchy hook install` | Engine | — | installed and removed by Omarchy's command; a capture after `omarchy update` |
+| — | Package recipe for Omarchy's package repository ready (`source: local`, `auto_merge`, `upstream.watch`); submission is the operator's act | Scaffold | WP-230 | the recipe builds in the CI container |
+| — | Removals: the `open <target>` alias, the `jax-seldon` symlink | Engine + Scaffold | — | CHANGELOG **Breaking**; tests updated |
+| WP-189 | Graph: the layouts and the whole-logbook export, in the app | App | *Radiant* | as its WP, in the app |
+
+**Phase 6 exit:** crashes and their surroundings are on the record, Seldon
+speaks every Omarchy language, and the package can be submitted.
+
+## Phase 7 — 1.0.0
+
+| WP | Title | Role | Depends on | Done when |
+|---|---|---|---|---|
+| — | The package published (Omarchy's package repository or the AUR; the operator's acts) | Operator | Phase 6 | `omarchy pkg add seldon` installs it on a fresh Omarchy |
+| — | One Omarchy stable cycle without a contract change; exit-code policy final (ADR-0058 §5); SPEC-LOGBOOK frozen | Orchestrator | the package | the operator's go for 1.0.0 |
+
+**Phase 7 exit:** 1.0.0, and "breaking = major" from then on.
+
 ## Milestones
 
 - **M0** Phase 0 exit — target: first weekend.
 - **M1** pill in the bar.
 - **M2** planning desk.
 - **M3** Prime Radiant.
-- **M4** public release 1.0.0.
+- **M4** public release (0.1.0, 2026-10-02; the 1.0.0 it once named is M7).
+- **M5** Seldon is an Omarchy app (0.5.0; proposed, ADR-0056).
+- **M6** contract 3 and every Omarchy language (0.6.0).
+- **M7** 1.0.0.
 
 No dates beyond M0 on purpose; the orchestrator reports velocity after
 Phase 0 and the operator sets the rest.

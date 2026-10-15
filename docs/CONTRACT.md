@@ -241,7 +241,9 @@ seldon --version --json
 seldon status --json
 seldon capture --all --json --quiet
 seldon log [--case <id>] --json -- <text>       # free text is one argument after `--`; --json before it
-seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # path reported as JSON; the engine launches the editor (or focuses the terminal window it opened on the path, ADR-0041)
+seldon edit <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # WP-229 (engine 0.5.0): path reported as JSON {what, path, editor}; the engine launches the editor (or focuses the terminal window it opened on the path, ADR-0041); fixture commands/edit.json
+seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # deprecated alias of the `edit` row, same JSON (plus a note on stderr); what plugin 0.4 runs; removed in 0.6.0
+seldon open --json                              # WP-229 (engine 0.5.0): the pill starts the Seldon app detached (own session, stdio /dev/null); {"started": true}, exit 0, or the error object, exit 1; fixture commands/open-app.json
 seldon plan new --zone <z> --risk <r> [--area <slug>] [--priority <p>] --json -- <title>
 seldon plan start|verify|done|drop <id> --json   # id validated by the schema regex; the engine enforces the transition
 seldon agent start <caseId> --json              # active case only; the engine launches the configured agent launcher detached (WP-022)
@@ -260,7 +262,7 @@ seldon agent ask triage --json                  # WP-124, ADR-0036: launches the
 seldon agent ask drift|case <id> --json          # Ask agent on an event (open drift only) or a case detail
 seldon drift apply <proposalId> [--item <eventId>]… --json   # applies index.triage's proposal as the user; a crisis only by --item
 seldon drift discard <proposalId> --json         # removes the proposal file; the logbook is untouched
-seldon decide --no-edit --json -- <title>        # then `open <newId> --editor --json` from the result
+seldon decide --no-edit --json -- <title>        # then `edit <newId> --editor --json` (plugin 0.4: `open`) from the result
 seldon decide accept <ADR-NNNN> --json           # WP-135, ADR-0040: Accept, armed twice; a proposed decision only; the user's act (an agent is refused)
 seldon rebuild --json
 seldon update-impact --json
@@ -268,6 +270,12 @@ seldon doctor --only rules --json               # WP-101: read-only, on panel op
 seldon rules update --json                      # WP-101: the rules banner's one click; rewrites only the engine's block
 seldon config watch --json -- <path>           # WP-139, ADR-0046: Watch on a row of system.recentConfig; the path one argument after `--`; only config.toml's watchPaths changes; answers {added, path, coveredBy, config}
 ```
+
+`edit` is `open <target>` renamed (WP-229, ADR-0058, proposed): the same
+argument list and the same JSON, so no `contractVersion` bump (E42): a
+released 0.4 plugin keeps running `open <target>` against a 0.5 engine,
+which answers it as `edit` with a note on stderr the plugin does not read.
+A plugin that runs `edit` or `open --json` needs engine 0.5.0 (`engineMin`).
 
 The plugin never runs `seldon drift propose` (the agent's command; ADR-0036
 §2). IDs are validated by regex in QML before being passed. Free text is passed

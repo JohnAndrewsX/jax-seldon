@@ -5,6 +5,8 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 ## 1. Principles
 
 1. Single static binary, no runtime deps, no network, no async.
+   (From 0.5.0 the package also carries the app `seldon-desk`, a dynamic
+   Qt binary; this rule stays the engine's, ADR-0056 §9, proposed.)
 2. Only writer of the logbook and the index. Everything else reads.
 3. Idempotent collectors with persistent cursors.
 4. Every command has `--json`; human output is for terminals, JSON is for
@@ -40,6 +42,13 @@ File modes (WP-064): a directory the engine creates (the logbook and its folders
 Linked folders and files (WP-168, WP-171, ADR-0049): every folder of the logbook the engine creates or writes a file in (`decisions/`, `work/queued|active|completed/`, `journal/` and its year folders, `ledger/`, `areas/<area>/`, `system/`, `outputs/`, `archive/`, `memory/`, `.seldon/` and `.seldon/imports/`, the harness kit's `.claude/` folders) must be a real directory inside the logbook (`logbook::checked_dir`). Each part below the root is checked without following links; a part that is a symbolic link (a write would land wherever it points) or no directory is refused with exit 1, "`<folder>` is a symbolic link | no directory, not a folder of the logbook; make it a folder and run the command again", and nothing is written. A part that does not exist yet is created (0700). Every file of the logbook the engine writes, replaced or appended (the journal days, the case files from and to, `.seldon/active-case` and `.seldon/imports/*`, `areas/<area>/README.md`, `ledger/*.jsonl` and the views `ledger/*.md`, `STATUS.md`, `DECISIONS.md`, `AGENTS.md`, `system/*.md`, `outputs/*.md`, the kit's files), must be a regular file or not exist yet (`logbook::checked_file`: its folder first, then the file without following a link): a symbolic link there (a dangling one too) is refused with exit 1, "`<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again", and anything else in a file's place (a directory, FIFO, socket, device) with "is no regular file"; nothing is written, and the file is not read first (a FIFO is never opened). The write primitives of the logbook refuse the same and never resolve a link: one that appears after the check is replaced by the rename, never its target, and the ledger's append opens the month file with `O_NOFOLLOW` and takes only a regular file (ADR-0049 §4). A generated view is skipped, not refused: when `STATUS.md`, `DECISIONS.md` or a month view `ledger/<month>.md` is a link or no regular file, `status` and `index` leave it as it is, warn "`<file>` not updated: `<file>` is a symbolic link, not a file of the logbook; make it a file and run the command again" (human and `--json` `warnings`), exit 0 and still write `index.json`; a linked `ledger/` folder is still refused. A capture's silent upgrade of the rules block warns instead ("AGENTS.md: Seldon's agent rules were not updated: …") and goes on; `decide`'s fill of `DECISIONS.md` after the decision is written is a warning too. Writers that create a file with `O_EXCL` (`write_new`, `init`, the archives) never follow a final link; their path is checked as well, so a link gives the reason. The setup kit's copy refuses a link where a file goes (it used to count an existing one as kept) and makes each file with `O_CREAT|O_EXCL` and the kit file's mode (a file made since the check is kept). `write_atomic` and `write_generated` are called only for files outside the logbook; `tests/linked_files.rs` lists every call site. An omarchy-agent import whose marker is a link is refused, not taken as "already imported". The root itself may be a link: a logbook kept on another disk goes there whole (the logbook folder itself may be a link, or a bind mount). A command checks before its first write and before the ledger: a command that writes a case checks all three case folders (a case moves between them; the next id is read from all three), `drift link|explain|dismiss|apply` (the ledger, and the case folders but for a dismissal) and `import --apply` check their folders before they read them, so a file in a folder's place is refused with the reason, not failed as an unreadable listing. A `.seldon` that is no directory is no logbook (exit 3). Reading through a linked folder or file is unchanged (the index still shows a linked journal day), but only a regular file is read, and at most a cap of it (§3, "Bounded reads"); `doctor`'s `layout` row names every linked folder and file where the engine writes (§3); `proposals/` in the state directory has its own check (WP-124). `hook install|uninstall claude-code --settings <file>` writes the file the user names where it is, also through a linked `.claude/` of the logbook: the user chose the path, so it is not checked.
 
 ## 3. Commands
+
+> [ADR-0058](../decisions/ADR-0058-seldon-open-is-the-app.md) (proposed;
+> E96 delegation, the operator accepts) changes this section in 0.5.0:
+> bare `seldon open` starts the app; `seldon open <target>` becomes
+> `seldon edit <target>` (the old form a deprecated alias until 0.6.0);
+> new `seldon skill [install]` and `seldon changes --around`. The
+> synopsis below stays normative for 0.4.x; WP-229 rewrites it.
 
 ```
 seldon init [--path DIR] [--defaults | --ask | --non-interactive] [--language de|en]
@@ -599,7 +608,7 @@ seldon hook install claude-code [--settings FILE]
 seldon hook uninstall claude-code [--settings FILE]
                                                # WP-049: the inverse of install (§8); `generic` has
                                                # nothing installed, so nothing to uninstall
-seldon hook install skills | uninstall skills  # WP-094, ADR-0027 §8: the Seldon agent skill
+seldon hook install skills | uninstall skills  # WP-094, ADR-0027 §8 (`seldon skill install`, WP-229): the Seldon agent skill
                                                # (engine/assets/skills/seldon/, compiled in) into every
                                                # agent skill folder that exists: ~/.agents/skills,
                                                # ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills,
@@ -734,8 +743,30 @@ seldon config watch <PATH> [--json]           # ADR-0046, WP-139: appends PATH (
                                                # --json → {added, path, coveredBy (the watch path that
                                                # covers it, else null), config}. The desk's *Watch* runs
                                                # `config watch --json -- <path>` (CONTRACT.md)
+seldon open [--json]
+# WP-229, ADR-0058: the Seldon app — the program `$SELDON_DESK` names (an
+# absolute path, else exit 1; for development) or /usr/lib/seldon/seldon-desk.
+# Without --json it runs in the foreground: the engine replaces itself with it
+# (exec, no arguments), so the `.desktop` file's `Exec=seldon open` and a
+# terminal see the app's own output and exit code. With --json (the bar's
+# pill) it is started detached: setsid(2) (a session and process group of its
+# own, no controlling terminal), stdin, stdout and stderr on /dev/null, every
+# other descriptor close-on-exec (close_range(2), else one by one), never
+# waited for or killed; a non-zero exit or a signal within 200 ms is an error
+# (exit 1, the error object), otherwise {"started": true} (exit 0) — an exit 0
+# in that time too: a second `seldon open` hands over to the open window. The
+# app never runs under the caller (`omarchy-shell`). A missing app is exit 1,
+# "The Seldon window is not installed (<path> is missing). Install the seldon
+# package."; a path that is no regular executable file, or one whose
+# interpreter or loader is missing, is exit 1 with its own sentence. No
+# logbook, lock or config is read: the app shows its own states.
 seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
-# prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
+# deprecated (WP-229): the old name of `seldon edit`, the same command and the
+# same JSON, with one note on stderr (none under --quiet): "`seldon open
+# <target>` is now `seldon edit <target>`; the old form goes in 0.6.0".
+# Kept for the plugins and agents of 0.4 and 0.5; removed in 0.6.0.
+seldon edit <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
+# WP-229: what `open <target>` was until 0.5.0. Prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
 # path as one argument; without a terminal (the plugin) it launches
 # `omarchy-launch-editor <path>` DETACHED (null stdio, own process group, never
 # killed or waited for): a non-zero exit within 200 ms is an error (exit 1),
@@ -748,6 +779,34 @@ seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--jso
 # "program"} (exit 0; the human line says so). A GUI editor's window, no
 # `hyprctl` (not a Hyprland session) or a failed focus: it launches as before.
 # The terminal path is unchanged. `decide`'s editor follows the same rule.
+# --json → {what, path, editor: null | the object above}
+seldon changes --around <TS> [--before DURATION] [--after DURATION] [--json]
+# WP-229: what the ledger recorded around a moment — a crash, a failed boot —
+# the timeline query the skill's crash.md gives an agent after Omarchy's
+# diagnose-crash. TS: RFC 3339, a local `YYYY-MM-DD HH:MM[:SS]` (or with `T`;
+# a time the clock skipped is exit 1, one it passed twice its first, still in
+# summer time), `@<seconds since 1970>` or `now` (`SELDON_NOW` counts); a date
+# alone is exit 1 (a time is needed; the message names the forms). DURATION:
+# one or more `<number><s|m|h|d>` (30m, 1h30m), each side at most 31d;
+# defaults 2h before, 30m after; a window that leaves the years 0001–9999 is
+# exit 1. Ledger only and read-only: no lock, no capture, no index, nothing
+# written; needs the logbook (exit 3). The events are the ledger lines of
+# [around − before, around + after] as they were written (redacted then),
+# every kind, in time order; at most 500: over that the ones nearest the
+# moment are kept and `omitted` counts the rest. Each carries `class`
+# (ADR-0058 §6): routine, attention or crisis, ADR-0028's verdict as the index
+# gives it to the change's drift item (a pacman transaction's members
+# together; `attention = "all"` by zone), resolved or not, without the lift an
+# open case's Plan gives a routine item; null for what is no machine change
+# (cases, notes, snapshots, sessions, resolutions).
+# --json → {around, from, to, events: [<ledger line> + class], omitted}
+seldon skill [install [--replace]] [--json]
+# WP-229: the Hype-shaped front of the agent skill. `seldon skill` prints the
+# skill's SKILL.md as this engine ships it (--json → {skill, file, text,
+# files: [the eight names]}); nothing read or written. `seldon skill install`
+# is `seldon hook install skills` (below), its output and exit codes, and
+# `--replace` is its `--replace` (the same code); uninstalling stays `hook
+# uninstall skills`.
 seldon preview [--days N] [--json]
 # WP-138, ADR-0047: before the logbook exists, what the machine remembers on
 # its own. Read-only: no logbook needed (one that exists is not read), no lock,
@@ -1210,7 +1269,7 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
                          1 unknown source or --source with --all; 3 not initialised; 4 lock held
 ```
 
-`log`, `event`, `plan *`, `open` with `--json` return `{"event":
+`log`, `event`, `plan *` with `--json` return `{"event":
 <ledger line>, "git": {...}}` plus, for plan steps, `from`, `to`,
 `movedFrom`, `activeCase`, `journal` (WP-006), `warnings` (a list of
 strings, empty unless `plan start` warned or the capture of `plan
@@ -1232,8 +1291,8 @@ takes the variable after the ledger attribution of a hook-recorded change
 (the agent command found names actor and case, as before) and only while the
 actor is still `system`; `log`'s one-line rule holds for an agent from the
 variable too; `log --tag T` stores `meta.tags`
-(comma-joined) and a `#tag` line in the journal; `open` also takes
-`logbook`, a case id or an ADR id; `seldon log --case` does not add a Log
+(comma-joined) and a `#tag` line in the journal; `edit` (and the
+deprecated `open <target>`) also takes `logbook`, a case id or an ADR id; `seldon log --case` does not add a Log
 line to the case (the fixture agrees). `seldon log` with `--actor agent:…` refuses
 a note that contains a line break (`\n`, `\r`, vertical tab, form feed,
 NEL, U+2028, U+2029; leading and trailing ones are trimmed first) with exit 1 and one
