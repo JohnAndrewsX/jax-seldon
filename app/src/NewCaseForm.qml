@@ -37,6 +37,14 @@ FocusScope {
     signal pressed()
     signal closeRequested()
 
+    // Return or Enter in a field: once per press; a held key's repeat
+    // does nothing (SPEC-PLUGIN §5.3: no field acts on `accepted`, which a
+    // repeat emits too).
+    function enterPressed(event) {
+        event.accepted = true
+        if (!event.isAutoRepeat) root.pressed()
+    }
+
     function focusTitle() {
         titleField.forceActiveFocus()
     }
@@ -146,9 +154,12 @@ FocusScope {
             objectName: "newCaseTitle"
             Layout.fillWidth: true
             placeholderText: qsTr("Title; Enter creates the case (twice to confirm)")
-            enabled: !root.pending
+            // Read-only, not disabled, while the engine works: the field
+            // keeps the keys, so typing on never reaches the view's keys.
+            readOnly: root.pending
             Material.roundedScale: theme.radius
-            onAccepted: root.pressed()
+            Keys.onReturnPressed: function(event) { root.enterPressed(event) }
+            Keys.onEnterPressed: function(event) { root.enterPressed(event) }
         }
 
         Choice {
@@ -183,9 +194,10 @@ FocusScope {
             objectName: "newCaseArea"
             Layout.fillWidth: true
             placeholderText: qsTr("Area (optional): lowercase letters, digits and -")
-            enabled: !root.pending
+            readOnly: root.pending
             Material.roundedScale: theme.radius
-            onAccepted: root.pressed()
+            Keys.onReturnPressed: function(event) { root.enterPressed(event) }
+            Keys.onEnterPressed: function(event) { root.enterPressed(event) }
         }
 
         RowLayout {

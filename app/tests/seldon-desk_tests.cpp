@@ -1231,6 +1231,9 @@ private slots:
 
         plan->setProperty("selectedId", "C-2026-003");
         QTRY_COMPARE(actionLabels(window.get()), QString("Hand to agent,To verification,Drop,Open in editor"));
+        // The filled button is the act Enter takes, never Hand to agent.
+        QVERIFY(find(window.get(), "caseAction-verify")->property("highlighted").toBool());
+        QVERIFY(!find(window.get(), "caseAction-agent")->property("highlighted").toBool());
         QTest::keyClick(window->window, Qt::Key_Return);
         QTRY_COMPARE(plan->property("armedWhat").toString(), QString("case:verify"));
         QTest::keyClick(window->window, Qt::Key_Return);
@@ -1745,6 +1748,327 @@ private slots:
         for (QQuickItem *item : allItems(window.get()))
             if (item->objectName().startsWith("choice-") && item->isVisible())
                 QVERIFY2(form.contains(rectOf(item)), qPrintable(item->objectName()));
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // ---- The window: review round 1 of WP-232 (the reviewer's reproductions)
+
+    void reviewAutoRepeatDrop() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        plan->setProperty("selectedId", "C-2026-004");
+        QTRY_VERIFY(find(window.get(), "caseAction-drop"));
+        QTest::simulateEvent(window->window, true, Qt::Key_X, Qt::NoModifier, "x", false);
+        QTest::qWait(50);
+        QTest::simulateEvent(window->window, true, Qt::Key_X, Qt::NoModifier, "x", true);
+        QTest::simulateEvent(window->window, false, Qt::Key_X, Qt::NoModifier, "x", false);
+        QTest::qWait(600);
+        qInfo().noquote() << "REVIEW autorepeat-x acts=" << acts(dir).join(" | ") << "armed=" << plan->property("armedWhat").toString();
+        QVERIFY(acts(dir).isEmpty());
+    }
+    void reviewAutoRepeatEnterCreate() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        QTest::keyClick(window->window, 'n');
+        QTRY_VERIFY(find(window.get(), "newCaseTitle")->hasActiveFocus());
+        for (const char c : QByteArray("Weekly"))
+            QTest::keyClick(window->window, c);
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", false);
+        QTest::qWait(50);
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", true);
+        QTest::simulateEvent(window->window, false, Qt::Key_Return, Qt::NoModifier, "\r", false);
+        QTest::qWait(600);
+        qInfo().noquote() << "REVIEW autorepeat-enter acts=" << acts(dir).join(" | ") << "armed=" << plan->property("armedWhat").toString();
+        QVERIFY(acts(dir).isEmpty());
+    }
+    void reviewFocusLostAfterRefusal() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        QVERIFY(write(dir.filePath("plan-exit"), "4\n"));
+        QVERIFY(write(dir.filePath("plan-out"), R"j({"error":{"code":4,"message":"locked"}})j"));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        QTest::keyClick(window->window, 'n');
+        QTRY_VERIFY(find(window.get(), "newCaseTitle")->hasActiveFocus());
+        for (const char c : QByteArray("Fix"))
+            QTest::keyClick(window->window, c);
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_COMPARE(find(window.get(), "newCaseError")->property("text").toString(), QString("locked"));
+        QTRY_VERIFY(!plan->property("pending").toBool());
+        QQuickItem *focus = window->window->activeFocusItem();
+        qInfo().noquote() << "REVIEW after-refusal titleFocus=" << find(window.get(), "newCaseTitle")->hasActiveFocus()
+                          << "activeFocus=" << (focus ? QString::fromUtf8(focus->metaObject()->className()) + "/" + focus->objectName() : "none")
+                          << "selected=" << plan->property("selectedId").toString();
+        QFile::remove(dir.filePath("plan-exit"));
+        // The user goes on typing the title: " paar"
+        for (const char c : QByteArray(" xx aa"))
+            QTest::keyClick(window->window, c);
+        QTest::qWait(600);
+        qInfo().noquote() << "REVIEW after-refusal acts=" << acts(dir).join(" | ") << "title=" << find(window.get(), "newCaseTitle")->property("text").toString()
+                          << "formOpen=" << plan->property("formOpen").toBool();
+        QCOMPARE(acts(dir).size(), 1);
+    }
+    void reviewKeysBehindTheForm() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        QTest::keyClick(window->window, 'n');
+        QTRY_VERIFY(find(window.get(), "newCaseTitle")->hasActiveFocus());
+        QTest::keyClick(window->window, Qt::Key_Escape);
+        QTest::qWait(100);
+        QTest::keyClick(window->window, 'x');
+        QTest::qWait(100);
+        qInfo().noquote() << "REVIEW behind-form armed=" << plan->property("armedWhat").toString() << "detailVisible=" << find(window.get(), "caseDetail")->isVisible()
+                          << "planResult=" << find(window.get(), "planResult")->property("text").toString();
+        QTest::keyClick(window->window, 'x');
+        QTest::qWait(600);
+        qInfo().noquote() << "REVIEW behind-form acts=" << acts(dir).join(" | ") << "formOpen=" << plan->property("formOpen").toBool();
+        QVERIFY(acts(dir).isEmpty());
+    }
+    void reviewFormClosesOnFirstIndex() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("index.json");
+        QVERIFY(writeFreshFixture(path, [](QJsonObject &index) {
+            index["cases"] = QJsonObject{{"queued", QJsonArray()}, {"active", QJsonArray()},
+                                         {"verification", QJsonArray()}, {"completed", QJsonArray()}};
+        }));
+        auto window = loadPlan(dir, options(dir, path), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        QTest::keyClick(window->window, 'n');
+        QTRY_VERIFY(find(window.get(), "newCaseTitle")->hasActiveFocus());
+        for (const char c : QByteArray("Ein p"))
+            QTest::keyClick(window->window, c);
+        QVERIFY(writeFreshFixture(path + ".tmp"));
+        QVERIFY(QFile::remove(path));
+        QVERIFY(QFile::rename(path + ".tmp", path));
+        QTRY_COMPARE(ids(plan).split(',').size(), 8);
+        QTest::qWait(100);
+        QQuickItem *focus = window->window->activeFocusItem();
+        qInfo().noquote() << "REVIEW first-index formOpen=" << plan->property("formOpen").toBool() << "selected=" << plan->property("selectedId").toString()
+                          << "activeFocus=" << (focus ? QString::fromUtf8(focus->metaObject()->className()) + "/" + focus->objectName() : "none");
+        for (const char c : QByteArray("aar"))
+            QTest::keyClick(window->window, c);
+        QTest::qWait(600);
+        qInfo().noquote() << "REVIEW first-index acts=" << acts(dir).join(" | ") << "title=" << find(window.get(), "newCaseTitle")->property("text").toString();
+        QVERIFY(acts(dir).isEmpty());
+    }
+    void reviewEnterUnderHelp() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        plan->setProperty("selectedId", "C-2026-005");
+        QTRY_VERIFY(find(window.get(), "caseAction-start"));
+        QTest::keyClick(window->window, '?', Qt::ShiftModifier);
+        QTRY_VERIFY(find(window.get(), "helpOverlay")->isVisible());
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTest::qWait(100);
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTest::qWait(600);
+        qInfo().noquote() << "REVIEW under-help acts=" << acts(dir).join(" | ") << "help=" << find(window.get(), "helpOverlay")->isVisible();
+        QVERIFY(acts(dir).isEmpty());
+    }
+    void reviewViewSwitchDisarms() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        plan->setProperty("selectedId", "C-2026-004");
+        QTRY_VERIFY(find(window.get(), "caseAction-drop"));
+        QTest::keyClick(window->window, 'x');
+        QTRY_COMPARE(plan->property("armedWhat").toString(), QString("case:drop"));
+        QTest::keyClick(window->window, '1');
+        QTest::keyClick(window->window, '2');
+        QTest::keyClick(window->window, 'x');
+        QTest::qWait(500);
+        qInfo().noquote() << "REVIEW view-switch acts=" << acts(dir).join(" | ") << "armed=" << plan->property("armedWhat").toString();
+        QVERIFY(acts(dir).isEmpty());
+    }
+
+    // A held key never confirms in Changes either: Enter held on the case
+    // picker, Return held in the reason field.
+    void changesHeldKeyNeverConfirms() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = load(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window->window);
+        QTRY_VERIFY(find(window.get(), "changesList")->property("count").toInt() > 0);
+        QTRY_COMPARE(window->backend->engineState(), QString("present"));
+        QQuickItem *view = find(window.get(), "changesView");
+        QQuickItem *detail = find(window.get(), "changeDetail");
+        view->setProperty("selectedId", "01M3VTGNY0NZG4AY80814WSKGR");
+        QTRY_VERIFY(find(window.get(), "resolveButton")->isVisible());
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_VERIFY(find(window.get(), "caseBox")->hasActiveFocus());
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", false);
+        QTRY_VERIFY(detail->property("armed").toBool());
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", true);
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", true);
+        QTest::simulateEvent(window->window, false, Qt::Key_Return, Qt::NoModifier, "\r", false);
+        QTest::qWait(400);
+        QVERIFY(acts(dir).isEmpty());
+        QVERIFY(detail->property("armed").toBool());
+        QTest::keyClick(window->window, Qt::Key_Escape);
+        QTRY_VERIFY(!find(window.get(), "caseBox")->hasActiveFocus());
+
+        view->setProperty("selectedId", "01M3VNJ9JGZ9169T01XCW16FT0");
+        QTRY_COMPARE(detail->property("action").toString(), QString("explain"));
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_VERIFY(find(window.get(), "reasonField")->hasActiveFocus());
+        for (const char c : QByteArray("mine"))
+            QTest::keyClick(window->window, c);
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", false);
+        QTRY_VERIFY(detail->property("armed").toBool());
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", true);
+        QTest::simulateEvent(window->window, false, Qt::Key_Return, Qt::NoModifier, "\r", false);
+        QTest::qWait(400);
+        QVERIFY(acts(dir).isEmpty());
+        // A second press of its own still runs it.
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_COMPARE(acts(dir).filter("drift explain").size(), 1);
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // A held Space or a held letter never confirms in Plan, nor a held
+    // Return in the sentence field.
+    void planHeldKeyNeverConfirms() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        plan->setProperty("selectedId", "C-2026-005");
+        QTRY_VERIFY(find(window.get(), "caseAction-start"));
+        QTest::simulateEvent(window->window, true, Qt::Key_Space, Qt::NoModifier, " ", false);
+        QTRY_COMPARE(plan->property("armedWhat").toString(), QString("case:start"));
+        QTest::simulateEvent(window->window, true, Qt::Key_Space, Qt::NoModifier, " ", true);
+        QTest::simulateEvent(window->window, false, Qt::Key_Space, Qt::NoModifier, " ", false);
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", true);
+        QTest::qWait(300);
+        QVERIFY(acts(dir).isEmpty());
+
+        plan->setProperty("selectedId", "C-2026-002");
+        QTRY_VERIFY(find(window.get(), "caseAction-reopen"));
+        QTest::simulateEvent(window->window, true, Qt::Key_R, Qt::NoModifier, "r", false);
+        QTRY_COMPARE(plan->property("armedWhat").toString(), QString("case:reopen"));
+        QTest::simulateEvent(window->window, true, Qt::Key_R, Qt::NoModifier, "r", true);
+        QTest::simulateEvent(window->window, false, Qt::Key_R, Qt::NoModifier, "r", false);
+        QTest::qWait(300);
+        QVERIFY(acts(dir).isEmpty());
+
+        QTest::keyClick(window->window, 'i');
+        QTRY_VERIFY(find(window.get(), "intentField")->hasActiveFocus());
+        for (const char c : QByteArray("Tidy"))
+            QTest::keyClick(window->window, c);
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", false);
+        QTRY_COMPARE(plan->property("armedWhat").toString(), QString("run"));
+        QTest::simulateEvent(window->window, true, Qt::Key_Return, Qt::NoModifier, "\r", true);
+        QTest::simulateEvent(window->window, false, Qt::Key_Return, Qt::NoModifier, "\r", false);
+        QTest::qWait(300);
+        QVERIFY(acts(dir).isEmpty());
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // While the quit question shows, no key acts: Enter, Space, the letters.
+    void noActWhileTheQuitAskShows() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *plan = find(window.get(), "planView");
+        QTest::keyClick(window->window, 'i');
+        QTRY_VERIFY(find(window.get(), "intentField")->hasActiveFocus());
+        QTest::keyClick(window->window, 'z');
+        QTest::keyClick(window->window, Qt::Key_Escape);
+        plan->setProperty("selectedId", "C-2026-004");
+        QTRY_VERIFY(find(window.get(), "caseAction-drop"));
+        QTest::keyClick(window->window, 'q');
+        QTRY_VERIFY(find(window.get(), "quitAsk")->isVisible());
+        QTest::keyClick(window->window, 'x');
+        QTest::keyClick(window->window, 'x');
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTest::keyClick(window->window, Qt::Key_Space);
+        QTest::keyClick(window->window, Qt::Key_Space);
+        QTest::qWait(300);
+        QVERIFY(acts(dir).isEmpty());
+        QCOMPARE(plan->property("armedWhat").toString(), QString());
+        QTest::keyClick(window->window, Qt::Key_Escape);
+        QTRY_VERIFY(!find(window.get(), "quitAsk")->isVisible());
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // A view change disarms Changes too (outside dev mode): the armed link
+    // does not run on the next Enter.
+    void changesViewSwitchDisarms() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        auto window = load(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window->window);
+        QTRY_VERIFY(find(window.get(), "changesList")->property("count").toInt() > 0);
+        QTRY_COMPARE(window->backend->engineState(), QString("present"));
+        QQuickItem *detail = find(window.get(), "changeDetail");
+        find(window.get(), "changesView")->setProperty("selectedId", "01M3VTGNY0NZG4AY80814WSKGR");
+        QTRY_VERIFY(find(window.get(), "resolveButton")->isVisible());
+        QMetaObject::invokeMethod(detail, "press");
+        QTRY_VERIFY(detail->property("armed").toBool());
+        QTest::keyClick(window->window, '2');
+        QTRY_VERIFY(find(window.get(), "planView")->isVisible());
+        QVERIFY(!detail->property("armed").toBool());
+        QTest::keyClick(window->window, '1');
+        QTRY_VERIFY(find(window.get(), "changesView")->isVisible());
+        QMetaObject::invokeMethod(detail, "press");
+        QTest::qWait(300);
+        QVERIFY(acts(dir).isEmpty());
+        QVERIFY(detail->property("armed").toBool());
+        QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
+    }
+
+    // Markup in the engine's refusal shows as the characters it is, in the
+    // form's error and in the answer line.
+    void engineErrorsArePlainText() {
+        QTemporaryDir dir;
+        QVERIFY(writeFreshFixture(dir.filePath("index.json")));
+        QVERIFY(write(dir.filePath("plan-exit"), "4\n"));
+        // Built with QJsonDocument: moc's lexer trips on \" in a raw string.
+        const auto refusal = [](int code, const QString &message) {
+            return QJsonDocument(QJsonObject{{"error", QJsonObject{{"code", code}, {"message", message}}}}).toJson();
+        };
+        QVERIFY(write(dir.filePath("plan-out"), refusal(4, "<font color=\"#ff00ff\" size=\"7\">LOCK</font>")));
+        QVERIFY(write(dir.filePath("agent-exit"), "1\n"));
+        QVERIFY(write(dir.filePath("agent-out"), refusal(1, "<font color=\"#00ff00\" size=\"7\">AGENT</font>")));
+        auto window = loadPlan(dir, options(dir, dir.filePath("index.json")), "en");
+        QVERIFY(window && window->window);
+        QQuickItem *error = find(window.get(), "newCaseError");
+        QQuickItem *answer = find(window.get(), "planResult");
+        QTest::keyClick(window->window, 'a');
+        QTest::keyClick(window->window, 'a');
+        QTRY_VERIFY(answer->property("text").toString().contains("AGENT"));
+        QCOMPARE(answer->property("textFormat").toInt(), int(Qt::PlainText));
+        QTest::keyClick(window->window, 'n');
+        QTRY_VERIFY(find(window.get(), "newCaseTitle")->hasActiveFocus());
+        QTest::keyClick(window->window, 'w');
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTest::keyClick(window->window, Qt::Key_Return);
+        QTRY_VERIFY(error->property("text").toString().contains("LOCK"));
+        QCOMPARE(error->property("textFormat").toInt(), int(Qt::PlainText));
+        QStringList literal;
+        const QStringList rich = richTexts(window.get(), &literal);
+        QVERIFY2(rich.isEmpty(), qPrintable(rich.join('\n')));
+        QVERIFY2(literal.filter("LOCK").size() >= 1, qPrintable(literal.join('\n')));
         QVERIFY2(messages.isEmpty(), qPrintable(messages.join('\n')));
     }
 

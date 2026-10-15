@@ -89,8 +89,13 @@ Item {
         if (root.active) backend.askSessions()
     }
     onIndexChanged: if (root.active) backend.askSessions()
-    onRowsChanged: if (root.selectedId === "" && root.rows.length > 0) root.selectRow(0)
-    Component.onCompleted: if (root.selectedId === "" && root.rows.length > 0) root.selectRow(0)
+    // A first index with cases selects the first one, behind an open form:
+    // an arriving index never closes the form nor takes its keys.
+    onRowsChanged: if (root.selectedId === "" && root.rows.length > 0) root.selectedId = root.rows[0].id
+    Component.onCompleted: if (root.selectedId === "" && root.rows.length > 0) root.selectedId = root.rows[0].id
+    // A closed form gives its keys back to the list: a hidden field never
+    // keeps typing.
+    onFormOpenChanged: if (!root.formOpen && form.activeFocus) list.forceActiveFocus()
 
     // The engine's argv for an act, Model.js's { args } or { error }.
     function argsFor(what) {
@@ -251,8 +256,11 @@ Item {
         return enter ? root.press("case:" + enter.id) : false
     }
 
-    // The view's letter keys; true when the key was the view's.
+    // The view's letter keys; true when the key was the view's. While the
+    // New case form is open the case behind it is hidden, so its keys
+    // (a x r e) do nothing: no act is armed whose ask cannot be seen.
     function key(k) {
+        if (root.formOpen && ["a", "x", "r", "e"].indexOf(k) !== -1) return true
         if (k === "a") {
             if (Model.caseDeskAction(root.current, "agent")) root.press("case:agent")
             else if (Model.caseDeskAction(root.current, "focus")) root.press("case:focus")
@@ -368,10 +376,16 @@ Item {
                     objectName: "intentField"
                     Layout.fillWidth: true
                     placeholderText: qsTr("New case: say what to do")
-                    enabled: !root.pending
+                    // Read-only, not disabled, while the engine works: the
+                    // field keeps the keys (a refusal leaves the sentence
+                    // there to fix), so typing on never reaches the view's
+                    // keys.
+                    readOnly: root.pending
                     Material.roundedScale: theme.radius
                     onTextEdited: if (root.armedWhat === "run") root.disarm()
-                    onAccepted: root.press("run")
+                    // Once per press: a held Enter's repeat does nothing.
+                    Keys.onReturnPressed: function(event) { event.accepted = true; if (!event.isAutoRepeat) root.press("run") }
+                    Keys.onEnterPressed: function(event) { event.accepted = true; if (!event.isAutoRepeat) root.press("run") }
                 }
                 SeldonButton {
                     objectName: "runButton"
@@ -444,7 +458,8 @@ Item {
                 placeholderText: qsTr("Search the cases")
                 Material.roundedScale: theme.radius
                 onTextEdited: root.search = text
-                onAccepted: list.forceActiveFocus()
+                Keys.onReturnPressed: function(event) { event.accepted = true; list.forceActiveFocus() }
+                Keys.onEnterPressed: function(event) { event.accepted = true; list.forceActiveFocus() }
             }
             // The engine's answer to the last act; a refused New case shows
             // in the form, beside its fields.

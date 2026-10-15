@@ -89,7 +89,9 @@ Item {
                         text: root.armedAction === modelData.id ? qsTr("Press again to confirm")
                             : root.pendingAction === modelData.id ? qsTr("Working…")
                             : qsTr(modelData.label)
-                        highlighted: modelData.primary || root.armedAction === modelData.id
+                        // Filled: the act Enter takes (never Hand to
+                        // agent: Enter never starts an agent), or the armed one.
+                        highlighted: modelData.enter || root.armedAction === modelData.id
                         enabled: !root.pending && !modelData.review
                         focusPolicy: Qt.NoFocus
                         onClicked: root.pressed(modelData.id)

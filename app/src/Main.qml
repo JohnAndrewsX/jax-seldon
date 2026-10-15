@@ -36,8 +36,11 @@ ApplicationWindow {
     property string view: "changes"
     readonly property bool inChanges: win.showsViews && win.view === "changes"
     readonly property bool inPlan: win.showsViews && win.view === "plan"
+    // An act's key does nothing while its ask cannot be seen: the key
+    // overlay or the quit question is up.
+    readonly property bool asking: win.helpVisible || win.quitAsked
     // The view's own keys are off while a field or a picker has them.
-    readonly property bool viewKeys: !win.typing && !win.helpVisible
+    readonly property bool viewKeys: !win.typing && !win.asking
         && (win.inChanges ? !changes.formFocused : win.inPlan ? !plan.formFocused : false)
     // A key typed into a field is text, not a shortcut.
     readonly property bool typing: !!win.activeFocusItem && win.activeFocusItem.cursorPosition !== undefined
@@ -71,12 +74,15 @@ ApplicationWindow {
         Qt.quit()
     }
 
-    Shortcut { sequences: ["?", "Shift+?"]; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.helpVisible = !win.helpVisible }
-    Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.quit() }
-    Shortcut { sequence: "1"; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsViews; onActivated: win.showView("changes") }
-    Shortcut { sequence: "2"; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsViews; onActivated: win.showView("plan") }
+    Shortcut { sequences: ["?", "Shift+?"]; autoRepeat: false; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.helpVisible = !win.helpVisible }
+    Shortcut { sequence: "Q"; autoRepeat: false; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.quit() }
+    Shortcut { sequence: "1"; autoRepeat: false; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsViews; onActivated: win.showView("changes") }
+    Shortcut { sequence: "2"; autoRepeat: false; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsViews; onActivated: win.showView("plan") }
+    // Every key that presses fires once per press: a held key's repeat
+    // (Hyprland repeats after 250 ms) never confirms what its first press
+    // armed (SPEC-PLUGIN §5.3, WP-173). Only moving keys repeat.
     // The case picker keeps Space for itself (it opens its list).
-    Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: !win.typing && !changes.formFocused && !win.helpVisible; onActivated: win.mainAction() }
+    Shortcut { sequence: "Space"; autoRepeat: false; context: Qt.ApplicationShortcut; enabled: !win.typing && !changes.formFocused && !win.asking; onActivated: win.mainAction() }
     Shortcut {
         sequence: "Esc"
         context: Qt.ApplicationShortcut
@@ -92,16 +98,16 @@ ApplicationWindow {
     Shortcut { sequences: ["Up", "K"]; context: Qt.ApplicationShortcut; enabled: win.viewKeys || win.helpVisible; onActivated: win.helpVisible ? help.scroll(-1) : win.inPlan ? plan.move(-1) : changes.move(-1) }
     Shortcut { sequence: "F"; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inChanges; onActivated: changes.cycleChip(1) }
     Shortcut { sequence: "Shift+F"; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inChanges; onActivated: changes.cycleChip(-1) }
-    Shortcut { sequences: ["Return", "Enter"]; context: Qt.ApplicationShortcut; enabled: !win.typing && win.showsViews; onActivated: win.inPlan ? plan.activate() : changes.activate() }
+    Shortcut { sequences: ["Return", "Enter"]; autoRepeat: false; context: Qt.ApplicationShortcut; enabled: !win.typing && !win.asking && win.showsViews; onActivated: win.inPlan ? plan.activate() : changes.activate() }
     // Plan's letters (HelpOverlay lists them).
     Repeater {
         model: ["A", "X", "R", "E", "I", "N", "B"]
         delegate: Item {
             required property string modelData
-            Shortcut { sequence: modelData; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inPlan; onActivated: plan.key(modelData.toLowerCase()) }
+            Shortcut { sequence: modelData; autoRepeat: false; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inPlan; onActivated: plan.key(modelData.toLowerCase()) }
         }
     }
-    Shortcut { sequences: ["/", "Shift+/"]; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inPlan; onActivated: plan.key("/") }
+    Shortcut { sequences: ["/", "Shift+/"]; autoRepeat: false; context: Qt.ApplicationShortcut; enabled: win.viewKeys && win.inPlan; onActivated: plan.key("/") }
 
     // Right-to-left languages mirror the window; the Translator sets the
     // application's layout direction.
