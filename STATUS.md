@@ -1,19 +1,21 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
-**Release:** v0.4.0 on GitHub (tag 2026-10-14 on `992529af`, operator
-decision E95; acceptance record partial: gate, status, header, redact,
-restart passed on the test host (Omarchy rc), b not run because the guard
-keeps agents out of `omarchy plugin update`; acceptance-check ok, E88);
-dry run on `main` green, release, plugin split and bump jobs green, build
-provenance verified (`refs/tags/v0.4.0`, digest `992529af`); the AUR push
-is skipped (no AUR key yet). Earlier: v0.3.0 (2026-10-12), v0.2.0
+**Release:** v0.4.1 on GitHub (tag 2026-10-15 on `81acb272`, under the
+operator's delegation E96 after the Fable release audit's GO; Omarchy edge
+compatibility: WP-224, WP-225, ADR-0059, ADR-0060; acceptance record
+partial: gate, desk, written, restart passed on the test host (Omarchy rc,
+Qt 6.11.2); edge and update not run; acceptance-check ok); dry run on
+`main` green; release workflow green in all jobs (build, split, release,
+aur, plugin, bump); build provenance verified (`refs/tags/v0.4.1`, digest
+`81acb272`). Earlier: v0.4.0 (2026-10-14), v0.3.0 (2026-10-12), v0.2.0
 (2026-10-12), v0.1.0 (2026-10-02) … v0.1.4.
-**Branches:** `main` = v0.4.0 plus the release bump; `next` carries the
-0.4.x work; WP-191 waits in draft PR #13 (merge after its CI is green,
-E94); then the step-back audit (E92).
+**Branches:** `main` = v0.4.1 plus the release bump; `next` carries the
+0.4.x work; `app` carries the 0.5.0 track (Seldon as an Omarchy app,
+ADR-0056/0057/0058 proposed; WP-227 to WP-230 merged there; draft PR #14
+for CI only, merged into `next` only after the operator accepts the ADRs).
 **Contract version:** 2
-**Last updated:** 2026-10-14
+**Last updated:** 2026-10-15
 
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
@@ -717,6 +719,16 @@ compatible addition is a minor release, a fix a patch):
 - E95 (2026-10-14) the operator's go for tag v0.4.0 (on `992529af`,
   after a green dry run on `main`, quoting `acceptance-check.sh 0.4.0`),
   and for pushing the WP-191 branch for its draft PR.
+- E96 (2026-10-14) the dev host runs Omarchy edge; Omarchy's new
+  `omarchy-app` skill applies: Seldon becomes a real Omarchy app. The
+  operator delegated the night's work to the orchestrator: the concept,
+  the plan, the roadmap, the version choice, and a tag if gates and
+  reviews are green. Outcome: v0.4.1 (edge compatibility) tagged; the
+  0.5.0 architecture (option A: the Rust engine stays, a C++/Qt Quick app
+  `seldon-desk`, the plugin becomes the pill, one package `seldon`)
+  written as ADR-0056/0057/0058, *proposed*, on the branch `app`.
+  ADR-0059 and ADR-0060 accepted under this delegation; the operator
+  confirms them.
 
 ## Decided 2026-10-10 (orchestrator, within operator rules; for the operator's review)
 - O1 `seldon init --defaults` (the panel path) sets up no agent harness:

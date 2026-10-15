@@ -441,6 +441,14 @@ file only when you change them, and `seldon doctor` prints the rules in
 use and marks what is not the default. `seldon drift --all` also lists the
 routine changes.
 
+On Omarchy's edge channel, `omarchy-dev` and `omarchy-settings-dev`
+count as `omarchy` and `omarchy-settings`, and Omarchy's other kernels
+(such as `linux-omarchy-bore`, not their `-headers`, `-docs` or
+`-debug`) as `linux-omarchy`, also in a list you wrote earlier: you do
+not add them. Switching the channel (`omarchy version channel edge`, or
+back) is one change, *Omarchy changed channel*; outside a case it is a
+crisis, as an install of `omarchy` by name is.
+
 The bar counts crises only. To count every change without a case, or
 nothing, set the plugin's `driftInBar` (see
 [Plugin settings](#plugin-settings)).

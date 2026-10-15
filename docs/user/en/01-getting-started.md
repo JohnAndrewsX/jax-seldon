@@ -422,7 +422,7 @@ seldon --version
 ```
 
 ```text
-seldon 0.4.0
+seldon 0.4.1
 ```
 
 If your shell says `command not found`, `~/.local/bin` is not on your
@@ -482,7 +482,7 @@ seldon doctor
 
 ```text
 seldon doctor · ~/Seldon
-  ok        engine   seldon 0.4.0, contract 2
+  ok        engine   seldon 0.4.1, contract 2
   ok        config   ~/.config/seldon/config.toml
   ok        logbook  ~/Seldon · machine <machine> · en · 0 cases, 0 decisions, 0 journal days
   ok        cases    every case id has one file

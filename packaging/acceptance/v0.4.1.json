@@ -1,0 +1,38 @@
+{
+  "version": "0.4.1",
+  "status": "partial",
+  "commit": "1e8f5e8a4b93fab014f2362be789129bfd94ff7d",
+  "date": "2026-10-15",
+  "omarchy": { "version": "4.0.4-1", "channel": "rc" },
+  "engine": "0.4.1+next.1e8f5e8a",
+  "plugin": "0.4.1",
+  "scenarios": [
+    { "id": "gate", "title": "Omarchy assumptions, check-upstream --gate (WP-194), before the live checks",
+      "where": "test host", "result": "passed",
+      "counts": { "humanSteps": 1, "passwordPrompts": 0, "snapshotCoverage": null, "r3GatesHonoured": null },
+      "notes": "before the deploy: OMARCHY_PATH=/usr/share/omarchy bash scripts/check-omarchy-assumptions.sh --gate in a clone of next at 1e8f5e8a (cloned on the test host from a git bundle of next, clean): \"ok (every assumption's file matches the ledger; 5 edge-only, absent here as on stable)\", 25 files, exit 0" },
+    { "id": "desk", "title": "the desk, the pill and a sheet in the theme's colours after Commons.Color, on the test host's Qt (WP-224)",
+      "where": "test host", "result": "passed",
+      "counts": { "humanSteps": 2, "passwordPrompts": 0, "snapshotCoverage": null, "r3GatesHonoured": null },
+      "notes": "Qt 6.11.2 (qt6-declarative), theme Tokyo Night. The desk summoned at Today (shot), then Decisions and d typed with wtype: the New decision form open (view form.open true, shot), lastError empty. In both shots the desk's pixels hold exactly the theme's background #1a1b26, foreground #a9b1d6 and accent #7aa2f7 from ~/.local/state/omarchy/current/theme/colors.toml, the bar the same foreground; no black text. Esc and hide closed the desk" },
+    { "id": "written", "title": "a file Omarchy writes itself is routine omarchy-written: omarchy default agent (WP-225, ADR-0059)",
+      "where": "test host", "result": "passed",
+      "counts": { "humanSteps": 3, "passwordPrompts": 0, "snapshotCoverage": null, "r3GatesHonoured": null },
+      "notes": "~/.config/omarchy/defaults/agent (was \"claude\\n\") written by hand with exactly Omarchy's content, no mise install (orchestrator's answer): \"codex\\n\", seldon capture: one config-change, rule omarchy-written, class routine; a second capture 0 events in every collector; \"notanagent\\n\": config-change, rule config, class attention; back to \"claude\\n\": omarchy-written, routine. The attention item was dismissed afterwards with a reason (open drift back to 4)" },
+    { "id": "edge", "title": "an omarchy-dev-shaped transaction and a channel switch are one omarchy-channel item, the twins counted as their stable names (WP-224, ADR-0060)",
+      "where": "not run", "result": "not run" },
+    { "id": "restart", "title": "three shell restarts (WP-162)",
+      "where": "test host", "result": "passed",
+      "counts": { "humanSteps": 3, "passwordPrompts": 0, "snapshotCoverage": null, "r3GatesHonoured": null },
+      "notes": "omarchy restart shell three times, each exit 0 and the shell answering ping after 1 s: quickshell pid 1501947 to 1506241 to 1507313 to 1508635; jax.seldon.service status ok, engine 0.4.1+next.1e8f5e8a, plugin 0.4.1, no restart notice each time; ~/.cache/quickshell/crashes 0 before and after, coredumpctl list quickshell: No coredumps found before and after" },
+    { "id": "update", "title": "0.4.0 to 0.4.1: omarchy plugin update jax.seldon and the engine, in either order, restart notice once, settings kept",
+      "where": "not run", "result": "not run" }
+  ],
+  "limitations": [
+    "edge: not run (no edge host in the yellow zone); the test host runs Omarchy's rc channel, and switching it to edge is not this release's test. Covered by fixture: the real edge pacman.log lines of a switch in tests/drift.rs (one omarchy-channel item, a second capture 0 events), the twins in nine transaction shapes; and by the full check on the edge dev host (headless)",
+    "desk: the pill showed no text (0 crises, driftInBar crisis), so its colours were seen only as the bar's foreground; the other sheets are covered headless by service-states on edge (the dev host)",
+    "restart: one monitor (1920x1080); the two-monitor restart test runs on the dev host after the tag with the release",
+    "channel: the test host runs Omarchy's rc channel with Qt 6.11.2, not stable (E93); Qt 6.12 (edge) was covered headless on the dev host only",
+    "update: not run; omarchy plugin update is the operator's (the guard keeps agents out of it, as for 0.3.0 and 0.4.0). The mixed install is covered by engineMin 0.2.0 (no new argv or index field), contract 2 unchanged, and plugin 0.4.0's fallback text for an unknown rule id"
+  ]
+}
