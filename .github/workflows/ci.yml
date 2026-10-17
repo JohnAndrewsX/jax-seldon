@@ -42,7 +42,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -77,7 +77,7 @@ jobs:
       - name: Install toolchain
         run: pacman -Syu --noconfirm --needed git rust just jq shellcheck rsync nodejs
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: just check
         run: just check
@@ -139,7 +139,7 @@ jobs:
           pacman -Syuu --noconfirm --needed git just jq python nodejs quickshell qt6-declarative ttf-jetbrains-mono-nerd
 
       # Omarchy's scan and the plugin run as root here: no token in .git/config
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
